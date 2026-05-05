@@ -1,0 +1,63 @@
+rules_version = '2';
+// MarchinZ 用 Cloud Storage for Firebase のルール例。
+// 「Storage → ルール」にデプロイし、Firestore と同様に mll_privileged_uids で管理人を許可してください。
+//
+// アップロード先はアプリ側で mll_community/{ログインUID}/... としています。
+// 管理人は isPrivileged() により、どの userId 配下にも書込・削除可能（モデレーション用）。
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isPrivileged() {
+      return signedIn()
+        && firestore.exists(/databases/(default)/documents/mll_privileged_uids/$(request.auth.uid));
+    }
+
+    match /mll_community/{userId}/{fileName} {
+      allow read: if true;
+
+      allow write: if signedIn()
+        && request.resource.size < 6 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*')
+        && (request.auth.uid == userId || isPrivileged());
+
+      allow delete: if signedIn()
+        && (request.auth.uid == userId || isPrivileged());
+    }
+
+    // Log日記の写真（クライアントは mll_event_diary_media/{uid}/... にアップロード）
+    match /mll_event_diary_media/{userId}/{fileName} {
+      allow read: if signedIn();
+
+      allow write: if signedIn()
+        && request.resource.size < 8 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*')
+        && (request.auth.uid == userId || isPrivileged());
+
+      allow delete: if signedIn()
+        && (request.auth.uid == userId || isPrivileged());
+    }
+
+    // プロフィールのアイコン・カバー（クライアントは avatar.jpg / cover.jpg のみ）
+    match /mll_profile_media/{userId}/{fileName} {
+      allow read: if true;
+
+      allow write: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.size < 8 * 1024 * 1024
+        && request.resource.contentType == 'image/jpeg'
+        && fileName in ['avatar.jpg', 'cover.jpg'];
+
+      allow delete: if signedIn()
+        && (request.auth.uid == userId || isPrivileged());
+    }
+
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}

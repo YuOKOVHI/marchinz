@@ -1,0 +1,15 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# API 実行時のバックアップ（コミットしない）
+*.bak.*
+
+# ローカル丸ごとバックアップ
+_snapshots/
+
+# アーカイブ（誤コミット防止・リポジトリ肥大化防止）
+*.tar.gz
+*.zip

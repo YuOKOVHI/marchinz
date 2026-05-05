@@ -1,0 +1,27 @@
+{
+  "name": "マーチンズ / MarchinZ",
+  "short_name": "MarchinZ",
+  "description": "参加したイベントの記録、ショウ動画の検索。マーチングコミュニティ「マーチンズ」",
+  "id": "./",
+  "start_url": "./?source=pwa",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f6f8",
+  "theme_color": "#0f2138",
+  "lang": "ja",
+  "dir": "ltr",
+  "icons": [
+    {
+      "src": "pwa/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "pwa/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

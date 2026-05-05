@@ -1,0 +1,32 @@
+# MarchinZ — 静的サイト（ビルドコマンド不要）
+# デプロイ時の公開ルートはこのリポジトリ／フォルダの直下（index.html がある場所）
+
+[build]
+  command = "bash ./netlify_prebuild_refresh.sh"
+  publish = "."
+
+# data.json は更新が多い想定。CDN・ブラウザのキャッシュは短めにしつつ配信
+[[headers]]
+  for = "/data.json"
+  [headers.values]
+    Cache-Control = "public, max-age=300, must-revalidate"
+
+# P2: 静的ホストの最低限セキュリティヘッダー（CSP はインラインスクリプト都合で未設定）
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Content-Type = "application/manifest+json; charset=utf-8"
+    Cache-Control = "public, max-age=3600"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"

@@ -1,0 +1,49 @@
+# 毎日 JST 06:00 頃に YouTube Data API でリストを更新し、差分があれば main に push。
+# Netlify が GitHub連携なら、この push で本番デプロイが走る。
+#
+# 事前準備（リポジトリ Settings → Secrets and variables → Actions）:
+#   YOUTUBE_API_KEY … Google Cloud の YouTube Data API v3 用キー（リポジトリシークレット）
+#
+# 手動実行: Actions タブ → 「YouTube API daily refresh」→ Run workflow
+
+name: YouTube API daily refresh
+
+on:
+  schedule:
+    # 21:00 UTC = 翌日 06:00 JST（DST なしの前提で運用）
+    - cron: "0 21 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: youtube-api-daily
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run YouTube API refresh
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+        run: bash ./run_youtube_api_refresh.sh
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- "YouTubeリスト.csv" "youtube-list.inline.js" "data.json" "data.inline.js"
+          if git diff --staged --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git commit -m "chore(data): refresh YouTube list via API"
+          git push

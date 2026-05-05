@@ -1,0 +1,17 @@
+# Git 連携で Netlify にデプロイするときだけ参照される（ドラッグ＆ドロップでは無視）
+# 本番の表示に不要な開発・元データを除外して軽量化
+
+__pycache__/
+*.py
+*.csv
+*.command
+*.numbers
+.DS_Store
+fetch_meta.json
+team_index.json
+_metadata_cache.json
+
+# logo 内は index.html から参照している marchinz-logo.png 以外は任意で除外
+logo/Gemini_Generated_Image_*.png
+logo/logo_font.png
+logo/logo_image.png
