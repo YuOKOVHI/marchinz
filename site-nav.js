@@ -186,9 +186,99 @@
     const signupEl = document.getElementById("site-brand-link-signup");
     if (loginEl) loginEl.href = buildAuthEntryUrl("login");
     if (signupEl) signupEl.href = buildAuthEntryUrl("signup");
+    const mobileLogin = document.getElementById("site-mobile-link-login");
+    const mobileSignup = document.getElementById("site-mobile-link-signup");
+    if (mobileLogin) mobileLogin.href = buildAuthEntryUrl("login");
+    if (mobileSignup) mobileSignup.href = buildAuthEntryUrl("signup");
   }
 
-  const navLinks = document.querySelectorAll(".site-nav a[data-page], .footer-nav a[data-page]");
+  function setupMobileDrawer() {
+    const root = document.getElementById("site-mobile-drawer");
+    const toggle = document.getElementById("site-mobile-nav-toggle");
+    const panel = root?.querySelector(".site-mobile-drawer-panel");
+    if (!root || !toggle || !panel) return;
+
+    const DRAWER_MS = 380;
+    let closeFallbackTimer = null;
+
+    function clearCloseFallback() {
+      if (closeFallbackTimer) {
+        clearTimeout(closeFallbackTimer);
+        closeFallbackTimer = null;
+      }
+    }
+
+    function finalizeDrawerClose() {
+      clearCloseFallback();
+      panel.removeEventListener("transitionend", onPanelTransitionEnd);
+      root.hidden = true;
+      root.classList.remove("site-mobile-drawer--open");
+      document.body.classList.remove("mz-mobile-drawer-open");
+      toggle.setAttribute("aria-expanded", "false");
+    }
+
+    function onPanelTransitionEnd(ev) {
+      if (ev.target !== panel || ev.propertyName !== "transform") return;
+      finalizeDrawerClose();
+    }
+
+    function drawerIsOpen() {
+      return !root.hidden && root.classList.contains("site-mobile-drawer--open");
+    }
+
+    function setOpen(open) {
+      if (open) {
+        clearCloseFallback();
+        panel.removeEventListener("transitionend", onPanelTransitionEnd);
+        if (drawerIsOpen()) return;
+        root.hidden = false;
+        toggle.setAttribute("aria-expanded", "true");
+        document.body.classList.add("mz-mobile-drawer-open");
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            root.classList.add("site-mobile-drawer--open");
+          });
+        });
+        return;
+      }
+
+      if (root.hidden || !root.classList.contains("site-mobile-drawer--open")) {
+        finalizeDrawerClose();
+        return;
+      }
+
+      toggle.setAttribute("aria-expanded", "false");
+      root.classList.remove("site-mobile-drawer--open");
+      panel.addEventListener("transitionend", onPanelTransitionEnd);
+      clearCloseFallback();
+      closeFallbackTimer = window.setTimeout(finalizeDrawerClose, DRAWER_MS + 70);
+    }
+
+    window.__marchinzCloseMobileDrawer = () => setOpen(false);
+
+    toggle.addEventListener("click", () => {
+      setOpen(!drawerIsOpen());
+    });
+
+    root.querySelectorAll("[data-site-mobile-drawer-close]").forEach((el) => {
+      el.addEventListener("click", () => setOpen(false));
+    });
+
+    root.addEventListener("click", (ev) => {
+      const t = ev.target.closest("a[href^='#']");
+      if (t && root.contains(t)) setOpen(false);
+    });
+
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape" && drawerIsOpen()) setOpen(false);
+    });
+  }
+
+  setupMobileDrawer();
+
+  const navLinks = document.querySelectorAll(
+    ".site-nav a[data-page], .footer-nav a[data-page], .site-mobile-drawer-nav a[data-page]",
+  );
   const metaDescription = document.getElementById("meta-description");
   const metaOgTitle = document.getElementById("meta-og-title");
   const metaOgDescription = document.getElementById("meta-og-description");
@@ -221,8 +311,8 @@
   const COMMUNITY_HUB_PANEL_SUFFIXES = ["events", "notes", "board"];
 
   function normalizeCommunityTab(tab) {
-    const x = String(tab ?? "board").trim().toLowerCase();
-    return COMMUNITY_HUB_PANEL_SUFFIXES.includes(x) ? x : "board";
+    const x = String(tab ?? "events").trim().toLowerCase();
+    return COMMUNITY_HUB_PANEL_SUFFIXES.includes(x) ? x : "events";
   }
 
   /** @param {string} tab */
@@ -249,7 +339,7 @@
             ? "#community/events"
             : tab === "notes"
               ? "#community/notes"
-              : "#community";
+              : "#community/board";
         if (location.hash !== nextHash) {
           location.hash = nextHash;
         } else {
@@ -283,7 +373,7 @@
     if (h === "events") return { pageId: "community", communityTab: "events" };
     if (h === "notes") return { pageId: "community", communityTab: "notes" };
     if (h === "community" || h.startsWith("community/")) {
-      let tab = "board";
+      let tab = "events";
       if (h.startsWith("community/")) {
         const seg = h.slice("community/".length).trim().toLowerCase();
         if (COMMUNITY_HUB_PANEL_SUFFIXES.includes(seg)) tab = seg;
@@ -310,20 +400,32 @@
       const el = pages[key];
       if (el) el.hidden = key !== id;
     });
+    const commTab = id === "community" ? normalizeCommunityTab(routeOpts.communityTab ?? "events") : null;
     navLinks.forEach((a) => {
-      const active = a.dataset.page === id;
+      const sub = String(a.dataset.communitySubtab || "")
+        .trim()
+        .toLowerCase();
+      let active = false;
+      if (id === "community" && sub) {
+        active = commTab === sub;
+      } else {
+        active = a.dataset.page === id && !sub;
+      }
+      const inDrawer = a.classList.contains("site-mobile-drawer-nav-link");
       if (active) {
         a.setAttribute("aria-current", "page");
-        a.classList.add("site-nav-link-active");
+        if (inDrawer) a.classList.add("site-mobile-drawer-nav-link--active");
+        else a.classList.add("site-nav-link-active");
       } else {
         a.removeAttribute("aria-current");
         a.classList.remove("site-nav-link-active");
+        a.classList.remove("site-mobile-drawer-nav-link--active");
       }
     });
     if (id === "mll") {
       document.title = HOME_SEO_TITLE;
     } else if (id === "community") {
-      const t = normalizeCommunityTab(routeOpts.communityTab ?? "board");
+      const t = normalizeCommunityTab(routeOpts.communityTab ?? "events");
       const piece =
         t === "events" ? titles.events : t === "notes" ? titles.notes : titles.community;
       document.title = `MarchinZ/マーチンズ — ${piece}`;
@@ -338,22 +440,40 @@
       id === "login" ||
       id === "signup" ||
       id === "profile" ||
-      (id === "community" && normalizeCommunityTab(routeOpts.communityTab ?? "board") === "notes")
+      (id === "community" && normalizeCommunityTab(routeOpts.communityTab ?? "events") === "notes")
     ) {
       requestAnimationFrame(() => {
         window.scrollTo({ top: 0, behavior: "auto" });
       });
     }
     updateSiteBrandAuthEntryLinks();
-    if (id === "videos" && typeof window.MarchinZVideoMylist?.renderList === "function") {
-      window.MarchinZVideoMylist.renderList();
+    if (id === "videos") {
+      if (typeof window.__marchinzResetVideosSearchTab === "function") {
+        window.__marchinzResetVideosSearchTab();
+      } else {
+        window.__marchinzPendingVideosReset = true;
+      }
+      if (typeof window.MarchinZVideoMylist?.renderList === "function") {
+        window.MarchinZVideoMylist.renderList();
+      }
     }
-    if (id === "youtube" && typeof window.MarchinZYoutubeChannelMylist?.renderMylist === "function") {
-      window.MarchinZYoutubeChannelMylist.renderMylist();
+    if (id === "youtube") {
+      if (typeof window.__marchinzResetYoutubeCategoryTabs === "function") {
+        window.__marchinzResetYoutubeCategoryTabs();
+      } else {
+        window.__marchinzPendingYoutubeReset = true;
+      }
+      if (typeof window.MarchinZYoutubeChannelMylist?.renderMylist === "function") {
+        window.MarchinZYoutubeChannelMylist.renderMylist();
+      }
+    }
+    if (id === "webmagazine") {
+      const firstJump = document.querySelector(".media-jump-tab");
+      if (firstJump) setMediaJumpTabActive(firstJump);
     }
     if (
       id === "community" &&
-      normalizeCommunityTab(routeOpts.communityTab ?? "board") === "notes" &&
+      normalizeCommunityTab(routeOpts.communityTab ?? "events") === "notes" &&
       typeof window.MarchinZMlnPublicFeed?.refresh === "function"
     ) {
       void window.MarchinZMlnPublicFeed.refresh();
@@ -372,7 +492,7 @@
   function updateMetaForPage(id, routeOpts = {}) {
     let ogKey = id;
     if (id === "community") {
-      const t = normalizeCommunityTab(routeOpts.communityTab ?? "board");
+      const t = normalizeCommunityTab(routeOpts.communityTab ?? "events");
       if (t === "events") ogKey = "events";
       else if (t === "notes") ogKey = "notes";
       else ogKey = "community";
@@ -380,13 +500,13 @@
     const og = ogByPage[ogKey] || ogByPage.videos;
     let url = `${publicBaseUrl}#${id}`;
     if (id === "community") {
-      const t = normalizeCommunityTab(routeOpts.communityTab ?? "board");
+      const t = normalizeCommunityTab(routeOpts.communityTab ?? "events");
       url =
         t === "events"
           ? `${publicBaseUrl}#community/events`
           : t === "notes"
             ? `${publicBaseUrl}#community/notes`
-            : `${publicBaseUrl}#community`;
+            : `${publicBaseUrl}#community/board`;
     }
     if (id === "profile") {
       const h = location.hash.replace(/^#/, "").trim();
@@ -443,12 +563,19 @@
     });
   }
 
+  function setMediaJumpTabActive(el) {
+    document.querySelectorAll(".media-jump-tab").forEach((node) => {
+      node.classList.toggle("media-jump-tab--active", node === el);
+    });
+  }
+
   function setupMediaJumpLinks() {
     document.querySelectorAll(".media-jump-links a[data-target-id]").forEach((a) => {
       a.addEventListener("click", (ev) => {
         ev.preventDefault();
         const targetId = a.getAttribute("data-target-id");
         if (!targetId) return;
+        setMediaJumpTabActive(a);
         if (location.hash !== "#webmagazine") {
           history.replaceState(null, "", `${location.pathname}${location.search}#webmagazine`);
           syncFromHash();
@@ -2100,7 +2227,10 @@
       if (Array.isArray(inlineRows) && inlineRows.length) {
         applyYoutubeCsvRows(inlineRows);
       } else {
-        const csvCandidates = ["YouTubeリスト.csv", encodeURI("YouTubeリスト.csv")];
+        const csvCandidates = [
+          "youtube-list/YouTubeリスト.csv",
+          "youtube-list/" + encodeURIComponent("YouTubeリスト.csv"),
+        ];
         let csvText = "";
         for (const u of csvCandidates) {
           try {
@@ -2122,18 +2252,6 @@
     }
 
     const channelsWithOrder = channels.map((item, idx) => ({ ...item, _order: idx }));
-
-    const publishedChannelCountEl = document.getElementById("youtube-published-channel-count");
-    if (publishedChannelCountEl) {
-      publishedChannelCountEl.textContent = `登録${channels.length} チャンネル`;
-    }
-    const publishedListOpenBtn = document.getElementById("youtube-published-list-open");
-    if (publishedListOpenBtn) {
-      publishedListOpenBtn.setAttribute(
-        "aria-label",
-        `掲載チャンネル名一覧を開く（登録${channels.length}チャンネル）`,
-      );
-    }
 
     let currentCategory = "all";
     let currentSort = "new";
@@ -2603,6 +2721,17 @@
       if (visibleCountEl) {
         visibleCountEl.textContent = `表示中: ${visible.length} / ${currentFiltered.length}`;
       }
+      const publishedScopeEl = document.getElementById("youtube-published-channel-count");
+      if (publishedScopeEl) {
+        publishedScopeEl.textContent = `表示中 ${currentFiltered.length}/${channels.length}`;
+      }
+      const publishedScopeBtn = document.getElementById("youtube-published-list-open");
+      if (publishedScopeBtn) {
+        publishedScopeBtn.setAttribute(
+          "aria-label",
+          `掲載チャンネル名一覧を開く（この区分 ${currentFiltered.length} / 全${channels.length}）`,
+        );
+      }
     }
 
     tabs.forEach((btn) => {
@@ -2663,7 +2792,27 @@
       });
     }
 
-    renderYoutubeCards();
+    function resetYoutubeTabToDefaultCategory() {
+      currentCategory = "all";
+      currentSort = "new";
+      visibleCount = 5;
+      tabs.forEach((btn) => {
+        const cat = btn.getAttribute("data-yt-category") || "all";
+        btn.setAttribute("aria-selected", cat === "all" ? "true" : "false");
+      });
+      sortBtns.forEach((x) => {
+        x.setAttribute("aria-pressed", String((x.getAttribute("data-yt-sort") || "") === "new"));
+      });
+      renderYoutubeCards();
+    }
+    window.__marchinzResetYoutubeCategoryTabs = resetYoutubeTabToDefaultCategory;
+
+    if (window.__marchinzPendingYoutubeReset) {
+      window.__marchinzPendingYoutubeReset = false;
+      resetYoutubeTabToDefaultCategory();
+    } else {
+      renderYoutubeCards();
+    }
   }
 
   const siteLogoLink = document.querySelector('a.site-logo-link[href="#mll"]');
@@ -2733,8 +2882,10 @@
   window.MarchinZOpenMllLoginOverlay = function marchinZOpenMllLoginOverlayFromContext(_hint) {
     window.MarchinZNavigateAuthEntry("signup", "context");
   };
-  syncFromHash();
   setupMediaMoreButtons();
   setupMediaJumpLinks();
   setupYoutubePage();
+  setTimeout(() => {
+    syncFromHash();
+  }, 0);
 })();

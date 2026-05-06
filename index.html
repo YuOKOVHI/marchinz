@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-version="1.7.2">
+<html lang="ja" data-mz-version="1.7.20">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta
       id="meta-description"
       name="description"
@@ -37,31 +37,43 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <link rel="manifest" href="manifest.webmanifest?v=1.7.2" />
-    <link rel="apple-touch-icon" href="pwa/icon-192.png?v=1.7.2" />
+    <link rel="manifest" href="manifest.webmanifest?v=1.7.20" />
+    <link rel="apple-touch-icon" href="pwa/icon-192.png?v=1.7.20" />
     <link rel="icon" type="image/png" href="favicon.png" />
     <title>マーチンズ/MarchinZ | 残す、見つける、盛り上げる！マーチングコミュニティ「マーチンズ」</title>
-    <link rel="stylesheet" href="styles.css?v=1.7.2" />
+    <link rel="stylesheet" href="styles.css?v=1.7.20" />
   </head>
   <body>
     <header class="site-brand" role="banner">
       <div class="site-brand-inner">
-        <div class="site-brand-logo-block">
-          <h1 class="site-logo-heading">
-            <a href="#mll" class="site-logo-link" aria-label="TOP・MarchinZ ホームへ">
-              <img
-                class="site-logo"
-                src="logo/marchinz-logo.png"
-                alt="MarchinZ / マーチンズ"
-                width="224"
-                decoding="async"
-              />
-            </a>
-          </h1>
-          <p class="site-brand-tagline" lang="ja">
-            残す、見つける、盛り上げる！<br />
-            マーチングコミュニティ「マーチンズ/MarchinZ」
-          </p>
+        <div class="site-brand-main-row">
+          <div class="site-brand-logo-block">
+            <h1 class="site-logo-heading">
+              <a href="#mll" class="site-logo-link" aria-label="TOP・MarchinZ ホームへ">
+                <img
+                  class="site-logo"
+                  src="logo/marchinz-logo.png"
+                  alt="MarchinZ / マーチンズ"
+                  width="224"
+                  decoding="async"
+                />
+              </a>
+            </h1>
+            <p class="site-brand-tagline" lang="ja">
+              残す、見つける、盛り上げる！<br />
+              マーチングコミュニティ「マーチンズ/MarchinZ」
+            </p>
+          </div>
+          <button
+            type="button"
+            id="site-mobile-nav-toggle"
+            class="site-mobile-nav-toggle"
+            aria-expanded="false"
+            aria-controls="site-mobile-drawer"
+            aria-label="メニューを開く"
+          >
+            <span class="site-brand-hamburger" aria-hidden="true"><span></span><span></span><span></span></span>
+          </button>
         </div>
         <div class="site-brand-actions" id="site-brand-actions">
           <a
@@ -131,7 +143,7 @@
     <nav class="site-nav" aria-label="サイト内ページ">
       <div class="site-nav-inner">
         <a href="#mll" data-page="mll" class="site-nav-link site-nav-link-active">TOP</a>
-        <a href="#community" data-page="community" class="site-nav-link">コミュニティ</a>
+        <a href="#community/events" data-page="community" class="site-nav-link">コミュニティ</a>
         <a href="#moderation" data-page="moderation" data-admin-only="true" class="site-nav-link" hidden>通報管理</a>
         <a href="#videos" data-page="videos" class="site-nav-link">大会動画</a>
         <a href="#youtube" data-page="youtube" class="site-nav-link">YouTube</a>
@@ -140,6 +152,101 @@
         <a href="#ops" data-page="ops" class="site-nav-link">運営</a>
       </div>
     </nav>
+
+    <div id="site-mobile-drawer" class="site-mobile-drawer" hidden>
+      <button type="button" class="site-mobile-drawer-backdrop" data-site-mobile-drawer-close tabindex="-1" aria-label="メニューを閉じる"></button>
+      <div class="site-mobile-drawer-panel" role="dialog" aria-modal="true" aria-label="サイトメニュー">
+        <div class="site-mobile-drawer-head">
+          <button type="button" class="site-mobile-drawer-close" data-site-mobile-drawer-close aria-label="閉じる">
+            ×
+          </button>
+        </div>
+        <div id="site-mobile-drawer-guest" class="site-mobile-drawer-auth site-mobile-drawer-guest">
+          <p class="site-mobile-drawer-lead">
+            登録すると、MarchinZ Log・コミュニティ投稿・イベント登録などがご利用いただけます。
+          </p>
+          <div class="site-mobile-drawer-cta-row">
+            <a
+              href="#signup"
+              class="site-mobile-drawer-btn site-mobile-drawer-btn--primary"
+              id="site-mobile-link-signup"
+              data-mll-auth-entry="signup"
+              >はじめての方</a
+            >
+            <a
+              href="#login"
+              class="site-mobile-drawer-btn site-mobile-drawer-btn--secondary"
+              id="site-mobile-link-login"
+              data-mll-auth-entry="login"
+              >ログイン</a
+            >
+          </div>
+        </div>
+        <div id="site-mobile-drawer-user" class="site-mobile-drawer-auth site-mobile-drawer-user" hidden>
+          <div class="site-mobile-drawer-user-head">
+            <img
+              id="mobile-drawer-profile-avatar"
+              class="site-mobile-drawer-avatar"
+              alt=""
+              width="44"
+              height="44"
+              decoding="async"
+            />
+            <div class="site-mobile-drawer-user-meta">
+              <div id="mobile-drawer-profile-name" class="site-mobile-drawer-user-name"></div>
+              <a href="#profile" class="site-mobile-drawer-mypage-link">マイページを表示</a>
+            </div>
+          </div>
+          <div class="site-mobile-drawer-user-actions">
+            <a href="#profile" class="site-mobile-drawer-menu-item" id="menu-mobile-open-user-profile-page">プロフィールを見る</a>
+            <button type="button" class="site-mobile-drawer-menu-item" id="menu-mobile-open-profile-edit">
+              プロフィール編集
+            </button>
+            <button type="button" class="site-mobile-drawer-menu-item" id="menu-mobile-open-settings">設定</button>
+            <button type="button" class="site-mobile-drawer-menu-item site-mobile-drawer-menu-item--danger" id="btn-mobile-logout">
+              ログアウト
+            </button>
+          </div>
+        </div>
+        <div class="site-mobile-drawer-divider" aria-hidden="true"></div>
+        <p class="site-mobile-drawer-section-label" id="site-mobile-drawer-pages-label">ページ一覧</p>
+        <nav class="site-mobile-drawer-nav" aria-labelledby="site-mobile-drawer-pages-label">
+          <a href="#mll" data-page="mll" class="site-mobile-drawer-nav-link">TOP</a>
+          <div class="site-mobile-drawer-nav-sub" role="group" aria-label="コミュニティ">
+            <span class="site-mobile-drawer-nav-parent">コミュニティ</span>
+            <a
+              href="#community/events"
+              data-page="community"
+              data-community-subtab="events"
+              class="site-mobile-drawer-nav-link site-mobile-drawer-nav-link--sub"
+              >演奏会・大会・イベント</a
+            >
+            <a
+              href="#community/notes"
+              data-page="community"
+              data-community-subtab="notes"
+              class="site-mobile-drawer-nav-link site-mobile-drawer-nav-link--sub"
+              >ノート</a
+            >
+            <a
+              href="#community/board"
+              data-page="community"
+              data-community-subtab="board"
+              class="site-mobile-drawer-nav-link site-mobile-drawer-nav-link--sub"
+              >掲示板</a
+            >
+          </div>
+          <a href="#moderation" data-page="moderation" data-admin-only="true" class="site-mobile-drawer-nav-link" hidden
+            >通報管理</a
+          >
+          <a href="#videos" data-page="videos" class="site-mobile-drawer-nav-link">大会動画</a>
+          <a href="#youtube" data-page="youtube" class="site-mobile-drawer-nav-link">YouTube</a>
+          <a href="#webmagazine" data-page="webmagazine" class="site-mobile-drawer-nav-link">メディア</a>
+          <a href="#creators" data-page="creators" class="site-mobile-drawer-nav-link">クリエイター</a>
+          <a href="#ops" data-page="ops" class="site-mobile-drawer-nav-link">運営</a>
+        </nav>
+      </div>
+    </div>
 
     <div id="mz-profile-dialog" class="mz-dialog-overlay" hidden>
       <div
@@ -352,19 +459,8 @@
             <h2 id="videos-heading" class="mz-philosophy-heading">大会動画</h2>
             <div class="mz-philosophy-rule" aria-hidden="true"></div>
           </header>
-          <p class="rights-notice">
-            動画はYouTube等の共有機能（埋め込み）を利用して表示しています。掲載されている動画の著作権、肖像権、および一切の権利は、各権利所有者および配信元に帰属します。<br />
-            <span class="rights-notice-mix3"
-              > *MIX3 （スリークロス）は、NPO法人マーチング祭の商標登録です。<a
-                href="https://www.marching-matsuri.com/mix3-rule-about"
-                target="_blank"
-                rel="noopener noreferrer"
-                >＜MIX3 についてはこちら＞</a
-              ></span
-            >
-          </p>
 
-          <nav class="tabs" role="tablist" aria-label="分類">
+          <nav class="tabs youtube-tabs mz-tab-strip-yamap" role="tablist" aria-label="分類">
           <button type="button" role="tab" id="tab-marching" aria-selected="true" data-category="マーチング団体等">
             マーチング等
           </button>
@@ -381,15 +477,18 @@
             >
           </h2>
           <div class="browse-inline-row">
-            <button
-              type="button"
-              id="browse-by-org"
-              class="browse-inline-trigger"
-              aria-expanded="false"
-              aria-controls="browse-button-list"
-            >
-              団体一覧表示
-            </button>
+            <div class="browse-inline-trigger-line">
+              <button
+                type="button"
+                id="browse-by-org"
+                class="browse-inline-trigger"
+                aria-expanded="false"
+                aria-controls="browse-button-list"
+              >
+                <span id="browse-by-org-label" class="browse-inline-trigger-label">団体一覧表示</span>
+              </button>
+              <span id="browse-by-org-count" class="browse-inline-org-count-outside" aria-hidden="true"></span>
+            </div>
           </div>
           <p class="videos-browse-hint mll-log-meta">
             候補が多いときは、まず「部分一致」に名前の一部を入れてから、一覧表示ボタンで開くと選びやすくなります。
@@ -529,6 +628,18 @@
             <button type="button" class="page-btn" id="page-last">最後</button>
           </div>
         </nav>
+
+        <p class="rights-notice rights-notice--page-foot">
+          動画はYouTube等の共有機能（埋め込み）を利用して表示しています。掲載されている動画の著作権、肖像権、および一切の権利は、各権利所有者および配信元に帰属します。<br />
+          <span class="rights-notice-mix3"
+            > *MIX3 （スリークロス）は、NPO法人マーチング祭の商標登録です。<a
+              href="https://www.marching-matsuri.com/mix3-rule-about"
+              target="_blank"
+              rel="noopener noreferrer"
+              >＜MIX3 についてはこちら＞</a
+            ></span
+          >
+        </p>
 
         <section
           id="recommend-section"
@@ -896,19 +1007,16 @@
             <h2 id="community-hub-heading" class="mz-philosophy-heading">コミュニティ</h2>
             <div class="mz-philosophy-rule" aria-hidden="true"></div>
           </header>
-          <p class="static-panel-lead community-hub-lead">
-            演奏会や大会の観戦/出場の記録を残す「MarchinZ Log」、写真と文章で思い出を彩る「MarchinZ Note」、マーチングに関する告知・募集・質問ができる「MarchinZ Board」。3つをタブで切り替えて利用できます。
-          </p>
-          <nav class="tabs youtube-tabs community-hub-tabs" role="tablist" aria-label="コミュニティの区分">
+          <nav class="tabs youtube-tabs community-hub-tabs mz-tab-strip-yamap" role="tablist" aria-label="コミュニティの区分">
             <button
               type="button"
               role="tab"
               id="community-hub-tab-events"
               class="youtube-tab-btn community-hub-tab-btn"
               data-community-hub-tab="events"
-              aria-selected="false"
+              aria-selected="true"
               aria-controls="community-hub-panel-events"
-              tabindex="-1"
+              tabindex="0"
             >
               演奏会・大会・イベント
             </button>
@@ -930,9 +1038,9 @@
               id="community-hub-tab-board"
               class="youtube-tab-btn community-hub-tab-btn"
               data-community-hub-tab="board"
-              aria-selected="true"
+              aria-selected="false"
               aria-controls="community-hub-panel-board"
-              tabindex="0"
+              tabindex="-1"
             >
               掲示板
             </button>
@@ -942,7 +1050,6 @@
             role="tabpanel"
             aria-labelledby="community-hub-tab-events"
             class="community-hub-panel community-hub-panel--events"
-            hidden
           >
         <section class="mll-panel calendar-events-panel" aria-labelledby="events-heading">
           <header class="page-hero mz-philosophy-header">
@@ -951,7 +1058,7 @@
             <div class="mz-philosophy-rule" aria-hidden="true"></div>
           </header>
           <p class="static-panel-lead">
-            マーチングに関する演奏会・大会・イベント等の情報 <span class="mll-log-meta">（閲覧はログインなしでも可能）</span>
+            演奏会や大会の観戦/出場の記録を残す「MarchinZ Log」
           </p>
 
           <div class="calendar-ev-register-intro">
@@ -1063,7 +1170,7 @@
             </section>
           </div>
 
-          <nav class="tabs youtube-tabs calendar-ev-time-tabs" aria-label="開催時期の絞り込み">
+          <nav class="tabs youtube-tabs calendar-ev-time-tabs mz-tab-strip-yamap" aria-label="開催時期の絞り込み">
             <button type="button" class="youtube-tab-btn calendar-ev-tab" data-cal-time="upcoming" aria-selected="true">
               これから
             </button>
@@ -1277,7 +1384,7 @@
                 <div class="mz-philosophy-rule" aria-hidden="true"></div>
               </header>
               <p class="static-panel-lead">
-                MarchinZ Note <span class="mll-log-meta">（設定で公開中のみ表示）</span>
+                写真と文章で思い出を彩る「MarchinZ Note」
               </p>
               <p id="mln-feed-msg" class="mll-create-msg mln-feed-msg" aria-live="polite"></p>
               <div id="mln-feed-cards" class="mln-feed-grid" aria-busy="false"></div>
@@ -1289,6 +1396,7 @@
             role="tabpanel"
             aria-labelledby="community-hub-tab-board"
             class="community-hub-panel community-hub-panel--board"
+            hidden
             tabindex="0"
           >
         <section class="mll-panel" aria-labelledby="community-heading">
@@ -1298,9 +1406,9 @@
             <div class="mz-philosophy-rule" aria-hidden="true"></div>
           </header>
           <p class="static-panel-lead community-board-lead-main">
-            マーチングに関する募集・告知・質問を共有できる掲示板 <span class="mll-log-meta">（掲示板の閲覧はログインなしでも可能）</span>
+            マーチングに関する告知・募集・質問ができる「MarchinZ Board」
           </p>
-          <nav class="tabs youtube-tabs community-filter-tabs" aria-label="話題一覧のカテゴリ絞り込み">
+          <nav class="tabs youtube-tabs community-filter-tabs mz-tab-strip-yamap" aria-label="話題一覧のカテゴリ絞り込み">
             <button type="button" class="youtube-tab-btn community-tab-btn" data-community-filter="ALL" aria-selected="true">
               ALL
             </button>
@@ -1381,7 +1489,7 @@
                 <form id="community-form" class="community-form">
                   <fieldset class="community-theme-fieldset community-form-theme-fieldset">
                     <legend class="search-label">カテゴリ（新規話題）</legend>
-                    <div class="community-form-theme-tabs youtube-tabs community-form-theme-inner" role="group" aria-label="投稿カテゴリ">
+                    <div class="community-form-theme-tabs youtube-tabs community-form-theme-inner mz-tab-strip-yamap" role="group" aria-label="投稿カテゴリ">
                       <button
                         type="button"
                         class="youtube-tab-btn community-tab-btn"
@@ -1471,17 +1579,13 @@
             <div class="mz-philosophy-rule" aria-hidden="true"></div>
           </header>
           <p class="static-panel-lead">マーチングに関する雑誌、マンガ、アニメ等の情報をまとめています。</p>
-          <p class="media-jump-links">
-            <a href="#webmagazine" data-target-id="media-free-magazine">フリーマガジン</a>
-            <span>/</span>
-            <a href="#webmagazine" data-target-id="media-manga">マンガ</a>
-            <span>/</span>
-            <a href="#webmagazine" data-target-id="media-books">雑誌</a>
-            <span>/</span>
-            <a href="#webmagazine" data-target-id="media-note">note</a>
-            <span>/</span>
-            <a href="#webmagazine" data-target-id="media-anime">アニメ</a>
-          </p>
+          <nav class="media-jump-links youtube-tabs mz-tab-strip-yamap" aria-label="メディアの区分">
+            <a href="#webmagazine" class="media-jump-tab" data-target-id="media-free-magazine">フリーマガジン</a>
+            <a href="#webmagazine" class="media-jump-tab" data-target-id="media-manga">マンガ</a>
+            <a href="#webmagazine" class="media-jump-tab" data-target-id="media-books">雑誌</a>
+            <a href="#webmagazine" class="media-jump-tab" data-target-id="media-note">note</a>
+            <a href="#webmagazine" class="media-jump-tab" data-target-id="media-anime">アニメ</a>
+          </nav>
           <p class="source-note">
             出典・権利表記：本ページに掲載するサムネイル画像および関連名称・商標等の権利は各権利者に帰属し、当サイトでは紹介および公式ページへの誘導を目的として使用しています。
           </p>
@@ -1859,9 +1963,6 @@
               >からお願いします。
             </p>
           </div>
-          <p class="rights-notice">
-            動画はYouTube等の共有機能（埋め込み）を利用して表示しています。掲載されている動画の著作権、肖像権、および一切の権利は、各権利所有者および配信元に帰属します。
-          </p>
           <p class="youtube-published-list-wrap">
             <span class="youtube-published-list-row">
               <button
@@ -1877,11 +1978,11 @@
               <span
                 class="youtube-published-channel-count"
                 id="youtube-published-channel-count"
-                aria-hidden="true"
+                aria-live="polite"
               ></span>
             </span>
           </p>
-          <nav class="tabs youtube-tabs" aria-label="YouTubeカテゴリ">
+          <nav class="tabs youtube-tabs mz-tab-strip-yamap" aria-label="YouTubeカテゴリ">
             <button type="button" class="youtube-tab-btn" data-yt-category="all" aria-selected="true">すべて</button>
             <button type="button" class="youtube-tab-btn" data-yt-category="大会" aria-selected="false">大会</button>
             <button type="button" class="youtube-tab-btn" data-yt-category="一般" aria-selected="false">一般</button>
@@ -1898,6 +1999,9 @@
           <p class="youtube-more-wrap">
             <span id="youtube-visible-count" class="youtube-visible-count" aria-live="polite"></span>
             <button type="button" id="youtube-more-btn" class="youtube-more-btn" hidden>もっと見る</button>
+          </p>
+          <p class="rights-notice rights-notice--page-foot rights-notice--youtube-foot">
+            動画はYouTube等の共有機能（埋め込み）を利用して表示しています。掲載されている動画の著作権、肖像権、および一切の権利は、各権利所有者および配信元に帰属します。
           </p>
         </section>
 
@@ -1968,7 +2072,10 @@
             <div class="mz-philosophy-rule" aria-hidden="true"></div>
           </header>
           <p class="static-panel-text">
-            マーチングに関する写真、映像、配信、イラスト、デザインに関するクリエイターを掲載予定。準備中
+            マーチングに関わる写真/映像/配信/イラスト/デザインのクリエイターを掲載予定。（準備中）
+          </p>
+          <p class="static-panel-text">
+            掲載希望は<a href="#ops" data-page="ops" class="static-panel-link">運営ページ</a>より
           </p>
           <p class="mz-philosophy-vision creator-services-vision">
             <span class="creator-services-vision-line">おすすめサービスのご案内</span>
@@ -2315,7 +2422,7 @@
       <nav class="footer-nav" aria-label="サイト内ページとポリシー">
         <div class="footer-nav-inner">
           <a href="#mll" data-page="mll" class="footer-nav-link">TOP</a>
-          <a href="#community" data-page="community" class="footer-nav-link">コミュニティ</a>
+          <a href="#community/events" data-page="community" class="footer-nav-link">コミュニティ</a>
           <a href="#videos" data-page="videos" class="footer-nav-link">大会動画</a>
           <a href="#youtube" data-page="youtube" class="footer-nav-link">YouTube</a>
           <a href="#webmagazine" data-page="webmagazine" class="footer-nav-link">メディア</a>
@@ -2325,33 +2432,47 @@
           <a href="#privacy" data-page="privacy" class="footer-nav-link">プライバシーポリシー</a>
         </div>
       </nav>
-      <p class="footer-copy">©️ MarchinZ 2026</p>
+      <p class="footer-copy">
+        ©️ MarchinZ 2026
+        <span class="footer-app-ver" id="mz-footer-version" lang="en"></span>
+      </p>
+      <script>
+        (function () {
+          var el = document.getElementById("mz-footer-version");
+          if (!el) return;
+          var v = document.documentElement.getAttribute("data-mz-version");
+          if (v) {
+            el.textContent = "ver.\u202f" + v;
+            el.setAttribute("title", "このページのサイト版番（Safari で更新確認に使えます）");
+          }
+        })();
+      </script>
     </footer>
 
-    <script src="marchinz-sort.js?v=1.7.2"></script>
-    <script src="youtube-list.inline.js?v=20260505-yt-logo-key-fix"></script>
-    <script src="youtube-channel-mylist.js?v=1.7.2"></script>
-    <script src="site-nav.js?v=1.7.2"></script>
-    <script src="data.inline.js?v=20260505-marchinz-channel-logo-r2"></script>
+    <script src="marchinz-sort.js?v=1.7.20"></script>
+    <script src="youtube-list/youtube-list.inline.js?v=1.7.20"></script>
+    <script src="youtube-list/youtube-channel-mylist.js?v=1.7.20"></script>
+    <script src="site-nav.js?v=1.7.20"></script>
+    <script src="data.inline.js?v=1.7.20"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-check-compat.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.js"></script>
-    <script src="marchinz-image-compress.js?v=1.7.2"></script>
+    <script src="marchinz-image-compress.js?v=1.7.20"></script>
     <script src="auth-config.js"></script>
-    <script src="auth.js?v=1.7.2-auth-no-firebase-feedback"></script>
-    <script src="marchinz-notify.js?v=1.7.2"></script>
-    <script src="marchinz-like-show.js?v=1.7.2"></script>
-    <script src="mll-video-mylist.js?v=1.7.2"></script>
-    <script src="mll.js?v=1.7.2"></script>
-    <script src="calendar-events.js?v=1.7.2-events-mll-reveal"></script>
-    <script src="community.js?v=1.7.2-image-compress-protect"></script>
-    <script src="event-log-diary.js?v=1.7.2"></script>
-    <script src="mln-public-feed.js?v=1.7.2"></script>
-    <script src="user-profile-page.js?v=1.7.2"></script>
-    <script src="app.js?v=1.7.2"></script>
+    <script src="auth.js?v=1.7.20-auth-no-firebase-feedback"></script>
+    <script src="marchinz-notify.js?v=1.7.20"></script>
+    <script src="marchinz-like-show.js?v=1.7.20"></script>
+    <script src="mll-video-mylist.js?v=1.7.20"></script>
+    <script src="mll.js?v=1.7.20"></script>
+    <script src="calendar-events.js?v=1.7.20-events-mll-reveal"></script>
+    <script src="community.js?v=1.7.20-image-compress-protect"></script>
+    <script src="event-log-diary.js?v=1.7.20"></script>
+    <script src="mln-public-feed.js?v=1.7.20"></script>
+    <script src="user-profile-page.js?v=1.7.20"></script>
+    <script src="app.js?v=1.7.20"></script>
     <script>
       (function () {
         if (!("serviceWorker" in navigator)) return;

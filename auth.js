@@ -29,6 +29,13 @@
   const headerProfileAvatar = document.getElementById("header-profile-avatar");
   const headerProfileName = document.getElementById("header-profile-name");
   const siteBrandUserArea = document.getElementById("site-brand-user-area");
+  const siteMobileDrawerGuest = document.getElementById("site-mobile-drawer-guest");
+  const siteMobileDrawerUser = document.getElementById("site-mobile-drawer-user");
+  const mobileDrawerAvatar = document.getElementById("mobile-drawer-profile-avatar");
+  const mobileDrawerName = document.getElementById("mobile-drawer-profile-name");
+  const menuMobileProfileEdit = document.getElementById("menu-mobile-open-profile-edit");
+  const menuMobileSettings = document.getElementById("menu-mobile-open-settings");
+  const btnMobileLogout = document.getElementById("btn-mobile-logout");
   const btnAccountMenuToggle = document.getElementById("btn-user-account-toggle");
   const userAccountDropdown = document.getElementById("user-account-dropdown");
   const menuOpenProfileEdit = document.getElementById("menu-open-profile-edit");
@@ -94,6 +101,21 @@
     }
   }
 
+  function closeMobileSiteDrawer() {
+    if (typeof window.__marchinzCloseMobileDrawer === "function") {
+      window.__marchinzCloseMobileDrawer();
+      return;
+    }
+    const drawer = document.getElementById("site-mobile-drawer");
+    const toggle = document.getElementById("site-mobile-nav-toggle");
+    if (drawer) {
+      drawer.hidden = true;
+      drawer.classList.remove("site-mobile-drawer--open");
+    }
+    if (toggle) toggle.setAttribute("aria-expanded", "false");
+    document.body.classList.remove("mz-mobile-drawer-open");
+  }
+
   function openAccountDropdown() {
     accountDropdownOpen = true;
     if (userAccountDropdown) {
@@ -116,6 +138,7 @@
   function openProfileDialog() {
     if (profileDialog) profileDialog.hidden = false;
     closeAccountDropdown();
+    closeMobileSiteDrawer();
     void hydrateProfileForm().catch(() => {});
     requestAnimationFrame(() => inputDisplayName?.focus());
   }
@@ -139,6 +162,7 @@
   function openSettingsDialog() {
     if (settingsDialog) settingsDialog.hidden = false;
     closeAccountDropdown();
+    closeMobileSiteDrawer();
     void hydrateLikeShowForm().catch(() => {});
   }
 
@@ -209,6 +233,20 @@
     });
   }
 
+  if (menuMobileProfileEdit) {
+    menuMobileProfileEdit.addEventListener("click", () => {
+      if (menuMobileProfileEdit.hidden) return;
+      openProfileDialog();
+    });
+  }
+
+  if (menuMobileSettings) {
+    menuMobileSettings.addEventListener("click", () => {
+      if (menuMobileSettings.hidden) return;
+      openSettingsDialog();
+    });
+  }
+
   function parseReturnTarget(raw) {
     if (raw == null || raw === "") return "#mll";
     let decoded;
@@ -253,6 +291,8 @@
     const loggedIn = Boolean(currentUser);
     if (siteBrandActions) siteBrandActions.hidden = loggedIn;
     if (siteBrandUserArea) siteBrandUserArea.hidden = !loggedIn;
+    if (siteMobileDrawerGuest) siteMobileDrawerGuest.hidden = loggedIn;
+    if (siteMobileDrawerUser) siteMobileDrawerUser.hidden = !loggedIn;
   }
 
   function navigateAwayFromAuthEntryIfLoggedIn() {
@@ -327,6 +367,20 @@
         headerProfileAvatar.alt = `${displayName || "ユーザー"} のプロフィール画像`;
       }
     }
+    if (mobileDrawerAvatar) {
+      if (currentProfileWithdrawn) {
+        mobileDrawerAvatar.src = `data:image/svg+xml,${encodeURIComponent(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96"><rect width="96" height="96" fill="#ffffff"/></svg>',
+        )}`;
+        mobileDrawerAvatar.alt = "";
+      } else {
+        mobileDrawerAvatar.src = avatarUrl || "logo/marchinz-logo.png";
+        mobileDrawerAvatar.alt = `${displayName || "ユーザー"} のプロフィール画像`;
+      }
+    }
+    if (mobileDrawerName) {
+      mobileDrawerName.textContent = label;
+    }
     applyAdminOnlyVisibility(admin);
     syncSiteBrandAuthVisibility();
   }
@@ -370,6 +424,7 @@
     }
     if (siteBrandActions) siteBrandActions.hidden = false;
     if (siteBrandUserArea) siteBrandUserArea.hidden = true;
+    syncSiteBrandAuthVisibility();
     closeAccountDropdown();
     setFirebaseHintVisible("Firebase 未設定（auth-config.js を設定）");
     syncSignupEntryConsentUi();
@@ -698,6 +753,8 @@
     currentProfileWithdrawn = withdrawn;
     if (menuOpenProfileEdit) menuOpenProfileEdit.hidden = withdrawn;
     if (menuOpenSettings) menuOpenSettings.hidden = withdrawn;
+    if (menuMobileProfileEdit) menuMobileProfileEdit.hidden = withdrawn;
+    if (menuMobileSettings) menuMobileSettings.hidden = withdrawn;
     if (withdrawn && profileForm && profileDialog) profileDialog.hidden = true;
   }
 
@@ -761,14 +818,25 @@
     });
   }
 
+  async function signOutAndClearUi() {
+    closeAccountDropdown();
+    closeMobileSiteDrawer();
+    await auth.signOut();
+    currentUser = null;
+    rawAuthUserForAdmin = null;
+    showLoggedOut();
+    window.dispatchEvent(new CustomEvent("mll-auth-changed", { detail: { user: null, isAdmin: false } }));
+  }
+
   if (btnLogout) {
-    btnLogout.addEventListener("click", async () => {
-      closeAccountDropdown();
-      await auth.signOut();
-      currentUser = null;
-      rawAuthUserForAdmin = null;
-      showLoggedOut();
-      window.dispatchEvent(new CustomEvent("mll-auth-changed", { detail: { user: null, isAdmin: false } }));
+    btnLogout.addEventListener("click", () => {
+      void signOutAndClearUi();
+    });
+  }
+
+  if (btnMobileLogout) {
+    btnMobileLogout.addEventListener("click", () => {
+      void signOutAndClearUi();
     });
   }
 

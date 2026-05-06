@@ -68,7 +68,7 @@
 | `#community` | コミュニティ掲示板 | `community.js` |
 | `#profile` / `#profile?uid=&tab=` | プロフィール（マイページ相当） | `user-profile-page.js`, `event-log-diary.js` |
 | `#videos` | 大会動画検索・マイリスト | `app.js`, `mll-video-mylist.js` |
-| `#youtube` | YouTube チャンネル一覧・マイリスト | `youtube-channel-mylist.js`, `site-nav.js`（一覧データ） |
+| `#youtube` | YouTube チャンネル一覧・マイリスト | `youtube-list/youtube-channel-mylist.js`, `site-nav.js`（一覧データは `youtube-list/YouTubeリスト.csv` / `youtube-list/youtube-list.inline.js`） |
 | `#webmagazine` / `#creators` / `#ops` | 静的コンテンツ | `index.html`, `site-nav.js` |
 | `#terms` / `#privacy` | 利用規約・プライバシー | `index.html` |
 | `#login` / `#signup` | ログイン・新規登録 | `index.html`, `auth.js` |
@@ -116,7 +116,7 @@
 - 検索・並べ替え・ページング・シェア。**ログイン不要**（データは `data.inline.js` 等）。
 - **マイリスト**（`mll-video-mylist.js`）: 追加はログイン必須（未ログインは `#signup` へ）。
 
-### 3.5 YouTube（`youtube-channel-mylist.js`, `site-nav.js`）
+### 3.5 YouTube（`youtube-list/youtube-channel-mylist.js`, `site-nav.js`）
 
 - チャンネル一覧の閲覧は **ログイン不要**。
 - **チャンネルマイリスト保存**はログイン必須（未ログインは `#signup` へ）。

@@ -95,8 +95,8 @@
 
 - `export_youtube_list_via_api.py`
   - `site-nav.js` の `channels` を入力に YouTube Data API v3 で収集
-  - `YouTubeリスト.csv` / `youtube-list.inline.js` を再生成
-  - 書き込み前に `.bak.YYYYmmdd_HHMMSS` を自動バックアップ
+  - `youtube-list/YouTubeリスト.csv` / `youtube-list/youtube-list.inline.js` を再生成
+  - 書き込み前に `youtube-list/archive/` へ `.bak.YYYYmmdd_HHMMSS` を自動バックアップ（`.gitignore` の `*.bak.*` でコミット対象外）
 - `run_youtube_api_refresh.sh`
   - 上記 API 取得に続けて `sync_csv_to_json.py` → `check_data.py` まで一括実行
 
@@ -139,7 +139,7 @@ Netlify を **GitHub リポジトリ連携**にしたうえで、リポジトリ
 
 ### 動き
 
-1. GitHub Actions が API で `YouTubeリスト.csv` / `youtube-list.inline.js` / `data.json` / `data.inline.js` を更新して push
+1. GitHub Actions が API で `youtube-list/YouTubeリスト.csv` / `youtube-list/youtube-list.inline.js` / `data.json` / `data.inline.js` を更新して push
 2. Netlify がそのコミットで **Production デプロイ**（ビルドコマンドは既存の `netlify_prebuild_refresh.sh`。キー未設定ならスキップしても問題なし）
 
 ### Netlify 側の API キーについて
@@ -154,7 +154,7 @@ Netlify を **GitHub リポジトリ連携**にしたうえで、リポジトリ
 - Scheduler（毎日 06:00 JST）→ Cloud Run `/trigger` を呼ぶ
 - Cloud Run は Netlify Build Hook を呼ぶ
 - Netlify build 時に `netlify_prebuild_refresh.sh` が `run_youtube_api_refresh.sh` を実行
-- そのビルド成果物として最新 `YouTubeリスト.csv` / `youtube-list.inline.js` / `data.json` などが配信される
+- そのビルド成果物として最新 `youtube-list/` 直下の CSV・インライン JS および `data.json` などが配信される
 
 ### 追加ファイル
 

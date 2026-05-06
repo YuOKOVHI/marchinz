@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""site-nav.js の YouTube チャンネル一覧から、指標付き CSV（YouTubeリスト.csv）を生成する。
+"""site-nav.js の YouTube チャンネル一覧から、指標付き CSV（youtube-list/YouTubeリスト.csv）を生成する。
 
 各チャンネルについて yt-dlp で以下を取得する（取得失敗セルは空・取得件数は --playlist-end で上限）。
 - ロゴ: チャンネルページ（--playlist-items 0）の thumbnails
@@ -26,8 +26,9 @@ from urllib.parse import urlparse, urlunparse
 
 ROOT = Path(__file__).resolve().parent
 SITE_NAV = ROOT / "site-nav.js"
-OUT_DEFAULT = ROOT / "YouTubeリスト.csv"
-OUT_INLINE_JS = ROOT / "youtube-list.inline.js"
+YOUTUBE_LIST_DIR = ROOT / "youtube-list"
+OUT_DEFAULT = YOUTUBE_LIST_DIR / "YouTubeリスト.csv"
+OUT_INLINE_JS = YOUTUBE_LIST_DIR / "youtube-list.inline.js"
 
 
 def strip_query(url: str) -> str:
@@ -352,6 +353,8 @@ def main() -> int:
     with ThreadPoolExecutor(max_workers=wn) as pool:
         rows = list(pool.map(_fetch_one, tasks))
 
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    OUT_INLINE_JS.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("w", encoding="utf-8-sig", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(FIELDNAMES))
         w.writeheader()

@@ -2,8 +2,8 @@
 """YouTube Data API v3 で YouTube リストを生成する。
 
 目的:
-- 既存 UI が読む `YouTubeリスト.csv` と `youtube-list.inline.js` を API 由来で更新
-- 失敗時のため既存ファイルをバックアップしてから書き込み
+- 既存 UI が読む `youtube-list/YouTubeリスト.csv` と `youtube-list/youtube-list.inline.js` を API 由来で更新
+- 失敗時のため、`youtube-list/archive/` にバックアップしてから書き込み
 
 前提:
 - 環境変数 `YOUTUBE_API_KEY` に API キーを設定
@@ -27,8 +27,10 @@ from typing import TypeVar
 
 ROOT = Path(__file__).resolve().parent
 SITE_NAV = ROOT / "site-nav.js"
-OUT_CSV = ROOT / "YouTubeリスト.csv"
-OUT_INLINE = ROOT / "youtube-list.inline.js"
+YOUTUBE_LIST_DIR = ROOT / "youtube-list"
+ARCHIVE_DIR = YOUTUBE_LIST_DIR / "archive"
+OUT_CSV = YOUTUBE_LIST_DIR / "YouTubeリスト.csv"
+OUT_INLINE = YOUTUBE_LIST_DIR / "youtube-list.inline.js"
 
 FIELDNAMES = (
     "ロゴ画像URL",
@@ -153,8 +155,9 @@ def chunked(arr: list[T], n: int) -> list[list[T]]:
 def backup_file(path: Path) -> None:
     if not path.exists():
         return
+    ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
     ts = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-    bak = path.with_suffix(path.suffix + f".bak.{ts}")
+    bak = ARCHIVE_DIR / f"{path.name}.bak.{ts}"
     shutil.copy2(path, bak)
 
 
@@ -386,6 +389,7 @@ def main() -> int:
         print(f"DRY-RUN OK: rows={len(rows)}")
         return 0
 
+    YOUTUBE_LIST_DIR.mkdir(parents=True, exist_ok=True)
     backup_file(OUT_CSV)
     backup_file(OUT_INLINE)
     with OUT_CSV.open("w", encoding="utf-8-sig", newline="") as f:

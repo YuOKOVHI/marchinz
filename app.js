@@ -75,6 +75,8 @@
   const optCrossBoth = $("#opt-cross-both");
   const mix3Notice = $("#mix3-notice");
   const browseByOrg = $("#browse-by-org");
+  const browseByOrgLabel = $("#browse-by-org-label");
+  const browseByOrgCount = $("#browse-by-org-count");
   const browseButtonList = $("#browse-button-list");
   const pageFirst = $("#page-first");
   const pagePrev = $("#page-prev");
@@ -393,7 +395,13 @@
 
   function renderBrowsePanel() {
     if (!browseButtonList || !browseByOrg) return;
-    browseByOrg.textContent = state.tab === "スリークロスチーム" ? "チーム一覧表示" : "団体一覧表示";
+
+    const mainLabel = state.tab === "スリークロスチーム" ? "チーム一覧表示" : "団体一覧表示";
+    const countUnit = state.tab === "スリークロスチーム" ? "チーム" : "団体";
+    const browseN = uniqOrgNamesForTab().length;
+    if (browseByOrgLabel) browseByOrgLabel.textContent = mainLabel;
+    if (browseByOrgCount) browseByOrgCount.textContent = `${browseN}${countUnit}`;
+    browseByOrg.setAttribute("aria-label", `${mainLabel}（${browseN}${countUnit}）`);
 
     if (!state.browseOpen) {
       browseButtonList.hidden = true;
@@ -2283,7 +2291,7 @@
     }
     return new Promise((resolve) => {
       const script = document.createElement("script");
-      script.src = "data.inline.js?v=20260526";
+      script.src = "data.inline.js?v=1.7.20";
       script.async = true;
       script.onload = () => resolve(window.__MARCHINZ_DATA || null);
       script.onerror = () => resolve(null);
@@ -2608,6 +2616,28 @@
   window.addEventListener("beforeunload", () => {});
 
   setupSortHeaders();
+
+  function resetVideosPageToDefaultTab() {
+    state.tab = "マーチング団体等";
+    document.querySelectorAll('#page-videos nav.tabs[role="tablist"] button[role="tab"]').forEach((b) => {
+      const cat = b.getAttribute("data-category");
+      if (!cat) return;
+      b.setAttribute("aria-selected", cat === state.tab ? "true" : "false");
+    });
+    cancelSearchDebounce();
+    clearExactFilters();
+    clearExcludedOrgs();
+    if (state.rows.length) {
+      applyFilter();
+      renderBrowsePanel();
+    }
+  }
+  window.__marchinzResetVideosSearchTab = resetVideosPageToDefaultTab;
+  if (window.__marchinzPendingVideosReset) {
+    window.__marchinzPendingVideosReset = false;
+    resetVideosPageToDefaultTab();
+  }
+
   load().catch(() => {
     const errEl = $("#load-err");
     if (errEl) errEl.textContent = "";

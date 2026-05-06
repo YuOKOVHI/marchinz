@@ -16,7 +16,7 @@ from sync_csv_to_json import SOURCE_CSVS
 ROOT = Path(__file__).resolve().parent
 JSON_PATH = ROOT / "data.json"
 CSV_PATHS = SOURCE_CSVS
-YOUTUBE_LIST_PATH = ROOT / "YouTubeリスト.csv"
+YOUTUBE_LIST_PATH = ROOT / "youtube-list" / "YouTubeリスト.csv"
 
 EXPECTED_FIELDS = (
     "種別",
