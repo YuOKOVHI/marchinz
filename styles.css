@@ -4525,6 +4525,22 @@ main {
   margin: 0 0 0.95rem;
 }
 
+.youtube-published-list-row {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.45rem 0.65rem;
+}
+
+.youtube-published-channel-count {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text);
+  opacity: 0.72;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
 .youtube-published-list-btn {
   padding: 0.45rem 1rem;
   font-size: 0.85rem;

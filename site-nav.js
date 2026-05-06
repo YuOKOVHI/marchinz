@@ -2122,6 +2122,19 @@
     }
 
     const channelsWithOrder = channels.map((item, idx) => ({ ...item, _order: idx }));
+
+    const publishedChannelCountEl = document.getElementById("youtube-published-channel-count");
+    if (publishedChannelCountEl) {
+      publishedChannelCountEl.textContent = `登録${channels.length} チャンネル`;
+    }
+    const publishedListOpenBtn = document.getElementById("youtube-published-list-open");
+    if (publishedListOpenBtn) {
+      publishedListOpenBtn.setAttribute(
+        "aria-label",
+        `掲載チャンネル名一覧を開く（登録${channels.length}チャンネル）`,
+      );
+    }
+
     let currentCategory = "all";
     let currentSort = "new";
     let visibleCount = 5;

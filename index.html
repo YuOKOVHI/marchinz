@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-version="1.7.0">
+<html lang="ja" data-mz-version="1.7.2">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -37,11 +37,11 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <link rel="manifest" href="manifest.webmanifest?v=1.7.0" />
-    <link rel="apple-touch-icon" href="pwa/icon-192.png?v=1.7.0" />
+    <link rel="manifest" href="manifest.webmanifest?v=1.7.2" />
+    <link rel="apple-touch-icon" href="pwa/icon-192.png?v=1.7.2" />
     <link rel="icon" type="image/png" href="favicon.png" />
     <title>マーチンズ/MarchinZ | 残す、見つける、盛り上げる！マーチングコミュニティ「マーチンズ」</title>
-    <link rel="stylesheet" href="styles.css?v=1.7.0" />
+    <link rel="stylesheet" href="styles.css?v=1.7.2" />
   </head>
   <body>
     <header class="site-brand" role="banner">
@@ -1863,16 +1863,23 @@
             動画はYouTube等の共有機能（埋め込み）を利用して表示しています。掲載されている動画の著作権、肖像権、および一切の権利は、各権利所有者および配信元に帰属します。
           </p>
           <p class="youtube-published-list-wrap">
-            <button
-              type="button"
-              class="youtube-published-list-btn"
-              id="youtube-published-list-open"
-              aria-haspopup="dialog"
-              aria-controls="youtube-published-list-dialog"
-              aria-expanded="false"
-            >
-              掲載リスト
-            </button>
+            <span class="youtube-published-list-row">
+              <button
+                type="button"
+                class="youtube-published-list-btn"
+                id="youtube-published-list-open"
+                aria-haspopup="dialog"
+                aria-controls="youtube-published-list-dialog"
+                aria-expanded="false"
+              >
+                掲載リスト
+              </button>
+              <span
+                class="youtube-published-channel-count"
+                id="youtube-published-channel-count"
+                aria-hidden="true"
+              ></span>
+            </span>
           </p>
           <nav class="tabs youtube-tabs" aria-label="YouTubeカテゴリ">
             <button type="button" class="youtube-tab-btn" data-yt-category="all" aria-selected="true">すべて</button>
@@ -2321,10 +2328,10 @@
       <p class="footer-copy">©️ MarchinZ 2026</p>
     </footer>
 
-    <script src="marchinz-sort.js?v=1.7.0"></script>
+    <script src="marchinz-sort.js?v=1.7.2"></script>
     <script src="youtube-list.inline.js?v=20260505-yt-logo-key-fix"></script>
-    <script src="youtube-channel-mylist.js?v=1.7.0"></script>
-    <script src="site-nav.js?v=1.7.0"></script>
+    <script src="youtube-channel-mylist.js?v=1.7.2"></script>
+    <script src="site-nav.js?v=1.7.2"></script>
     <script src="data.inline.js?v=20260505-marchinz-channel-logo-r2"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
@@ -2332,19 +2339,19 @@
     <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-check-compat.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.js"></script>
-    <script src="marchinz-image-compress.js?v=1.7.0"></script>
+    <script src="marchinz-image-compress.js?v=1.7.2"></script>
     <script src="auth-config.js"></script>
-    <script src="auth.js?v=1.7.0-auth-no-firebase-feedback"></script>
-    <script src="marchinz-notify.js?v=1.7.0"></script>
-    <script src="marchinz-like-show.js?v=1.7.0"></script>
-    <script src="mll-video-mylist.js?v=1.7.0"></script>
-    <script src="mll.js?v=1.7.0"></script>
-    <script src="calendar-events.js?v=1.7.0-events-mll-reveal"></script>
-    <script src="community.js?v=1.7.0-image-compress-protect"></script>
-    <script src="event-log-diary.js?v=1.7.0"></script>
-    <script src="mln-public-feed.js?v=1.7.0"></script>
-    <script src="user-profile-page.js?v=1.7.0"></script>
-    <script src="app.js?v=1.7.0"></script>
+    <script src="auth.js?v=1.7.2-auth-no-firebase-feedback"></script>
+    <script src="marchinz-notify.js?v=1.7.2"></script>
+    <script src="marchinz-like-show.js?v=1.7.2"></script>
+    <script src="mll-video-mylist.js?v=1.7.2"></script>
+    <script src="mll.js?v=1.7.2"></script>
+    <script src="calendar-events.js?v=1.7.2-events-mll-reveal"></script>
+    <script src="community.js?v=1.7.2-image-compress-protect"></script>
+    <script src="event-log-diary.js?v=1.7.2"></script>
+    <script src="mln-public-feed.js?v=1.7.2"></script>
+    <script src="user-profile-page.js?v=1.7.2"></script>
+    <script src="app.js?v=1.7.2"></script>
     <script>
       (function () {
         if (!("serviceWorker" in navigator)) return;
