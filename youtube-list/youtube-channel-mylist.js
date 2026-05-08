@@ -289,6 +289,12 @@
     return false;
   }
 
+  function trackMetric(name, payload = {}) {
+    if (typeof window.MarchinZTrackEvent === "function") {
+      window.MarchinZTrackEvent(name, payload);
+    }
+  }
+
   /**
    * @param {{ url?: string; name?: string; logo?: string; category?: string }} item
    * @param {string} listId
@@ -335,6 +341,7 @@
       listUrlKeys.get(lid).add(urlKey(channel_url));
       setLastUsedListId(lid);
       setMsg("マイリストに追加しました。");
+      trackMetric("mylist_add", { target: "youtube_channel", list_id: lid });
       window.setTimeout(() => setMsg(""), 2400);
       renderMylist();
       window.dispatchEvent(new CustomEvent("marchinz-channel-mylist-updated"));
@@ -675,15 +682,7 @@
       })
       .then(async (snap) => {
         if (!hostEl()) return;
-        let showChLike = true;
-        if (user?.id && db) {
-          try {
-            const ps = await db.collection("mll_profiles").doc(user.id).get();
-            showChLike = (ps.data() || {}).like_show_channel_bookmark !== false;
-          } catch {
-            showChLike = true;
-          }
-        }
+        const showChLike = true;
         /** @type {Map<string, { meta: { id: string; name: string; visibility: string; list_order: number }; items: { docId: string; title: string; url: string; sort: number; added: string; liked_by?: Record<string, boolean> }[] }>} */
         const grouped = new Map();
         for (const L of cachedLists) {

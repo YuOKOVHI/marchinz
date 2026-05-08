@@ -68,6 +68,7 @@
   const videoList = $("#video-list");
   const resultsSkeleton = $("#results-skeleton");
   const resultsPanel = $("#results-panel");
+  const pageVideos = $("#page-videos");
   const qTeam = $("#q-team");
   const qEvent = $("#q-event");
   const qFree = $("#q-free");
@@ -94,6 +95,14 @@
   const shareSearchBtns = () => document.querySelectorAll("[data-marchinz-search-share]");
   const btnResetRecentSearches = $("#btn-reset-recent-searches");
   const recentSearchesEl = $("#recent-searches");
+
+  function updateMix3NoticeVisibility() {
+    if (!mix3Notice) return;
+    const inVideosPage = !pageVideos || pageVideos.hidden === false;
+    const threecrossTab = document.getElementById("tab-threecross");
+    const show = inVideosPage && threecrossTab?.getAttribute("aria-selected") === "true";
+    mix3Notice.hidden = !show;
+  }
 
   /** サイトでは非表示だがシェア文などで利用 */
   function rowDisplayName(row) {
@@ -525,6 +534,7 @@
       window.gtag("event", name, payload);
     }
   }
+  window.MarchinZTrackEvent = trackEvent;
 
   function currentSearchState() {
     return {
@@ -566,6 +576,7 @@
     saveJsonStorage(LS_KEY_RECENT_SEARCHES, state.recentSearches);
     renderRecentSearches();
     trackEvent("search_executed", { label });
+    trackEvent("search_run", { tab: state.tab, has_team: Boolean(c.team), has_event: Boolean(c.event), has_free: Boolean(c.free) });
   }
 
   function renderSearchList(target, arr, emptyText) {
@@ -890,7 +901,7 @@
   function syncUrlState() {
     const p = buildShareSearchParams();
     const qs = searchParamsToCompactQuery(p);
-    const hash = window.location.hash || "#videos";
+    const hash = window.location.hash || "#top";
     const newUrl = `${window.location.pathname}${qs ? `?${qs}` : ""}${hash}`;
     history.replaceState(null, "", newUrl);
   }
@@ -898,7 +909,7 @@
   function buildShareUrl() {
     const p = buildShareSearchParams();
     const qs = searchParamsToCompactQuery(p);
-    const hash = window.location.hash || "#videos";
+    const hash = window.location.hash || "#top";
     if (window.location.protocol === "file:") {
       const fileName = window.location.pathname.split("/").pop() || "index.html";
       const base = String(SHARE_PUBLIC_BASE_URL || "").trim().replace(/\/+$/, "");
@@ -915,7 +926,7 @@
    * @param {string} hashWithLeadingHash 例: `#profile?uid=…&tab=videos&mylist=…`
    */
   function buildAbsoluteUrlForHash(hashWithLeadingHash) {
-    const h = String(hashWithLeadingHash || "#videos").startsWith("#")
+    const h = String(hashWithLeadingHash || "#top").startsWith("#")
       ? String(hashWithLeadingHash)
       : `#${hashWithLeadingHash}`;
     if (window.location.protocol === "file:") {
@@ -1218,7 +1229,8 @@
       return true;
     });
     if (shouldUseInitialRandom()) {
-      state.filtered = applyInitialRandomOrder(state.filtered);
+      const matsuriOnly = state.filtered.filter((row) => isMarchingMatsuriVideo(row));
+      state.filtered = applyInitialRandomOrder(matsuriOnly);
     } else {
       sortRows();
     }
@@ -1230,9 +1242,7 @@
         btn.classList.add(state.sortDir === "asc" ? "sorted-asc" : "sorted-desc");
       }
     });
-    if (mix3Notice) {
-      mix3Notice.hidden = state.tab !== "スリークロスチーム";
-    }
+    updateMix3NoticeVisibility();
     render();
     renderRecommendations();
   }
@@ -1288,10 +1298,19 @@
     return true;
   }
 
+  function isMarchingMatsuriVideo(row) {
+    const name = normalize(rowChannelName(row));
+    const url = normalize(rowChannelUrl(row));
+    if (name.includes("マーチング祭")) return true;
+    if (url.includes("marching-matsuri")) return true;
+    return false;
+  }
+
   function applyInitialRandomOrder(rows) {
     const required = [];
     const usedUrls = new Set();
-    for (const team of INITIAL_RANDOM_TEAMS) {
+    const randomizedTeams = shuffleArray(INITIAL_RANDOM_TEAMS);
+    for (const team of randomizedTeams) {
       const candidates = rows.filter((r) => String(rowOrgTeam(r) || "").trim() === team);
       if (!candidates.length) continue;
       const sortedByPref = [...candidates].sort((a, b) => {
@@ -2154,7 +2173,7 @@
       } else {
         const from = start + 1;
         const to = start + pageRows.length;
-        paginationStatus.textContent = `ページ ${state.page} / ${totalPages}（${from}〜${to} 件目を表示）`;
+        paginationStatus.innerHTML = `ページ ${state.page} / ${totalPages}<span class="pagination-status-sub">（${from}〜${to} 件目を表示）</span>`;
       }
     }
     const atFirst = state.page <= 1;
@@ -2291,7 +2310,7 @@
     }
     return new Promise((resolve) => {
       const script = document.createElement("script");
-      script.src = "data.inline.js?v=1.7.20";
+      script.src = "data.inline.js?v=1.7.48";
       script.async = true;
       script.onload = () => resolve(window.__MARCHINZ_DATA || null);
       script.onerror = () => resolve(null);
@@ -2611,6 +2630,9 @@
     }
     renderBrowsePanel();
   });
+  window.addEventListener("hashchange", () => {
+    updateMix3NoticeVisibility();
+  });
 
   window.addEventListener("pageshow", () => {});
   window.addEventListener("beforeunload", () => {});
@@ -2630,6 +2652,8 @@
     if (state.rows.length) {
       applyFilter();
       renderBrowsePanel();
+    } else {
+      updateMix3NoticeVisibility();
     }
   }
   window.__marchinzResetVideosSearchTab = resetVideosPageToDefaultTab;

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-version="1.7.20">
+<html lang="ja" data-mz-version="1.9.29">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -19,7 +19,7 @@
       content="マーチンズ/MarchinZ。参加したイベントの記録、ショウ動画の検索。あなたのマーチングライフがさらに彩ります。"
     />
     <meta property="og:type" content="website" />
-    <meta id="meta-og-url" property="og:url" content="https://marchinz.netlify.app/#mll" />
+    <meta id="meta-og-url" property="og:url" content="https://marchinz.netlify.app/#top" />
     <meta id="meta-og-image" property="og:image" content="https://marchinz.netlify.app/logo/mll-logo.png" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta
@@ -37,11 +37,12 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <link rel="manifest" href="manifest.webmanifest?v=1.7.20" />
-    <link rel="apple-touch-icon" href="pwa/icon-192.png?v=1.7.20" />
-    <link rel="icon" type="image/png" href="favicon.png" />
+    <link rel="manifest" href="manifest.webmanifest?v=1.9.29" />
+    <link rel="apple-touch-icon" href="pwa/icon-192.png?v=1.9.29" />
+    <link rel="icon" type="image/x-icon" href="favicon.ico?v=1.9.29" />
+    <link rel="icon" type="image/png" href="favicon.png?v=1.9.29" />
     <title>マーチンズ/MarchinZ | 残す、見つける、盛り上げる！マーチングコミュニティ「マーチンズ」</title>
-    <link rel="stylesheet" href="styles.css?v=1.7.20" />
+    <link rel="stylesheet" href="styles.css?v=1.9.29" />
   </head>
   <body>
     <header class="site-brand" role="banner">
@@ -49,7 +50,7 @@
         <div class="site-brand-main-row">
           <div class="site-brand-logo-block">
             <h1 class="site-logo-heading">
-              <a href="#mll" class="site-logo-link" aria-label="TOP・MarchinZ ホームへ">
+              <a href="#top" class="site-logo-link" aria-label="TOP・MarchinZ ホームへ">
                 <img
                   class="site-logo"
                   src="logo/marchinz-logo.png"
@@ -142,7 +143,7 @@
 
     <nav class="site-nav" aria-label="サイト内ページ">
       <div class="site-nav-inner">
-        <a href="#mll" data-page="mll" class="site-nav-link site-nav-link-active">TOP</a>
+        <a href="#top" data-page="mll" class="site-nav-link site-nav-link-active">TOP</a>
         <a href="#community/events" data-page="community" class="site-nav-link">コミュニティ</a>
         <a href="#moderation" data-page="moderation" data-admin-only="true" class="site-nav-link" hidden>通報管理</a>
         <a href="#videos" data-page="videos" class="site-nav-link">大会動画</a>
@@ -163,7 +164,7 @@
         </div>
         <div id="site-mobile-drawer-guest" class="site-mobile-drawer-auth site-mobile-drawer-guest">
           <p class="site-mobile-drawer-lead">
-            登録すると、MarchinZ Log・コミュニティ投稿・イベント登録などがご利用いただけます。
+            マーチンズに登録すると、MarchinZ Log・MarchinZ Note・MarchinZ Boardをご利用いただけます。
           </p>
           <div class="site-mobile-drawer-cta-row">
             <a
@@ -211,7 +212,7 @@
         <div class="site-mobile-drawer-divider" aria-hidden="true"></div>
         <p class="site-mobile-drawer-section-label" id="site-mobile-drawer-pages-label">ページ一覧</p>
         <nav class="site-mobile-drawer-nav" aria-labelledby="site-mobile-drawer-pages-label">
-          <a href="#mll" data-page="mll" class="site-mobile-drawer-nav-link">TOP</a>
+          <a href="#top" data-page="mll" class="site-mobile-drawer-nav-link">TOP</a>
           <div class="site-mobile-drawer-nav-sub" role="group" aria-label="コミュニティ">
             <span class="site-mobile-drawer-nav-parent">コミュニティ</span>
             <a
@@ -219,7 +220,7 @@
               data-page="community"
               data-community-subtab="events"
               class="site-mobile-drawer-nav-link site-mobile-drawer-nav-link--sub"
-              >演奏会・大会・イベント</a
+              >演奏会等</a
             >
             <a
               href="#community/notes"
@@ -322,41 +323,52 @@
             公開プロフィールの表示名・アイコンは「プロフィール編集」から変更できます。ログアウトはヘッダーのメニューから実行できます。
           </p>
           <section class="mz-settings-like-section" aria-labelledby="mz-like-show-heading">
-            <h3 id="mz-like-show-heading" class="mz-settings-subheading">いいねの表示</h3>
+            <h3 id="mz-like-show-heading" class="mz-settings-subheading">いいね通知</h3>
             <p class="mz-settings-lead mz-settings-like-lead">
-              各コンテンツで「いいね」ボタンと件数を他のユーザーに表示するかどうかです。OFF
-              にすると当該コンテンツではいいねが表示されません（自分の画面でも非表示）。
+              各コンテンツで「いいねされた時の通知」を受け取るかどうかです。いいねの数はサイト全体で常に表示されます。
             </p>
             <ul class="mz-settings-like-list" id="mz-like-show-list">
               <li class="mz-settings-like-item">
-                <label><input type="checkbox" id="mz-like-show-mll" data-mz-like-field="like_show_mll" checked /> MarchinZ Log</label>
+                <label><input type="checkbox" id="mz-like-show-mll" data-mz-like-field="like_show_mll" checked /> MarchinZ Log のいいね通知</label>
               </li>
               <li class="mz-settings-like-item">
-                <label><input type="checkbox" id="mz-like-show-community" data-mz-like-field="like_show_community" checked /> コミュニティ投稿</label>
+                <label><input type="checkbox" id="mz-like-show-community" data-mz-like-field="like_show_community" checked /> コミュニティ投稿のいいね通知</label>
               </li>
               <li class="mz-settings-like-item">
-                <label><input type="checkbox" id="mz-like-show-calendar" data-mz-like-field="like_show_calendar" checked /> 登録したイベント（カレンダー）</label>
+                <label><input type="checkbox" id="mz-like-show-calendar" data-mz-like-field="like_show_calendar" checked /> 登録したイベント（カレンダー）のいいね通知</label>
               </li>
               <li class="mz-settings-like-item">
-                <label><input type="checkbox" id="mz-like-show-video-bm" data-mz-like-field="like_show_video_bookmark" checked /> 大会動画マイリスト</label>
+                <label><input type="checkbox" id="mz-like-show-video-bm" data-mz-like-field="like_show_video_bookmark" checked /> 大会動画マイリストのいいね通知</label>
               </li>
               <li class="mz-settings-like-item">
-                <label><input type="checkbox" id="mz-like-show-channel-bm" data-mz-like-field="like_show_channel_bookmark" checked /> YouTube マイリスト</label>
+                <label><input type="checkbox" id="mz-like-show-channel-bm" data-mz-like-field="like_show_channel_bookmark" checked /> YouTube マイリストのいいね通知</label>
               </li>
               <li class="mz-settings-like-item">
-                <label><input type="checkbox" id="mz-like-show-log-diary" data-mz-like-field="like_show_log_diary" checked /> MarchinZ Note</label>
+                <label><input type="checkbox" id="mz-like-show-log-diary" data-mz-like-field="like_show_log_diary" checked /> MarchinZ Note のいいね通知</label>
               </li>
             </ul>
             <p class="mz-settings-like-status" id="mz-like-show-status" hidden></p>
           </section>
+          <section class="mz-settings-like-section" aria-labelledby="mz-public-setting-heading">
+            <h3 id="mz-public-setting-heading" class="mz-settings-subheading">公開設定</h3>
+            <ul class="mz-settings-like-list">
+              <li class="mz-settings-like-item">イベントへの参加（MarchinZ Log）　公開/非公開</li>
+              <li class="mz-settings-like-item">イベントの写真付記録（MarchinZ Note）　公開/非公開</li>
+            </ul>
+          </section>
           <section class="mz-settings-danger-zone" aria-labelledby="mz-account-delete-heading">
-            <h3 id="mz-account-delete-heading" class="mz-settings-subheading">アカウント削除（退会）</h3>
-            <p class="mz-settings-lead mz-settings-danger-lead">
-              作成したイベント情報・掲示板の投稿はサイト上に残る場合があります。プロフィールおよびアップロード画像、MarchinZ Note、MarchinZ Log、マイリストは削除されます。Google アカウントとの連携も解除されます。
-            </p>
-            <button type="button" id="btn-account-withdraw" class="btn-reset-search profile-withdraw-btn">
-              アカウントを削除（退会）する
+            <h3 id="mz-account-delete-heading" class="mz-settings-subheading">アカウント</h3>
+            <button type="button" id="btn-account-withdraw-toggle" class="mz-withdraw-toggle-link">
+              退会について
             </button>
+            <div id="mz-withdraw-detail" hidden>
+              <p class="mz-settings-lead mz-settings-danger-lead">
+                作成したイベント情報・掲示板の投稿はサイト上に残る場合があります。プロフィールおよびアップロード画像、MarchinZ Note、MarchinZ Log、マイリストは削除されます。Google アカウントとの連携も解除されます。
+              </p>
+              <button type="button" id="btn-account-withdraw" class="btn-reset-search profile-withdraw-btn">
+                アカウントを削除（退会）する
+              </button>
+            </div>
           </section>
         </div>
       </div>
@@ -411,6 +423,12 @@
               Googleでログイン
             </button>
           </div>
+          <p class="mll-create-msg auth-popup-hint">※ ブラウザにより別ウィンドウで開くか、Googleのページへ移動します。</p>
+          <p id="auth-login-msg" class="mll-create-msg auth-entry-msg" aria-live="polite"></p>
+          <label class="auth-consent-label">
+            <input type="checkbox" id="auth-login-remember-session" checked />
+            ログイン状態を保持する
+          </label>
           <p class="auth-entry-switch">
             <a href="#signup" class="static-panel-link" data-mll-auth-switch="signup">はじめての方・新規登録はこちら</a>
           </p>
@@ -425,7 +443,7 @@
             <div class="mz-philosophy-rule" aria-hidden="true"></div>
           </header>
           <p class="static-panel-lead auth-entry-lead">
-            MarchinZに登録すると、サイト内の共通アカウントとして MarchinZ Log をはじめ、コミュニティやイベント機能をご利用いただけます。ログイン／登録の方法は Google認証でご利用いただけます。
+            マーチンズに登録すると、MarchinZ Log・MarchinZ Note・MarchinZ Boardといったコミュニティやイベント機能をご利用いただけます。ログイン／登録の方法は Google認証でご利用いただけます。
           </p>
           <div id="auth-entry-signup-block" class="auth-entry-signup-consent-block">
             <p class="auth-register-lead">
@@ -440,11 +458,14 @@
               <span>プライバシーポリシーに同意する</span>
             </label>
           </div>
+          <p id="auth-signup-consent-msg" class="mll-create-msg" aria-live="polite"></p>
           <div class="auth-entry-actions">
             <button type="button" id="btn-auth-signup-google" class="btn-share-search btn-auth-google-entry" disabled>
               MarchinZ に登録する
             </button>
           </div>
+          <p class="mll-create-msg auth-popup-hint">※ ブラウザにより別ウィンドウで開くか、Googleのページへ移動します。</p>
+          <p id="auth-signup-msg" class="mll-create-msg auth-entry-msg" aria-live="polite"></p>
           <p class="auth-entry-switch">
             <a href="#login" class="static-panel-link" data-mll-auth-switch="login">すでに登録済みの方はログイン</a>
           </p>
@@ -468,31 +489,33 @@
             MIX3<span class="tabs-tab-cross-sub">（スリークロス）</span>
           </button>
         </nav>
+        <p id="mix3-notice" class="rights-notice rights-notice-mix3" hidden>
+          *MIX3 （スリークロス）は、NPO法人マーチング祭の商標登録です。<a
+            href="https://www.marching-matsuri.com/mix3-rule-about"
+            target="_blank"
+            rel="noopener noreferrer"
+            >＜MIX3 についてはこちら＞</a
+          >
+        </p>
 
         <section class="search-panel" aria-labelledby="search-heading">
-          <h2 id="search-heading" class="search-panel-title">
-            検索
-            <span class="search-panel-title-note"
-              >並べ替えの右「検索結果をシェアする」で、表示中の条件・並べ替えを反映した一覧リンクをシェアできます。</span
-            >
-          </h2>
-          <div class="browse-inline-row">
-            <div class="browse-inline-trigger-line">
-              <button
-                type="button"
-                id="browse-by-org"
-                class="browse-inline-trigger"
-                aria-expanded="false"
-                aria-controls="browse-button-list"
-              >
-                <span id="browse-by-org-label" class="browse-inline-trigger-label">団体一覧表示</span>
-              </button>
-              <span id="browse-by-org-count" class="browse-inline-org-count-outside" aria-hidden="true"></span>
+          <div class="search-inline-header">
+            <h2 id="search-heading" class="search-panel-title">検索</h2>
+            <div class="browse-inline-row">
+              <div class="browse-inline-trigger-line">
+                <button
+                  type="button"
+                  id="browse-by-org"
+                  class="browse-inline-trigger"
+                  aria-expanded="false"
+                  aria-controls="browse-button-list"
+                >
+                  <span id="browse-by-org-label" class="browse-inline-trigger-label">団体一覧表示</span>
+                </button>
+                <span id="browse-by-org-count" class="browse-inline-org-count-outside" aria-hidden="true"></span>
+              </div>
             </div>
           </div>
-          <p class="videos-browse-hint mll-log-meta">
-            候補が多いときは、まず「部分一致」に名前の一部を入れてから、一覧表示ボタンで開くと選びやすくなります。
-          </p>
           <div class="search-rows">
             <div class="search-row">
               <div class="search-field search-field--team">
@@ -561,22 +584,12 @@
         <p id="data-fetch-meta" class="data-fetch-meta" hidden style="display:none"></p>
 
         <div class="results-panel" id="results-panel">
-          <div class="result-sort-bar" role="toolbar" aria-label="一覧の並べ替えとシェア">
+          <div class="result-sort-bar" role="toolbar" aria-label="一覧の並べ替え">
             <div class="result-sort-bar-main">
               <span class="result-sort-label">並べ替え</span>
               <button type="button" class="sort-btn" data-sort="配信日">配信日</button>
               <button type="button" class="sort-btn" data-sort="団体/チーム">団体/チーム</button>
               <button type="button" class="sort-btn" data-sort="配信元">配信元</button>
-            </div>
-            <div class="result-sort-bar-share">
-              <button
-                type="button"
-                id="btn-share-search"
-                class="btn-share-search btn-marchinz-spotlight"
-                data-marchinz-search-share
-              >
-                検索結果をシェアする
-              </button>
             </div>
           </div>
           <div
@@ -619,6 +632,14 @@
                 <option value="100">100</option>
               </select>
             </label>
+            <button
+              type="button"
+              id="btn-share-search"
+              class="btn-share-search btn-marchinz-spotlight pagination-share-btn"
+              data-marchinz-search-share
+            >
+              検索結果をシェアする
+            </button>
           </div>
           <div class="pagination-inner">
             <button type="button" class="page-btn" id="page-first">最初</button>
@@ -631,14 +652,6 @@
 
         <p class="rights-notice rights-notice--page-foot">
           動画はYouTube等の共有機能（埋め込み）を利用して表示しています。掲載されている動画の著作権、肖像権、および一切の権利は、各権利所有者および配信元に帰属します。<br />
-          <span class="rights-notice-mix3"
-            > *MIX3 （スリークロス）は、NPO法人マーチング祭の商標登録です。<a
-              href="https://www.marching-matsuri.com/mix3-rule-about"
-              target="_blank"
-              rel="noopener noreferrer"
-              >＜MIX3 についてはこちら＞</a
-            ></span
-          >
         </p>
 
         <section
@@ -654,7 +667,7 @@
           </button>
         </section>
 
-        <section class="mll-mylist-section" aria-labelledby="mll-mylist-video-heading">
+        <section class="mll-mylist-section" aria-labelledby="mll-mylist-video-heading" hidden>
           <h2 id="mll-mylist-video-heading" class="mll-mylist-page-heading">大会動画マイリスト</h2>
           <p class="mll-mylist-hint">
             リストごとに公開／非公開を設定できます。名前の変更・リストの並べ替え・動画の並べ替えは、各ブロック内のボタンから行えます。
@@ -1018,7 +1031,7 @@
               aria-controls="community-hub-panel-events"
               tabindex="0"
             >
-              演奏会・大会・イベント
+              演奏会等
             </button>
             <button
               type="button"
@@ -1071,6 +1084,10 @@
             >
               イベントを登録
             </button>
+            <p class="mll-log-meta">
+              登録フロー: ① 開催日・開催地・タイトルを入力 → ② 参加スタイル（観戦/出演/チームスタッフ/運営）を選択 → ③ 必要ならURLやメモを追記 →
+              ④ 公開/非公開を選び保存。保存後は「これから」「過去」の一覧に自動反映されます。
+            </p>
           </div>
 
           <div id="mll-events-register-reveal" class="mll-events-register-reveal" hidden aria-hidden="true">
@@ -1080,6 +1097,7 @@
               <div id="mll-events-auth-gate" class="mll-events-auth-gate" hidden>
                 <p class="static-panel-lead mll-events-mll-lead">
                   大会・演奏会などへの参加記録です。区分は<strong>観戦・出演・チームスタッフ・運営</strong>の4種類。開催日を過ぎると、表記が自然な過去形に切り替わります。
+                  入力テキストは「大会名（必須）」「開催日（必須）」「会場（任意）」「参加区分（必須）」「メモ（任意）」「チケットページURL（任意）」「公式ページURL（任意）」です。
                 </p>
                 <div class="mll-events-auth-gate-actions">
                   <a href="#signup" class="mll-lp-btn mll-lp-btn--primary" data-mll-auth-entry="signup">はじめての方</a>
@@ -1095,23 +1113,32 @@
 
               <div id="mll-events-mll-logged-block" class="mll-events-mll-logged-block" hidden>
                 <p class="static-panel-lead mll-events-mll-lead">
-                  大会・演奏会などへの参加記録です。区分は<strong>観戦・出演・チームスタッフ・運営</strong>の4種類。開催日を過ぎると、表記が自然な過去形に切り替わります。
+                  イベント自体は公開で全員に共有されます。参加形式の公開/非公開はプロフィール設定で切り替えできます。
                 </p>
                 <form id="mll-log-form" class="mll-form" autocomplete="off" lang="ja">
                   <label class="search-label-full">
-                    大会名（必須）
+                    演奏会/大会/イベント名（必須）
                     <input type="text" id="mll-event-name" maxlength="120" required placeholder="例）〇〇マーチングコンテスト" />
                   </label>
                   <label class="search-label-full">
                     開催日（必須）
                     <input type="date" id="mll-event-date" required />
                   </label>
-                  <label class="search-label-full">
-                    会場（任意）
-                    <input type="text" id="mll-venue" maxlength="120" placeholder="例）〇〇ドーム" />
+                  <label class="search-label-full calendar-ev-venue-label">
+                    都道府県（必須）
+                    <select id="mll-venue" required aria-label="都道府県">
+                      <option value="">選択してください</option>
+                      <option>北海道</option><option>青森県</option><option>岩手県</option><option>宮城県</option><option>秋田県</option><option>山形県</option><option>福島県</option><option>茨城県</option><option>栃木県</option><option>群馬県</option><option>埼玉県</option><option>千葉県</option><option>東京都</option><option>神奈川県</option><option>新潟県</option><option>富山県</option><option>石川県</option><option>福井県</option><option>山梨県</option><option>長野県</option><option>岐阜県</option><option>静岡県</option><option>愛知県</option><option>三重県</option><option>滋賀県</option><option>京都府</option><option>大阪府</option><option>兵庫県</option><option>奈良県</option><option>和歌山県</option><option>鳥取県</option><option>島根県</option><option>岡山県</option><option>広島県</option><option>山口県</option><option>徳島県</option><option>香川県</option><option>愛媛県</option><option>高知県</option><option>福岡県</option><option>佐賀県</option><option>長崎県</option><option>熊本県</option><option>大分県</option><option>宮崎県</option><option>鹿児島県</option><option>沖縄県</option><option>海外</option>
+                    </select>
                   </label>
                   <label class="search-label-full">
-                    参加区分（必須）
+                    参加スタイル（必須）
+                    <div id="mll-role-buttons" class="mll-role-buttons" role="group" aria-label="参加スタイル">
+                      <button type="button" class="mll-role-btn" data-role-value="perform">出演</button>
+                      <button type="button" class="mll-role-btn" data-role-value="watch">観戦</button>
+                      <button type="button" class="mll-role-btn" data-role-value="team_staff">チームスタッフ</button>
+                      <button type="button" class="mll-role-btn" data-role-value="ops">運営</button>
+                    </div>
                     <select id="mll-role" required>
                       <option value="">選択してください</option>
                       <option value="watch">観戦する／観戦した</option>
@@ -1122,25 +1149,8 @@
                   </label>
                   <p id="mll-role-preview" class="mll-role-preview" aria-live="polite"></p>
                   <label class="search-label-full">
-                    メモ（任意）
-                    <textarea id="mll-note" rows="3" maxlength="500"></textarea>
-                  </label>
-                  <label class="search-label-full">
-                    チケットページURL（任意）
-                    <input type="url" id="mll-ticket-url" maxlength="2000" placeholder="https://..." inputmode="url" />
-                  </label>
-                  <label class="search-label-full">
                     公式ページURL（任意）
                     <input type="url" id="mll-official-url" maxlength="2000" placeholder="https://..." inputmode="url" />
-                  </label>
-                  <label class="mll-log-privacy-label">
-                    <span class="mll-log-privacy-label-text">公開設定</span>
-                    <span class="mll-log-privacy-options">
-                      <label class="mll-log-privacy-option">
-                        <input type="checkbox" id="mll-log-private" />
-                        この記録を非公開にする（自分だけが閲覧できます）
-                      </label>
-                    </span>
                   </label>
                   <div class="search-share-row">
                     <button type="submit" id="btn-mll-save" class="btn-share-search">保存する</button>
@@ -2005,7 +2015,7 @@
           </p>
         </section>
 
-        <section class="mll-mylist-section" aria-labelledby="mll-yt-mylist-heading">
+        <section class="mll-mylist-section" aria-labelledby="mll-yt-mylist-heading" hidden>
           <h2 id="mll-yt-mylist-heading" class="mll-mylist-page-heading">YouTube マイリスト</h2>
           <p class="mll-mylist-hint">
             チャンネルはリスト別に保存できます。名前の変更・リストやチャンネルの並べ替えは、ログイン後に下の一覧から行えます。
@@ -2048,7 +2058,9 @@
         >
           <div class="youtube-published-list-surface" role="document">
             <div class="youtube-published-list-header">
-              <h3 id="youtube-published-list-title" class="youtube-published-list-title">掲載チャンネル一覧</h3>
+              <h3 id="youtube-published-list-title" class="youtube-published-list-title">
+                掲載チャンネル一覧 <span id="youtube-published-list-title-count" aria-live="polite"></span>
+              </h3>
               <p class="youtube-published-list-note">カテゴリ別 / 各カテゴリ内は名前順</p>
               <button
                 type="button"
@@ -2087,16 +2099,15 @@
           <p class="static-panel-text">
             以下の専用リンクから年間登録すると【2ヶ月分が無料】に。初めての方こそ、プロの音源で作品を一気にアップグレードさせましょう！
           </p>
-          <h3 class="media-section-heading">2ヶ月分の無料特典付　専用リンク</h3>
-          <p class="static-panel-text">
+          <h3 class="media-section-heading">
             <a
               href="https://artlist.io/referral/9e958a5d-8272-4c71-95d9-12ce5704a7dc"
               target="_blank"
               rel="noopener noreferrer"
-              class="static-panel-link"
-              >https://artlist.io/referral/9e958a5d-8272-4c71-95d9-12ce5704a7dc</a
+              class="static-panel-link artlist-link-neutral"
+              >2ヶ月分の無料特典付　専用リンク</a
             >
-          </p>
+          </h3>
           <p class="creator-banner">
             <a
               href="https://artlist.io/referral/9e958a5d-8272-4c71-95d9-12ce5704a7dc"
@@ -2106,16 +2117,15 @@
               <img src="images/creators/artlist-logo.png" alt="Artlist ロゴ" loading="lazy" />
             </a>
           </p>
-          <h3 class="media-section-heading">Artlistのプラン、著作権についてなど</h3>
-          <p class="static-panel-text">
+          <h3 class="media-section-heading">
             <a
               href="https://artlist.io/blog/ja/artlist-pricing-and-plans-explained/"
               target="_blank"
               rel="noopener noreferrer"
-              class="static-panel-link"
-              >https://artlist.io/blog/ja/artlist-pricing-and-plans-explained/</a
+              class="static-panel-link artlist-link-neutral"
+              >Artlistのプラン、著作権についてなど</a
             >
-          </p>
+          </h3>
         </section>
       </div>
 
@@ -2421,7 +2431,7 @@
       </div>
       <nav class="footer-nav" aria-label="サイト内ページとポリシー">
         <div class="footer-nav-inner">
-          <a href="#mll" data-page="mll" class="footer-nav-link">TOP</a>
+          <a href="#top" data-page="mll" class="footer-nav-link">TOP</a>
           <a href="#community/events" data-page="community" class="footer-nav-link">コミュニティ</a>
           <a href="#videos" data-page="videos" class="footer-nav-link">大会動画</a>
           <a href="#youtube" data-page="youtube" class="footer-nav-link">YouTube</a>
@@ -2449,30 +2459,30 @@
       </script>
     </footer>
 
-    <script src="marchinz-sort.js?v=1.7.20"></script>
-    <script src="youtube-list/youtube-list.inline.js?v=1.7.20"></script>
-    <script src="youtube-list/youtube-channel-mylist.js?v=1.7.20"></script>
-    <script src="site-nav.js?v=1.7.20"></script>
-    <script src="data.inline.js?v=1.7.20"></script>
+    <script src="marchinz-sort.js?v=1.9.29"></script>
+    <script src="youtube-list/youtube-list.inline.js?v=1.9.29"></script>
+    <script src="youtube-list/youtube-channel-mylist.js?v=1.9.29"></script>
+    <script src="site-nav.js?v=1.9.29"></script>
+    <script src="data.inline.js?v=1.9.29"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-check-compat.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.js"></script>
-    <script src="marchinz-image-compress.js?v=1.7.20"></script>
-    <script src="auth-config.js"></script>
-    <script src="auth.js?v=1.7.20-auth-no-firebase-feedback"></script>
-    <script src="marchinz-notify.js?v=1.7.20"></script>
-    <script src="marchinz-like-show.js?v=1.7.20"></script>
-    <script src="mll-video-mylist.js?v=1.7.20"></script>
-    <script src="mll.js?v=1.7.20"></script>
-    <script src="calendar-events.js?v=1.7.20-events-mll-reveal"></script>
-    <script src="community.js?v=1.7.20-image-compress-protect"></script>
-    <script src="event-log-diary.js?v=1.7.20"></script>
-    <script src="mln-public-feed.js?v=1.7.20"></script>
-    <script src="user-profile-page.js?v=1.7.20"></script>
-    <script src="app.js?v=1.7.20"></script>
+    <script src="marchinz-image-compress.js?v=1.9.29"></script>
+    <script src="auth-config.js?v=1.9.29"></script>
+    <script src="auth.js?v=1.9.29-auth-no-firebase-feedback"></script>
+    <script src="marchinz-notify.js?v=1.9.29"></script>
+    <script src="marchinz-like-show.js?v=1.9.29"></script>
+    <script src="mll-video-mylist.js?v=1.9.29"></script>
+    <script src="mll.js?v=1.9.29"></script>
+    <script src="calendar-events.js?v=1.9.29-events-mll-reveal"></script>
+    <script src="community.js?v=1.9.29-image-compress-protect"></script>
+    <script src="event-log-diary.js?v=1.9.29"></script>
+    <script src="mln-public-feed.js?v=1.9.29"></script>
+    <script src="user-profile-page.js?v=1.9.29"></script>
+    <script src="app.js?v=1.9.29"></script>
     <script>
       (function () {
         if (!("serviceWorker" in navigator)) return;

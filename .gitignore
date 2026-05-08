@@ -13,3 +13,6 @@ _snapshots/
 # アーカイブ（誤コミット防止・リポジトリ肥大化防止）
 *.tar.gz
 *.zip
+
+# Local Netlify folder
+.netlify

@@ -381,6 +381,12 @@
     return Boolean(k && listUrlKeys.get(lid)?.has(k));
   }
 
+  function trackMetric(name, payload = {}) {
+    if (typeof window.MarchinZTrackEvent === "function") {
+      window.MarchinZTrackEvent(name, payload);
+    }
+  }
+
   /** いずれかのリストに同一 URL があるか */
   function hasUrlAnywhere(rawUrl) {
     const k = urlKey(rawUrl);
@@ -419,6 +425,7 @@
       listUrlKeys.get(lid).add(payload.url);
       setLastUsedListId(lid);
       setMsg("マイリストに追加しました。");
+      trackMetric("mylist_add", { target: "video", list_id: lid });
       window.setTimeout(() => setMsg(""), 2400);
       renderList();
       window.dispatchEvent(new CustomEvent("marchinz-mylist-updated"));
@@ -756,15 +763,7 @@
       })
       .then(async (snap) => {
         if (!hostEl()) return;
-        let showVidLike = true;
-        if (user?.id && db) {
-          try {
-            const ps = await db.collection("mll_profiles").doc(user.id).get();
-            showVidLike = (ps.data() || {}).like_show_video_bookmark !== false;
-          } catch {
-            showVidLike = true;
-          }
-        }
+        const showVidLike = true;
         /** @type {Map<string, { meta: { id: string; name: string; visibility: string; list_order: number }; items: { docId: string; title: string; url: string; org: string; sort: number; added: string; liked_by?: Record<string, boolean> }[] }>} */
         const grouped = new Map();
         for (const L of cachedLists) {

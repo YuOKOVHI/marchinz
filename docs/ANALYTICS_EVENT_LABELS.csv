@@ -1,0 +1,6 @@
+event_name,display_label,primary_breakdown_1,primary_breakdown_2
+login_start,ログイン開始（Google）,entry,
+login_success,ログイン成功,admin,
+search_run,動画検索実行,tab,has_team|has_event|has_free
+mylist_add,マイリスト追加,target,list_id
+share_click,シェア操作,kind,target

@@ -1,6 +1,8 @@
 (() => {
   const WITHDRAWN_NAME = "退会ユーザー";
   const AUTH_RETURN_STORAGE_KEY = "mll_auth_return_to";
+  const AUTH_ENTRY_MODE_STORAGE_KEY = "mll_auth_entry_mode";
+  const AUTH_REDIRECT_PENDING_KEY = "mll_auth_redirect_pending";
   const RETURN_PAGE_IDS = new Set([
     "mll",
     "events",
@@ -18,7 +20,7 @@
   const cfg = window.MLL_AUTH_CONFIG || {};
   const firebaseCfg = cfg.firebase || {};
   const appCheckCfg = cfg.appCheck || {};
-  const publicRedirectUrl = String(cfg.publicRedirectUrl || "https://marchinz.netlify.app/#mll").trim();
+  const publicRedirectUrl = String(cfg.publicRedirectUrl || "https://marchinz.netlify.app/#top").trim();
   const adminEmails = new Set(
     (Array.isArray(cfg.adminEmails) ? cfg.adminEmails : [])
       .map((x) => String(x || "").trim().toLowerCase())
@@ -51,11 +53,17 @@
   const inputCoverFile = document.getElementById("profile-cover-file");
   const btnProfileCancel = document.getElementById("btn-profile-cancel");
   const btnAccountWithdraw = document.getElementById("btn-account-withdraw");
+  const btnAccountWithdrawToggle = document.getElementById("btn-account-withdraw-toggle");
+  const withdrawDetail = document.getElementById("mz-withdraw-detail");
   const siteBrandActions = document.getElementById("site-brand-actions");
   const btnAuthLoginGoogle = document.getElementById("btn-auth-login-google");
   const btnAuthSignupGoogle = document.getElementById("btn-auth-signup-google");
+  const authLoginRememberSession = document.getElementById("auth-login-remember-session");
   const authSignupAgreeTerms = document.getElementById("auth-signup-agree-terms");
   const authSignupAgreePrivacy = document.getElementById("auth-signup-agree-privacy");
+  const authSignupConsentMsg = document.getElementById("auth-signup-consent-msg");
+  const authLoginMsg = document.getElementById("auth-login-msg");
+  const authSignupMsg = document.getElementById("auth-signup-msg");
 
   /** Firebase 初期化後に差し替え（未設定時は空振り） */
   let hydrateProfileForm = async () => {};
@@ -66,6 +74,16 @@
 
   let currentProfileWithdrawn = false;
   let accountDropdownOpen = false;
+  let profileSetupRequired = false;
+  let authEntryBusy = false;
+  let signupConsentTried = false;
+  let lastRedirectAuthErrorCode = "";
+  const AUTH_REMEMBER_STORAGE_KEY = "mll_auth_remember_session";
+  const AUTH_BUSY_TEXT = "処理中...";
+  const authButtonLabelStore = new WeakMap();
+  const DEFAULT_COVER_IMAGE_URL = `data:image/svg+xml,${encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#0f2138"/><stop offset="100%" stop-color="#20456f"/></linearGradient></defs><rect width="1200" height="360" fill="url(#g)"/><circle cx="1040" cy="86" r="128" fill="rgba(255,255,255,0.08)"/><circle cx="980" cy="304" r="170" fill="rgba(255,255,255,0.07)"/><text x="68" y="210" fill="#ffffff" font-size="74" font-family="Arial, sans-serif" font-weight="700" letter-spacing="2">MarchinZ</text></svg>',
+  )}`;
 
   let hydrateLikeShowForm = async () => {};
   let persistLikeShowField = async (_field, _checked) => {};
@@ -88,6 +106,92 @@
     } else {
       firebaseHintEl.textContent = "";
       firebaseHintEl.hidden = true;
+    }
+  }
+
+  const AUTH_MESSAGE = {
+    agreeRequired: "利用規約とプライバシーポリシーの両方に同意してください。",
+    firebaseMissingSimple: "Firebase が未設定です。auth-config.js を確認してください。",
+    storageUnavailable: "Firebase Storage が利用できないため画像を保存できません。",
+    fileTooLarge: "ファイルサイズが大きすぎます。20MB以下の画像を選択してください",
+    saveFailed: "保存に失敗しました。時間をおいて再度お試しください。",
+    accountBanned:
+      "このアカウントは現在ご利用いただけません。お問い合わせは「運営」のフォームからご連絡ください。",
+    withdrawNeedReauth:
+      "退会を完了するには、Googleアカウントの再認証が必要です。キャンセルした場合、退会は実行されません。",
+    withdrawRetryAfterRelogin:
+      "Google連携の解除に失敗しました。いったんログアウトし、再ログイン後にもう一度「退会」をお試しください。",
+    withdrawPartialFailure:
+      "退会処理の途中でエラーが発生しました。一部のみ処理されている可能性があります。時間をおいて再実行してください。",
+  };
+
+  function authFriendlyErrorMessage(err, fallback) {
+    const code = String(err?.code || "").trim();
+    if (code === "auth/popup-closed-by-user") return "ログインがキャンセルされました。";
+    if (code === "auth/popup-blocked") return "ポップアップがブロックされました。ブラウザ設定を確認して再度お試しください。";
+    if (code === "auth/cancelled-popup-request") return "認証画面が中断されました。もう一度お試しください。";
+    if (code === "auth/unauthorized-domain")
+      return "このURLはFirebaseの承認済みドメインに未登録です。Authorized domainsを確認してください。";
+    if (code === "auth/network-request-failed") return "通信エラーが発生しました。通信環境をご確認ください。";
+    if (code === "auth/too-many-requests") return "試行回数が多すぎます。少し時間をおいてからお試しください。";
+    if (code === "auth/user-disabled") return "このアカウントは現在ご利用いただけません。";
+    if (code === "permission-denied")
+      return "データの保存が許可されませんでした。Firebase の Firestore ルール、または App Check（本番）の設定を確認してください。";
+    if (code === "storage/unauthorized" || code === "storage/canceled")
+      return "画像ストレージへの保存が許可されませんでした。Storage のルールとログイン状態を確認してください。";
+    if (code.startsWith("storage/"))
+      return `画像の保存に失敗しました（${code}）。ファイル形式は JPEG（自動変換済み）か確認してください。`;
+    if (code === "auth/popup-timeout")
+      return "認証画面の応答が遅すぎるため、別のログイン方式に切り替えました。Google の画面が開くまでお待ちください。";
+    return fallback;
+  }
+
+  /** Brave（デスクトップ含む）は redirect 復帰後に getRedirectResult / currentUser が空になりやすい。popup を先に試す。 */
+  function isBraveBrowser() {
+    return /\bBrave\b/i.test(String(navigator.userAgent || ""));
+  }
+
+  function isIOSSafari() {
+    const ua = String(navigator.userAgent || "");
+    const isiOS = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    if (!isiOS) return false;
+    return /Safari/i.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS|DuckDuckGo|Brave/i.test(ua);
+  }
+
+  function isUsableImageUrl(raw) {
+    const s = String(raw || "").trim();
+    return /^https?:\/\//i.test(s) || /^data:image\//i.test(s);
+  }
+
+  function firstDisplayChar(name) {
+    const t = String(name || "").trim();
+    return t ? Array.from(t)[0].toUpperCase() : "M";
+  }
+
+  function createInitialAvatarDataUrl(name) {
+    const ch = firstDisplayChar(name);
+    return `data:image/svg+xml,${encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192"><rect width="192" height="192" rx="96" fill="#1e3a5f"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="#ffffff" font-size="86" font-family="Arial, sans-serif" font-weight="700">${ch}</text></svg>`,
+    )}`;
+  }
+
+  function getProfileAvatarSrc(displayName, avatarUrl, withdrawn) {
+    if (withdrawn) {
+      return `data:image/svg+xml,${encodeURIComponent(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96"><rect width="96" height="96" fill="#ffffff"/></svg>',
+      )}`;
+    }
+    return isUsableImageUrl(avatarUrl) ? String(avatarUrl).trim() : createInitialAvatarDataUrl(displayName);
+  }
+
+  function consumeAuthEntryMode() {
+    try {
+      const raw = sessionStorage.getItem(AUTH_ENTRY_MODE_STORAGE_KEY);
+      sessionStorage.removeItem(AUTH_ENTRY_MODE_STORAGE_KEY);
+      const mode = String(raw || "").trim();
+      return mode === "signup" || mode === "login" ? mode : "";
+    } catch {
+      return "";
     }
   }
 
@@ -131,7 +235,8 @@
     else openAccountDropdown();
   }
 
-  function closeProfileDialog() {
+  function closeProfileDialog(force = false) {
+    if (profileSetupRequired && !force) return;
     if (profileDialog) profileDialog.hidden = true;
   }
 
@@ -215,7 +320,7 @@
     btnWithdrawDoneOk.addEventListener("click", () => {
       closeWithdrawDoneDialog();
       const base = `${window.location.pathname}${window.location.search}`;
-      window.location.assign(`${base}#mll`);
+      window.location.assign(`${base}#top`);
     });
   }
 
@@ -248,7 +353,7 @@
   }
 
   function parseReturnTarget(raw) {
-    if (raw == null || raw === "") return "#mll";
+    if (raw == null || raw === "") return "#top";
     let decoded;
     try {
       decoded = decodeURIComponent(String(raw));
@@ -256,12 +361,13 @@
       decoded = String(raw);
     }
     const idx = decoded.indexOf("#");
-    const hashPart = idx >= 0 ? decoded.slice(idx).trim() : "#mll";
+    const hashPart = idx >= 0 ? decoded.slice(idx).trim() : "#top";
     const m = /^#([\w-]+)$/.exec(hashPart);
-    if (!m) return "#mll";
+    if (!m) return "#top";
     const pageId = m[1];
-    if (pageId === "login" || pageId === "signup") return "#mll";
-    if (!RETURN_PAGE_IDS.has(pageId)) return "#mll";
+    if (pageId === "login" || pageId === "signup") return "#top";
+    if (pageId === "top" || pageId === "mll") return "#top";
+    if (!RETURN_PAGE_IDS.has(pageId)) return "#top";
     return `#${pageId}`;
   }
 
@@ -315,7 +421,7 @@
       el.style.display = isAdmin ? "" : "none";
     });
     if (!isAdmin && window.location.hash === "#moderation") {
-      history.replaceState(null, "", `${window.location.pathname}${window.location.search}#mll`);
+      history.replaceState(null, "", `${window.location.pathname}${window.location.search}#top`);
       window.dispatchEvent(new HashChangeEvent("hashchange"));
     }
   }
@@ -323,20 +429,57 @@
   function syncSignupEntryConsentUi() {
     if (!btnAuthSignupGoogle) return;
     const okConsent = Boolean(authSignupAgreeTerms?.checked && authSignupAgreePrivacy?.checked);
+    if (authEntryBusy) {
+      btnAuthSignupGoogle.disabled = true;
+      if (authSignupConsentMsg) authSignupConsentMsg.textContent = "認証を開始しています。しばらくお待ちください。";
+      return;
+    }
     const firebaseOk = Boolean(window.MLL_AUTH?.firebaseAuthAvailable);
-    btnAuthSignupGoogle.disabled = !(firebaseOk && okConsent);
+    btnAuthSignupGoogle.disabled = !firebaseOk;
+    if (authSignupConsentMsg) {
+      authSignupConsentMsg.textContent = !signupConsentTried || okConsent ? "" : AUTH_MESSAGE.agreeRequired;
+    }
+  }
+
+  function setAuthEntryMessage(entry, text, isError = false) {
+    const node = entry === "signup" ? authSignupMsg : authLoginMsg;
+    if (!node) return;
+    node.textContent = String(text || "").trim();
+    node.style.color = isError ? "#b71c1c" : "";
+  }
+
+  function setAuthEntryBusy(busy) {
+    authEntryBusy = Boolean(busy);
+    [btnAuthLoginGoogle, btnAuthSignupGoogle].forEach((btn) => {
+      if (!btn) return;
+      if (!authButtonLabelStore.has(btn)) authButtonLabelStore.set(btn, btn.textContent || "");
+      btn.disabled = authEntryBusy;
+      btn.textContent = authEntryBusy ? AUTH_BUSY_TEXT : authButtonLabelStore.get(btn) || btn.textContent;
+      btn.setAttribute("aria-busy", authEntryBusy ? "true" : "false");
+    });
+    if (!authEntryBusy) syncSignupEntryConsentUi();
   }
 
   function showLoggedOut() {
     currentProfileWithdrawn = false;
+    profileSetupRequired = false;
+    signupConsentTried = false;
+    setAuthEntryBusy(false);
     closeAccountDropdown();
     closeProfileDialog();
     closeSettingsDialog();
     setFirebaseHintVisible("");
     if (menuOpenProfileEdit) menuOpenProfileEdit.hidden = false;
     if (menuOpenSettings) menuOpenSettings.hidden = false;
+    setAuthEntryMessage("login", "");
+    setAuthEntryMessage("signup", "");
     if (authSignupAgreeTerms) authSignupAgreeTerms.checked = false;
     if (authSignupAgreePrivacy) authSignupAgreePrivacy.checked = false;
+    try {
+      sessionStorage.removeItem(AUTH_ENTRY_MODE_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
     applyAdminOnlyVisibility(false);
     syncSignupEntryConsentUi();
     if (btnAuthLoginGoogle) btnAuthLoginGoogle.disabled = !window.MLL_AUTH?.firebaseAuthAvailable;
@@ -357,26 +500,12 @@
       headerProfileName.textContent = label;
     }
     if (headerProfileAvatar) {
-      if (currentProfileWithdrawn) {
-        headerProfileAvatar.src = `data:image/svg+xml,${encodeURIComponent(
-          '<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96"><rect width="96" height="96" fill="#ffffff"/></svg>',
-        )}`;
-        headerProfileAvatar.alt = "";
-      } else {
-        headerProfileAvatar.src = avatarUrl || "logo/marchinz-logo.png";
-        headerProfileAvatar.alt = `${displayName || "ユーザー"} のプロフィール画像`;
-      }
+      headerProfileAvatar.src = getProfileAvatarSrc(displayName, avatarUrl, currentProfileWithdrawn);
+      headerProfileAvatar.alt = currentProfileWithdrawn ? "" : `${displayName || "ユーザー"} のプロフィール画像`;
     }
     if (mobileDrawerAvatar) {
-      if (currentProfileWithdrawn) {
-        mobileDrawerAvatar.src = `data:image/svg+xml,${encodeURIComponent(
-          '<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96"><rect width="96" height="96" fill="#ffffff"/></svg>',
-        )}`;
-        mobileDrawerAvatar.alt = "";
-      } else {
-        mobileDrawerAvatar.src = avatarUrl || "logo/marchinz-logo.png";
-        mobileDrawerAvatar.alt = `${displayName || "ユーザー"} のプロフィール画像`;
-      }
+      mobileDrawerAvatar.src = getProfileAvatarSrc(displayName, avatarUrl, currentProfileWithdrawn);
+      mobileDrawerAvatar.alt = currentProfileWithdrawn ? "" : `${displayName || "ユーザー"} のプロフィール画像`;
     }
     if (mobileDrawerName) {
       mobileDrawerName.textContent = label;
@@ -399,7 +528,7 @@
       isAppCheckActive: () => false,
       isWithdrawn: () => false,
       signInWithGoogle: async () => {
-        alert("Firebase が未設定です。auth-config.js を確認してください。");
+        alert(AUTH_MESSAGE.firebaseMissingSimple);
       },
     };
     const noFirebaseMsg =
@@ -416,7 +545,7 @@
       btnAuthSignupGoogle.disabled = false;
       btnAuthSignupGoogle.addEventListener("click", () => {
         if (!authSignupAgreeTerms?.checked || !authSignupAgreePrivacy?.checked) {
-          alert("利用規約とプライバシーポリシーの両方に同意してください。");
+          alert(AUTH_MESSAGE.agreeRequired);
           return;
         }
         alert(noFirebaseMsg);
@@ -462,7 +591,7 @@
     } catch {
       if (status) {
         status.hidden = false;
-        status.textContent = "いいね表示の設定を読み込めませんでした。";
+        status.textContent = "いいね通知の設定を読み込めませんでした。";
         status.classList.add("mz-settings-like-status--err");
       }
     }
@@ -577,11 +706,11 @@
   function resolveCoverImageUrlFromDocData(data) {
     if (!data || typeof data !== "object") return "";
     const u = String(data.cover_image_url || "").trim();
-    if (/^https?:\/\//i.test(u)) return u;
+    if (isUsableImageUrl(u)) return u;
     const arr = Array.isArray(data.cover_image_urls) ? data.cover_image_urls : [];
     for (const x of arr) {
       const s = String(x || "").trim();
-      if (/^https?:\/\//i.test(s)) return s;
+      if (isUsableImageUrl(s)) return s;
     }
     return "";
   }
@@ -596,19 +725,19 @@
     if (av instanceof HTMLImageElement) {
       if (av.src.startsWith("blob:")) URL.revokeObjectURL(av.src);
       const au = p.withdrawn ? "" : String(p.avatar_url || "").trim();
-      av.src = au && /^https?:\/\//i.test(au) ? au : "logo/marchinz-logo.png";
+      av.src = getProfileAvatarSrc(p.display_name, au, Boolean(p.withdrawn));
       av.hidden = false;
     }
     const cv = document.getElementById("profile-cover-preview");
     if (cv instanceof HTMLImageElement) {
       if (cv.src.startsWith("blob:")) URL.revokeObjectURL(cv.src);
       const cu = p.withdrawn ? "" : String(p.cover_image_url || "").trim();
-      if (cu && /^https?:\/\//i.test(cu)) {
+      if (isUsableImageUrl(cu)) {
         cv.src = cu;
         cv.hidden = false;
       } else {
-        cv.removeAttribute("src");
-        cv.hidden = true;
+        cv.src = DEFAULT_COVER_IMAGE_URL;
+        cv.hidden = false;
       }
     }
   };
@@ -625,26 +754,108 @@
     };
   }
 
-  async function signInWithGoogle() {
+  async function signInWithGoogle(entry = "unknown") {
+    if (authEntryBusy) return;
+    setAuthEntryBusy(true);
+    const remember = Boolean(authLoginRememberSession?.checked);
+    const persistence = window.firebase.auth.Auth.Persistence.LOCAL;
+    try {
+      localStorage.setItem(AUTH_REMEMBER_STORAGE_KEY, remember ? "1" : "0");
+    } catch {
+      // ignore
+    }
+    try {
+      sessionStorage.setItem(AUTH_ENTRY_MODE_STORAGE_KEY, entry === "signup" ? "signup" : "login");
+    } catch {
+      // ignore
+    }
+    const popupFirst = isBraveBrowser() || isIOSSafari();
+    try {
+      if (popupFirst) {
+        sessionStorage.removeItem(AUTH_REDIRECT_PENDING_KEY);
+      } else {
+        sessionStorage.setItem(AUTH_REDIRECT_PENDING_KEY, "1");
+      }
+    } catch {
+      // ignore
+    }
+    window.MarchinZTrackEvent?.("login_start", { entry });
+    const unlockTimer = window.setTimeout(() => {
+      if (authEntryBusy) setAuthEntryBusy(false);
+    }, popupFirst ? 12000 : 8000);
     try {
       const provider = new window.firebase.auth.GoogleAuthProvider();
       provider.setCustomParameters({ prompt: "select_account" });
-      const useRedirect = window.location.protocol === "file:";
-      if (useRedirect) {
-        await auth.signInWithRedirect(provider);
-        location.href = publicRedirectUrl;
+
+      if (popupFirst) {
+        setAuthEntryMessage(entry, "Google認証を開始しています…", false);
+        const popupPromise = auth.signInWithPopup(provider);
+        try {
+          await auth.setPersistence(persistence);
+        } catch {
+          // ignore
+        }
+        try {
+          // iPhone Safari はユーザー操作待ちが必要なため、短い timeout で redirect へ落とすと失敗しやすい。
+          // Safari だけは popup 完了まで待ち、明示的に block/cancel された時だけ redirect へフォールバックする。
+          if (isIOSSafari()) {
+            await popupPromise;
+          } else {
+            const popupTimeoutMs = 8000;
+            const timeoutPromise = new Promise((_, reject) => {
+              window.setTimeout(() => {
+                const err = new Error("popup stall");
+                err.code = "auth/popup-timeout";
+                reject(err);
+              }, popupTimeoutMs);
+            });
+            await Promise.race([popupPromise, timeoutPromise]);
+          }
+        } catch (popupErr) {
+          const code = String(popupErr?.code || "");
+          if (code === "auth/popup-closed-by-user") throw popupErr;
+          if (code === "auth/popup-timeout" || code === "auth/popup-blocked" || code === "auth/cancelled-popup-request") {
+            try {
+              sessionStorage.setItem(AUTH_REDIRECT_PENDING_KEY, "1");
+            } catch {
+              // ignore
+            }
+            setAuthEntryMessage(entry, "別の方式でログインを続けます…", false);
+            try {
+              await auth.setPersistence(window.firebase.auth.Auth.Persistence.LOCAL);
+            } catch {
+              // ignore
+            }
+            await auth.signInWithRedirect(provider);
+            return;
+          }
+          throw popupErr;
+        }
+        try {
+          sessionStorage.removeItem(AUTH_REDIRECT_PENDING_KEY);
+        } catch {
+          // ignore
+        }
         return;
       }
+
+      setAuthEntryMessage(entry, "Googleの認証ページへ移動します…", false);
       try {
-        await auth.signInWithPopup(provider);
-      } catch (popupErr) {
-        await auth.signInWithRedirect(provider);
+        await auth.setPersistence(persistence);
+      } catch {
+        // ignore
       }
+      await auth.signInWithRedirect(provider);
+      return;
     } catch (err) {
-      const code = String(err?.code || "");
-      const msg = code ? `（${code}）` : "";
-      alert(`Googleログインを開始できませんでした${msg}。設定を確認してください。`);
+      const fallback = "Googleログインを開始できませんでした。設定を確認してください。";
+      const msg = authFriendlyErrorMessage(err, fallback);
+      setAuthEntryMessage(entry, msg, true);
+      alert(msg);
       throw err;
+    } finally {
+      window.clearTimeout(unlockTimer);
+      setAuthEntryBusy(false);
     }
   }
 
@@ -663,7 +874,7 @@
     const fallback = {
       display_name: user.user_metadata?.full_name || user.user_metadata?.name || "ユーザー",
       avatar_url: user.user_metadata?.avatar_url || "",
-      cover_image_url: "",
+      cover_image_url: DEFAULT_COVER_IMAGE_URL,
       withdrawn: false,
     };
 
@@ -740,6 +951,9 @@
       if (!String(existing.avatar_url || "").trim()) {
         payload.avatar_url = user.user_metadata?.avatar_url || "";
       }
+      if (!resolveCoverImageUrlFromDocData(existing)) {
+        payload.cover_image_url = DEFAULT_COVER_IMAGE_URL;
+      }
       if (marchinz_public_id) {
         payload.marchinz_public_id = marchinz_public_id;
       }
@@ -775,9 +989,7 @@
           currentUser = null;
           rawAuthUserForAdmin = null;
           showLoggedOut();
-          alert(
-            "利用規約により、このアカウントは凍結されています。お問い合わせは #ops（お問い合わせフォーム）から運営へご連絡ください。",
-          );
+          alert(AUTH_MESSAGE.accountBanned);
           window.dispatchEvent(new CustomEvent("mll-auth-changed", { detail: { user: null, isAdmin: false } }));
           return;
         }
@@ -789,9 +1001,14 @@
     await ensureProfile(user);
     await refreshProfileView(user);
     navigateAwayFromAuthEntryIfLoggedIn();
+    window.MarchinZTrackEvent?.("login_success", { admin: isAdminUser(currentUser) ? 1 : 0 });
     window.dispatchEvent(
       new CustomEvent("mll-auth-changed", { detail: { user: currentUser, isAdmin: isAdminUser(currentUser) } })
     );
+    if (consumeAuthEntryMode() === "signup") {
+      profileSetupRequired = true;
+      requestAnimationFrame(() => openProfileDialog());
+    }
   }
 
   [authSignupAgreeTerms, authSignupAgreePrivacy].forEach((el) => {
@@ -800,7 +1017,10 @@
 
   if (btnAuthLoginGoogle) {
     btnAuthLoginGoogle.addEventListener("click", () => {
-      void signInWithGoogle().catch((err) => {
+      setAuthEntryMessage("login", "");
+      void signInWithGoogle("login").catch((err) => {
+        const fallback = "ログインに失敗しました。時間をおいて再度お試しください。";
+        setAuthEntryMessage("login", authFriendlyErrorMessage(err, fallback), true);
         console.error("[MarchinZ] Google sign-in", err);
       });
     });
@@ -808,11 +1028,16 @@
 
   if (btnAuthSignupGoogle) {
     btnAuthSignupGoogle.addEventListener("click", () => {
+      signupConsentTried = true;
       if (!authSignupAgreeTerms?.checked || !authSignupAgreePrivacy?.checked) {
-        alert("利用規約とプライバシーポリシーの両方に同意してください。");
+        syncSignupEntryConsentUi();
         return;
       }
-      void signInWithGoogle().catch((err) => {
+      setAuthEntryMessage("signup", "");
+      syncSignupEntryConsentUi();
+      void signInWithGoogle("signup").catch((err) => {
+        const fallback = "新規登録に失敗しました。時間をおいて再度お試しください。";
+        setAuthEntryMessage("signup", authFriendlyErrorMessage(err, fallback), true);
         console.error("[MarchinZ] Google sign-in", err);
       });
     });
@@ -842,7 +1067,17 @@
 
   if (btnProfileCancel) {
     btnProfileCancel.addEventListener("click", () => {
+      if (profileSetupRequired) {
+        alert("プロフィール設定を完了してください。");
+        return;
+      }
       closeProfileDialog();
+    });
+  }
+
+  if (btnAccountWithdrawToggle && withdrawDetail) {
+    btnAccountWithdrawToggle.addEventListener("click", () => {
+      withdrawDetail.hidden = !withdrawDetail.hidden;
     });
   }
 
@@ -905,7 +1140,7 @@
         provider.setCustomParameters({ prompt: "select_account" });
         await auth.currentUser.reauthenticateWithPopup(provider);
       } catch {
-        alert("退会を完了するには、Googleアカウントの再認証が必要です。キャンセルした場合は退会は行われていません。");
+        alert(AUTH_MESSAGE.withdrawNeedReauth);
         return;
       }
       try {
@@ -950,12 +1185,10 @@
         const code = String(e?.code || "");
         const msg = String(e?.message || e || "");
         if (code === "auth/requires-recent-login") {
-          alert(
-            "Google 連携の解除（Auth アカウント削除）に失敗しました。一度ログアウトし、Googleで再ログインしたうえで、もう一度「退会」からお試しください。\n直前までにデータ削除や退会フラグの更新が進んでいる場合があります。",
-          );
+          alert(AUTH_MESSAGE.withdrawRetryAfterRelogin);
         } else {
           alert(
-            `退会処理の途中でエラーが発生しました。${msg ? `（${msg}）` : ""}\n一部だけ削除されている場合があります。しばらくしてから再度お試しください。`,
+            `${AUTH_MESSAGE.withdrawPartialFailure}${msg ? `（${msg}）` : ""}`,
           );
         }
         try {
@@ -994,7 +1227,23 @@
       ev.preventDefault();
       if (!currentUser) return;
       if (currentProfileWithdrawn) return;
-      const displayName = (inputDisplayName?.value || "").trim() || "ユーザー";
+      const displayName = (inputDisplayName?.value || "").trim();
+      if (!displayName) {
+        alert("プロフィール名を入力してください。");
+        inputDisplayName?.focus();
+        return;
+      }
+      try {
+        const dupSnap = await db.collection("mll_profiles").where("display_name", "==", displayName).limit(10).get();
+        const dup = dupSnap.docs.find((d) => d.id !== currentUser.id && !Boolean((d.data() || {}).withdrawn));
+        if (dup) {
+          alert("そのプロフィール名は既に使われています。別の名前を入力してください。");
+          inputDisplayName?.focus();
+          return;
+        }
+      } catch {
+        // Query failure should not block user forever; continue to save attempt.
+      }
       const fv = window.firebase?.firestore?.FieldValue;
       const payload = {
         id: currentUser.id,
@@ -1005,7 +1254,7 @@
       const needAvatar = Boolean(inputAvatarFile?.files?.[0]);
       const needCover = Boolean(inputCoverFile?.files?.[0]);
       if ((needAvatar || needCover) && !st) {
-        alert("Firebase Storage が利用できないため画像を保存できません。");
+        alert(AUTH_MESSAGE.storageUnavailable);
         return;
       }
       try {
@@ -1024,13 +1273,16 @@
         await db.collection("mll_profiles").doc(currentUser.id).set(payload, { merge: true });
       } catch (e) {
         if (String(e?.message || "") === window.MarchinZImage?.ERR_TOO_LARGE) {
+          window.alert(AUTH_MESSAGE.fileTooLarge);
           return;
         }
-        alert(String(e?.message || e || "保存に失敗しました。"));
+        const extra = e?.code ? ` [${e.code}]` : "";
+        alert((authFriendlyErrorMessage(e, AUTH_MESSAGE.saveFailed) + extra).trim());
         return;
       }
       const p = await fetchProfile(currentUser);
       showLoggedInView(p.display_name, p.avatar_url);
+      profileSetupRequired = false;
       closeProfileDialog();
       window.dispatchEvent(new CustomEvent("marchinz-profile-saved", { detail: { id: currentUser.id } }));
     });
@@ -1050,7 +1302,7 @@
       return;
     }
     if (f.size > profileRawMaxBytes()) {
-      window.alert("ファイルサイズが大きすぎます。20MB以下の画像を選択してください");
+      window.alert(AUTH_MESSAGE.fileTooLarge);
       inputAvatarFile.value = "";
       void hydrateProfileForm().catch(() => {});
       return;
@@ -1068,7 +1320,7 @@
       return;
     }
     if (f.size > profileRawMaxBytes()) {
-      window.alert("ファイルサイズが大きすぎます。20MB以下の画像を選択してください");
+      window.alert(AUTH_MESSAGE.fileTooLarge);
       inputCoverFile.value = "";
       void hydrateProfileForm().catch(() => {});
       return;
@@ -1087,22 +1339,111 @@
       window.dispatchEvent(new CustomEvent("mll-auth-changed", { detail: { user: null, isAdmin: false } }));
       return;
     }
+    try {
+      sessionStorage.removeItem(AUTH_REDIRECT_PENDING_KEY);
+    } catch {
+      // ignore
+    }
     await onSignedIn(user);
   });
 
+  let redirectResolvedUser = null;
   auth
     .getRedirectResult()
-    .catch(() => null)
+    .then((res) => {
+      redirectResolvedUser = res?.user || null;
+      return res;
+    })
+    .catch((err) => {
+      lastRedirectAuthErrorCode = String(err?.code || "").trim();
+      const fallback = "Googleログインを完了できませんでした。時間をおいて再度お試しください。";
+      alert(authFriendlyErrorMessage(err, fallback));
+      return null;
+    })
     .finally(() => {
-      rawAuthUserForAdmin = auth.currentUser;
-      const user = mapFirebaseUser(auth.currentUser);
-      if (!user) {
+      void (async () => {
+        try {
+          const remembered = localStorage.getItem(AUTH_REMEMBER_STORAGE_KEY);
+          if (authLoginRememberSession) authLoginRememberSession.checked = remembered !== "0";
+        } catch {
+          if (authLoginRememberSession) authLoginRememberSession.checked = true;
+        }
+
+        const readMappedUser = () => mapFirebaseUser(auth.currentUser);
+
+        try {
+          if (typeof auth.authStateReady === "function") {
+            await auth.authStateReady();
+          }
+        } catch {
+          // ignore
+        }
+
+        let redirectPending = false;
+        try {
+          redirectPending = sessionStorage.getItem(AUTH_REDIRECT_PENDING_KEY) === "1";
+        } catch {
+          redirectPending = false;
+        }
+
+        let user = readMappedUser();
+        // iOS / Android WebView 系で IndexedDB 復元や auth の確定が遅れ、直後だけ currentUser が空になる。
+        if (!user && redirectPending) {
+          const ua = String(navigator.userAgent || "");
+          const ipadOs = navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+          const slowAuthEnv =
+            /iPhone|iPod|Android|CriOS|FxiOS|EdgiOS/i.test(ua) ||
+            ipadOs ||
+            /\bBrave\b/i.test(ua);
+          const delaysMs = slowAuthEnv ? [100, 350, 900, 2200, 4500, 8000] : [80, 220, 600];
+          for (const ms of delaysMs) {
+            await new Promise((r) => setTimeout(r, ms));
+            user = readMappedUser();
+            if (user) break;
+          }
+        }
+
+        if (user) {
+          try {
+            sessionStorage.removeItem(AUTH_REDIRECT_PENDING_KEY);
+          } catch {
+            // ignore
+          }
+          rawAuthUserForAdmin = auth.currentUser;
+          void onSignedIn(user);
+          return;
+        }
+
         currentUser = null;
         rawAuthUserForAdmin = null;
         showLoggedOut();
         window.dispatchEvent(new CustomEvent("mll-auth-changed", { detail: { user: null, isAdmin: false } }));
-      } else {
-        void onSignedIn(user);
-      }
+
+        try {
+          redirectPending = sessionStorage.getItem(AUTH_REDIRECT_PENDING_KEY) === "1";
+          const hp = location.hash.replace(/^#/, "");
+          if (redirectPending && (hp === "login" || hp === "signup")) {
+            const codeText = lastRedirectAuthErrorCode ? `\n\nエラーコード: ${lastRedirectAuthErrorCode}` : "";
+            if (lastRedirectAuthErrorCode) {
+              setFirebaseHintVisible(
+                "Googleログインを完了できませんでした。表示されたエラーコード（auth/...）を共有してください。"
+              );
+              alert(
+                `Googleログインを完了できませんでした。\n\n現在のドメイン: ${location.hostname}${codeText}\n\nFirebase設定またはブラウザ制限が原因です。`
+              );
+            } else if (!redirectResolvedUser) {
+              setFirebaseHintVisible(
+                "Googleログインの戻りを受け取れませんでした。Brave はアドレスバーのライオン→このサイトのシールドをオフにして再試行してください。改善しない場合は別ブラウザをお試しください。"
+              );
+              alert(
+                `Googleログインの戻りを受け取れませんでした。\n\n現在のドメイン: ${location.hostname}\n\n（主な原因）プライバシー保護・サードパーティ設定で認証の保存がブロックされていること、または戻り専用の情報が欠けていることです。Brave ではサイトのシールドをオフにしてからもう一度お試しください。`
+              );
+            }
+          }
+          sessionStorage.removeItem(AUTH_REDIRECT_PENDING_KEY);
+        } catch {
+          // ignore
+        }
+      })();
     });
 })();

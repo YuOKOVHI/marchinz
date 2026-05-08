@@ -244,7 +244,11 @@ service cloud.firestore {
         'like_show_calendar',
         'like_show_video_bookmark',
         'like_show_channel_bookmark',
-        'like_show_log_diary'
+        'like_show_log_diary',
+        // 管理人が付与する凍結フラグ。クライアントの本文更新時は文書全体の検証に含まれるため列入が必要（差分変更は update 側で拒否）
+        'banned',
+        'banned_at',
+        'banned_reason'
       ]);
     }
 
@@ -330,7 +334,16 @@ service cloud.firestore {
         && (!request.resource.data.keys().hasAny(['like_show_channel_bookmark'])
           || request.resource.data.like_show_channel_bookmark is bool)
         && (!request.resource.data.keys().hasAny(['like_show_log_diary'])
-          || request.resource.data.like_show_log_diary is bool);
+          || request.resource.data.like_show_log_diary is bool)
+        && (!request.resource.data.keys().hasAny(['banned'])
+          || request.resource.data.banned is bool)
+        && (!request.resource.data.keys().hasAny(['banned_at'])
+          || (request.resource.data.banned_at is string
+            && request.resource.data.banned_at.size() >= 0
+            && request.resource.data.banned_at.size() <= 48))
+        && (!request.resource.data.keys().hasAny(['banned_reason'])
+          || (request.resource.data.banned_reason is string
+            && request.resource.data.banned_reason.size() <= 500));
     }
 
     function mllProfileCreatedAtImmutOk() {
@@ -493,6 +506,8 @@ service cloud.firestore {
             mllProfileValuesOk(uid)
             && (!request.resource.data.keys().hasAny(['withdrawn'])
               || request.resource.data.withdrawn == false)
+            && (!request.resource.data.keys().hasAny(['banned'])
+              || request.resource.data.banned == false)
           )
         );
 

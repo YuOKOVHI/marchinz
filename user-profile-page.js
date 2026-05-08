@@ -676,7 +676,7 @@
     watch: "観戦",
     perform: "出演",
     team_staff: "チームスタッフ",
-    ops: "運営側",
+    ops: "運営",
   };
 
   const MLL_MEDAL_EMOJI = /** @type {Record<(typeof PROFILE_ROLE_ORDER)[number], string>} */ ({
@@ -903,9 +903,31 @@
     kpiOuter.setAttribute("aria-label", "MarchinZ Log 集計");
     const kpiInner = document.createElement("div");
     kpiInner.className = "user-profile-mll-kpi-inner";
-    PROFILE_ROLE_ORDER.forEach((k) => {
-      kpiInner.appendChild(statMedal(k, totals[k]));
-    });
+    const totalMll = totals.watch + totals.perform + totals.team_staff + totals.ops;
+    const hasAnyLog = totalMll > 0;
+    if (hasAnyLog) {
+      PROFILE_ROLE_ORDER.forEach((k) => {
+        if ((totals[k] || 0) <= 0) return;
+        kpiInner.appendChild(statMedal(k, totals[k]));
+      });
+    } else if (shareCtx?.isOwner) {
+      const sample = document.createElement("div");
+      sample.className = "user-profile-mll-sample";
+      sample.innerHTML =
+        '<div class="user-profile-mll-sample-row">' +
+        '<span class="user-profile-mll-sample-count user-profile-mll-sample-count--cute-circle">12</span>' +
+        '<span class="user-profile-mll-sample-count">8</span>' +
+        '<span class="user-profile-mll-sample-count">2</span>' +
+        '<span class="user-profile-mll-sample-count">0</span>' +
+        "</div>" +
+        '<div class="user-profile-mll-sample-row user-profile-mll-sample-row--label">' +
+        '<span class="user-profile-mll-sample-label">参加</span>' +
+        '<span class="user-profile-mll-sample-label">観戦</span>' +
+        '<span class="user-profile-mll-sample-label">チームスタッフ</span>' +
+        '<span class="user-profile-mll-sample-label">運営</span>' +
+        "</div>";
+      kpiInner.appendChild(sample);
+    }
     const kpiCap = document.createElement("p");
     kpiCap.className = "user-profile-mll-kpi-caption";
     kpiCap.textContent = "MarchinZ Log";
@@ -913,7 +935,6 @@
     kpiOuter.appendChild(kpiInner);
     host.appendChild(kpiOuter);
 
-    const totalMll = totals.watch + totals.perform + totals.team_staff + totals.ops;
     if (totalMll > 0 && shareCtx?.targetUid) {
       const shareRow = document.createElement("div");
       shareRow.className = "user-profile-mll-share-row";
@@ -1033,7 +1054,9 @@
     if (!years.length) {
       const p = document.createElement("p");
       p.className = "user-profile-empty";
-      p.textContent = "公開されているライフログはまだありません。";
+      p.textContent = shareCtx?.isOwner
+        ? "MarchinZ Log はまだ未入力です。"
+        : "MarchinZ Logは未入力です。（入力していても非公開なら、MarchinZ Logは非公開です。）";
       host.appendChild(p);
       return;
     }

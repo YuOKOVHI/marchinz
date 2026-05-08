@@ -24,6 +24,20 @@
   };
   const FILTER_ALL = "ALL";
   const MAX_COMMUNITY_IMAGES = 4;
+  const COMMUNITY_MESSAGE = {
+    likeUpdateFailed: "いいねの更新に失敗しました。時間をおいて再度お試しください。",
+    imageTooLarge: "ファイルサイズが大きすぎます。20MB以下の画像を選択してください。",
+    imageUploadFailed: "画像のアップロードに失敗しました。時間をおいて再度お試しください。",
+    postFailed: "投稿に失敗しました。時間をおいて再度お試しください。",
+  };
+
+  function communityFriendlyErrorMessage(err, fallback) {
+    const code = String(err?.code || "").trim();
+    if (code === "auth/network-request-failed") return "通信エラーが発生しました。通信環境をご確認ください。";
+    if (code === "permission-denied") return "この操作を行う権限がありません。";
+    if (code === "unavailable") return "ただいま混み合っています。少し時間をおいて再度お試しください。";
+    return fallback;
+  }
 
   function rawInputMaxBytes() {
     return window.MarchinZImage?.RAW_INPUT_MAX_BYTES || 20 * 1024 * 1024;
@@ -503,7 +517,7 @@
         }
       });
     } catch (e) {
-      setMsg(String(e?.message || e || "いいねの更新に失敗しました"), true);
+      setMsg(communityFriendlyErrorMessage(e, COMMUNITY_MESSAGE.likeUpdateFailed), true);
       return;
     }
     if (likeNotify) {
@@ -524,8 +538,6 @@
 
   function appendLikeRow(hostEl, p) {
     if (!hostEl || !p) return;
-    const authorId = String(p.user_id || "").trim();
-    if (authorId && authorProfileCache.get(authorId)?.like_show_community === false) return;
     const me = currentUser();
     const lb =
       p.liked_by && typeof p.liked_by === "object" && !Array.isArray(p.liked_by) ? p.liked_by : {};
@@ -647,7 +659,7 @@
         next.push(f);
       }
       if (skippedBig > 0) {
-        window.alert("ファイルサイズが大きすぎます。20MB以下の画像を選択してください");
+        window.alert(COMMUNITY_MESSAGE.imageTooLarge);
       }
       state.files = next;
       render();
@@ -768,7 +780,7 @@
           setMsg("大きすぎる画像は投稿できません。", true);
           return;
         }
-        setMsg(String(e?.message || e || "画像のアップロードに失敗しました"), true);
+        setMsg(communityFriendlyErrorMessage(e, COMMUNITY_MESSAGE.imageUploadFailed), true);
         return;
       }
     }
@@ -1623,7 +1635,7 @@
       if (String(e?.message || "") === window.MarchinZImage?.ERR_TOO_LARGE) {
         setMsg("大きすぎる画像は投稿できません。", true);
       } else {
-        setMsg(String(e?.message || e || "投稿に失敗しました"), true);
+        setMsg(communityFriendlyErrorMessage(e, COMMUNITY_MESSAGE.postFailed), true);
       }
     } finally {
       const w = Boolean(window.MLL_AUTH?.isWithdrawn?.());

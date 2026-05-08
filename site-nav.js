@@ -39,7 +39,7 @@
   const defaultOgImage = `${publicBaseUrl}logo/marchinz-logo.png`;
   const mllOgImage = `${publicBaseUrl}logo/mll-logo.png`;
 
-  /** TOP（#mll）検索・ブラウザタブ用（OG の mll と揃える） */
+  /** TOP（#top）検索・ブラウザタブ用（OG の mll と揃える） */
   const HOME_SEO_TITLE =
     "マーチンズ/MarchinZ | 残す、見つける、盛り上げる！マーチングコミュニティ「マーチンズ」";
   const HOME_SEO_DESCRIPTION =
@@ -159,7 +159,7 @@
   /** YAMAP 式: return_to で直前ページへ戻る（ログイン・新規登録の入口リンク用） */
   function buildAuthEntryUrl(mode, signupFromOpt) {
     const pathQs = stripReturnFromRawSearch(location.search);
-    const h = location.hash && location.hash.length > 1 ? location.hash : "#mll";
+    const h = location.hash && location.hash.length > 1 ? location.hash : "#top";
     const snapshot = `${location.pathname}${pathQs}${h}`;
     const p = new URLSearchParams(pathQs.startsWith("?") ? pathQs.slice(1) : "");
     p.set("return_to", snapshot);
@@ -226,7 +226,8 @@
       return !root.hidden && root.classList.contains("site-mobile-drawer--open");
     }
 
-    function setOpen(open) {
+    function setOpen(open, opts = {}) {
+      const immediate = Boolean(opts && opts.immediate);
       if (open) {
         clearCloseFallback();
         panel.removeEventListener("transitionend", onPanelTransitionEnd);
@@ -243,6 +244,11 @@
       }
 
       if (root.hidden || !root.classList.contains("site-mobile-drawer--open")) {
+        finalizeDrawerClose();
+        return;
+      }
+
+      if (immediate) {
         finalizeDrawerClose();
         return;
       }
@@ -266,7 +272,7 @@
 
     root.addEventListener("click", (ev) => {
       const t = ev.target.closest("a[href^='#']");
-      if (t && root.contains(t)) setOpen(false);
+      if (t && root.contains(t)) setOpen(false, { immediate: true });
     });
 
     document.addEventListener("keydown", (ev) => {
@@ -368,8 +374,9 @@
     }
     if (h === "moderation" && !isAdminNow()) {
       h = "mll";
-      history.replaceState(null, "", `${location.pathname}${location.search}#mll`);
+      history.replaceState(null, "", `${location.pathname}${location.search}#top`);
     }
+    if (h === "top") return { pageId: "mll", communityTab: null };
     if (h === "events") return { pageId: "community", communityTab: "events" };
     if (h === "notes") return { pageId: "community", communityTab: "notes" };
     if (h === "community" || h.startsWith("community/")) {
@@ -499,6 +506,9 @@
     }
     const og = ogByPage[ogKey] || ogByPage.videos;
     let url = `${publicBaseUrl}#${id}`;
+    if (id === "mll") {
+      url = `${publicBaseUrl}#top`;
+    }
     if (id === "community") {
       const t = normalizeCommunityTab(routeOpts.communityTab ?? "events");
       url =
@@ -531,6 +541,9 @@
   };
 
   function syncFromHash() {
+    if (!location.hash) {
+      history.replaceState(null, "", `${location.pathname}${location.search}#top`);
+    }
     const r = routeFromHash();
     showPage(r.pageId, { communityTab: r.communityTab });
     if (typeof window.MarchinZUserProfile?.onRouteShow === "function") {
@@ -2603,16 +2616,7 @@
         topBadges.appendChild(badgeLatest);
         const info = document.createElement("div");
         info.className = "youtube-card-info";
-        const linkRow = document.createElement("p");
-        linkRow.className = "youtube-card-link";
-        const a = document.createElement("a");
-        a.href = item.url;
-        a.target = "_blank";
-        a.rel = "noopener noreferrer";
-        a.textContent = item.url;
-        linkRow.appendChild(a);
         info.appendChild(name);
-        info.appendChild(linkRow);
         info.appendChild(topBadges);
         logoLink.appendChild(logo);
         head.appendChild(logoLink);
@@ -2725,6 +2729,10 @@
       if (publishedScopeEl) {
         publishedScopeEl.textContent = `表示中 ${currentFiltered.length}/${channels.length}`;
       }
+      const publishedTitleCountEl = document.getElementById("youtube-published-list-title-count");
+      if (publishedTitleCountEl) {
+        publishedTitleCountEl.textContent = `${currentFiltered.length}チャンネル`;
+      }
       const publishedScopeBtn = document.getElementById("youtube-published-list-open");
       if (publishedScopeBtn) {
         publishedScopeBtn.setAttribute(
@@ -2815,15 +2823,16 @@
     }
   }
 
-  const siteLogoLink = document.querySelector('a.site-logo-link[href="#mll"]');
+  const siteLogoLink = document.querySelector('a.site-logo-link[href="#top"]');
   if (siteLogoLink) {
     siteLogoLink.addEventListener("click", (ev) => {
-      const raw = location.hash.replace(/^#/, "");
-      if (raw === "mll") {
-        ev.preventDefault();
-        showPage("mll");
-        window.scrollTo({ top: 0, behavior: "smooth" });
+      ev.preventDefault();
+      if (location.hash !== "#top") {
+        location.hash = "#top";
+        return;
       }
+      showPage("mll");
+      window.scrollTo({ top: 0, behavior: "smooth" });
     });
   }
 

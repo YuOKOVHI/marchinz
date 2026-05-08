@@ -1,5 +1,5 @@
 /* MarchinZ PWA — bump CACHE when shell/offline behavior should refresh (deploy with index bump). */
-const CACHE = "marchinz-pwa-v1.7.20";
+const CACHE = "marchinz-pwa-v1.9.29";
 
 self.addEventListener("install", (event) => {
   const origin = self.location.origin;
@@ -53,6 +53,17 @@ async function networkFirst(request) {
   }
 }
 
+/** Firebase Google ログインのリダイレクト復帰 URL には apiKey / authType 等が付く。SW のキャッシュやネットワークフォールバック経由だと初回 HTML とクエリの組み合わせが崩れ、getRedirectResult が空になりやすい（特に iOS）。 */
+function navigationLooksLikeFirebaseAuthReturn(url) {
+  const sp = url.searchParams;
+  if (sp.has("authType")) return true;
+  if (sp.has("apiKey") && (sp.has("providerId") || sp.has("signInSuccessUrl"))) return true;
+  const mode = sp.get("mode");
+  if (mode === "signIn" || mode === "signInViaRedirect") return true;
+  if (sp.has("oobCode")) return true;
+  return false;
+}
+
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return;
@@ -64,5 +75,8 @@ self.addEventListener("fetch", (event) => {
   }
   if (url.origin !== self.location.origin) return;
   if (url.pathname.endsWith("/sw.js")) return;
+  if (request.mode === "navigate" && navigationLooksLikeFirebaseAuthReturn(url)) {
+    return;
+  }
   event.respondWith(networkFirst(request));
 });

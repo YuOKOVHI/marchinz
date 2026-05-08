@@ -1,6 +1,6 @@
 (() => {
   /**
-   * mll_profiles の「いいね表示」各フラグ。未設定・null は ON（表示する）。
+   * mll_profiles の「いいね通知」各フラグ。未設定・null は ON（通知する）。
    * @param {Record<string, unknown>|null|undefined} pdata
    */
   function parseLikeShowPrefs(pdata) {

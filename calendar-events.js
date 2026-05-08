@@ -867,8 +867,7 @@
       titleEl.className = "mll-log-title calendar-ev-title-text";
       titleEl.textContent = ev.title;
 
-      const crUid = String(ev.created_by || "").trim();
-      const showCalLike = !crUid || profileCache.get(crUid)?.like_show_calendar !== false;
+      const showCalLike = true;
 
       const likeCluster = document.createElement("div");
       likeCluster.className = "calendar-ev-like-cluster";

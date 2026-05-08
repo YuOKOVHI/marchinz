@@ -6,6 +6,7 @@
 - 物理パス例: `…/CursorLogs/010_MarchinZ/大会動画リスト_マーチング祭.csv`。Google Drive 上ではフォルダ名が `マイドライブ` と `マイドライブ`（Unicode の分解の違い）のように **表記が変わっても同一フォルダを指す**ことがありますが、**必ず `010_MarchinZ/大会動画リスト_マーチング祭.csv` を開いて編集**してください。
 - MLLはFirestoreの `mll_logs` / `mll_profiles` に保存されます。
 - 画像やバナー差し替えは `logo/` と `images/` を更新します。
+- 本番反映は **手動デプロイのみ**（`netlify deploy --prod --dir .`）で行います。**自動本番デプロイは停止済み**（Netlify `build_settings.stop_builds=true`）。
 
 ## 2) MLLの投稿・表示仕様（現状）
 
@@ -131,6 +132,8 @@
 > `search.list` は使わず低コストです（60ch 目安で **約 122 units/回**）。
 
 ## 8.5) GitHub Actions 日次更新（Git 連携 Netlify 向け・推奨）
+
+> 現在運用では本番の自動反映を止めているため、この節の手順は**採用しない**。必要になった場合のみ再有効化する。
 
 Netlify を **GitHub リポジトリ連携**にしたうえで、リポジトリに以下を置く。
 

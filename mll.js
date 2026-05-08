@@ -6,10 +6,8 @@
   const inputDate = document.getElementById("mll-event-date");
   const inputVenue = document.getElementById("mll-venue");
   const selectRole = document.getElementById("mll-role");
-  const inputNote = document.getElementById("mll-note");
-  const inputTicketUrl = document.getElementById("mll-ticket-url");
   const inputOfficialUrl = document.getElementById("mll-official-url");
-  const inputLogPrivate = document.getElementById("mll-log-private");
+  const roleButtons = document.getElementById("mll-role-buttons");
   const msg = document.getElementById("mll-create-msg");
   const list = document.getElementById("mll-log-list");
   const eventList = document.getElementById("mll-event-list");
@@ -36,6 +34,19 @@
     return "watch";
   }
   const UNKNOWN_USER = "ユーザー";
+  const MLL_MESSAGE = {
+    deleteFailed: "削除に失敗しました。時間をおいて再度お試しください。",
+    visibilityUpdateFailed: "公開設定の更新に失敗しました。時間をおいて再度お試しください。",
+    likeUpdateFailed: "いいねの更新に失敗しました。時間をおいて再度お試しください。",
+  };
+
+  function mllFriendlyErrorMessage(err, fallback) {
+    const code = String(err?.code || "").trim();
+    if (code === "auth/network-request-failed") return "通信エラーが発生しました。通信環境をご確認ください。";
+    if (code === "permission-denied") return "この操作を行う権限がありません。";
+    if (code === "unavailable") return "ただいま混み合っています。少し時間をおいて再度お試しください。";
+    return fallback;
+  }
   let allLogsCache = [];
   const profileCache = new Map();
 
@@ -117,6 +128,10 @@
 
   function updateRolePreview() {
     if (!rolePreview) return;
+    if (!String(selectRole.value || "").trim()) {
+      rolePreview.textContent = "表示: 参加スタイルを選択してください";
+      return;
+    }
     const label = buildRoleLabel(selectRole.value, inputDate.value);
     rolePreview.textContent = `表示: ${label}`;
   }
@@ -150,7 +165,7 @@
       try {
         await db.collection("mll_logs").doc(logId).delete();
       } catch (e) {
-        setMessage(String(e?.message || e || "削除に失敗しました。"), true);
+        setMessage(mllFriendlyErrorMessage(e, MLL_MESSAGE.deleteFailed), true);
         return;
       }
     }
@@ -169,7 +184,7 @@
       try {
         await db.collection("mll_logs").doc(id).set({ visibility: vis }, { merge: true });
       } catch (e) {
-        setMessage(String(e?.message || e || "公開設定の更新に失敗しました。"), true);
+        setMessage(mllFriendlyErrorMessage(e, MLL_MESSAGE.visibilityUpdateFailed), true);
         return;
       }
     }
@@ -239,12 +254,10 @@
         note.textContent = log.note;
         li.appendChild(note);
       }
-      if (profileCache.get(log.user_id)?.like_show_mll !== false) {
-        const likeHost = document.createElement("div");
-        likeHost.className = "mll-log-like-host";
-        appendMllLikeRow(likeHost, log);
-        li.appendChild(likeHost);
-      }
+      const likeHost = document.createElement("div");
+      likeHost.className = "mll-log-like-host";
+      appendMllLikeRow(likeHost, log);
+      li.appendChild(likeHost);
       const actions = document.createElement("div");
       actions.className = "mll-log-self-actions";
       const visBtn = document.createElement("button");
@@ -587,7 +600,7 @@
         }
       });
     } catch (e) {
-      setMessage(String(e?.message || e || "いいねの更新に失敗しました"), true);
+      setMessage(mllFriendlyErrorMessage(e, MLL_MESSAGE.likeUpdateFailed), true);
       return;
     }
     if (likeNotify) {
@@ -678,28 +691,24 @@
   async function persistRemote(log) {
     const db = getFirestoreDb();
     if (!db) return;
-    try {
-      const payload = {
-        id: log.id,
-        user_id: log.user_id,
-        event_name: log.event_name,
-        event_date: log.event_date,
-        venue: log.venue,
-        role: log.role,
-        role_label: log.role_label,
-        note: log.note,
-        ticket_url: log.ticket_url,
-        official_url: log.official_url,
-        creator_name: log.creator_name,
-        creator_avatar: log.creator_avatar,
-        created_at: log.created_at,
-        liked_by: normalizeLikedBy(log.liked_by),
-        visibility: logVisibility(log),
-      };
-      await db.collection("mll_logs").doc(String(log.id)).set(payload, { merge: true });
-    } catch {
-      // Firestore未設定時はローカル保存のみ
-    }
+    const payload = {
+      id: log.id,
+      user_id: log.user_id,
+      event_name: log.event_name,
+      event_date: log.event_date,
+      venue: log.venue,
+      role: log.role,
+      role_label: log.role_label,
+      note: log.note,
+      ticket_url: log.ticket_url,
+      official_url: log.official_url,
+      creator_name: log.creator_name,
+      creator_avatar: log.creator_avatar,
+      created_at: log.created_at,
+      liked_by: normalizeLikedBy(log.liked_by),
+      visibility: logVisibility(log),
+    };
+    await db.collection("mll_logs").doc(String(log.id)).set(payload, { merge: true });
   }
 
   form.addEventListener("submit", async (ev) => {
@@ -716,17 +725,22 @@
     const eventName = inputName.value.trim();
     const eventDate = inputDate.value;
     const venue = (inputVenue?.value || "").trim();
-    const role = canonicalRole(selectRole.value);
-    const note = (inputNote?.value || "").trim();
-    const ticketUrl = cleanUrl(inputTicketUrl?.value || "");
-    const officialUrl = cleanUrl(inputOfficialUrl?.value || "");
-    if (!eventName || !eventDate || !role) {
-      setMessage("大会名・開催日・参加区分は必須です。", true);
+    const roleRaw = String(selectRole.value || "").trim();
+    const role = roleRaw ? canonicalRole(roleRaw) : "";
+    const note = "";
+    const ticketUrl = "";
+    const officialUrl = String(inputOfficialUrl?.value || "").trim();
+    if (!eventName || !eventDate || !venue || !role) {
+      setMessage("必須項目が未入力です。入力内容をご確認ください。", true);
+      return;
+    }
+    if (officialUrl && !/^https:\/\//i.test(officialUrl)) {
+      setMessage("URLの形式が正しくありません。https:// から始まるURLを入力してください。", true);
       return;
     }
     const creatorName = displayNameFromUser(user);
     const creatorAvatar = user.user_metadata?.avatar_url || "";
-    const visibility = inputLogPrivate?.checked ? "private" : "public";
+    const visibility = "public";
     const log = normalizeLogEntry({
       id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       user_id: user.id,
@@ -747,15 +761,44 @@
     const logs = loadLogs();
     logs.push(log);
     saveLogs(logs);
-    await persistRemote(log);
+    try {
+      await persistRemote(log);
+    } catch (e) {
+      console.warn("[mll] persist failed", e);
+      setMessage("保存に失敗しました。通信状況を確認して再度お試しください。", true);
+      return;
+    }
     form.reset();
-    if (inputLogPrivate) inputLogPrivate.checked = false;
+    if (inputVenue) inputVenue.value = "";
+    roleButtons?.querySelectorAll(".mll-role-btn").forEach((node) => node.classList.remove("is-active"));
     updateRolePreview();
-    setMessage("MarchinZ Log を保存しました。");
+    setMessage("イベントを保存しました。");
     await refreshMLLView();
   });
 
-  selectRole.addEventListener("change", updateRolePreview);
+  if (roleButtons) {
+    roleButtons.addEventListener("click", (ev) => {
+      const t = ev.target;
+      if (!(t instanceof HTMLElement)) return;
+      const btn = t.closest(".mll-role-btn");
+      if (!btn) return;
+      const nextValue = String(btn.dataset.roleValue || "").trim();
+      if (!nextValue) return;
+      selectRole.value = nextValue;
+      updateRolePreview();
+      roleButtons.querySelectorAll(".mll-role-btn").forEach((node) => {
+        node.classList.toggle("is-active", node === btn);
+      });
+    });
+  }
+  selectRole.addEventListener("change", () => {
+    updateRolePreview();
+    if (!roleButtons) return;
+    const selected = canonicalRole(selectRole.value);
+    roleButtons.querySelectorAll(".mll-role-btn").forEach((node) => {
+      node.classList.toggle("is-active", String(node.dataset.roleValue || "") === selected);
+    });
+  });
   inputDate.addEventListener("change", updateRolePreview);
   window.addEventListener("mll-auth-changed", syncAuthStateUI);
   window.addEventListener("marchinz-events-register-changed", syncAuthStateUI);
