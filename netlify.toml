@@ -5,6 +5,20 @@
   command = "bash ./netlify_prebuild_refresh.sh"
   publish = "."
 
+# Firebase Auth helper endpoints を Netlify 側でプロキシし、1st-party の同一オリジンに見せる
+[[redirects]]
+  from = "/__/auth/*"
+  to = "https://marchinz-app.firebaseapp.com/__/auth/:splat"
+  status = 200
+  force = true
+
+# クライアント側ルート（#page 以外のパス）や誤 URL で 404 にならないよう SPA フォールバック。
+# 実在する静的ファイルは Netlify の Shadowing で優先され、このルールは適用されない。
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
 # data.json は更新が多い想定。CDN・ブラウザのキャッシュは短めにしつつ配信
 [[headers]]
   for = "/data.json"

@@ -1,63 +1,57 @@
 (() => {
   window.MarchinZEventsRegisterExpanded = false;
 
-  /** 一覧に含める kind（過去データ互換あり）／新規登録は統一種別のみ使う */
-  const VALID_KINDS = new Set(["イベント", "演奏会", "大会", "マーチング関連"]);
-  const CREATE_KIND_UNIFIED = "マーチング関連";
+  /** 一覧に含める kind（Firestore・フォームと一致） */
+  const VALID_KINDS = new Set(["イベント", "演奏会", "大会"]);
+  /** フォームで選べる種別（Firestore の kind にそのまま保存） */
+  const CALENDAR_KIND_CREATE_OPTIONS = ["演奏会", "大会", "イベント"];
   const ATTENDANCE_OPTIONS = ["出演", "チームスタッフ", "観戦", "スタッフ/運営"];
   /** イベント登録フォームでの「参加形式」 */
   const PARTICIPATION_OPTIONS = ["出演", "チームスタッフ", "観戦", "運営", "未定"];
-  /** 北海道〜沖縄、最後に海外 */
-  const JP_PREFS = [
-    "北海道",
-    "青森県",
-    "岩手県",
-    "宮城県",
-    "秋田県",
-    "山形県",
-    "福島県",
-    "茨城県",
-    "栃木県",
-    "群馬県",
-    "埼玉県",
-    "千葉県",
-    "東京都",
-    "神奈川県",
-    "新潟県",
-    "富山県",
-    "石川県",
-    "福井県",
-    "山梨県",
-    "長野県",
-    "岐阜県",
-    "静岡県",
-    "愛知県",
-    "三重県",
-    "滋賀県",
-    "京都府",
-    "大阪府",
-    "兵庫県",
-    "奈良県",
-    "和歌山県",
-    "鳥取県",
-    "島根県",
-    "岡山県",
-    "広島県",
-    "山口県",
-    "徳島県",
-    "香川県",
-    "愛媛県",
-    "高知県",
-    "福岡県",
-    "佐賀県",
-    "長崎県",
-    "熊本県",
-    "大分県",
-    "宮崎県",
-    "鹿児島県",
-    "沖縄県",
-    "海外",
+  /** 並び順: 関東→関西→その後は北から */
+  const JP_PREF_GROUPS = [
+    {
+      label: "地域：関東",
+      prefs: ["東京都", "神奈川県", "埼玉県", "千葉県", "茨城県", "栃木県", "群馬県"],
+    },
+    {
+      label: "地域：関西",
+      prefs: ["大阪府", "兵庫県", "京都府", "和歌山県", "滋賀県", "奈良県"],
+    },
+    {
+      label: "地域：北海道",
+      prefs: ["北海道"],
+    },
+    {
+      label: "地域：東北",
+      prefs: ["青森県", "岩手県", "宮城県", "秋田県", "山形県", "福島県"],
+    },
+    {
+      label: "地域：中部",
+      prefs: ["新潟県", "富山県", "石川県", "福井県", "山梨県", "長野県", "岐阜県", "静岡県", "愛知県"],
+    },
+    {
+      label: "地域：中国",
+      prefs: ["鳥取県", "島根県", "岡山県", "広島県", "山口県"],
+    },
+    {
+      label: "地域：四国",
+      prefs: ["徳島県", "香川県", "愛媛県", "高知県"],
+    },
+    {
+      label: "地域：九州",
+      prefs: ["福岡県", "佐賀県", "長崎県", "熊本県", "大分県", "宮崎県", "鹿児島県"],
+    },
+    {
+      label: "地域：沖縄",
+      prefs: ["沖縄県"],
+    },
+    {
+      label: "地域：その他",
+      prefs: ["海外"],
+    },
   ];
+  const JP_PREFS = JP_PREF_GROUPS.flatMap((g) => g.prefs);
 
   const UNKNOWN = "ユーザー";
   const WITHDRAWN_NAME = "退会ユーザー";
@@ -70,9 +64,9 @@
   const inputTitle = document.getElementById("calendar-ev-title");
   const inputUrl = document.getElementById("calendar-ev-url");
   const selectParticipation = document.getElementById("calendar-ev-participation");
+  const selectKind = document.getElementById("calendar-ev-kind");
   const formMsg = document.getElementById("calendar-ev-form-msg");
   const listEl = document.getElementById("calendar-event-list");
-  const listHeading = document.getElementById("calendar-ev-list-heading");
   const submitBtn = document.getElementById("calendar-ev-submit");
 
   const mllReveal = document.getElementById("mll-events-register-reveal");
@@ -106,24 +100,41 @@
     ph.value = "";
     ph.textContent = "都道府県を選択";
     sel.appendChild(ph);
-    for (const p of JP_PREFS) {
-      const o = document.createElement("option");
-      o.value = p;
-      o.textContent = p;
-      sel.appendChild(o);
+    for (const group of JP_PREF_GROUPS) {
+      const heading = document.createElement("option");
+      heading.value = "";
+      heading.disabled = true;
+      heading.textContent = `【${group.label}】`;
+      sel.appendChild(heading);
+      for (const p of group.prefs) {
+        const o = document.createElement("option");
+        o.value = p;
+        o.textContent = p;
+        sel.appendChild(o);
+      }
     }
     sel.dataset.mzPrefFilled = "1";
   }
   fillPrefectureSelect(selectVenue);
   fillPrefectureSelect(editVenue);
 
-  let timeTab = "upcoming";
+  /** true のとき開催日が今日以降のイベントのみ（旧「これから」相当） */
+  let upcomingOnly = false;
+  /** 一覧の種別フィルタ: all または CALENDAR_KIND_CREATE_OPTIONS のいずれか */
+  let kindTab = "all";
+  /** @type {"date"|"kind"|"venue"} */
+  let sortKey = "date";
+  /** true のとき主キー比較を反転（開催日・開催地・種別）。開催日は「今後のみ」のとき昇順（近い日が先）、すべて表示のとき初期は降順 */
+  let sortDesc = true;
   let eventsCache = [];
   const attendeesByEvent = new Map();
   const profileCache = new Map();
+  /** `開催日|タイトル|開催地` → MarchinZ Log を公開で紐づく user_id */
+  let mllPublicUidsByMatchKey = new Map();
 
   let pendingAttEventId = "";
   let pendingEditEventId = "";
+  let mergeSourceEventId = "";
   /** イベント登録フォームの開閉（ログイン済みのみ開く） */
   let registerFormExpanded = false;
 
@@ -137,6 +148,10 @@
 
   function isSiteAdmin() {
     return Boolean(window.MLL_AUTH?.isAdmin?.());
+  }
+
+  function isAuthRedirectPending() {
+    return Boolean(window.MLL_AUTH?.isRedirectPending?.());
   }
 
   function canManageEvent(ev) {
@@ -176,12 +191,13 @@
   function syncRegisterFormVisibility() {
     const loggedIn = Boolean(getUser()?.id);
     const withdrawn = Boolean(window.MLL_AUTH?.isWithdrawn?.());
+    const redirectPending = isAuthRedirectPending();
     const showReveal = registerFormExpanded;
     const showCalendarBody = Boolean(
       loggedIn && !withdrawn && registerFormExpanded && formBody,
     );
     const showLoggedMll = showReveal && loggedIn && !withdrawn;
-    const showAuthGate = showReveal && !loggedIn;
+    const showAuthGate = showReveal && !loggedIn && !redirectPending;
     const showWithdrawnGate = showReveal && withdrawn;
 
     if (mllReveal) {
@@ -214,7 +230,9 @@
     form.querySelectorAll("input:not([type='hidden']), select").forEach((inp) => {
       inp.disabled = !loggedIn || withdrawn || !registerFormExpanded || !showCalendarBody;
     });
-    if (!loggedIn) {
+    if (redirectPending) {
+      setFormMsg("ログイン処理中です。認証完了までお待ちください。", false);
+    } else if (!loggedIn) {
       setFormMsg("", false);
     } else if (loggedIn && !withdrawn && !registerFormExpanded) {
       setFormMsg("", false);
@@ -235,6 +253,8 @@
           withdrawn: false,
           profile_attributes: [],
           like_show_calendar: true,
+          like_show_mll: true,
+          section_vis_mll: "public",
         });
         continue;
       }
@@ -250,6 +270,9 @@
           withdrawn: Boolean(p.withdrawn),
           profile_attributes: attrs,
           like_show_calendar: p.like_show_calendar !== false,
+          like_show_mll: p.like_show_mll !== false,
+          section_vis_mll:
+            String(p.section_vis_mll || "").trim() === "private" ? "private" : "public",
         });
       } catch {
         profileCache.set(id, {
@@ -258,6 +281,8 @@
           withdrawn: false,
           profile_attributes: [],
           like_show_calendar: true,
+          like_show_mll: true,
+          section_vis_mll: "public",
         });
       }
     }
@@ -269,6 +294,8 @@
       avatar_url: "",
       withdrawn: false,
       profile_attributes: [],
+      like_show_mll: true,
+      section_vis_mll: "public",
     };
     if (p.withdrawn) {
       return { uid, name: WITHDRAWN_NAME, avatar: "", withdrawn: true };
@@ -422,61 +449,48 @@
     participantsOverlay.setAttribute("aria-hidden", "false");
   }
 
+  function normTitleKey(s) {
+    return String(s || "")
+      .trim()
+      .replace(/\s+/g, " ");
+  }
+
+  /** mll_logs と突き合わせるキー（カレンダー行と同一正規化） */
+  function eventMatchKey(ev) {
+    return `${String(ev.date || "").trim()}|${normTitleKey(ev.title)}|${String(ev.venue_pref || "").trim()}`;
+  }
+
   /**
-   * @param {string} eventId
-   * @param {Map<string, string>} am uid -> style
+   * 公開の MarchinZ Log（mll_logs）で、このイベントに紐づく user_id を収集。
    */
-  function buildParticipantStackButton(eventId, am) {
-    const uids = [...am.keys()].sort((a, b) =>
-      profileMini(a).name.localeCompare(profileMini(b).name, "ja"),
-    );
-    const total = uids.length;
-    const show = uids.slice(0, 5);
-    const wrap = document.createElement("div");
-    wrap.className = "calendar-ev-avatar-stack";
-    show.forEach((uid, i) => {
-      const p = profileMini(uid);
-      const ring = document.createElement("span");
-      ring.className = "calendar-ev-avatar-ring";
-      ring.style.zIndex = String(10 - i);
-      if (p.withdrawn) {
-        const box = document.createElement("span");
-        box.className = "calendar-ev-avatar-img calendar-ev-avatar-img--withdrawn";
-        box.setAttribute("role", "presentation");
-        ring.appendChild(box);
-      } else {
-        const img = document.createElement("img");
-        img.className = "calendar-ev-avatar-img";
-        img.alt = "";
-        img.src = p.avatar || "logo/marchinz-logo.png";
-        if (!p.avatar) img.style.opacity = "0.55";
-        ring.appendChild(img);
-      }
-      wrap.appendChild(ring);
-    });
-    if (total > 5) {
-      const more = document.createElement("span");
-      more.className = "calendar-ev-participant-more";
-      more.textContent = `+${total - 5}`;
-      more.title = `ほか ${total - 5} 人`;
-      wrap.appendChild(more);
+  async function loadMllLogPublicFaceMap(db, events) {
+    mllPublicUidsByMatchKey = new Map();
+    if (!db || !events.length) return;
+    const keysNeeded = new Set(events.map(eventMatchKey));
+    let snap;
+    try {
+      snap = await db.collection("mll_logs").orderBy("created_at", "desc").limit(800).get();
+    } catch (e) {
+      console.warn("[calendar-events] mll_logs fetch", e);
+      return;
     }
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "calendar-ev-avatar-stack-btn calendar-ev-participant-stack-btn";
-    btn.setAttribute("aria-label", `参加者${total}人、一覧を開く`);
-    btn.appendChild(wrap);
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      openParticipantsDialog(eventId);
+    snap.forEach((doc) => {
+      const x = doc.data() || {};
+      if (String(x.visibility || "").trim() === "private") return;
+      const uid = String(x.user_id || "").trim();
+      if (!uid) return;
+      const key = `${String(x.event_date || "").trim()}|${normTitleKey(x.event_name || "")}|${String(x.venue || "").trim()}`;
+      if (!keysNeeded.has(key)) return;
+      if (!mllPublicUidsByMatchKey.has(key)) mllPublicUidsByMatchKey.set(key, new Set());
+      mllPublicUidsByMatchKey.get(key).add(uid);
     });
-    return btn;
   }
 
   async function loadEventsAndAttendees() {
     const db = getDb();
     eventsCache = [];
     attendeesByEvent.clear();
+    mllPublicUidsByMatchKey = new Map();
     if (!db) {
       setFormMsg("Firestore が利用できない環境です。イベント共有にはブラウザからの接続を確認してください。", true);
       renderList();
@@ -510,8 +524,8 @@
       return;
     }
 
-    await Promise.all(
-      eventsCache.map(async (ev) => {
+    await Promise.all([
+      ...eventsCache.map(async (ev) => {
         try {
           const sub = await db.collection("mll_calendar_events").doc(ev.id).collection("attendees").get();
           const m = new Map();
@@ -524,85 +538,273 @@
           attendeesByEvent.set(ev.id, new Map());
         }
       }),
-    );
+      loadMllLogPublicFaceMap(db, eventsCache),
+    ]);
 
     const allUids = new Set();
     for (const ev of eventsCache) {
-      Object.keys(ev.liked_by || {}).forEach((u) => allUids.add(u));
       allUids.add(ev.created_by);
       const am = attendeesByEvent.get(ev.id);
       if (am) [...am.keys()].forEach((u) => allUids.add(u));
+    }
+    for (const s of mllPublicUidsByMatchKey.values()) {
+      [...s].forEach((u) => allUids.add(u));
     }
     await hydrateProfiles([...allUids]);
     renderList();
   }
 
+  function sortCalendarRows(rows) {
+    const sign = sortDesc ? -1 : 1;
+    const kindOrder = { 演奏会: 1, 大会: 2, イベント: 3 };
+    rows.sort((a, b) => {
+      let c = 0;
+      if (sortKey === "date") {
+        c = a.date.localeCompare(b.date);
+      } else if (sortKey === "kind") {
+        c = (kindOrder[a.kind] ?? 9) - (kindOrder[b.kind] ?? 9);
+        if (c === 0) c = a.date.localeCompare(b.date);
+      } else {
+        c = String(a.venue_pref || "").localeCompare(String(b.venue_pref || ""), "ja");
+        if (c === 0) c = a.date.localeCompare(b.date);
+      }
+      return sign * c;
+    });
+  }
+
   function filteredSorted() {
     const t = todayStr();
     let rows = eventsCache.filter((ev) => VALID_KINDS.has(ev.kind));
-    if (timeTab === "upcoming") {
-      rows = rows.filter((ev) => ev.date >= t);
-      rows.sort((a, b) => a.date.localeCompare(b.date));
-    } else {
-      rows = rows.filter((ev) => ev.date < t);
-      rows.sort((a, b) => b.date.localeCompare(a.date));
+    if (kindTab !== "all" && CALENDAR_KIND_CREATE_OPTIONS.includes(kindTab)) {
+      rows = rows.filter((ev) => ev.kind === kindTab);
     }
+    if (upcomingOnly) {
+      rows = rows.filter((ev) => ev.date >= t);
+    }
+    sortCalendarRows(rows);
     return rows;
   }
 
-  function updateListHeading() {
-    if (!listHeading) return;
-    listHeading.textContent = timeTab === "upcoming" ? "一覧（これから・開催日順）" : "一覧（過去・開催日の新しい順）";
+  /**
+   * 同一開催日・タイトル・開催地・作成者の重複行は、created_at が新しい方だけ残す（過去の二重登録対策）。
+   */
+  function dedupeCalendarRows(rows) {
+    const map = new Map();
+    for (const ev of rows) {
+      const titleKey = normTitleKey(ev.title);
+      const key = `${ev.date}|${titleKey}|${String(ev.venue_pref || "").trim()}|${ev.created_by || ""}`;
+      const prev = map.get(key);
+      if (!prev) {
+        map.set(key, ev);
+        continue;
+      }
+      const pa = String(prev.created_at || "");
+      const pb = String(ev.created_at || "");
+      if (pb >= pa) map.set(key, ev);
+    }
+    return [...map.values()];
   }
 
-  async function toggleLike(eventId) {
-    const me = getUser();
-    if (!me?.id) {
-      window.MarchinZNavigateAuthEntry?.("login");
-      return;
+  /** チップ用の種別ラベル */
+  function kindChipLabel(kind) {
+    if (CALENDAR_KIND_CREATE_OPTIONS.includes(kind)) return kind;
+    return VALID_KINDS.has(kind) ? kind : "—";
+  }
+
+  /** CSS サフィックス用（日本語 class 名を避ける） */
+  function kindSlugForCss(kind) {
+    if (kind === "演奏会") return "concert";
+    if (kind === "大会") return "taikai";
+    if (kind === "イベント") return "event";
+    return "other";
+  }
+
+  function syncSortBar() {
+    const bar = document.getElementById("calendar-ev-sort-bar");
+    if (!bar) return;
+    if (kindTab !== "all" && sortKey === "kind") {
+      sortKey = "date";
+      sortDesc = !upcomingOnly;
     }
-    const db = getDb();
-    if (!db) return;
-    /** @type {{ createdBy: string; title: string; eid: string } | null} */
-    let likeNotify = null;
-    try {
-      const ref = db.collection("mll_calendar_events").doc(String(eventId));
-      await db.runTransaction(async (txn) => {
-        const snap = await txn.get(ref);
-        if (!snap.exists) return;
-        const data = snap.data() || {};
-        const prev = normalizeLikedBy(data.liked_by);
-        const next = { ...prev };
-        const wasOn = Boolean(next[me.id]);
-        if (wasOn) delete next[me.id];
-        else next[me.id] = true;
-        txn.update(ref, { liked_by: next });
-        if (!wasOn) {
-          const createdBy = String(data.created_by || "").trim();
-          const title = String(data.title || "イベント").trim().slice(0, 200);
-          const eid = String(eventId);
-          if (createdBy && createdBy !== me.id) likeNotify = { createdBy, title, eid };
-        }
+    bar.querySelectorAll("[data-cal-sort]").forEach((btn) => {
+      const k = btn.getAttribute("data-cal-sort") || "";
+      const showKindBtn = kindTab === "all";
+      if (k === "kind") {
+        btn.hidden = !showKindBtn;
+      }
+      const active = k === sortKey && !(k === "kind" && !showKindBtn);
+      btn.setAttribute("aria-pressed", active ? "true" : "false");
+      btn.classList.toggle("calendar-ev-sort-btn--active", active);
+      btn.classList.remove("sorted-asc", "sorted-desc");
+      if (active) {
+        btn.classList.add(sortDesc ? "sorted-desc" : "sorted-asc");
+      }
+      const dirJp = sortDesc ? "降順" : "昇順";
+      const base = k === "date" ? "開催日" : k === "kind" ? "種別" : "開催地";
+      btn.setAttribute(
+        "aria-label",
+        active ? `${base}で並び替え（${dirJp}）、クリックで順序切替` : `${base}で並び替え`,
+      );
+    });
+  }
+
+  function renderMetaChips(ev) {
+    const venueTxt = ev.venue_pref?.trim()
+      ? ev.venue_pref.trim()
+      : "開催地未登録";
+    const kindLbl = kindChipLabel(ev.kind);
+    const wrap = document.createElement("div");
+    wrap.className = "calendar-ev-meta-chips";
+    const mk = (text, extraClass) => {
+      const s = document.createElement("span");
+      s.className = `calendar-ev-meta-chip${extraClass ? ` ${extraClass}` : ""}`;
+      s.textContent = text;
+      return s;
+    };
+    const slug = kindSlugForCss(ev.kind);
+    wrap.appendChild(mk(ev.date || "—", "calendar-ev-meta-chip--date"));
+    wrap.appendChild(mk(venueTxt, "calendar-ev-meta-chip--venue"));
+    wrap.appendChild(
+      mk(
+        kindLbl,
+        `calendar-ev-meta-chip--kind calendar-ev-meta-chip--kind-${slug}`,
+      ),
+    );
+    return wrap;
+  }
+
+  function getMllPublicFaceUids(ev) {
+    const key = eventMatchKey(ev);
+    const raw = mllPublicUidsByMatchKey.get(key);
+    if (!raw || raw.size === 0) return [];
+    const out = [];
+    for (const uid of raw) {
+      const pr = profileCache.get(uid);
+      if (pr?.withdrawn) continue;
+      if (pr?.section_vis_mll === "private") continue;
+      if (pr?.like_show_mll === false) continue;
+      out.push(uid);
+    }
+    out.sort((a, b) => profileMini(a).name.localeCompare(profileMini(b).name, "ja"));
+    return out;
+  }
+
+  function renderTopMetaWithCreator(ev) {
+    const row = document.createElement("div");
+    row.className = "calendar-ev-topline";
+    row.appendChild(renderMetaChips(ev));
+    const right = document.createElement("div");
+    right.className = "calendar-ev-topline-right";
+    const kiju = document.createElement("span");
+    kiju.className = "calendar-ev-topline-kinyuu";
+    kiju.textContent = "記入者";
+    const cr = document.createElement("span");
+    cr.className = "calendar-ev-topline-creator";
+    const storedAv = String(ev.creator_avatar_url || "").trim();
+    const creatorUid = String(ev.created_by || "").trim();
+    const pm = profileMini(ev.created_by);
+    const creatorAvatar = document.createElement("img");
+    creatorAvatar.className = "calendar-ev-topline-creator-avatar";
+    creatorAvatar.alt = "";
+    creatorAvatar.src = storedAv || pm.avatar || "logo/marchinz-logo.png";
+    if (!storedAv && !pm.avatar) creatorAvatar.style.opacity = "0.55";
+    if (creatorUid && !pm.withdrawn) {
+      const avLink = document.createElement("a");
+      avLink.className = "calendar-ev-topline-creator-avatar-link";
+      avLink.href = `#profile?uid=${encodeURIComponent(creatorUid)}`;
+      avLink.setAttribute("aria-label", `${ev.creator_display_name || pm.name || UNKNOWN}のマイページ`);
+      avLink.appendChild(creatorAvatar);
+      cr.appendChild(avLink);
+    } else {
+      cr.appendChild(creatorAvatar);
+    }
+    const creatorName = document.createElement("span");
+    creatorName.className = "calendar-ev-topline-creator-name";
+    creatorName.textContent = ev.creator_display_name || pm.name || UNKNOWN;
+    cr.appendChild(creatorName);
+    right.appendChild(kiju);
+    right.appendChild(cr);
+    row.appendChild(right);
+    return row;
+  }
+
+  function buildMllFacesWrap(ev) {
+    const uids = getMllPublicFaceUids(ev);
+    const wrap = document.createElement("div");
+    wrap.className = "calendar-ev-mll-faces";
+    for (const uid of uids) {
+      const p = profileMini(uid);
+      const a = document.createElement("a");
+      a.className = "calendar-ev-mll-face";
+      a.href = `#profile?uid=${encodeURIComponent(uid)}`;
+      a.title = p.name;
+      if (p.withdrawn) {
+        const ph = document.createElement("span");
+        ph.className = "calendar-ev-mll-face-img calendar-ev-mll-face-img--withdrawn";
+        ph.setAttribute("role", "presentation");
+        a.appendChild(ph);
+      } else {
+        const img = document.createElement("img");
+        img.className = "calendar-ev-mll-face-img";
+        img.alt = "";
+        img.loading = "lazy";
+        img.src = p.avatar || "logo/marchinz-logo.png";
+        if (!p.avatar) img.style.opacity = "0.55";
+        a.appendChild(img);
+      }
+      wrap.appendChild(a);
+    }
+    return wrap;
+  }
+
+  /** 3段目: MarchinZ Log 公開者アイコン + 右端で参加スタイル（旧 設定・変更） */
+  function buildMarchinZLogRow(ev, me) {
+    const am = attendeesByEvent.get(ev.id) || new Map();
+    const row = document.createElement("div");
+    row.className = "calendar-ev-mll-log-row";
+    const left = document.createElement("div");
+    left.className = "calendar-ev-mll-log-left";
+    const lab = document.createElement("span");
+    lab.className = "calendar-ev-mll-log-label";
+    lab.textContent = "MarchinZ Log";
+    left.appendChild(lab);
+    left.appendChild(buildMllFacesWrap(ev));
+    if (am.size > 0) {
+      const partBtn = document.createElement("button");
+      partBtn.type = "button";
+      partBtn.className = "calendar-ev-mll-log-part-btn";
+      partBtn.textContent = `参加者（${am.size}）`;
+      partBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openParticipantsDialog(ev.id);
       });
-    } catch (e) {
-      console.warn(e);
-      setFormMsg(String(e?.message || "いいねの更新に失敗しました"), true);
-      return;
+      left.appendChild(partBtn);
     }
-    if (likeNotify) {
-      const nm = String(displayNameFromUser(me) || UNKNOWN).trim().slice(0, 120) || UNKNOWN;
-      window.MarchinZPushLikeNotification?.(db, likeNotify.createdBy, {
-        kind: "like_calendar_event",
-        actor_uid: me.id,
-        actor_name: nm,
-        target_type: "calendar_event",
-        target_id: likeNotify.eid,
-        target_title: likeNotify.title,
-        target_href: "#community/events",
-        thread_root_id: "",
-      });
+    const actions = document.createElement("div");
+    actions.className = "calendar-ev-mll-log-actions";
+    const mllBtn = document.createElement("button");
+    mllBtn.type = "button";
+    mllBtn.className = "calendar-ev-mll-log-save-btn";
+    mllBtn.textContent = "MarchinZ Logを残す";
+    mllBtn.addEventListener("click", () => {
+      if (!getUser()?.id) {
+        window.MarchinZNavigateAuthEntry?.("login");
+        return;
+      }
+      openAttendanceDialog(ev.id);
+    });
+    actions.appendChild(mllBtn);
+    if (me?.id) {
+      const cloneBtn = document.createElement("button");
+      cloneBtn.type = "button";
+      cloneBtn.className = "calendar-ev-mll-log-clone-btn";
+      cloneBtn.textContent = "この内容で作成";
+      cloneBtn.addEventListener("click", () => prefillCreateFormFromEvent(ev));
+      actions.appendChild(cloneBtn);
     }
-    await loadEventsAndAttendees();
+    row.appendChild(left);
+    row.appendChild(actions);
+    return row;
   }
 
   function openAttendanceDialog(eventId) {
@@ -641,7 +843,7 @@
         .set({ style }, { merge: true });
     } catch (e) {
       console.warn(e);
-      setFormMsg(String(e?.message || "参加スタイルの保存に失敗しました"), true);
+      setFormMsg(String(e?.message || "MarchinZ Log（参加のしかた）の保存に失敗しました"), true);
       return;
     }
     closeAttendance();
@@ -692,6 +894,12 @@
       editParticipation.value = PARTICIPATION_OPTIONS.includes(p) ? p : "";
     }
 
+    const editKind = document.getElementById("calendar-edit-kind");
+    if (editKind) {
+      const k = String(ev.kind || "").trim();
+      editKind.value = CALENDAR_KIND_CREATE_OPTIONS.includes(k) ? k : "イベント";
+    }
+
     if (editHint) {
       editHint.textContent = isSiteAdmin() && getUser()?.id !== ev.created_by
         ? "管理人として編集・削除できます。"
@@ -725,8 +933,10 @@
       editParticipation && editParticipation.value && PARTICIPATION_OPTIONS.includes(editParticipation.value)
         ? editParticipation.value
         : "";
-    if (!date || !title || !venue_pref || !participation_format) {
-      setFormMsg("開催日・開催地・イベント名・参加形式はすべて必須です。", true);
+    const editKindEl = document.getElementById("calendar-edit-kind");
+    const nextKind = editKindEl ? String(editKindEl.value || "").trim() : "";
+    if (!date || !title || !venue_pref || !participation_format || !CALENDAR_KIND_CREATE_OPTIONS.includes(nextKind)) {
+      setFormMsg("開催日・種別・開催地・イベント名・参加形式はすべて必須です。", true);
       return;
     }
     /** 運用で URL 長過ぎを防ぐ */
@@ -740,6 +950,7 @@
       venue_pref,
       event_url,
       participation_format,
+      kind: nextKind,
     };
     if (user.id === ev.created_by && !profileMini(ev.created_by).withdrawn) {
       patch.creator_display_name = displayNameFromUser(user);
@@ -796,6 +1007,165 @@
     }
   }
 
+  function prefillCreateFormFromEvent(ev) {
+    if (!ev) return;
+    registerFormExpanded = true;
+    syncRegisterFormVisibility();
+    if (inputDate) inputDate.value = String(ev.date || "").trim();
+    if (inputTitle) inputTitle.value = String(ev.title || "").trim();
+    if (selectVenue) {
+      const v = String(ev.venue_pref || "").trim();
+      if (JP_PREFS.includes(v)) selectVenue.value = v;
+      else selectVenue.value = "";
+    }
+    if (inputUrl) inputUrl.value = String(ev.event_url || "").trim();
+    const pf = String(ev.participation_format || "").trim();
+    if (selectParticipation) {
+      selectParticipation.value = PARTICIPATION_OPTIONS.includes(pf) ? pf : "";
+    }
+    if (selectKind) {
+      const k = String(ev.kind || "").trim();
+      selectKind.value = CALENDAR_KIND_CREATE_OPTIONS.includes(k) ? k : "";
+    }
+    setFormMsg("イベント情報を複製しました。内容を確認して保存してください。", false);
+  }
+
+  function setMergeSource(ev) {
+    if (!ev?.id) return;
+    mergeSourceEventId = String(ev.id);
+    setFormMsg(`統合元を選択: 「${String(ev.title || "イベント").slice(0, 60)}」`, false);
+    renderList();
+  }
+
+  /**
+   * 統合元カレンダー行と同一キー（開催日・イベント名・開催地）の MarchinZ Log を統合先の情報へ書き換え。
+   * @returns {Promise<number>} 更新したログ件数
+   */
+  async function rewriteMllLogsForMergedCalendar(db, sourceFields, targetFields) {
+    const srcDate = String(sourceFields?.date || "").trim();
+    const srcTitle = normTitleKey(sourceFields?.title || "");
+    const srcVenue = String(sourceFields?.venue_pref || "").trim();
+    const tgtDate = String(targetFields?.date || "").trim();
+    const tgtTitle = String(targetFields?.title || "").trim().slice(0, 120);
+    const tgtVenue = String(targetFields?.venue_pref || "").trim().slice(0, 48);
+    if (!srcDate || !tgtDate || !tgtTitle || !tgtVenue) return 0;
+
+    const buildRl = window.MarchinZMllBuildRoleLabel;
+    let snap;
+    try {
+      snap = await db.collection("mll_logs").where("event_date", "==", srcDate).limit(500).get();
+    } catch (e) {
+      console.warn("[calendar-events] mll_logs query for merge", e);
+      throw e;
+    }
+
+    const updates = [];
+    snap.forEach((doc) => {
+      const x = doc.data() || {};
+      if (normTitleKey(x.event_name || "") !== srcTitle) return;
+      if (String(x.venue || "").trim() !== srcVenue) return;
+      const roleLabel =
+        typeof buildRl === "function" ? buildRl(x.role, tgtDate) : String(x.role_label || "").trim() || "—";
+      updates.push({
+        ref: doc.ref,
+        payload: {
+          event_date: tgtDate,
+          event_name: tgtTitle,
+          venue: tgtVenue,
+          role_label: String(roleLabel).slice(0, 120),
+        },
+      });
+    });
+
+    const chunk = 400;
+    for (let i = 0; i < updates.length; i += chunk) {
+      const batch = db.batch();
+      updates.slice(i, i + chunk).forEach(({ ref, payload }) => batch.update(ref, payload));
+      await batch.commit();
+    }
+    return updates.length;
+  }
+
+  async function mergeEventIntoTarget(targetEv) {
+    if (!isSiteAdmin()) return;
+    const db = getDb();
+    const sourceId = String(mergeSourceEventId || "").trim();
+    const targetId = String(targetEv?.id || "").trim();
+    if (!db || !sourceId || !targetId || sourceId === targetId) return;
+    const sourceEv = eventsCache.find((x) => String(x.id) === sourceId);
+    const targetTitle = String(targetEv?.title || "").trim() || "イベント";
+    const sourceTitle = String(sourceEv?.title || "").trim() || "イベント";
+    if (
+      !window.confirm(
+        `「${sourceTitle}」を「${targetTitle}」へ統合しますか？\n\n統合元のカードは削除されます。統合元と同じ開催日・イベント名・開催地の MarchinZ Log は、統合先の開催情報に合わせて更新されます。`,
+      )
+    ) {
+      return;
+    }
+    try {
+      const sourceRef = db.collection("mll_calendar_events").doc(sourceId);
+      const targetRef = db.collection("mll_calendar_events").doc(targetId);
+      const [sourceSnap, targetSnap, sourceAttSnap, targetAttSnap] = await Promise.all([
+        sourceRef.get(),
+        targetRef.get(),
+        sourceRef.collection("attendees").get(),
+        targetRef.collection("attendees").get(),
+      ]);
+      if (!sourceSnap.exists || !targetSnap.exists) {
+        setFormMsg("統合対象のイベントが見つかりません。再読み込み後にやり直してください。", true);
+        return;
+      }
+      const srcData = sourceSnap.data() || {};
+      const tgtData = targetSnap.data() || {};
+
+      let logRewritten = 0;
+      try {
+        logRewritten = await rewriteMllLogsForMergedCalendar(db, srcData, tgtData);
+      } catch (logErr) {
+        console.warn(logErr);
+        setFormMsg(
+          String(
+            logErr?.message ||
+              "MarchinZ Log の更新に失敗したため、統合を中止しました。Firestore ルールのデプロイと、mll_privileged_uids に運営 UID が登録されているか確認してください。",
+          ),
+          true,
+        );
+        return;
+      }
+
+      const srcLiked = normalizeLikedBy(srcData.liked_by);
+      const tgtLiked = normalizeLikedBy(tgtData.liked_by);
+      const mergedLiked = { ...tgtLiked, ...srcLiked };
+      await targetRef.set({ liked_by: mergedLiked }, { merge: true });
+
+      const targetAttMap = new Map();
+      targetAttSnap.forEach((d) => targetAttMap.set(d.id, d.data() || {}));
+      for (const d of sourceAttSnap.docs) {
+        if (!targetAttMap.has(d.id)) {
+          await targetRef.collection("attendees").doc(d.id).set(d.data() || {}, { merge: true });
+        }
+      }
+      for (const d of sourceAttSnap.docs) {
+        await sourceRef.collection("attendees").doc(d.id).delete();
+      }
+
+      await sourceRef.delete();
+      mergeSourceEventId = "";
+      if (logRewritten > 0) {
+        setFormMsg(`イベントを統合しました。MarchinZ Log を ${logRewritten} 件、統合先の開催情報に合わせて更新しました。`, false);
+      } else {
+        setFormMsg(
+          "イベントを統合しました。（同一キーの MarchinZ Log が見つからなかったため、ログの更新はありませんでした）",
+          false,
+        );
+      }
+      await loadEventsAndAttendees();
+    } catch (e) {
+      console.warn(e);
+      setFormMsg(String(e?.message || "イベント統合に失敗しました。"), true);
+    }
+  }
+
   async function clearMyAttendance() {
     const me = getUser();
     const db = getDb();
@@ -811,38 +1181,11 @@
     await loadEventsAndAttendees();
   }
 
-  function renderMetaLine(ev) {
-    const venueTxt = ev.venue_pref?.trim()
-      ? ev.venue_pref.trim()
-      : "開催地未登録（旧データ）";
-    const partTxt = PARTICIPATION_OPTIONS.includes(ev.participation_format)
-      ? ev.participation_format
-      : ev.participation_format || "—";
-    const meta = document.createElement("p");
-    meta.className = "mll-log-meta";
-    meta.textContent = `${ev.date} · ${venueTxt} · 告知の参加形態: ${partTxt}`;
-    return meta;
-  }
-
-  function appendUrlSection(li, rawUrl) {
-    const trimmed = String(rawUrl || "").trim();
-    if (!trimmed || !/^https?:\/\/.+/i.test(trimmed)) return;
-    const wrap = document.createElement("p");
-    wrap.className = "calendar-ev-event-url-row mll-log-meta";
-    const a = document.createElement("a");
-    a.href = trimmed;
-    a.target = "_blank";
-    a.rel = "noopener noreferrer";
-    const host = trimmed.length > 96 ? trimmed.slice(0, 93) + "…" : trimmed;
-    a.textContent = host;
-    wrap.appendChild(a);
-    li.appendChild(wrap);
-  }
-
   function renderList() {
-    updateListHeading();
+    syncSortBar();
+    syncKindTabs();
     listEl.innerHTML = "";
-    const rows = filteredSorted();
+    const rows = dedupeCalendarRows(filteredSorted());
     if (!rows.length) {
       const li = document.createElement("li");
       li.className = "mll-log-item";
@@ -855,58 +1198,38 @@
 
     for (const ev of rows) {
       const li = document.createElement("li");
-      li.className = "mll-log-item calendar-ev-card";
+      const kSlug = kindSlugForCss(ev.kind);
+      li.className = `mll-log-item calendar-ev-card calendar-ev-card--kind-${kSlug}`;
       li.dataset.calEventId = String(ev.id || "");
 
-      const meta = renderMetaLine(ev);
+      const topMeta = renderTopMetaWithCreator(ev);
 
       const titleRow = document.createElement("div");
-      titleRow.className = "calendar-ev-title-row";
+      titleRow.className = "calendar-ev-title-row calendar-ev-title-row--prominent";
+
+      const titleCol = document.createElement("div");
+      titleCol.className = "calendar-ev-title-col";
 
       const titleEl = document.createElement("p");
       titleEl.className = "mll-log-title calendar-ev-title-text";
       titleEl.textContent = ev.title;
+      titleCol.appendChild(titleEl);
 
-      const showCalLike = true;
-
-      const likeCluster = document.createElement("div");
-      likeCluster.className = "calendar-ev-like-cluster";
-
-      const lb = ev.liked_by || {};
-      const cnt = Object.keys(lb).filter((k) => lb[k]).length;
-
-      if (showCalLike) {
-        const likeBtn = document.createElement("button");
-        likeBtn.type = "button";
-        likeBtn.className = `community-like-btn${me?.id && lb[me.id] ? " community-like-btn--on" : ""}`;
-        likeBtn.setAttribute("aria-pressed", me?.id && lb[me.id] ? "true" : "false");
-        likeBtn.disabled = false;
-        likeBtn.addEventListener("click", () => void toggleLike(ev.id));
-        const heart = document.createElement("span");
-        heart.className = "community-like-heart";
-        heart.setAttribute("aria-hidden", "true");
-        heart.textContent = "\u2665";
-        const num = document.createElement("span");
-        num.className = "community-like-count";
-        num.textContent = String(cnt);
-        likeBtn.appendChild(heart);
-        likeBtn.appendChild(num);
-        likeCluster.appendChild(likeBtn);
-
-        if (!me?.id) {
-          const hint = document.createElement("span");
-          hint.className = "community-like-hint mll-log-meta";
-          hint.textContent = "ログインでいいね・参加スタイル";
-          likeCluster.appendChild(hint);
-        }
+      const trimmedUrl = String(ev.event_url || "").trim();
+      if (trimmedUrl && /^https?:\/\/.+/i.test(trimmedUrl)) {
+        const urlRow = document.createElement("p");
+        urlRow.className = "calendar-ev-title-url mll-log-meta";
+        const a = document.createElement("a");
+        a.href = trimmedUrl;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        const host = trimmedUrl.length > 96 ? trimmedUrl.slice(0, 93) + "…" : trimmedUrl;
+        a.textContent = host;
+        urlRow.appendChild(a);
+        titleCol.appendChild(urlRow);
       }
 
-      titleRow.appendChild(titleEl);
-      if (showCalLike) titleRow.appendChild(likeCluster);
-
-      const creatorRow = document.createElement("p");
-      creatorRow.className = "mll-log-meta";
-      creatorRow.textContent = `登録: ${ev.creator_display_name || UNKNOWN}`;
+      titleRow.appendChild(titleCol);
 
       let ownerRow = null;
       if (canManageEvent(ev)) {
@@ -918,48 +1241,35 @@
         editCardBtn.textContent = "編集";
         editCardBtn.addEventListener("click", () => openEditDialog(ev));
         ownerRow.appendChild(editCardBtn);
-      }
-
-      const attRow = document.createElement("div");
-      attRow.className = "calendar-ev-att-row";
-      const am = attendeesByEvent.get(ev.id) || new Map();
-      const myStyle = me?.id ? am.get(me.id) || "" : "";
-      const attLabel = document.createElement("span");
-      attLabel.className = "calendar-ev-att-label";
-      attLabel.textContent = me?.id ? `参加スタイル（あなた）: ${myStyle || "未記入"}` : "参加スタイル: ログインで入力できます";
-
-      const attBtn = document.createElement("button");
-      attBtn.type = "button";
-      attBtn.className = "calendar-ev-att-open-btn";
-      attBtn.textContent = "設定・変更";
-      attBtn.disabled = false;
-      attBtn.addEventListener("click", () => {
-        if (!getUser()?.id) {
-          window.MarchinZNavigateAuthEntry?.("login");
-          return;
+        const dupBtn = document.createElement("button");
+        dupBtn.type = "button";
+        dupBtn.className = "calendar-ev-edit-btn";
+        dupBtn.textContent = "複製";
+        dupBtn.addEventListener("click", () => prefillCreateFormFromEvent(ev));
+        ownerRow.appendChild(dupBtn);
+        if (isSiteAdmin()) {
+          const pickBtn = document.createElement("button");
+          pickBtn.type = "button";
+          pickBtn.className = "calendar-ev-edit-btn";
+          pickBtn.textContent = mergeSourceEventId === ev.id ? "統合元選択中" : "統合元に指定";
+          pickBtn.disabled = mergeSourceEventId === ev.id;
+          pickBtn.addEventListener("click", () => setMergeSource(ev));
+          ownerRow.appendChild(pickBtn);
+          if (mergeSourceEventId && mergeSourceEventId !== ev.id) {
+            const mergeBtn = document.createElement("button");
+            mergeBtn.type = "button";
+            mergeBtn.className = "calendar-ev-edit-btn";
+            mergeBtn.textContent = "ここへ統合";
+            mergeBtn.addEventListener("click", () => void mergeEventIntoTarget(ev));
+            ownerRow.appendChild(mergeBtn);
+          }
         }
-        openAttendanceDialog(ev.id);
-      });
-
-      attRow.appendChild(attLabel);
-      attRow.appendChild(attBtn);
-
-      li.appendChild(meta);
-      li.appendChild(titleRow);
-      appendUrlSection(li, ev.event_url);
-      li.appendChild(creatorRow);
-      if (ownerRow) li.appendChild(ownerRow);
-      li.appendChild(attRow);
-      if (am.size > 0) {
-        const partRow = document.createElement("div");
-        partRow.className = "calendar-ev-participant-preview-row";
-        const partLbl = document.createElement("span");
-        partLbl.className = "calendar-ev-participant-preview-label";
-        partLbl.textContent = "参加者";
-        partRow.appendChild(partLbl);
-        partRow.appendChild(buildParticipantStackButton(ev.id, am));
-        li.appendChild(partRow);
       }
+
+      li.appendChild(topMeta);
+      li.appendChild(titleRow);
+      li.appendChild(buildMarchinZLogRow(ev, me));
+      if (ownerRow) li.appendChild(ownerRow);
       listEl.appendChild(li);
     }
 
@@ -993,27 +1303,64 @@
 
   if (openRegisterBtn) {
     openRegisterBtn.addEventListener("click", () => {
+      if (isAuthRedirectPending()) return;
       registerFormExpanded = !registerFormExpanded;
       syncRegisterFormVisibility();
     });
   }
 
-  function syncTimeTabs() {
-    document.querySelectorAll("[data-cal-time]").forEach((btn) => {
-      const v = btn.getAttribute("data-cal-time") || "";
-      btn.setAttribute("aria-selected", String(v === timeTab));
+  window.MarchinZSetEventsRegisterExpanded = (nextOpen) => {
+    registerFormExpanded = Boolean(nextOpen);
+    syncRegisterFormVisibility();
+  };
+
+  function syncKindTabs() {
+    document.querySelectorAll("[data-cal-kind]").forEach((btn) => {
+      const v = btn.getAttribute("data-cal-kind") || "";
+      btn.setAttribute("aria-selected", String(v === kindTab));
     });
   }
 
-  document.querySelectorAll("[data-cal-time]").forEach((btn) => {
+  document.querySelectorAll("[data-cal-kind]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      timeTab = btn.getAttribute("data-cal-time") || "upcoming";
-      syncTimeTabs();
+      kindTab = btn.getAttribute("data-cal-kind") || "all";
+      syncKindTabs();
+      syncSortBar();
       renderList();
     });
   });
 
-  syncTimeTabs();
+  document.querySelectorAll("[data-cal-sort]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const k = btn.getAttribute("data-cal-sort") || "";
+      if (k !== "date" && k !== "kind" && k !== "venue") return;
+      if (sortKey === k) {
+        sortDesc = !sortDesc;
+      } else {
+        sortKey = k;
+        sortDesc = k === "date" ? !upcomingOnly : false;
+      }
+      syncSortBar();
+      renderList();
+    });
+  });
+
+  syncKindTabs();
+  const upcomingOnlyInput = document.getElementById("calendar-ev-upcoming-only");
+  if (upcomingOnlyInput) {
+    upcomingOnlyInput.checked = false;
+    upcomingOnly = false;
+    upcomingOnlyInput.addEventListener("change", () => {
+      upcomingOnly = Boolean(upcomingOnlyInput.checked);
+      if (sortKey === "date") {
+        sortDesc = !upcomingOnly;
+      }
+      syncSortBar();
+      renderList();
+    });
+  }
+  sortDesc = !upcomingOnly;
+  syncSortBar();
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -1033,9 +1380,10 @@
     const venue_pref = selectVenue ? String(selectVenue.value || "").trim() : "";
     const event_url = normUrl(inputUrl?.value ?? "");
     const pf = selectParticipation ? String(selectParticipation.value || "").trim() : "";
+    const calendarKind = selectKind ? String(selectKind.value || "").trim() : "";
 
-    if (!date || !title || !venue_pref || !PARTICIPATION_OPTIONS.includes(pf)) {
-      setFormMsg("開催日・開催地・イベント名・参加形式はすべて必須です。", true);
+    if (!date || !title || !venue_pref || !PARTICIPATION_OPTIONS.includes(pf) || !CALENDAR_KIND_CREATE_OPTIONS.includes(calendarKind)) {
+      setFormMsg("開催日・種別・開催地・イベント名・参加形式はすべて必須です。", true);
       return;
     }
     if (event_url.length > 2000) {
@@ -1044,7 +1392,7 @@
     }
 
     const payload = {
-      kind: CREATE_KIND_UNIFIED,
+      kind: calendarKind,
       date,
       title,
       venue_pref,
@@ -1061,7 +1409,9 @@
       await db.collection("mll_calendar_events").add(payload);
       inputTitle.value = "";
       if (inputUrl) inputUrl.value = "";
-      setFormMsg("イベントを登録しました。");
+      setFormMsg("登録しました。");
+      registerFormExpanded = false;
+      syncRegisterFormVisibility();
       await loadEventsAndAttendees();
     } catch (err) {
       console.warn(err);

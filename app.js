@@ -50,6 +50,9 @@
   let marchinzOrgIdToName = new Map();
   let marchinzNameToOrgId = new Map();
 
+  /** 一覧オーバーレイに載せる全団体/チーム名（タブ切替・開き直しで更新） */
+  let browseOrgOverlayFullNames = [];
+
   const $ = (sel) => document.querySelector(sel);
   const collatorJa = new Intl.Collator("ja", { sensitivity: "base" });
 
@@ -79,6 +82,11 @@
   const browseByOrgLabel = $("#browse-by-org-label");
   const browseByOrgCount = $("#browse-by-org-count");
   const browseButtonList = $("#browse-button-list");
+  const browseOrgOverlay = $("#browse-org-overlay");
+  const browseOrgOverlayHeading = $("#browse-org-overlay-heading");
+  const browseOrgOverlayCount = $("#browse-org-overlay-count");
+  const browseOrgFilterInput = $("#browse-org-filter");
+  const browseOrgClose = $("#browse-org-close");
   const pageFirst = $("#page-first");
   const pagePrev = $("#page-prev");
   const pageNext = $("#page-next");
@@ -402,32 +410,43 @@
     return sortBrowseStrings([...set]);
   }
 
-  function renderBrowsePanel() {
-    if (!browseButtonList || !browseByOrg) return;
-
-    const mainLabel = state.tab === "スリークロスチーム" ? "チーム一覧表示" : "団体一覧表示";
-    const countUnit = state.tab === "スリークロスチーム" ? "チーム" : "団体";
-    const browseN = uniqOrgNamesForTab().length;
-    if (browseByOrgLabel) browseByOrgLabel.textContent = mainLabel;
-    if (browseByOrgCount) browseByOrgCount.textContent = `${browseN}${countUnit}`;
-    browseByOrg.setAttribute("aria-label", `${mainLabel}（${browseN}${countUnit}）`);
-
-    if (!state.browseOpen) {
-      browseButtonList.hidden = true;
-      browseButtonList.innerHTML = "";
-      browseByOrg.setAttribute("aria-expanded", "false");
-      browseByOrg.classList.remove("browse-trigger-active");
-      return;
+  function setVideosBrowseOverlayScrollLock(open) {
+    if (open) {
+      document.documentElement.style.overflow = "hidden";
+      document.body.style.overflow = "hidden";
+    } else {
+      document.documentElement.style.overflow = "";
+      document.body.style.overflow = "";
     }
+  }
 
-    const currentCategory = state.tab;
-    const values = sortBrowseStrings(
-      rowsInCategory(currentCategory)
-        .map((r) => rowOrgTeam(r).trim())
-        .filter(Boolean)
-    );
+  function normalizeBrowseOrgFilter(s) {
+    return String(s || "")
+      .normalize("NFKC")
+      .trim()
+      .toLowerCase();
+  }
+
+  function updateBrowseOverlayHead() {
+    if (!browseOrgOverlayHeading || !browseOrgOverlayCount) return;
+    const listHead = state.tab === "スリークロスチーム" ? "チーム一覧" : "団体一覧";
+    const countUnit = state.tab === "スリークロスチーム" ? "チーム" : "団体";
+    const n = browseOrgOverlayFullNames.length;
+    browseOrgOverlayHeading.textContent = listHead;
+    browseOrgOverlayCount.textContent = `（${n}${countUnit}）`;
+    browseOrgOverlayCount.setAttribute("aria-label", `全${n}${countUnit}`);
+  }
+
+  function renderBrowseOverlayChips() {
+    if (!browseButtonList) return;
+    const raw = (browseOrgFilterInput?.value ?? "").trim();
+    const needle = normalizeBrowseOrgFilter(raw);
+    const filtered = needle
+      ? browseOrgOverlayFullNames.filter((v) => normalizeBrowseOrgFilter(v).includes(needle))
+      : browseOrgOverlayFullNames;
+
     browseButtonList.innerHTML = "";
-    for (const val of values) {
+    for (const val of filtered) {
       const b = document.createElement("button");
       b.type = "button";
       b.className = "browse-chip";
@@ -446,10 +465,53 @@
       });
       browseButtonList.appendChild(b);
     }
+  }
+
+  function renderBrowsePanel() {
+    if (!browseButtonList || !browseByOrg) return;
+
+    const mainLabel = state.tab === "スリークロスチーム" ? "チーム一覧表示" : "団体一覧表示";
+    const countUnit = state.tab === "スリークロスチーム" ? "チーム" : "団体";
+    const browseN = uniqOrgNamesForTab().length;
+    if (browseByOrgLabel) browseByOrgLabel.textContent = mainLabel;
+    if (browseByOrgCount) browseByOrgCount.textContent = `${browseN}${countUnit}`;
+    browseByOrg.setAttribute("aria-label", `${mainLabel}（${browseN}${countUnit}）`);
+
+    if (!state.browseOpen) {
+      browseButtonList.hidden = true;
+      browseButtonList.innerHTML = "";
+      browseOrgOverlayFullNames = [];
+      browseByOrg.setAttribute("aria-expanded", "false");
+      browseByOrg.classList.remove("browse-trigger-active");
+      if (browseOrgOverlay) browseOrgOverlay.hidden = true;
+      setVideosBrowseOverlayScrollLock(false);
+      return;
+    }
+
+    const currentCategory = state.tab;
+    const values = sortBrowseStrings(
+      rowsInCategory(currentCategory)
+        .map((r) => rowOrgTeam(r).trim())
+        .filter(Boolean)
+    );
+    browseOrgOverlayFullNames = values;
+    if (browseOrgFilterInput) {
+      browseOrgFilterInput.value = "";
+    }
+    updateBrowseOverlayHead();
+    renderBrowseOverlayChips();
+
+    if (browseOrgOverlay) browseOrgOverlay.hidden = false;
+    setVideosBrowseOverlayScrollLock(true);
 
     browseButtonList.hidden = false;
+    browseButtonList.scrollTop = 0;
     browseByOrg.setAttribute("aria-expanded", "true");
     browseByOrg.classList.add("browse-trigger-active");
+
+    window.requestAnimationFrame(() => {
+      browseOrgFilterInput?.focus({ preventScroll: true });
+    });
   }
 
   function shareText(row) {
@@ -724,6 +786,27 @@
 
   function normalize(s) {
     return (s || "").toString().toLowerCase();
+  }
+
+  /** 団体/チームの部分一致（表記ゆれ吸収・チップ並び用） */
+  function normalizeTeamSearchKey(s) {
+    return String(s ?? "")
+      .trim()
+      .normalize("NFKC")
+      .toLowerCase();
+  }
+
+  /** 表示中チップの並び: 完全一致 > 接頭 > 接尾(例: Nana→KaeNana) > その他の部分一致 */
+  function scoreOrgChipForTeamQuery(orgRaw, dispRaw, qk) {
+    if (!qk) return 0;
+    const org = normalizeTeamSearchKey(orgRaw);
+    const disp = normalizeTeamSearchKey(dispRaw);
+    let best = 0;
+    if (org === qk || disp === qk) best = 100;
+    if (org.startsWith(qk) || disp.startsWith(qk)) best = Math.max(best, 85);
+    if (org.endsWith(qk) || disp.endsWith(qk)) best = Math.max(best, 72);
+    if (org.includes(qk) || disp.includes(qk)) best = Math.max(best, 50);
+    return best;
   }
 
   function normalizeLoose(s) {
@@ -1156,7 +1239,7 @@
 
   function applyFilter() {
     state.recommendVisibleCount = RECOMMEND_INITIAL;
-    const t = normalize((qTeam?.value ?? "").trim());
+    const teamQ = normalizeTeamSearchKey((qTeam?.value ?? "").trim());
     const e = normalize((qEvent?.value ?? "").trim());
     const f = normalize((qFree?.value ?? "").trim());
     const selectedOrg = String(state.exactOrgTeam ?? "").trim();
@@ -1165,7 +1248,7 @@
     const crossTabFocusMode = isFocusQuery || isFocusSelected;
     const hasSearchOrExact =
       crossTabFocusMode ||
-      Boolean(t) ||
+      Boolean(teamQ) ||
       Boolean(e) ||
       Boolean(f) ||
       state.exactOrgTeam !== null ||
@@ -1194,14 +1277,22 @@
         } else if (rawOrg !== state.exactOrgTeam) {
           return false;
         }
-      } else if (t) {
+      } else if (teamQ) {
+        const orgK = normalizeTeamSearchKey(rowOrgTeam(row));
+        const dispK = normalizeTeamSearchKey(rowDisplayName(row));
         const teamMatched = useExactMatch
-          ? orgTeam === t || display === t
-          : orgTeam.includes(t) || display.includes(t);
+          ? orgK === teamQ || dispK === teamQ
+          : orgK.includes(teamQ) || dispK.includes(teamQ);
         if (!teamMatched) return false;
       }
 
-      if (crossTabFocusMode && !state.exactOrgTeam && t && hasTheFocusToken(t) && !rowIsFocus) {
+      if (
+        crossTabFocusMode &&
+        !state.exactOrgTeam &&
+        teamQ &&
+        hasTheFocusToken(qTeam?.value ?? "") &&
+        !rowIsFocus
+      ) {
         return false;
       }
 
@@ -2075,6 +2166,21 @@
       visibleOrgs.innerHTML = "";
       return;
     }
+
+    const chipQuery = normalizeTeamSearchKey((qTeam?.value ?? "").trim());
+    if (chipQuery && state.exactOrgTeam === null) {
+      const dispForOrg = (orgName) => {
+        const hit = state.filtered.find((row) => String(rowOrgTeam(row) ?? "").trim() === orgName);
+        return hit ? String(rowDisplayName(hit) ?? "").trim() : "";
+      };
+      names.sort((a, b) => {
+        const sb = scoreOrgChipForTeamQuery(b, dispForOrg(b), chipQuery);
+        const sa = scoreOrgChipForTeamQuery(a, dispForOrg(a), chipQuery);
+        if (sb !== sa) return sb - sa;
+        return compareScriptOrder(a, b);
+      });
+    }
+
     visibleOrgs.hidden = false;
     visibleOrgs.innerHTML = "";
 
@@ -2511,6 +2617,36 @@
       renderBrowsePanel();
     });
   }
+
+  if (browseOrgFilterInput) {
+    browseOrgFilterInput.addEventListener("input", () => {
+      if (!state.browseOpen) return;
+      renderBrowseOverlayChips();
+      browseButtonList.scrollTop = 0;
+    });
+  }
+
+  if (browseOrgClose) {
+    browseOrgClose.addEventListener("click", () => {
+      state.browseOpen = false;
+      renderBrowsePanel();
+      browseByOrg?.focus({ preventScroll: true });
+    });
+  }
+
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key !== "Escape" || !state.browseOpen) return;
+    ev.preventDefault();
+    state.browseOpen = false;
+    renderBrowsePanel();
+    browseByOrg?.focus({ preventScroll: true });
+  });
+
+  window.__marchinzCloseVideosBrowseOverlay = () => {
+    if (!state.browseOpen) return;
+    state.browseOpen = false;
+    renderBrowsePanel();
+  };
 
   if (visibleOrgs) {
     visibleOrgs.addEventListener("click", (ev) => {

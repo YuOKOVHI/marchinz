@@ -1,5 +1,5 @@
 /* MarchinZ PWA — bump CACHE when shell/offline behavior should refresh (deploy with index bump). */
-const CACHE = "marchinz-pwa-v1.10.0";
+const CACHE = "marchinz-pwa-v1.12.14";
 
 self.addEventListener("install", (event) => {
   const origin = self.location.origin;
@@ -74,6 +74,10 @@ self.addEventListener("fetch", (event) => {
     return;
   }
   if (url.origin !== self.location.origin) return;
+  // Firebase Auth helper / iframe 通信は SW で一切触らない（browser native 通信へ完全委譲）
+  if (url.pathname.startsWith("/__/auth/") || url.pathname.startsWith("/__/firebase/")) {
+    return;
+  }
   if (url.pathname.endsWith("/sw.js")) return;
   if (request.mode === "navigate" && navigationLooksLikeFirebaseAuthReturn(url)) {
     return;

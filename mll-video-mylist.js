@@ -49,6 +49,22 @@
     return window.MLL_AUTH?.getDb?.() || null;
   }
 
+  function normalizeVisibility(raw) {
+    return String(raw || "").trim() === "private" ? "private" : "public";
+  }
+
+  function showBusyOverlay() {
+    window.MarchinZProcessingOverlay?.show?.("処理中...");
+  }
+
+  function hideBusyOverlay() {
+    window.MarchinZProcessingOverlay?.hide?.();
+  }
+
+  function alertErr(err, fallback) {
+    window.alert(`code: ${(err?.code || "unknown").toString()}\nmessage: ${(err?.message || fallback || "処理に失敗しました。").toString()}`);
+  }
+
   function normLbBookmarks(raw) {
     const o = {};
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return o;
@@ -309,7 +325,7 @@
     return m;
   }
 
-  /** @returns {Promise<{ id: string; name: string; visibility: string; list_order: number }[]>} */
+  /** @returns {Promise<{ id: string; name: string; oshi_text: string; visibility: string; list_order: number }[]>} */
   async function loadListMetas(user, db) {
     await ensureDefaultList(user, db);
     const snap = await db
@@ -326,12 +342,13 @@
       out.push({
         id: doc.id,
         name: String(d.name || doc.id).trim() || doc.id,
+        oshi_text: String(d.oshi_text || "").trim(),
         visibility: String(d.visibility || "public").trim() === "private" ? "private" : "public",
         list_order: Number.isFinite(lo) ? lo : doc.id === DEFAULT_LIST_ID ? 0 : 500000,
       });
     });
     if (!out.some((x) => x.id === DEFAULT_LIST_ID)) {
-      out.unshift({ id: DEFAULT_LIST_ID, name: "マイリスト", visibility: "public", list_order: 0 });
+      out.unshift({ id: DEFAULT_LIST_ID, name: "マイリスト", oshi_text: "", visibility: "public", list_order: 0 });
     }
     out.sort((a, b) => {
       if (a.list_order !== b.list_order) return a.list_order - b.list_order;
@@ -445,19 +462,28 @@
     const sid = sanitizeListId(id);
     const now = new Date().toISOString();
     const maxO = await getMaxVideoListOrder(user, db);
-    await db
-      .collection("mll_profiles")
-      .doc(user.id)
-      .collection("video_lists")
-      .doc(sid)
-      .set({
-        name: String(name || "マイリスト").trim().slice(0, 120) || "マイリスト",
-        visibility: visibility === "private" ? "private" : "public",
-        list_order: maxO + 100,
-        created_at: now,
-        updated_at: now,
-      });
-    return sid;
+    showBusyOverlay();
+    try {
+      await db
+        .collection("mll_profiles")
+        .doc(user.id)
+        .collection("video_lists")
+        .doc(sid)
+        .set({
+          name: String(name || "マイリスト").trim().slice(0, 120) || "マイリスト",
+          oshi_text: "",
+          visibility: normalizeVisibility(visibility),
+          list_order: Number(maxO + 100),
+          created_at: now,
+          updated_at: now,
+        });
+      return sid;
+    } catch (e) {
+      alertErr(e, "リストの作成に失敗しました。");
+      return null;
+    } finally {
+      hideBusyOverlay();
+    }
   }
 
   async function renameVideoList(listId, rawName) {
@@ -470,10 +496,33 @@
       return;
     }
     const now = new Date().toISOString();
+    showBusyOverlay();
+    try {
+      await db.collection("mll_profiles").doc(user.id).collection("video_lists").doc(listId).set(
+        {
+          name: nm,
+          updated_at: now,
+        },
+        { merge: true },
+      );
+      await refreshCache();
+    } catch (e) {
+      alertErr(e, "リスト名の更新に失敗しました。");
+      return;
+    } finally {
+      hideBusyOverlay();
+    }
+  }
+
+  async function updateVideoListOshiText(listId, rawText) {
+    const user = getUser();
+    const db = getDb();
+    if (!user?.id || !db || !listId) return;
+    const txt = String(rawText || "").trim().slice(0, 240);
     await db.collection("mll_profiles").doc(user.id).collection("video_lists").doc(listId).set(
       {
-        name: nm,
-        updated_at: now,
+        oshi_text: txt,
+        updated_at: new Date().toISOString(),
       },
       { merge: true },
     );
@@ -499,8 +548,8 @@
     const refA = db.collection("mll_profiles").doc(user.id).collection("video_lists").doc(a.id);
     const refB = db.collection("mll_profiles").doc(user.id).collection("video_lists").doc(b.id);
     const batch = db.batch();
-    batch.set(refA, { list_order: b.list_order, updated_at: now }, { merge: true });
-    batch.set(refB, { list_order: a.list_order, updated_at: now }, { merge: true });
+    batch.set(refA, { list_order: Number(b.list_order), updated_at: now }, { merge: true });
+    batch.set(refB, { list_order: Number(a.list_order), updated_at: now }, { merge: true });
     await batch.commit();
     await refreshCache();
   }
@@ -555,13 +604,21 @@
     const db = getDb();
     if (!user?.id || !db) return;
     const now = new Date().toISOString();
-    await db
-      .collection("mll_profiles")
-      .doc(user.id)
-      .collection("video_lists")
-      .doc(listId)
-      .set({ visibility: visibility === "private" ? "private" : "public", updated_at: now }, { merge: true });
-    await refreshCache();
+    showBusyOverlay();
+    try {
+      await db
+        .collection("mll_profiles")
+        .doc(user.id)
+        .collection("video_lists")
+        .doc(listId)
+        .set({ visibility: normalizeVisibility(visibility), updated_at: now }, { merge: true });
+      await refreshCache();
+    } catch (e) {
+      alertErr(e, "公開設定の更新に失敗しました。");
+      return;
+    } finally {
+      hideBusyOverlay();
+    }
   }
 
   function requestLoginThenAdd(row) {
@@ -777,6 +834,7 @@
               meta: {
                 id: lid,
                 name: lid === DEFAULT_LIST_ID ? "マイリスト" : lid,
+                  oshi_text: "",
                 visibility: "public",
                 list_order: lid === DEFAULT_LIST_ID ? 0 : 500000,
               },
@@ -831,6 +889,10 @@
           const h4 = document.createElement("h4");
           h4.className = "mll-mylist-list-name";
           h4.textContent = block.meta.name;
+          const oshiText = String(block.meta.oshi_text || "").trim();
+          const oshiLead = document.createElement("p");
+          oshiLead.className = `mll-mylist-oshi-display${oshiText ? "" : " is-placeholder"}`;
+          oshiLead.textContent = oshiText || "ドリルも演奏も大好き！○○分のここがイイ！";
           const right = document.createElement("div");
           right.className = "mll-mylist-list-head-right";
           const listTools = document.createElement("div");
@@ -904,7 +966,33 @@
             sm.setupSearchLikeShareMenuForButton(shareBtn, shareText, shareUrl);
           }
           head.appendChild(h4);
+          head.appendChild(oshiLead);
           head.appendChild(right);
+
+          const oshiEdit = document.createElement("div");
+          oshiEdit.className = "mll-mylist-oshi-edit-row";
+          const oshiInput = document.createElement("textarea");
+          oshiInput.className = "mll-mylist-oshi-input";
+          oshiInput.rows = 2;
+          oshiInput.maxLength = 240;
+          oshiInput.placeholder = "ドリルも演奏も大好き！○○分のここがイイ！";
+          oshiInput.value = String(block.meta.oshi_text || "");
+          const oshiSaveBtn = document.createElement("button");
+          oshiSaveBtn.type = "button";
+          oshiSaveBtn.className = "btn-reset-search mll-mylist-oshi-save";
+          oshiSaveBtn.textContent = "マイ推し！を保存";
+          oshiSaveBtn.addEventListener("click", () => {
+            void (async () => {
+              try {
+                await updateVideoListOshiText(block.meta.id, oshiInput.value);
+                setMsg("マイ推し！を保存しました。", false);
+              } catch (e) {
+                setMsg(String(e?.message || "マイ推し！の保存に失敗しました。"), true);
+              }
+            })();
+          });
+          oshiEdit.appendChild(oshiInput);
+          oshiEdit.appendChild(oshiSaveBtn);
 
           const ul = document.createElement("ul");
           ul.className = "mll-mylist-video-list";
@@ -960,6 +1048,7 @@
             ul.appendChild(li);
           }
           sec.appendChild(head);
+          sec.appendChild(oshiEdit);
           sec.appendChild(ul);
           frag.appendChild(sec);
         }
@@ -987,6 +1076,7 @@
     requestLoginThenAdd,
     createList,
     renameList: renameVideoList,
+    updateListOshiText: updateVideoListOshiText,
     moveListOrder: moveVideoListOrder,
     moveBookmarkOrder: moveVideoBookmarkOrder,
     DEFAULT_LIST_ID,

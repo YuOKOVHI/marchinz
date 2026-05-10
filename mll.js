@@ -7,7 +7,14 @@
   const inputVenue = document.getElementById("mll-venue");
   const selectRole = document.getElementById("mll-role");
   const inputOfficialUrl = document.getElementById("mll-official-url");
+  const selectEventKind = document.getElementById("mll-event-kind");
   const roleButtons = document.getElementById("mll-role-buttons");
+  const btnSave = document.getElementById("btn-mll-save");
+  const errorEventName = document.getElementById("mll-error-event-name");
+  const errorEventDate = document.getElementById("mll-error-event-date");
+  const errorVenue = document.getElementById("mll-error-venue");
+  const errorRole = document.getElementById("mll-error-role");
+  const errorEventKind = document.getElementById("mll-error-event-kind");
   const msg = document.getElementById("mll-create-msg");
   const list = document.getElementById("mll-log-list");
   const eventList = document.getElementById("mll-event-list");
@@ -15,7 +22,8 @@
   const profileCard = document.getElementById("mll-profile-card");
   const rolePreview = document.getElementById("mll-role-preview");
 
-  if (!form || !list || !inputName || !inputDate || !selectRole) return;
+  const CALENDAR_KIND_OPTIONS = ["演奏会", "大会", "イベント"];
+  if (!form || !list || !inputName || !inputDate || !selectRole || !selectEventKind) return;
 
   /** Firestore 保存値は watch / perform / team_staff / ops（旧 staff は team_staff に読み替え） */
   const ROLE_LABEL = {
@@ -140,6 +148,19 @@
     if (!msg) return;
     msg.textContent = text;
     msg.style.color = isError ? "#b71c1c" : "";
+  }
+
+  function setFieldError(node, text) {
+    if (!node) return;
+    node.textContent = String(text || "");
+  }
+
+  function clearFieldErrors() {
+    setFieldError(errorEventName, "");
+    setFieldError(errorEventDate, "");
+    setFieldError(errorVenue, "");
+    setFieldError(errorRole, "");
+    setFieldError(errorEventKind, "");
   }
 
   function profileForUserId(userId, fallbackName = UNKNOWN_USER, fallbackAvatar = "") {
@@ -662,8 +683,7 @@
     const loggedIn = Boolean(user);
     const withdrawn = Boolean(window.MLL_AUTH?.isWithdrawn?.());
     const panelOpen = eventsRegisterPanelOpen();
-    const disableMll =
-      !loggedIn || withdrawn || !panelOpen;
+    const disableMll = !loggedIn || withdrawn || !panelOpen;
 
     form.querySelectorAll("input,select,textarea,button").forEach((el) => {
       const tag = String(el.tagName || "").toLowerCase();
@@ -683,36 +703,21 @@
     } else if (withdrawn) {
       setMessage("退会済みのアカウントではログを保存できません。", true);
     } else {
-      setMessage("ログイン中。ライフログを作成できます。", false);
+      setMessage("", false);
     }
     void refreshMLLView();
   }
 
-  async function persistRemote(log) {
-    const db = getFirestoreDb();
-    if (!db) return;
-    const payload = {
-      id: log.id,
-      user_id: log.user_id,
-      event_name: log.event_name,
-      event_date: log.event_date,
-      venue: log.venue,
-      role: log.role,
-      role_label: log.role_label,
-      note: log.note,
-      ticket_url: log.ticket_url,
-      official_url: log.official_url,
-      creator_name: log.creator_name,
-      creator_avatar: log.creator_avatar,
-      created_at: log.created_at,
-      liked_by: normalizeLikedBy(log.liked_by),
-      visibility: logVisibility(log),
-    };
-    await db.collection("mll_logs").doc(String(log.id)).set(payload, { merge: true });
+  function mapRoleToParticipation(role) {
+    if (role === "perform") return "出演";
+    if (role === "team_staff") return "チームスタッフ";
+    if (role === "ops") return "運営";
+    return "観戦";
   }
 
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
+
     const user = getAuthUser();
     if (!user) {
       window.MarchinZNavigateAuthEntry?.("signup", "mll_save");
@@ -722,22 +727,49 @@
       setMessage("退会済みのアカウントではログを保存できません。", true);
       return;
     }
+
+    clearFieldErrors();
     const eventName = inputName.value.trim();
     const eventDate = inputDate.value;
     const venue = (inputVenue?.value || "").trim();
     const roleRaw = String(selectRole.value || "").trim();
     const role = roleRaw ? canonicalRole(roleRaw) : "";
+    const calendarKind = String(selectEventKind.value || "").trim();
     const note = "";
     const ticketUrl = "";
     const officialUrl = String(inputOfficialUrl?.value || "").trim();
-    if (!eventName || !eventDate || !venue || !role) {
-      setMessage("必須項目が未入力です。入力内容をご確認ください。", true);
+
+    let hasError = false;
+    if (!eventName) {
+      setFieldError(errorEventName, "入力してください");
+      hasError = true;
+    }
+    if (!eventDate) {
+      setFieldError(errorEventDate, "入力してください");
+      hasError = true;
+    }
+    if (!venue) {
+      setFieldError(errorVenue, "選択してください");
+      hasError = true;
+    }
+    if (!roleRaw) {
+      setFieldError(errorRole, "選択してください");
+      hasError = true;
+    }
+    if (!CALENDAR_KIND_OPTIONS.includes(calendarKind)) {
+      setFieldError(errorEventKind, "選択してください");
+      hasError = true;
+    }
+    if (hasError) {
+      setMessage("必須項目を入力してください。", true);
       return;
     }
+
     if (officialUrl && !/^https:\/\//i.test(officialUrl)) {
       setMessage("URLの形式が正しくありません。https:// から始まるURLを入力してください。", true);
       return;
     }
+
     const creatorName = displayNameFromUser(user);
     const creatorAvatar = user.user_metadata?.avatar_url || "";
     const visibility = "public";
@@ -758,22 +790,128 @@
       liked_by: {},
       visibility,
     });
-    const logs = loadLogs();
-    logs.push(log);
-    saveLogs(logs);
-    try {
-      await persistRemote(log);
-    } catch (e) {
-      console.warn("[mll] persist failed", e);
-      setMessage("保存に失敗しました。通信状況を確認して再度お試しください。", true);
+
+    const participation_format = mapRoleToParticipation(String(log.role || ""));
+    const date = String(log.event_date || "").trim();
+    const title = String(log.event_name || "").trim().slice(0, 200);
+    const venue_pref = String(log.venue || "").trim().slice(0, 48);
+    const event_url = String(log.official_url || "").trim().slice(0, 2000);
+    const created_by = String(log.user_id);
+    const creator_display_name = String(log.creator_name || UNKNOWN_USER).trim().slice(0, 200);
+    const creator_avatar_url = String(log.creator_avatar || "").trim();
+    const created_at = new Date().toISOString();
+    const payload = {
+      kind: calendarKind,
+      date,
+      title,
+      venue_pref,
+      event_url,
+      participation_format,
+      created_by,
+      liked_by: {},
+      creator_display_name,
+      creator_avatar_url,
+      created_at,
+    };
+
+    const db = getFirestoreDb();
+    if (!db) {
+      window.alert("Firestore が利用できません。ページを再読み込みしてからお試しください。");
       return;
     }
-    form.reset();
-    if (inputVenue) inputVenue.value = "";
-    roleButtons?.querySelectorAll(".mll-role-btn").forEach((node) => node.classList.remove("is-active"));
-    updateRolePreview();
-    setMessage("イベントを保存しました。");
-    await refreshMLLView();
+
+    const logPayload = {
+      id: log.id,
+      user_id: log.user_id,
+      event_name: log.event_name,
+      event_date: log.event_date,
+      venue: log.venue,
+      role: log.role,
+      role_label: log.role_label,
+      note: log.note,
+      ticket_url: log.ticket_url,
+      official_url: log.official_url,
+      creator_name: log.creator_name,
+      creator_avatar: log.creator_avatar,
+      created_at: log.created_at,
+      liked_by: {},
+      visibility: logVisibility(log),
+    };
+
+    // Firestore Web では enableIndexedDbPersistence を呼んでいないため、IndexedDB オフライン永続化は無効（公式どおりメモリ中心）。
+    // Auth の setPersistence(LOCAL) は認証ストレージであり、Firestore のオフラインキャッシュとは別レイヤ。
+
+    if (btnSave) btnSave.disabled = true;
+    const saveDeadlineMs = 8000;
+    let timeoutId = 0;
+    const saveStartedAt = typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
+    try {
+      const timeoutPromise = new Promise((_, reject) => {
+        timeoutId = window.setTimeout(() => {
+          reject(new Error("TIMEOUT_BLOCKED"));
+        }, saveDeadlineMs);
+      });
+
+      const savePromise = Promise.all([
+        db.collection("mll_logs").doc(String(log.id)).set(logPayload, { merge: true }),
+        db.collection("mll_calendar_events").add(payload),
+      ]);
+
+      await Promise.race([savePromise, timeoutPromise]);
+
+      window.alert("イベントを登録しました。");
+      window.MarchinZSetEventsRegisterExpanded?.(false);
+
+      const logs = loadLogs();
+      logs.push(log);
+      saveLogs(logs);
+      form.reset();
+      if (inputVenue) inputVenue.value = "";
+      roleButtons?.querySelectorAll(".mll-role-btn").forEach((node) => node.classList.remove("is-active"));
+      updateRolePreview();
+      clearFieldErrors();
+      setMessage("");
+      await refreshMLLView();
+    } catch (error) {
+      const elapsedMs =
+        typeof performance !== "undefined" && performance.now
+          ? Math.round(performance.now() - saveStartedAt)
+          : null;
+      const msg = String(error?.message || "");
+      const isTimeout = msg === "TIMEOUT_BLOCKED";
+      const firebaseCode = error?.code != null ? String(error.code) : "";
+      const firebaseMessage = error?.message != null ? String(error.message) : "";
+      const errorName = error?.name != null ? String(error.name) : "";
+
+      console.error("[mll] 保存エラー（分類）:", {
+        kind: isTimeout ? "promise_race_timeout" : "native_or_other",
+        isTimeout,
+        deadlineMs: saveDeadlineMs,
+        elapsedMs,
+        errorName,
+        firebaseCode,
+        firebaseMessage,
+        stack: error?.stack || "(no stack)",
+        raw: error,
+      });
+      console.error("[mll] 保存エラー（Firebase 互換フィールドのそのまま）:", {
+        code: error?.code,
+        message: error?.message,
+        name: error?.name,
+        customData: error?.customData,
+      });
+
+      if (isTimeout || error?.code === "unavailable") {
+        window.alert(
+          "通信がブロックされました。お使いのブラウザの「広告ブロック」や「トラッキング防止機能（Brave Shields等）」をオフにしてから再試行してください。"
+        );
+      } else {
+        window.alert("保存に失敗しました。時間をおいて再度お試しください。");
+      }
+    } finally {
+      if (timeoutId) window.clearTimeout(timeoutId);
+      if (btnSave) btnSave.disabled = false;
+    }
   });
 
   if (roleButtons) {
@@ -823,4 +961,7 @@
   syncAuthStateUI();
 
   window.MarchinZToggleMllLogLike = toggleMllLogLike;
+  window.MarchinZResyncMllEventFormUi = syncAuthStateUI;
+  /** カレンダー統合時に role_label を再計算するほかで利用 */
+  window.MarchinZMllBuildRoleLabel = buildRoleLabel;
 })();

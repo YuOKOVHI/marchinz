@@ -12,7 +12,6 @@
     "クラウドファンディング",
     "質問",
     "運営より",
-    "その他",
   ];
   const OLD_THEME_MAP = {
     クラファン募集: "クラウドファンディング",
@@ -20,8 +19,18 @@
     演奏会告知: "告知（出演・開催等）",
     演奏会・出演告知: "告知（出演・開催等）",
     大会開催告知: "告知（出演・開催等）",
-    見学募集: "その他",
+    見学募集: "質問",
+    その他: "質問",
   };
+  /** Firestore 等の内部キーは据え置き、画面表示だけ短くする */
+  const THEME_DISPLAY_LABEL = {
+    "告知（出演・開催等）": "出演/開催告知",
+    "クラウドファンディング": "クラファン",
+  };
+  function themeDisplayLabel(themeKey) {
+    const k = String(themeKey || "").trim();
+    return THEME_DISPLAY_LABEL[k] || k;
+  }
   const FILTER_ALL = "ALL";
   const MAX_COMMUNITY_IMAGES = 4;
   const COMMUNITY_MESSAGE = {
@@ -56,12 +65,20 @@
   const submitBtn = document.getElementById("community-submit");
   const composeOverlay = document.getElementById("community-compose-overlay");
   const openComposeBtn = document.getElementById("community-open-compose");
+  const composeAuthPhase = document.getElementById("community-compose-auth-phase");
+  const composeFormWrap = document.getElementById("community-compose-form-wrap");
+  const composeHeadingEl = document.getElementById("community-compose-heading");
+  const COMPOSE_HEADING_DEFAULT = "新規話題を投稿";
+  const COMPOSE_HEADING_AUTH = "ログイン・登録";
   const feedMsgEl = document.getElementById("community-feed-msg");
   const moderationListEl = document.getElementById("moderation-list");
   const moderationNoteEl = document.getElementById("moderation-note");
   const topicImagesInput = document.getElementById("community-images");
   const topicImagesPreview = document.getElementById("community-images-preview");
   const topicImagesNote = document.getElementById("community-images-note");
+  const errorThemeEl = document.getElementById("community-error-theme");
+  const errorTitleEl = document.getElementById("community-error-title");
+  const errorContentEl = document.getElementById("community-error-content");
   let cachedPosts = [];
   let cachedReports = [];
   let composeOverlayActive = false;
@@ -89,6 +106,27 @@
 
   function getDb() {
     return window.MLL_AUTH?.getDb?.() || null;
+  }
+
+  function setFieldError(el, message) {
+    if (!(el instanceof HTMLElement)) return;
+    const msg = String(message || "").trim();
+    el.textContent = msg;
+    el.hidden = !msg;
+  }
+
+  function clearFormErrors() {
+    setFieldError(errorThemeEl, "");
+    setFieldError(errorTitleEl, "");
+    setFieldError(errorContentEl, "");
+  }
+
+  function showBusyOverlay() {
+    window.MarchinZProcessingOverlay?.show?.("処理中...");
+  }
+
+  function hideBusyOverlay() {
+    window.MarchinZProcessingOverlay?.hide?.();
   }
 
   function authorWithdrawn(userId) {
@@ -190,11 +228,18 @@
     }
   }
 
+  function resetComposeOverlayPanels() {
+    if (composeAuthPhase) composeAuthPhase.hidden = true;
+    if (composeFormWrap) composeFormWrap.hidden = false;
+    if (composeHeadingEl) composeHeadingEl.textContent = COMPOSE_HEADING_DEFAULT;
+  }
+
   function closeComposeOverlay() {
     if (!composeOverlayActive) return;
     composeOverlay.hidden = true;
     composeOverlay.setAttribute("aria-hidden", "true");
     composeOverlayActive = false;
+    resetComposeOverlayPanels();
     attachModalEscapeIfNeeded();
     syncBodyModalLock();
     try {
@@ -204,8 +249,17 @@
     }
   }
 
-  function openComposeOverlay() {
+  function openComposeOverlay(options = {}) {
     setMsg("", false);
+    const guest = !currentUser()?.id;
+    const showAuth = Boolean(options.authOnly) && guest;
+    if (composeAuthPhase && composeFormWrap) {
+      composeAuthPhase.hidden = !showAuth;
+      composeFormWrap.hidden = showAuth;
+    }
+    if (composeHeadingEl) {
+      composeHeadingEl.textContent = showAuth ? COMPOSE_HEADING_AUTH : COMPOSE_HEADING_DEFAULT;
+    }
     composeOverlay.hidden = false;
     composeOverlay.setAttribute("aria-hidden", "false");
     composeOverlayActive = true;
@@ -214,7 +268,10 @@
     requestAnimationFrame(() => {
       const closeBtn = composeOverlay.querySelector(".community-compose-close-btn");
       const u = currentUser();
-      if (u?.id && titleEl && !titleEl.disabled) {
+      const authFirst = composeAuthPhase?.querySelector?.("a[data-mll-auth-entry]");
+      if (showAuth && authFirst) {
+        authFirst.focus();
+      } else if (u?.id && titleEl && !titleEl.disabled) {
         titleEl.focus();
       } else if (closeBtn) {
         closeBtn.focus();
@@ -225,8 +282,8 @@
   function normalizeTheme(t) {
     const s = String(t || "").trim();
     if (THEMES.includes(s)) return s;
-    if (OLD_THEME_MAP[s]) return OLD_THEME_MAP[s];
-    return "その他";
+    if (OLD_THEME_MAP[s]) return normalizeTheme(OLD_THEME_MAP[s]);
+    return "質問";
   }
 
   function normalizePostDoc(raw) {
@@ -1002,7 +1059,7 @@
 
       const theme = document.createElement("p");
       theme.className = "community-theme-tag";
-      theme.textContent = `【${root.theme}】`;
+      theme.textContent = `【${themeDisplayLabel(root.theme)}】`;
 
       const head = document.createElement("div");
       head.className = "community-post-head";
@@ -1282,9 +1339,9 @@
       const fallback = cachedPosts.find((x) => x.id === post.thread_root_id);
       const th = fallback ? fallback.theme : post.theme;
       const ti = fallback ? fallback.title : post.title;
-      return { themeLabel: normalizeTheme(th), titleLabel: ti || "（削除済みの話題）" };
+      return { themeLabel: themeDisplayLabel(normalizeTheme(th)), titleLabel: ti || "（削除済みの話題）" };
     }
-    return { themeLabel: normalizeTheme(root.theme), titleLabel: root.title };
+    return { themeLabel: themeDisplayLabel(normalizeTheme(root.theme)), titleLabel: root.title };
   }
 
   async function editPost(postId) {
@@ -1483,7 +1540,7 @@
     topicImageSlots?.setEnabled(canUseImages);
     if (topicImagesNote) {
       topicImagesNote.textContent = canUseImages
-        ? `任意で最大${MAX_COMMUNITY_IMAGES}枚。アップロード前に長辺最大1024px・目安300KB以下のJPEGへ自動圧縮（元が${Math.floor(rawInputMaxBytes() / 1048576)}MB超は不可）。`
+        ? `任意で最大${MAX_COMMUNITY_IMAGES}枚。アップロード時に自動で圧縮されます（元が${Math.floor(rawInputMaxBytes() / 1048576)}MB超は不可）。`
         : "画像付き投稿を使う場合は Firebase で Storage を有効化し auth-config の storageBucket を設定してください（未設定時はテキストのみ）。";
     }
 
@@ -1548,26 +1605,34 @@
   });
 
   openComposeBtn.addEventListener("click", () => {
+    setFeedMsg("", false);
     if (!currentUser()?.id) {
-      try {
-        sessionStorage.setItem(SS_INTENT_COMMUNITY_COMPOSE, "1");
-      } catch {
-        //
-      }
-      window.MarchinZNavigateAuthEntry?.("signup", "community_compose");
+      openComposeOverlay({ authOnly: true });
       return;
     }
-    setFeedMsg("", false);
-    openComposeOverlay();
+    openComposeOverlay({ authOnly: false });
   });
 
-  composeOverlay.addEventListener("click", (ev) => {
-    if (!ev.target.closest("[data-community-compose-close]")) return;
-    closeComposeOverlay();
-  });
+  composeOverlay.addEventListener(
+    "click",
+    (ev) => {
+      const authLink = ev.target.closest?.("a[data-mll-auth-entry]");
+      if (authLink && composeAuthPhase?.contains?.(authLink)) {
+        try {
+          sessionStorage.setItem(SS_INTENT_COMMUNITY_COMPOSE, "1");
+        } catch {
+          //
+        }
+      }
+      if (!ev.target.closest("[data-community-compose-close]")) return;
+      closeComposeOverlay();
+    },
+    true,
+  );
 
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
+    clearFormErrors();
     const user = currentUser();
     if (!user?.id) {
       try {
@@ -1582,15 +1647,28 @@
       setMsg("退会済みのアカウントでは投稿できません。", true);
       return;
     }
+    if (window.MLL_AUTH?.isLegalGateBlocking?.()) {
+      setMsg("利用規約・プライバシーポリシーへの同意が完了するまで投稿できません。", true);
+      return;
+    }
     const title = String(titleEl.value || "").trim();
     const content = String(contentEl.value || "").trim();
     const files = topicImageSlots.getFiles().slice(0, MAX_COMMUNITY_IMAGES);
-    if (!title) {
-      setMsg("タイトルを入力してください。", true);
+    const theme = String(selectedFormTheme() || "").trim();
+    const normalizedTheme = normalizeTheme(theme);
+    if (!THEMES.includes(normalizedTheme)) {
+      setFieldError(errorThemeEl, "選択してください");
+      setMsg("カテゴリを選択してください。", true);
       return;
     }
-    if (!content && !files.length) {
-      setMsg("本文を入力するか、画像を1枚以上選んでください。", true);
+    if (!title) {
+      setFieldError(errorTitleEl, "入力してください");
+      setMsg("必須項目を入力してください。", true);
+      return;
+    }
+    if (!content) {
+      setFieldError(errorContentEl, "入力してください");
+      setMsg("必須項目を入力してください。", true);
       return;
     }
     if (files.length && !storageAvailable()) {
@@ -1598,10 +1676,12 @@
       return;
     }
     submitBtn.disabled = true;
+    showBusyOverlay();
     let image_urls = [];
     try {
       if (files.length) image_urls = await buildImageUrlsFromFiles(user.id, files);
       if (!content.trim() && !image_urls.length) {
+        setFieldError(errorContentEl, "入力してください");
         setMsg("本文または画像を投稿してください。", true);
         return;
       }
@@ -1610,7 +1690,7 @@
       const id = `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
       const post = {
         id,
-        theme: normalizeTheme(selectedFormTheme()),
+        theme: normalizedTheme,
         thread_root_id: id,
         title,
         content: content.trim(),
@@ -1637,9 +1717,11 @@
       } else {
         setMsg(communityFriendlyErrorMessage(e, COMMUNITY_MESSAGE.postFailed), true);
       }
+      window.alert(`code: ${(e?.code || "unknown").toString()}\nmessage: ${(e?.message || COMMUNITY_MESSAGE.postFailed).toString()}`);
     } finally {
       const w = Boolean(window.MLL_AUTH?.isWithdrawn?.());
       submitBtn.disabled = !Boolean(currentUser()?.id) || w;
+      hideBusyOverlay();
     }
   });
 

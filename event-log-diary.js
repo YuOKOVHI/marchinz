@@ -112,7 +112,7 @@
     const isOwner = Boolean(viewerId && viewerId === targetUid);
     const msg = q(root, "[data-eld-msg]");
     if (msg) {
-      msg.textContent = "読み込み中…";
+      msg.textContent = "";
       msg.hidden = false;
     }
 

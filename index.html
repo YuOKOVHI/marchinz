@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-version="1.10.0">
+<html lang="ja" data-mz-version="1.12.14">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -37,12 +37,12 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <link rel="manifest" href="manifest.webmanifest?v=1.10.0" />
-    <link rel="apple-touch-icon" href="pwa/icon-192.png?v=1.10.0" />
-    <link rel="icon" type="image/x-icon" href="favicon.ico?v=1.10.0" />
-    <link rel="icon" type="image/png" href="favicon.png?v=1.10.0" />
+    <link rel="manifest" href="manifest.webmanifest?v=1.12.14" />
+    <link rel="apple-touch-icon" href="pwa/icon-192.png?v=1.12.14" />
+    <link rel="icon" type="image/x-icon" href="favicon.ico?v=1.12.14" />
+    <link rel="icon" type="image/png" href="favicon.png?v=1.12.14" />
     <title>マーチンズ/MarchinZ | 残す、見つける、盛り上げる！マーチングコミュニティ「マーチンズ」</title>
-    <link rel="stylesheet" href="styles.css?v=1.10.0" />
+    <link rel="stylesheet" href="styles.css?v=1.12.14" />
   </head>
   <body>
     <header class="site-brand" role="banner">
@@ -265,8 +265,45 @@
         <div class="mz-dialog-body">
           <form id="profile-form" class="profile-form mz-profile-dialog-form" data-mz-profile-form>
             <label class="search-label-full">
-              表示名
-              <input type="text" id="profile-display-name" maxlength="40" autocomplete="nickname" />
+              ニックネーム（表示名）
+              <input type="text" id="profile-display-name" maxlength="120" required autocomplete="nickname" />
+            </label>
+            <p id="profile-error-display-name" class="mll-field-error" hidden></p>
+            <label class="search-label-full calendar-ev-venue-label">
+              都道府県（必須）
+              <select id="profile-prefecture" required aria-label="都道府県"></select>
+            </label>
+            <p id="profile-error-prefecture" class="mll-field-error" hidden></p>
+            <label class="mz-profile-checkbox-label">
+              <input type="checkbox" id="profile-address-prefecture-public" checked />
+              プロフィールページに都道府県を表示する（OFF にすると非公開）
+            </label>
+            <p class="mll-log-meta mz-profile-field-note">
+              ※ここで選ぶ都道府県は住所用です。イベントの開催地とは別に保存されます。
+            </p>
+            <label class="search-label-full">
+              性別（必須）
+              <select id="profile-gender" required aria-label="性別">
+                <option value="">選択してください</option>
+                <option value="男性">男性</option>
+                <option value="女性">女性</option>
+                <option value="その他">その他</option>
+                <option value="無回答">無回答</option>
+              </select>
+            </label>
+            <p id="profile-error-gender" class="mll-field-error" hidden></p>
+            <label class="search-label-full">
+              誕生日（必須）
+              <input type="date" id="profile-birthdate" required aria-label="誕生日" min="1900-01-01" />
+            </label>
+            <p class="mll-log-meta calendar-ev-date-hint">
+              スマホ（iPhone など）では、日付のドラムロール式の選択が使えます。
+            </p>
+            <p class="mll-log-meta mz-profile-field-note">性別・誕生日は他のユーザーには表示されません。</p>
+            <p id="profile-error-birthdate" class="mll-field-error" hidden></p>
+            <label class="search-label-full">
+              プロフィール（自由入力・任意）
+              <textarea id="profile-bio" maxlength="4000" rows="4" placeholder="自己紹介やひとことなど"></textarea>
             </label>
             <label class="search-label-full">
               アイコン画像
@@ -301,6 +338,39 @@
               <button type="button" id="btn-profile-cancel" class="btn-reset-search">キャンセル</button>
             </div>
           </form>
+        </div>
+      </div>
+    </div>
+
+    <div id="mz-legal-policy-dialog" class="mz-dialog-overlay mz-dialog-overlay--legal-gate" hidden>
+      <div
+        class="mz-dialog mz-dialog--narrow"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="mz-legal-policy-dialog-title"
+      >
+        <div class="mz-dialog-head">
+          <h2 id="mz-legal-policy-dialog-title" class="mz-dialog-title">ご利用にあたっての確認</h2>
+        </div>
+        <div class="mz-dialog-body">
+          <p class="static-panel-lead mz-legal-gate-lead">
+            続けるには、次の要点および<a href="#terms" class="auth-inline-link">利用規約</a>・<a href="#privacy" class="auth-inline-link">プライバシーポリシー</a>へ同意してください。
+          </p>
+          <ul class="privacy-policy-list mz-legal-gate-bullets">
+            <li><strong>年齢制限：</strong>本サービスは13歳以上の方を対象としています。13歳未満の方はご利用いただけません。</li>
+            <li>
+              <strong>データの活用：</strong>当社は、取得した情報を統計的なデータ（特定の個人を識別できない形式）に加工した上で、提携パートナー（楽器メーカー等）へ提供し、サービスの向上やマーチング業界の発展に役立てることがあります。
+            </li>
+          </ul>
+          <label class="mz-profile-checkbox-label">
+            <input type="checkbox" id="mz-legal-gate-agree-checkbox" />
+            <span>上記の要点および利用規約・プライバシーポリシーの内容に同意します。</span>
+          </label>
+          <p id="mz-legal-gate-error" class="mll-field-error" hidden></p>
+          <div class="search-share-row mz-legal-gate-actions">
+            <button type="button" id="btn-legal-gate-accept" class="btn-share-search" disabled>同意して続ける</button>
+            <button type="button" id="btn-legal-gate-signout" class="btn-reset-search">ログアウト</button>
+          </div>
         </div>
       </div>
     </div>
@@ -423,7 +493,7 @@
               Googleでログイン
             </button>
           </div>
-          <p class="mll-create-msg auth-popup-hint">※ ブラウザにより別ウィンドウで開くか、Googleのページへ移動します。</p>
+          <p class="mll-create-msg auth-popup-hint">※ Googleの認証ページへ移動します（同じタブで続きます）。</p>
           <p id="auth-login-msg" class="mll-create-msg auth-entry-msg" aria-live="polite"></p>
           <label class="auth-consent-label">
             <input type="checkbox" id="auth-login-remember-session" checked />
@@ -449,6 +519,9 @@
             <p class="auth-register-lead">
               <a href="#terms" class="auth-inline-link">利用規約</a>および<a href="#privacy" class="auth-inline-link">プライバシーポリシー</a>を確認し、内容に同意してください。
             </p>
+            <p class="auth-legal-summary-snippet">
+              <strong>【重要】</strong>本サービスは<strong>13歳以上</strong>の方が対象です。取得情報を<strong>個人が特定されない統計</strong>に加工し、<strong>提携パートナー（楽器メーカー等）</strong>へ提供する場合があります（詳細はプライバシーポリシー）。
+            </p>
             <label class="auth-consent-label">
               <input type="checkbox" id="auth-signup-agree-terms" />
               <span>利用規約に同意する</span>
@@ -457,6 +530,14 @@
               <input type="checkbox" id="auth-signup-agree-privacy" />
               <span>プライバシーポリシーに同意する</span>
             </label>
+            <label class="auth-consent-label">
+              <input type="checkbox" id="auth-signup-age-13" />
+              <span>私は13歳以上です（13歳未満は利用できません）</span>
+            </label>
+            <label class="auth-consent-label">
+              <input type="checkbox" id="auth-signup-agree-stats-sharing" />
+              <span>統計データの第三者提供についてプライバシーポリシーを確認し、同意します</span>
+            </label>
           </div>
           <p id="auth-signup-consent-msg" class="mll-create-msg" aria-live="polite"></p>
           <div class="auth-entry-actions">
@@ -464,7 +545,7 @@
               MarchinZ に登録する
             </button>
           </div>
-          <p class="mll-create-msg auth-popup-hint">※ ブラウザにより別ウィンドウで開くか、Googleのページへ移動します。</p>
+          <p class="mll-create-msg auth-popup-hint">※ Googleの認証ページへ移動します（同じタブで続きます）。</p>
           <p id="auth-signup-msg" class="mll-create-msg auth-entry-msg" aria-live="polite"></p>
           <p class="auth-entry-switch">
             <a href="#login" class="static-panel-link" data-mll-auth-switch="login">すでに登録済みの方はログイン</a>
@@ -489,14 +570,19 @@
             MIX3<span class="tabs-tab-cross-sub">（スリークロス）</span>
           </button>
         </nav>
-        <p id="mix3-notice" class="rights-notice rights-notice-mix3" hidden>
-          *MIX3 （スリークロス）は、NPO法人マーチング祭の商標登録です。<a
-            href="https://www.marching-matsuri.com/mix3-rule-about"
-            target="_blank"
-            rel="noopener noreferrer"
-            >＜MIX3 についてはこちら＞</a
-          >
-        </p>
+        <div class="videos-tab-notice-block">
+          <p class="rights-notice rights-notice-mix3 videos-tab-notice-line">
+            *検索の都合上、表記を揃えている項目があります
+          </p>
+          <p id="mix3-notice" class="rights-notice rights-notice-mix3 videos-tab-notice-line" hidden>
+            *MIX3 （スリークロス）は、NPO法人マーチング祭の商標登録です。<a
+              href="https://www.marching-matsuri.com/mix3-rule-about"
+              target="_blank"
+              rel="noopener noreferrer"
+              >＜MIX3 についてはこちら＞</a
+            >
+          </p>
+        </div>
 
         <section class="search-panel" aria-labelledby="search-heading">
           <div class="search-inline-header">
@@ -508,7 +594,7 @@
                   id="browse-by-org"
                   class="browse-inline-trigger"
                   aria-expanded="false"
-                  aria-controls="browse-button-list"
+                  aria-controls="browse-org-overlay"
                 >
                   <span id="browse-by-org-label" class="browse-inline-trigger-label">団体一覧表示</span>
                 </button>
@@ -528,25 +614,18 @@
                     autocomplete="off"
                   />
                 </div>
-                <div
-                  id="browse-button-list"
-                  class="browse-button-list browse-button-list--below-team"
-                  role="region"
-                  aria-label="団体/チーム名から選択"
-                  hidden
-                ></div>
               </div>
             </div>
             <div class="search-row">
-              <label class="search-label-full">
-                フリーワード
+              <div class="search-field search-field--free">
+                <label class="search-label" for="q-free">フリーワード  </label>
                 <input
                   type="search"
                   id="q-free"
-                  placeholder="大会、タイトルなど"
+                  placeholder="大会名など"
                   autocomplete="off"
                 />
-              </label>
+              </div>
             </div>
           </div>
           <div class="search-share-row">
@@ -563,9 +642,13 @@
             </button>
           </div>
           <div class="search-history">
-            <p class="search-presets-title">最近検索した単語</p>
+            <div class="search-history-heading">
+              <p class="search-presets-title search-presets-title--history">最近検索した単語</p>
+              <button type="button" id="btn-reset-recent-searches" class="btn-reset-search btn-reset-search--history">
+                履歴をリセット
+              </button>
+            </div>
             <div id="recent-searches" class="search-presets-list"></div>
-            <button type="button" id="btn-reset-recent-searches" class="btn-reset-search">履歴をリセット</button>
           </div>
         </section>
         </section>
@@ -702,6 +785,53 @@
             </div>
           </div>
         </dialog>
+
+        <div
+          id="browse-org-overlay"
+          class="browse-org-overlay"
+          hidden
+        >
+          <div
+            class="browse-org-overlay__sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="browse-org-overlay-heading"
+            tabindex="-1"
+          >
+            <div class="browse-org-overlay__head">
+              <div class="browse-org-overlay__title-row">
+                <span id="browse-org-overlay-heading" class="browse-org-overlay__heading">団体一覧</span>
+                <span id="browse-org-overlay-count" class="browse-org-overlay__count"></span>
+              </div>
+              <div class="browse-org-overlay__filter-row">
+                <label class="browse-org-overlay__filter-label" for="browse-org-filter">検索</label>
+                <input
+                  type="search"
+                  id="browse-org-filter"
+                  class="browse-org-overlay__filter"
+                  autocomplete="off"
+                  enterkeyhint="search"
+                  placeholder="名前の一部で絞り込み"
+                />
+              </div>
+            </div>
+            <div class="browse-org-overlay__scroll">
+              <div
+                id="browse-button-list"
+                class="browse-button-list browse-button-list--overlay"
+                role="region"
+                aria-label="団体/チーム名から選択"
+                hidden
+              ></div>
+              <div class="browse-org-overlay__fade" aria-hidden="true"></div>
+            </div>
+            <div class="browse-org-overlay__footer">
+              <button type="button" id="browse-org-close" class="browse-org-overlay__close btn-share-search btn-marchinz-spotlight">
+                閉じる
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div id="page-mll" class="page page-mll">
@@ -715,9 +845,12 @@
                 <p class="mll-lp-hero-lead">
                   参加した大会・演奏会の記録からショウ動画の検索まで、ひとつの場で。あなたのマーチングライフを、もっと色鮮やかに。
                 </p>
-                <div class="mll-lp-hero-cta-row">
+                <div class="mll-lp-hero-cta-row" data-mll-top-guest-only>
                   <a href="#signup" class="mll-lp-btn mll-lp-btn--primary" data-mll-auth-entry="signup">はじめての方</a>
                   <a href="#login" class="mll-lp-btn mll-lp-btn--ghost" data-mll-auth-entry="login">ログイン</a>
+                </div>
+                <div class="mll-lp-hero-cta-row mll-lp-hero-cta-row--mypage" data-mll-top-user-only hidden>
+                  <a href="#profile" class="mll-lp-btn mll-lp-btn--primary">マイページ</a>
                 </div>
                 <div class="mll-lp-hero-subcta">
                   <a href="#community/events" data-page="community" class="mll-lp-inline-link">大会・演奏会を記録する</a>
@@ -838,9 +971,12 @@
               <p class="mll-lp-finale-text">
                 マーチンズに登録すると、MarchinZ Log・MarchinZ Note・MarchinZ Boardをご利用いただけます。
               </p>
-              <div class="mll-lp-finale-row">
+              <div class="mll-lp-finale-row" data-mll-top-guest-only>
                 <a href="#signup" class="mll-lp-btn mll-lp-btn--primary" data-mll-auth-entry="signup">登録する</a>
                 <a href="#login" class="mll-lp-btn mll-lp-btn--ghost" data-mll-auth-entry="login">ログイン</a>
+              </div>
+              <div class="mll-lp-finale-row mll-lp-finale-row--mypage" data-mll-top-user-only hidden>
+                <a href="#profile" class="mll-lp-btn mll-lp-btn--primary">マイページ</a>
               </div>
             </div>
           </section>
@@ -877,6 +1013,7 @@
                   <span id="prof-display-name" class="user-profile-display-name"></span>
                 </div>
                 <p id="prof-public-id" class="user-profile-public-id"></p>
+                <p id="prof-address-prefecture" class="user-profile-address-prefecture" hidden></p>
                 <div id="prof-attrs" class="user-profile-pills"></div>
                 <p id="prof-bio" class="user-profile-bio-public"></p>
                 <p id="prof-banned-note" class="user-profile-banned-note" hidden></p>
@@ -920,6 +1057,7 @@
                 tabindex="-1"
               >
                 通知
+                <span id="prof-vis-notifs" class="user-profile-tab-vis">未読/既読</span>
               </button>
               <button
                 type="button"
@@ -931,31 +1069,7 @@
                 aria-controls="prof-pane-mll"
                 tabindex="0"
               >
-                MarchinZ Log <span id="prof-count-mll" class="user-profile-tab-count">0</span>
-              </button>
-              <button
-                type="button"
-                class="user-profile-tab"
-                id="prof-tab-videos"
-                role="tab"
-                data-prof-tab="videos"
-                aria-selected="false"
-                aria-controls="prof-pane-videos"
-                tabindex="-1"
-              >
-                大会動画マイリスト <span id="prof-count-videos" class="user-profile-tab-count">0</span>
-              </button>
-              <button
-                type="button"
-                class="user-profile-tab"
-                id="prof-tab-yt"
-                role="tab"
-                data-prof-tab="yt"
-                aria-selected="false"
-                aria-controls="prof-pane-yt"
-                tabindex="-1"
-              >
-                YouTube マイリスト <span id="prof-count-yt" class="user-profile-tab-count">0</span>
+                MarchinZ Log <span id="prof-vis-mll" class="user-profile-tab-vis">公開中</span> <span id="prof-count-mll" class="user-profile-tab-count">0</span>
               </button>
               <button
                 type="button"
@@ -967,7 +1081,31 @@
                 aria-controls="prof-pane-logdiary"
                 tabindex="-1"
               >
-                MarchinZ Note <span id="prof-count-logdiary" class="user-profile-tab-count">0</span>
+                MarchinZ Note <span id="prof-vis-logdiary" class="user-profile-tab-vis">公開中</span> <span id="prof-count-logdiary" class="user-profile-tab-count">0</span>
+              </button>
+              <button
+                type="button"
+                class="user-profile-tab"
+                id="prof-tab-videos"
+                role="tab"
+                data-prof-tab="videos"
+                aria-selected="false"
+                aria-controls="prof-pane-videos"
+                tabindex="-1"
+              >
+                大会動画マイリスト <span id="prof-vis-videos" class="user-profile-tab-vis">公開中</span> <span id="prof-count-videos" class="user-profile-tab-count">0</span>
+              </button>
+              <button
+                type="button"
+                class="user-profile-tab"
+                id="prof-tab-yt"
+                role="tab"
+                data-prof-tab="yt"
+                aria-selected="false"
+                aria-controls="prof-pane-yt"
+                tabindex="-1"
+              >
+                YouTube マイリスト <span id="prof-vis-yt" class="user-profile-tab-vis">公開中</span> <span id="prof-count-yt" class="user-profile-tab-count">0</span>
               </button>
             </nav>
             <div
@@ -985,19 +1123,10 @@
               role="tabpanel"
               aria-labelledby="prof-tab-mll"
             >
+              <p class="user-profile-pane-lead">
+                マーチングライフを残そう。出演、参加、スタッフなど自分の記録。<a href="#community/events">イベントページから登録。</a>
+              </p>
               <div id="prof-mll-main"></div>
-            </div>
-            <div
-              id="prof-pane-videos"
-              class="user-profile-tab-pane"
-              hidden
-              role="tabpanel"
-              aria-labelledby="prof-tab-videos"
-            >
-              <div id="prof-mylist-videos" class="user-profile-mylist-videos-root"></div>
-            </div>
-            <div id="prof-pane-yt" class="user-profile-tab-pane" hidden role="tabpanel" aria-labelledby="prof-tab-yt">
-              <div id="prof-mylist-yt" class="user-profile-mylist-videos-root"></div>
             </div>
             <div
               id="prof-pane-logdiary"
@@ -1006,8 +1135,26 @@
               role="tabpanel"
               aria-labelledby="prof-tab-logdiary"
             >
-              <p class="user-profile-logdiary-lead">イベントごとの参加記録と写真です。</p>
+              <p class="user-profile-logdiary-lead">イベントごとにその時の思い出を写真とともに。</p>
               <div id="prof-log-diary-root" class="prof-log-diary-root"></div>
+            </div>
+            <div
+              id="prof-pane-videos"
+              class="user-profile-tab-pane"
+              hidden
+              role="tabpanel"
+              aria-labelledby="prof-tab-videos"
+            >
+              <p class="user-profile-pane-lead">
+                マイ推し！で自分の推しポイントも！<a href="#videos">大会動画ページから登録！</a>
+              </p>
+              <div id="prof-mylist-videos" class="user-profile-mylist-videos-root"></div>
+            </div>
+            <div id="prof-pane-yt" class="user-profile-tab-pane" hidden role="tabpanel" aria-labelledby="prof-tab-yt">
+              <p class="user-profile-pane-lead">
+                推し団体/チームの公式YouTubeをフォロー。<a href="#youtube">YouTubeページから登録！</a>
+              </p>
+              <div id="prof-mylist-yt" class="user-profile-mylist-videos-root"></div>
             </div>
           </div>
         </section>
@@ -1070,34 +1217,35 @@
             <h2 id="events-heading" class="mz-philosophy-heading">演奏会・大会・イベント</h2>
             <div class="mz-philosophy-rule" aria-hidden="true"></div>
           </header>
-          <p class="static-panel-lead">
-            演奏会や大会の観戦/出場の記録を残す「MarchinZ Log」
-          </p>
-
-          <div class="calendar-ev-register-intro">
-            <button
-              type="button"
-              id="calendar-ev-open-register"
-              class="btn-share-search btn-marchinz-spotlight calendar-ev-open-register-btn"
-              aria-expanded="false"
-              aria-controls="mll-events-register-reveal calendar-ev-form-body"
-            >
-              イベントを登録
-            </button>
-            <p class="mll-log-meta">
-              登録フロー: ① 開催日・開催地・タイトルを入力 → ② 参加スタイル（観戦/出演/チームスタッフ/運営）を選択 → ③ 必要ならURLやメモを追記 →
-              ④ 公開/非公開を選び保存。保存後は「これから」「過去」の一覧に自動反映されます。
-            </p>
+          <div class="calendar-events-head-band">
+            <div class="calendar-ev-lead-register-line">
+              <span class="static-panel-lead calendar-ev-lead-inline">演奏会や大会の観戦/出場の記録を残す「MarchinZ Log」</span>
+            </div>
+            <nav class="tabs youtube-tabs mz-tab-strip-yamap" role="tablist" aria-label="イベント種別の絞り込み">
+              <button type="button" class="youtube-tab-btn" role="tab" data-cal-kind="all" aria-selected="true">すべて</button>
+              <button type="button" class="youtube-tab-btn" role="tab" data-cal-kind="演奏会" aria-selected="false">演奏会</button>
+              <button type="button" class="youtube-tab-btn" role="tab" data-cal-kind="大会" aria-selected="false">大会</button>
+              <button type="button" class="youtube-tab-btn" role="tab" data-cal-kind="イベント" aria-selected="false">イベント</button>
+            </nav>
+            <div class="calendar-ev-register-action-row">
+              <button
+                type="button"
+                id="calendar-ev-open-register"
+                class="browse-inline-trigger calendar-ev-open-register-btn"
+                aria-expanded="false"
+                aria-controls="mll-events-register-reveal calendar-ev-form-body"
+              >
+                イベントを登録
+              </button>
+            </div>
           </div>
-
           <div id="mll-events-register-reveal" class="mll-events-register-reveal" hidden aria-hidden="true">
             <section class="mll-panel mll-events-mll-panel" aria-labelledby="mll-events-mll-heading">
-              <h2 id="mll-events-mll-heading" class="search-panel-title">MarchinZ Log</h2>
+              <h2 id="mll-events-mll-heading" class="search-panel-title">イベント入力</h2>
 
               <div id="mll-events-auth-gate" class="mll-events-auth-gate" hidden>
                 <p class="static-panel-lead mll-events-mll-lead">
-                  大会・演奏会などへの参加記録です。区分は<strong>観戦・出演・チームスタッフ・運営</strong>の4種類。開催日を過ぎると、表記が自然な過去形に切り替わります。
-                  入力テキストは「大会名（必須）」「開催日（必須）」「会場（任意）」「参加区分（必須）」「メモ（任意）」「チケットページURL（任意）」「公式ページURL（任意）」です。
+                  イベント登録にはログインが必要です。
                 </p>
                 <div class="mll-events-auth-gate-actions">
                   <a href="#signup" class="mll-lp-btn mll-lp-btn--primary" data-mll-auth-entry="signup">はじめての方</a>
@@ -1113,24 +1261,68 @@
 
               <div id="mll-events-mll-logged-block" class="mll-events-mll-logged-block" hidden>
                 <p class="static-panel-lead mll-events-mll-lead">
-                  イベント自体は公開で全員に共有されます。参加形式の公開/非公開はプロフィール設定で切り替えできます。
+                  イベントは全員に公開されます。参加形式の公開/非公開はプロフィール設定で切り替えできます。
                 </p>
                 <form id="mll-log-form" class="mll-form" autocomplete="off" lang="ja">
                   <label class="search-label-full">
                     演奏会/大会/イベント名（必須）
-                    <input type="text" id="mll-event-name" maxlength="120" required placeholder="例）〇〇マーチングコンテスト" />
+                    <input type="text" id="mll-event-name" maxlength="120" required placeholder="例）〇〇演奏会" />
+                    <p id="mll-error-event-name" class="mll-field-error" aria-live="polite"></p>
                   </label>
                   <label class="search-label-full">
-                    開催日（必須）
-                    <input type="date" id="mll-event-date" required />
-                  </label>
-                  <label class="search-label-full calendar-ev-venue-label">
-                    都道府県（必須）
-                    <select id="mll-venue" required aria-label="都道府県">
+                    種別（必須・カレンダー共有用）
+                    <select id="mll-event-kind" required aria-label="イベント種別">
                       <option value="">選択してください</option>
-                      <option>北海道</option><option>青森県</option><option>岩手県</option><option>宮城県</option><option>秋田県</option><option>山形県</option><option>福島県</option><option>茨城県</option><option>栃木県</option><option>群馬県</option><option>埼玉県</option><option>千葉県</option><option>東京都</option><option>神奈川県</option><option>新潟県</option><option>富山県</option><option>石川県</option><option>福井県</option><option>山梨県</option><option>長野県</option><option>岐阜県</option><option>静岡県</option><option>愛知県</option><option>三重県</option><option>滋賀県</option><option>京都府</option><option>大阪府</option><option>兵庫県</option><option>奈良県</option><option>和歌山県</option><option>鳥取県</option><option>島根県</option><option>岡山県</option><option>広島県</option><option>山口県</option><option>徳島県</option><option>香川県</option><option>愛媛県</option><option>高知県</option><option>福岡県</option><option>佐賀県</option><option>長崎県</option><option>熊本県</option><option>大分県</option><option>宮崎県</option><option>鹿児島県</option><option>沖縄県</option><option>海外</option>
+                      <option value="演奏会">演奏会</option>
+                      <option value="大会">大会</option>
+                      <option value="イベント">イベント</option>
                     </select>
+                    <p id="mll-error-event-kind" class="mll-field-error" aria-live="polite"></p>
                   </label>
+                  <div class="mll-form-inline-row">
+                    <label class="search-label-full">
+                      開催日（必須）
+                      <input type="date" id="mll-event-date" required />
+                      <p id="mll-error-event-date" class="mll-field-error" aria-live="polite"></p>
+                    </label>
+                    <label class="search-label-full calendar-ev-venue-label">
+                      都道府県（必須）
+                      <select id="mll-venue" required aria-label="都道府県">
+                        <option value="">選択してください</option>
+                        <optgroup label="地域：関東">
+                          <option>東京都</option><option>神奈川県</option><option>埼玉県</option><option>千葉県</option><option>茨城県</option><option>栃木県</option><option>群馬県</option>
+                        </optgroup>
+                        <optgroup label="地域：関西">
+                          <option>大阪府</option><option>兵庫県</option><option>京都府</option><option>和歌山県</option><option>滋賀県</option><option>奈良県</option>
+                        </optgroup>
+                        <optgroup label="地域：北海道">
+                          <option>北海道</option>
+                        </optgroup>
+                        <optgroup label="地域：東北">
+                          <option>青森県</option><option>岩手県</option><option>宮城県</option><option>秋田県</option><option>山形県</option><option>福島県</option>
+                        </optgroup>
+                        <optgroup label="地域：中部">
+                          <option>新潟県</option><option>富山県</option><option>石川県</option><option>福井県</option><option>山梨県</option><option>長野県</option><option>岐阜県</option><option>静岡県</option><option>愛知県</option>
+                        </optgroup>
+                        <optgroup label="地域：中国">
+                          <option>鳥取県</option><option>島根県</option><option>岡山県</option><option>広島県</option><option>山口県</option>
+                        </optgroup>
+                        <optgroup label="地域：四国">
+                          <option>徳島県</option><option>香川県</option><option>愛媛県</option><option>高知県</option>
+                        </optgroup>
+                        <optgroup label="地域：九州">
+                          <option>福岡県</option><option>佐賀県</option><option>長崎県</option><option>熊本県</option><option>大分県</option><option>宮崎県</option><option>鹿児島県</option>
+                        </optgroup>
+                        <optgroup label="地域：沖縄">
+                          <option>沖縄県</option>
+                        </optgroup>
+                        <optgroup label="地域：その他">
+                          <option>海外</option>
+                        </optgroup>
+                      </select>
+                      <p id="mll-error-venue" class="mll-field-error" aria-live="polite"></p>
+                    </label>
+                  </div>
                   <label class="search-label-full">
                     参加スタイル（必須）
                     <div id="mll-role-buttons" class="mll-role-buttons" role="group" aria-label="参加スタイル">
@@ -1140,32 +1332,29 @@
                       <button type="button" class="mll-role-btn" data-role-value="ops">運営</button>
                     </div>
                     <select id="mll-role" required>
-                      <option value="">選択してください</option>
-                      <option value="watch">観戦する／観戦した</option>
-                      <option value="perform">出演する／出演した</option>
-                      <option value="team_staff">チームスタッフで参加する／した</option>
-                      <option value="ops">運営側で参加する／した</option>
+                      <option value="">参加スタイルを選択してください</option>
+                      <option value="watch">観戦</option>
+                      <option value="perform">出演</option>
+                      <option value="team_staff">チームスタッフ</option>
+                      <option value="ops">運営</option>
                     </select>
+                    <p id="mll-error-role" class="mll-field-error" aria-live="polite"></p>
                   </label>
                   <p id="mll-role-preview" class="mll-role-preview" aria-live="polite"></p>
                   <label class="search-label-full">
                     公式ページURL（任意）
                     <input type="url" id="mll-official-url" maxlength="2000" placeholder="https://..." inputmode="url" />
                   </label>
+                  <p class="mll-log-meta calendar-ev-register-consent" lang="ja">
+                    運営によって情報の修正をさせていただくことがあります。重複しているイベントは統合または削除いたします。ご了承ください
+                  </p>
                   <div class="search-share-row">
-                    <button type="submit" id="btn-mll-save" class="btn-share-search">保存する</button>
+                    <button type="submit" id="btn-mll-save" class="btn-share-search">登録する</button>
                   </div>
                 </form>
                 <p id="mll-create-msg" class="mll-create-msg" aria-live="polite"></p>
-                <p class="mll-log-meta mll-events-mll-footnote">
-                  公開に設定された MarchinZ Log は、ログインなしでも一覧に表示されます。自分のログを保存する・非公開ログを読む・いいねするには、画面上部の「ログイン」または「はじめての方」から登録してください。（参加区分は観戦・出演・チームスタッフ・運営の4種類です。）
-                </p>
-                <div class="mll-log-list-wrap mll-events-mll-list-wrap">
-                  <p class="search-presets-title">自分のログ</p>
+                <div hidden aria-hidden="true">
                   <ul id="mll-log-list" class="mll-log-list"></ul>
-                </div>
-                <div class="mll-log-list-wrap mll-event-list-wrap mll-event-list-wrap--page">
-                  <p class="search-presets-title">これからのイベント（参戦予定）</p>
                   <ul id="mll-event-list" class="mll-log-list"></ul>
                 </div>
                 <div id="mll-profile-viewer" class="mll-profile-viewer" hidden>
@@ -1180,16 +1369,7 @@
             </section>
           </div>
 
-          <nav class="tabs youtube-tabs calendar-ev-time-tabs mz-tab-strip-yamap" aria-label="開催時期の絞り込み">
-            <button type="button" class="youtube-tab-btn calendar-ev-tab" data-cal-time="upcoming" aria-selected="true">
-              これから
-            </button>
-            <button type="button" class="youtube-tab-btn calendar-ev-tab" data-cal-time="past" aria-selected="false">
-              過去
-            </button>
-          </nav>
-
-          <form id="calendar-event-form" class="calendar-event-form" autocomplete="off" lang="ja">
+          <form id="calendar-event-form" class="calendar-event-form" autocomplete="off" lang="ja" hidden aria-hidden="true">
             <div
               id="calendar-ev-form-body"
               class="calendar-ev-form-body"
@@ -1197,6 +1377,15 @@
               aria-hidden="true"
             >
               <p class="mll-log-meta calendar-ev-date-hint">スマホ（iPhone など）では、開催日の入力で回転ドラム形式の選択ができます。</p>
+              <label class="search-label-full">
+                種別（必須）
+                <select id="calendar-ev-kind" name="calendar-ev-kind" required aria-label="イベント種別">
+                  <option value="">選択してください</option>
+                  <option value="演奏会">演奏会</option>
+                  <option value="大会">大会</option>
+                  <option value="イベント">イベント</option>
+                </select>
+              </label>
               <label class="search-label-full">
                 開催日（必須）
                 <input type="date" id="calendar-ev-date" name="calendar-ev-date" required />
@@ -1238,6 +1427,9 @@
                   <option value="未定">未定</option>
                 </select>
               </label>
+              <p class="mll-log-meta calendar-ev-register-consent" lang="ja">
+                運営によって情報の修正をさせていただくことがあります。重複しているイベントは統合または削除いたします。ご了承ください
+              </p>
               <div class="search-share-row">
                 <button type="submit" id="calendar-ev-submit" class="btn-share-search calendar-ev-submit-register">
                   この内容で登録する
@@ -1248,7 +1440,29 @@
           <p id="calendar-ev-form-msg" class="mll-create-msg calendar-ev-form-msg" aria-live="polite"></p>
 
           <div class="mll-log-list-wrap calendar-ev-list-wrap">
-            <p class="search-presets-title" id="calendar-ev-list-heading">一覧（これから・イベント）</p>
+            <div class="calendar-ev-controls-row">
+              <div
+                class="search-presets-title calendar-ev-sort-bar"
+                id="calendar-ev-sort-bar"
+                role="group"
+                aria-label="一覧の並び替え"
+              >
+                <span class="calendar-ev-sort-intro">並び替え</span>
+                <button type="button" class="calendar-ev-sort-btn" data-cal-sort="date" aria-pressed="true">
+                  開催日
+                </button>
+                <button type="button" class="calendar-ev-sort-btn" data-cal-sort="venue" aria-pressed="false">
+                  開催地
+                </button>
+                <button type="button" class="calendar-ev-sort-btn" data-cal-sort="kind" aria-pressed="false">
+                  種別
+                </button>
+              </div>
+              <label class="calendar-ev-upcoming-filter calendar-ev-upcoming-filter--inline">
+                <input type="checkbox" id="calendar-ev-upcoming-only" />
+                今後の開催のみ表示
+              </label>
+            </div>
             <ul id="calendar-event-list" class="mll-log-list calendar-ev-list"></ul>
           </div>
         </section>
@@ -1304,12 +1518,14 @@
             class="community-compose-dialog calendar-attendance-dialog"
           >
             <div class="community-compose-dialog-head">
-              <h3 id="calendar-att-heading" class="community-compose-heading">参加スタイル</h3>
+              <h3 id="calendar-att-heading" class="community-compose-heading">MarchinZ Logを残す</h3>
               <button type="button" class="community-compose-close-btn" aria-label="閉じる" data-calendar-att-close>
                 ×
               </button>
             </div>
-            <p class="mll-log-meta calendar-att-hint">自分の参加のしかたを選べます（他のユーザーも入力できます）。</p>
+            <p class="mll-log-meta calendar-att-hint">
+              このイベントでの参加のしかた（MarchinZ Log）を選べます。他のユーザーも入力できます。
+            </p>
             <div class="calendar-att-options" id="calendar-att-options"></div>
             <p class="calendar-att-actions">
               <button type="button" class="btn-share-search calendar-att-clear" id="calendar-att-clear">未記入に戻す</button>
@@ -1347,6 +1563,14 @@
               <label class="search-label-full">
                 開催日（必須）
                 <input type="date" id="calendar-edit-date" required />
+              </label>
+              <label class="search-label-full">
+                種別（必須）
+                <select id="calendar-edit-kind" required aria-label="イベント種別（編集）">
+                  <option value="演奏会">演奏会</option>
+                  <option value="大会">大会</option>
+                  <option value="イベント">イベント</option>
+                </select>
               </label>
               <label class="search-label-full calendar-ev-venue-label">
                 開催地（必須）
@@ -1418,34 +1642,27 @@
           <p class="static-panel-lead community-board-lead-main">
             マーチングに関する告知・募集・質問ができる「MarchinZ Board」
           </p>
-          <nav class="tabs youtube-tabs community-filter-tabs mz-tab-strip-yamap" aria-label="話題一覧のカテゴリ絞り込み">
-            <button type="button" class="youtube-tab-btn community-tab-btn" data-community-filter="ALL" aria-selected="true">
-              ALL
+          <nav class="tabs youtube-tabs mz-tab-strip-yamap" role="tablist" aria-label="話題一覧のカテゴリ絞り込み">
+            <button type="button" class="youtube-tab-btn" role="tab" data-community-filter="ALL" aria-selected="true">ALL</button>
+            <button type="button" class="youtube-tab-btn" role="tab" data-community-filter="告知（出演・開催等）" aria-selected="false">
+              出演/開催告知
             </button>
-            <button type="button" class="youtube-tab-btn community-tab-btn" data-community-filter="告知（出演・開催等）" aria-selected="false">
-              告知（出演・開催等）
-            </button>
-            <button type="button" class="youtube-tab-btn community-tab-btn" data-community-filter="メンバー募集" aria-selected="false">
+            <button type="button" class="youtube-tab-btn" role="tab" data-community-filter="メンバー募集" aria-selected="false">
               メンバー募集
             </button>
-            <button type="button" class="youtube-tab-btn community-tab-btn" data-community-filter="クラウドファンディング" aria-selected="false">
-              クラウドファンディング
+            <button type="button" class="youtube-tab-btn" role="tab" data-community-filter="クラウドファンディング" aria-selected="false">
+              クラファン
             </button>
-            <button type="button" class="youtube-tab-btn community-tab-btn" data-community-filter="質問" aria-selected="false">
-              質問
-            </button>
-            <button type="button" class="youtube-tab-btn community-tab-btn" data-community-filter="運営より" aria-selected="false">
+            <button type="button" class="youtube-tab-btn" role="tab" data-community-filter="質問" aria-selected="false">質問</button>
+            <button type="button" class="youtube-tab-btn" role="tab" data-community-filter="運営より" aria-selected="false">
               運営より
-            </button>
-            <button type="button" class="youtube-tab-btn community-tab-btn" data-community-filter="その他" aria-selected="false">
-              その他
             </button>
           </nav>
           <div class="community-compose-bar">
             <button
               type="button"
               id="community-open-compose"
-              class="btn-share-search btn-marchinz-spotlight community-open-compose-btn"
+              class="browse-inline-trigger community-open-compose-btn"
             >
               投稿する
             </button>
@@ -1487,61 +1704,78 @@
                   ×
                 </button>
               </div>
-              <div class="community-compose-notes mll-log-meta">
-                <p class="community-compose-note-p">
-                  投稿には MarchinZ へのログイン（登録）が必要です。表示名・プロフィール画像・タイムスタンプが公開されます。
-                </p>
-                <p class="community-board-rules community-compose-rules">
-                  <strong>ルール</strong>：投稿の修正・編集・削除は、当該投稿の<strong>投稿者本人</strong>と<strong>管理人（サイト管理者）</strong>が行えます。（非表示・復元は管理人のみ／通報は他ユーザーも利用できます。）
-                </p>
-              </div>
               <div class="community-compose-scroll">
+                <div id="community-compose-auth-phase" class="community-compose-auth-phase" hidden>
+                  <div class="mll-events-auth-gate-actions community-compose-auth-actions">
+                    <a href="#signup" class="mll-lp-btn mll-lp-btn--primary" data-mll-auth-entry="signup">はじめての方</a>
+                    <a href="#login" class="mll-lp-btn mll-lp-btn--ghost" data-mll-auth-entry="login">ログイン</a>
+                  </div>
+                </div>
+                <div id="community-compose-form-wrap">
                 <form id="community-form" class="community-form">
                   <fieldset class="community-theme-fieldset community-form-theme-fieldset">
-                    <legend class="search-label">カテゴリ（新規話題）</legend>
-                    <div class="community-form-theme-tabs youtube-tabs community-form-theme-inner mz-tab-strip-yamap" role="group" aria-label="投稿カテゴリ">
+                    <legend class="search-label">カテゴリ（必須）</legend>
+                    <div
+                      class="community-form-theme-tabs youtube-tabs community-form-theme-inner mz-tab-strip-yamap"
+                      role="tablist"
+                      aria-label="投稿カテゴリ"
+                    >
                       <button
                         type="button"
-                        class="youtube-tab-btn community-tab-btn"
+                        class="youtube-tab-btn"
+                        role="tab"
                         data-community-form-theme="告知（出演・開催等）"
                         aria-selected="true"
                       >
-                        告知（出演・開催等）
+                        出演/開催告知
                       </button>
-                      <button type="button" class="youtube-tab-btn community-tab-btn" data-community-form-theme="メンバー募集" aria-selected="false">
+                      <button
+                        type="button"
+                        class="youtube-tab-btn"
+                        role="tab"
+                        data-community-form-theme="メンバー募集"
+                        aria-selected="false"
+                      >
                         メンバー募集
                       </button>
-                      <button type="button" class="youtube-tab-btn community-tab-btn" data-community-form-theme="クラウドファンディング" aria-selected="false">
-                        クラウドファンディング
+                      <button
+                        type="button"
+                        class="youtube-tab-btn"
+                        role="tab"
+                        data-community-form-theme="クラウドファンディング"
+                        aria-selected="false"
+                      >
+                        クラファン
                       </button>
-                      <button type="button" class="youtube-tab-btn community-tab-btn" data-community-form-theme="質問" aria-selected="false">
+                      <button type="button" class="youtube-tab-btn" role="tab" data-community-form-theme="質問" aria-selected="false">
                         質問
                       </button>
-                      <button type="button" class="youtube-tab-btn community-tab-btn" data-community-form-theme="運営より" aria-selected="false">
+                      <button type="button" class="youtube-tab-btn" role="tab" data-community-form-theme="運営より" aria-selected="false">
                         運営より
-                      </button>
-                      <button type="button" class="youtube-tab-btn community-tab-btn" data-community-form-theme="その他" aria-selected="false">
-                        その他
                       </button>
                     </div>
                   </fieldset>
+                  <p id="community-error-theme" class="mll-field-error" hidden></p>
                   <label class="search-label-full">
-                    タイトル
-                    <input type="text" id="community-title" maxlength="100" required placeholder="例）7月定期演奏会メンバー募集" />
+                    タイトル（必須）
+                    <input type="text" id="community-title" maxlength="100" required placeholder="例）3月定期演奏会開催！" />
                   </label>
+                  <p id="community-error-title" class="mll-field-error" hidden></p>
                   <label class="search-label-full">
-                    内容
+                    内容（必須）
                     <textarea
                       id="community-content"
                       rows="5"
                       maxlength="1200"
-                      placeholder="日時・場所・連絡先など、必要な情報を記入してください。（画像のみの投稿も可・最大4枚）"
+                      required
+                      placeholder="日時・場所・連絡先など、必要な情報を記入してください。（画像は最大4枚）"
                     ></textarea>
                   </label>
+                  <p id="community-error-content" class="mll-field-error" hidden></p>
                   <div class="community-images-field" id="community-images-field">
                     <div class="search-label community-images-field-label">画像（任意・最大4枚）</div>
                     <p id="community-images-note" class="community-images-note mll-log-meta">
-                      1枚ずつサイズ自動調整（長辺最大2048px・JPEG約85%・目安〜1.5MB）／Xの写真投稿に近い圧縮です。Firebase Storage 利用時のみ有効です。
+                      任意で最大4枚。アップロード時に自動で圧縮されます（元が20MB超は不可）。
                     </p>
                     <input
                       type="file"
@@ -1559,6 +1793,7 @@
                   </div>
                   <p id="community-msg" class="mll-create-msg"></p>
                 </form>
+                </div>
               </div>
             </div>
           </div>
@@ -1948,7 +2183,8 @@
       </div>
 
       <div id="page-youtube" class="page" hidden>
-        <section class="static-panel youtube-panel" aria-labelledby="youtube-heading">
+        <!-- 大会動画ページと同型：上段＝見出し・絞り込み（mll-panel）、下段＝一覧（results-panel で横幅いっぱい） -->
+        <section class="mll-panel youtube-page-main" aria-labelledby="youtube-heading">
           <header class="page-hero mz-philosophy-header youtube-page-hero">
             <p class="mz-philosophy-label mz-philosophy-label--en" lang="en">Official Video Channels</p>
             <div class="youtube-page-hero-row">
@@ -1985,35 +2221,66 @@
               >
                 掲載リスト
               </button>
-              <span
-                class="youtube-published-channel-count"
-                id="youtube-published-channel-count"
-                aria-live="polite"
-              ></span>
             </span>
           </p>
-          <nav class="tabs youtube-tabs mz-tab-strip-yamap" aria-label="YouTubeカテゴリ">
-            <button type="button" class="youtube-tab-btn" data-yt-category="all" aria-selected="true">すべて</button>
-            <button type="button" class="youtube-tab-btn" data-yt-category="大会" aria-selected="false">大会</button>
-            <button type="button" class="youtube-tab-btn" data-yt-category="一般" aria-selected="false">一般</button>
-            <button type="button" class="youtube-tab-btn" data-yt-category="高校" aria-selected="false">高校</button>
-            <button type="button" class="youtube-tab-btn" data-yt-category="中学生以下" aria-selected="false">中学生以下</button>
-            <button type="button" class="youtube-tab-btn" data-yt-category="カラーガード" aria-selected="false">カラーガード</button>
-            <button type="button" class="youtube-tab-btn" data-yt-category="海外" aria-selected="false">海外</button>
+          <nav class="tabs youtube-tabs mz-tab-strip-yamap" role="tablist" aria-label="YouTubeカテゴリ">
+            <button type="button" class="youtube-tab-btn" role="tab" data-yt-category="all" aria-selected="true">すべて</button>
+            <button type="button" class="youtube-tab-btn" role="tab" data-yt-category="大会" aria-selected="false">大会</button>
+            <button type="button" class="youtube-tab-btn" role="tab" data-yt-category="一般" aria-selected="false">一般</button>
+            <button type="button" class="youtube-tab-btn" role="tab" data-yt-category="高校" aria-selected="false">高校</button>
+            <button type="button" class="youtube-tab-btn" role="tab" data-yt-category="中学生以下" aria-selected="false">中学生以下</button>
+            <button type="button" class="youtube-tab-btn" role="tab" data-yt-category="カラーガード" aria-selected="false">カラーガード</button>
+            <button type="button" class="youtube-tab-btn" role="tab" data-yt-category="海外" aria-selected="false">海外</button>
           </nav>
-          <div class="youtube-list-menu" aria-label="表示の並び替え">
-            <button type="button" class="youtube-sort-btn" data-yt-sort="new" aria-pressed="true">新着順</button>
-            <button type="button" class="youtube-sort-btn" data-yt-sort="name" aria-pressed="false">名前順</button>
+        </section>
+
+        <div class="results-panel youtube-results-panel" aria-label="YouTubeチャンネル一覧">
+          <div class="result-sort-bar youtube-result-sort-bar" role="toolbar" aria-label="表示の並び替え">
+            <div class="result-sort-bar-main">
+              <span class="result-sort-label">並び替え</span>
+              <button type="button" class="youtube-sort-btn" data-yt-sort="new" aria-pressed="true">新着順</button>
+              <button type="button" class="youtube-sort-btn" data-yt-sort="name" aria-pressed="false">名前順</button>
+            </div>
+            <span
+              id="youtube-published-channel-count"
+              class="youtube-published-channel-count youtube-sort-bar-channel-count"
+              aria-live="polite"
+            ></span>
           </div>
-          <ul id="youtube-channel-list" class="youtube-channel-list" aria-live="polite"></ul>
-          <p class="youtube-more-wrap">
-            <span id="youtube-visible-count" class="youtube-visible-count" aria-live="polite"></span>
-            <button type="button" id="youtube-more-btn" class="youtube-more-btn" hidden>もっと見る</button>
-          </p>
-          <p class="rights-notice rights-notice--page-foot rights-notice--youtube-foot">
+          <p class="rights-notice rights-notice--page-foot rights-notice--youtube-foot rights-notice--youtube-under-sort">
             動画はYouTube等の共有機能（埋め込み）を利用して表示しています。掲載されている動画の著作権、肖像権、および一切の権利は、各権利所有者および配信元に帰属します。
           </p>
-        </section>
+          <div
+            id="youtube-results-skeleton"
+            class="results-skeleton youtube-results-skeleton"
+            aria-hidden="false"
+            aria-busy="true"
+            aria-label="一覧を読み込み中"
+          >
+            <div class="skeleton-card"></div>
+            <div class="skeleton-card"></div>
+            <div class="skeleton-card"></div>
+            <div class="skeleton-card"></div>
+            <div class="skeleton-card"></div>
+            <div class="skeleton-card"></div>
+          </div>
+          <ul id="youtube-channel-list" class="youtube-channel-list" aria-live="polite" hidden></ul>
+          <p class="youtube-more-wrap">
+            <span id="youtube-visible-count" class="youtube-visible-count" aria-live="polite"></span>
+          </p>
+        </div>
+
+        <div class="video-result-more-wrap youtube-result-more-wrap" id="youtube-result-more-wrap" hidden>
+          <button
+            type="button"
+            id="youtube-more-btn"
+            class="recommend-more video-result-more"
+            hidden
+            aria-label="さらにチャンネルを表示"
+          >
+            もっと見る
+          </button>
+        </div>
 
         <section class="mll-mylist-section" aria-labelledby="mll-yt-mylist-heading" hidden>
           <h2 id="mll-yt-mylist-heading" class="mll-mylist-page-heading">YouTube マイリスト</h2>
@@ -2201,7 +2468,7 @@
             <h2 id="terms-heading" class="mz-philosophy-heading">利用規約</h2>
             <div class="mz-philosophy-rule" aria-hidden="true"></div>
           </header>
-          <p class="privacy-policy-meta">制定・最終更新：2026年5月1日</p>
+          <p class="privacy-policy-meta">制定・最終更新：2026年5月9日</p>
           <p class="static-panel-lead privacy-policy-scope">
             本規約は、ウェブサイト「MarchinZ（マーチンズ）」（以下「本サイト」）の利用条件を定めます。本サイトを利用すると、本規約に同意したものとみなします。
           </p>
@@ -2212,8 +2479,8 @@
               </p>
               <h4 class="privacy-policy-heading">第2条（利用資格・ログイン）</h4>
               <p class="static-panel-text">
-                本サイトは16歳以上の方を対象とします。16歳未満の方は利用できません。<br />
-                16歳以上であっても未成年者の場合は、保護者の同意を得た上でご利用ください。<br />
+                本サイトは<strong>13歳以上</strong>の方を対象とします。<strong>13歳未満の方はご利用いただけません。</strong><br />
+                13歳以上18歳未満の未成年の方は、保護者（法定代理人）の同意と適切な監督のもとでご利用ください。<br />
                 本サイトの一部の機能は Google アカウントによるログインが必要です。ログイン時は、当該サービス提供者の規約・ポリシーも適用されることがあります。
               </p>
               <h4 class="privacy-policy-heading">第3条（禁止事項）</h4>
@@ -2264,7 +2531,7 @@
             <h2 id="privacy-heading" class="mz-philosophy-heading">プライバシーポリシー</h2>
             <div class="mz-philosophy-rule" aria-hidden="true"></div>
           </header>
-            <p class="privacy-policy-meta">制定・最終更新：2026年5月1日</p>
+            <p class="privacy-policy-meta">制定・最終更新：2026年5月9日</p>
             <p class="static-panel-lead privacy-policy-scope">
               本ポリシーはウェブサイト「<strong>MarchinZ（マーチンズ）</strong>」において運営者が取り扱う情報の基本的な考え方を示すものです。個人での運営のため法令との関係はケースによりますが、利用者との信頼のために公表します。
             </p>
@@ -2298,6 +2565,9 @@
               <p class="static-panel-text">
                 オンライン上でサービスを提供するために外部のサービスを利用することがあり、その過程でデータの処理や保管に海外が含まれることがあります。法令に基づく場合を除き、本人の同意なく個人情報を販売しません。
               </p>
+              <p class="static-panel-text">
+                <strong>統計データの提供：</strong>運営は、取得した情報を<strong>特定の個人を識別できない統計的な形式</strong>に加工したうえで、サービスの向上やマーチング業界の発展に資する目的で、<strong>提携パートナー企業（楽器メーカー等）</strong>へ提供することがあります。個人が特定される状態での提供は行いません。
+              </p>
 
               <h4 class="privacy-policy-heading">5. Cookie 等・ブラウザ内の情報</h4>
               <p class="static-panel-text">
@@ -2322,6 +2592,13 @@
       </div>
 
     </main>
+
+    <div id="auth-loading-overlay" class="auth-loading-overlay" aria-hidden="true">
+      <div class="auth-loading-overlay-inner" role="status" aria-live="polite">
+        <span class="auth-loading-spinner" aria-hidden="true"></span>
+        <p class="auth-loading-text">ログイン中...</p>
+      </div>
+    </div>
 
     <div
       id="community-login-overlay"
@@ -2363,9 +2640,6 @@
             <p class="community-login-preface-line">登録済みの方は <strong>ログイン</strong></p>
             <p class="community-login-preface-line">初めての方は <strong>登録</strong></p>
           </div>
-          <p class="community-login-dialog-lead">
-            MarchinZ Log の記録やコミュニティ、イベント（大会等の案内登録）・マイリストなど、参加・投稿には MarchinZ でのログイン（登録）が必要です。Google認証でご利用いただけます。
-          </p>
           <div class="community-login-consent-block">
             <p class="community-login-consent-lead">
               <a href="#terms" class="auth-inline-link" target="_blank" rel="noopener noreferrer">利用規約</a>および<a
@@ -2459,37 +2733,45 @@
       </script>
     </footer>
 
-    <script src="marchinz-sort.js?v=1.10.0"></script>
-    <script src="youtube-list/youtube-list.inline.js?v=1.10.0"></script>
-    <script src="youtube-list/youtube-channel-mylist.js?v=1.10.0"></script>
-    <script src="site-nav.js?v=1.10.0"></script>
-    <script src="data.inline.js?v=1.10.0"></script>
+    <script src="marchinz-sort.js?v=1.12.14"></script>
+    <script src="youtube-list/youtube-list.inline.js?v=1.12.14"></script>
+    <script src="youtube-list/youtube-channel-mylist.js?v=1.12.14"></script>
+    <script src="site-nav.js?v=1.12.14"></script>
+    <script src="data.inline.js?v=1.12.14"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-check-compat.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.js"></script>
-    <script src="marchinz-image-compress.js?v=1.10.0"></script>
-    <script src="auth-config.js?v=1.10.0"></script>
-    <script src="auth.js?v=1.10.0-auth-no-firebase-feedback"></script>
-    <script src="marchinz-notify.js?v=1.10.0"></script>
-    <script src="marchinz-like-show.js?v=1.10.0"></script>
-    <script src="mll-video-mylist.js?v=1.10.0"></script>
-    <script src="mll.js?v=1.10.0"></script>
-    <script src="calendar-events.js?v=1.10.0-events-mll-reveal"></script>
-    <script src="community.js?v=1.10.0-image-compress-protect"></script>
-    <script src="event-log-diary.js?v=1.10.0"></script>
-    <script src="mln-public-feed.js?v=1.10.0"></script>
-    <script src="user-profile-page.js?v=1.10.0"></script>
-    <script src="app.js?v=1.10.0"></script>
+    <script src="marchinz-image-compress.js?v=1.12.14"></script>
+    <script src="auth-config.js?v=1.12.14"></script>
+    <script src="auth.js?v=1.12.14-local-dev-login"></script>
+    <script src="marchinz-notify.js?v=1.12.14"></script>
+    <script src="marchinz-like-show.js?v=1.12.14"></script>
+    <script src="mll-video-mylist.js?v=1.12.14"></script>
+    <script src="mll.js?v=1.12.14"></script>
+    <script src="calendar-events.js?v=1.12.14-events-merge-dup"></script>
+    <script src="community.js?v=1.12.14-image-compress-protect"></script>
+    <script src="event-log-diary.js?v=1.12.14"></script>
+    <script src="mln-public-feed.js?v=1.12.14"></script>
+    <script src="user-profile-page.js?v=1.12.14"></script>
+    <script src="app.js?v=1.12.14"></script>
     <script>
       (function () {
         if (!("serviceWorker" in navigator)) return;
         var host = location.hostname;
         if (location.protocol !== "https:" && host !== "localhost" && host !== "127.0.0.1") return;
         addEventListener("load", function () {
-          navigator.serviceWorker.register("sw.js").catch(function () {});
+          navigator.serviceWorker
+            .getRegistrations()
+            .then(function (regs) {
+              return Promise.all(
+                regs.map(function (r) {
+                  return r.unregister().catch(function () {});
+                }),
+              );
+            })
+            .catch(function () {});
         });
       })();
     </script>

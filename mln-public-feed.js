@@ -3,6 +3,7 @@
  */
 (() => {
   const LIMIT = 48;
+  const FEED_SUMMARY_TEXT = `更新が新しい順 · 最大 ${LIMIT} 件を表示しています`;
   /** @type {boolean} */
   let busy = false;
 
@@ -219,7 +220,7 @@
 
     busy = true;
     if (msg) {
-      msg.textContent = "読み込み中…";
+      msg.textContent = FEED_SUMMARY_TEXT;
       msg.hidden = false;
     }
     root.replaceChildren();
@@ -267,7 +268,7 @@
         root.appendChild(frag);
       }
 
-      if (msg) msg.textContent = `更新が新しい順 · 最大 ${LIMIT} 件を表示しています`;
+      if (msg) msg.textContent = FEED_SUMMARY_TEXT;
     } catch (e) {
       const code = typeof e?.code === "string" ? e.code : "";
       console.warn("[MarchinZ] MLN feed", e);

@@ -407,6 +407,13 @@
       const el = pages[key];
       if (el) el.hidden = key !== id;
     });
+    if (id !== "videos") {
+      document.documentElement.style.overflow = "";
+      document.body.style.overflow = "";
+      if (typeof window.__marchinzCloseVideosBrowseOverlay === "function") {
+        window.__marchinzCloseVideosBrowseOverlay();
+      }
+    }
     const commTab = id === "community" ? normalizeCommunityTab(routeOpts.communityTab ?? "events") : null;
     navLinks.forEach((a) => {
       const sub = String(a.dataset.communitySubtab || "")
@@ -609,6 +616,28 @@
     const tabs = [...document.querySelectorAll(".youtube-tab-btn[data-yt-category]")];
     const sortBtns = [...document.querySelectorAll(".youtube-sort-btn[data-yt-sort]")];
     if (!list || !tabs.length) return;
+
+    const youtubePanel = document.querySelector(".youtube-results-panel");
+    const youtubeSkeleton = document.getElementById("youtube-results-skeleton");
+    const youtubeMoreWrap = document.getElementById("youtube-result-more-wrap");
+
+    function setYoutubeResultsLoading(loading) {
+      if (youtubeSkeleton) {
+        youtubeSkeleton.hidden = !loading;
+        youtubeSkeleton.setAttribute("aria-busy", loading ? "true" : "false");
+        youtubeSkeleton.setAttribute("aria-hidden", loading ? "false" : "true");
+      }
+      if (list) list.hidden = loading;
+      if (youtubePanel) youtubePanel.setAttribute("aria-busy", loading ? "true" : "false");
+      const dis = loading;
+      sortBtns.forEach((b) => {
+        b.disabled = dis;
+      });
+      tabs.forEach((b) => {
+        b.disabled = dis;
+      });
+      if (moreBtn) moreBtn.disabled = dis;
+    }
 
     const listDateEl = document.getElementById("youtube-list-updated");
     if (listDateEl) {
@@ -2553,6 +2582,188 @@
       return frag;
     }
 
+    /** styles.css の YouTube グリッド幅と大会動画一覧（app.js getVideoResultGridColumnCount）と一致 */
+    function getYoutubeGridColumnCount() {
+      try {
+        if (window.matchMedia("(min-width: 1200px)").matches) return 3;
+        if (window.matchMedia("(min-width: 900px)").matches) return 2;
+      } catch {
+        //
+      }
+      return 1;
+    }
+
+    /**
+     * @param {{ rootTag?: "li" | "div" }} [options]
+     */
+    function buildYoutubeCard(item, options = {}) {
+      const rootTag = options.rootTag === "div" ? "div" : "li";
+      const root = document.createElement(rootTag);
+      root.className = "youtube-card";
+      const head = document.createElement("div");
+      head.className = "youtube-card-head";
+      const logoLink = document.createElement("a");
+      logoLink.href = item.url;
+      logoLink.target = "_blank";
+      logoLink.rel = "noopener noreferrer";
+      logoLink.className = "youtube-logo-link";
+      const logo = document.createElement("img");
+      logo.className = "youtube-card-logo";
+      logo.src = toHighResLogo(item.logo);
+      logo.alt = `${item.name} ロゴ`;
+      logo.loading = "lazy";
+      logo.onerror = () => {
+        logo.style.visibility = "hidden";
+      };
+      const name = document.createElement("p");
+      name.className = "youtube-card-name";
+      name.textContent = item.name;
+      const topBadges = document.createElement("div");
+      topBadges.className = "youtube-card-top-badges";
+      const catTop = document.createElement("span");
+      catTop.className = "youtube-top-badge youtube-top-badge--category";
+      const categoryClassMap = {
+        大会: "youtube-top-badge--cat-taikai",
+        一般: "youtube-top-badge--cat-ippan",
+        中学生以下: "youtube-top-badge--cat-junior",
+        高校: "youtube-top-badge--cat-koko",
+        海外: "youtube-top-badge--cat-default",
+        カラーガード: "youtube-top-badge--cat-colorguard",
+      };
+      catTop.classList.add(categoryClassMap[item.category] || "youtube-top-badge--cat-default");
+      catTop.textContent = item.category;
+      const badgeLatest = document.createElement("span");
+      badgeLatest.className = "youtube-top-badge youtube-top-badge--date youtube-top-badge--video-date";
+      const dLatestStr = channelUpdateDateString(item.url, item);
+      badgeLatest.textContent = `最新：${dLatestStr}`;
+      topBadges.appendChild(catTop);
+      topBadges.appendChild(badgeLatest);
+      const info = document.createElement("div");
+      info.className = "youtube-card-info";
+      info.appendChild(name);
+      info.appendChild(topBadges);
+      logoLink.appendChild(logo);
+      head.appendChild(logoLink);
+      head.appendChild(info);
+      root.appendChild(head);
+
+      const thumbs = document.createElement("div");
+      thumbs.className = "youtube-thumb-list";
+      const fallbackIds = fallbackThumbIdsFor(item);
+      const meta = resolvedMetaFor(item);
+      const badgeMap = buildThumbBadgeMap(meta);
+      const thumbIds = buildYoutubeFourThumbIds(meta, fallbackIds, {
+        allowShortFallback: false,
+      });
+      const [t1, t2, t3, t4] = thumbIds;
+      thumbIds.forEach((vid) => {
+        const src = vid ? `https://i.ytimg.com/vi/${vid}/hqdefault.jpg` : "";
+        if (!src) return;
+        const thumb = document.createElement("img");
+        thumb.className = "youtube-thumb";
+        thumb.src = src;
+        thumb.loading = "lazy";
+        thumb.alt = item.name;
+        const videoLink = document.createElement("a");
+        videoLink.href = vid ? `https://www.youtube.com/watch?v=${vid}` : item.url;
+        videoLink.target = "_blank";
+        videoLink.rel = "noopener noreferrer";
+        videoLink.className = "youtube-thumb-link";
+        const wrap = document.createElement("div");
+        wrap.className = "youtube-thumb-item";
+        wrap.setAttribute("data-yt-vid", vid);
+        const badgeMeta = badgeMap.get(vid);
+        if (badgeMeta) {
+          wrap.classList.add(`youtube-thumb-item--rank-${badgeMeta.rank}`);
+          const b = document.createElement("span");
+          b.className = `youtube-thumb-badge youtube-thumb-badge--corner-tr youtube-thumb-badge--rank-${badgeMeta.rank}`;
+          b.textContent = badgeMeta.label;
+          wrap.appendChild(b);
+        }
+        const thumbTitle = document.createElement("span");
+        thumbTitle.className = "youtube-thumb-title";
+        const hasStatic = videoTitleById[vid];
+        thumbTitle.textContent = hasStatic || "YouTubeで見る";
+        videoLink.appendChild(thumb);
+        wrap.appendChild(videoLink);
+        wrap.appendChild(thumbTitle);
+        thumbs.appendChild(wrap);
+      });
+      root.appendChild(thumbs);
+      backfillOembedThumbTitlesIn(thumbs);
+
+      const mylistRow = document.createElement("div");
+      mylistRow.className = "youtube-card-mylist-row";
+      const mylistBtn = document.createElement("button");
+      mylistBtn.type = "button";
+      mylistBtn.className = "youtube-channel-mylist-add-btn btn-share-search btn-marchinz-spotlight";
+      mylistBtn.textContent = "マイリストに追加";
+      mylistBtn.setAttribute("aria-label", `${item.name} を YouTube マイリストに追加`);
+      mylistBtn.addEventListener("click", async () => {
+        const api = window.MarchinZYoutubeChannelMylist;
+        const run = api?.addWithPicker || api?.add;
+        if (!run) {
+          window.alert("マイリスト機能が読み込まれていません。ページを再読み込みしてください。");
+          return;
+        }
+        mylistBtn.disabled = true;
+        try {
+          const r = await run({
+            name: item.name,
+            url: item.url,
+            logo: item.logo,
+            category: item.category,
+          });
+          if (!r?.ok) {
+            if (r?.message) window.alert(r.message);
+            return;
+          }
+          if (String(r.message || "").includes("すでに")) {
+            mylistBtn.textContent = "マイリスト済み";
+          } else {
+            mylistBtn.textContent = "追加済み";
+          }
+        } catch (e) {
+          window.alert(String(e?.message || e || "エラーが発生しました。"));
+        } finally {
+          if (mylistBtn.textContent === "マイリストに追加") {
+            mylistBtn.disabled = false;
+          }
+        }
+      });
+      mylistRow.appendChild(mylistBtn);
+      root.appendChild(mylistRow);
+
+      if (debugYoutube) {
+        const debug = document.createElement("p");
+        debug.className = "youtube-debug-meta";
+        debug.textContent = `DEBUG | 4枠(重複なし, ${thumbIds.length}本):${thumbIds.join(",")} | 解釈:最新動画 ${t1 || "-"} / 最新LIVE|人気 ${t2 || "-"} / 人気 ${t3 || "-"} / 人気 ${t4 || "-"}`;
+        root.appendChild(debug);
+      }
+      return root;
+    }
+
+    function buildYoutubePeekSlot(peekItem, btn) {
+      const peekLi = document.createElement("li");
+      peekLi.className = "video-result-peek-slot";
+      const stack = document.createElement("div");
+      stack.className = "video-result-peek-stack";
+      const card = buildYoutubeCard(peekItem, { rootTag: "div" });
+      card.classList.add("video-result-peek-card");
+      card.setAttribute("aria-hidden", "true");
+      const veil = document.createElement("div");
+      veil.className = "video-result-peek-veil";
+      veil.setAttribute("aria-hidden", "true");
+      stack.appendChild(card);
+      stack.appendChild(veil);
+      if (btn) {
+        btn.classList.add("video-result-peek-more-btn");
+        stack.appendChild(btn);
+      }
+      peekLi.appendChild(stack);
+      return peekLi;
+    }
+
     function renderYoutubeCards() {
       const base =
         currentCategory === "all"
@@ -2570,164 +2781,50 @@
         return a._order - b._order;
       });
       currentFiltered = sorted;
-      const visible = sorted.slice(0, visibleCount);
-      list.innerHTML = "";
-      visible.forEach((item) => {
-        const li = document.createElement("li");
-        li.className = "youtube-card";
-        const head = document.createElement("div");
-        head.className = "youtube-card-head";
-        const logoLink = document.createElement("a");
-        logoLink.href = item.url;
-        logoLink.target = "_blank";
-        logoLink.rel = "noopener noreferrer";
-        logoLink.className = "youtube-logo-link";
-        const logo = document.createElement("img");
-        logo.className = "youtube-card-logo";
-        logo.src = toHighResLogo(item.logo);
-        logo.alt = `${item.name} ロゴ`;
-        logo.loading = "lazy";
-        logo.onerror = () => {
-          logo.style.visibility = "hidden";
-        };
-        const name = document.createElement("p");
-        name.className = "youtube-card-name";
-        name.textContent = item.name;
-        const topBadges = document.createElement("div");
-        topBadges.className = "youtube-card-top-badges";
-        const catTop = document.createElement("span");
-        catTop.className = "youtube-top-badge youtube-top-badge--category";
-        const categoryClassMap = {
-          大会: "youtube-top-badge--cat-taikai",
-          一般: "youtube-top-badge--cat-ippan",
-          中学生以下: "youtube-top-badge--cat-junior",
-          高校: "youtube-top-badge--cat-koko",
-          海外: "youtube-top-badge--cat-default",
-          カラーガード: "youtube-top-badge--cat-colorguard",
-        };
-        catTop.classList.add(categoryClassMap[item.category] || "youtube-top-badge--cat-default");
-        catTop.textContent = item.category;
-        const mHead = resolvedMetaFor(item);
-        const badgeLatest = document.createElement("span");
-        badgeLatest.className = "youtube-top-badge youtube-top-badge--date youtube-top-badge--video-date";
-        const dLatestStr = channelUpdateDateString(item.url, item);
-        badgeLatest.textContent = `最新：${dLatestStr}`;
-        topBadges.appendChild(catTop);
-        topBadges.appendChild(badgeLatest);
-        const info = document.createElement("div");
-        info.className = "youtube-card-info";
-        info.appendChild(name);
-        info.appendChild(topBadges);
-        logoLink.appendChild(logo);
-        head.appendChild(logoLink);
-        head.appendChild(info);
-        li.appendChild(head);
+      const total = sorted.length;
+      list.className = "youtube-channel-list";
+      if (total === 1) list.classList.add("youtube-channel-list--total-1");
+      else if (total === 2) list.classList.add("youtube-channel-list--total-2");
 
-        const thumbs = document.createElement("div");
-        thumbs.className = "youtube-thumb-list";
-        const fallbackIds = fallbackThumbIdsFor(item);
-        const meta = resolvedMetaFor(item);
-        const badgeMap = buildThumbBadgeMap(meta);
-        const thumbIds = buildYoutubeFourThumbIds(meta, fallbackIds, {
-          allowShortFallback: false,
-        });
-        const [t1, t2, t3, t4] = thumbIds;
-        thumbIds.forEach((vid) => {
-          const src = vid ? `https://i.ytimg.com/vi/${vid}/hqdefault.jpg` : "";
-          if (!src) return;
-          const thumb = document.createElement("img");
-          thumb.className = "youtube-thumb";
-          thumb.src = src;
-          thumb.loading = "lazy";
-          thumb.alt = item.name;
-          const videoLink = document.createElement("a");
-          videoLink.href = vid ? `https://www.youtube.com/watch?v=${vid}` : item.url;
-          videoLink.target = "_blank";
-          videoLink.rel = "noopener noreferrer";
-          videoLink.className = "youtube-thumb-link";
-          const wrap = document.createElement("div");
-          wrap.className = "youtube-thumb-item";
-          wrap.setAttribute("data-yt-vid", vid);
-          const badgeMeta = badgeMap.get(vid);
-          if (badgeMeta) {
-            wrap.classList.add(`youtube-thumb-item--rank-${badgeMeta.rank}`);
-            const b = document.createElement("span");
-            b.className = `youtube-thumb-badge youtube-thumb-badge--corner-tr youtube-thumb-badge--rank-${badgeMeta.rank}`;
-            b.textContent = badgeMeta.label;
-            wrap.appendChild(b);
-          }
-          const thumbTitle = document.createElement("span");
-          thumbTitle.className = "youtube-thumb-title";
-          const hasStatic = videoTitleById[vid];
-          thumbTitle.textContent = hasStatic || "YouTubeで見る";
-          videoLink.appendChild(thumb);
-          wrap.appendChild(videoLink);
-          wrap.appendChild(thumbTitle);
-          thumbs.appendChild(wrap);
-        });
-        li.appendChild(thumbs);
-        backfillOembedThumbTitlesIn(thumbs);
+      const pageRows = sorted.slice(0, visibleCount);
+      const moreAvailable = total > 0 && visibleCount < total;
+      const peekRow = moreAvailable ? sorted[visibleCount] : null;
+      const gridCols = getYoutubeGridColumnCount();
+      const rem = pageRows.length % gridCols;
+      const emptySlots = rem === 0 ? 0 : gridCols - rem;
+      const useInlinePeek = Boolean(moreAvailable && peekRow && emptySlots > 0 && moreBtn);
 
-        const mylistRow = document.createElement("div");
-        mylistRow.className = "youtube-card-mylist-row";
-        const mylistBtn = document.createElement("button");
-        mylistBtn.type = "button";
-        mylistBtn.className = "youtube-channel-mylist-add-btn btn-share-search btn-marchinz-spotlight";
-        mylistBtn.textContent = "マイリストに追加";
-        mylistBtn.setAttribute("aria-label", `${item.name} を YouTube マイリストに追加`);
-        mylistBtn.addEventListener("click", async () => {
-          const api = window.MarchinZYoutubeChannelMylist;
-          const run = api?.addWithPicker || api?.add;
-          if (!run) {
-            window.alert("マイリスト機能が読み込まれていません。ページを再読み込みしてください。");
-            return;
-          }
-          mylistBtn.disabled = true;
-          try {
-            const r = await run({
-              name: item.name,
-              url: item.url,
-              logo: item.logo,
-              category: item.category,
-            });
-            if (!r?.ok) {
-              if (r?.message) window.alert(r.message);
-              return;
-            }
-            if (String(r.message || "").includes("すでに")) {
-              mylistBtn.textContent = "マイリスト済み";
-            } else {
-              mylistBtn.textContent = "追加済み";
-            }
-          } catch (e) {
-            window.alert(String(e?.message || e || "エラーが発生しました。"));
-          } finally {
-            if (mylistBtn.textContent === "マイリストに追加") {
-              mylistBtn.disabled = false;
-            }
-          }
-        });
-        mylistRow.appendChild(mylistBtn);
-        li.appendChild(mylistRow);
-
-        if (debugYoutube) {
-          const debug = document.createElement("p");
-          debug.className = "youtube-debug-meta";
-          debug.textContent = `DEBUG | 4枠(重複なし, ${thumbIds.length}本):${thumbIds.join(",")} | 解釈:最新動画 ${t1 || "-"} / 最新LIVE|人気 ${t2 || "-"} / 人気 ${t3 || "-"} / 人気 ${t4 || "-"}`;
-          li.appendChild(debug);
-        }
-        list.appendChild(li);
-      });
-      if (moreBtn) {
-        moreBtn.textContent = "もっと見る";
-        moreBtn.hidden = currentFiltered.length <= visibleCount;
+      if (moreBtn && youtubeMoreWrap && list.contains(moreBtn)) {
+        youtubeMoreWrap.appendChild(moreBtn);
       }
+
+      list.replaceChildren();
+      for (const item of pageRows) {
+        list.appendChild(buildYoutubeCard(item));
+      }
+      if (useInlinePeek && peekRow && moreBtn) {
+        list.appendChild(buildYoutubePeekSlot(peekRow, moreBtn));
+      }
+
+      if (moreBtn) {
+        if (!useInlinePeek && youtubeMoreWrap) {
+          moreBtn.classList.remove("video-result-peek-more-btn");
+          youtubeMoreWrap.appendChild(moreBtn);
+        }
+        moreBtn.textContent = "もっと見る";
+        moreBtn.hidden = !moreAvailable;
+        moreBtn.title = moreAvailable ? "さらにチャンネルを表示します" : "";
+      }
+      if (youtubeMoreWrap) {
+        youtubeMoreWrap.hidden = Boolean(useInlinePeek) || !moreAvailable;
+      }
+
       if (visibleCountEl) {
-        visibleCountEl.textContent = `表示中: ${visible.length} / ${currentFiltered.length}`;
+        visibleCountEl.textContent = `表示中: ${pageRows.length} / ${currentFiltered.length}チャンネル`;
       }
       const publishedScopeEl = document.getElementById("youtube-published-channel-count");
       if (publishedScopeEl) {
-        publishedScopeEl.textContent = `表示中 ${currentFiltered.length}/${channels.length}`;
+        publishedScopeEl.textContent = `表示中 ${currentFiltered.length}チャンネル`;
       }
       const publishedTitleCountEl = document.getElementById("youtube-published-list-title-count");
       if (publishedTitleCountEl) {
@@ -2737,7 +2834,7 @@
       if (publishedScopeBtn) {
         publishedScopeBtn.setAttribute(
           "aria-label",
-          `掲載チャンネル名一覧を開く（この区分 ${currentFiltered.length} / 全${channels.length}）`,
+          `掲載チャンネル名一覧を開く（この区分 ${currentFiltered.length}チャンネル）`,
         );
       }
     }
@@ -2749,7 +2846,11 @@
         currentSort = "new";
         visibleCount = 5;
         sortBtns.forEach((x) => x.setAttribute("aria-pressed", String((x.getAttribute("data-yt-sort") || "") === "new")));
-        renderYoutubeCards();
+        setYoutubeResultsLoading(true);
+        requestAnimationFrame(() => {
+          renderYoutubeCards();
+          setYoutubeResultsLoading(false);
+        });
       });
     });
 
@@ -2758,7 +2859,11 @@
         currentSort = btn.getAttribute("data-yt-sort") || "new";
         visibleCount = 5;
         sortBtns.forEach((x) => x.setAttribute("aria-pressed", String(x === btn)));
-        renderYoutubeCards();
+        setYoutubeResultsLoading(true);
+        requestAnimationFrame(() => {
+          renderYoutubeCards();
+          setYoutubeResultsLoading(false);
+        });
       });
     });
 
@@ -2768,6 +2873,20 @@
         renderYoutubeCards();
       });
     }
+
+    let lastYoutubeGridCols = getYoutubeGridColumnCount();
+    let youtubeGridResizeTimer = null;
+    window.addEventListener("resize", () => {
+      if (youtubeGridResizeTimer) window.clearTimeout(youtubeGridResizeTimer);
+      youtubeGridResizeTimer = window.setTimeout(() => {
+        youtubeGridResizeTimer = null;
+        const c = getYoutubeGridColumnCount();
+        if (c !== lastYoutubeGridCols) {
+          lastYoutubeGridCols = c;
+          renderYoutubeCards();
+        }
+      }, 200);
+    });
 
     const publishedDialog = document.getElementById("youtube-published-list-dialog");
     const publishedOpen = document.getElementById("youtube-published-list-open");
@@ -2811,7 +2930,11 @@
       sortBtns.forEach((x) => {
         x.setAttribute("aria-pressed", String((x.getAttribute("data-yt-sort") || "") === "new"));
       });
-      renderYoutubeCards();
+      setYoutubeResultsLoading(true);
+      requestAnimationFrame(() => {
+        renderYoutubeCards();
+        setYoutubeResultsLoading(false);
+      });
     }
     window.__marchinzResetYoutubeCategoryTabs = resetYoutubeTabToDefaultCategory;
 
@@ -2820,6 +2943,7 @@
       resetYoutubeTabToDefaultCategory();
     } else {
       renderYoutubeCards();
+      setYoutubeResultsLoading(false);
     }
   }
 

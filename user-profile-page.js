@@ -31,12 +31,12 @@
   let adminBanCtx = { db: /** @type {any} */ (null), targetUid: "" };
 
   /** `data-prof-tab` / `#prof-pane-*` / `?tab=` / section_vis_* と一致（index.html と揃える） */
-  const PROFILE_TAB_KEYS = /** @type {readonly ["notifs", "mll", "videos", "yt", "logdiary"]} */ ([
+  const PROFILE_TAB_KEYS = /** @type {readonly ["notifs", "mll", "logdiary", "videos", "yt"]} */ ([
     "notifs",
     "mll",
+    "logdiary",
     "videos",
     "yt",
-    "logdiary",
   ]);
 
   const DEFAULT_VIDEO_LIST_ID = "default";
@@ -225,11 +225,24 @@
     const host = el("#prof-notifs-list");
     if (!host) return;
     host.replaceChildren();
+    const tool = document.createElement("div");
+    tool.className = "user-prof-notif-filters";
+    tool.innerHTML =
+      '<button type="button" class="user-prof-notif-filter-btn" data-mz-notif-filter="unread" aria-pressed="true">未読</button>' +
+      '<button type="button" class="user-prof-notif-filter-btn" data-mz-notif-filter="all" aria-pressed="false">すべて</button>' +
+      '<button type="button" class="user-prof-notif-filter-btn" data-mz-notif-filter="read" aria-pressed="false">既読</button>';
+    host.appendChild(tool);
+    const feed = document.createElement("div");
+    feed.className = "user-prof-notifs-items";
+    host.appendChild(feed);
+    const empty = document.createElement("p");
+    empty.className = "user-profile-empty";
+    empty.hidden = true;
+    host.appendChild(empty);
     if (!snap || snap.empty) {
-      const p = document.createElement("p");
-      p.className = "user-profile-empty";
-      p.textContent = "通知はまだありません。";
-      host.appendChild(p);
+      empty.textContent = "新規の通知はありません";
+      empty.hidden = false;
+      tool.hidden = true;
       return;
     }
     /** @type {{ id: string; kind?: string; actor_uid?: string; actor_name?: string; target_title?: string; target_id?: string; target_href?: string; thread_root_id?: string; read?: boolean; created_at?: string }[]} */
@@ -353,14 +366,65 @@
 
       article.appendChild(avWrap);
       article.appendChild(body);
-      host.appendChild(article);
+      feed.appendChild(article);
     }
+    const allArticles = Array.from(feed.querySelectorAll("article[data-mz-notif-id]"));
+    const applyNotifFilter = (mode) => {
+      const m = mode === "read" || mode === "all" ? mode : "unread";
+      tool.querySelectorAll("[data-mz-notif-filter]").forEach((btn) => {
+        if (!(btn instanceof HTMLElement)) return;
+        const on = btn.getAttribute("data-mz-notif-filter") === m;
+        btn.setAttribute("aria-pressed", on ? "true" : "false");
+      });
+      let shown = 0;
+      allArticles.forEach((article) => {
+        if (!(article instanceof HTMLElement)) return;
+        const isRead = article.dataset.mzRead === "1";
+        const show = m === "all" || (m === "read" ? isRead : !isRead);
+        article.hidden = !show;
+        if (show) shown += 1;
+      });
+      empty.hidden = shown > 0;
+      if (!empty.hidden) {
+        empty.textContent = m === "unread" ? "新規の通知はありません" : "通知はありません";
+      }
+      host.dataset.mzNotifFilter = m;
+    };
+    applyNotifFilter("unread");
   }
 
   function wireNotificationPaneClicks() {
     if (!root || root.dataset.mzProfNotifWire === "1") return;
     root.dataset.mzProfNotifWire = "1";
     root.addEventListener("click", (ev) => {
+      const filterBtn = ev.target?.closest?.("[data-mz-notif-filter]");
+      if (filterBtn instanceof HTMLElement) {
+        ev.preventDefault();
+        const host = el("#prof-notifs-list");
+        if (!host) return;
+        const mode = String(filterBtn.getAttribute("data-mz-notif-filter") || "unread");
+        const allArticles = Array.from(host.querySelectorAll("article[data-mz-notif-id]"));
+        host.querySelectorAll("[data-mz-notif-filter]").forEach((btn) => {
+          if (!(btn instanceof HTMLElement)) return;
+          const on = btn.getAttribute("data-mz-notif-filter") === mode;
+          btn.setAttribute("aria-pressed", on ? "true" : "false");
+        });
+        let shown = 0;
+        allArticles.forEach((article) => {
+          if (!(article instanceof HTMLElement)) return;
+          const isRead = article.dataset.mzRead === "1";
+          const show = mode === "all" || (mode === "read" ? isRead : !isRead);
+          article.hidden = !show;
+          if (show) shown += 1;
+        });
+        const empty = host.querySelector(".user-profile-empty");
+        if (empty instanceof HTMLElement) {
+          empty.hidden = shown > 0;
+          if (!empty.hidden) empty.textContent = mode === "unread" ? "新規の通知はありません" : "通知はありません";
+        }
+        host.dataset.mzNotifFilter = mode;
+        return;
+      }
       const go = ev.target?.closest?.("[data-mz-notif-go]");
       if (go instanceof HTMLElement) {
         ev.preventDefault();
@@ -372,12 +436,24 @@
           if (nid0 && cur0 && d0) {
             artGo.dataset.mzRead = "1";
             artGo.classList.remove("user-prof-notif--unread");
+            const hostNow = el("#prof-notifs-list");
+            if (hostNow?.dataset.mzNotifFilter === "unread") artGo.hidden = true;
             void d0
               .collection("mll_profiles")
               .doc(cur0)
               .collection("notifications")
               .doc(nid0)
               .update({ read: true })
+              .then(() => {
+                const host = el("#prof-notifs-list");
+                if (!host || host.dataset.mzNotifFilter !== "unread") return;
+                const empty = host.querySelector(".user-profile-empty");
+                const hasUnread = Boolean(host.querySelector("article.user-prof-notif--unread"));
+                if (empty instanceof HTMLElement) {
+                  empty.hidden = hasUnread;
+                  if (!hasUnread) empty.textContent = "新規の通知はありません";
+                }
+              })
               .catch(() => {});
           }
         }
@@ -444,12 +520,24 @@
       if (!d || !cur) return;
       art.dataset.mzRead = "1";
       art.classList.remove("user-prof-notif--unread");
+      const hostNow = el("#prof-notifs-list");
+      if (hostNow?.dataset.mzNotifFilter === "unread") art.hidden = true;
       void d
         .collection("mll_profiles")
         .doc(cur)
         .collection("notifications")
         .doc(nid)
         .update({ read: true })
+        .then(() => {
+          const host = el("#prof-notifs-list");
+          if (!host || host.dataset.mzNotifFilter !== "unread") return;
+          const empty = host.querySelector(".user-profile-empty");
+          const hasUnread = Boolean(host.querySelector("article.user-prof-notif--unread"));
+          if (empty instanceof HTMLElement) {
+            empty.hidden = hasUnread;
+            if (!hasUnread) empty.textContent = "新規の通知はありません";
+          }
+        })
         .catch(() => {});
     });
   }
@@ -795,8 +883,26 @@
     img.className = "user-profile-cover-img";
     img.loading = "eager";
     img.decoding = "async";
+    img.onerror = () => {
+      img.onerror = null;
+      wrap.innerHTML = "";
+      wrap.classList.add("user-profile-cover--empty");
+      wrap.appendChild(document.createElement("div")).className = "user-profile-cover-placeholder";
+    };
     wrap.appendChild(img);
     window.MarchinZImage?.ensureProtectedImgWrap?.(img);
+  }
+
+  /** @param {Record<string, unknown>} pdata */
+  function resolveProfileAddressPrefecture(pdata) {
+    const a = String(pdata.profile_address_prefecture ?? "").trim();
+    if (a) return a;
+    return String(pdata.profile_prefecture ?? "").trim();
+  }
+
+  /** @param {Record<string, unknown>} pdata */
+  function isProfileAddressPrefecturePublic(pdata) {
+    return pdata.profile_address_prefecture_public !== false;
   }
 
   /** 公開ID表示（101→0000101）。8桁超のレガシーはそのまま。 */
@@ -822,17 +928,33 @@
   function renderHeader(profile, targetUid) {
     setText("#prof-display-name", String(profile.display_name || "ユーザー"));
     const pid = formatMarchinzPublicIdForDisplay(profile.marchinz_public_id);
-    setText("#prof-public-id", pid ? `ユーザーID: ${pid}` : "");
+    setText("#prof-public-id", pid ? `登録番号: ${pid}` : "登録番号: 0000101〜");
     const av = el("#prof-avatar");
     if (av && av instanceof HTMLImageElement) {
       av.src = profile.avatar_url || "logo/marchinz-logo.png";
       av.alt = `${profile.display_name || "ユーザー"} のプロフィール画像`;
+      av.onerror = () => {
+        av.onerror = null;
+        av.src = "logo/marchinz-logo.png";
+      };
       window.MarchinZImage?.ensureProtectedImgWrap?.(av);
     }
     const bio = el("#prof-bio");
     if (bio) {
       const t = String(profile.profile_bio || "").trim();
       bio.textContent = t || "（自己紹介は未設定です）";
+    }
+    const prefEl = el("#prof-address-prefecture");
+    if (prefEl) {
+      const pub = profile.profile_address_prefecture_public !== false;
+      const prefText = String(profile.profile_address_prefecture || "").trim();
+      if (pub && prefText) {
+        prefEl.textContent = prefText;
+        prefEl.hidden = false;
+      } else {
+        prefEl.textContent = "";
+        prefEl.hidden = true;
+      }
     }
     const attrsHost = el("#prof-attrs");
     if (attrsHost) {
@@ -847,6 +969,28 @@
         attrsHost.appendChild(sp);
       });
     }
+  }
+
+  /**
+   * @param {{ mll: string; videos: string; yt: string; logdiary: string }} sectionVis
+   * @param {boolean} isOwner
+   */
+  function renderTabVisibilityLabels(sectionVis, isOwner) {
+    const map = [
+      ["#prof-vis-mll", sectionVis.mll],
+      ["#prof-vis-logdiary", sectionVis.logdiary],
+      ["#prof-vis-videos", sectionVis.videos],
+      ["#prof-vis-yt", sectionVis.yt],
+    ];
+    map.forEach(([sel, vis]) => {
+      const n = el(sel);
+      if (!n) return;
+      const isPublic = vis !== "private";
+      n.textContent = isPublic ? "公開中" : "非公開";
+      n.classList.toggle("user-profile-tab-vis--private", !isPublic);
+    });
+    const notif = el("#prof-vis-notifs");
+    if (notif) notif.textContent = isOwner ? "未読/既読" : "";
   }
 
   /**
@@ -1065,16 +1209,35 @@
     }
   }
 
+  async function submitMylistReport(db, viewerId, targetUid, listId, listType) {
+    if (!db || !viewerId || !targetUid || !listId) return;
+    const text = window.prompt("通報理由（任意）");
+    if (text == null) return;
+    const reason = String(text || "").trim().slice(0, 500);
+    const rid = `mylist_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    await db.collection("mll_mylist_reports").doc(rid).set({
+      reporter_id: String(viewerId),
+      target_uid: String(targetUid),
+      list_id: String(listId),
+      list_type: listType === "yt" ? "yt" : "videos",
+      reason,
+      created_at: new Date().toISOString(),
+    });
+    window.alert("通報を受け付けました。ご協力ありがとうございます。");
+  }
+
   /**
    * @param {any} listsSnap
    * @param {any} marksSnap
-   * @param {{ targetUid?: string; likeShow?: { videoBookmark?: boolean } } | null} [opts]
+   * @param {{ targetUid?: string; likeShow?: { videoBookmark?: boolean }; viewerId?: string; db?: any } | null} [opts]
    */
   function renderVideoBookmarksGrouped(listsSnap, marksSnap, opts = null) {
     const host = el("#prof-mylist-videos");
     if (!host) return;
     host.replaceChildren();
     const profUid = String(opts?.targetUid || "").trim();
+    const viewerId = String(opts?.viewerId || "").trim();
+    const db = opts?.db || null;
     const showLike = opts?.likeShow?.videoBookmark !== false && Boolean(profUid);
 
     const listMeta = new Map();
@@ -1083,12 +1246,13 @@
       const lo = Number(d.list_order);
       listMeta.set(doc.id, {
         name: String(d.name || doc.id).trim() || doc.id,
+        oshi_text: String(d.oshi_text || "").trim(),
         visibility: String(d.visibility || "public").trim() === "private" ? "private" : "public",
         list_order: Number.isFinite(lo) ? lo : doc.id === DEFAULT_VIDEO_LIST_ID ? 0 : 500000,
       });
     });
     if (!listMeta.has(DEFAULT_VIDEO_LIST_ID)) {
-      listMeta.set(DEFAULT_VIDEO_LIST_ID, { name: "マイリスト", visibility: "public", list_order: 0 });
+      listMeta.set(DEFAULT_VIDEO_LIST_ID, { name: "マイリスト", oshi_text: "", visibility: "public", list_order: 0 });
     }
 
     /** @type {Map<string, any[]>} */
@@ -1126,6 +1290,7 @@
       totalCards += items.length;
       const meta = listMeta.get(lid) || {
         name: lid === DEFAULT_VIDEO_LIST_ID ? "マイリスト" : lid,
+        oshi_text: "",
         visibility: "public",
         list_order: lid === DEFAULT_VIDEO_LIST_ID ? 0 : 500000,
       };
@@ -1147,8 +1312,26 @@
       tag.textContent = pub ? "公開" : "非公開";
       tag.title = pub ? "プロフィールのこのタブに表示されます" : "プロフィールでは非表示です";
       right.appendChild(tag);
+      if (viewerId && viewerId !== profUid) {
+        const reportBtn = document.createElement("button");
+        reportBtn.type = "button";
+        reportBtn.className = "btn-reset-search";
+        reportBtn.textContent = "このマイリストを通報";
+        reportBtn.addEventListener("click", () => {
+          void submitMylistReport(db, viewerId, profUid, lid, "videos").catch((e) => {
+            window.alert(String(e?.message || "通報に失敗しました。"));
+          });
+        });
+        right.appendChild(reportBtn);
+      }
       head.appendChild(h3);
       head.appendChild(right);
+      if (meta.oshi_text) {
+        const oshi = document.createElement("p");
+        oshi.className = "mll-mylist-oshi-display";
+        oshi.textContent = `マイ推し！ ${meta.oshi_text}`;
+        head.appendChild(oshi);
+      }
 
       const grid = document.createElement("ul");
       grid.className = "user-profile-mylist-grid";
@@ -1197,13 +1380,15 @@
   /**
    * @param {any} listsSnap
    * @param {any} marksSnap
-   * @param {{ targetUid?: string; likeShow?: { channelBookmark?: boolean } } | null} [opts]
+   * @param {{ targetUid?: string; likeShow?: { channelBookmark?: boolean }; viewerId?: string; db?: any } | null} [opts]
    */
   function renderChannelBookmarksGrouped(listsSnap, marksSnap, opts = null) {
     const host = el("#prof-mylist-yt");
     if (!host) return;
     host.replaceChildren();
     const profUid = String(opts?.targetUid || "").trim();
+    const viewerId = String(opts?.viewerId || "").trim();
+    const db = opts?.db || null;
     const showLike = opts?.likeShow?.channelBookmark !== false && Boolean(profUid);
 
     const listMeta = new Map();
@@ -1212,12 +1397,13 @@
       const lo = Number(d.list_order);
       listMeta.set(doc.id, {
         name: String(d.name || doc.id).trim() || doc.id,
+        oshi_text: String(d.oshi_text || "").trim(),
         visibility: String(d.visibility || "public").trim() === "private" ? "private" : "public",
         list_order: Number.isFinite(lo) ? lo : doc.id === DEFAULT_CHANNEL_LIST_ID ? 0 : 500000,
       });
     });
     if (!listMeta.has(DEFAULT_CHANNEL_LIST_ID)) {
-      listMeta.set(DEFAULT_CHANNEL_LIST_ID, { name: "マイリスト", visibility: "public", list_order: 0 });
+      listMeta.set(DEFAULT_CHANNEL_LIST_ID, { name: "マイリスト", oshi_text: "", visibility: "public", list_order: 0 });
     }
 
     /** @type {Map<string, any[]>} */
@@ -1255,6 +1441,7 @@
       totalCards += items.length;
       const meta = listMeta.get(lid) || {
         name: lid === DEFAULT_CHANNEL_LIST_ID ? "マイリスト" : lid,
+        oshi_text: "",
         visibility: "public",
         list_order: lid === DEFAULT_CHANNEL_LIST_ID ? 0 : 500000,
       };
@@ -1276,8 +1463,26 @@
       tag.textContent = pub ? "公開" : "非公開";
       tag.title = pub ? "プロフィールのこのタブに表示されます" : "プロフィールでは非表示です";
       right.appendChild(tag);
+      if (viewerId && viewerId !== profUid) {
+        const reportBtn = document.createElement("button");
+        reportBtn.type = "button";
+        reportBtn.className = "btn-reset-search";
+        reportBtn.textContent = "このマイリストを通報";
+        reportBtn.addEventListener("click", () => {
+          void submitMylistReport(db, viewerId, profUid, lid, "yt").catch((e) => {
+            window.alert(String(e?.message || "通報に失敗しました。"));
+          });
+        });
+        right.appendChild(reportBtn);
+      }
       head.appendChild(h3);
       head.appendChild(right);
+      if (meta.oshi_text) {
+        const oshi = document.createElement("p");
+        oshi.className = "mll-mylist-oshi-display";
+        oshi.textContent = `マイ推し！ ${meta.oshi_text}`;
+        head.appendChild(oshi);
+      }
 
       const grid = document.createElement("ul");
       grid.className = "user-profile-mylist-grid";
@@ -1508,6 +1713,7 @@
         b.setAttribute("tabindex", on ? "0" : "-1");
       }
     });
+    renderTabVisibilityLabels({ mll: "public", logdiary: "public", videos: "public", yt: "public" }, false);
     const note = el("#prof-sections-private-note");
     if (note) {
       note.textContent = "";
@@ -1569,7 +1775,7 @@
       return;
     }
 
-    setText("#prof-load-msg", "読み込み中…");
+    setText("#prof-load-msg", "");
 
     const profSnap = await db.collection("mll_profiles").doc(targetUid).get();
     const pdata = profSnap.exists ? profSnap.data() || {} : {};
@@ -1616,31 +1822,64 @@
     const loadYt = !guest && (isOwner || sectionVis.yt === "public");
     const loadDiary = !guest && (isOwner || sectionVis.logdiary === "public");
 
+    const safeQuery = async (task, fallback, warnTag) => {
+      try {
+        return await task();
+      } catch (e) {
+        console.warn(`[profile] ${warnTag} failed`, e);
+        return fallback;
+      }
+    };
     const [logsSnap, videoListsSnap, vidSnap, chListsSnap, chSnap, calMap, notifsSnap] = await Promise.all([
       loadMll
-        ? db.collection("mll_logs").orderBy("created_at", "desc").limit(800).get()
+        ? safeQuery(
+            () => db.collection("mll_logs").orderBy("created_at", "desc").limit(800).get(),
+            EMPTY_QUERY_SNAP,
+            "mll_logs",
+          )
         : Promise.resolve(EMPTY_QUERY_SNAP),
       loadVid
-        ? db.collection("mll_profiles").doc(targetUid).collection("video_lists").orderBy("created_at", "asc").limit(80).get()
+        ? safeQuery(
+            () => db.collection("mll_profiles").doc(targetUid).collection("video_lists").orderBy("created_at", "asc").limit(80).get(),
+            EMPTY_QUERY_SNAP,
+            "video_lists",
+          )
         : Promise.resolve(EMPTY_QUERY_SNAP),
       loadVid
-        ? db.collection("mll_profiles").doc(targetUid).collection("video_bookmarks").orderBy("added_at", "desc").limit(200).get()
+        ? safeQuery(
+            () => db.collection("mll_profiles").doc(targetUid).collection("video_bookmarks").orderBy("added_at", "desc").limit(200).get(),
+            EMPTY_QUERY_SNAP,
+            "video_bookmarks",
+          )
         : Promise.resolve(EMPTY_QUERY_SNAP),
       loadYt
-        ? db.collection("mll_profiles").doc(targetUid).collection("channel_lists").orderBy("created_at", "asc").limit(80).get()
+        ? safeQuery(
+            () => db.collection("mll_profiles").doc(targetUid).collection("channel_lists").orderBy("created_at", "asc").limit(80).get(),
+            EMPTY_QUERY_SNAP,
+            "channel_lists",
+          )
         : Promise.resolve(EMPTY_QUERY_SNAP),
       loadYt
-        ? db.collection("mll_profiles").doc(targetUid).collection("channel_bookmarks").orderBy("added_at", "desc").limit(200).get()
+        ? safeQuery(
+            () => db.collection("mll_profiles").doc(targetUid).collection("channel_bookmarks").orderBy("added_at", "desc").limit(200).get(),
+            EMPTY_QUERY_SNAP,
+            "channel_bookmarks",
+          )
         : Promise.resolve(EMPTY_QUERY_SNAP),
-      loadCalendarLookup(db),
+      safeQuery(() => loadCalendarLookup(db), new Map(), "calendar_lookup"),
       isOwner
-        ? db
-            .collection("mll_profiles")
-            .doc(targetUid)
-            .collection("notifications")
-            .orderBy("created_at", "desc")
-            .limit(80)
-            .get()
+        ? safeQuery(
+            () =>
+              db
+                .collection("mll_profiles")
+                .doc(targetUid)
+                .collection("notifications")
+                .orderBy("created_at", "desc")
+                .limit(80)
+                .get(),
+            EMPTY_QUERY_SNAP,
+            "notifications",
+          )
         : Promise.resolve(EMPTY_QUERY_SNAP),
     ]);
 
@@ -1648,6 +1887,8 @@
       display_name: pdata.display_name || "ユーザー",
       avatar_url: pdata.avatar_url || "",
       profile_bio: pdata.profile_bio || "",
+      profile_address_prefecture: resolveProfileAddressPrefecture(pdata),
+      profile_address_prefecture_public: isProfileAddressPrefecturePublic(pdata),
       profile_attributes: Array.isArray(pdata.profile_attributes) ? pdata.profile_attributes : [],
       marchinz_public_id: String(pdata.marchinz_public_id || "").replace(/\D/g, ""),
     };
@@ -1672,6 +1913,7 @@
         if (btn instanceof HTMLElement) btn.hidden = false;
       });
     }
+    renderTabVisibilityLabels(sectionVis, isOwner);
 
     const anyTabPublic =
       isOwner || PROFILE_TAB_KEYS.some((k) => sectionVis[k] === "public");
@@ -1731,7 +1973,7 @@
         host.appendChild(p);
       }
     } else {
-      renderVideoBookmarksGrouped(videoListsSnap, vidSnap, { targetUid, likeShow });
+      renderVideoBookmarksGrouped(videoListsSnap, vidSnap, { targetUid, likeShow, viewerId, db });
     }
 
     if (guest && sectionVis.yt === "public") {
@@ -1753,7 +1995,7 @@
         yhost.appendChild(p);
       }
     } else {
-      renderChannelBookmarksGrouped(chListsSnap, chSnap, { targetUid, likeShow });
+      renderChannelBookmarksGrouped(chListsSnap, chSnap, { targetUid, likeShow, viewerId, db });
     }
 
     const storedCounts = readPublicProfCounts(pdata);
@@ -1957,6 +2199,14 @@
     const fromHash = String(window.MarchinZProfileUidFromHash?.() || "").trim();
     const me = String(window.MLL_AUTH?.getUser?.()?.id || "").trim();
     if (fromHash && me && fromHash !== me) return;
+    void loadAndRender().catch(() => {});
+  });
+
+  window.addEventListener("mll-auth-changed", () => {
+    const hash = String(location.hash || "");
+    if (!/^#profile(?:\?|$)/i.test(hash)) return;
+    const fromHash = String(window.MarchinZProfileUidFromHash?.() || "").trim();
+    if (fromHash) return;
     void loadAndRender().catch(() => {});
   });
 })();

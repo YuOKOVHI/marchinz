@@ -106,6 +106,8 @@ body {
 }
 
 .site-brand {
+  position: relative;
+  z-index: 600;
   padding: 1.25rem 1.5rem 1rem;
   text-align: center;
   background: var(--logo-canvas);
@@ -115,6 +117,7 @@ body {
 .site-brand-inner {
   box-sizing: border-box;
   position: relative;
+  z-index: 601;
   width: 100%;
   max-width: 1400px;
   margin: 0 auto;
@@ -210,6 +213,7 @@ body {
 
 .site-brand-account-menu-wrap {
   position: relative;
+  z-index: 602;
   flex-shrink: 0;
 }
 
@@ -260,7 +264,7 @@ body {
     0 10px 28px rgba(12, 20, 42, 0.18),
     0 2px 6px rgba(12, 20, 42, 0.08);
   background: var(--panel);
-  z-index: 12900;
+  z-index: 603;
   text-align: left;
 }
 
@@ -336,6 +340,12 @@ a.user-account-dropdown-item {
 }
 
 @media (max-width: 719px) {
+  :root {
+    --mz-mobile-toggle-size: 3.06rem;
+    --mz-mobile-logo-gap: 0.32rem;
+    --mz-mobile-logo-safe-inset: 0.86rem;
+  }
+
   .site-brand {
     padding: 0.48rem max(0.3rem, env(safe-area-inset-right, 0px)) 0.42rem max(0.3rem, env(safe-area-inset-left, 0px));
     text-align: left;
@@ -365,7 +375,11 @@ a.user-account-dropdown-item {
   }
 
   .site-logo {
-    max-width: min(28vw, 110px);
+    /*
+      Mobile logo size is derived from hamburger size:
+      logo = toggle size - safe inset (3.06rem - 0.86rem = 2.20rem)
+    */
+    max-width: min(4.5vw, calc((var(--mz-mobile-toggle-size) - var(--mz-mobile-logo-safe-inset)) * 0.5));
     margin: 0;
   }
 
@@ -379,11 +393,47 @@ a.user-account-dropdown-item {
     right: max(0.06rem, env(safe-area-inset-right, 0px));
     transform: translateY(-50%);
     display: inline-flex !important;
+    width: var(--mz-mobile-toggle-size);
+    height: var(--mz-mobile-toggle-size);
   }
 
-  .site-brand-actions,
-  .site-brand-user-area {
+  .site-mobile-nav-toggle .site-brand-hamburger {
+    width: 1.32rem;
+    gap: 5px;
+  }
+
+  .site-brand-actions {
     display: none !important;
+  }
+
+  .site-brand-user-area {
+    position: absolute;
+    top: 50%;
+    right: calc(max(0.06rem, env(safe-area-inset-right, 0px)) + var(--mz-mobile-toggle-size) + var(--mz-mobile-logo-gap));
+    transform: translateY(-50%);
+    display: flex !important;
+    align-items: center;
+    gap: 0;
+    max-width: none;
+  }
+
+  .site-brand-user-area[hidden] {
+    display: none !important;
+  }
+
+  .site-brand-user-profile-link {
+    padding: 0;
+    margin: 0;
+  }
+
+  .site-brand-user-name,
+  .site-brand-account-menu-wrap {
+    display: none !important;
+  }
+
+  .site-brand-user-avatar {
+    width: 2.2rem;
+    height: 2.2rem;
   }
 
   .site-nav {
@@ -665,7 +715,8 @@ a.user-account-dropdown-item {
 .site-mobile-drawer:not([hidden]) {
   position: fixed;
   inset: 0;
-  z-index: 25000;
+  z-index: 2147483640;
+  isolation: isolate;
 }
 
 .site-mobile-drawer:not([hidden]) .site-mobile-drawer-backdrop {
@@ -680,6 +731,7 @@ a.user-account-dropdown-item {
 .site-mobile-drawer-backdrop {
   position: absolute;
   inset: 0;
+  z-index: 0;
   margin: 0;
   padding: 0;
   border: none;
@@ -692,6 +744,7 @@ a.user-account-dropdown-item {
   top: 0;
   right: 0;
   bottom: 0;
+  z-index: 1;
   width: min(92vw, 400px);
   background: var(--panel);
   box-shadow: -10px 0 36px rgba(12, 20, 42, 0.2);
@@ -1103,6 +1156,35 @@ body.mz-mobile-drawer-open {
   margin-top: 0;
 }
 
+.mz-dialog-overlay--legal-gate {
+  z-index: 13100;
+}
+
+.mz-dialog-overlay--legal-gate .mz-dialog {
+  max-height: min(90vh, 620px);
+}
+
+.mz-legal-gate-lead {
+  margin-top: 0;
+  font-size: 0.95rem;
+}
+
+.mz-legal-gate-bullets {
+  margin: 0.5rem 0 0.75rem;
+  padding-left: 1.25rem;
+}
+
+.mz-legal-gate-actions {
+  margin-top: 1rem;
+}
+
+.auth-legal-summary-snippet {
+  margin: 0.5rem 0 0.65rem;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: var(--muted, #555);
+}
+
 .mz-dialog-overlay {
   box-sizing: border-box;
   position: fixed;
@@ -1285,8 +1367,11 @@ body.mz-mobile-drawer-open {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: flex-start;
-  margin: 0.35rem 0 0.35rem;
+  justify-content: center;
+  margin: 0;
+  padding: 0.85rem 0 0.75rem;
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .community-open-compose-btn {
@@ -1578,6 +1663,50 @@ body.community-compose-active {
   display: none;
 }
 
+.auth-loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483600;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.7);
+  pointer-events: auto;
+}
+
+.auth-loading-overlay-inner {
+  display: grid;
+  place-items: center;
+  gap: 0.7rem;
+  padding: 1.1rem 1.2rem;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(15, 33, 56, 0.16);
+  box-shadow: 0 8px 28px rgba(15, 33, 56, 0.14);
+}
+
+.auth-loading-spinner {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  border: 3px solid rgba(15, 33, 56, 0.2);
+  border-top-color: #0f2138;
+  animation: auth-loading-spin 0.9s linear infinite;
+}
+
+.auth-loading-text {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f2138;
+}
+
+@keyframes auth-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .community-compose-backdrop {
   position: absolute;
   inset: 0;
@@ -1591,7 +1720,7 @@ body.community-compose-active {
 .community-compose-dialog {
   position: relative;
   z-index: 1;
-  width: min(38rem, 100%);
+  width: min(40rem, calc(100vw - 1rem));
   max-height: min(92vh, 920px);
   display: flex;
   flex-direction: column;
@@ -1650,6 +1779,10 @@ body.community-compose-active {
   margin: 0 0 0.55rem;
 }
 
+.community-compose-notes .community-compose-note-p:last-child {
+  margin-bottom: 0;
+}
+
 .community-compose-rules {
   margin: 0 !important;
   line-height: 1.5;
@@ -1661,6 +1794,20 @@ body.community-compose-active {
   overflow-y: auto;
   padding: 0.75rem 1rem 1rem;
   -webkit-overflow-scrolling: touch;
+}
+
+.community-compose-auth-phase {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  padding: 0.35rem 0 1.1rem;
+  box-sizing: border-box;
+}
+
+.community-compose-auth-phase .community-compose-auth-actions {
+  margin-top: 0;
+  justify-content: center;
 }
 
 .community-compose-submit-row {
@@ -2420,6 +2567,17 @@ main {
   gap: 0.35rem;
 }
 
+/* 大会動画：表示中チップは最大3行、あふれは右スクロールバーで縦スクロール */
+#page-videos #visible-orgs .visible-orgs-tags {
+  align-content: flex-start;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
+  max-height: calc(3 * (0.28rem * 2 + 1.35 * 0.78rem) + 2 * 0.35rem);
+  padding-right: 0.2rem;
+}
+
 .mll-participant-rows {
   flex-direction: column;
   align-items: stretch;
@@ -2533,6 +2691,157 @@ main {
   margin-left: 0;
   margin-right: 0;
   padding-top: 0.75rem;
+}
+
+/* 大会動画：団体/チーム一覧を全画面で表示 */
+.browse-org-overlay {
+  box-sizing: border-box;
+  position: fixed;
+  inset: 0;
+  z-index: 12180;
+  display: flex;
+  flex-direction: column;
+  justify-content: stretch;
+  padding-top: env(safe-area-inset-top, 0);
+  padding-left: max(0.45rem, env(safe-area-inset-left, 0));
+  padding-right: max(0.45rem, env(safe-area-inset-right, 0));
+  margin: 0;
+  background: rgba(15, 33, 56, 0.28);
+}
+
+.browse-org-overlay[hidden] {
+  display: none !important;
+}
+
+.browse-org-overlay__sheet {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+  background: var(--panel);
+  border-radius: 12px 12px 0 0;
+  box-shadow: 0 -4px 28px rgba(15, 33, 56, 0.18);
+}
+
+.browse-org-overlay__sheet:focus {
+  outline: none;
+}
+
+.browse-org-overlay__sheet:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.browse-org-overlay__head {
+  flex-shrink: 0;
+  padding: 0.5rem 0.75rem 0.45rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.browse-org-overlay__title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.12rem 0.35rem;
+  margin-bottom: 0.4rem;
+}
+
+.browse-org-overlay__heading {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--navy);
+  line-height: 1.35;
+}
+
+.browse-org-overlay__count {
+  font-size: 0.52rem;
+  font-weight: 600;
+  color: var(--muted);
+  line-height: 1.25;
+  letter-spacing: 0.02em;
+}
+
+.browse-org-overlay__filter-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.browse-org-overlay__filter-label {
+  flex-shrink: 0;
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--navy);
+}
+
+.browse-org-overlay__filter {
+  flex: 1 1 auto;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 0.38rem 0.55rem;
+  font-size: 0.88rem;
+  line-height: 1.3;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.browse-org-overlay__scroll {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.browse-button-list.browse-button-list--overlay {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  margin: 0;
+  padding: 0.85rem 0.75rem 5.5rem;
+  border: none;
+  border-radius: 0;
+  background: var(--panel);
+  box-shadow: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.browse-org-overlay__fade {
+  pointer-events: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 5.25rem;
+  z-index: 1;
+  background: linear-gradient(
+    to top,
+    var(--white) 0%,
+    rgba(255, 255, 255, 0.88) 38%,
+    rgba(255, 255, 255, 0) 100%
+  );
+}
+
+.browse-org-overlay__footer {
+  flex-shrink: 0;
+  position: relative;
+  z-index: 2;
+  padding: 0.65rem 1rem calc(0.85rem + env(safe-area-inset-bottom, 0));
+  background: var(--white);
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: center;
+}
+
+.browse-org-overlay__close {
+  min-width: min(100%, 18rem);
 }
 
 .browse-button-list[hidden] {
@@ -2831,6 +3140,15 @@ main {
   align-items: center;
 }
 
+/** display:flex が UA の [hidden] を打ち消すため、非表示は明示する */
+.mll-lp-hero-cta-row[hidden] {
+  display: none !important;
+}
+
+.mll-lp-hero-cta-row--mypage {
+  justify-content: flex-start;
+}
+
 .mll-lp-btn {
   display: inline-flex;
   align-items: center;
@@ -2920,7 +3238,7 @@ main {
 
 .mll-lp-section-sub {
   margin: 0 auto 2rem;
-  max-width: 46em;
+  max-width: min(100%, 58em);
   text-align: center;
   font-size: 0.92rem;
   line-height: 1.74;
@@ -3162,6 +3480,10 @@ main {
   flex-wrap: wrap;
   justify-content: center;
   gap: 0.85rem;
+}
+
+.mll-lp-finale-row[hidden] {
+  display: none !important;
 }
 
 .mll-lp-finale-row .mll-lp-btn {
@@ -3532,11 +3854,8 @@ main {
   color: var(--muted);
 }
 
-.community-filter-tabs {
-  margin-top: 0.35rem;
-}
-
-.community-form-theme-inner.youtube-tabs {
+/* 投稿フォームのカテゴリ：YouTube カテゴリタブと同じ mz-tab-strip-yamap / youtube-tab-btn に統一 */
+.community-form-theme-inner.youtube-tabs.mz-tab-strip-yamap {
   margin-bottom: 0;
 }
 
@@ -3633,6 +3952,12 @@ main {
   gap: 0.55rem;
 }
 
+.mll-form-inline-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem;
+}
+
 .mll-form select,
 .mll-form textarea {
   padding: 0.5rem 0.65rem;
@@ -3648,6 +3973,14 @@ main {
   font-size: 0.8rem;
   color: var(--text);
   font-weight: 600;
+}
+
+.mll-field-error {
+  margin: 0.1rem 0 0;
+  min-height: 1.05rem;
+  font-size: 0.76rem;
+  line-height: 1.35;
+  color: #b71c1c;
 }
 
 #mll-role {
@@ -3820,6 +4153,41 @@ main {
   font-weight: 700;
   flex: 1;
   min-width: 0;
+}
+
+.mll-mylist-oshi-display {
+  width: 100%;
+  margin: -0.05rem 0 0;
+  font-size: 0.83rem;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.mll-mylist-oshi-display.is-placeholder {
+  color: rgba(12, 15, 20, 0.45);
+}
+
+.mll-mylist-oshi-edit-row {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0.38rem 0 0.6rem;
+}
+
+.mll-mylist-oshi-input {
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+.mll-mylist-oshi-save {
+  width: fit-content;
+  font-size: 0.78rem;
 }
 
 .mll-mylist-list-head-right {
@@ -4198,7 +4566,7 @@ main {
   font-size: 0.95rem;
 }
 
-/* PC でも検索は常に 3 行（団体・大会・フリー） */
+/* 大会動画検索：団体・フリーはラベル左・入力右 */
 .search-rows {
   display: flex;
   flex-direction: column;
@@ -4210,9 +4578,48 @@ main {
 }
 
 .search-field--team {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+  display: grid;
+  /* ラベル幅は文字どおり。min 固定幅を付けない（短文ラベルと入力の間に空きができないように） */
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.35rem 0.35rem;
+  align-items: center;
+}
+
+.search-field--team > .search-label {
+  grid-column: 1;
+  grid-row: 1;
+  display: block;
+  margin: 0;
+  padding-top: 0;
+  padding-right: 0;
+  white-space: nowrap;
+}
+
+.search-field--team > .search-team-line {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.search-field--free {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.35rem 0.35rem;
+  align-items: center;
+}
+
+.search-field--free > .search-label {
+  grid-column: 1;
+  display: block;
+  margin: 0;
+  padding-right: 0;
+  /* 連続半角スペースを表示しつつ1行に収める（ラベル末尾2スペースの詰め用） */
+  white-space: pre;
+}
+
+.search-field--free > input {
+  grid-column: 2;
+  min-width: 0;
+  width: 100%;
 }
 
 .search-team-line {
@@ -4225,6 +4632,31 @@ main {
 .search-team-line input {
   flex: 1 1 14rem;
   min-width: 0;
+}
+
+@media (max-width: 520px) {
+  .search-field--team,
+  .search-field--free {
+    grid-template-columns: 1fr;
+  }
+
+  .search-field--team > .search-label,
+  .search-field--free > .search-label {
+    grid-column: 1;
+    grid-row: auto;
+    padding-top: 0;
+    white-space: normal;
+  }
+
+  .search-field--team > .search-team-line {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .search-field--free > input {
+    grid-column: 1;
+    grid-row: auto;
+  }
 }
 
 .search-options {
@@ -4289,7 +4721,8 @@ main {
   color: #7a3d00;
 }
 
-.browse-inline-trigger.browse-trigger-active {
+.browse-inline-trigger.browse-trigger-active,
+.browse-inline-trigger[aria-expanded="true"] {
   background: #ffb85c;
   color: #6e3300;
   border-color: #b96407;
@@ -4319,11 +4752,34 @@ main {
   color: var(--text);
 }
 
+.search-history-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem 0.75rem;
+  margin-bottom: 0.45rem;
+}
+
+.search-presets-title--history {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: min(100%, 12rem);
+}
+
+.search-history-heading .btn-reset-search--history {
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0.3rem 0.65rem;
+  line-height: 1.35;
+}
+
 .search-presets-list {
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
-  margin-bottom: 0.45rem;
+  margin-bottom: 0;
 }
 
 .search-presets-empty {
@@ -4945,7 +5401,8 @@ main {
   box-shadow: 0 0 0 1px var(--border);
 }
 
-.video-result-list .video-result-peek-card {
+.video-result-list .video-result-peek-card,
+.youtube-channel-list .youtube-card.video-result-peek-card {
   margin: 0;
   width: 100%;
   max-width: 100%;
@@ -5227,14 +5684,6 @@ main {
   color: #000;
 }
 
-.youtube-list-menu {
-  margin: 0 0 0.8rem;
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  flex-wrap: wrap;
-}
-
 .youtube-sort-btn {
   padding: 0.32rem 0.7rem;
   font-size: 0.78rem;
@@ -5252,42 +5701,100 @@ main {
   font-weight: 700;
 }
 
+/* YouTube 一覧は大会動画の results-panel と同型で横幅いっぱい */
+.youtube-results-panel .youtube-result-sort-bar {
+  margin-bottom: 0.5rem;
+  justify-content: flex-start;
+  align-items: center;
+  column-gap: 0.75rem;
+}
+
+.youtube-results-panel .youtube-result-sort-bar .result-sort-bar-main {
+  align-items: center;
+}
+
+.youtube-sort-bar-channel-count {
+  flex-shrink: 0;
+}
+
+/* モバイルファースト：〜899px 1列 / 900〜1199px 2列 / 1200px〜 3列（大会動画一覧と同じ閾値） */
 .youtube-channel-list {
   margin: 0;
   padding: 0;
   list-style: none;
   display: grid;
-  gap: 0.7rem;
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(1rem, 2.5vw, 1.35rem);
+  justify-content: center;
+}
+
+.youtube-channel-list > li {
+  min-width: 0;
+}
+
+@media (min-width: 900px) {
+  .youtube-channel-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* 区分などで 2 チャンネルだけ：最大幅を抑えて中央に並べる */
+  .youtube-channel-list.youtube-channel-list--total-2 {
+    grid-template-columns: repeat(2, minmax(0, min(100%, 24rem)));
+    justify-content: center;
+  }
+
+  /* 1 件だけ：カード幅を抑えて中央 */
+  .youtube-channel-list.youtube-channel-list--total-1 {
+    grid-template-columns: minmax(0, min(100%, 28rem));
+    justify-content: center;
+  }
+}
+
+@media (min-width: 1200px) {
+  .youtube-channel-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  /* 広い画面で 2 件のみのときは 3 列グリッドをやめ 2 枚を中央に */
+  .youtube-channel-list.youtube-channel-list--total-2 {
+    grid-template-columns: repeat(2, minmax(0, min(100%, 24rem)));
+    justify-content: center;
+  }
+
+  .youtube-channel-list.youtube-channel-list--total-1 {
+    grid-template-columns: minmax(0, min(100%, 28rem));
+    justify-content: center;
+  }
+}
+
+.youtube-results-skeleton {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(1rem, 2.5vw, 1.35rem);
+  min-height: auto;
+}
+
+@media (min-width: 900px) {
+  .youtube-results-skeleton {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1200px) {
+  .youtube-results-skeleton {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 .youtube-more-wrap {
-  margin: 0.7rem 0 0;
+  margin: 0.55rem 0 0;
   text-align: center;
-  display: grid;
-  justify-content: center;
-  gap: 0.45rem;
 }
 
 .youtube-visible-count {
   font-size: 0.78rem;
   color: var(--muted);
   font-weight: 700;
-}
-
-.youtube-more-btn {
-  padding: 0.42rem 0.95rem;
-  font-size: 0.82rem;
-  font-weight: 700;
-  border: 1px solid var(--navy);
-  border-radius: 999px;
-  background: var(--navy);
-  color: var(--white);
-  cursor: pointer;
-}
-
-.youtube-more-btn:hover {
-  background: var(--blue-deep);
-  border-color: var(--blue-deep);
 }
 
 .youtube-card {
@@ -5639,6 +6146,19 @@ main {
   line-height: 1.45;
 }
 
+/* 大会動画タブ下：検索注記（常時）＋ MIX3 注記（MIX3 タブ時のみ）を同じ体裁で積む */
+.videos-tab-notice-block {
+  margin: 0.18rem 0 0.45rem;
+}
+
+.videos-tab-notice-block .videos-tab-notice-line {
+  margin: 0;
+}
+
+.videos-tab-notice-block #mix3-notice:not([hidden]) {
+  margin-top: 0.35rem;
+}
+
 .rights-notice-mix3[hidden] {
   display: none !important;
 }
@@ -5663,6 +6183,15 @@ main {
 
 .rights-notice--youtube-foot {
   text-align: left;
+}
+
+/* YouTube: 並び替え行（表示中 Nチャンネル含む）の直下 */
+.youtube-results-panel > .rights-notice--youtube-under-sort {
+  margin-top: 0.42rem;
+  margin-bottom: 0.55rem;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: var(--muted);
 }
 
 .results-panel {
@@ -6086,18 +6615,133 @@ main {
 
 /* ---------- イベントページ（カレンダー共有） ---------- */
 
-.calendar-events-panel .calendar-ev-time-tabs {
-  margin-bottom: 0.65rem;
+/**
+ * 見出し（page-hero）〜直下のタブ／リードまで縦を詰める
+ * — 演奏会・大会・イベント / 大会動画（マーチング等・MIX3）/ MarchinZ Note / MarchinZ Board
+ */
+.mll-panel.calendar-events-panel,
+.mll-panel.videos-page-main,
+.mll-panel.youtube-page-main,
+.community-hub-panel--notes > .mll-panel,
+.community-hub-panel--board > .mll-panel {
+  gap: 0.48rem;
 }
 
-.calendar-ev-register-intro {
-  margin: 0.35rem 0 0.85rem;
+.mll-panel.calendar-events-panel > header.page-hero.mz-philosophy-header,
+.mll-panel.videos-page-main > header.page-hero.mz-philosophy-header,
+.mll-panel.youtube-page-main > header.page-hero.mz-philosophy-header,
+.community-hub-panel--notes > .mll-panel > header.page-hero.mz-philosophy-header,
+.community-hub-panel--board > .mll-panel > header.page-hero.mz-philosophy-header {
+  margin-bottom: 0.28rem;
+}
+
+.mll-panel.calendar-events-panel .mz-philosophy-label,
+.mll-panel.videos-page-main .mz-philosophy-label,
+.mll-panel.youtube-page-main .mz-philosophy-label,
+.community-hub-panel--notes > .mll-panel .mz-philosophy-label,
+.community-hub-panel--board > .mll-panel .mz-philosophy-label {
+  margin-bottom: 0.3rem;
+}
+
+.mll-panel.calendar-events-panel .mz-philosophy-rule,
+.mll-panel.videos-page-main .mz-philosophy-rule,
+.mll-panel.youtube-page-main .mz-philosophy-rule,
+.community-hub-panel--notes > .mll-panel .mz-philosophy-rule,
+.community-hub-panel--board > .mll-panel .mz-philosophy-rule {
+  margin-top: 0.55rem;
+}
+
+.mll-panel.calendar-events-panel .calendar-events-head-band {
+  margin: 0 0 0.28rem;
+}
+
+.community-hub-panel--notes > .mll-panel > .static-panel-lead:first-of-type,
+.community-hub-panel--board > .mll-panel > .community-board-lead-main {
+  line-height: 1.42;
+}
+
+/* コミュニティ見出し直下: リード → 種別タブ → 登録（中央・団体一覧ボタン同型） */
+.calendar-events-head-band {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: stretch;
+  margin: 0.15rem 0 0.28rem;
 }
 
-.calendar-ev-open-register-btn {
-  min-width: min(100%, 280px);
+.calendar-ev-lead-register-line {
+  width: 100%;
+  min-width: 0;
+  margin: 0 0 0.28rem;
+}
+
+.calendar-ev-lead-register-line .static-panel-lead.calendar-ev-lead-inline {
+  margin: 0;
+  line-height: 1.42;
+}
+
+.calendar-ev-lead-inline {
+  display: block;
+  max-width: 100%;
+}
+
+.calendar-events-head-band nav.tabs.youtube-tabs.mz-tab-strip-yamap {
+  margin-bottom: 0 !important;
+  padding-bottom: 0 !important;
+  width: 100%;
+}
+
+/* 種別タブと「イベントを登録」の間・下に十分な余白。ボタンはコンテナ幅いっぱいで中央 */
+.calendar-ev-register-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0.85rem 0 0.75rem;
+}
+
+.calendar-ev-register-action-row .browse-inline-trigger {
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+.calendar-ev-controls-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem 0.65rem;
+  margin: 0 0 0.15rem;
+}
+
+.calendar-ev-controls-row .calendar-ev-sort-bar {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: min(100%, 10rem);
+}
+
+.calendar-ev-upcoming-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+  flex: 0 0 auto;
+}
+
+.calendar-ev-upcoming-filter--inline {
+  white-space: nowrap;
+}
+
+.calendar-ev-upcoming-filter input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--accent, #1e4fd6);
 }
 
 .calendar-event-form.calendar-ev-form-body {
@@ -6123,10 +6767,22 @@ main {
   margin: 0.15rem 0 0.85rem;
 }
 
+.calendar-ev-register-consent {
+  margin: 0.35rem 0 0.65rem !important;
+  line-height: 1.55 !important;
+}
+
 .calendar-ev-venue-label select,
 .calendar-event-form select {
   font-size: 1rem;
   max-width: 100%;
+  min-height: 2.7rem;
+}
+
+#mll-event-date,
+#calendar-ev-date,
+#calendar-edit-date {
+  min-height: 2.7rem;
 }
 
 #calendar-edit-overlay .calendar-edit-body select {
@@ -6146,14 +6802,42 @@ main {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 0.45rem 0.75rem;
   margin: 0.15rem 0 0.35rem;
 }
 
+.calendar-ev-title-row--prominent {
+  margin: 0.72rem 0 0.5rem;
+}
+
+.calendar-ev-title-col {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+.calendar-ev-title-row--prominent .calendar-ev-title-text {
+  font-size: 1.22rem;
+  line-height: 1.52;
+  font-weight: 800;
+  margin: 0;
+}
+
+.calendar-ev-title-url {
+  margin: 0.18rem 0 0 !important;
+  font-size: 0.72rem !important;
+  line-height: 1.42 !important;
+  color: var(--muted) !important;
+}
+
+.calendar-ev-title-url a {
+  color: var(--link);
+  word-break: break-all;
+}
+
 .calendar-ev-title-text {
-  flex: 1;
-  min-width: min(100%, 12rem);
+  flex: 0 1 auto;
+  min-width: min(100%, 8rem);
   margin: 0;
 }
 
@@ -6513,6 +7197,9 @@ main {
 }
 
 .calendar-ev-owner-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
   margin-top: 0.35rem;
 }
 
@@ -6539,6 +7226,507 @@ a.user-account-dropdown-link {
   outline-offset: 3px;
   border-radius: 8px;
   transition: outline-color 0.35s ease;
+}
+
+/* カレンダー一覧: 並び替え（開催日 / 開催地 / 種別）— 大会動画と同様に ▲▼ */
+.calendar-ev-sort-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.22rem 0.34rem;
+  margin: 0.02rem 0 0.28rem;
+}
+
+.calendar-ev-sort-intro {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-right: 0.06rem;
+}
+
+.calendar-ev-sort-btn {
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 0.18rem 0.42rem;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 33, 56, 0.16);
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+  line-height: 1.25;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease,
+    box-shadow 0.12s ease;
+}
+
+.calendar-ev-sort-btn:hover {
+  border-color: rgba(30, 79, 214, 0.35);
+  color: var(--navy);
+}
+
+.calendar-ev-sort-btn--active {
+  background: rgba(30, 79, 214, 0.14);
+  border-color: rgba(30, 79, 214, 0.48);
+  color: #1a237e;
+  box-shadow: 0 1px 3px rgba(30, 79, 214, 0.12);
+}
+
+.calendar-ev-sort-btn.sorted-asc::after,
+.calendar-ev-sort-btn.sorted-desc::after {
+  font-size: 0.68em;
+  opacity: 0.88;
+  font-weight: 700;
+}
+
+.calendar-ev-sort-btn.sorted-asc::after {
+  content: " ▲";
+}
+
+.calendar-ev-sort-btn.sorted-desc::after {
+  content: " ▼";
+}
+
+/* 1行目: チップ + 右寄せ 記入者・アイコン・名前 */
+.calendar-ev-topline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.35rem 0.65rem;
+  width: 100%;
+  max-width: 100%;
+  margin: 0 0 0.2rem;
+}
+
+.calendar-ev-topline .calendar-ev-meta-chips {
+  margin-bottom: 0;
+  margin-right: 0;
+  flex: 1 1 auto;
+  min-width: min(100%, 10rem);
+}
+
+.calendar-ev-topline-right {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.calendar-ev-topline-kinyuu {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+
+.calendar-ev-topline-creator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.38rem;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.calendar-ev-topline-creator-avatar-link {
+  display: inline-flex;
+  line-height: 0;
+  flex-shrink: 0;
+  border-radius: 50%;
+  text-decoration: none;
+}
+
+.calendar-ev-topline-creator-avatar-link:hover .calendar-ev-topline-creator-avatar {
+  box-shadow: 0 0 0 2px rgba(30, 79, 214, 0.35);
+}
+
+.calendar-ev-topline-creator-avatar {
+  width: 1.38rem;
+  height: 1.38rem;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 1px solid rgba(15, 33, 56, 0.12);
+  box-sizing: border-box;
+  display: block;
+}
+
+.calendar-ev-topline-creator-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: min(100%, 14rem);
+}
+
+/* MarchinZ Log 行（ラベル + アイコン + 右アクション） */
+.calendar-ev-mll-log-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.55rem 0.75rem;
+  margin-top: 0.45rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid rgba(15, 33, 56, 0.1);
+  max-width: 100%;
+}
+
+.calendar-ev-mll-log-left {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.38rem 0.45rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.calendar-ev-mll-log-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1.15;
+  color: var(--blue-deep);
+  white-space: nowrap;
+  padding: 0.14rem 0.44rem 0.15rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid rgba(30, 79, 214, 0.28);
+  background: linear-gradient(
+    155deg,
+    rgba(240, 246, 255, 0.98) 0%,
+    rgba(220, 232, 252, 0.88) 55%,
+    rgba(232, 241, 252, 0.92) 100%
+  );
+  box-shadow: 0 1px 3px rgba(30, 79, 214, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.75);
+}
+
+.calendar-ev-mll-log-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+}
+
+.calendar-ev-mll-log-save-btn {
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0.4rem 0.85rem;
+  border-radius: 8px;
+  border: 1px solid rgba(30, 79, 214, 0.45);
+  background: linear-gradient(180deg, rgba(30, 79, 214, 0.16) 0%, rgba(30, 79, 214, 0.08) 100%);
+  color: #0d2474;
+  cursor: pointer;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.calendar-ev-mll-log-save-btn:hover {
+  border-color: rgba(30, 79, 214, 0.65);
+  background: linear-gradient(180deg, rgba(30, 79, 214, 0.22) 0%, rgba(30, 79, 214, 0.12) 100%);
+}
+
+.calendar-ev-mll-log-clone-btn {
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.36rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  line-height: 1.25;
+}
+
+.calendar-ev-mll-log-clone-btn:hover {
+  border-color: var(--muted);
+}
+
+.calendar-ev-mll-log-part-btn {
+  font-size: 0.76rem;
+  font-weight: 600;
+  padding: 0.28rem 0.55rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--muted);
+  cursor: pointer;
+  line-height: 1.2;
+  flex: 0 0 auto;
+}
+
+.calendar-ev-mll-log-part-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* MarchinZ Log を公開しているユーザー（プロフィールへ） */
+.calendar-ev-mll-faces {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.38rem;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.calendar-ev-mll-face {
+  flex: 0 0 auto;
+  display: block;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px solid rgba(255, 255, 255, 0.92);
+  box-shadow: 0 0 0 1px rgba(15, 33, 56, 0.12);
+  line-height: 0;
+  text-decoration: none;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.calendar-ev-mll-face:hover {
+  transform: scale(1.06);
+  box-shadow: 0 0 0 2px rgba(30, 79, 214, 0.28);
+}
+
+.calendar-ev-mll-face-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.calendar-ev-mll-face-img--withdrawn {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, #cfd8dc, #90a4ae);
+}
+
+/* カレンダー一覧: メタを YouTube 風チップ（日付・開催地・種別） */
+.calendar-ev-meta-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0 0 0.4rem;
+}
+
+.calendar-ev-meta-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.48rem;
+  font-size: 0.76rem;
+  font-weight: 600;
+  line-height: 1.35;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 33, 56, 0.14);
+  background: var(--panel, #f5f5f5);
+  color: var(--navy, #1a237e);
+  box-shadow: 0 1px 2px rgba(15, 33, 56, 0.06);
+}
+
+.calendar-ev-meta-chip--date {
+  font-variant-numeric: tabular-nums;
+}
+
+.calendar-ev-meta-chip--venue {
+  font-weight: 500;
+}
+
+.calendar-ev-meta-chip--kind-concert {
+  border-color: rgba(106, 27, 154, 0.42);
+  background: rgba(106, 27, 154, 0.09);
+  color: #4a148c;
+}
+
+.calendar-ev-meta-chip--kind-taikai {
+  border-color: rgba(198, 40, 40, 0.45);
+  background: rgba(198, 40, 40, 0.08);
+  color: #b71c1c;
+}
+
+.calendar-ev-meta-chip--kind-event {
+  border-color: rgba(21, 101, 192, 0.45);
+  background: rgba(21, 101, 192, 0.08);
+  color: #0d47a1;
+}
+
+.calendar-ev-meta-chip--kind-marching {
+  border-color: rgba(245, 124, 0, 0.5);
+  background: rgba(245, 124, 0, 0.1);
+  color: #e65100;
+}
+
+.calendar-ev-meta-chip--kind-other {
+  border-color: rgba(15, 33, 56, 0.18);
+  background: var(--bg);
+  color: var(--muted);
+}
+
+/* 種別ごとにカード左アクセント + タブと同系の背景トーン */
+.calendar-ev-card.calendar-ev-card--kind-concert {
+  border-left: 4px solid #7b1fa2;
+  background: linear-gradient(
+    105deg,
+    rgba(106, 27, 154, 0.12) 0%,
+    rgba(106, 27, 154, 0.045) 42%,
+    var(--bg) 100%
+  );
+}
+
+.calendar-ev-card.calendar-ev-card--kind-taikai {
+  border-left: 4px solid #c62828;
+  background: linear-gradient(
+    105deg,
+    rgba(198, 40, 40, 0.11) 0%,
+    rgba(198, 40, 40, 0.04) 42%,
+    var(--bg) 100%
+  );
+}
+
+.calendar-ev-card.calendar-ev-card--kind-event {
+  border-left: 4px solid #1565c0;
+  background: linear-gradient(
+    105deg,
+    rgba(21, 101, 192, 0.11) 0%,
+    rgba(21, 101, 192, 0.04) 42%,
+    var(--bg) 100%
+  );
+}
+
+.calendar-ev-card.calendar-ev-card--kind-marching {
+  border-left: 4px solid #ef6c00;
+  background: linear-gradient(
+    105deg,
+    rgba(245, 124, 0, 0.12) 0%,
+    rgba(245, 124, 0, 0.045) 42%,
+    var(--bg) 100%
+  );
+}
+
+.calendar-ev-card.calendar-ev-card--kind-other {
+  border-left: 4px solid rgba(15, 33, 56, 0.22);
+  background: linear-gradient(
+    105deg,
+    rgba(26, 35, 126, 0.06) 0%,
+    rgba(26, 35, 126, 0.02) 40%,
+    var(--bg) 100%
+  );
+}
+
+/* いいね表示を ♥0 に近づける */
+.calendar-ev-like-btn {
+  gap: 0.02rem;
+  padding: 0.15rem 0.32rem;
+}
+
+.calendar-ev-like-btn .community-like-count {
+  margin-left: -0.02rem;
+}
+
+/* 作成者（サイト共通の小さな円形アバター） */
+.calendar-ev-creator-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.45rem;
+  margin: 0.25rem 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.calendar-ev-creator-label {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.calendar-ev-creator-avatar {
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 1px solid rgba(15, 33, 56, 0.12);
+  box-sizing: border-box;
+}
+
+.calendar-ev-creator-name {
+  color: var(--text);
+  font-weight: 500;
+}
+
+/* 参加者アバター横並び（カード内） */
+.calendar-ev-att-avatars-btn {
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 8px;
+  line-height: 0;
+}
+
+.calendar-ev-att-avatars-btn:focus-visible {
+  outline: 2px solid var(--accent, #1e4fd6);
+  outline-offset: 2px;
+}
+
+.calendar-ev-att-avatars {
+  display: inline-flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.28rem;
+}
+
+.calendar-ev-att-avatar-ring {
+  width: 1.55rem;
+  height: 1.55rem;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  border: 2px solid var(--surface, #fafafa);
+  box-sizing: border-box;
+  box-shadow: 0 0 0 1px rgba(15, 33, 56, 0.1);
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.calendar-ev-att-avatar-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.calendar-ev-att-avatar-img--withdrawn {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, #cfd8dc, #90a4ae);
+}
+
+.calendar-ev-att-avatar-more {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--muted);
+  padding: 0 0.15rem;
 }
 
 @keyframes mz-cover-kenburns {
@@ -6597,6 +7785,35 @@ a.user-account-dropdown-link {
   border: 1px solid var(--border);
   border-radius: 8px;
   font: inherit;
+}
+
+.mz-profile-dialog-form input[type="date"] {
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  box-sizing: border-box;
+}
+
+.mz-profile-checkbox-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  margin-top: 0.65rem;
+  font-size: 0.92rem;
+  line-height: 1.35;
+  cursor: pointer;
+}
+
+.mz-profile-checkbox-label input {
+  margin-top: 0.2rem;
+  flex-shrink: 0;
+}
+
+.mz-profile-field-note {
+  margin: 0.35rem 0 0;
 }
 
 .user-profile-panel {
@@ -6762,6 +7979,16 @@ a.user-account-dropdown-link {
   color: var(--muted, #666);
 }
 
+.user-profile-address-prefecture {
+  margin: 0.2rem 0 0;
+  font-size: 0.88rem;
+  color: var(--muted, #666);
+}
+
+.user-profile-address-prefecture[hidden] {
+  display: none !important;
+}
+
 .user-profile-name-row {
   display: flex;
   flex-wrap: wrap;
@@ -6829,6 +8056,21 @@ a.user-account-dropdown-link {
   color: var(--muted, #444);
 }
 
+.user-profile-tab-vis {
+  font-size: 0.7rem;
+  padding: 0.03rem 0.35rem;
+  border-radius: 999px;
+  border: 1px solid rgba(37, 99, 235, 0.25);
+  color: #1d4ed8;
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.user-profile-tab-vis--private {
+  border-color: rgba(100, 116, 139, 0.3);
+  color: #475569;
+  background: rgba(100, 116, 139, 0.1);
+}
+
 .user-profile-tab-pane {
   padding-top: 0.85rem;
 }
@@ -6838,6 +8080,19 @@ a.user-account-dropdown-link {
   font-size: 0.86rem;
   line-height: 1.65;
   color: rgba(12, 15, 20, 0.72);
+}
+
+.user-profile-pane-lead {
+  margin: 0 0 1rem;
+  font-size: 0.86rem;
+  line-height: 1.65;
+  color: rgba(12, 15, 20, 0.72);
+}
+
+.user-profile-pane-lead a {
+  color: var(--link, #2563eb);
+  text-decoration: underline;
+  text-underline-offset: 0.14em;
 }
 
 .user-profile-logdiary-notice {
@@ -7658,13 +8913,41 @@ a.user-account-dropdown-link {
 
 /* プロフィール「通知」（X 風の縦リスト） */
 .user-prof-notifs-feed {
-  list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 0.55rem;
   border: 1px solid var(--border);
   border-radius: 12px;
-  overflow: hidden;
   background: var(--panel);
+}
+
+.user-prof-notif-filters {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 0.55rem;
+}
+
+.user-prof-notif-filter-btn {
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--text);
+  border-radius: 999px;
+  padding: 0.22rem 0.6rem;
+  font-size: 0.76rem;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.user-prof-notif-filter-btn[aria-pressed="true"] {
+  border-color: rgba(37, 99, 235, 0.3);
+  background: rgba(37, 99, 235, 0.1);
+  color: #1d4ed8;
+  font-weight: 700;
+}
+
+.user-prof-notifs-items {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
 }
 
 .user-prof-notif {
@@ -8033,6 +9316,11 @@ a.user-account-dropdown-link {
     padding-left: calc(var(--mz-mobile-block-pl) + 0.24rem);
     padding-right: calc(var(--mz-mobile-block-pr) + 0.24rem);
     box-sizing: border-box;
+  }
+
+  body .youtube-results-panel > .rights-notice--youtube-under-sort {
+    padding-left: 0;
+    padding-right: 0;
   }
 
   body .footer-nav-inner {
