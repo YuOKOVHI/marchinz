@@ -1,5 +1,5 @@
 /* MarchinZ PWA — bump CACHE when shell/offline behavior should refresh (deploy with index bump). */
-const CACHE = "marchinz-pwa-v1.12.14";
+const CACHE = "marchinz-pwa-v1.13.0";
 
 self.addEventListener("install", (event) => {
   const origin = self.location.origin;
