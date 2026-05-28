@@ -32,6 +32,9 @@ ARCHIVE_DIR = YOUTUBE_LIST_DIR / "archive"
 OUT_CSV = YOUTUBE_LIST_DIR / "YouTubeリスト.csv"
 OUT_INLINE = YOUTUBE_LIST_DIR / "youtube-list.inline.js"
 
+# 3分00秒（180秒）以下は除外。3分01秒（181秒）以上のみ掲載。
+MIN_VIDEO_DURATION_SEC = 181
+
 FIELDNAMES = (
     "ロゴ画像URL",
     "チャンネル名",
@@ -172,8 +175,8 @@ def is_short(item: dict) -> bool:
     if "#shorts" in blob or "＃shorts" in blob or " shorts" in blob or "ショート" in blob:
         return True
     duration_sec = int(item.get("duration_sec") or 0)
-    # Shorts 混入抑止を優先して 3分以下を短尺として除外
-    if 0 < duration_sec <= 180:
+    # Shorts 混入抑止を優先して 3分01秒未満を短尺として除外
+    if 0 < duration_sec < MIN_VIDEO_DURATION_SEC:
         return True
     return False
 
