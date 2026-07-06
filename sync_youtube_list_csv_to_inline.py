@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """
-YouTubeリスト.csv → youtube-list/youtube-list.inline.js 同期（単一の正: CSV）。
+YouTubeリスト.csv → youtube-list/youtube-list.inline.js 同期。
+
+手動で CSV のみ編集した場合に実行する。書き込み後、CSV と inline の一致を検証する。
+
+本番の定常更新は GitHub Actions の `export_youtube_list_via_api.py`（CSV と inline を同時生成）を正とする。
 
 使い方（010_MarchinZ ディレクトリで）:
   python3 sync_youtube_list_csv_to_inline.py
@@ -57,6 +61,12 @@ def main() -> int:
         encoding="utf-8",
     )
     print(f"wrote {OUT_PATH} ({len(rows)} channels)")
+    from verify_youtube_list_csv_inline import verify_youtube_csv_inline_match
+
+    ok, msg = verify_youtube_csv_inline_match()
+    if not ok:
+        print(f"error: 書き込み後の検証に失敗しました: {msg}", file=sys.stderr)
+        return 1
     return 0
 
 

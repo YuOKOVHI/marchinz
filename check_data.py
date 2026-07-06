@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """data.json と大会動画 CSV（2 本同時）の整合を検査する（ビルド後の確認用）。
 
+加えて **YouTubeリスト.csv と youtube-list.inline.js の一致**（サイトは inline を読むため）を検証する。
+
 `sync_csv_to_json.SOURCE_CSVS` と同じ並び・同じ 2 ファイルを必ずまとめて検査する。
 片方だけの CSV では `check_data.py` を通さない運用にしてください。
 """
@@ -103,6 +105,14 @@ def main() -> int:
     if csv_total != len(rows):
         errs.append(f"件数不一致: JSON {len(rows)} / CSV合算 {csv_total}")
     validate_youtube_list_csv(errs)
+    try:
+        from verify_youtube_list_csv_inline import verify_youtube_csv_inline_match
+    except Exception as ex:  # noqa: BLE001
+        errs.append(f"YouTubeリスト CSV/inline 検証の読込失敗: {ex}")
+    else:
+        yt_ok, yt_msg = verify_youtube_csv_inline_match()
+        if not yt_ok:
+            errs.append(yt_msg)
     if errs:
         print("\n".join(errs), file=sys.stderr)
         return 1

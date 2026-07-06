@@ -1,0 +1,29 @@
+# PR / main への push で、コミット済みデータの整合を検証する（シークレット不要）。
+# - YouTubeリスト: CSV と youtube-list.inline.js がズレていないか
+# - 大会動画: data.json と CSV 合算件数など（check_data.py）
+
+name: Verify repo data
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: YouTube list CSV vs inline
+        run: python3 verify_youtube_list_csv_inline.py
+
+      - name: data.json vs tournament CSVs
+        run: python3 check_data.py

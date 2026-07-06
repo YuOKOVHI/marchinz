@@ -14,7 +14,9 @@
 | **Firebase / GCP 監視** | どのプロダクトが増えているか把握する | Cloud Monitoring のダッシュボード、または Firebase Console の **Usage** を定期的に確認。Storage / Firestore の急増がないか見る。 |
 | **App Check（本番キー + Enforcement）** | API キー公開 SPA に対し、Bot や直叩きの悪用を減らす | 1) Firebase Console → **App Check** で Web アプリを登録し **reCAPTCHA v3 サイトキー**を発行する。2) 本番の `auth-config.js`（またはホスティングの環境変数注入）に `appCheck.recaptchaSiteKey` を設定する。3) 問題なければ **Firestore / Storage / 必要なら Realtime DB** で **Enforcement を有効化**する（有効化前にトークンが付いていることを必ず確認）。4) ローカル開発用にデバッグトークンを Console に登録する。 |
 
-**コード側の現状:** `auth.js` でキーがあれば `ReCaptchaV3Provider` を有効化済み。`MLL_AUTH.isAppCheckActive()` で有効かどうかを参照可能。
+**コード側の現状:** `auth.js` で `appCheck.recaptchaSiteKey` が設定されているとき **ReCaptchaV3Provider** を有効化。未設定・空文字のときは初期化しない（`MLL_AUTH.isAppCheckActive()` は false）。**Console で Enforcement を有効にする前に**本番キー設定とメトリクス確認が必須。
+
+**Enforcement 状態（本番・2026-05-23）:** **Cloud Firestore** 適用済み。**Storage** 適用済み（メトリクス 100% 確認後に適用・プロフィール画像保存で動作確認済み）。Authentication はモニタリングのまま（任意）。
 
 ---
 
@@ -22,6 +24,8 @@
 
 | 項目 | 目的 | 備考 |
 |------|------|------|
+| **Firestore プロフィール配下マイリスト read** | 意図した公開範囲だけ未ログインに露出する | `section_vis_videos` / `section_vis_yt` と各 `video_lists` / `channel_lists` の `visibility`、およびブックマーク側の `list_id` 参照でゲート（`firebase/firestore.rules`）。 |
+| **Firestore `mll_community_posts` read / write** | 掲示板 — 雑談・質問はログインのみ read。運営よりは privileged のみ create/update | `theme` が 質問 / 見学募集 / その他 は未ログイン read 不可。`theme: 運営より` は `isPrivileged()` のみ書込可（**1.26.9–1.26.11**）。 |
 | **Firestore `mll_profiles` allowlist** | クライアントが任意フィールドを `merge` で増やせないようにする | `firebase/firestore.rules` の `mll_profiles/{uid}` を参照。 |
 | **Storage ルール（サイズ・MIME・パス）** | 巨大ファイル・非画像の直 PUT を抑止 | `firebase/storage.rules`。 |
 | **画像の canvas 再エンコード** | EXIF 等のメタが乗りにくい JPEG へ変換（プロフィール・コミュニティ・ログ日記） | クライアント実装。ルールは MIME のみ検知（完全なマジックバイト検証は別レイヤ）。 |

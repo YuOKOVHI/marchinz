@@ -4,6 +4,10 @@
 (() => {
   const SS_INTENT_MYLIST_ROW = "mll_intent_mylist_row_json";
   const DEFAULT_LIST_ID = "default";
+
+  function isLegacyDefaultPickerList(id, name) {
+    return String(id) === DEFAULT_LIST_ID && String(name || "").trim() === "マイリスト";
+  }
   const LS_LAST_LIST = "mz_video_mylist_last_list_id";
 
   const hostEl = () => document.getElementById("mll-mylist-video-host");
@@ -31,6 +35,30 @@
     "動画配信元",
     "動画配信元URL",
   ];
+
+  /** @param {HTMLElement} parent @param {string} oshiText */
+  function appendMllOshiDisplayRow(parent, oshiText) {
+    const trimmed = String(oshiText || "").trim();
+    const row = document.createElement("p");
+    row.className = `mll-mylist-oshi-display${trimmed ? "" : " is-placeholder"}`;
+    const label = document.createElement("span");
+    label.className = "mll-mylist-oshi-label";
+    label.textContent = "推しポイント！";
+    row.appendChild(label);
+    const body = document.createElement("span");
+    body.className = "mll-mylist-oshi-text";
+    body.textContent = trimmed || "はまだ記入されていません";
+    row.appendChild(body);
+    parent.appendChild(row);
+    return { row, body };
+  }
+
+  /** @param {{ row: HTMLElement; body: HTMLElement }} display @param {string} oshiText */
+  function setMllOshiDisplayRow(display, oshiText) {
+    const trimmed = String(oshiText || "").trim();
+    display.row.className = `mll-mylist-oshi-display${trimmed ? "" : " is-placeholder"}`;
+    display.body.textContent = trimmed || "はまだ記入されていません";
+  }
 
   function cloneRowForPending(row) {
     const o = {};
@@ -61,6 +89,14 @@
     window.MarchinZProcessingOverlay?.hide?.();
   }
 
+  function refreshAfterListLike() {
+    if (/^#profile(?:[?#]|$)/i.test(String(location.hash || ""))) {
+      window.MarchinZUserProfile?.refresh?.();
+      return;
+    }
+    renderList();
+  }
+
   function alertErr(err, fallback) {
     window.alert(`code: ${(err?.code || "unknown").toString()}\nmessage: ${(err?.message || fallback || "処理に失敗しました。").toString()}`);
   }
@@ -74,61 +110,74 @@
     return o;
   }
 
-  async function toggleMyVideoBookmarkLike(docId) {
+  const listLikeInflight = new Set();
+
+  async function toggleVideoListLike(ownerUid, listId) {
+    const inflightKey = `vl:${ownerUid}:${listId}`;
+    if (listLikeInflight.has(inflightKey)) return false;
     const db = getDb();
     const user = getUser();
-    if (!user?.id || !db) return;
+    if (!user?.id) {
+      window.MarchinZNavigateAuthEntry?.("login");
+      return false;
+    }
+    if (!db || !ownerUid || !listId) return false;
+    if (window.MarchinZRateLimit && !window.MarchinZRateLimit.check("like")) return false;
+    listLikeInflight.add(inflightKey);
+    /** @type {{ title: string } | null} */
+    let likeNotify = null;
     try {
-      const ref = db.collection("mll_profiles").doc(user.id).collection("video_bookmarks").doc(docId);
+      const ref = db.collection("mll_profiles").doc(ownerUid).collection("video_lists").doc(listId);
       await db.runTransaction(async (txn) => {
         const snap = await txn.get(ref);
         if (!snap.exists) return;
         const data = snap.data() || {};
         const prev = normLbBookmarks(data.liked_by);
         const next = { ...prev };
-        if (next[user.id]) delete next[user.id];
+        const wasOn = Boolean(next[user.id]);
+        if (wasOn) delete next[user.id];
         else next[user.id] = true;
         txn.update(ref, { liked_by: next });
+        if (!wasOn && ownerUid !== user.id) {
+          const title = String(data.name || "").trim().slice(0, 200) || "マイリスト";
+          likeNotify = { title };
+        }
       });
     } catch (e) {
       console.warn(e);
       setMsg(String(e?.message || "いいねの更新に失敗しました。"), true);
-      return;
+      listLikeInflight.delete(inflightKey);
+      return false;
     }
-    renderList();
+    if (likeNotify) {
+      const nm = String(window.MarchinZActorDisplayName?.(user) || "ユーザー").trim().slice(0, 120) || "ユーザー";
+      window.MarchinZPushLikeNotification?.(db, ownerUid, {
+        kind: "like_video_list",
+        actor_uid: user.id,
+        actor_name: nm,
+        target_type: "video_list",
+        target_id: String(listId),
+        target_title: likeNotify.title,
+        target_href: `#profile?uid=${encodeURIComponent(ownerUid)}&tab=videos&mylist=${encodeURIComponent(String(listId))}`,
+        thread_root_id: String(listId).slice(0, 128),
+      });
+    }
+    listLikeInflight.delete(inflightKey);
   }
 
-  function appendMyVideoBmLike(hostEl, it, showLike) {
-    if (!hostEl || !showLike || !it?.docId) return;
+  function appendListLike(hostEl, ownerUid, listId, likedByMap) {
+    if (!hostEl || !listId) return;
     const me = getUser();
-    const lb = normLbBookmarks(it.liked_by);
+    const lb = normLbBookmarks(likedByMap);
     const cnt = Object.keys(lb).filter((k) => lb[k]).length;
     const liked = Boolean(me?.id && lb[me.id]);
-    const row = document.createElement("div");
-    row.className = "community-like-row";
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "community-like-btn" + (liked ? " community-like-btn--on" : "");
-    btn.setAttribute("aria-pressed", liked ? "true" : "false");
-    btn.setAttribute("aria-label", liked ? "いいねを解除" : "いいねする");
-    btn.addEventListener("click", () => void toggleMyVideoBookmarkLike(it.docId));
-    const heart = document.createElement("span");
-    heart.className = "community-like-heart";
-    heart.setAttribute("aria-hidden", "true");
-    heart.textContent = "\u2665";
-    const num = document.createElement("span");
-    num.className = "community-like-count";
-    num.textContent = String(cnt);
-    btn.appendChild(heart);
-    btn.appendChild(num);
-    row.appendChild(btn);
-    if (!me?.id) {
-      const hint = document.createElement("span");
-      hint.className = "community-like-hint mll-log-meta";
-      hint.textContent = "ログインでいいねできます";
-      row.appendChild(hint);
-    }
-    hostEl.appendChild(row);
+    window.MarchinZEngageUi?.buildLikeRow(hostEl, {
+      liked,
+      count: cnt,
+      onClick: () => toggleVideoListLike(ownerUid, listId),
+      showLoginHint: !me?.id,
+      stopPropagation: true,
+    });
   }
 
   function normalizeBookmarkUrl(u) {
@@ -264,7 +313,7 @@
       channel_name: rowChannelName(row),
       channel_url: rowChannelUrl(row),
       category: rowCategory(row),
-      added_at: new Date().toISOString(),
+      added_at: new Date().toISOString().slice(0, 40),
       sort_index: Math.min(2147483647, Math.floor(Date.now() / 1000)),
     };
   }
@@ -283,36 +332,24 @@
   }
 
   function lastUsedListId() {
-    try {
-      return String(localStorage.getItem(LS_LAST_LIST) || "").trim() || DEFAULT_LIST_ID;
-    } catch {
-      return DEFAULT_LIST_ID;
-    }
+    const fromLs = (() => {
+      try {
+        return String(localStorage.getItem(LS_LAST_LIST) || "").trim();
+      } catch {
+        return "";
+      }
+    })();
+    if (fromLs && cachedLists.some((x) => x.id === fromLs)) return fromLs;
+    return cachedLists[0]?.id || "";
   }
 
   function setLastUsedListId(id) {
     try {
-      localStorage.setItem(LS_LAST_LIST, String(id || DEFAULT_LIST_ID));
+      const v = String(id || "").trim();
+      if (v) localStorage.setItem(LS_LAST_LIST, v);
     } catch {
       //
     }
-  }
-
-  async function ensureDefaultList(user, db) {
-    const ref = db.collection("mll_profiles").doc(user.id).collection("video_lists").doc(DEFAULT_LIST_ID);
-    const snap = await ref.get();
-    const now = new Date().toISOString();
-    const prev = snap.exists ? snap.data() || {} : {};
-    await ref.set(
-      {
-        name: String(prev.name || "マイリスト").trim() || "マイリスト",
-        visibility: prev.visibility === "private" ? "private" : "public",
-        list_order: Number.isFinite(Number(prev.list_order)) ? Number(prev.list_order) : 0,
-        created_at: String(prev.created_at || now).slice(0, 40) || now,
-        updated_at: now,
-      },
-      { merge: true },
-    );
   }
 
   async function getMaxVideoListOrder(user, db) {
@@ -327,7 +364,6 @@
 
   /** @returns {Promise<{ id: string; name: string; oshi_text: string; visibility: string; list_order: number }[]>} */
   async function loadListMetas(user, db) {
-    await ensureDefaultList(user, db);
     const snap = await db
       .collection("mll_profiles")
       .doc(user.id)
@@ -345,16 +381,14 @@
         oshi_text: String(d.oshi_text || "").trim(),
         visibility: String(d.visibility || "public").trim() === "private" ? "private" : "public",
         list_order: Number.isFinite(lo) ? lo : doc.id === DEFAULT_LIST_ID ? 0 : 500000,
+        liked_by: normLbBookmarks(d.liked_by),
       });
     });
-    if (!out.some((x) => x.id === DEFAULT_LIST_ID)) {
-      out.unshift({ id: DEFAULT_LIST_ID, name: "マイリスト", oshi_text: "", visibility: "public", list_order: 0 });
-    }
     out.sort((a, b) => {
       if (a.list_order !== b.list_order) return a.list_order - b.list_order;
       return String(a.name).localeCompare(String(b.name), "ja");
     });
-    return out;
+    return out.filter((l) => !isLegacyDefaultPickerList(l.id, l.name));
   }
 
   async function refreshCache() {
@@ -368,7 +402,6 @@
       return;
     }
     try {
-      await ensureDefaultList(user, db);
       cachedLists = await loadListMetas(user, db);
       const snap = await db
         .collection("mll_profiles")
@@ -424,7 +457,11 @@
       setMsg("マイリストに追加するにはログインしてください。", true);
       return false;
     }
-    const lid = String(listId || DEFAULT_LIST_ID).trim() || DEFAULT_LIST_ID;
+    const lid = String(listId || "").trim();
+    if (!lid) {
+      setMsg("保存先のリストを選んでください。", true);
+      return false;
+    }
     const payload = rowToPayload(row, lid);
     if (!payload.url) {
       setMsg("動画URLがありません。", true);
@@ -436,8 +473,17 @@
       return true;
     }
     const docId = bookmarkDocumentId(lid, payload.url);
+    const ref = db.collection("mll_profiles").doc(user.id).collection("video_bookmarks").doc(docId);
     try {
-      await db.collection("mll_profiles").doc(user.id).collection("video_bookmarks").doc(docId).set(payload);
+      const prev = await ref.get();
+      if (prev.exists) {
+        if (!listUrlKeys.has(lid)) listUrlKeys.set(lid, new Set());
+        listUrlKeys.get(lid).add(urlKey(payload.url));
+        setMsg("このリストにはすでに追加済みです。");
+        window.setTimeout(() => setMsg(""), 2400);
+        return true;
+      }
+      await ref.set(payload);
       if (!listUrlKeys.has(lid)) listUrlKeys.set(lid, new Set());
       listUrlKeys.get(lid).add(payload.url);
       setLastUsedListId(lid);
@@ -449,12 +495,20 @@
       return true;
     } catch (e) {
       console.warn(e);
-      setMsg(String(e?.message || "保存に失敗しました。"), true);
+      const code = String(e?.code || "");
+      if (code === "permission-denied") {
+        setMsg(
+          "保存の権限がありません。Firebase の Firestore ルール（firebase/firestore.rules）を本番にデプロイし、再読み込みしてください。",
+          true,
+        );
+      } else {
+        setMsg(String(e?.message || "保存に失敗しました。"), true);
+      }
       return false;
     }
   }
 
-  async function createList(name, visibility) {
+  async function createList(name, visibility, oshiText = "") {
     const user = getUser();
     const db = getDb();
     if (!user?.id || !db) return null;
@@ -470,13 +524,21 @@
         .collection("video_lists")
         .doc(sid)
         .set({
-          name: String(name || "マイリスト").trim().slice(0, 120) || "マイリスト",
-          oshi_text: "",
+          name: String(name || "リスト").trim().slice(0, 120) || "リスト",
+          oshi_text: String(oshiText || "").trim().slice(0, 240),
           visibility: normalizeVisibility(visibility),
           list_order: Number(maxO + 100),
+          liked_by: {},
           created_at: now,
           updated_at: now,
         });
+      const listName = String(name || "リスト").trim().slice(0, 120) || "リスト";
+      window.MarchinZAdminUgcLog?.recordVideoMylist?.({
+        listId: sid,
+        listName,
+        actorUid: user.id,
+        actorName: window.MarchinZActorDisplayName?.(user) || "ユーザー",
+      });
       return sid;
     } catch (e) {
       alertErr(e, "リストの作成に失敗しました。");
@@ -621,6 +683,58 @@
     }
   }
 
+  /**
+   * 既定リスト以外を削除。当該リストのブックマークはすべて削除（空のリストのみ削除したい場合は事前に移動してください）。
+   * @param {string} listId
+   */
+  async function deleteVideoListCascade(listId) {
+    const user = getUser();
+    const db = getDb();
+    if (!user?.id || !db) throw new Error("ログインが必要です。");
+    const lid = String(listId || "").trim();
+    if (!lid) throw new Error("リストを指定できません。");
+    showBusyOverlay();
+    try {
+      while (true) {
+        const qs = await db
+          .collection("mll_profiles")
+          .doc(user.id)
+          .collection("video_bookmarks")
+          .where("list_id", "==", lid)
+          .limit(400)
+          .get();
+        if (qs.empty) break;
+        const batch = db.batch();
+        qs.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+      }
+      const legacy = await db
+        .collection("mll_profiles")
+        .doc(user.id)
+        .collection("video_bookmarks")
+        .limit(500)
+        .get();
+      const batch2 = db.batch();
+      let n2 = 0;
+      legacy.forEach((doc) => {
+        const d = doc.data() || {};
+        if (inferListIdFromDoc(doc.id, d) === lid) {
+          batch2.delete(doc.ref);
+          n2 += 1;
+        }
+      });
+      if (n2) await batch2.commit();
+      await db.collection("mll_profiles").doc(user.id).collection("video_lists").doc(lid).delete();
+      await refreshCache();
+      window.dispatchEvent(new CustomEvent("marchinz-mylist-updated"));
+    } catch (e) {
+      alertErr(e, "リストの削除に失敗しました。");
+      throw e;
+    } finally {
+      hideBusyOverlay();
+    }
+  }
+
   function requestLoginThenAdd(row) {
     pendingRowPlain = cloneRowForPending(row);
     try {
@@ -667,15 +781,17 @@
     const chosen = dlg.querySelector('input[name="mz-picker-list"]:checked');
     const rid = chosen instanceof HTMLInputElement ? String(chosen.value || "").trim() : "";
     const newName = /** @type {HTMLInputElement|null} */ (dlg.querySelector("[data-mz-new-list-name]"));
-    const newVis = /** @type {HTMLInputElement|null} */ (dlg.querySelector("[data-mz-new-list-vis]:checked"));
+    const newOshi = /** @type {HTMLTextAreaElement|null} */ (dlg.querySelector("[data-mz-new-list-oshi]"));
     if (rid === "__new__") {
       const nm = (newName?.value || "").trim();
       if (!nm) {
         setMsg("新しいリストの名前を入力してください。", true);
         return;
       }
-      const vis = newVis?.value === "private" ? "private" : "public";
-      const nid = await createList(nm, vis);
+      const oshi = (newOshi?.value || "").trim();
+      const user = getUser();
+      const db = getDb();
+      const nid = await createList(nm, "public", oshi);
       if (!nid) {
         setMsg("リストの作成に失敗しました。", true);
         return;
@@ -691,18 +807,23 @@
    * @param {Record<string, string>} row
    * @returns {Promise<string|null>} list id or null
    */
-  function openPicker(row) {
+  async function openPicker(row) {
     wirePickerOnce();
     const dlg = pickerDlg();
     if (!(dlg instanceof HTMLDialogElement)) return Promise.resolve(lastUsedListId());
+
+    const user = getUser();
+    const db = getDb();
+    const titleEl = dlg.querySelector("[data-mz-picker-title]");
+    if (titleEl) {
+      titleEl.textContent = "保存先のリスト";
+    }
 
     const body = dlg.querySelector("[data-mz-picker-lists]");
     const newBlock = dlg.querySelector("[data-mz-picker-new]");
     if (body) {
       body.innerHTML = "";
-      const lists = cachedLists.length
-        ? cachedLists
-        : [{ id: DEFAULT_LIST_ID, name: "マイリスト", visibility: "public", list_order: 0 }];
+      const lists = cachedLists.slice();
       const last = lastUsedListId();
       const hasLast = lists.some((x) => x.id === last);
       for (const L of lists) {
@@ -712,11 +833,11 @@
         inp.type = "radio";
         inp.name = "mz-picker-list";
         inp.value = L.id;
-        if (hasLast ? L.id === last : L.id === DEFAULT_LIST_ID) {
+        if (hasLast ? L.id === last : lists[0]?.id === L.id) {
           inp.checked = true;
         }
         const span = document.createElement("span");
-        span.textContent = `${L.name}（${L.visibility === "private" ? "リスト非公開" : "リスト公開"}）`;
+        span.textContent = L.name;
         lab.appendChild(inp);
         lab.appendChild(span);
         body.appendChild(lab);
@@ -727,6 +848,7 @@
       newInp.type = "radio";
       newInp.name = "mz-picker-list";
       newInp.value = "__new__";
+      if (!lists.length) newInp.checked = true;
       newLab.appendChild(newInp);
       newLab.appendChild(document.createTextNode("新しいリストを作成…"));
       body.appendChild(newLab);
@@ -740,9 +862,13 @@
       });
     }
     if (newBlock) {
-      newBlock.hidden = true;
+      const checked = dlg.querySelector('input[name="mz-picker-list"]:checked');
+      const isNew = checked instanceof HTMLInputElement && checked.value === "__new__";
+      newBlock.hidden = !isNew;
       const ni = dlg.querySelector("[data-mz-new-list-name]");
       if (ni instanceof HTMLInputElement) ni.value = "";
+      const oi = dlg.querySelector("[data-mz-new-list-oshi]");
+      if (oi instanceof HTMLTextAreaElement) oi.value = "";
     }
 
     return new Promise((resolve) => {
@@ -765,7 +891,6 @@
       requestLoginThenAdd(row);
       return;
     }
-    await ensureDefaultList(user, db);
     cachedLists = await loadListMetas(user, db);
     const listId = await openPicker(row);
     if (!listId) return;
@@ -783,6 +908,7 @@
       const u = String(d.url || "").trim();
       const lid = inferListIdFromDoc(docId, d);
       await ref.delete();
+      trackMetric("mylist_remove", { target: "video", list_id: lid || "" });
       const k = urlKey(u);
       if (k && listUrlKeys.has(lid)) listUrlKeys.get(lid).delete(k);
       renderList();
@@ -820,7 +946,6 @@
       })
       .then(async (snap) => {
         if (!hostEl()) return;
-        const showVidLike = true;
         /** @type {Map<string, { meta: { id: string; name: string; visibility: string; list_order: number }; items: { docId: string; title: string; url: string; org: string; sort: number; added: string; liked_by?: Record<string, boolean> }[] }>} */
         const grouped = new Map();
         for (const L of cachedLists) {
@@ -833,7 +958,7 @@
             grouped.set(lid, {
               meta: {
                 id: lid,
-                name: lid === DEFAULT_LIST_ID ? "マイリスト" : lid,
+                name: lid,
                   oshi_text: "",
                 visibility: "public",
                 list_order: lid === DEFAULT_LIST_ID ? 0 : 500000,
@@ -850,9 +975,11 @@
             title,
             url,
             org,
+            video_id: String(d.video_id || "").trim(),
+            channel_name: String(d.channel_name || "").trim(),
+            display_name: String(d.display_name || "").trim(),
             sort: Number.isFinite(si) ? si : 0,
             added: String(d.added_at || ""),
-            liked_by: normLbBookmarks(d.liked_by),
           });
         });
 
@@ -887,26 +1014,105 @@
           const head = document.createElement("header");
           head.className = "mll-mylist-list-head";
           const h4 = document.createElement("h4");
-          h4.className = "mll-mylist-list-name";
+          h4.className = "mll-mylist-list-name mll-mylist-list-name--editable";
           h4.textContent = block.meta.name;
-          const oshiText = String(block.meta.oshi_text || "").trim();
-          const oshiLead = document.createElement("p");
-          oshiLead.className = `mll-mylist-oshi-display${oshiText ? "" : " is-placeholder"}`;
-          oshiLead.textContent = oshiText || "ドリルも演奏も大好き！○○分のここがイイ！";
+          h4.title = "クリックしてリスト設定を編集";
+
+          const editPanel = document.createElement("div");
+          editPanel.className = "mll-mylist-edit-panel";
+          editPanel.hidden = true;
+          const editNameInput = document.createElement("input");
+          editNameInput.type = "text";
+          editNameInput.className = "mll-mylist-edit-name";
+          editNameInput.value = block.meta.name;
+          editNameInput.placeholder = "リスト名";
+          const editVisRow = document.createElement("div");
+          editVisRow.className = "mll-mylist-edit-vis-row";
+          const pub = block.meta.visibility !== "private";
+          const visTag = document.createElement("button");
+          visTag.type = "button";
+          visTag.className = `mll-mylist-vis-tag mll-mylist-vis-tag--clickable ${pub ? "mll-mylist-vis-tag--public" : "mll-mylist-vis-tag--private"}`;
+          visTag.textContent = pub ? "公開中" : "非公開";
+          visTag.title = "クリックで公開設定を切り替え";
+          let pendingVis = block.meta.visibility !== "private" ? "public" : "private";
+          visTag.addEventListener("click", () => {
+            const next = pendingVis === "public" ? "private" : "public";
+            const label = next === "public" ? "公開中" : "非公開";
+            if (!confirm(`「${label}」に変更しますか？`)) return;
+            pendingVis = next;
+            visTag.textContent = next === "public" ? "公開中" : "非公開";
+            visTag.className = `mll-mylist-vis-tag mll-mylist-vis-tag--clickable ${next === "public" ? "mll-mylist-vis-tag--public" : "mll-mylist-vis-tag--private"}`;
+          });
+          editVisRow.appendChild(visTag);
+          const editSave = document.createElement("button");
+          editSave.type = "button";
+          editSave.className = "btn-marchinz btn-marchinz--sm mll-mylist-edit-save";
+          editSave.textContent = "保存";
+          const editCancel = document.createElement("button");
+          editCancel.type = "button";
+          editCancel.className = "btn-reset-search mll-mylist-edit-cancel";
+          editCancel.textContent = "キャンセル";
+          const editBtns = document.createElement("div");
+          editBtns.className = "mll-mylist-edit-btns";
+          editBtns.appendChild(editSave);
+          editBtns.appendChild(editCancel);
+          const editOshiInput = document.createElement("textarea");
+          editOshiInput.className = "mll-mylist-oshi-input";
+          editOshiInput.rows = 3;
+          editOshiInput.maxLength = 240;
+          editOshiInput.placeholder = "推しポイント！を入力";
+          editPanel.appendChild(editNameInput);
+          editPanel.appendChild(editOshiInput);
+          editPanel.appendChild(editVisRow);
+          editPanel.appendChild(editBtns);
+
+          const openEditPanel = () => {
+            editPanel.hidden = false;
+            editNameInput.value = h4.textContent;
+            editOshiInput.value = String(block.meta.oshi_text || "");
+            editNameInput.focus();
+          };
+          const closeEditPanel = () => { editPanel.hidden = true; };
+          h4.addEventListener("click", openEditPanel);
+          editCancel.addEventListener("click", closeEditPanel);
+          editSave.addEventListener("click", () => {
+            void (async () => {
+              const newName = editNameInput.value.trim();
+              const newOshi = String(editOshiInput.value || "").trim().slice(0, 240);
+              const origVis = block.meta.visibility !== "private" ? "public" : "private";
+              const origOshi = String(block.meta.oshi_text || "").trim();
+              try {
+                if (newName && newName !== block.meta.name) await renameVideoList(block.meta.id, newName);
+                if (newOshi !== origOshi) {
+                  await updateVideoListOshiText(block.meta.id, newOshi);
+                  block.meta.oshi_text = newOshi;
+                  setMllOshiDisplayRow(oshiDisplay, newOshi);
+                }
+                if (pendingVis !== origVis) {
+                  await updateListVisibility(block.meta.id, pendingVis);
+                  if (pendingVis === "public") {
+                    setMsg("リストを公開にしました。", false);
+                    window.setTimeout(() => setMsg(""), 6000);
+                  }
+                }
+              } catch (e) {
+                setMsg(String(e?.message || "更新に失敗しました。"), true);
+              }
+              closeEditPanel();
+            })();
+          });
+
+          let oshiDisplay;
           const right = document.createElement("div");
           right.className = "mll-mylist-list-head-right";
           const listTools = document.createElement("div");
           listTools.className = "mll-mylist-list-tools";
-          const renameBtn = document.createElement("button");
-          renameBtn.type = "button";
-          renameBtn.className = "btn-reset-search mll-mylist-list-tool-btn";
-          renameBtn.textContent = "名前変更";
-          renameBtn.title = "リストの表示名を変更";
-          renameBtn.addEventListener("click", () => {
-            const nv = window.prompt("リスト名", block.meta.name);
-            if (nv == null) return;
-            void renameVideoList(block.meta.id, nv);
-          });
+          const dragHandle = document.createElement("span");
+          dragHandle.className = "mll-mylist-drag-handle";
+          dragHandle.textContent = "☰";
+          dragHandle.title = "ドラッグして並び替え";
+          dragHandle.setAttribute("aria-label", "ドラッグして並び替え");
+          listTools.appendChild(dragHandle);
           const upList = document.createElement("button");
           upList.type = "button";
           upList.className = "btn-reset-search mll-mylist-list-tool-btn";
@@ -919,104 +1125,150 @@
           downList.textContent = "↓";
           downList.title = "リストの表示順を下へ";
           downList.addEventListener("click", () => void moveVideoListOrder(block.meta.id, 1));
-          listTools.appendChild(renameBtn);
           listTools.appendChild(upList);
           listTools.appendChild(downList);
-          const tag = document.createElement("span");
-          const pub = block.meta.visibility !== "private";
-          tag.className = `mll-mylist-vis-tag ${pub ? "mll-mylist-vis-tag--public" : "mll-mylist-vis-tag--private"}`;
-          tag.textContent = pub ? "公開" : "非公開";
-          tag.title = pub ? "プロフィールのマイリストに表示されます" : "プロフィールでは非表示です";
-          const toggle = document.createElement("button");
-          toggle.type = "button";
-          toggle.className = "btn-reset-search mll-mylist-vis-toggle";
-          toggle.textContent = pub ? "非公開にする" : "公開にする";
-          toggle.addEventListener("click", () => {
-            void (async () => {
-              const next = pub ? "private" : "public";
-              try {
-                await updateListVisibility(block.meta.id, next);
-                if (next === "public") {
-                  setMsg(
-                    "リストを公開にしました。シェアしたリンクを他の方が見られるようにするには、プロフィールの公開範囲で「大会動画マイリスト」も公開にしてください。",
-                    false,
-                  );
-                  window.setTimeout(() => setMsg(""), 10000);
-                }
-              } catch (e) {
-                setMsg(String(e?.message || "公開設定の更新に失敗しました。"), true);
-              }
+          right.appendChild(listTools);
+
+          sec.setAttribute("draggable", "true");
+          sec.addEventListener("dragstart", (e) => {
+            e.dataTransfer.effectAllowed = "move";
+            e.dataTransfer.setData("text/plain", block.meta.id);
+            sec.classList.add("mll-mylist-dragging");
+          });
+          sec.addEventListener("dragend", () => sec.classList.remove("mll-mylist-dragging"));
+          sec.addEventListener("dragover", (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; sec.classList.add("mll-mylist-dragover"); });
+          sec.addEventListener("dragleave", () => sec.classList.remove("mll-mylist-dragover"));
+          sec.addEventListener("drop", (e) => {
+            e.preventDefault();
+            sec.classList.remove("mll-mylist-dragover");
+            const fromId = e.dataTransfer.getData("text/plain");
+            if (!fromId || fromId === block.meta.id) return;
+            const fromIdx = cachedLists.findIndex((x) => x.id === fromId);
+            const toIdx = cachedLists.findIndex((x) => x.id === block.meta.id);
+            if (fromIdx < 0 || toIdx < 0) return;
+            const dir = toIdx > fromIdx ? 1 : -1;
+            let steps = Math.abs(toIdx - fromIdx);
+            (async () => {
+              for (let s = 0; s < steps; s++) await moveVideoListOrder(fromId, dir);
             })();
           });
-          right.appendChild(listTools);
-          right.appendChild(tag);
-          right.appendChild(toggle);
+
+          {
+            let touchTimer = null;
+            let touchActive = false;
+            let touchStartY = 0;
+            let lastSwapY = 0;
+            const HOLD_MS = 400;
+            const SWAP_THRESHOLD = 50;
+            dragHandle.addEventListener("touchstart", (e) => {
+              if (e.touches.length !== 1) return;
+              touchStartY = e.touches[0].clientY;
+              lastSwapY = touchStartY;
+              touchTimer = setTimeout(() => {
+                touchActive = true;
+                sec.classList.add("mll-mylist-dragging");
+                if (navigator.vibrate) navigator.vibrate(30);
+              }, HOLD_MS);
+            }, { passive: true });
+            dragHandle.addEventListener("touchmove", (e) => {
+              if (!touchActive) { clearTimeout(touchTimer); return; }
+              e.preventDefault();
+              const y = e.touches[0].clientY;
+              const delta = y - lastSwapY;
+              if (Math.abs(delta) >= SWAP_THRESHOLD) {
+                const dir = delta > 0 ? 1 : -1;
+                lastSwapY = y;
+                void moveVideoListOrder(block.meta.id, dir);
+              }
+            }, { passive: false });
+            const endTouch = () => {
+              clearTimeout(touchTimer);
+              if (touchActive) sec.classList.remove("mll-mylist-dragging");
+              touchActive = false;
+            };
+            dragHandle.addEventListener("touchend", endTouch);
+            dragHandle.addEventListener("touchcancel", endTouch);
+          }
           const shareBtn = document.createElement("button");
           shareBtn.type = "button";
           shareBtn.className = "btn-share-search btn-marchinz-spotlight";
-          shareBtn.textContent = "このリストをシェアする";
-          shareBtn.setAttribute("aria-label", `リスト「${block.meta.name}」をシェア`);
+          shareBtn.textContent = "シェアする";
+          shareBtn.setAttribute("aria-label", `大会動画マイリスト「${block.meta.name}」をシェア`);
           right.appendChild(shareBtn);
           const uid = String(user.id || "").trim();
           const sm = window.MarchinZShareMenu;
           if (uid && sm?.buildAbsoluteUrlForHash && sm.mylistShareText && sm.setupSearchLikeShareMenuForButton) {
             const profHash = `#profile?uid=${encodeURIComponent(uid)}&tab=videos&mylist=${encodeURIComponent(block.meta.id)}`;
             const shareUrl = sm.buildAbsoluteUrlForHash(profHash);
-            const shareText = sm.mylistShareText(block.meta.name, shareUrl);
+            const shareText = sm.mylistShareText(block.meta.name, shareUrl, "videos");
             sm.setupSearchLikeShareMenuForButton(shareBtn, shareText, shareUrl);
           }
-          head.appendChild(h4);
-          head.appendChild(oshiLead);
-          head.appendChild(right);
+          const likeHost = document.createElement("div");
+          likeHost.className = "mll-mylist-list-like-host mz-inline-like-host";
+          appendListLike(likeHost, user.id, block.meta.id, block.meta.liked_by);
 
-          const oshiEdit = document.createElement("div");
-          oshiEdit.className = "mll-mylist-oshi-edit-row";
-          const oshiInput = document.createElement("textarea");
-          oshiInput.className = "mll-mylist-oshi-input";
-          oshiInput.rows = 2;
-          oshiInput.maxLength = 240;
-          oshiInput.placeholder = "ドリルも演奏も大好き！○○分のここがイイ！";
-          oshiInput.value = String(block.meta.oshi_text || "");
-          const oshiSaveBtn = document.createElement("button");
-          oshiSaveBtn.type = "button";
-          oshiSaveBtn.className = "btn-reset-search mll-mylist-oshi-save";
-          oshiSaveBtn.textContent = "マイ推し！を保存";
-          oshiSaveBtn.addEventListener("click", () => {
-            void (async () => {
-              try {
-                await updateVideoListOshiText(block.meta.id, oshiInput.value);
-                setMsg("マイ推し！を保存しました。", false);
-              } catch (e) {
-                setMsg(String(e?.message || "マイ推し！の保存に失敗しました。"), true);
-              }
-            })();
-          });
-          oshiEdit.appendChild(oshiInput);
-          oshiEdit.appendChild(oshiSaveBtn);
+          const topRow = document.createElement("div");
+          topRow.className = "mll-mylist-top-row";
+          const titleBlock = document.createElement("div");
+          titleBlock.className = "mll-mylist-title-block";
+          titleBlock.appendChild(h4);
+          window.MarchinZEngageUi?.appendInlineLike(titleBlock, likeHost);
+          topRow.appendChild(titleBlock);
+          topRow.appendChild(right);
+          head.appendChild(topRow);
+          head.appendChild(editPanel);
+          oshiDisplay = appendMllOshiDisplayRow(head, block.meta.oshi_text);
 
           const ul = document.createElement("ul");
-          ul.className = "mll-mylist-video-list";
+          ul.className = "mll-mylist-video-list mll-mylist-video-grid";
           for (const it of block.items) {
             const li = document.createElement("li");
-            li.className = "mll-mylist-item";
-            const main = document.createElement("div");
-            main.className = "mll-mylist-item-main";
-            const a = document.createElement("a");
-            a.href = it.url || "#";
-            a.target = "_blank";
-            a.rel = "noopener noreferrer";
-            a.className = "mll-mylist-item-title";
-            a.textContent = it.title;
-            main.appendChild(a);
-            if (it.org) {
-              const sub = document.createElement("p");
-              sub.className = "mll-mylist-item-meta";
-              sub.textContent = it.org;
-              main.appendChild(sub);
+            li.className = "mll-mylist-video-card";
+
+            const thumbUrl = it.video_id
+              ? `https://i.ytimg.com/vi/${it.video_id}/mqdefault.jpg`
+              : "";
+            if (thumbUrl) {
+              const thumbWrap = document.createElement("a");
+              thumbWrap.href = it.url || "#";
+              thumbWrap.target = "_blank";
+              thumbWrap.rel = "noopener noreferrer";
+              thumbWrap.className = "mll-mylist-card-thumb-wrap";
+              const img = document.createElement("img");
+              img.className = "mll-mylist-card-thumb";
+              img.src = thumbUrl;
+              img.alt = it.title;
+              img.loading = "lazy";
+              img.onerror = function () { this.style.display = "none"; };
+              thumbWrap.appendChild(img);
+              li.appendChild(thumbWrap);
             }
-            appendMyVideoBmLike(main, it, showVidLike);
-            const ord = document.createElement("div");
-            ord.className = "mll-mylist-item-order";
+
+            const body = document.createElement("div");
+            body.className = "mll-mylist-card-body";
+            if (it.org) {
+              const orgP = document.createElement("p");
+              orgP.className = "mll-mylist-card-org";
+              orgP.textContent = it.org;
+              body.appendChild(orgP);
+            }
+            const titleA = document.createElement("a");
+            titleA.href = it.url || "#";
+            titleA.target = "_blank";
+            titleA.rel = "noopener noreferrer";
+            titleA.className = "mll-mylist-card-title";
+            titleA.textContent = it.title;
+            body.appendChild(titleA);
+            if (it.channel_name || it.display_name) {
+              const chP = document.createElement("p");
+              chP.className = "mll-mylist-card-channel";
+              chP.textContent = String(it.channel_name || it.display_name || "").trim();
+              body.appendChild(chP);
+            }
+            li.appendChild(body);
+
+            const actions = document.createElement("div");
+            actions.className = "mll-mylist-card-actions";
             const upIt = document.createElement("button");
             upIt.type = "button";
             upIt.className = "btn-reset-search mll-mylist-order-btn";
@@ -1035,20 +1287,19 @@
               ev.preventDefault();
               void moveVideoBookmarkOrder(it.docId, block.meta.id, 1);
             });
-            ord.appendChild(upIt);
-            ord.appendChild(downIt);
             const del = document.createElement("button");
             del.type = "button";
             del.className = "btn-reset-search mll-mylist-remove";
             del.textContent = "削除";
             del.addEventListener("click", () => void removeByDocId(it.docId));
-            li.appendChild(main);
-            li.appendChild(ord);
-            li.appendChild(del);
+            actions.appendChild(upIt);
+            actions.appendChild(downIt);
+            actions.appendChild(del);
+            li.appendChild(actions);
+
             ul.appendChild(li);
           }
           sec.appendChild(head);
-          sec.appendChild(oshiEdit);
           sec.appendChild(ul);
           frag.appendChild(sec);
         }
@@ -1076,9 +1327,12 @@
     requestLoginThenAdd,
     createList,
     renameList: renameVideoList,
+    updateListVisibility,
     updateListOshiText: updateVideoListOshiText,
+    deleteListCascade: deleteVideoListCascade,
     moveListOrder: moveVideoListOrder,
     moveBookmarkOrder: moveVideoBookmarkOrder,
+    appendListLikeRow: appendListLike,
     DEFAULT_LIST_ID,
   };
 
@@ -1107,7 +1361,6 @@
       }
     }
     if (user?.id && row) {
-      await ensureDefaultList(user, getDb());
       cachedLists = await loadListMetas(user, getDb());
       const listId = await openPicker(row);
       if (listId) {

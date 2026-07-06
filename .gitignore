@@ -16,3 +16,11 @@ _snapshots/
 
 # Local Netlify folder
 .netlify
+
+# scripts/ の npm（firebase-admin）
+scripts/node_modules/
+scripts/.local-env
+scripts/reports/
+
+# ローカル丸ごとバックアップ(スナップショット群)
+backups/

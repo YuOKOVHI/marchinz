@@ -35,5 +35,6 @@ fi
 
 python3 "$SCRIPT_DIR/sync_csv_to_json.py"
 python3 "$SCRIPT_DIR/check_data.py"
+python3 "$SCRIPT_DIR/verify_youtube_list_csv_inline.py"
 
 echo "DONE: API取得 -> YouTubeリスト生成 -> data同期 -> 整合チェック 完了"

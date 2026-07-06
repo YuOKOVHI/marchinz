@@ -7,6 +7,9 @@ __pycache__/
 *.command
 *.numbers
 .DS_Store
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
 fetch_meta.json
 team_index.json
 _metadata_cache.json

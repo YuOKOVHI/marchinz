@@ -12,15 +12,42 @@
   const RECOMMEND_FIRST_EXPAND = 10;
   const RECOMMEND_STEP = 10;
   const SHARE_X_SUFFIX = " @marchinz2026";
+
+  /** カードメタ行用（2025-11-24 → 2025/11/24） */
+  function formatVideoMetaDate(raw) {
+    const s = String(raw ?? "").trim();
+    if (!s) return "";
+    const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) return `${iso[1]}/${iso[2]}/${iso[3]}`;
+    const slash = s.replace(/-/g, "/");
+    const parts = slash.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+    if (parts) {
+      const mm = String(parts[2]).padStart(2, "0");
+      const dd = String(parts[3]).padStart(2, "0");
+      return `${parts[1]}/${mm}/${dd}`;
+    }
+    return slash;
+  }
   const SHARE_PUBLIC_BASE_URL = "https://marchinz.netlify.app";
   const LS_KEY_RECENT_SEARCHES = "marchinz_recent_searches_v1";
   /** 動画カード行の「シェアする」（検索結果シェアと同じ CTA 配色） */
   const ROW_SHARE_BTN_CLASS = "btn-share-search btn-marchinz-spotlight share-toggle";
 
   /** 一覧の並べ替えキー（data-sort・URL の sort= と一致） */
-  const SORT_KEYS = ["配信日", "団体/チーム", "配信元"];
-  const INITIAL_RANDOM_TEAMS = ["YOKOHAMA ROBINS", "インスタントコー", "GENESIS", "THE FOCUS"];
-  const INITIAL_RANDOM_TEAM_SET = new Set(INITIAL_RANDOM_TEAMS);
+  const SORT_KEYS = ["配信日", "団体/チーム"];
+  const VIDEO_SOURCE_FILTER_DEFAULT_LABEL = "配信元";
+  const VIDEO_SOURCE_FILTER_LABELS = {
+    matsuri: "マーチング祭",
+    drumcorps: "DrumcorpsfunTV",
+  };
+  /** 大会動画・初期表示で必ず先頭に試す団体（順固定・各1動画・最大3枠）。動画が無い団体はスキップ。 */
+  const INITIAL_RANDOM_PRIORITY_SLOTS = 3;
+  const INITIAL_RANDOM_PRIORITY_TEAMS = [
+    "インスタントコー",
+    "YOKOHAMA ROBINS",
+    "THE FOCUS",
+  ];
+  const INITIAL_RANDOM_TEAM_SET = new Set(INITIAL_RANDOM_PRIORITY_TEAMS);
 
   const state = {
     rows: [],
@@ -43,6 +70,8 @@
     recommendVisibleCount: RECOMMEND_INITIAL,
     /** 表示中タグで手動除外した団体/チーム名 */
     excludedOrgTeams: new Set(),
+    /** 配信元絞り込み（""=すべて, "matsuri"=マーチング祭, "drumcorps"=DrumcorpsfunTV） */
+    sourceFilter: "",
     recentSearches: [],
   };
 
@@ -78,6 +107,14 @@
   const optMatchExact = $("#opt-match-exact");
   const optCrossBoth = $("#opt-cross-both");
   const mix3Notice = $("#mix3-notice");
+  const mix3AboutChipWrap = $("#mix3-about-chip-wrap");
+  const mix3AboutOverlay = $("#mix3-about-overlay");
+  const mix3AboutOpen = $("#mix3-about-open");
+  const MIX3_ABOUT_VIDEO_URL = "https://www.youtube.com/watch?v=zasYJQQ_yd8&t=289s";
+  const MIX3_ABOUT_VIDEO_ID = "zasYJQQ_yd8";
+  const videoSourceFilterBtn = $("#video-source-filter-btn");
+  const videoSourceFilterMenu = $("#video-source-filter-menu");
+  let videoSourceFilterMenuOpen = false;
   const browseByOrg = $("#browse-by-org");
   const browseByOrgLabel = $("#browse-by-org-label");
   const browseByOrgCount = $("#browse-by-org-count");
@@ -87,6 +124,7 @@
   const browseOrgOverlayCount = $("#browse-org-overlay-count");
   const browseOrgFilterInput = $("#browse-org-filter");
   const browseOrgClose = $("#browse-org-close");
+  const browseOrgSwitchCategory = $("#browse-org-switch-category");
   const pageFirst = $("#page-first");
   const pagePrev = $("#page-prev");
   const pageNext = $("#page-next");
@@ -104,12 +142,116 @@
   const btnResetRecentSearches = $("#btn-reset-recent-searches");
   const recentSearchesEl = $("#recent-searches");
 
+  function rowMatchesVideoSourceFilter(row) {
+    if (!state.sourceFilter) return true;
+    if (state.sourceFilter === "matsuri") return isMarchingMatsuriVideo(row);
+    if (state.sourceFilter === "drumcorps") return isDrumcorpsFunTvChannelRow(row);
+    return true;
+  }
+
+  function setVideoSourceFilterButtonLabel(text) {
+    if (!videoSourceFilterBtn) return;
+    let label = videoSourceFilterBtn.querySelector(".video-source-filter-label");
+    if (!label) {
+      label = document.createElement("span");
+      label.className = "video-source-filter-label";
+      videoSourceFilterBtn.appendChild(label);
+    }
+    label.textContent = text;
+  }
+
+  function syncVideoSourceFilterButton() {
+    if (!videoSourceFilterBtn) return;
+    const active = Boolean(state.sourceFilter);
+    const label =
+      VIDEO_SOURCE_FILTER_LABELS[state.sourceFilter] || VIDEO_SOURCE_FILTER_DEFAULT_LABEL;
+    setVideoSourceFilterButtonLabel(label);
+    videoSourceFilterBtn.classList.toggle("video-source-filter-btn--active", active);
+    videoSourceFilterBtn.setAttribute("aria-expanded", videoSourceFilterMenuOpen ? "true" : "false");
+    if (videoSourceFilterMenu) {
+      videoSourceFilterMenu.querySelectorAll(".video-source-filter-item").forEach((item) => {
+        const v = item.getAttribute("data-source") || "";
+        const on = v ? state.sourceFilter === v : !state.sourceFilter;
+        item.setAttribute("aria-selected", on ? "true" : "false");
+      });
+    }
+  }
+
+  function closeVideoSourceFilterMenu() {
+    videoSourceFilterMenuOpen = false;
+    if (videoSourceFilterMenu) videoSourceFilterMenu.hidden = true;
+    syncVideoSourceFilterButton();
+  }
+
+  function toggleVideoSourceFilterMenu() {
+    if (!videoSourceFilterMenu || !videoSourceFilterBtn) return;
+    if (videoSourceFilterMenuOpen) {
+      closeVideoSourceFilterMenu();
+      return;
+    }
+    videoSourceFilterMenuOpen = true;
+    videoSourceFilterMenu.hidden = false;
+    syncVideoSourceFilterButton();
+  }
+
+  function setMix3AboutOverlayOpen(open) {
+    if (!mix3AboutOverlay) return;
+    mix3AboutOverlay.hidden = !open;
+    mix3AboutOverlay.setAttribute("aria-hidden", open ? "false" : "true");
+    document.documentElement.classList.toggle("mix3-about-active", open);
+    document.body.classList.toggle("mix3-about-active", open);
+    if (open) {
+      const closeBtn = mix3AboutOverlay.querySelector(".community-compose-close-btn");
+      if (closeBtn instanceof HTMLElement) closeBtn.focus();
+    }
+  }
+
   function updateMix3NoticeVisibility() {
-    if (!mix3Notice) return;
+    if (!mix3Notice && !mix3AboutChipWrap) return;
     const inVideosPage = !pageVideos || pageVideos.hidden === false;
     const threecrossTab = document.getElementById("tab-threecross");
     const show = inVideosPage && threecrossTab?.getAttribute("aria-selected") === "true";
-    mix3Notice.hidden = !show;
+    if (mix3Notice) mix3Notice.hidden = !show;
+    if (mix3AboutChipWrap) mix3AboutChipWrap.hidden = !show;
+    if (!show) setMix3AboutOverlayOpen(false);
+  }
+
+  function escapeMix3AboutOverlay(ev) {
+    if (ev.key !== "Escape") return;
+    if (!mix3AboutOverlay || mix3AboutOverlay.hidden) return;
+    ev.preventDefault();
+    setMix3AboutOverlayOpen(false);
+  }
+
+  if (mix3AboutOpen) {
+    mix3AboutOpen.addEventListener("click", () => setMix3AboutOverlayOpen(true));
+  }
+
+  document.querySelectorAll("[data-mix3-about-close]").forEach((btn) => {
+    btn.addEventListener("click", () => setMix3AboutOverlayOpen(false));
+  });
+  document.addEventListener("keydown", escapeMix3AboutOverlay, true);
+
+  const mix3AboutVideoPlay = document.getElementById("mix3-about-video-play");
+  const mix3AboutVideoThumb = document.getElementById("mix3-about-video-thumb");
+  if (mix3AboutVideoThumb instanceof HTMLImageElement) {
+    mix3AboutVideoThumb.addEventListener("error", () => {
+      if (mix3AboutVideoThumb.dataset.fallbackApplied === "1") return;
+      mix3AboutVideoThumb.dataset.fallbackApplied = "1";
+      mix3AboutVideoThumb.src = `https://i.ytimg.com/vi/${MIX3_ABOUT_VIDEO_ID}/hqdefault.jpg`;
+    });
+  }
+  if (mix3AboutVideoPlay) {
+    mix3AboutVideoPlay.addEventListener("click", () => {
+      const url = mix3AboutVideoPlay.getAttribute("data-yt-url") || MIX3_ABOUT_VIDEO_URL;
+      if (window.MarchinZYouTubePlayer?.openEmbed) {
+        window.MarchinZYouTubePlayer.openEmbed(url, {
+          titleHint: "【後夜祭5】スリークロス熱狂の夜！スペシャル対談LIVE！",
+        });
+      } else {
+        window.open(url, "_blank", "noopener,noreferrer");
+      }
+    });
   }
 
   /** サイトでは非表示だがシェア文などで利用 */
@@ -427,6 +569,33 @@
       .toLowerCase();
   }
 
+  function updateBrowseOverlaySwitchButton() {
+    if (!browseOrgSwitchCategory) return;
+    const label =
+      state.tab === "スリークロスチーム" ? "マーチング等" : "MIX3";
+    browseOrgSwitchCategory.textContent = label;
+    browseOrgSwitchCategory.setAttribute(
+      "aria-label",
+      state.tab === "スリークロスチーム"
+        ? "団体一覧（マーチング等）に切り替え"
+        : "チーム一覧（MIX3）に切り替え"
+    );
+  }
+
+  function switchVideosCategoryTab(category) {
+    if (!category || category === state.tab) return;
+    cancelSearchDebounce();
+    state.tab = category;
+    clearExactFilters();
+    clearExcludedOrgs();
+    document.querySelectorAll('.tabs button[role="tab"]').forEach((b) => {
+      const cat = b.getAttribute("data-category");
+      b.setAttribute("aria-selected", cat === category ? "true" : "false");
+    });
+    applyFilter();
+    renderBrowsePanel();
+  }
+
   function updateBrowseOverlayHead() {
     if (!browseOrgOverlayHeading || !browseOrgOverlayCount) return;
     const listHead = state.tab === "スリークロスチーム" ? "チーム一覧" : "団体一覧";
@@ -461,6 +630,7 @@
         if (qFree) qFree.value = "";
         state.browseOpen = false;
         applyFilter();
+        logVideoSearchUgc({ force: true });
         renderBrowsePanel();
       });
       browseButtonList.appendChild(b);
@@ -499,6 +669,7 @@
       browseOrgFilterInput.value = "";
     }
     updateBrowseOverlayHead();
+    updateBrowseOverlaySwitchButton();
     renderBrowseOverlayChips();
 
     if (browseOrgOverlay) browseOrgOverlay.hidden = false;
@@ -518,7 +689,7 @@
     const orgTeam = rowOrgTeam(row);
     const display = rowDisplayName(row);
     const ev = row["大会名"] ?? "";
-    const url = row["URL"] ?? "";
+    const url = youtubeWatchUrlWithForcedStart(String(row["URL"] ?? ""));
     let line1 = orgTeam;
     if (orgTeam && display && display !== orgTeam) {
       line1 = `${orgTeam}（${display}）`;
@@ -581,22 +752,49 @@
 
   function setSearchOverlay(_show) {}
 
+  /** @type {(name: string, payload?: Record<string, unknown>) => void} */
   function trackEvent(name, payload = {}) {
-    const k = `marchinz_metric_${name}`;
-    try {
-      const c = Number.parseInt(localStorage.getItem(k) || "0", 10) || 0;
-      localStorage.setItem(k, String(c + 1));
-    } catch {
-      // ignore local metric failure
-    }
-    if (typeof window.plausible === "function") {
-      window.plausible(name, { props: payload });
-    }
-    if (typeof window.gtag === "function") {
-      window.gtag("event", name, payload);
+    if (typeof window.MarchinZTrackEvent === "function") {
+      window.MarchinZTrackEvent(name, payload);
     }
   }
-  window.MarchinZTrackEvent = trackEvent;
+
+  /**
+   * Instagram 用: URL のみコピー（Web から Instagram 投稿 API はない）
+   * @param {string} url
+   * @param {"search" | "mylist" | "mll" | "card"} analyticsTarget
+   */
+  function shareInstagramLinkOnly(url, analyticsTarget) {
+    const link = String(url || "").trim();
+    if (!link) {
+      alert("リンクがありません。");
+      return;
+    }
+    trackEvent("share_click", { kind: "instagram", target: analyticsTarget });
+    const notifyCopyOk = () => {
+      alert("リンクをコピーしました。\nInstagramで新規投稿を開き、キャプションに貼り付けてください。");
+    };
+    const notifyCopyFail = () => {
+      alert("クリップボードにコピーできませんでした。リンクを手動でコピーしてください。");
+    };
+    const runCopy = () => copyText(link).then(notifyCopyOk).catch(notifyCopyFail);
+
+    if (typeof navigator.share === "function") {
+      const shareData = { url: link };
+      const canTry =
+        typeof navigator.canShare !== "function" || navigator.canShare(shareData);
+      if (canTry) {
+        navigator
+          .share(shareData)
+          .catch((err) => {
+            if (err && err.name === "AbortError") return;
+            runCopy();
+          });
+        return;
+      }
+    }
+    runCopy();
+  }
 
   function currentSearchState() {
     return {
@@ -668,7 +866,7 @@
 
   function openShare(kind, row) {
     const text = shareText(row);
-    const url = row["URL"] || "";
+    const url = youtubeWatchUrlWithForcedStart(String(row["URL"] || ""));
     const enc = encodeURIComponent(text);
     const encUrl = encodeURIComponent(url);
 
@@ -702,41 +900,9 @@
           "noopener,noreferrer"
         );
         break;
-      case "instagram": {
-        trackEvent("share_click", { kind, target: "card" });
-        const notifyCopyOk = () => {
-          alert(
-            "シェア用の文をコピーしました。\nInstagramで新規投稿を開き、キャプションに貼り付けてください。"
-          );
-        };
-        const notifyCopyFail = () => {
-          alert(
-            "クリップボードにコピーできませんでした。表示された文を手動でコピーしてください。"
-          );
-        };
-        const runCopy = () => {
-          copyText(text).then(notifyCopyOk).catch(notifyCopyFail);
-        };
-
-        if (typeof navigator.share === "function") {
-          const shareData = { text };
-          const canTry =
-            typeof navigator.canShare !== "function" || navigator.canShare(shareData);
-          if (canTry) {
-            navigator
-              .share(shareData)
-              .catch((err) => {
-                if (err && err.name === "AbortError") return;
-                runCopy();
-              });
-          } else {
-            runCopy();
-          }
-        } else {
-          runCopy();
-        }
+      case "instagram":
+        shareInstagramLinkOnly(url, "card");
         break;
-      }
       default:
         break;
     }
@@ -825,8 +991,8 @@
 
   /** 共有・履歴用の短いクエリキー。団体は `o=団体ID`（CSV「団体ID」優先・空なら団体名から導出）、従来の tab / team / t も readUrlState で読める */
   const SHARE_C_TO_TAB = { m: "マーチング団体等", x: "スリークロスチーム" };
-  const SHARE_SORT_TO_S = { 配信日: "dt", "団体/チーム": "tm", 配信元: "ch" };
-  const SHARE_S_TO_SORT = { dt: "配信日", tm: "団体/チーム", ch: "配信元" };
+  const SHARE_SORT_TO_S = { 配信日: "dt", "団体/チーム": "tm" };
+  const SHARE_S_TO_SORT = { dt: "配信日", tm: "団体/チーム" };
 
   function searchParamsToCompactQuery(p) {
     return p.toString().replace(/%20/g, "+");
@@ -924,12 +1090,13 @@
         state.sortKey = SHARE_S_TO_SORT[sort];
       } else if (SORT_KEYS.includes(sort)) {
         state.sortKey = sort;
-      } else if (sort === "動画配信元" || sort === "大会") {
-        state.sortKey = "配信元";
       } else if (sort === "団体/チーム名") {
         state.sortKey = "団体/チーム";
       }
     }
+    const src = p.get("src");
+    if (src === "m" || src === "matsuri") state.sourceFilter = "matsuri";
+    else if (src === "d" || src === "drumcorps") state.sourceFilter = "drumcorps";
     const dir = p.has("dir") ? p.get("dir") : p.get("d");
     if (dir === "asc" || dir === "desc") state.sortDir = dir;
     const ps = p.get("pageSize") ?? p.get("z");
@@ -939,6 +1106,10 @@
         state.pageSize = n;
         if (pageSizeSelect) pageSizeSelect.value = String(n);
       }
+    }
+    const ex = p.get("ex");
+    if (ex) {
+      state.excludedOrgTeams = new Set(ex.split("|").map((s) => s.trim()).filter(Boolean));
     }
     const pg = p.has("page") ? p.get("page") : p.get("p");
     if (pg) {
@@ -976,8 +1147,13 @@
       else p.set("s", state.sortKey);
     }
     if (state.sortDir !== "desc") p.set("d", state.sortDir);
+    if (state.sourceFilter === "matsuri") p.set("src", "m");
+    else if (state.sourceFilter === "drumcorps") p.set("src", "d");
     if (state.page > 1) p.set("p", String(state.page));
     if (state.pageSize !== 10) p.set("z", String(state.pageSize));
+    if (state.excludedOrgTeams.size > 0) {
+      p.set("ex", [...state.excludedOrgTeams].join("|"));
+    }
     return p;
   }
 
@@ -993,15 +1169,19 @@
     const p = buildShareSearchParams();
     const qs = searchParamsToCompactQuery(p);
     const hash = window.location.hash || "#top";
+    let url;
     if (window.location.protocol === "file:") {
       const fileName = window.location.pathname.split("/").pop() || "index.html";
       const base = String(SHARE_PUBLIC_BASE_URL || "").trim().replace(/\/+$/, "");
       if (base) {
-        return `${base}/${fileName}${qs ? `?${qs}` : ""}${hash}`;
+        url = `${base}/${fileName}${qs ? `?${qs}` : ""}${hash}`;
+      } else {
+        url = `${fileName}${qs ? `?${qs}` : ""}${hash}`;
       }
-      return `${fileName}${qs ? `?${qs}` : ""}${hash}`;
+    } else {
+      url = `${window.location.origin}${window.location.pathname}${qs ? `?${qs}` : ""}${hash}`;
     }
-    return `${window.location.origin}${window.location.pathname}${qs ? `?${qs}` : ""}${hash}`;
+    return withOpenExternalBrowserParam(url);
   }
 
   /**
@@ -1012,26 +1192,51 @@
     const h = String(hashWithLeadingHash || "#top").startsWith("#")
       ? String(hashWithLeadingHash)
       : `#${hashWithLeadingHash}`;
+    let url;
     if (window.location.protocol === "file:") {
       const fileName = window.location.pathname.split("/").pop() || "index.html";
       const base = String(SHARE_PUBLIC_BASE_URL || "").trim().replace(/\/+$/, "");
       if (base) {
-        return `${base}/${fileName}${h}`;
+        url = `${base}/${fileName}${h}`;
+      } else {
+        url = `${fileName}${h}`;
       }
-      return `${fileName}${h}`;
+    } else {
+      url = `${window.location.origin}${window.location.pathname}${h}`;
     }
-    return `${window.location.origin}${window.location.pathname}${h}`;
+    return withOpenExternalBrowserParam(url);
+  }
+
+  /** @param {string} urlStr @returns {string} */
+  function withOpenExternalBrowserParam(urlStr) {
+    const fn = window.MarchinZUrlShare?.withOpenExternalBrowserParam;
+    if (typeof fn === "function") return fn(urlStr);
+    return String(urlStr || "").trim();
   }
 
   function currentSearchSummary() {
     const parts = [];
-    const team = (qTeam?.value ?? "").trim();
-    const event = (qEvent?.value ?? "").trim();
+    const team = (qTeam?.value ?? "").trim() || String(state.exactOrgTeam ?? "").trim();
+    const event = (qEvent?.value ?? "").trim() || String(state.exactEvent ?? "").trim();
     const free = (qFree?.value ?? "").trim();
     if (team) parts.push(team);
     if (event) parts.push(event);
     if (free) parts.push(free);
     return parts.length ? parts.join(" / ") : "現在の検索条件";
+  }
+
+  /** @param {{ force?: boolean }} [opts] */
+  function logVideoSearchUgc(opts) {
+    if (!window.MarchinZAdminUgcLog?.recordVideoSearch) return;
+    const query = currentSearchSummary();
+    if (!query || query === "現在の検索条件") return;
+    syncUrlState();
+    const href = (window.location.hash || "#videos").trim() || "#videos";
+    window.MarchinZAdminUgcLog.recordVideoSearch({
+      query,
+      targetHref: href,
+      force: Boolean(opts?.force),
+    });
   }
 
   function searchShareText() {
@@ -1056,6 +1261,26 @@
    */
   function openSearchLikeShare(kind, text, url, analyticsTarget) {
     const target = analyticsTarget || "search";
+    if (target === "search" && window.MarchinZAdminUgcLog?.recordSearchShare) {
+      const shareQuery = currentSearchSummary();
+      if (shareQuery && shareQuery !== "現在の検索条件") {
+        const shareLabels = {
+          copy: "リンクをコピー",
+          x: "X",
+          line: "LINE",
+          instagram: "Instagram",
+          facebook: "Facebook",
+        };
+        syncUrlState();
+        const shareHref = (window.location.hash || "#videos").trim() || "#videos";
+        window.MarchinZAdminUgcLog.recordSearchShare({
+          query: shareQuery,
+          channel: kind,
+          channelLabel: shareLabels[kind] || kind,
+          targetHref: shareHref,
+        });
+      }
+    }
     const enc = encodeURIComponent(text);
     const encUrl = encodeURIComponent(url);
     switch (kind) {
@@ -1087,36 +1312,9 @@
           "noopener,noreferrer"
         );
         break;
-      case "instagram": {
-        trackEvent("share_click", { kind, target });
-        const notifyCopyOk = () => {
-          alert(
-            "シェア用の文をコピーしました。\nInstagramで新規投稿を開き、キャプションに貼り付けてください。"
-          );
-        };
-        const notifyCopyFail = () => {
-          alert("クリップボードにコピーできませんでした。表示された文を手動でコピーしてください。");
-        };
-        const runCopy = () => copyText(text).then(notifyCopyOk).catch(notifyCopyFail);
-        if (typeof navigator.share === "function") {
-          const shareData = { text };
-          const canTry =
-            typeof navigator.canShare !== "function" || navigator.canShare(shareData);
-          if (canTry) {
-            navigator
-              .share(shareData)
-              .catch((err) => {
-                if (err && err.name === "AbortError") return;
-                runCopy();
-              });
-          } else {
-            runCopy();
-          }
-        } else {
-          runCopy();
-        }
+      case "instagram":
+        shareInstagramLinkOnly(url, target);
         break;
-      }
       default:
         break;
     }
@@ -1317,6 +1515,7 @@
         ].join(" ")
       );
       if (f && !hay.includes(f)) return false;
+      if (!rowMatchesVideoSourceFilter(row)) return false;
       return true;
     });
     if (shouldUseInitialRandom()) {
@@ -1334,11 +1533,30 @@
       }
     });
     updateMix3NoticeVisibility();
+    syncVideoSourceFilterButton();
+    if (hasSearchOrExact && window.MarchinZTrackEvent) {
+      const bucket = window.MarchinZAnalytics?.searchResultBucket?.(state.filtered.length) ?? "0";
+      window.MarchinZTrackEvent("search_result_view", {
+        tab: state.tab,
+        has_team: Boolean(teamQ),
+        has_event: Boolean(e),
+        has_free: Boolean(f),
+        result_bucket: bucket,
+      });
+      if (state.filtered.length === 0) {
+        window.MarchinZTrackEvent("search_result_empty", {
+          team: (qTeam?.value ?? "").trim(),
+          free: (qFree?.value ?? "").trim(),
+          tab: state.tab,
+        });
+      }
+    }
     render();
     renderRecommendations();
   }
 
   function hasActiveListFilter() {
+    if (state.sourceFilter) return true;
     if (state.exactOrgTeam !== null || state.exactEvent !== null) return true;
     if (
       (qTeam?.value ?? "").trim() ||
@@ -1362,7 +1580,7 @@
   }
 
   function sortRows() {
-    const key = state.sortKey;
+    const key = SORT_KEYS.includes(state.sortKey) ? state.sortKey : "配信日";
     const dir = state.sortDir === "asc" ? 1 : -1;
     state.filtered.sort((a, b) => {
       const prim = cmp(a, b, key) * dir;
@@ -1386,6 +1604,7 @@
     if ((qEvent?.value ?? "").trim()) return false;
     if ((qFree?.value ?? "").trim()) return false;
     if (state.excludedOrgTeams.size > 0) return false;
+    if (state.sourceFilter) return false;
     return true;
   }
 
@@ -1397,31 +1616,40 @@
     return false;
   }
 
+  /** @param {object[]} rows @param {string} team */
+  function pickRandomVideoForPriorityTeam(rows, team) {
+    const candidates = rows.filter((r) => String(rowOrgTeam(r) || "").trim() === team);
+    if (!candidates.length) return null;
+    const sortedByPref = [...candidates].sort((a, b) => {
+      const ca = drumcorpsFinalVsIntroBonus(a);
+      const cb = drumcorpsFinalVsIntroBonus(b);
+      if (ca === cb) return 0;
+      if (ca === 0) return 1;
+      if (cb === 0) return -1;
+      return cb - ca;
+    });
+    const bestPref = drumcorpsFinalVsIntroBonus(sortedByPref[0]);
+    const pool =
+      bestPref !== 0
+        ? candidates.filter((r) => drumcorpsFinalVsIntroBonus(r) === bestPref)
+        : candidates;
+    return pool[Math.floor(Math.random() * pool.length)] ?? null;
+  }
+
   function applyInitialRandomOrder(rows) {
     const required = [];
     const usedUrls = new Set();
-    const randomizedTeams = shuffleArray(INITIAL_RANDOM_TEAMS);
-    for (const team of randomizedTeams) {
-      const candidates = rows.filter((r) => String(rowOrgTeam(r) || "").trim() === team);
-      if (!candidates.length) continue;
-      const sortedByPref = [...candidates].sort((a, b) => {
-        const ca = drumcorpsFinalVsIntroBonus(a);
-        const cb = drumcorpsFinalVsIntroBonus(b);
-        if (ca === cb) return 0;
-        if (ca === 0) return 1;
-        if (cb === 0) return -1;
-        return cb - ca;
-      });
-      const bestPref = drumcorpsFinalVsIntroBonus(sortedByPref[0]);
-      const pool =
-        bestPref !== 0
-          ? candidates.filter((r) => drumcorpsFinalVsIntroBonus(r) === bestPref)
-          : candidates;
-      const picked = pool[Math.floor(Math.random() * pool.length)];
+    const usedTeams = new Set();
+    for (const team of INITIAL_RANDOM_PRIORITY_TEAMS) {
+      if (required.length >= INITIAL_RANDOM_PRIORITY_SLOTS) break;
+      if (usedTeams.has(team)) continue;
+      const picked = pickRandomVideoForPriorityTeam(rows, team);
+      if (!picked) continue;
       const urlKey = String(picked["URL"] || "").trim();
       if (!urlKey || usedUrls.has(urlKey)) continue;
       required.push(picked);
       usedUrls.add(urlKey);
+      usedTeams.add(team);
     }
     const remaining = shuffleArray(
       rows.filter((r) => {
@@ -1704,53 +1932,345 @@
     a.appendChild(span);
   }
 
-  function mobileOS() {
-    const ua = navigator.userAgent || "";
-    if (/Android/i.test(ua)) return "android";
-    if (/iPhone|iPad|iPod/i.test(ua)) return "ios";
-    return null;
+  /** @param {string} token @returns {number} */
+  function parseYoutubeTimeSeconds(token) {
+    const s = String(token || "").trim();
+    if (!s) return 0;
+    if (/^\d+$/.test(s)) return parseInt(s, 10);
+    const hm = s.match(/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s?)?$/i);
+    if (hm) {
+      return (
+        (parseInt(hm[1] || "0", 10) || 0) * 3600 +
+        (parseInt(hm[2] || "0", 10) || 0) * 60 +
+        (parseInt(hm[3] || "0", 10) || 0)
+      );
+    }
+    const m = s.match(/^(\d+)s?$/i);
+    return m ? parseInt(m[1], 10) : 0;
+  }
+
+  /** @param {string} urlStr @returns {number} */
+  function youtubeEmbedStartSeconds(urlStr) {
+    try {
+      const u = new URL(urlStr);
+      const hash = u.hash.replace(/^#/, "");
+      if (/^t=/i.test(hash)) {
+        const fromHash = parseYoutubeTimeSeconds(hash.slice(2));
+        if (fromHash > 0) return fromHash;
+      }
+      const t = u.searchParams.get("t") || u.searchParams.get("start");
+      return t ? parseYoutubeTimeSeconds(t) : 0;
+    } catch {
+      return 0;
+    }
   }
 
   /**
-   * スマホでは YouTube リンクを優先的に公式アプリで開く（失敗時は Web にフォールバック）
+   * YouTube 本家で「続きから再生」より URL の秒数を優先しやすい watch URL
+   * （クエリ t= とハッシュ #t= の両方を付与）
+   * @param {string} urlStr
+   * @returns {string}
    */
-  function preferYouTubeApp(anchor, urlStr) {
-    if (!anchor || !urlStr) return;
-    const id = youtubeVideoIdFromUrl(urlStr);
-    const os = mobileOS();
-    if (!id || !os) return;
-    anchor.addEventListener("click", (ev) => {
-      trackEvent("video_open", { platform: "youtube_app_attempt" });
-      ev.preventDefault();
-      const webUrl = urlStr;
-      const appUrl =
-        os === "android"
-          ? `intent://www.youtube.com/watch?v=${id}#Intent;package=com.google.android.youtube;scheme=https;end`
-          : `youtube://watch?v=${id}`;
-      let done = false;
-      const timer = window.setTimeout(() => {
-        if (done) return;
-        done = true;
-        window.location.href = webUrl;
-      }, 700);
-      try {
-        window.location.href = appUrl;
-      } finally {
-        window.setTimeout(() => {
-          if (done) return;
-          done = true;
-          clearTimeout(timer);
-        }, 1200);
+  function youtubeWatchUrlWithForcedStart(urlStr) {
+    const raw = String(urlStr || "").trim();
+    if (!raw) return raw;
+    const id = youtubeVideoIdFromUrl(raw);
+    if (!id) return raw;
+    const start = youtubeEmbedStartSeconds(raw);
+    const watch = new URL("https://www.youtube.com/watch");
+    watch.searchParams.set("v", id);
+    if (start > 0) {
+      watch.searchParams.set("t", `${start}s`);
+      watch.hash = `t=${start}s`;
+    }
+    return watch.toString();
+  }
+
+  function subscribeYouTubeEmbedListening() {
+    if (!youtubeEmbedIframe?.contentWindow) return;
+    if (!youtubeEmbedIframe.id) youtubeEmbedIframe.id = "mz-youtube-embed-iframe";
+    youtubeEmbedIframe.contentWindow.postMessage(
+      JSON.stringify({
+        event: "listening",
+        id: youtubeEmbedIframe.id,
+        channel: "widget",
+      }),
+      "*"
+    );
+  }
+
+  /** @type {boolean} */
+  let youtubeEmbedQualityBootstrapped = false;
+
+  /** @param {number} [startSec=0] */
+  function applyYouTubeEmbedPlayerBootstrap(startSec = 0) {
+    if (!youtubeEmbedIframe) return;
+    youtubeEmbedQualityBootstrapped = false;
+    const bootstrap = () => {
+      if (!youtubeEmbedIframe?.contentWindow) return;
+      const payload = (func, args) =>
+        youtubeEmbedIframe.contentWindow.postMessage(JSON.stringify({ event: "command", func, args }), "*");
+      subscribeYouTubeEmbedListening();
+      if (!youtubeEmbedQualityBootstrapped) {
+        payload("setPlaybackQuality", ["hd720"]);
+        youtubeEmbedQualityBootstrapped = true;
       }
+      if (startSec > 0) payload("seekTo", [startSec, true]);
+      payload("playVideo", []);
+    };
+    youtubeEmbedIframe.addEventListener("load", bootstrap, { once: true });
+    window.setTimeout(bootstrap, 700);
+    window.setTimeout(bootstrap, 1500);
+  }
+
+  /** @type {HTMLDivElement | null} */
+  let youtubeEmbedOverlayEl = null;
+  /** @type {HTMLDivElement | null} */
+  let youtubeEmbedFrameWrap = null;
+  /** @type {HTMLIFrameElement | null} */
+  let youtubeEmbedIframe = null;
+  /** @type {HTMLHeadingElement | null} */
+  let youtubeEmbedTitleEl = null;
+  /** @type {HTMLAnchorElement | null} */
+  let youtubeEmbedOpenExternal = null;
+  /** @type {Element | null} */
+  let youtubeEmbedReturnAnchor = null;
+
+  /** @param {string} urlStr @param {{ titleHint?: string, anchor?: Element | null }} [opts] */
+  function resolveYouTubeEmbedTitle(urlStr, opts = {}) {
+    const skip = new Set(["動画", "動画を開く", "YouTubeで見る", "YouTube動画"]);
+    const hint = String(opts.titleHint || "").trim();
+    if (hint && !skip.has(hint)) return hint;
+
+    const anchor = opts.anchor;
+    if (anchor instanceof HTMLElement) {
+      const card = anchor.closest(".recommend-item, .youtube-thumb-item, .prof-mylist-recommend-item");
+      const fromCard = card
+        ?.querySelector(
+          ".recommend-item-event-link, .recommend-item-event-plain, .recommend-item-url-line, .youtube-thumb-title"
+        )
+        ?.textContent?.trim();
+      if (fromCard && !skip.has(fromCard)) return fromCard;
+    }
+
+    const id = youtubeVideoIdFromUrl(urlStr);
+    if (id) {
+      for (const row of state.rows || []) {
+        if (youtubeVideoIdFromUrl(String(row.URL || "")) !== id) continue;
+        const t = String(row["大会名"] || "").trim();
+        if (t) return t;
+      }
+    }
+    return "YouTube動画";
+  }
+
+  function onYoutubeEmbedKeydown(ev) {
+    if (ev.key !== "Escape") return;
+    if (!youtubeEmbedOverlayEl || youtubeEmbedOverlayEl.hidden) return;
+    closeYouTubeEmbedModal();
+  }
+
+  function showYouTubeEmbedFullscreenHint() {
+    const msg = "全画面は動画内の右のアイコンから";
+    if (typeof window.MarchinZEphemeralMessage === "function") {
+      window.MarchinZEphemeralMessage(msg);
+      return;
+    }
+    console.info("[MarchinZYouTubePlayer]", msg);
+  }
+
+  /** @param {Element} el */
+  function requestElementFullscreen(el) {
+    const fn =
+      el.requestFullscreen ||
+      el.webkitRequestFullscreen ||
+      /** @type {any} */ (el).msRequestFullscreen ||
+      /** @type {any} */ (el).mozRequestFullScreen;
+    if (!fn) return Promise.reject(new Error("fullscreen unsupported"));
+    const ret = fn.call(el);
+    return ret && typeof ret.then === "function" ? ret : Promise.resolve();
+  }
+
+  async function requestYouTubeEmbedFullscreen() {
+    const targets = [youtubeEmbedFrameWrap, youtubeEmbedIframe].filter(Boolean);
+    for (const target of targets) {
+      try {
+        await requestElementFullscreen(/** @type {Element} */ (target));
+        return;
+      } catch {
+        /* 次の要素（iframe 等）を試す */
+      }
+    }
+    showYouTubeEmbedFullscreenHint();
+  }
+
+  function closeYouTubeEmbedModal() {
+    if (!youtubeEmbedOverlayEl) return;
+    const returnAnchor = youtubeEmbedReturnAnchor;
+    youtubeEmbedReturnAnchor = null;
+    if (document.fullscreenElement || document.webkitFullscreenElement) {
+      const exit =
+        document.exitFullscreen?.bind(document) ||
+        document.webkitExitFullscreen?.bind(document) ||
+        /** @type {any} */ (document).msExitFullscreen?.bind(document);
+      try {
+        exit?.();
+      } catch {
+        /* ignore */
+      }
+    }
+    youtubeEmbedOverlayEl.hidden = true;
+    document.documentElement.classList.remove("mz-youtube-embed-open");
+    if (youtubeEmbedIframe) youtubeEmbedIframe.src = "about:blank";
+    if (returnAnchor instanceof Element) {
+      requestAnimationFrame(() => {
+        returnAnchor.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      });
+    }
+  }
+
+  function ensureYoutubeEmbedOverlay() {
+    if (youtubeEmbedOverlayEl) return youtubeEmbedOverlayEl;
+
+    const overlay = document.createElement("div");
+    overlay.id = "mz-youtube-embed-overlay";
+    overlay.className = "mz-dialog-overlay mz-youtube-embed-overlay";
+    overlay.hidden = true;
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-labelledby", "mz-youtube-embed-title");
+
+    const dialog = document.createElement("div");
+    dialog.className = "mz-dialog mz-dialog--youtube-embed";
+
+    const head = document.createElement("div");
+    head.className = "mz-dialog-head";
+    const title = document.createElement("h2");
+    title.id = "mz-youtube-embed-title";
+    title.className = "mz-dialog-title mz-youtube-embed-title";
+    title.textContent = "YouTube動画";
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "mz-dialog-close-btn";
+    closeBtn.setAttribute("aria-label", "閉じる");
+    closeBtn.textContent = "×";
+    head.append(title, closeBtn);
+
+    const body = document.createElement("div");
+    body.className = "mz-dialog-body mz-youtube-embed-body";
+    const frameWrap = document.createElement("div");
+    frameWrap.className = "mz-youtube-embed-frame-wrap";
+    const iframe = document.createElement("iframe");
+    iframe.className = "mz-youtube-embed-frame";
+    iframe.setAttribute("allowfullscreen", "");
+    iframe.setAttribute(
+      "allow",
+      "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+    );
+    iframe.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
+    iframe.title = "YouTube動画";
+    frameWrap.appendChild(iframe);
+    body.appendChild(frameWrap);
+
+    const foot = document.createElement("div");
+    foot.className = "mz-dialog-foot mz-youtube-embed-foot";
+    const qualityHint = document.createElement("p");
+    qualityHint.className = "mz-youtube-embed-quality-hint";
+    qualityHint.textContent = "画質はプレイヤー内の ⚙️ から変更できます";
+    const footActions = document.createElement("div");
+    footActions.className = "mz-youtube-embed-foot-actions";
+    const fullscreenBtn = document.createElement("button");
+    fullscreenBtn.type = "button";
+    fullscreenBtn.className = "mz-youtube-embed-fullscreen-btn";
+    fullscreenBtn.textContent = "全画面表示 ⛶";
+    const openExt = document.createElement("a");
+    openExt.className = "mz-youtube-embed-open-external";
+    openExt.target = "_blank";
+    openExt.rel = "noopener noreferrer";
+    openExt.textContent = "YouTubeで開く";
+    footActions.append(fullscreenBtn, openExt);
+    foot.append(qualityHint, footActions);
+
+    dialog.append(head, body, foot);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+
+    closeBtn.addEventListener("click", closeYouTubeEmbedModal);
+    overlay.addEventListener("click", (ev) => {
+      if (ev.target === overlay) closeYouTubeEmbedModal();
     });
+    document.addEventListener("keydown", onYoutubeEmbedKeydown);
+
+    fullscreenBtn.addEventListener("click", () => {
+      void requestYouTubeEmbedFullscreen();
+    });
+
+    youtubeEmbedOverlayEl = overlay;
+    youtubeEmbedFrameWrap = frameWrap;
+    youtubeEmbedIframe = iframe;
+    youtubeEmbedTitleEl = title;
+    youtubeEmbedOpenExternal = openExt;
+    return overlay;
+  }
+
+  /**
+   * YouTube 動画をサイト内 iframe モーダルで再生（Universal Links / アプリ強制起動を回避）
+   * @param {string} urlStr
+   * @param {{ titleHint?: string, anchor?: Element | null }} [opts]
+   */
+  function openYouTubeEmbedModal(urlStr, opts = {}) {
+    const raw = String(urlStr || "").trim();
+    const id = youtubeVideoIdFromUrl(raw);
+    if (!id) {
+      trackEvent("video_open", { platform: "web_fallback" });
+      window.open(raw, "_blank", "noopener,noreferrer");
+      return;
+    }
+    youtubeEmbedReturnAnchor = opts.anchor instanceof Element ? opts.anchor : null;
+    const overlay = ensureYoutubeEmbedOverlay();
+    const titleText = resolveYouTubeEmbedTitle(raw, opts);
+    if (youtubeEmbedTitleEl) youtubeEmbedTitleEl.textContent = titleText;
+    if (youtubeEmbedIframe) youtubeEmbedIframe.title = titleText;
+    const start = youtubeEmbedStartSeconds(raw);
+    const params = new URLSearchParams({
+      autoplay: "1",
+      controls: "1",
+      rel: "0",
+      modestbranding: "1",
+      playsinline: "1",
+      vq: "hd720",
+      enablejsapi: "1",
+      origin: window.location.origin,
+    });
+    if (start > 0) params.set("start", String(start));
+    if (youtubeEmbedIframe) {
+      youtubeEmbedIframe.src = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?${params}`;
+    }
+    applyYouTubeEmbedPlayerBootstrap(start);
+    if (youtubeEmbedOpenExternal) youtubeEmbedOpenExternal.href = youtubeWatchUrlWithForcedStart(raw);
+    overlay.hidden = false;
+    document.documentElement.classList.add("mz-youtube-embed-open");
+    trackEvent("video_open", { platform: "embed_modal" });
   }
 
   function enhanceVideoLink(anchor, urlStr) {
     if (!anchor || !urlStr) return;
-    anchor.addEventListener("click", () => {
-      trackEvent("video_open", { platform: "web" });
+    const id = youtubeVideoIdFromUrl(urlStr);
+    if (!id) {
+      anchor.addEventListener("click", () => {
+        trackEvent("video_open", { platform: "web" });
+      });
+      return;
+    }
+    const watchUrl = youtubeWatchUrlWithForcedStart(urlStr);
+    anchor.href = watchUrl;
+    anchor.target = "_blank";
+    anchor.rel = "noopener noreferrer";
+    anchor.dataset.ytEmbed = "1";
+    anchor.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      openYouTubeEmbedModal(urlStr, { anchor });
     });
-    preferYouTubeApp(anchor, urlStr);
   }
 
   /** 検索結果グリッドの列数（styles.css のブレークポイントと一致） */
@@ -1775,7 +2295,7 @@
     const orgTeam = rowOrgTeam(row);
     const eventTitle = String(row["大会名"] ?? "").trim();
     const urlStr = String(row["URL"] ?? "").trim();
-    const dateStr = String(row["配信日"] ?? "").trim();
+    const dateStr = formatVideoMetaDate(row["配信日"]);
     const chName = rowChannelName(row);
 
     const chNameNorm = String(chName || "").toLowerCase();
@@ -1924,7 +2444,7 @@
       teamSearchBtn.type = "button";
       teamSearchBtn.className = "recommend-item-team-search-btn btn-share-search btn-marchinz-spotlight";
       const teamSearchLabel =
-        state.tab === "スリークロスチーム" ? "このチームの動画を検索" : "この団体の動画を検索";
+        state.tab === "スリークロスチーム" ? "このチームを検索" : "この団体を検索";
       teamSearchBtn.textContent = teamSearchLabel;
       teamSearchBtn.setAttribute("aria-label", teamSearchLabel);
       teamSearchBtn.addEventListener("click", (ev) => {
@@ -1937,7 +2457,6 @@
         state.browseOpen = false;
         if (qTeam) qTeam.value = searchTeamVal;
         onSearchInput();
-        qTeam?.focus({ preventScroll: true });
         document.getElementById("results-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
       });
       orgSearchWrap.appendChild(teamSearchBtn);
@@ -1991,12 +2510,12 @@
         chLink.textContent = chName;
         metaLine.appendChild(chLink);
         if (dateStr) {
-          metaLine.appendChild(document.createTextNode(` · ${dateStr}`));
+          metaLine.appendChild(document.createTextNode(` ${dateStr}`));
         }
       } else if (chName) {
         metaLine.appendChild(document.createTextNode(chName));
         if (dateStr) {
-          metaLine.appendChild(document.createTextNode(` · ${dateStr}`));
+          metaLine.appendChild(document.createTextNode(` ${dateStr}`));
         }
       } else if (dateStr) {
         metaLine.appendChild(document.createTextNode(dateStr));
@@ -2146,6 +2665,66 @@
     return Math.max(1, Math.ceil(n / ps));
   }
 
+  /** もっと見るで同一ページに残りがすべて載ったときは、現在ページが最終ページ */
+  function effectiveTotalPages(slice) {
+    const base = totalFilteredPages();
+    if (!slice || slice.total === 0) return 1;
+    if (slice.start + slice.displayedCount >= slice.total) return state.page;
+    return base;
+  }
+
+  /** 現在ページの一覧スライス（もっと見るの追加分・末尾1件の通常表示を含む） */
+  function computeVideoListPageSlice() {
+    const total = state.filtered.length;
+    const ps = state.pageSize;
+    const start = (state.page - 1) * ps;
+    const remaining = Math.max(0, total - start);
+    const take = Math.min(ps * (1 + state.listLoadMoreExtra), remaining);
+    let pageRows = state.filtered.slice(start, start + take);
+    let moreAvailable = remaining > 0 && pageRows.length < remaining;
+    let peekRow = moreAvailable ? state.filtered[start + pageRows.length] : null;
+    const gridCols = getVideoResultGridColumnCount();
+    let rem = pageRows.length % gridCols;
+    let emptySlots = rem === 0 ? 0 : gridCols - rem;
+    if (moreAvailable && remaining - pageRows.length === 1) {
+      pageRows = state.filtered.slice(start, remaining);
+      moreAvailable = false;
+      peekRow = null;
+      rem = pageRows.length % gridCols;
+      emptySlots = rem === 0 ? 0 : gridCols - rem;
+    }
+    const useInlinePeek = Boolean(moreAvailable && peekRow && emptySlots > 0);
+    return {
+      total,
+      ps,
+      start,
+      remaining,
+      pageRows,
+      moreAvailable,
+      peekRow,
+      gridCols,
+      emptySlots,
+      useInlinePeek,
+      displayedCount: pageRows.length,
+    };
+  }
+
+  function formatPaginationStatus(slice) {
+    const { total, ps, start, displayedCount, remaining } = slice;
+    const totalPages = effectiveTotalPages(slice);
+    const from = start + 1;
+    const to = start + displayedCount;
+    const expanded = state.listLoadMoreExtra > 0 || displayedCount > ps;
+    const allOnPage = displayedCount >= remaining;
+    let sub;
+    if (expanded || allOnPage) {
+      sub = `（${displayedCount}件を表示 / 該当${total}件）`;
+    } else {
+      sub = `（${from}〜${to} 件目 / 該当${total}件）`;
+    }
+    return `ページ ${state.page} / ${totalPages}<span class="pagination-status-sub">${sub}</span>`;
+  }
+
   function renderVisibleOrgsLine() {
     if (!visibleOrgs) return;
     if (!hasActiveListFilter() && state.excludedOrgTeams.size === 0) {
@@ -2216,26 +2795,21 @@
       pageSizeSelect.value = String(state.pageSize);
     }
 
-    const total = state.filtered.length;
-    const totalPages = totalFilteredPages();
-    if (state.page > totalPages) state.page = totalPages;
+    const baseTotalPages = totalFilteredPages();
+    if (state.page > baseTotalPages) state.page = baseTotalPages;
     if (state.page < 1) state.page = 1;
 
-    const ps = state.pageSize;
-    const start = (state.page - 1) * ps;
-    const take = ps * (1 + state.listLoadMoreExtra);
-    const pageRows = state.filtered.slice(start, start + take);
-    const moreAvailable =
-      total > 0 && start + pageRows.length < total;
-    const peekRow = moreAvailable
-      ? state.filtered[start + pageRows.length]
-      : null;
-    const gridCols = getVideoResultGridColumnCount();
-    const rem = pageRows.length % gridCols;
-    const emptySlots = rem === 0 ? 0 : gridCols - rem;
-    const useInlinePeek = Boolean(
-      moreAvailable && peekRow && emptySlots > 0,
-    );
+    const slice = computeVideoListPageSlice();
+    const {
+      total,
+      ps,
+      start,
+      pageRows,
+      moreAvailable,
+      peekRow,
+      useInlinePeek,
+      displayedCount,
+    } = slice;
 
     if (videoList) {
       if (
@@ -2261,6 +2835,7 @@
         videoResultMoreWrap.appendChild(videoListMoreBtn);
       }
       videoListMoreBtn.hidden = !moreAvailable;
+      videoListMoreBtn.disabled = !moreAvailable;
       videoListMoreBtn.title = moreAvailable
         ? `「表示件数」の ${ps} 件ぶん、さらに表示します`
         : "";
@@ -2277,13 +2852,13 @@
       if (total === 0) {
         paginationStatus.textContent = "該当なし";
       } else {
-        const from = start + 1;
-        const to = start + pageRows.length;
-        paginationStatus.innerHTML = `ページ ${state.page} / ${totalPages}<span class="pagination-status-sub">（${from}〜${to} 件目を表示）</span>`;
+        paginationStatus.innerHTML = formatPaginationStatus(slice);
       }
     }
     const atFirst = state.page <= 1;
-    const atLast = state.page >= totalPages || total === 0;
+    const totalPages = effectiveTotalPages(slice);
+    const atLast =
+      total === 0 || start + displayedCount >= total || state.page >= totalPages;
     [pageFirst, pagePrev].forEach((btn) => {
       if (btn) btn.disabled = atFirst || total === 0;
     });
@@ -2310,6 +2885,7 @@
     document.querySelectorAll(".result-sort-bar button[data-sort]").forEach((btn) => {
       btn.disabled = dis;
     });
+    if (videoSourceFilterBtn) videoSourceFilterBtn.disabled = dis;
     shareSearchBtns().forEach((b) => {
       b.disabled = dis;
     });
@@ -2333,6 +2909,34 @@
         window.scrollBy({ top: delta, left: 0, behavior: "auto" });
       }
     }
+  }
+
+  function setupVideoSourceFilter() {
+    if (!videoSourceFilterBtn || !videoSourceFilterMenu) return;
+    syncVideoSourceFilterButton();
+    videoSourceFilterBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleVideoSourceFilterMenu();
+    });
+    videoSourceFilterMenu.querySelectorAll(".video-source-filter-item").forEach((item) => {
+      item.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const v = item.getAttribute("data-source") || "";
+        state.sourceFilter = v === "matsuri" || v === "drumcorps" ? v : "";
+        closeVideoSourceFilterMenu();
+        cancelSearchDebounce();
+        applyFilter();
+      });
+    });
+    document.addEventListener("click", (e) => {
+      if (!videoSourceFilterMenuOpen) return;
+      const t = e.target;
+      if (videoSourceFilterBtn?.contains(t) || videoSourceFilterMenu?.contains(t)) return;
+      closeVideoSourceFilterMenu();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && videoSourceFilterMenuOpen) closeVideoSourceFilterMenu();
+    });
   }
 
   function setupSortHeaders() {
@@ -2543,6 +3147,7 @@
     clearExcludedOrgs();
     state.browseOpen = false;
     applyFilter();
+    logVideoSearchUgc({ force: true });
     renderBrowsePanel();
     setSearchOverlay(false);
   }
@@ -2626,6 +3231,14 @@
     });
   }
 
+  if (browseOrgSwitchCategory) {
+    browseOrgSwitchCategory.addEventListener("click", () => {
+      const next =
+        state.tab === "スリークロスチーム" ? "マーチング団体等" : "スリークロスチーム";
+      switchVideosCategoryTab(next);
+    });
+  }
+
   if (browseOrgClose) {
     browseOrgClose.addEventListener("click", () => {
       state.browseOpen = false;
@@ -2688,15 +3301,7 @@
     btn.addEventListener("click", () => {
       const cat = btn.getAttribute("data-category");
       if (!cat) return;
-      cancelSearchDebounce();
-      state.tab = cat;
-      clearExactFilters();
-      clearExcludedOrgs();
-      document.querySelectorAll('.tabs button[role="tab"]').forEach((b) => {
-        b.setAttribute("aria-selected", b === btn ? "true" : "false");
-      });
-      applyFilter();
-      renderBrowsePanel();
+      switchVideosCategoryTab(cat);
     });
   });
 
@@ -2707,6 +3312,21 @@
     });
   });
 
+  document.addEventListener(
+    "click",
+    (ev) => {
+      const a = ev.target.closest?.(
+        "a.recommend-item-thumb-link, a.youtube-thumb-link, a.user-profile-mylist-thumb-link, a.recommend-item-url-line"
+      );
+      if (!a || a.dataset.ytEmbed === "1" || a.dataset.ytEmbedSkip === "1") return;
+      const href = a.getAttribute("href") || "";
+      if (!youtubeVideoIdFromUrl(href)) return;
+      ev.preventDefault();
+      openYouTubeEmbedModal(href, { anchor: a });
+    },
+    true
+  );
+
   state.recentSearches = loadJsonStorage(LS_KEY_RECENT_SEARCHES, []);
   renderRecentSearches();
 
@@ -2714,9 +3334,12 @@
 
   window.MarchinZShareMenu = {
     buildAbsoluteUrlForHash,
-    mylistShareText(listTitle, url) {
+    withOpenExternalBrowserParam,
+    mylistShareText(listTitle, url, kind = "videos") {
       const t = String(listTitle || "マイリスト").trim() || "マイリスト";
-      return `動画リスト「${t}」。マーチンズで作成。\n${url}`;
+      const k = kind === "yt" ? "yt" : "videos";
+      const label = k === "yt" ? "YouTubeマイリスト" : "大会動画マイリスト";
+      return `「${t}」の${label}。\n${url}\nマーチンズからシェアしました♪`;
     },
     /**
      * @param {string} displayName
@@ -2725,11 +3348,28 @@
      */
     mllProfileShareText(displayName, counts, url) {
       const name = String(displayName || "ユーザー").trim() || "ユーザー";
-      const w = Number(counts?.watch) || 0;
-      const p = Number(counts?.perform) || 0;
-      const t = Number(counts?.team_staff) || 0;
-      const o = Number(counts?.ops) || 0;
-      return `${name}のMarchinZ Log。これまで${w}回観戦、${p}回出演、${t}回チームスタッフ、運営側で${o}回。マーチングイベントに参加。\n${url}`;
+      const R = window.MarchinZMllRole;
+      const order = R?.PROFILE_ROLE_ORDER || ["watch", "perform", "team_staff", "ops"];
+      /** @type {string[]} */
+      const parts = [];
+      for (const k of order) {
+        const c = Number(counts?.[k]) || 0;
+        if (c <= 0) continue;
+        const piece = R?.formatYearRoleCountJa ? R.formatYearRoleCountJa(k, c) : "";
+        if (piece) parts.push(piece);
+      }
+      const tally = parts.length ? `これまで${parts.join("、")}。` : "";
+      return `${name}のMarchinZ Log。${tally}\n${url}`;
+    },
+    /** @param {string} noteTitle @param {string} url */
+    noteShareText(noteTitle, url) {
+      const t = String(noteTitle || "MarchinZ Note").trim() || "MarchinZ Note";
+      return `「${t}」のMarchinZ Note。\n${url}\nマーチンズからシェアしました♪`;
+    },
+    /** @param {string} threadTitle @param {string} url */
+    boardShareText(threadTitle, url) {
+      const t = String(threadTitle || "MarchinZ Board 話題").trim() || "MarchinZ Board 話題";
+      return `「${t}」のMarchinZ Board 話題。\n${url}\nマーチンズからシェアしました♪`;
     },
     setupSearchLikeShareMenuForButton,
   };
@@ -2774,6 +3414,7 @@
   window.addEventListener("beforeunload", () => {});
 
   setupSortHeaders();
+  setupVideoSourceFilter();
 
   function resetVideosPageToDefaultTab() {
     state.tab = "マーチング団体等";
@@ -2802,4 +3443,14 @@
     const errEl = $("#load-err");
     if (errEl) errEl.textContent = "";
   });
+
+  window.MarchinZYouTubePlayer = {
+    openEmbed: openYouTubeEmbedModal,
+    close: closeYouTubeEmbedModal,
+    watchUrlWithForcedStart: youtubeWatchUrlWithForcedStart,
+  };
+
+  if (window.MarchinZInAppBrowser?.init) {
+    window.MarchinZInAppBrowser.init();
+  }
 })();

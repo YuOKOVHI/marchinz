@@ -4,6 +4,7 @@
   const LS_KEY_REPORTS = "marchinz_community_reports_v1";
   const SS_INTENT_COMMUNITY_COMPOSE = "mll_intent_community_compose";
   const SS_COMM_THREAD_FOCUS = "mz_comm_thread_focus";
+  const SS_DRAFT_COMMUNITY_COMPOSE = "mz_draft_community_compose_v1";
 
   /** 話題カテゴリ（表示タブ／投稿フォーム共通） */
   const THEMES = [
@@ -26,12 +27,56 @@
   const THEME_DISPLAY_LABEL = {
     "告知（出演・開催等）": "出演/開催告知",
     "クラウドファンディング": "クラファン",
+    "質問": "雑談・質問",
   };
+  const FILTER_ALL = "ALL";
+  /** ログインユーザーのみ閲覧可（Firestore ルールと一致） */
+  const THEME_MEMBERS_ONLY = "質問";
+  /** 運営（管理人）のみ投稿時に選択可 */
+  const THEME_OPS_ONLY = "運営より";
+  const BOARD_PUBLIC_THEMES = THEMES.filter((t) => t !== THEME_MEMBERS_ONLY);
   function themeDisplayLabel(themeKey) {
     const k = String(themeKey || "").trim();
     return THEME_DISPLAY_LABEL[k] || k;
   }
-  const FILTER_ALL = "ALL";
+
+  function isMembersOnlyTheme(theme) {
+    return normalizeTheme(theme) === THEME_MEMBERS_ONLY;
+  }
+
+  function boardPostVisibleToViewer(post) {
+    if (currentUser()?.id) return true;
+    return !isMembersOnlyTheme(post?.theme);
+  }
+
+  function parseCommunityBoardRoute() {
+    const raw = location.hash.replace(/^#/, "").trim();
+    const qi = raw.indexOf("?");
+    const path = qi === -1 ? raw : raw.slice(0, qi);
+    if (path !== "community/board" && path !== "community") {
+      return { threadId: "" };
+    }
+    const query = qi === -1 ? "" : raw.slice(qi + 1);
+    const params = new URLSearchParams(query);
+    return { threadId: String(params.get("thread") || "").trim() };
+  }
+
+  function boardThreadShareHash(threadRootId) {
+    const id = String(threadRootId || "").trim();
+    if (!id) return "#community/board";
+    return `#community/board?thread=${encodeURIComponent(id)}`;
+  }
+
+  function pendingCommunityThreadFocusId() {
+    let id = parseCommunityBoardRoute().threadId;
+    if (id) return id;
+    try {
+      id = String(sessionStorage.getItem(SS_COMM_THREAD_FOCUS) || "").trim();
+    } catch {
+      id = "";
+    }
+    return id;
+  }
   const MAX_COMMUNITY_IMAGES = 4;
   const COMMUNITY_MESSAGE = {
     likeUpdateFailed: "いいねの更新に失敗しました。時間をおいて再度お試しください。",
@@ -56,6 +101,7 @@
   const authorProfileCache = new Map();
 
   let activeDisplayTab = FILTER_ALL;
+  let communitySearchQuery = "";
 
   const form = document.getElementById("community-form");
   const titleEl = document.getElementById("community-title");
@@ -65,25 +111,35 @@
   const submitBtn = document.getElementById("community-submit");
   const composeOverlay = document.getElementById("community-compose-overlay");
   const openComposeBtn = document.getElementById("community-open-compose");
-  const composeAuthPhase = document.getElementById("community-compose-auth-phase");
   const composeFormWrap = document.getElementById("community-compose-form-wrap");
   const composeHeadingEl = document.getElementById("community-compose-heading");
+  const formThemeSelect = document.getElementById("community-form-theme-select");
   const COMPOSE_HEADING_DEFAULT = "新規話題を投稿";
-  const COMPOSE_HEADING_AUTH = "ログイン・登録";
   const feedMsgEl = document.getElementById("community-feed-msg");
   const moderationListEl = document.getElementById("moderation-list");
   const moderationNoteEl = document.getElementById("moderation-note");
+  const moderationViewTabsRoot = document.getElementById("moderation-view-tabs");
+  const moderationViewTabBtns = moderationViewTabsRoot
+    ? [...moderationViewTabsRoot.querySelectorAll("button[data-moderation-view]")]
+    : [];
   const topicImagesInput = document.getElementById("community-images");
   const topicImagesPreview = document.getElementById("community-images-preview");
   const topicImagesNote = document.getElementById("community-images-note");
   const errorThemeEl = document.getElementById("community-error-theme");
   const errorTitleEl = document.getElementById("community-error-title");
   const errorContentEl = document.getElementById("community-error-content");
+  const themeMembersNoteEl = document.getElementById("community-theme-members-note");
+  const boardGuestHintEl = document.getElementById("community-board-guest-hint");
   let cachedPosts = [];
   let cachedReports = [];
+  let cachedMylistReports = [];
+  let cachedNoteReports = [];
   let composeOverlayActive = false;
+  /** 掲示板オーバーレイで編集中の投稿 id（新規投稿時は空） */
+  let composeEditingPostId = "";
   let modalEscapeAttached = false;
   let feedMsgTimer = null;
+  let communityDraftSaveTimer = null;
 
   if (
     !form ||
@@ -135,15 +191,15 @@
   }
 
   function resolveAuthor(post) {
-    if (!post) return { name: "ユーザー", avatar: "", withdrawn: false };
-    if (authorWithdrawn(post.user_id)) {
-      return { name: WITHDRAWN_NAME, avatar: "", withdrawn: true };
+    const uid = String(post?.user_id || "").trim();
+    if (!post) return { uid: "", name: "ユーザー", avatar: "", withdrawn: false };
+    if (authorWithdrawn(uid)) {
+      return { uid, name: WITHDRAWN_NAME, avatar: "", withdrawn: true };
     }
-    return {
-      name: post.user_name || "ユーザー",
-      avatar: post.user_avatar || "",
-      withdrawn: false,
-    };
+    const cached = uid ? authorProfileCache.get(uid) : null;
+    const name = String(cached?.display_name || post.user_name || "ユーザー").trim() || "ユーザー";
+    const avatar = String(cached?.avatar_url || post.user_avatar || "").trim();
+    return { uid, name, avatar, withdrawn: false };
   }
 
   async function hydrateAuthorProfilesForPosts(posts) {
@@ -160,23 +216,125 @@
           const d = snap.data() || {};
           authorProfileCache.set(String(uid), {
             withdrawn: Boolean(d.withdrawn),
+            display_name: String(d.display_name || "").trim(),
+            avatar_url: String(d.avatar_url || "").trim(),
             like_show_community: d.like_show_community !== false,
           });
         } catch {
-          authorProfileCache.set(String(uid), { withdrawn: false, like_show_community: true });
+          authorProfileCache.set(String(uid), {
+            withdrawn: false,
+            display_name: "",
+            avatar_url: "",
+            like_show_community: true,
+          });
         }
       }),
     );
+  }
+
+  const WITHDRAWN_AVATAR_SVG = `data:image/svg+xml,${encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48"><rect width="48" height="48" fill="#ffffff"/></svg>',
+  )}`;
+
+  /**
+   * @param {{ uid?: string; name: string; avatar: string; withdrawn: boolean; uid?: string }} auth
+   * @param {boolean} [isReply]
+   * @returns {{ head: HTMLElement; textWrap: HTMLElement }}
+   */
+  function buildCommunityPostHead(auth, isReply = false) {
+    const headEl = document.createElement("div");
+    headEl.className = isReply ? "community-post-head community-post-head--reply" : "community-post-head";
+
+    const profileUid = auth.withdrawn ? "" : String(auth.uid || "").trim();
+    const avatar = document.createElement("img");
+    avatar.className = "community-post-avatar" + (auth.withdrawn ? " community-post-avatar--withdrawn" : "");
+    avatar.src = auth.withdrawn ? WITHDRAWN_AVATAR_SVG : auth.avatar || "logo/marchinz-logo.png";
+    avatar.alt = auth.withdrawn ? "" : `${auth.name} のプロフィール画像`;
+    if (profileUid) {
+      const avatarLink = document.createElement("a");
+      avatarLink.className = "community-post-avatar-link";
+      avatarLink.href = `#profile?uid=${encodeURIComponent(profileUid)}`;
+      avatarLink.setAttribute("aria-label", `${auth.name} のプロフィール`);
+      avatarLink.appendChild(avatar);
+      headEl.appendChild(avatarLink);
+    } else {
+      headEl.appendChild(avatar);
+    }
+
+    const textWrap = document.createElement("div");
+    const name = document.createElement("p");
+    name.className = "mll-log-title community-post-author-name";
+    if (profileUid) {
+      const nameLink = document.createElement("a");
+      nameLink.className = "community-post-author-link";
+      nameLink.href = `#profile?uid=${encodeURIComponent(profileUid)}`;
+      nameLink.textContent = auth.name;
+      nameLink.setAttribute("aria-label", `${auth.name} のプロフィール`);
+      name.appendChild(nameLink);
+    } else {
+      name.textContent = auth.name;
+    }
+    textWrap.appendChild(name);
+
+    headEl.appendChild(textWrap);
+    return { head: headEl, textWrap };
   }
 
   function isAdmin() {
     return Boolean(window.MLL_AUTH?.isAdmin?.());
   }
 
+  function canSelectOpsTheme() {
+    return isAdmin();
+  }
+
+  function composeSelectableThemes() {
+    return canSelectOpsTheme() ? THEMES.slice() : THEMES.filter((t) => t !== THEME_OPS_ONLY);
+  }
+
+  function defaultComposeTheme() {
+    return composeSelectableThemes()[0] || THEMES[0];
+  }
+
+  function themeAllowedForCompose(theme) {
+    const t = normalizeTheme(theme);
+    if (t === THEME_OPS_ONLY) return canSelectOpsTheme();
+    return THEMES.includes(t);
+  }
+
+  function syncComposeThemeOptionsVisibility() {
+    const allowOps = canSelectOpsTheme();
+    if (formThemeSelect instanceof HTMLSelectElement) {
+      [...formThemeSelect.options].forEach((opt) => {
+        if (String(opt.value || "") === THEME_OPS_ONLY) {
+          opt.hidden = !allowOps;
+          opt.disabled = !allowOps;
+        }
+      });
+    }
+    formThemeTabs.forEach((btn) => {
+      if (String(btn.getAttribute("data-community-form-theme") || "") === THEME_OPS_ONLY) {
+        btn.hidden = !allowOps;
+      }
+    });
+    const cur = selectedFormTheme();
+    if (!themeAllowedForCompose(cur)) {
+      syncFormThemeUi(defaultComposeTheme());
+    }
+  }
+
+  function rejectThemeForCompose(theme) {
+    if (themeAllowedForCompose(theme)) return false;
+    setFieldError(errorThemeEl, "選択できません");
+    setMsg("このカテゴリを選択する権限がありません。", true);
+    return true;
+  }
+
   function profileFallback(user) {
+    const nick = String(window.MLL_AUTH?.getDisplayName?.() || "").trim();
     return {
       display_name:
-        user?.user_metadata?.full_name || user?.user_metadata?.name || "ユーザー",
+        nick || user?.user_metadata?.full_name || user?.user_metadata?.name || "ユーザー",
       avatar_url: user?.user_metadata?.avatar_url || "",
       withdrawn: false,
     };
@@ -229,12 +387,127 @@
   }
 
   function resetComposeOverlayPanels() {
-    if (composeAuthPhase) composeAuthPhase.hidden = true;
     if (composeFormWrap) composeFormWrap.hidden = false;
     if (composeHeadingEl) composeHeadingEl.textContent = COMPOSE_HEADING_DEFAULT;
   }
 
-  function closeComposeOverlay() {
+  function restoreComposeFormLayoutDefaults() {
+    const themeFs = document.querySelector("#community-form .community-form-theme-fieldset");
+    const titleLab = titleEl?.closest?.("label.search-label-full");
+    const imgField = document.getElementById("community-images-field");
+    if (themeFs instanceof HTMLElement) themeFs.hidden = false;
+    if (titleLab instanceof HTMLElement) titleLab.hidden = false;
+    if (imgField instanceof HTMLElement) imgField.hidden = false;
+    if (titleEl) titleEl.required = true;
+    if (submitBtn) submitBtn.textContent = "この内容で投稿";
+    if (composeHeadingEl) composeHeadingEl.textContent = COMPOSE_HEADING_DEFAULT;
+  }
+
+  function applyComposeEditLayout(post) {
+    const themeFs = document.querySelector("#community-form .community-form-theme-fieldset");
+    const titleLab = titleEl?.closest?.("label.search-label-full");
+    const imgField = document.getElementById("community-images-field");
+    const isRoot = isThreadRoot(post);
+    if (themeFs instanceof HTMLElement) themeFs.hidden = !isRoot;
+    if (titleLab instanceof HTMLElement) titleLab.hidden = !isRoot;
+    if (imgField instanceof HTMLElement) imgField.hidden = false;
+    if (titleEl) {
+      titleEl.required = isRoot;
+      if (!isRoot) titleEl.value = "";
+    }
+    if (submitBtn) submitBtn.textContent = isRoot ? "変更を保存" : "返信を保存";
+    if (composeHeadingEl) composeHeadingEl.textContent = isRoot ? "話題を編集" : "返信を編集";
+  }
+
+  function scrollCommunityBoardTabStripsToStart() {
+    const board = document.getElementById("community-hub-panel-board");
+    if (!(board instanceof HTMLElement)) return;
+    board.querySelectorAll(".mz-tab-strip-yamap").forEach((el) => {
+      if (el instanceof HTMLElement) el.scrollLeft = 0;
+    });
+  }
+
+  function collectCommunityComposeDraft() {
+    return {
+      theme: String(selectedFormTheme() || "").trim(),
+      title: String(titleEl?.value || "").trim(),
+      content: String(contentEl?.value || "").trim(),
+      uiOpen: Boolean(composeOverlayActive && !composeEditingPostId),
+    };
+  }
+
+  function hasCommunityComposeDraftContent(draft) {
+    if (!draft || typeof draft !== "object") return false;
+    return Boolean(String(draft.title || "").trim() || String(draft.content || "").trim());
+  }
+
+  function readCommunityComposeDraft() {
+    try {
+      const raw = sessionStorage.getItem(SS_DRAFT_COMMUNITY_COMPOSE);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+
+  function clearCommunityComposeDraft() {
+    try {
+      sessionStorage.removeItem(SS_DRAFT_COMMUNITY_COMPOSE);
+    } catch {
+      //
+    }
+  }
+
+  function persistCommunityComposeDraft(uiOpen) {
+    if (composeEditingPostId) return;
+    const draft = collectCommunityComposeDraft();
+    const open = uiOpen != null ? Boolean(uiOpen) : Boolean(draft.uiOpen);
+    if (!hasCommunityComposeDraftContent(draft)) {
+      clearCommunityComposeDraft();
+      return;
+    }
+    try {
+      sessionStorage.setItem(
+        SS_DRAFT_COMMUNITY_COMPOSE,
+        JSON.stringify({
+          theme: normalizeTheme(draft.theme),
+          title: draft.title,
+          content: draft.content,
+          uiOpen: open,
+        }),
+      );
+    } catch {
+      //
+    }
+  }
+
+  function scheduleCommunityComposeDraftSave() {
+    if (composeEditingPostId) return;
+    clearTimeout(communityDraftSaveTimer);
+    communityDraftSaveTimer = window.setTimeout(() => {
+      communityDraftSaveTimer = null;
+      persistCommunityComposeDraft(null);
+    }, 350);
+  }
+
+  function applyCommunityComposeDraftFields(draft) {
+    if (!draft || composeEditingPostId) return;
+    const theme = normalizeTheme(String(draft.theme || "").trim());
+    if (THEMES.includes(theme)) syncFormThemeUi(theme);
+    if (titleEl) titleEl.value = String(draft.title || "");
+    if (contentEl) contentEl.value = String(draft.content || "");
+  }
+
+  function resetCommunityComposeFormFields() {
+    if (titleEl) titleEl.value = "";
+    if (contentEl) contentEl.value = "";
+    topicImageSlots?.reset?.();
+    syncComposeThemeFromBoardFilter();
+    clearFormErrors();
+  }
+
+  function hideComposeOverlayOnly() {
     if (!composeOverlayActive) return;
     composeOverlay.hidden = true;
     composeOverlay.setAttribute("aria-hidden", "true");
@@ -242,6 +515,18 @@
     resetComposeOverlayPanels();
     attachModalEscapeIfNeeded();
     syncBodyModalLock();
+  }
+
+  function closeComposeOverlay(options = {}) {
+    if (!composeOverlayActive && !options.forcePersist) return;
+    if (!composeEditingPostId && !options.skipPersist) {
+      persistCommunityComposeDraft(false);
+    }
+    hideComposeOverlayOnly();
+    if (!options.keepEditing) {
+      composeEditingPostId = "";
+      restoreComposeFormLayoutDefaults();
+    }
     try {
       openComposeBtn.focus();
     } catch {
@@ -249,16 +534,60 @@
     }
   }
 
-  function openComposeOverlay(options = {}) {
-    setMsg("", false);
-    const guest = !currentUser()?.id;
-    const showAuth = Boolean(options.authOnly) && guest;
-    if (composeAuthPhase && composeFormWrap) {
-      composeAuthPhase.hidden = !showAuth;
-      composeFormWrap.hidden = showAuth;
+  function onCommunityComposeLeaveBoard() {
+    if (composeEditingPostId) {
+      hideComposeOverlayOnly();
+      return;
     }
-    if (composeHeadingEl) {
-      composeHeadingEl.textContent = showAuth ? COMPOSE_HEADING_AUTH : COMPOSE_HEADING_DEFAULT;
+    const draft = collectCommunityComposeDraft();
+    if (!hasCommunityComposeDraftContent(draft)) {
+      clearCommunityComposeDraft();
+      hideComposeOverlayOnly();
+      resetCommunityComposeFormFields();
+      activeDisplayTab = FILTER_ALL;
+      setTabGroupSelected(filterTabs, FILTER_ALL, "data-community-filter");
+      scrollCommunityBoardTabStripsToStart();
+      renderPosts(cachedPosts);
+      return;
+    }
+    persistCommunityComposeDraft(true);
+    hideComposeOverlayOnly();
+  }
+
+  function onCommunityComposeEnterBoard() {
+    if (composeEditingPostId) return;
+    const draft = readCommunityComposeDraft();
+    if (!draft || !hasCommunityComposeDraftContent(draft)) return;
+    applyCommunityComposeDraftFields(draft);
+    if (draft.uiOpen && currentUser()?.id && !composeOverlayActive) {
+      openComposeOverlay({ preserveFields: true, fromEdit: false });
+    }
+  }
+
+  function syncComposeThemeFromBoardFilter() {
+    if (activeDisplayTab !== FILTER_ALL && THEMES.includes(activeDisplayTab)) {
+      syncFormThemeUi(themeAllowedForCompose(activeDisplayTab) ? activeDisplayTab : defaultComposeTheme());
+      setFieldError(errorThemeEl, "");
+    }
+  }
+
+  function openComposeOverlay(options = {}) {
+    if (!options.fromEdit) {
+      composeEditingPostId = "";
+      restoreComposeFormLayoutDefaults();
+      if (!options.preserveFields) {
+        const draft = readCommunityComposeDraft();
+        if (draft && hasCommunityComposeDraftContent(draft)) {
+          applyCommunityComposeDraftFields(draft);
+        } else {
+          syncComposeThemeFromBoardFilter();
+        }
+      }
+    }
+    setMsg("", false);
+    if (composeFormWrap) composeFormWrap.hidden = false;
+    if (composeHeadingEl && !String(composeEditingPostId || "").trim()) {
+      composeHeadingEl.textContent = COMPOSE_HEADING_DEFAULT;
     }
     composeOverlay.hidden = false;
     composeOverlay.setAttribute("aria-hidden", "false");
@@ -268,11 +597,16 @@
     requestAnimationFrame(() => {
       const closeBtn = composeOverlay.querySelector(".community-compose-close-btn");
       const u = currentUser();
-      const authFirst = composeAuthPhase?.querySelector?.("a[data-mll-auth-entry]");
-      if (showAuth && authFirst) {
-        authFirst.focus();
-      } else if (u?.id && titleEl && !titleEl.disabled) {
-        titleEl.focus();
+      if (u?.id) {
+        const titleLab = titleEl?.closest?.("label.search-label-full");
+        const titleHidden = Boolean(titleLab?.hidden);
+        if (!titleHidden && titleEl && !titleEl.disabled) {
+          titleEl.focus();
+        } else if (contentEl && !contentEl.disabled) {
+          contentEl.focus();
+        } else if (closeBtn) {
+          closeBtn.focus();
+        }
       } else if (closeBtn) {
         closeBtn.focus();
       }
@@ -368,10 +702,49 @@
     }
   }
 
+  function isMobileFormThemeSelect() {
+    return window.matchMedia("(max-width: 767px)").matches;
+  }
+
+  function syncFormThemeUi(themeValue) {
+    let v = THEMES.includes(themeValue) ? themeValue : defaultComposeTheme();
+    if (!themeAllowedForCompose(v)) v = defaultComposeTheme();
+    setTabGroupSelected(formThemeTabs, v, "data-community-form-theme");
+    if (formThemeSelect instanceof HTMLSelectElement) formThemeSelect.value = v;
+    if (themeMembersNoteEl instanceof HTMLElement) {
+      themeMembersNoteEl.hidden = !isMembersOnlyTheme(v);
+    }
+  }
+
   function selectedFormTheme() {
+    if (formThemeSelect instanceof HTMLSelectElement && isMobileFormThemeSelect()) {
+      const v = String(formThemeSelect.value || "").trim();
+      return themeAllowedForCompose(v) ? normalizeTheme(v) : defaultComposeTheme();
+    }
     const hit = formThemeTabs.find((b) => b.getAttribute("aria-selected") === "true");
     const v = String(hit?.getAttribute("data-community-form-theme") || "").trim();
-    return THEMES.includes(v) ? v : THEMES[0];
+    return themeAllowedForCompose(v) ? normalizeTheme(v) : defaultComposeTheme();
+  }
+
+  function navigateToCommunityLogin(intentKey) {
+    try {
+      sessionStorage.setItem(SS_INTENT_COMMUNITY_COMPOSE, "1");
+    } catch {
+      //
+    }
+    if (typeof window.MarchinZNavigateAuthEntry === "function") {
+      window.MarchinZNavigateAuthEntry("login", intentKey || "community_compose");
+      return;
+    }
+    window.location.hash = "#login";
+  }
+
+  function navigateToCommunityLoginForMembersBoard() {
+    if (typeof window.MarchinZNavigateAuthEntry === "function") {
+      window.MarchinZNavigateAuthEntry("login", "community_board_members");
+      return;
+    }
+    window.location.hash = "#login";
   }
 
   /** 旧 LS キーからの読み込み（初回のみ） */
@@ -436,6 +809,31 @@
     };
   }
 
+  function mapMylistReport(raw) {
+    const lt = String(raw.list_type || "").trim();
+    return {
+      id: String(raw.id || ""),
+      reporter_id: String(raw.reporter_id || ""),
+      target_uid: String(raw.target_uid || ""),
+      list_id: String(raw.list_id || ""),
+      list_type: lt === "yt" ? "yt" : "videos",
+      reason: String(raw.reason || "").trim(),
+      created_at: String(raw.created_at || ""),
+    };
+  }
+
+  function mapNoteReport(raw) {
+    return {
+      id: String(raw.id || ""),
+      reporter_id: String(raw.reporter_id || ""),
+      target_uid: String(raw.target_uid || ""),
+      event_id: String(raw.event_id || ""),
+      note_title: String(raw.note_title || "").trim(),
+      reason: String(raw.reason || "").trim(),
+      created_at: String(raw.created_at || ""),
+    };
+  }
+
   function formatDate(isoLike) {
     const d = new Date(isoLike);
     if (Number.isNaN(d.getTime())) return "";
@@ -489,7 +887,8 @@
       .slice(0, MAX_COMMUNITY_IMAGES);
     if (!list.length || !wrapEl) return;
     const fig = document.createElement("div");
-    fig.className = "community-post-images";
+    const count = Math.min(list.length, MAX_COMMUNITY_IMAGES);
+    fig.className = `community-post-images community-post-images--count-${count}`;
     fig.setAttribute("role", "group");
     fig.setAttribute("aria-label", maskWithdrawn ? "投稿画像（退会ユーザーのため非表示）" : "投稿画像");
     if (maskWithdrawn) {
@@ -502,28 +901,28 @@
       }
     } else {
       const mi = window.MarchinZImage;
-      for (const u of list) {
+      list.forEach((u, i) => {
         const slot = document.createElement("div");
         slot.className = "community-post-image-slot";
-        if (mi?.appendProtectedPhoto) {
-          mi.appendProtectedPhoto(slot, {
-            src: u,
-            alt: "投稿画像",
-            loading: "lazy",
-            classNameImg: "community-post-image",
-          });
-        } else {
-          const img = document.createElement("img");
-          img.className = "community-post-image";
-          img.src = u;
-          img.alt = "投稿画像";
-          img.loading = "lazy";
-          img.decoding = "async";
-          img.draggable = false;
-          slot.appendChild(img);
-        }
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "community-post-image-btn";
+        btn.setAttribute("aria-label", `投稿画像 ${i + 1} を表示`);
+        const img = document.createElement("img");
+        img.className = "community-post-image";
+        img.src = u;
+        img.alt = `投稿画像 ${i + 1}`;
+        img.loading = "lazy";
+        img.decoding = "async";
+        img.draggable = false;
+        mi?.bindImgGuards?.(img);
+        btn.appendChild(img);
+        btn.addEventListener("click", () => {
+          mi?.openPhotoLightbox?.(list, i);
+        });
+        slot.appendChild(btn);
         fig.appendChild(slot);
-      }
+      });
     }
     wrapEl.appendChild(fig);
   }
@@ -544,16 +943,28 @@
     const user = currentUser();
     if (!user?.id) {
       window.MarchinZNavigateAuthEntry?.("login");
-      return;
+      return false;
+    }
+    if (window.MarchinZRateLimit && !window.MarchinZRateLimit.check("like")) {
+      return false;
     }
     const db = getDb();
     if (!db) {
       toggleLikeLocal(postId, user.id);
-      await refreshAll();
+      cachedPosts = cachedPosts.map((p) => {
+        if (p.id !== postId) return p;
+        const lb = { ...(p.liked_by && typeof p.liked_by === "object" ? p.liked_by : {}) };
+        if (lb[user.id]) delete lb[user.id];
+        else lb[user.id] = true;
+        return mapPost(normalizePostDoc({ ...p, liked_by: lb }));
+      });
+      renderPosts(cachedPosts);
       return;
     }
     /** @type {{ author: string; title: string; threadRoot: string } | null} */
     let likeNotify = null;
+    /** @type {Record<string, boolean>|null} */
+    let nextLb = null;
     try {
       const ref = db.collection("mll_community_posts").doc(postId);
       await db.runTransaction(async (txn) => {
@@ -561,11 +972,12 @@
         if (!snap.exists) return;
         const data = snap.data() || {};
         const prev = data.liked_by && typeof data.liked_by === "object" ? data.liked_by : {};
-        const nextLb = { ...prev };
-        const wasOn = Boolean(nextLb[user.id]);
-        if (wasOn) delete nextLb[user.id];
-        else nextLb[user.id] = true;
-        txn.update(ref, { liked_by: nextLb });
+        const patched = { ...prev };
+        const wasOn = Boolean(patched[user.id]);
+        if (wasOn) delete patched[user.id];
+        else patched[user.id] = true;
+        nextLb = patched;
+        txn.update(ref, { liked_by: patched });
         if (!wasOn) {
           const author = String(data.user_id || "").trim();
           const title = String(data.title || "投稿").trim().slice(0, 200);
@@ -575,10 +987,13 @@
       });
     } catch (e) {
       setMsg(communityFriendlyErrorMessage(e, COMMUNITY_MESSAGE.likeUpdateFailed), true);
-      return;
+      return false;
     }
     if (likeNotify) {
-      const nm = String(profileFallback(user).display_name || "ユーザー").trim().slice(0, 120) || "ユーザー";
+      const nm =
+        String(window.MarchinZActorDisplayName?.(user) || profileFallback(user).display_name || "ユーザー")
+          .trim()
+          .slice(0, 120) || "ユーザー";
       window.MarchinZPushLikeNotification?.(db, likeNotify.author, {
         kind: "like_community_post",
         actor_uid: user.id,
@@ -590,7 +1005,11 @@
         thread_root_id: likeNotify.threadRoot,
       });
     }
-    await refreshAll();
+    if (nextLb) {
+      cachedPosts = cachedPosts.map((p) =>
+        p.id === postId ? mapPost(normalizePostDoc({ ...p, liked_by: nextLb })) : p,
+      );
+    }
   }
 
   function appendLikeRow(hostEl, p) {
@@ -600,32 +1019,12 @@
       p.liked_by && typeof p.liked_by === "object" && !Array.isArray(p.liked_by) ? p.liked_by : {};
     const cnt = Object.keys(lb).filter((k) => lb[k]).length;
     const liked = Boolean(me?.id && lb[me.id]);
-    const row = document.createElement("div");
-    row.className = "community-like-row";
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "community-like-btn" + (liked ? " community-like-btn--on" : "");
-    btn.setAttribute("aria-pressed", liked ? "true" : "false");
-    btn.setAttribute("aria-label", liked ? "いいねを解除" : "いいねする");
-    btn.disabled = false;
-    btn.addEventListener("click", () => void toggleCommunityLike(p.id));
-    const heart = document.createElement("span");
-    heart.className = "community-like-heart";
-    heart.setAttribute("aria-hidden", "true");
-    heart.textContent = "\u2665";
-    const num = document.createElement("span");
-    num.className = "community-like-count";
-    num.textContent = String(cnt);
-    btn.appendChild(heart);
-    btn.appendChild(num);
-    row.appendChild(btn);
-    if (!me?.id) {
-      const hint = document.createElement("span");
-      hint.className = "community-like-hint mll-log-meta";
-      hint.textContent = "ログインでいいねできます";
-      row.appendChild(hint);
-    }
-    hostEl.appendChild(row);
+    window.MarchinZEngageUi?.buildLikeRow(hostEl, {
+      liked,
+      count: cnt,
+      onClick: () => toggleCommunityLike(p.id),
+      showLoginHint: !me?.id,
+    });
   }
 
   function storageAvailable() {
@@ -656,9 +1055,44 @@
     }
     const blobs = [];
     for (const file of files) {
-      blobs.push(await mi.compressForUpload(file));
+      blobs.push(
+        await mi.compressForUpload(file, {
+          maxWidthOrHeight: 1920,
+          maxSizeMB: 0.65,
+          initialQuality: 0.85,
+        }),
+      );
     }
     return uploadCommunityJpegs(storage, uid, blobs);
+  }
+
+  /**
+   * ネイティブ file 入力の「ファイル未選択」表示を出さず、ラベルボタンで選択する。
+   * @param {HTMLInputElement} inputEl
+   * @returns {HTMLElement}
+   */
+  function wireCommunityFilePicker(inputEl) {
+    if (!inputEl) return /** @type {HTMLElement} */ (inputEl);
+    const existing = inputEl.closest(".community-file-picker");
+    if (existing instanceof HTMLElement) return existing;
+
+    const wrap = document.createElement("div");
+    wrap.className = "community-file-picker";
+    const label = document.createElement("label");
+    label.className = "community-file-picker__label";
+    const trigger = document.createElement("span");
+    trigger.className = "community-file-picker__trigger";
+    trigger.textContent = "画像を添付";
+
+    inputEl.classList.add("community-file-picker__input");
+    const parent = inputEl.parentNode;
+    if (parent) {
+      parent.insertBefore(wrap, inputEl);
+    }
+    label.appendChild(inputEl);
+    label.appendChild(trigger);
+    wrap.appendChild(label);
+    return wrap;
   }
 
   /**
@@ -666,7 +1100,11 @@
    * 管理人の書込許可には Firestore の `mll_privileged_uids/{uid}` 登録が必要。
    */
   function attachImageSlots(inputEl, previewEl) {
-    const state = { files: [] };
+    const state = { files: [], existingUrls: [] };
+
+    function totalCount() {
+      return state.existingUrls.length + state.files.length;
+    }
 
     function render() {
       if (!previewEl) return;
@@ -678,6 +1116,25 @@
         }
       });
       previewEl.innerHTML = "";
+      state.existingUrls.forEach((url, idx) => {
+        const thumb = document.createElement("div");
+        thumb.className = "community-image-thumb community-image-thumb--saved";
+        const pic = document.createElement("img");
+        pic.src = url;
+        pic.alt = "投稿済み画像";
+        pic.draggable = false;
+        const rm = document.createElement("button");
+        rm.type = "button";
+        rm.className = "community-image-thumb-remove";
+        rm.textContent = "削除";
+        rm.addEventListener("click", () => {
+          state.existingUrls = state.existingUrls.filter((_, j) => j !== idx);
+          render();
+        });
+        thumb.appendChild(pic);
+        thumb.appendChild(rm);
+        previewEl.appendChild(thumb);
+      });
       state.files.forEach((file, idx) => {
         const thumb = document.createElement("div");
         thumb.className = "community-image-thumb";
@@ -707,7 +1164,7 @@
       const rawMax = rawInputMaxBytes();
       let skippedBig = 0;
       for (const f of arr) {
-        if (next.length >= MAX_COMMUNITY_IMAGES) break;
+        if (state.existingUrls.length + next.length >= MAX_COMMUNITY_IMAGES) break;
         if (!/^image\//i.test(String(f.type || ""))) continue;
         if (f.size > rawMax) {
           skippedBig += 1;
@@ -731,8 +1188,18 @@
 
     return {
       getFiles: () => state.files.slice(),
+      getExistingUrls: () => state.existingUrls.slice(),
+      setExistingUrls(urls) {
+        state.existingUrls = (Array.isArray(urls) ? urls : [])
+          .map((u) => String(u || "").trim())
+          .filter((u) => /^https?:\/\//i.test(u))
+          .slice(0, MAX_COMMUNITY_IMAGES);
+        state.files = [];
+        render();
+      },
       reset: () => {
         state.files = [];
+        state.existingUrls = [];
         if (previewEl) {
           previewEl.querySelectorAll("img[src^='blob:']").forEach((img) => {
             try {
@@ -751,14 +1218,94 @@
     };
   }
 
+  if (topicImagesInput instanceof HTMLInputElement) {
+    wireCommunityFilePicker(topicImagesInput);
+  }
   const topicImageSlots = attachImageSlots(topicImagesInput, topicImagesPreview);
 
-  function postActionsRow(p, opts) {
-    const { includeReplyToggle = false, onReplyToggle } = opts || {};
+  function buildReportOverflowDetails(postId) {
+    const Eu = window.MarchinZEngageUi;
+    const det = Eu?.buildReportOverflow
+      ? Eu.buildReportOverflow(() => void reportPost(postId))
+      : (() => {
+          const d = document.createElement("details");
+          d.className = "community-post-overflow";
+          const s = document.createElement("summary");
+          s.className = "community-post-overflow-trigger";
+          s.setAttribute("aria-label", "その他の操作");
+          s.textContent = "⋯";
+          const p = document.createElement("div");
+          p.className = "community-post-overflow-panel";
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "community-post-overflow-item";
+          b.textContent = "通報する";
+          b.addEventListener("click", (e) => {
+            e.preventDefault();
+            d.open = false;
+            void reportPost(postId);
+          });
+          p.appendChild(b);
+          d.appendChild(s);
+          d.appendChild(p);
+          return d;
+        })();
+    det.addEventListener("toggle", () => {
+      if (!det.open) return;
+      try {
+        det.closest(".community-post-engage")?.querySelectorAll("details.community-post-overflow").forEach((d) => {
+          if (d !== det && d instanceof HTMLDetailsElement) d.open = false;
+        });
+      } catch {
+        //
+      }
+    });
+    return det;
+  }
+
+  function appendBoardShareButton(parentEl, rootPost) {
+    if (!parentEl || !rootPost || !isThreadRoot(rootPost)) return;
+    if (isMembersOnlyTheme(rootPost.theme)) return;
+    const sm = window.MarchinZShareMenu;
+    if (!sm?.buildAbsoluteUrlForHash || !sm.setupSearchLikeShareMenuForButton) return;
+    const hash = boardThreadShareHash(rootPost.id);
+    const url = sm.buildAbsoluteUrlForHash(hash);
+    const title = String(rootPost.title || "MarchinZ Board 話題").trim() || "MarchinZ Board 話題";
+    const shareText = sm.boardShareText ? sm.boardShareText(title, url) : `${title}\n${url}`;
+    const shareBtn = document.createElement("button");
+    shareBtn.type = "button";
+    shareBtn.className = "btn-share-search btn-marchinz-spotlight";
+    shareBtn.textContent = "シェアする";
+    shareBtn.setAttribute("aria-label", "MarchinZ Board 話題をシェア");
+    parentEl.appendChild(shareBtn);
+    sm.setupSearchLikeShareMenuForButton(shareBtn, shareText, url, "search");
+  }
+
+  function appendEngagementRow(parent, p, opts) {
+    const { includeReplyToggle = false, onReplyToggle, skipLike = false, includeShare = false } = opts || {};
+    if (!parent || !p) return;
     const me = currentUser();
     const admin = isAdmin();
-    const actions = document.createElement("div");
-    actions.className = "community-post-actions";
+    const row = document.createElement("div");
+    row.className = "community-post-engage";
+    const primary = document.createElement("div");
+    primary.className = "community-post-engage-primary";
+    if (!skipLike) appendLikeRow(primary, p);
+    if (includeShare) appendBoardShareButton(primary, p);
+    if (includeReplyToggle && me?.id && !window.MLL_AUTH?.isWithdrawn?.()) {
+      const replyBtn = document.createElement("button");
+      replyBtn.type = "button";
+      replyBtn.className = "community-reply-open-btn";
+      replyBtn.textContent = "返信する";
+      replyBtn.addEventListener("click", () => {
+        if (typeof onReplyToggle === "function") onReplyToggle(replyBtn);
+        else replyBtn.hidden = true;
+      });
+      primary.appendChild(replyBtn);
+    }
+    row.appendChild(primary);
+    const aside = document.createElement("div");
+    aside.className = "community-post-engage-aside";
     const posterWithdrawn = authorWithdrawn(p.user_id);
     let canManage = Boolean(me?.id && (me.id === p.user_id || admin));
     if (posterWithdrawn && me?.id === p.user_id && !admin) {
@@ -767,43 +1314,31 @@
     if (canManage) {
       const editBtn = document.createElement("button");
       editBtn.type = "button";
-      editBtn.className = "btn-reset-search";
+      editBtn.className = "btn-reset-search community-post-manage-btn";
       editBtn.textContent = "編集";
       editBtn.addEventListener("click", () => void editPost(p.id));
       const delBtn = document.createElement("button");
       delBtn.type = "button";
-      delBtn.className = "btn-reset-search";
+      delBtn.className = "btn-reset-search community-post-manage-btn";
       delBtn.textContent = "削除";
       delBtn.addEventListener("click", () => void deletePost(p.id));
-      actions.appendChild(editBtn);
-      actions.appendChild(delBtn);
+      aside.appendChild(editBtn);
+      aside.appendChild(delBtn);
       if (admin) {
         const toggleBtn = document.createElement("button");
         toggleBtn.type = "button";
-        toggleBtn.className = "btn-reset-search";
+        toggleBtn.className =
+          "btn-reset-search community-post-manage-btn community-post-manage-btn--moderation";
         toggleBtn.textContent = p.hidden ? "復元" : "非表示";
+        toggleBtn.setAttribute("aria-label", p.hidden ? "投稿を復元（運営のみ）" : "投稿を非表示（運営のみ）");
         toggleBtn.addEventListener("click", () => void toggleHidden(p.id, !p.hidden));
-        actions.appendChild(toggleBtn);
+        aside.appendChild(toggleBtn);
       }
-    } else {
-      const reportBtn = document.createElement("button");
-      reportBtn.type = "button";
-      reportBtn.className = "btn-reset-search";
-      reportBtn.textContent = "通報";
-      reportBtn.addEventListener("click", () => void reportPost(p.id));
-      actions.appendChild(reportBtn);
+    } else if (me?.id && me.id !== p.user_id) {
+      aside.appendChild(buildReportOverflowDetails(p.id));
     }
-    if (includeReplyToggle && me?.id && !window.MLL_AUTH?.isWithdrawn?.()) {
-      const replyBtn = document.createElement("button");
-      replyBtn.type = "button";
-      replyBtn.className = "btn-reset-search";
-      replyBtn.textContent = "返信する";
-      replyBtn.addEventListener("click", () => {
-        if (typeof onReplyToggle === "function") onReplyToggle(replyBtn);
-      });
-      actions.appendChild(replyBtn);
-    }
-    return actions;
+    row.appendChild(aside);
+    parent.appendChild(row);
   }
 
   async function submitReply(threadRoot, parentPost, compose) {
@@ -814,6 +1349,10 @@
     }
     if (window.MLL_AUTH?.isWithdrawn?.()) {
       setMsg("退会済みのアカウントでは返信できません。", true);
+      return;
+    }
+    if (window.MarchinZRateLimit && !window.MarchinZRateLimit.check("post")) {
+      setMsg("投稿の頻度が高すぎます。しばらく待ってから再度お試しください。", true);
       return;
     }
     const textarea = compose?.textarea;
@@ -864,6 +1403,16 @@
       user_avatar: profile.avatar_url || "",
     };
     await writePost(post);
+    window.MarchinZAdminUgcLog?.recordBoardReply?.({
+      postId: post.id,
+      threadRootId: threadRoot.id,
+      threadTitle: String(threadRoot.title || "掲示板").trim(),
+      actorUid: user.id,
+      actorName: profile.display_name || "ユーザー",
+    });
+    window.MarchinZTrackEvent?.("community_reply_submit", {
+      has_image: image_urls.length > 0 ? 1 : 0,
+    });
     textarea.value = "";
     imageSlots?.reset?.();
     setMsg("返信を投稿しました。");
@@ -883,53 +1432,90 @@
         imageSlots: null,
       };
     }
-    const box = document.createElement("div");
-    box.className = "community-reply-compose community-reply-compose--collapsed";
-    const ta = document.createElement("textarea");
-    ta.className = "community-reply-textarea";
-    ta.rows = 3;
-    ta.maxLength = 1200;
-    ta.placeholder =
-      parentPost?.id === threadRoot.id
-        ? "この話題に返信…（または画像のみ）"
-        : `${String(parentPost?.user_name || "投稿").slice(0, 40)} への返信…`;
+    const me = currentUser();
+    if (!me?.id) {
+      return { box: null, ta: null, expand() {}, imageSlots: null };
+    }
 
-    const imgRow = document.createElement("div");
-    imgRow.className = "community-reply-images-row";
-    const input = document.createElement("input");
-    input.type = "file";
-    input.className = "community-images-input community-images-input--reply";
-    input.accept = "image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif";
-    input.multiple = true;
-    input.disabled = true;
-    const preview = document.createElement("div");
-    preview.className = "community-images-preview community-images-preview--reply";
-    const replyImageSlots = attachImageSlots(input, preview);
-    replyImageSlots.setEnabled(storageAvailable() && Boolean(currentUser()?.id));
+    /** @type {HTMLDivElement | null} */
+    let box = null;
+    /** @type {HTMLTextAreaElement | null} */
+    let ta = null;
+    /** @type {ReturnType<typeof attachImageSlots> | null} */
+    let replyImageSlots = null;
 
-    const row = document.createElement("div");
-    row.className = "community-reply-actions";
-    const send = document.createElement("button");
-    send.type = "button";
-    send.className = "btn-reset-search";
-    send.textContent = "返信を送る";
-    send.addEventListener("click", () =>
-      void submitReply(threadRoot, parentPost, { textarea: ta, imageSlots: replyImageSlots }),
-    );
-    row.appendChild(send);
-    imgRow.appendChild(input);
-    imgRow.appendChild(preview);
-    box.appendChild(ta);
-    box.appendChild(imgRow);
-    box.appendChild(row);
-    wrapRoot.appendChild(box);
+    const mount = () => {
+      if (box) return;
+      box = document.createElement("div");
+      box.className = "community-reply-compose";
+      ta = document.createElement("textarea");
+      ta.className = "community-reply-textarea";
+      ta.rows = 3;
+      ta.maxLength = 1200;
+      ta.placeholder =
+        parentPost?.id === threadRoot.id
+          ? "返信"
+          : `${String(parentPost?.user_name || "投稿").slice(0, 40)} への返信…`;
 
-    const expand = () => {
-      box.classList.remove("community-reply-compose--collapsed");
+      const imgRow = document.createElement("div");
+      imgRow.className = "community-reply-images-row";
+      const input = document.createElement("input");
+      input.type = "file";
+      input.className = "community-images-input community-images-input--reply";
+      input.accept = "image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif";
+      input.multiple = true;
+      input.disabled = true;
+      const preview = document.createElement("div");
+      preview.className = "community-images-preview community-images-preview--reply";
+      const filePicker = wireCommunityFilePicker(input);
+      replyImageSlots = attachImageSlots(input, preview);
       replyImageSlots.setEnabled(storageAvailable() && Boolean(currentUser()?.id));
-      ta.focus();
+
+      const row = document.createElement("div");
+      row.className = "community-reply-actions";
+      const send = document.createElement("button");
+      send.type = "button";
+      send.className = "btn-reset-search community-reply-send-btn";
+      send.textContent = "返信を送る";
+      send.addEventListener("click", () =>
+        void submitReply(threadRoot, parentPost, { textarea: ta, imageSlots: replyImageSlots }),
+      );
+      row.appendChild(filePicker);
+      row.appendChild(send);
+      imgRow.appendChild(preview);
+      box.appendChild(ta);
+      box.appendChild(imgRow);
+      box.appendChild(row);
+      wrapRoot.appendChild(box);
+      wrapRoot.classList.add("community-has-reply-compose");
     };
-    return { box, ta, expand, imageSlots: replyImageSlots };
+
+    const hideReplyOpenBtn = (replyBtn) => {
+      wrapRoot.classList.add("community-has-reply-compose");
+      const threadBody = wrapRoot.closest(".community-thread-body");
+      threadBody?.classList.add("community-has-reply-compose");
+      if (replyBtn instanceof HTMLButtonElement) {
+        replyBtn.hidden = true;
+        replyBtn.setAttribute("aria-hidden", "true");
+      }
+      const scope = threadBody || wrapRoot;
+      scope.querySelectorAll(".community-reply-open-btn").forEach((btn) => {
+        if (btn instanceof HTMLButtonElement) {
+          btn.hidden = true;
+          btn.setAttribute("aria-hidden", "true");
+        }
+      });
+      const engage = wrapRoot.querySelector(":scope > .community-post-engage");
+      engage?.classList.add("community-post-engage--reply-active");
+    };
+
+    const expand = (replyBtn) => {
+      mount();
+      hideReplyOpenBtn(replyBtn);
+      replyImageSlots?.setEnabled(storageAvailable() && Boolean(currentUser()?.id));
+      ta?.focus();
+    };
+    return { box: wrapRoot, ta: null, expand, imageSlots: null };
   }
 
   const MAX_REPLY_NEST_DEPTH = 12;
@@ -959,7 +1545,7 @@
     listEl.innerHTML = "";
     const admin = isAdmin();
     const me = currentUser();
-    const visible = posts.filter((p) => !p.hidden || admin);
+    const visible = posts.filter((p) => (!p.hidden || admin) && boardPostVisibleToViewer(p));
     const byId = {};
     visible.forEach((p) => {
       byId[p.id] = p;
@@ -968,6 +1554,17 @@
     let roots = visible.filter(isThreadRoot);
     if (activeDisplayTab !== FILTER_ALL) {
       roots = roots.filter((r) => r.theme === activeDisplayTab);
+    }
+    if (communitySearchQuery) {
+      const q = communitySearchQuery.toLowerCase();
+      const allReplies = visible.filter((p) => !isThreadRoot(p));
+      roots = roots.filter((r) => {
+        if ((r.title || "").toLowerCase().includes(q)) return true;
+        if ((r.content || "").toLowerCase().includes(q)) return true;
+        if ((r.user_name || "").toLowerCase().includes(q)) return true;
+        if ((r.theme || "").toLowerCase().includes(q)) return true;
+        return allReplies.some((rep) => rep.thread_root_id === r.id && (rep.content || "").toLowerCase().includes(q));
+      });
     }
     roots.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
 
@@ -992,29 +1589,15 @@
       for (const r of children) {
         const rli = document.createElement("li");
         rli.className = "community-reply-item";
+        if (r.hidden && admin) rli.classList.add("community-reply-item--admin-hidden");
         rli.style.setProperty("--reply-depth", String(Math.min(depth, 8)));
 
         const inner = document.createElement("div");
         inner.className = "community-reply-item-inner";
 
-        const rh = document.createElement("div");
-        rh.className = "community-post-head community-post-head--reply";
         const rauth = resolveAuthor(r);
-        const ra = document.createElement("img");
-        ra.className = "community-post-avatar" + (rauth.withdrawn ? " community-post-avatar--withdrawn" : "");
-        ra.src =
-          rauth.withdrawn
-            ? `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48"><rect width="48" height="48" fill="#ffffff"/></svg>')}`
-            : rauth.avatar || "logo/marchinz-logo.png";
-        ra.alt = rauth.withdrawn ? "" : `${rauth.name} のプロフィール画像`;
-        const rtext = document.createElement("div");
-        const rn = document.createElement("p");
-        rn.className = "mll-log-title";
-        rn.textContent = rauth.name;
-        rtext.appendChild(rn);
+        const { head: rh, textWrap: rtext } = buildCommunityPostHead(rauth, true);
         appendDatetimeBlock(rtext, r);
-        rh.appendChild(ra);
-        rh.appendChild(rtext);
 
         inner.appendChild(rh);
         if (String(r.content || "").trim()) {
@@ -1024,22 +1607,20 @@
           inner.appendChild(rc);
         }
         appendImageGallery(inner, r.image_urls, rauth.withdrawn);
-        appendLikeRow(inner, r);
         if (r.hidden && admin) {
           const hn = document.createElement("p");
-          hn.className = "community-hidden-note";
+          hn.className = "community-hidden-note community-admin-only-note";
+          hn.setAttribute("role", "status");
           hn.textContent = `非表示中（理由: ${r.hidden_reason || "管理者対応"}）`;
           inner.appendChild(hn);
         }
         let replyUi = null;
-        inner.appendChild(
-          postActionsRow(r, {
-            includeReplyToggle: Boolean(me?.id),
-            onReplyToggle: () => {
-              replyUi?.expand();
-            },
-          }),
-        );
+        appendEngagementRow(inner, r, {
+          includeReplyToggle: Boolean(me?.id),
+          onReplyToggle: (replyBtn) => {
+            replyUi?.expand(replyBtn);
+          },
+        });
 
         const nestedUl = renderReplyBranch(r.id, depth + 1, threadRoot, repliesByParent);
         if (nestedUl) inner.appendChild(nestedUl);
@@ -1055,48 +1636,32 @@
     for (const root of roots) {
       const li = document.createElement("li");
       li.className = "mll-log-item community-thread";
+      if (root.hidden && admin) li.classList.add("community-thread--admin-hidden");
       li.dataset.mzThreadRoot = String(root.id || "");
 
       const theme = document.createElement("p");
       theme.className = "community-theme-tag";
       theme.textContent = `【${themeDisplayLabel(root.theme)}】`;
 
-      const head = document.createElement("div");
-      head.className = "community-post-head";
       const roAuth = resolveAuthor(root);
-      const avatar = document.createElement("img");
-      avatar.className = "community-post-avatar" + (roAuth.withdrawn ? " community-post-avatar--withdrawn" : "");
-      avatar.src =
-        roAuth.withdrawn
-          ? `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48"><rect width="48" height="48" fill="#ffffff"/></svg>')}`
-          : roAuth.avatar || "logo/marchinz-logo.png";
-      avatar.alt = roAuth.withdrawn ? "" : `${roAuth.name} のプロフィール画像`;
-      const headText = document.createElement("div");
-      const name = document.createElement("p");
-      name.className = "mll-log-title";
-      name.textContent = roAuth.name;
-      headText.appendChild(name);
+      const { head, textWrap: headText } = buildCommunityPostHead(roAuth, false);
       appendDatetimeBlock(headText, root);
-      head.appendChild(avatar);
-      head.appendChild(headText);
 
+      const titleRow = document.createElement("div");
+      titleRow.className = "mz-title-like-row";
       const title = document.createElement("p");
       title.className = "mll-log-title";
       title.textContent = root.title;
+      titleRow.appendChild(title);
+      appendLikeRow(titleRow, root);
 
       const threadBody = document.createElement("div");
       threadBody.className = "community-thread-body";
       let rootReplyUi = null;
-      const actions = postActionsRow(root, {
-        includeReplyToggle: Boolean(me?.id),
-        onReplyToggle: () => {
-          rootReplyUi?.expand();
-        },
-      });
 
       threadBody.appendChild(theme);
       threadBody.appendChild(head);
-      threadBody.appendChild(title);
+      threadBody.appendChild(titleRow);
       if (String(root.content || "").trim()) {
         const content = document.createElement("p");
         content.className = "mll-log-note";
@@ -1104,14 +1669,21 @@
         threadBody.appendChild(content);
       }
       appendImageGallery(threadBody, root.image_urls, roAuth.withdrawn);
-      appendLikeRow(threadBody, root);
       if (root.hidden && admin) {
         const hiddenNote = document.createElement("p");
-        hiddenNote.className = "community-hidden-note";
+        hiddenNote.className = "community-hidden-note community-admin-only-note";
+        hiddenNote.setAttribute("role", "status");
         hiddenNote.textContent = `非表示中（理由: ${root.hidden_reason || "管理者対応"}）`;
         threadBody.appendChild(hiddenNote);
       }
-      threadBody.appendChild(actions);
+      appendEngagementRow(threadBody, root, {
+        includeReplyToggle: Boolean(me?.id),
+        skipLike: true,
+        includeShare: !isMembersOnlyTheme(root.theme),
+        onReplyToggle: (replyBtn) => {
+          rootReplyUi?.expand(replyBtn);
+        },
+      });
 
       const repliesAll = visible.filter((p) => !isThreadRoot(p) && p.thread_root_id === root.id);
       const repliesByParent = buildRepliesByParent(root, repliesAll, byId);
@@ -1149,13 +1721,29 @@
   async function readPosts() {
     const db = getDb();
     if (!db) {
-      return loadLocalPosts().sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+      let posts = loadLocalPosts();
+      if (!currentUser()?.id) {
+        posts = posts.filter(boardPostVisibleToViewer);
+      }
+      return posts.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
     }
     try {
-      const snap = await db.collection("mll_community_posts").orderBy("created_at", "desc").limit(250).get();
-      return snap.docs.map((d) => mapPost({ id: d.id, ...(d.data() || {}) }));
+      const loggedIn = Boolean(currentUser()?.id);
+      let snap;
+      if (loggedIn) {
+        snap = await db.collection("mll_community_posts").orderBy("created_at", "desc").limit(250).get();
+      } else {
+        snap = await db.collection("mll_community_posts").where("theme", "in", BOARD_PUBLIC_THEMES).limit(250).get();
+      }
+      const rows = snap.docs.map((d) => mapPost({ id: d.id, ...(d.data() || {}) }));
+      if (!loggedIn) {
+        return rows.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+      }
+      return rows;
     } catch {
-      return loadLocalPosts().sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+      let posts = loadLocalPosts();
+      if (!currentUser()?.id) posts = posts.filter(boardPostVisibleToViewer);
+      return posts.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
     }
   }
 
@@ -1169,6 +1757,28 @@
       return snap.docs.map((d) => mapReport({ id: d.id, ...(d.data() || {}) }));
     } catch {
       return loadLocalReports().sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+    }
+  }
+
+  async function readMylistReports() {
+    const db = getDb();
+    if (!db) return [];
+    try {
+      const snap = await db.collection("mll_mylist_reports").orderBy("created_at", "desc").limit(300).get();
+      return snap.docs.map((d) => mapMylistReport({ id: d.id, ...(d.data() || {}) }));
+    } catch {
+      return [];
+    }
+  }
+
+  async function readNoteReports() {
+    const db = getDb();
+    if (!db) return [];
+    try {
+      const snap = await db.collection("mll_note_reports").orderBy("created_at", "desc").limit(300).get();
+      return snap.docs.map((d) => mapNoteReport({ id: d.id, ...(d.data() || {}) }));
+    } catch {
+      return [];
     }
   }
 
@@ -1357,34 +1967,18 @@
       setMsg("退会済みのアカウントでは編集できません。", true);
       return;
     }
-    const reply = !isThreadRoot(post);
-    let cleanedTitle = post.title;
-    if (!reply) {
-      const nextTitle = window.prompt("タイトルを編集してください。", post.title);
-      if (nextTitle === null) return;
-      cleanedTitle = String(nextTitle).trim();
-      if (!cleanedTitle) {
-        setMsg("タイトルは空にできません。", true);
-        return;
-      }
+    clearFormErrors();
+    topicImageSlots.reset();
+    topicImageSlots.setExistingUrls(post.image_urls);
+    const isRoot = isThreadRoot(post);
+    if (isRoot) {
+      titleEl.value = post.title;
+      syncFormThemeUi(normalizeTheme(post.theme));
     }
-    const nextContent = window.prompt("内容を編集してください。", post.content);
-    if (nextContent === null) return;
-    const cleanedContent = String(nextContent).trim();
-    if (!cleanedContent) {
-      setMsg("内容は空にできません。", true);
-      return;
-    }
-    const updated = {
-      ...post,
-      title: reply ? "" : cleanedTitle,
-      content: cleanedContent,
-      theme: normalizeTheme(post.theme),
-      updated_at: new Date().toISOString(),
-    };
-    await updatePost(updated);
-    setMsg(reply ? "返信を更新しました。" : "投稿を更新しました。");
-    await refreshAll();
+    contentEl.value = post.content;
+    composeEditingPostId = post.id;
+    applyComposeEditLayout(post);
+    openComposeOverlay({ fromEdit: true });
   }
 
   async function deletePost(postId) {
@@ -1432,6 +2026,10 @@
       setMsg("自分の投稿は通報できません。", true);
       return;
     }
+    if (window.MarchinZRateLimit && !window.MarchinZRateLimit.check("report")) {
+      setMsg("通報の頻度が高すぎます。しばらく待ってから再度お試しください。", true);
+      return;
+    }
     const reason = window.prompt("通報理由を入力してください（任意）。", "");
     if (reason === null) return;
     const report = {
@@ -1439,35 +2037,193 @@
       post_id: post.id,
       reporter_id: me.id,
       reporter_name:
-        me.user_metadata?.full_name || me.user_metadata?.name || "ユーザー",
+        window.MarchinZActorDisplayName?.(me) ||
+        me.user_metadata?.full_name ||
+        me.user_metadata?.name ||
+        "ユーザー",
       reason: String(reason).trim().slice(0, 500),
       created_at: new Date().toISOString(),
     };
     await writeReport(report);
+    window.MarchinZTrackEvent?.("report_submit", { target_type: "community" });
     setMsg("通報を受け付けました。運営側で確認します。");
+  }
+
+  let moderationSearchQuery = "";
+  let moderationView = "community";
+
+  function mylistReportTypeLabel(listType) {
+    return listType === "yt" ? "YouTube マイリスト" : "大会動画マイリスト";
   }
 
   function renderModeration() {
     if (!moderationListEl || !moderationNoteEl) return;
     moderationListEl.innerHTML = "";
+    const toolbar = document.getElementById("moderation-toolbar");
     if (!isAdmin()) {
+      if (moderationViewTabsRoot) moderationViewTabsRoot.hidden = true;
       const li = document.createElement("li");
       li.className = "mll-log-item";
       li.textContent = "このページは管理者のみ閲覧できます。";
       moderationListEl.appendChild(li);
       moderationNoteEl.textContent = "管理者ログイン時に通報履歴が表示されます。";
+      if (toolbar) toolbar.hidden = true;
       return;
     }
+    if (moderationViewTabsRoot) moderationViewTabsRoot.hidden = false;
+    setTabGroupSelected(moderationViewTabBtns, moderationView, "data-moderation-view");
+
+    if (moderationView === "note") {
+      if (toolbar) toolbar.hidden = false;
+      const bulkHost = document.getElementById("moderation-bulk-actions");
+      if (bulkHost) bulkHost.hidden = true;
+      let items = [...cachedNoteReports].sort((a, b) =>
+        String(b.created_at || "").localeCompare(String(a.created_at || "")),
+      );
+      if (moderationSearchQuery) {
+        const q = moderationSearchQuery.toLowerCase();
+        items = items.filter((r) => {
+          const blob = [r.target_uid, r.event_id, r.reporter_id, r.reason, r.note_title]
+            .join(" ")
+            .toLowerCase();
+          return blob.includes(q);
+        });
+      }
+      moderationNoteEl.textContent =
+        `MarchinZ Note 通報（表示中）: ${items.length}件 / 全件: ${cachedNoteReports.length}件 · コミュニティ ${cachedReports.length}件 / マイリスト ${cachedMylistReports.length}件`;
+      if (!items.length) {
+        const li = document.createElement("li");
+        li.className = "mll-log-item";
+        li.textContent = cachedNoteReports.length
+          ? "検索条件に一致する MarchinZ Note 通報はありません。"
+          : "MarchinZ Note の通報記録はまだありません。";
+        moderationListEl.appendChild(li);
+        return;
+      }
+      for (const r of items) {
+        const li = document.createElement("li");
+        li.className = "mll-log-item";
+        const title = document.createElement("p");
+        title.className = "mll-log-title";
+        title.textContent = `MarchinZ Note — ${r.note_title || "（無題）"}`;
+        const meta = document.createElement("p");
+        meta.className = "mll-log-meta";
+        meta.textContent = `通報日時: ${formatDateTimeJa(r.created_at)} / 通報者: ${r.reporter_id || "（不明）"} / 対象UID: ${
+          r.target_uid || "（不明）"
+        } / イベント: ${r.event_id || "（不明）"}`;
+        const reasonEl = document.createElement("p");
+        reasonEl.className = "moderation-report-note";
+        reasonEl.textContent = r.reason ? `理由: ${r.reason}` : "理由: （未記入）";
+        const linkRow = document.createElement("p");
+        linkRow.className = "community-post-actions";
+        const a = document.createElement("a");
+        a.className = "btn-reset-search";
+        const uid = encodeURIComponent(String(r.target_uid || "").trim());
+        const ev = encodeURIComponent(String(r.event_id || "").trim());
+        a.href = `#profile?uid=${uid}&tab=logdiary&event=${ev}`;
+        a.textContent = "該当プロフィールの MarchinZ Note へ";
+        linkRow.appendChild(a);
+        li.appendChild(title);
+        li.appendChild(meta);
+        li.appendChild(reasonEl);
+        li.appendChild(linkRow);
+        moderationListEl.appendChild(li);
+      }
+      return;
+    }
+
+    if (moderationView === "mylist") {
+      if (toolbar) toolbar.hidden = false;
+      const bulkHost = document.getElementById("moderation-bulk-actions");
+      if (bulkHost) bulkHost.hidden = true;
+      let items = [...cachedMylistReports].sort((a, b) =>
+        String(b.created_at || "").localeCompare(String(a.created_at || "")),
+      );
+      if (moderationSearchQuery) {
+        const q = moderationSearchQuery.toLowerCase();
+        items = items.filter((r) => {
+          const blob = [
+            r.target_uid,
+            r.list_id,
+            r.reporter_id,
+            r.reason,
+            mylistReportTypeLabel(r.list_type),
+            r.list_type,
+          ]
+            .join(" ")
+            .toLowerCase();
+          return blob.includes(q);
+        });
+      }
+      moderationNoteEl.textContent =
+        `マイリスト通報（表示中）: ${items.length}件 / 全件: ${cachedMylistReports.length}件 · Note ${cachedNoteReports.length}件 / コミュニティ ${cachedReports.length}件`;
+      if (!items.length) {
+        const li = document.createElement("li");
+        li.className = "mll-log-item";
+        li.textContent = cachedMylistReports.length
+          ? "検索条件に一致するマイリスト通報はありません。"
+          : "マイリスト通報の記録はまだありません。";
+        moderationListEl.appendChild(li);
+        return;
+      }
+      for (const r of items) {
+        const li = document.createElement("li");
+        li.className = "mll-log-item";
+        const title = document.createElement("p");
+        title.className = "mll-log-title";
+        title.textContent = `${mylistReportTypeLabel(r.list_type)} — 通報`;
+        const meta = document.createElement("p");
+        meta.className = "mll-log-meta";
+        meta.textContent = `通報日時: ${formatDateTimeJa(r.created_at)} / 通報者: ${r.reporter_id || "（不明）"} / 対象UID: ${
+          r.target_uid || "（不明）"
+        } / リスト: ${r.list_id || "（不明）"}`;
+        const reasonEl = document.createElement("p");
+        reasonEl.className = "moderation-report-note";
+        reasonEl.textContent = r.reason ? `理由: ${r.reason}` : "理由: （未記入）";
+        const linkRow = document.createElement("p");
+        linkRow.className = "community-post-actions";
+        const a = document.createElement("a");
+        a.className = "btn-reset-search";
+        const tab = r.list_type === "yt" ? "yt" : "videos";
+        const uid = encodeURIComponent(String(r.target_uid || "").trim());
+        const lid = encodeURIComponent(String(r.list_id || "").trim());
+        a.href = `#profile?uid=${uid}&tab=${tab}&mylist=${lid}`;
+        a.textContent = "該当プロフィールのマイリストへ";
+        linkRow.appendChild(a);
+        li.appendChild(title);
+        li.appendChild(meta);
+        li.appendChild(reasonEl);
+        li.appendChild(linkRow);
+        moderationListEl.appendChild(li);
+      }
+      return;
+    }
+
+    if (toolbar) toolbar.hidden = false;
+    const bulkHost = document.getElementById("moderation-bulk-actions");
+    if (bulkHost) bulkHost.hidden = false;
     const reportByPost = new Map();
     for (const r of cachedReports) {
       if (!reportByPost.has(r.post_id)) reportByPost.set(r.post_id, []);
       reportByPost.get(r.post_id).push(r);
     }
-    const rows = cachedPosts
+    let rows = cachedPosts
       .map((p) => ({ post: p, reports: reportByPost.get(p.id) || [] }))
       .filter((x) => x.reports.length > 0)
       .sort((a, b) => String(b.reports[0]?.created_at || "").localeCompare(String(a.reports[0]?.created_at || "")));
-    moderationNoteEl.textContent = `通報対象投稿: ${rows.length}件 / 通報履歴: ${cachedReports.length}件`;
+
+    if (moderationSearchQuery) {
+      const q = moderationSearchQuery.toLowerCase();
+      rows = rows.filter((x) => {
+        const p = x.post;
+        const auth = resolveAuthor(p);
+        return (auth.name || "").toLowerCase().includes(q) ||
+          (p.content || "").toLowerCase().includes(q) ||
+          (p.theme || "").toLowerCase().includes(q);
+      });
+    }
+
+    moderationNoteEl.textContent = `通報対象投稿: ${rows.length}件 / コミュニティ通報履歴: ${cachedReports.length}件（マイリスト ${cachedMylistReports.length}件・Note ${cachedNoteReports.length}件は各タブ）`;
     if (!rows.length) {
       const li = document.createElement("li");
       li.className = "mll-log-item";
@@ -1480,6 +2236,12 @@
       const { themeLabel, titleLabel } = resolveModerationHeading(p);
       const li = document.createElement("li");
       li.className = "mll-log-item";
+      if (p.hidden) li.classList.add("community-thread--admin-hidden");
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.className = "moderation-item-checkbox";
+      cb.dataset.postId = p.id;
+      li.appendChild(cb);
       const title = document.createElement("p");
       title.className = "mll-log-title";
       let suffix = "";
@@ -1506,7 +2268,7 @@
       actions.className = "community-post-actions";
       const toggleBtn = document.createElement("button");
       toggleBtn.type = "button";
-      toggleBtn.className = "btn-reset-search";
+      toggleBtn.className = "btn-reset-search community-post-manage-btn community-post-manage-btn--moderation";
       toggleBtn.textContent = p.hidden ? "復元" : "非表示";
       toggleBtn.addEventListener("click", () => void toggleHidden(p.id, !p.hidden));
       const delBtn = document.createElement("button");
@@ -1526,8 +2288,106 @@
     }
   }
 
+  const modSearchInput = document.getElementById("moderation-search");
+  if (modSearchInput) {
+    let mTimer = null;
+    modSearchInput.addEventListener("input", () => {
+      clearTimeout(mTimer);
+      mTimer = setTimeout(() => {
+        moderationSearchQuery = modSearchInput.value.trim();
+        renderModeration();
+      }, 250);
+    });
+  }
+
+  if (moderationViewTabBtns.length) {
+    moderationViewTabBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const v = String(btn.getAttribute("data-moderation-view") || "").trim();
+        if (v !== "community" && v !== "mylist" && v !== "note") return;
+        moderationView = v;
+        setTabGroupSelected(moderationViewTabBtns, moderationView, "data-moderation-view");
+        if (modSearchInput) {
+          modSearchInput.placeholder =
+            v === "mylist"
+              ? "対象UID・リストID・理由・種別で絞り込み…"
+              : v === "note"
+                ? "対象UID・イベントID・Noteタイトル・理由で絞り込み…"
+                : "投稿者名・内容で絞り込み…";
+        }
+        renderModeration();
+      });
+    });
+  }
+
+  const modSelectAll = document.getElementById("moderation-select-all");
+  if (modSelectAll) {
+    modSelectAll.addEventListener("change", () => {
+      moderationListEl.querySelectorAll(".moderation-item-checkbox").forEach((cb) => { cb.checked = modSelectAll.checked; });
+    });
+  }
+
+  function getSelectedPostIds() {
+    return [...moderationListEl.querySelectorAll(".moderation-item-checkbox:checked")].map((cb) => cb.dataset.postId).filter(Boolean);
+  }
+
+  const bulkHideBtn = document.getElementById("moderation-bulk-hide");
+  if (bulkHideBtn) {
+    bulkHideBtn.addEventListener("click", async () => {
+      const ids = getSelectedPostIds();
+      if (!ids.length || !confirm(`${ids.length}件を一括非表示にしますか？`)) return;
+      bulkHideBtn.disabled = true;
+      try {
+        const me = currentUser();
+        const db = getDb();
+        for (const id of ids) {
+          const post = cachedPosts.find((x) => x.id === id);
+          if (!post || post.hidden) continue;
+          const updated = { ...post, hidden: true, hidden_at: new Date().toISOString(), hidden_by: me?.id || "", hidden_reason: "一括非表示", updated_at: new Date().toISOString() };
+          await updatePost(updated);
+        }
+        setMsg(`${ids.length}件を非表示にしました。`);
+        await refreshAll();
+      } finally {
+        bulkHideBtn.disabled = false;
+      }
+    });
+  }
+
+  const bulkDeleteBtn = document.getElementById("moderation-bulk-delete");
+  if (bulkDeleteBtn) {
+    bulkDeleteBtn.addEventListener("click", async () => {
+      const ids = getSelectedPostIds();
+      if (!ids.length || !confirm(`${ids.length}件を一括削除しますか？この操作は取り消せません。`)) return;
+      bulkDeleteBtn.disabled = true;
+      try {
+        const db = getDb();
+        if (db) {
+          const CHUNK = 400;
+          for (let i = 0; i < ids.length; i += CHUNK) {
+            const batch = db.batch();
+            ids.slice(i, i + CHUNK).forEach((id) => batch.delete(db.collection("mll_community_posts").doc(id)));
+            await batch.commit();
+          }
+        } else {
+          const drop = new Set(ids);
+          saveLocalPosts(loadLocalPosts().filter((p) => !drop.has(p.id)));
+        }
+        setMsg(`${ids.length}件を削除しました。`);
+        await refreshAll();
+      } finally {
+        bulkDeleteBtn.disabled = false;
+      }
+    });
+  }
+
+  function isAuthRedirectPending() {
+    return Boolean(window.MLL_AUTH?.isRedirectPending?.());
+  }
+
   function syncLoginUI(user, profile) {
     const loggedIn = Boolean(user?.id);
+    const redirectPending = isAuthRedirectPending();
     const withdrawn = Boolean(window.MLL_AUTH?.isWithdrawn?.() || profile?.withdrawn);
     const canUseImages = loggedIn && storageAvailable() && !withdrawn;
     submitBtn.disabled = !loggedIn || withdrawn;
@@ -1537,27 +2397,77 @@
     formThemeTabs.forEach((el) => {
       el.disabled = !loggedIn || withdrawn;
     });
+    if (formThemeSelect instanceof HTMLSelectElement) {
+      formThemeSelect.disabled = !loggedIn || withdrawn;
+    }
     topicImageSlots?.setEnabled(canUseImages);
     if (topicImagesNote) {
       topicImagesNote.textContent = canUseImages
-        ? `任意で最大${MAX_COMMUNITY_IMAGES}枚。アップロード時に自動で圧縮されます（元が${Math.floor(rawInputMaxBytes() / 1048576)}MB超は不可）。`
+        ? `アップロード時に自動で圧縮。（元が${Math.floor(rawInputMaxBytes() / 1048576)}MB超は不可）`
         : "画像付き投稿を使う場合は Firebase で Storage を有効化し auth-config の storageBucket を設定してください（未設定時はテキストのみ）。";
+    }
+
+    if (redirectPending) {
+      if (openComposeBtn) openComposeBtn.disabled = true;
+      setFeedMsg("ログイン処理中です。認証完了までお待ちください。", false);
+      return;
     }
 
     if (!loggedIn) {
       if (openComposeBtn) openComposeBtn.disabled = false;
       topicImageSlots?.reset?.();
+      if (boardGuestHintEl instanceof HTMLElement) boardGuestHintEl.hidden = false;
+      syncComposeThemeOptionsVisibility();
       return;
+    }
+    if (boardGuestHintEl instanceof HTMLElement) boardGuestHintEl.hidden = true;
+    syncComposeThemeOptionsVisibility();
+  }
+
+  async function fetchThreadPostsByRootId(threadRootId) {
+    const db = getDb();
+    if (!db || !threadRootId) return [];
+    try {
+      const snap = await db.collection("mll_community_posts").where("thread_root_id", "==", threadRootId).get();
+      return snap.docs.map((d) => mapPost({ id: d.id, ...(d.data() || {}) }));
+    } catch {
+      return [];
     }
   }
 
-  function tryFocusStoredCommunityThread() {
-    let id = "";
+  async function mergeThreadIntoCache(threadRootId) {
+    if (!threadRootId) return false;
+    if (cachedPosts.some((p) => p.id === threadRootId)) return true;
+    const db = getDb();
+    if (!db) return false;
     try {
-      id = String(sessionStorage.getItem(SS_COMM_THREAD_FOCUS) || "").trim();
+      const rootSnap = await db.collection("mll_community_posts").doc(threadRootId).get();
+      if (!rootSnap.exists) return false;
+      const root = mapPost({ id: rootSnap.id, ...(rootSnap.data() || {}) });
+      if (root.hidden && !isAdmin()) return false;
+      if (!boardPostVisibleToViewer(root)) {
+        setFeedMsg("雑談・質問カテゴリーの話題は、ログインすると閲覧できます。", false);
+        return false;
+      }
+      const threadPosts = await fetchThreadPostsByRootId(threadRootId);
+      const ids = new Set(cachedPosts.map((p) => p.id));
+      for (const p of threadPosts) {
+        if (!ids.has(p.id) && (!p.hidden || isAdmin()) && boardPostVisibleToViewer(p)) {
+          cachedPosts.push(p);
+          ids.add(p.id);
+        }
+      }
+      return cachedPosts.some((p) => p.id === threadRootId);
     } catch {
-      id = "";
+      if (!currentUser()?.id) {
+        setFeedMsg("雑談・質問カテゴリーの話題は、ログインすると閲覧できます。", false);
+      }
+      return false;
     }
+  }
+
+  function tryFocusCommunityThread(focusId) {
+    const id = String(focusId || pendingCommunityThreadFocusId() || "").trim();
     if (!id || !listEl) return;
     try {
       sessionStorage.removeItem(SS_COMM_THREAD_FOCUS);
@@ -1578,52 +2488,90 @@
   }
 
   async function refreshAll() {
-    const [posts, reports] = await Promise.all([readPosts(), readReports()]);
+    const [posts, reports, mylistReports, noteReports] = await Promise.all([
+      readPosts(),
+      readReports(),
+      readMylistReports(),
+      readNoteReports(),
+    ]);
     cachedPosts = posts;
     cachedReports = reports;
+    cachedMylistReports = mylistReports;
+    cachedNoteReports = noteReports;
     await hydrateAuthorProfilesForPosts(cachedPosts);
+    const focusId = pendingCommunityThreadFocusId();
+    if (focusId) {
+      await mergeThreadIntoCache(focusId);
+      await hydrateAuthorProfilesForPosts(cachedPosts);
+    }
     renderPosts(cachedPosts);
     renderModeration();
-    tryFocusStoredCommunityThread();
+    tryFocusCommunityThread(focusId);
   }
 
   filterTabs.forEach((btn) => {
     btn.addEventListener("click", () => {
       const v = String(btn.getAttribute("data-community-filter") || "").trim();
+      if (v === THEME_MEMBERS_ONLY && !currentUser()?.id) {
+        navigateToCommunityLoginForMembersBoard();
+        return;
+      }
       activeDisplayTab = (v === FILTER_ALL || THEMES.includes(v)) ? v : FILTER_ALL;
       setTabGroupSelected(filterTabs, activeDisplayTab, "data-community-filter");
       renderPosts(cachedPosts);
+      if (composeOverlayActive) syncComposeThemeFromBoardFilter();
     });
   });
+
+  const communitySearchInput = document.getElementById("community-board-search");
+  if (communitySearchInput) {
+    let sTimer = null;
+    communitySearchInput.addEventListener("input", () => {
+      clearTimeout(sTimer);
+      sTimer = setTimeout(() => {
+        communitySearchQuery = communitySearchInput.value.trim();
+        window.MarchinZTrackEvent?.("community_search_run", {
+          has_query: communitySearchQuery ? 1 : 0,
+        });
+        renderPosts(cachedPosts);
+      }, 250);
+    });
+  }
 
   formThemeTabs.forEach((btn) => {
     btn.addEventListener("click", () => {
       const v = String(btn.getAttribute("data-community-form-theme") || "").trim();
-      if (!THEMES.includes(v)) return;
-      setTabGroupSelected(formThemeTabs, v, "data-community-form-theme");
+      if (!THEMES.includes(v) || !themeAllowedForCompose(v)) return;
+      syncFormThemeUi(v);
+      setFieldError(errorThemeEl, "");
     });
   });
 
+  if (formThemeSelect instanceof HTMLSelectElement) {
+    formThemeSelect.addEventListener("change", () => {
+      const v = String(formThemeSelect.value || "").trim();
+      if (!THEMES.includes(v) || !themeAllowedForCompose(v)) {
+        syncFormThemeUi(defaultComposeTheme());
+        return;
+      }
+      syncFormThemeUi(v);
+      setFieldError(errorThemeEl, "");
+    });
+  }
+
   openComposeBtn.addEventListener("click", () => {
+    if (isAuthRedirectPending()) return;
     setFeedMsg("", false);
     if (!currentUser()?.id) {
-      openComposeOverlay({ authOnly: true });
+      navigateToCommunityLogin("community_compose");
       return;
     }
-    openComposeOverlay({ authOnly: false });
+    openComposeOverlay();
   });
 
   composeOverlay.addEventListener(
     "click",
     (ev) => {
-      const authLink = ev.target.closest?.("a[data-mll-auth-entry]");
-      if (authLink && composeAuthPhase?.contains?.(authLink)) {
-        try {
-          sessionStorage.setItem(SS_INTENT_COMMUNITY_COMPOSE, "1");
-        } catch {
-          //
-        }
-      }
       if (!ev.target.closest("[data-community-compose-close]")) return;
       closeComposeOverlay();
     },
@@ -1635,12 +2583,7 @@
     clearFormErrors();
     const user = currentUser();
     if (!user?.id) {
-      try {
-        sessionStorage.setItem(SS_INTENT_COMMUNITY_COMPOSE, "1");
-      } catch {
-        //
-      }
-      window.MarchinZNavigateAuthEntry?.("signup", "community_submit");
+      navigateToCommunityLogin("community_submit");
       return;
     }
     if (window.MLL_AUTH?.isWithdrawn?.()) {
@@ -1651,6 +2594,97 @@
       setMsg("利用規約・プライバシーポリシーへの同意が完了するまで投稿できません。", true);
       return;
     }
+    if (window.MarchinZRateLimit && !window.MarchinZRateLimit.check("post")) {
+      setMsg("投稿の頻度が高すぎます。しばらく待ってから再度お試しください。", true);
+      return;
+    }
+
+    const editId = String(composeEditingPostId || "").trim();
+    if (editId) {
+      const post = cachedPosts.find((x) => x.id === editId);
+      if (!post) {
+        setMsg("対象の投稿が見つかりません。", true);
+        return;
+      }
+      if (post.user_id !== user.id && !isAdmin()) {
+        setMsg("この投稿を編集する権限がありません。", true);
+        return;
+      }
+      if (post.user_id === user.id && authorWithdrawn(user.id) && !isAdmin()) {
+        setMsg("退会済みのアカウントでは編集できません。", true);
+        return;
+      }
+      const isRoot = isThreadRoot(post);
+      const content = String(contentEl.value || "").trim();
+      let nextTitle = String(post.title || "").trim();
+      let normalizedTheme = normalizeTheme(post.theme);
+      if (isRoot) {
+        const theme = String(selectedFormTheme() || "").trim();
+        normalizedTheme = normalizeTheme(theme);
+        if (!THEMES.includes(normalizedTheme)) {
+          setFieldError(errorThemeEl, "選択してください");
+          setMsg("カテゴリを選択してください。", true);
+          return;
+        }
+        if (rejectThemeForCompose(normalizedTheme)) return;
+        nextTitle = String(titleEl.value || "").trim();
+        if (!nextTitle) {
+          setFieldError(errorTitleEl, "入力してください");
+          setMsg("必須項目を入力してください。", true);
+          return;
+        }
+      }
+      const existingUrls = topicImageSlots.getExistingUrls();
+      const newFiles = topicImageSlots.getFiles().slice(0, MAX_COMMUNITY_IMAGES);
+      if (!content && !existingUrls.length && !newFiles.length) {
+        setFieldError(errorContentEl, "入力してください");
+        setMsg("本文または画像を入力してください。", true);
+        return;
+      }
+      if (newFiles.length && !storageAvailable()) {
+        setMsg("画像の追加には Firebase Storage が必要です。", true);
+        return;
+      }
+      submitBtn.disabled = true;
+      showBusyOverlay();
+      try {
+        let image_urls = existingUrls.slice();
+        if (newFiles.length) {
+          const uploaded = await buildImageUrlsFromFiles(user.id, newFiles);
+          image_urls = image_urls.concat(uploaded).slice(0, MAX_COMMUNITY_IMAGES);
+        }
+        const updated = {
+          ...post,
+          title: isRoot ? nextTitle : "",
+          content,
+          theme: normalizedTheme,
+          image_urls,
+          updated_at: new Date().toISOString(),
+        };
+        await updatePost(updated);
+        topicImageSlots.reset();
+        setMsg("");
+        closeComposeOverlay({ skipPersist: true });
+        clearCommunityComposeDraft();
+        setFeedMsg(isRoot ? "話題を更新しました。" : "返信を更新しました。");
+        await refreshAll();
+      } catch (e) {
+        if (String(e?.message || "") === window.MarchinZImage?.ERR_TOO_LARGE) {
+          setMsg("大きすぎる画像は投稿できません。", true);
+        } else {
+          setMsg(communityFriendlyErrorMessage(e, COMMUNITY_MESSAGE.postFailed), true);
+          window.alert(
+            `code: ${String(e?.code || "unknown")}\nmessage: ${String(e?.message || COMMUNITY_MESSAGE.postFailed)}`,
+          );
+        }
+      } finally {
+        const w = Boolean(window.MLL_AUTH?.isWithdrawn?.());
+        submitBtn.disabled = !Boolean(currentUser()?.id) || w;
+        hideBusyOverlay();
+      }
+      return;
+    }
+
     const title = String(titleEl.value || "").trim();
     const content = String(contentEl.value || "").trim();
     const files = topicImageSlots.getFiles().slice(0, MAX_COMMUNITY_IMAGES);
@@ -1661,6 +2695,7 @@
       setMsg("カテゴリを選択してください。", true);
       return;
     }
+    if (rejectThemeForCompose(normalizedTheme)) return;
     if (!title) {
       setFieldError(errorTitleEl, "入力してください");
       setMsg("必須項目を入力してください。", true);
@@ -1703,21 +2738,43 @@
         user_avatar: p.avatar_url || "",
       };
       await writePost(post);
+      window.MarchinZAdminUgcLog?.recordBoardPost?.({
+        postId: id,
+        title,
+        theme: normalizedTheme,
+        actorUid: user.id,
+        actorName: p.display_name || "ユーザー",
+      });
+      window.MarchinZTrackEvent?.("community_post_submit", {
+        has_image: image_urls.length > 0 ? 1 : 0,
+        theme: normalizedTheme,
+      });
       form.reset();
       topicImageSlots.reset();
+      clearCommunityComposeDraft();
       const firstFt = THEMES[0];
-      setTabGroupSelected(formThemeTabs, firstFt, "data-community-form-theme");
+      syncFormThemeUi(firstFt);
       setMsg("");
       closeComposeOverlay();
       setFeedMsg("話題を投稿しました。");
-      await refreshAll();
+      window.location.reload();
+      return;
     } catch (e) {
+      const errCode = String(e?.code || "");
+      const errMsg = String(e?.message || "");
       if (String(e?.message || "") === window.MarchinZImage?.ERR_TOO_LARGE) {
         setMsg("大きすぎる画像は投稿できません。", true);
+      } else if (errCode === "storage/unauthorized" || errMsg.includes("storage/unauthorized")) {
+        setMsg(
+          "画像のアップロードが拒否されました。Firebase Console の Storage ルール（firebase/storage.rules）を本番にデプロイしてください。",
+          true,
+        );
       } else {
         setMsg(communityFriendlyErrorMessage(e, COMMUNITY_MESSAGE.postFailed), true);
       }
-      window.alert(`code: ${(e?.code || "unknown").toString()}\nmessage: ${(e?.message || COMMUNITY_MESSAGE.postFailed).toString()}`);
+      if (errCode !== "storage/unauthorized" && !errMsg.includes("storage/unauthorized")) {
+        window.alert(`code: ${(e?.code || "unknown").toString()}\nmessage: ${(e?.message || COMMUNITY_MESSAGE.postFailed).toString()}`);
+      }
     } finally {
       const w = Boolean(window.MLL_AUTH?.isWithdrawn?.());
       submitBtn.disabled = !Boolean(currentUser()?.id) || w;
@@ -1760,13 +2817,21 @@
   });
 
   setTabGroupSelected(filterTabs, FILTER_ALL, "data-community-filter");
-  setTabGroupSelected(formThemeTabs, THEMES[0], "data-community-form-theme");
+  syncFormThemeUi(defaultComposeTheme());
+  syncComposeThemeOptionsVisibility();
+
+  function isCommunityHashRoute(raw) {
+    const base = String(raw || "")
+      .replace(/^#/, "")
+      .trim()
+      .split(/[?&#]/)[0] || "";
+    return base === "community" || base.startsWith("community/");
+  }
 
   window.addEventListener("hashchange", () => {
     const raw = window.location.hash.replace(/^#/, "").trim();
-    const page = raw.split(/[?&#]/)[0] || "";
-    if (page === "community") {
-      tryFocusStoredCommunityThread();
+    if (isCommunityHashRoute(raw)) {
+      tryFocusCommunityThread(parseCommunityBoardRoute().threadId);
       if (currentUser()?.id) {
         try {
           if (sessionStorage.getItem(SS_INTENT_COMMUNITY_COMPOSE) === "1") {
@@ -1780,7 +2845,9 @@
       }
       return;
     }
-    if (composeOverlayActive) closeComposeOverlay();
+    if (!isCommunityHashRoute(raw)) {
+      window.MarchinZCommunityComposeDraft?.onLeaveBoard?.();
+    }
     if (!currentUser()?.id && page !== "signup" && page !== "login") {
       try {
         sessionStorage.removeItem(SS_INTENT_COMMUNITY_COMPOSE);
@@ -1790,8 +2857,36 @@
     }
   });
 
+  window.addEventListener("marchinz-community-focus-thread", () => {
+    void refreshAll();
+  });
+
+  window.MarchinZResetCommunityBoardFilter = function () {
+    activeDisplayTab = FILTER_ALL;
+    setTabGroupSelected(filterTabs, FILTER_ALL, "data-community-filter");
+    scrollCommunityBoardTabStripsToStart();
+    renderPosts(cachedPosts);
+  };
+
+  window.MarchinZCommunityComposeDraft = {
+    onLeaveBoard: onCommunityComposeLeaveBoard,
+    onEnterBoard: onCommunityComposeEnterBoard,
+  };
+
+  if (titleEl) titleEl.addEventListener("input", scheduleCommunityComposeDraftSave);
+  if (contentEl) contentEl.addEventListener("input", scheduleCommunityComposeDraftSave);
+  formThemeTabs.forEach((btn) => {
+    btn.addEventListener("click", scheduleCommunityComposeDraftSave);
+  });
+  if (formThemeSelect) formThemeSelect.addEventListener("change", scheduleCommunityComposeDraftSave);
+
   (async () => {
+    const redirectPending = isAuthRedirectPending();
     const user = currentUser();
+    if (redirectPending && !user?.id) {
+      syncLoginUI(null, null);
+      return;
+    }
     const p = user ? await fetchProfile(user) : profileFallback(null);
     syncLoginUI(user, p);
     await refreshAll();

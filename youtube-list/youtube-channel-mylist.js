@@ -5,6 +5,10 @@
   const DEFAULT_LIST_ID = "default";
   const LS_LAST_LIST = "mz_yt_mylist_last_list_id";
 
+  function isLegacyDefaultPickerList(id, name) {
+    return String(id) === DEFAULT_LIST_ID && String(name || "").trim() === "マイリスト";
+  }
+
   const hostEl = () => document.getElementById("mll-yt-channel-mylist-host");
   const msgEl = () => document.getElementById("mll-yt-mylist-msg");
   const pickerDlg = () => document.getElementById("mz-yt-mylist-picker");
@@ -27,12 +31,44 @@
     return String(raw || "").trim() === "private" ? "private" : "public";
   }
 
+  /** @param {HTMLElement} parent @param {string} oshiText */
+  function appendMllOshiDisplayRow(parent, oshiText) {
+    const trimmed = String(oshiText || "").trim();
+    const row = document.createElement("p");
+    row.className = `mll-mylist-oshi-display${trimmed ? "" : " is-placeholder"}`;
+    const label = document.createElement("span");
+    label.className = "mll-mylist-oshi-label";
+    label.textContent = "推しポイント！";
+    row.appendChild(label);
+    const body = document.createElement("span");
+    body.className = "mll-mylist-oshi-text";
+    body.textContent = trimmed || "はまだ記入されていません";
+    row.appendChild(body);
+    parent.appendChild(row);
+    return { row, body };
+  }
+
+  /** @param {{ row: HTMLElement; body: HTMLElement }} display @param {string} oshiText */
+  function setMllOshiDisplayRow(display, oshiText) {
+    const trimmed = String(oshiText || "").trim();
+    display.row.className = `mll-mylist-oshi-display${trimmed ? "" : " is-placeholder"}`;
+    display.body.textContent = trimmed || "はまだ記入されていません";
+  }
+
   function showBusyOverlay() {
     window.MarchinZProcessingOverlay?.show?.("処理中...");
   }
 
   function hideBusyOverlay() {
     window.MarchinZProcessingOverlay?.hide?.();
+  }
+
+  function refreshAfterListLike() {
+    if (/^#profile(?:[?#]|$)/i.test(String(location.hash || ""))) {
+      window.MarchinZUserProfile?.refresh?.();
+      return;
+    }
+    renderMylist();
   }
 
   function alertErr(err, fallback) {
@@ -48,61 +84,74 @@
     return o;
   }
 
-  async function toggleMyChannelBookmarkLike(docId) {
+  const listLikeInflight = new Set();
+
+  async function toggleChannelListLike(ownerUid, listId) {
+    const inflightKey = `cl:${ownerUid}:${listId}`;
+    if (listLikeInflight.has(inflightKey)) return false;
     const db = getDb();
     const user = getUser();
-    if (!user?.id || !db) return;
+    if (!user?.id) {
+      window.MarchinZNavigateAuthEntry?.("login");
+      return false;
+    }
+    if (!db || !ownerUid || !listId) return false;
+    if (window.MarchinZRateLimit && !window.MarchinZRateLimit.check("like")) return false;
+    listLikeInflight.add(inflightKey);
+    /** @type {{ title: string } | null} */
+    let likeNotify = null;
     try {
-      const ref = db.collection("mll_profiles").doc(user.id).collection("channel_bookmarks").doc(docId);
+      const ref = db.collection("mll_profiles").doc(ownerUid).collection("channel_lists").doc(listId);
       await db.runTransaction(async (txn) => {
         const snap = await txn.get(ref);
         if (!snap.exists) return;
         const data = snap.data() || {};
         const prev = normLbBookmarks(data.liked_by);
         const next = { ...prev };
-        if (next[user.id]) delete next[user.id];
+        const wasOn = Boolean(next[user.id]);
+        if (wasOn) delete next[user.id];
         else next[user.id] = true;
         txn.update(ref, { liked_by: next });
+        if (!wasOn && ownerUid !== user.id) {
+          const title = String(data.name || "").trim().slice(0, 200) || "マイリスト";
+          likeNotify = { title };
+        }
       });
     } catch (e) {
       console.warn(e);
       setMsg(String(e?.message || "いいねの更新に失敗しました。"), true);
-      return;
+      listLikeInflight.delete(inflightKey);
+      return false;
     }
-    renderMylist();
+    if (likeNotify) {
+      const nm = String(window.MarchinZActorDisplayName?.(user) || "ユーザー").trim().slice(0, 120) || "ユーザー";
+      window.MarchinZPushLikeNotification?.(db, ownerUid, {
+        kind: "like_channel_list",
+        actor_uid: user.id,
+        actor_name: nm,
+        target_type: "channel_list",
+        target_id: String(listId),
+        target_title: likeNotify.title,
+        target_href: `#profile?uid=${encodeURIComponent(ownerUid)}&tab=yt&mylist=${encodeURIComponent(String(listId))}`,
+        thread_root_id: String(listId).slice(0, 128),
+      });
+    }
+    listLikeInflight.delete(inflightKey);
   }
 
-  function appendMyChannelBmLike(hostEl, it, showLike) {
-    if (!hostEl || !showLike || !it?.docId) return;
+  function appendChannelListLike(hostEl, ownerUid, listId, likedByMap) {
+    if (!hostEl || !listId) return;
     const me = getUser();
-    const lb = normLbBookmarks(it.liked_by);
+    const lb = normLbBookmarks(likedByMap);
     const cnt = Object.keys(lb).filter((k) => lb[k]).length;
     const liked = Boolean(me?.id && lb[me.id]);
-    const row = document.createElement("div");
-    row.className = "community-like-row";
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "community-like-btn" + (liked ? " community-like-btn--on" : "");
-    btn.setAttribute("aria-pressed", liked ? "true" : "false");
-    btn.setAttribute("aria-label", liked ? "いいねを解除" : "いいねする");
-    btn.addEventListener("click", () => void toggleMyChannelBookmarkLike(it.docId));
-    const heart = document.createElement("span");
-    heart.className = "community-like-heart";
-    heart.setAttribute("aria-hidden", "true");
-    heart.textContent = "\u2665";
-    const num = document.createElement("span");
-    num.className = "community-like-count";
-    num.textContent = String(cnt);
-    btn.appendChild(heart);
-    btn.appendChild(num);
-    row.appendChild(btn);
-    if (!me?.id) {
-      const hint = document.createElement("span");
-      hint.className = "community-like-hint mll-log-meta";
-      hint.textContent = "ログインでいいねできます";
-      row.appendChild(hint);
-    }
-    hostEl.appendChild(row);
+    window.MarchinZEngageUi?.buildLikeRow(hostEl, {
+      liked,
+      count: cnt,
+      onClick: () => toggleChannelListLike(ownerUid, listId),
+      showLoginHint: !me?.id,
+      stopPropagation: true,
+    });
   }
 
   function normalizeChannelUrl(u) {
@@ -182,36 +231,24 @@
   }
 
   function lastUsedListId() {
-    try {
-      return String(localStorage.getItem(LS_LAST_LIST) || "").trim() || DEFAULT_LIST_ID;
-    } catch {
-      return DEFAULT_LIST_ID;
-    }
+    const fromLs = (() => {
+      try {
+        return String(localStorage.getItem(LS_LAST_LIST) || "").trim();
+      } catch {
+        return "";
+      }
+    })();
+    if (fromLs && cachedLists.some((x) => x.id === fromLs)) return fromLs;
+    return cachedLists[0]?.id || "";
   }
 
   function setLastUsedListId(id) {
     try {
-      localStorage.setItem(LS_LAST_LIST, String(id || DEFAULT_LIST_ID));
+      const v = String(id || "").trim();
+      if (v) localStorage.setItem(LS_LAST_LIST, v);
     } catch {
       //
     }
-  }
-
-  async function ensureDefaultChannelList(user, db) {
-    const ref = db.collection("mll_profiles").doc(user.id).collection("channel_lists").doc(DEFAULT_LIST_ID);
-    const snap = await ref.get();
-    const now = new Date().toISOString();
-    const prev = snap.exists ? snap.data() || {} : {};
-    await ref.set(
-      {
-        name: String(prev.name || "マイリスト").trim() || "マイリスト",
-        visibility: prev.visibility === "private" ? "private" : "public",
-        list_order: Number.isFinite(Number(prev.list_order)) ? Number(prev.list_order) : 0,
-        created_at: String(prev.created_at || now).slice(0, 40) || now,
-        updated_at: now,
-      },
-      { merge: true },
-    );
   }
 
   async function getMaxChannelListOrder(user, db) {
@@ -224,9 +261,29 @@
     return m;
   }
 
+  /**
+   * 新規は自動で「default」リストを作らない。保存前にリスト実在のみ確認する。
+   * @param {object} user
+   * @param {import('firebase').firestore.Firestore} db
+   * @param {string} listId
+   * @returns {Promise<boolean>}
+   */
+  async function assertChannelListExists(user, db, listId) {
+    const lid = String(listId || "").trim();
+    if (!lid) {
+      setMsg("保存先のリストを選んでください。", true);
+      return false;
+    }
+    const snap = await db.collection("mll_profiles").doc(user.id).collection("channel_lists").doc(lid).get();
+    if (!snap.exists) {
+      setMsg("保存先のリストが見つかりません。リストを選び直してください。", true);
+      return false;
+    }
+    return true;
+  }
+
   /** @returns {Promise<{ id: string; name: string; oshi_text: string; visibility: string; list_order: number }[]>} */
   async function loadChannelListMetas(user, db) {
-    await ensureDefaultChannelList(user, db);
     const snap = await db
       .collection("mll_profiles")
       .doc(user.id)
@@ -244,16 +301,14 @@
         oshi_text: String(d.oshi_text || "").trim(),
         visibility: String(d.visibility || "public").trim() === "private" ? "private" : "public",
         list_order: Number.isFinite(lo) ? lo : doc.id === DEFAULT_LIST_ID ? 0 : 500000,
+        liked_by: normLbBookmarks(d.liked_by),
       });
     });
-    if (!out.some((x) => x.id === DEFAULT_LIST_ID)) {
-      out.unshift({ id: DEFAULT_LIST_ID, name: "マイリスト", oshi_text: "", visibility: "public", list_order: 0 });
-    }
     out.sort((a, b) => {
       if (a.list_order !== b.list_order) return a.list_order - b.list_order;
       return String(a.name).localeCompare(String(b.name), "ja");
     });
-    return out;
+    return out.filter((l) => !isLegacyDefaultPickerList(l.id, l.name));
   }
 
   async function refreshCache() {
@@ -267,7 +322,6 @@
       return;
     }
     try {
-      await ensureDefaultChannelList(user, db);
       cachedLists = await loadChannelListMetas(user, db);
       const snap = await db
         .collection("mll_profiles")
@@ -332,8 +386,8 @@
       setMsg("チャンネル URL が無効です。", true);
       return false;
     }
-    const lid = String(listId || DEFAULT_LIST_ID).trim() || DEFAULT_LIST_ID;
-    await ensureDefaultChannelList(user, db);
+    const lid = String(listId || "").trim();
+    if (!(await assertChannelListExists(user, db, lid))) return false;
     if (hasChannelInList(channel_url, lid)) {
       setMsg("このリストにはすでに追加済みです。");
       window.setTimeout(() => setMsg(""), 2400);
@@ -352,8 +406,17 @@
       added_at: new Date().toISOString().slice(0, 40),
       sort_index: Math.min(2147483647, Math.floor(Date.now() / 1000)),
     };
+    const ref = db.collection("mll_profiles").doc(user.id).collection("channel_bookmarks").doc(docId);
     try {
-      await db.collection("mll_profiles").doc(user.id).collection("channel_bookmarks").doc(docId).set(payload);
+      const prev = await ref.get();
+      if (prev.exists) {
+        if (!listUrlKeys.has(lid)) listUrlKeys.set(lid, new Set());
+        listUrlKeys.get(lid).add(urlKey(channel_url));
+        setMsg("このリストにはすでに追加済みです。");
+        window.setTimeout(() => setMsg(""), 2400);
+        return true;
+      }
+      await ref.set(payload);
       if (!listUrlKeys.has(lid)) listUrlKeys.set(lid, new Set());
       listUrlKeys.get(lid).add(urlKey(channel_url));
       setLastUsedListId(lid);
@@ -365,12 +428,20 @@
       return true;
     } catch (e) {
       console.warn(e);
-      setMsg(String(e?.message || "保存に失敗しました。"), true);
+      const code = String(e?.code || "");
+      if (code === "permission-denied") {
+        setMsg(
+          "保存の権限がありません。Firebase の Firestore ルール（firebase/firestore.rules）を本番にデプロイし、再読み込みしてください。",
+          true,
+        );
+      } else {
+        setMsg(String(e?.message || "保存に失敗しました。"), true);
+      }
       return false;
     }
   }
 
-  async function createChannelList(name, visibility) {
+  async function createChannelList(name, visibility, oshiText = "") {
     const user = getUser();
     const db = getDb();
     if (!user?.id || !db) return null;
@@ -386,13 +457,21 @@
         .collection("channel_lists")
         .doc(sid)
         .set({
-          name: String(name || "マイリスト").trim().slice(0, 120) || "マイリスト",
-          oshi_text: "",
+          name: String(name || "リスト").trim().slice(0, 120) || "リスト",
+          oshi_text: String(oshiText || "").trim().slice(0, 240),
           visibility: normalizeVisibility(visibility),
           list_order: Number(maxO + 100),
+          liked_by: {},
           created_at: now,
           updated_at: now,
         });
+      const listName = String(name || "リスト").trim().slice(0, 120) || "リスト";
+      window.MarchinZAdminUgcLog?.recordYtMylist?.({
+        listId: sid,
+        listName,
+        actorUid: user.id,
+        actorName: window.MarchinZActorDisplayName?.(user) || "ユーザー",
+      });
       return sid;
     } catch (e) {
       alertErr(e, "リストの作成に失敗しました。");
@@ -462,6 +541,97 @@
     } catch (e) {
       alertErr(e, "公開設定の更新に失敗しました。");
       return;
+    } finally {
+      hideBusyOverlay();
+    }
+  }
+
+  /** ログイン中ユーザーの YouTube マイリスト（全リスト・全ブックマーク）を削除 */
+  async function deleteAllChannelListsCascade() {
+    const user = getUser();
+    const db = getDb();
+    if (!user?.id || !db) throw new Error("ログインが必要です。");
+    if (
+      !window.confirm(
+        "YouTube マイリストをすべて削除しますか？\n登録したリストとチャンネルがすべて消えます。取り消せません。",
+      )
+    ) {
+      return;
+    }
+    showBusyOverlay();
+    try {
+      const profRef = db.collection("mll_profiles").doc(user.id);
+      while (true) {
+        const qs = await profRef.collection("channel_bookmarks").limit(400).get();
+        if (qs.empty) break;
+        const batch = db.batch();
+        qs.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+      }
+      while (true) {
+        const qs = await profRef.collection("channel_lists").limit(400).get();
+        if (qs.empty) break;
+        const batch = db.batch();
+        qs.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+      }
+      await refreshCache();
+      window.dispatchEvent(new CustomEvent("marchinz-channel-mylist-updated"));
+    } catch (e) {
+      alertErr(e, "YouTube マイリストの一括削除に失敗しました。");
+      throw e;
+    } finally {
+      hideBusyOverlay();
+    }
+  }
+
+  /**
+   * 既定リスト以外を削除。当該リストのチャンネルブックマークはすべて削除します。
+   * @param {string} listId
+   */
+  async function deleteChannelListCascade(listId) {
+    const user = getUser();
+    const db = getDb();
+    if (!user?.id || !db) throw new Error("ログインが必要です。");
+    const lid = String(listId || "").trim();
+    if (!lid) throw new Error("リストを指定できません。");
+    showBusyOverlay();
+    try {
+      while (true) {
+        const qs = await db
+          .collection("mll_profiles")
+          .doc(user.id)
+          .collection("channel_bookmarks")
+          .where("list_id", "==", lid)
+          .limit(400)
+          .get();
+        if (qs.empty) break;
+        const batch = db.batch();
+        qs.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+      }
+      const legacy = await db
+        .collection("mll_profiles")
+        .doc(user.id)
+        .collection("channel_bookmarks")
+        .limit(500)
+        .get();
+      const batch2 = db.batch();
+      let n2 = 0;
+      legacy.forEach((doc) => {
+        const d = doc.data() || {};
+        if (inferChannelListIdFromDoc(doc.id, d) === lid) {
+          batch2.delete(doc.ref);
+          n2 += 1;
+        }
+      });
+      if (n2) await batch2.commit();
+      await db.collection("mll_profiles").doc(user.id).collection("channel_lists").doc(lid).delete();
+      await refreshCache();
+      window.dispatchEvent(new CustomEvent("marchinz-channel-mylist-updated"));
+    } catch (e) {
+      alertErr(e, "リストの削除に失敗しました。");
+      throw e;
     } finally {
       hideBusyOverlay();
     }
@@ -548,6 +718,7 @@
       const u = String(d.channel_url || "").trim();
       const lid = inferChannelListIdFromDoc(docId, d);
       await ref.delete();
+      trackMetric("mylist_remove", { target: "youtube_channel", list_id: lid || "" });
       const k = urlKey(u);
       if (k && listUrlKeys.has(lid)) listUrlKeys.get(lid).delete(k);
       renderMylist();
@@ -593,15 +764,11 @@
     const chosen = dlg.querySelector('input[name="mz-yt-picker-list"]:checked');
     const rid = chosen instanceof HTMLInputElement ? String(chosen.value || "").trim() : "";
     const newName = /** @type {HTMLInputElement|null} */ (dlg.querySelector("[data-mz-yt-new-list-name]"));
-    const newVis = /** @type {HTMLInputElement|null} */ (dlg.querySelector("[data-mz-yt-new-list-vis]:checked"));
+    const newOshi = /** @type {HTMLTextAreaElement|null} */ (dlg.querySelector("[data-mz-yt-new-list-oshi]"));
     if (rid === "__new__") {
-      const nm = (newName?.value || "").trim();
-      if (!nm) {
-        setMsg("新しいリストの名前を入力してください。", true);
-        return;
-      }
-      const vis = newVis?.value === "private" ? "private" : "public";
-      const nid = await createChannelList(nm, vis);
+      const nm = (newName?.value || "").trim() || "リスト";
+      const oshi = (newOshi?.value || "").trim();
+      const nid = await createChannelList(nm, "public", oshi);
       if (!nid) {
         setMsg("リストの作成に失敗しました。", true);
         return;
@@ -617,18 +784,21 @@
    * @param {{ url?: string; name?: string; logo?: string; category?: string }} item
    * @returns {Promise<string|null>}
    */
-  function openPicker(item) {
+  async function openPicker(item) {
     wirePickerOnce();
     const dlg = pickerDlg();
     if (!(dlg instanceof HTMLDialogElement)) return Promise.resolve(lastUsedListId());
+
+    const titleEl = dlg.querySelector("[data-mz-yt-picker-title]");
+    if (titleEl) {
+      titleEl.textContent = "保存先のリスト";
+    }
 
     const body = dlg.querySelector("[data-mz-yt-picker-lists]");
     const newBlock = dlg.querySelector("[data-mz-yt-picker-new]");
     if (body) {
       body.innerHTML = "";
-      const lists = cachedLists.length
-        ? cachedLists
-        : [{ id: DEFAULT_LIST_ID, name: "マイリスト", visibility: "public", list_order: 0 }];
+      const lists = cachedLists.slice();
       const last = lastUsedListId();
       const hasLast = lists.some((x) => x.id === last);
       for (const L of lists) {
@@ -638,11 +808,11 @@
         inp.type = "radio";
         inp.name = "mz-yt-picker-list";
         inp.value = L.id;
-        if (hasLast ? L.id === last : L.id === DEFAULT_LIST_ID) {
+        if (hasLast ? L.id === last : lists[0]?.id === L.id) {
           inp.checked = true;
         }
         const span = document.createElement("span");
-        span.textContent = `${L.name}（${L.visibility === "private" ? "リスト非公開" : "リスト公開"}）`;
+        span.textContent = L.name;
         lab.appendChild(inp);
         lab.appendChild(span);
         body.appendChild(lab);
@@ -653,6 +823,7 @@
       newInp.type = "radio";
       newInp.name = "mz-yt-picker-list";
       newInp.value = "__new__";
+      if (!lists.length) newInp.checked = true;
       newLab.appendChild(newInp);
       newLab.appendChild(document.createTextNode("新しいリストを作成…"));
       body.appendChild(newLab);
@@ -666,9 +837,13 @@
       });
     }
     if (newBlock) {
-      newBlock.hidden = true;
+      const checked = dlg.querySelector('input[name="mz-yt-picker-list"]:checked');
+      const isNew = checked instanceof HTMLInputElement && checked.value === "__new__";
+      newBlock.hidden = !isNew;
       const ni = dlg.querySelector("[data-mz-yt-new-list-name]");
       if (ni instanceof HTMLInputElement) ni.value = "";
+      const oi = dlg.querySelector("[data-mz-yt-new-list-oshi]");
+      if (oi instanceof HTMLTextAreaElement) oi.value = "";
     }
 
     return new Promise((resolve) => {
@@ -695,7 +870,6 @@
     if (window.MLL_AUTH?.isWithdrawn?.()) {
       return { ok: false, message: "退会済みのアカウントでは保存できません。" };
     }
-    await ensureDefaultChannelList(user, db);
     cachedLists = await loadChannelListMetas(user, db);
     const listId = await openPicker(item);
     if (!listId) return { ok: false, message: "" };
@@ -739,8 +913,6 @@
       })
       .then(async (snap) => {
         if (!hostEl()) return;
-        const showChLike = true;
-        /** @type {Map<string, { meta: { id: string; name: string; visibility: string; list_order: number }; items: { docId: string; title: string; url: string; sort: number; added: string; liked_by?: Record<string, boolean> }[] }>} */
         const grouped = new Map();
         for (const L of cachedLists) {
           grouped.set(L.id, { meta: { ...L, list_order: Number(L.list_order) || 0 }, items: [] });
@@ -752,10 +924,11 @@
             grouped.set(lid, {
               meta: {
                 id: lid,
-                name: lid === DEFAULT_LIST_ID ? "マイリスト" : lid,
+                name: lid,
                 oshi_text: "",
                 visibility: "public",
                 list_order: lid === DEFAULT_LIST_ID ? 0 : 500000,
+                liked_by: {},
               },
               items: [],
             });
@@ -767,9 +940,10 @@
             docId: doc.id,
             title,
             url,
+            logo: String(d.channel_logo || "").trim(),
+            category: String(d.category || "").trim(),
             sort: Number.isFinite(si) ? si : 0,
             added: String(d.added_at || ""),
-            liked_by: normLbBookmarks(d.liked_by),
           });
         });
 
@@ -804,25 +978,105 @@
           const head = document.createElement("header");
           head.className = "mll-mylist-list-head";
           const h4 = document.createElement("h4");
-          h4.className = "mll-mylist-list-name";
+          h4.className = "mll-mylist-list-name mll-mylist-list-name--editable";
           h4.textContent = block.meta.name;
-          const oshiText = String(block.meta.oshi_text || "").trim();
-          const oshiLead = document.createElement("p");
-          oshiLead.className = `mll-mylist-oshi-display${oshiText ? "" : " is-placeholder"}`;
-          oshiLead.textContent = oshiText || "ドリルも演奏も大好き！○○分のここがイイ！";
+          h4.title = "クリックしてリスト設定を編集";
+
+          const editPanel = document.createElement("div");
+          editPanel.className = "mll-mylist-edit-panel";
+          editPanel.hidden = true;
+          const editNameInput = document.createElement("input");
+          editNameInput.type = "text";
+          editNameInput.className = "mll-mylist-edit-name";
+          editNameInput.value = block.meta.name;
+          editNameInput.placeholder = "リスト名";
+          const editVisRow = document.createElement("div");
+          editVisRow.className = "mll-mylist-edit-vis-row";
+          const pub = block.meta.visibility !== "private";
+          const visTag = document.createElement("button");
+          visTag.type = "button";
+          visTag.className = `mll-mylist-vis-tag mll-mylist-vis-tag--clickable ${pub ? "mll-mylist-vis-tag--public" : "mll-mylist-vis-tag--private"}`;
+          visTag.textContent = pub ? "公開中" : "非公開";
+          visTag.title = "クリックで公開設定を切り替え";
+          let pendingVis = block.meta.visibility !== "private" ? "public" : "private";
+          visTag.addEventListener("click", () => {
+            const next = pendingVis === "public" ? "private" : "public";
+            const label = next === "public" ? "公開中" : "非公開";
+            if (!confirm(`「${label}」に変更しますか？`)) return;
+            pendingVis = next;
+            visTag.textContent = next === "public" ? "公開中" : "非公開";
+            visTag.className = `mll-mylist-vis-tag mll-mylist-vis-tag--clickable ${next === "public" ? "mll-mylist-vis-tag--public" : "mll-mylist-vis-tag--private"}`;
+          });
+          editVisRow.appendChild(visTag);
+          const editSave = document.createElement("button");
+          editSave.type = "button";
+          editSave.className = "btn-marchinz btn-marchinz--sm mll-mylist-edit-save";
+          editSave.textContent = "保存";
+          const editCancel = document.createElement("button");
+          editCancel.type = "button";
+          editCancel.className = "btn-reset-search mll-mylist-edit-cancel";
+          editCancel.textContent = "キャンセル";
+          const editBtns = document.createElement("div");
+          editBtns.className = "mll-mylist-edit-btns";
+          editBtns.appendChild(editSave);
+          editBtns.appendChild(editCancel);
+          const editOshiInput = document.createElement("textarea");
+          editOshiInput.className = "mll-mylist-oshi-input";
+          editOshiInput.rows = 3;
+          editOshiInput.maxLength = 240;
+          editOshiInput.placeholder = "推しポイント！を入力";
+          editPanel.appendChild(editNameInput);
+          editPanel.appendChild(editOshiInput);
+          editPanel.appendChild(editVisRow);
+          editPanel.appendChild(editBtns);
+
+          const openEditPanel = () => {
+            editPanel.hidden = false;
+            editNameInput.value = h4.textContent;
+            editOshiInput.value = String(block.meta.oshi_text || "");
+            editNameInput.focus();
+          };
+          const closeEditPanel = () => { editPanel.hidden = true; };
+          h4.addEventListener("click", openEditPanel);
+          editCancel.addEventListener("click", closeEditPanel);
+          editSave.addEventListener("click", () => {
+            void (async () => {
+              const newName = editNameInput.value.trim();
+              const newOshi = String(editOshiInput.value || "").trim().slice(0, 240);
+              const origVis = block.meta.visibility !== "private" ? "public" : "private";
+              const origOshi = String(block.meta.oshi_text || "").trim();
+              try {
+                if (newName && newName !== block.meta.name) await renameChannelList(block.meta.id, newName);
+                if (newOshi !== origOshi) {
+                  await updateChannelListOshiText(block.meta.id, newOshi);
+                  block.meta.oshi_text = newOshi;
+                  setMllOshiDisplayRow(oshiDisplay, newOshi);
+                }
+                if (pendingVis !== origVis) {
+                  await updateChannelListVisibility(block.meta.id, pendingVis);
+                  if (pendingVis === "public") {
+                    setMsg("リストを公開にしました。", false);
+                    window.setTimeout(() => setMsg(""), 6000);
+                  }
+                }
+              } catch (e) {
+                setMsg(String(e?.message || "更新に失敗しました。"), true);
+              }
+              closeEditPanel();
+            })();
+          });
+
+          let oshiDisplay;
           const right = document.createElement("div");
           right.className = "mll-mylist-list-head-right";
           const listTools = document.createElement("div");
           listTools.className = "mll-mylist-list-tools";
-          const renameBtn = document.createElement("button");
-          renameBtn.type = "button";
-          renameBtn.className = "btn-reset-search mll-mylist-list-tool-btn";
-          renameBtn.textContent = "名前変更";
-          renameBtn.addEventListener("click", () => {
-            const nv = window.prompt("リスト名", block.meta.name);
-            if (nv == null) return;
-            void renameChannelList(block.meta.id, nv);
-          });
+          const dragHandle = document.createElement("span");
+          dragHandle.className = "mll-mylist-drag-handle";
+          dragHandle.textContent = "☰";
+          dragHandle.title = "ドラッグして並び替え";
+          dragHandle.setAttribute("aria-label", "ドラッグして並び替え");
+          listTools.appendChild(dragHandle);
           const upList = document.createElement("button");
           upList.type = "button";
           upList.className = "btn-reset-search mll-mylist-list-tool-btn";
@@ -835,98 +1089,142 @@
           downList.textContent = "↓";
           downList.title = "リストの表示順を下へ";
           downList.addEventListener("click", () => void moveChannelListOrder(block.meta.id, 1));
-          listTools.appendChild(renameBtn);
           listTools.appendChild(upList);
           listTools.appendChild(downList);
-          const tag = document.createElement("span");
-          const pub = block.meta.visibility !== "private";
-          tag.className = `mll-mylist-vis-tag ${pub ? "mll-mylist-vis-tag--public" : "mll-mylist-vis-tag--private"}`;
-          tag.textContent = pub ? "公開" : "非公開";
-          tag.title = pub ? "プロフィールのマイリストに表示されます" : "プロフィールでは非表示です";
-          const toggle = document.createElement("button");
-          toggle.type = "button";
-          toggle.className = "btn-reset-search mll-mylist-vis-toggle";
-          toggle.textContent = pub ? "非公開にする" : "公開にする";
-          toggle.addEventListener("click", () => {
-            void (async () => {
-              const next = pub ? "private" : "public";
-              try {
-                await updateChannelListVisibility(block.meta.id, next);
-                if (next === "public") {
-                  setMsg(
-                    "リストを公開にしました。シェアしたリンクを他の方が見られるようにするには、プロフィールの公開範囲で「YouTube マイリスト」も公開にしてください。",
-                    false,
-                  );
-                  window.setTimeout(() => setMsg(""), 10000);
-                }
-              } catch (e) {
-                setMsg(String(e?.message || "公開設定の更新に失敗しました。"), true);
-              }
+          right.appendChild(listTools);
+
+          sec.setAttribute("draggable", "true");
+          sec.addEventListener("dragstart", (e) => {
+            e.dataTransfer.effectAllowed = "move";
+            e.dataTransfer.setData("text/plain", block.meta.id);
+            sec.classList.add("mll-mylist-dragging");
+          });
+          sec.addEventListener("dragend", () => sec.classList.remove("mll-mylist-dragging"));
+          sec.addEventListener("dragover", (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; sec.classList.add("mll-mylist-dragover"); });
+          sec.addEventListener("dragleave", () => sec.classList.remove("mll-mylist-dragover"));
+          sec.addEventListener("drop", (e) => {
+            e.preventDefault();
+            sec.classList.remove("mll-mylist-dragover");
+            const fromId = e.dataTransfer.getData("text/plain");
+            if (!fromId || fromId === block.meta.id) return;
+            const fromIdx = cachedLists.findIndex((x) => x.id === fromId);
+            const toIdx = cachedLists.findIndex((x) => x.id === block.meta.id);
+            if (fromIdx < 0 || toIdx < 0) return;
+            const dir = toIdx > fromIdx ? 1 : -1;
+            let steps = Math.abs(toIdx - fromIdx);
+            (async () => {
+              for (let s = 0; s < steps; s++) await moveChannelListOrder(fromId, dir);
             })();
           });
-          right.appendChild(listTools);
-          right.appendChild(tag);
-          right.appendChild(toggle);
+
+          {
+            let touchTimer = null;
+            let touchActive = false;
+            let touchStartY = 0;
+            let lastSwapY = 0;
+            const HOLD_MS = 400;
+            const SWAP_THRESHOLD = 50;
+            dragHandle.addEventListener("touchstart", (e) => {
+              if (e.touches.length !== 1) return;
+              touchStartY = e.touches[0].clientY;
+              lastSwapY = touchStartY;
+              touchTimer = setTimeout(() => {
+                touchActive = true;
+                sec.classList.add("mll-mylist-dragging");
+                if (navigator.vibrate) navigator.vibrate(30);
+              }, HOLD_MS);
+            }, { passive: true });
+            dragHandle.addEventListener("touchmove", (e) => {
+              if (!touchActive) { clearTimeout(touchTimer); return; }
+              e.preventDefault();
+              const y = e.touches[0].clientY;
+              const delta = y - lastSwapY;
+              if (Math.abs(delta) >= SWAP_THRESHOLD) {
+                const dir = delta > 0 ? 1 : -1;
+                lastSwapY = y;
+                void moveChannelListOrder(block.meta.id, dir);
+              }
+            }, { passive: false });
+            const endTouch = () => {
+              clearTimeout(touchTimer);
+              if (touchActive) sec.classList.remove("mll-mylist-dragging");
+              touchActive = false;
+            };
+            dragHandle.addEventListener("touchend", endTouch);
+            dragHandle.addEventListener("touchcancel", endTouch);
+          }
+
           const shareBtn = document.createElement("button");
           shareBtn.type = "button";
           shareBtn.className = "btn-share-search btn-marchinz-spotlight";
-          shareBtn.textContent = "このリストをシェアする";
-          shareBtn.setAttribute("aria-label", `リスト「${block.meta.name}」をシェア`);
+          shareBtn.textContent = "シェアする";
+          shareBtn.setAttribute("aria-label", `YouTubeマイリスト「${block.meta.name}」をシェア`);
           right.appendChild(shareBtn);
           const uid = String(user.id || "").trim();
           const sm = window.MarchinZShareMenu;
           if (uid && sm?.buildAbsoluteUrlForHash && sm.mylistShareText && sm.setupSearchLikeShareMenuForButton) {
             const profHash = `#profile?uid=${encodeURIComponent(uid)}&tab=yt&mylist=${encodeURIComponent(block.meta.id)}`;
             const shareUrl = sm.buildAbsoluteUrlForHash(profHash);
-            const shareText = sm.mylistShareText(block.meta.name, shareUrl);
+            const shareText = sm.mylistShareText(block.meta.name, shareUrl, "yt");
             sm.setupSearchLikeShareMenuForButton(shareBtn, shareText, shareUrl);
           }
-          head.appendChild(h4);
-          head.appendChild(oshiLead);
-          head.appendChild(right);
+          const likeHost = document.createElement("div");
+          likeHost.className = "mll-mylist-list-like-host mz-inline-like-host";
+          appendChannelListLike(likeHost, user.id, block.meta.id, block.meta.liked_by);
 
-          const oshiEdit = document.createElement("div");
-          oshiEdit.className = "mll-mylist-oshi-edit-row";
-          const oshiInput = document.createElement("textarea");
-          oshiInput.className = "mll-mylist-oshi-input";
-          oshiInput.rows = 2;
-          oshiInput.maxLength = 240;
-          oshiInput.placeholder = "ドリルも演奏も大好き！○○分のここがイイ！";
-          oshiInput.value = String(block.meta.oshi_text || "");
-          const oshiSaveBtn = document.createElement("button");
-          oshiSaveBtn.type = "button";
-          oshiSaveBtn.className = "btn-reset-search mll-mylist-oshi-save";
-          oshiSaveBtn.textContent = "マイ推し！を保存";
-          oshiSaveBtn.addEventListener("click", () => {
-            void (async () => {
-              try {
-                await updateChannelListOshiText(block.meta.id, oshiInput.value);
-                setMsg("マイ推し！を保存しました。", false);
-              } catch (e) {
-                setMsg(String(e?.message || "マイ推し！の保存に失敗しました。"), true);
-              }
-            })();
-          });
-          oshiEdit.appendChild(oshiInput);
-          oshiEdit.appendChild(oshiSaveBtn);
+          const topRow = document.createElement("div");
+          topRow.className = "mll-mylist-top-row";
+          const titleBlock = document.createElement("div");
+          titleBlock.className = "mll-mylist-title-block";
+          titleBlock.appendChild(h4);
+          window.MarchinZEngageUi?.appendInlineLike(titleBlock, likeHost);
+          topRow.appendChild(titleBlock);
+          topRow.appendChild(right);
+          head.appendChild(topRow);
+          head.appendChild(editPanel);
+          oshiDisplay = appendMllOshiDisplayRow(head, block.meta.oshi_text);
 
           const ul = document.createElement("ul");
-          ul.className = "mll-mylist-video-list";
+          ul.className = "mll-mylist-video-list mll-mylist-channel-grid";
           for (const it of block.items) {
             const li = document.createElement("li");
-            li.className = "mll-mylist-item";
-            const main = document.createElement("div");
-            main.className = "mll-mylist-item-main";
-            const a = document.createElement("a");
-            a.href = it.url || "#";
-            a.target = "_blank";
-            a.rel = "noopener noreferrer";
-            a.className = "mll-mylist-item-title";
-            a.textContent = it.title;
-            main.appendChild(a);
-            appendMyChannelBmLike(main, it, showChLike);
-            const ord = document.createElement("div");
-            ord.className = "mll-mylist-item-order";
+            li.className = "mll-mylist-channel-card";
+
+            if (it.logo) {
+              const logoWrap = document.createElement("a");
+              logoWrap.href = it.url || "#";
+              logoWrap.target = "_blank";
+              logoWrap.rel = "noopener noreferrer";
+              logoWrap.className = "mll-mylist-card-logo-wrap";
+              const img = document.createElement("img");
+              img.className = "mll-mylist-card-logo";
+              img.src = it.logo;
+              img.alt = it.title;
+              img.loading = "lazy";
+              img.onerror = function () { this.style.display = "none"; };
+              logoWrap.appendChild(img);
+              li.appendChild(logoWrap);
+            }
+
+            const body = document.createElement("div");
+            body.className = "mll-mylist-card-body";
+            const titleA = document.createElement("a");
+            titleA.href = it.url || "#";
+            titleA.target = "_blank";
+            titleA.rel = "noopener noreferrer";
+            titleA.className = "mll-mylist-card-title";
+            titleA.textContent = it.title;
+            body.appendChild(titleA);
+            if (it.category) {
+              const catBadge = document.createElement("span");
+              catBadge.className = "mll-mylist-card-category";
+              catBadge.textContent = it.category;
+              body.appendChild(catBadge);
+            }
+            li.appendChild(body);
+
+            const actions = document.createElement("div");
+            actions.className = "mll-mylist-card-actions";
             const upIt = document.createElement("button");
             upIt.type = "button";
             upIt.className = "btn-reset-search mll-mylist-order-btn";
@@ -943,20 +1241,19 @@
               ev.preventDefault();
               void moveChannelBookmarkOrder(it.docId, block.meta.id, 1);
             });
-            ord.appendChild(upIt);
-            ord.appendChild(downIt);
             const del = document.createElement("button");
             del.type = "button";
             del.className = "btn-reset-search mll-mylist-remove";
             del.textContent = "削除";
             del.addEventListener("click", () => void removeByDocId(it.docId));
-            li.appendChild(main);
-            li.appendChild(ord);
-            li.appendChild(del);
+            actions.appendChild(upIt);
+            actions.appendChild(downIt);
+            actions.appendChild(del);
+            li.appendChild(actions);
+
             ul.appendChild(li);
           }
           sec.appendChild(head);
-          sec.appendChild(oshiEdit);
           sec.appendChild(ul);
           frag.appendChild(sec);
         }
@@ -990,6 +1287,11 @@
     hasChannel: hasChannelAnywhere,
     hasChannelInList,
     updateListOshiText: updateChannelListOshiText,
+    renameList: renameChannelList,
+    updateListVisibility: updateChannelListVisibility,
+    deleteListCascade: deleteChannelListCascade,
+    deleteAllListsCascade: deleteAllChannelListsCascade,
+    appendListLikeRow: appendChannelListLike,
     DEFAULT_LIST_ID,
   };
 })();

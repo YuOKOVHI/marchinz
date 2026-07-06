@@ -45,4 +45,4 @@
 
 ## 1行サンプル
 
-- `20260506-190500-admin_a,2026-05-06 19:05,admin_a,admin_b,https://...,ユーザー,,abc123,#moderation,凍結,banned=trueに更新,利用規約違反の通報複数件,成功,OK,OK,対象ユーザーのみ,なし,banned=false,banned=true,https://...`
+- `20260506-190500-admin_a,2026-05-06 19:05,admin_a,admin_b,https://...,ユーザー,,abc123,#admin/reports,凍結,banned=trueに更新,利用規約違反の通報複数件,成功,OK,OK,対象ユーザーのみ,なし,banned=false,banned=true,https://...`

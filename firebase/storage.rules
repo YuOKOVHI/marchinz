@@ -29,8 +29,34 @@ service firebase.storage {
         && (request.auth.uid == userId || isPrivileged());
     }
 
+    // レガシー誤パス（ml_community）— 古いクライアント資産向け。新規は mll_community を使用
+    match /ml_community/{userId}/{fileName} {
+      allow read: if true;
+
+      allow write: if signedIn()
+        && request.resource.size < 6 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*')
+        && (request.auth.uid == userId || isPrivileged());
+
+      allow delete: if signedIn()
+        && (request.auth.uid == userId || isPrivileged());
+    }
+
     // Log日記の写真（クライアントは mll_event_diary_media/{uid}/... にアップロード）
     match /mll_event_diary_media/{userId}/{fileName} {
+      allow read: if signedIn();
+
+      allow write: if signedIn()
+        && request.resource.size < 8 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*')
+        && (request.auth.uid == userId || isPrivileged());
+
+      allow delete: if signedIn()
+        && (request.auth.uid == userId || isPrivileged());
+    }
+
+    // MarchinZ Moment の写真（mll_moment_media/{uid}/...）
+    match /mll_moment_media/{userId}/{fileName} {
       allow read: if signedIn();
 
       allow write: if signedIn()
@@ -49,7 +75,7 @@ service firebase.storage {
       allow write: if signedIn()
         && request.auth.uid == userId
         && request.resource.size < 8 * 1024 * 1024
-        && request.resource.contentType == 'image/jpeg'
+        && request.resource.contentType.matches('image/jpeg.*')
         && fileName in ['avatar.jpg', 'cover.jpg'];
 
       allow delete: if signedIn()

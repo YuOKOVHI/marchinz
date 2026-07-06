@@ -6,7 +6,8 @@
     "mll",
     "community",
     "profile",
-    "moderation",
+    "ugc",
+    "admin",
     "videos",
     "youtube",
     "webmagazine",
@@ -22,8 +23,10 @@
     events: "イベント",
     community: "コミュニティ",
     notes: "ノート",
+    moments: "モーメント",
     profile: "プロフィール",
-    moderation: "通報管理",
+    ugc: "UGC",
+    admin: "管理",
     videos: "大会動画",
     youtube: "YouTube",
     webmagazine: "メディア",
@@ -36,8 +39,179 @@
   };
 
   const publicBaseUrl = "https://marchinz.netlify.app/";
-  const defaultOgImage = `${publicBaseUrl}logo/marchinz-logo.png`;
-  const mllOgImage = `${publicBaseUrl}logo/mll-logo.png`;
+
+  /**
+   * LINE / X / Instagram / Facebook 等のアプリ内 WebView（Google OAuth 403 対策）
+   * @returns {boolean}
+   */
+  function detectInAppBrowser() {
+    const ua = String(navigator.userAgent || "");
+    if (!ua) return false;
+    if (/MicroMessenger/i.test(ua)) return true;
+    if (/\bLine\//i.test(ua)) return true;
+    if (/Instagram/i.test(ua)) return true;
+    if (/FBAN|FBAV|FB_IAB|FBIOS|FBSS|Facebook/i.test(ua)) return true;
+    if (/Twitter/i.test(ua)) return true;
+    if (/TikTok/i.test(ua)) return true;
+    if (/LinkedInApp/i.test(ua)) return true;
+    if (/Snapchat/i.test(ua)) return true;
+    const isIos = /iPhone|iPad|iPod/i.test(ua);
+    const isAndroid = /Android/i.test(ua);
+    if (isIos && /AppleWebKit/i.test(ua) && !/Safari/i.test(ua)) return true;
+    if (isAndroid && /; wv\)/i.test(ua)) return true;
+    return false;
+  }
+
+  const IN_APP_BROWSER_BANNER_TITLE = "ブラウザでの閲覧をおすすめします💡";
+  const IN_APP_BROWSER_BANNER_MESSAGE =
+    "ログインや登録する場合、URLをコピーして、ブラウザ開いてください。";
+  const IN_APP_BROWSER_BANNER_DISMISS_KEY = "mz_inapp_browser_banner_dismissed";
+
+  function setInAppBrowserBannerVisible(visible) {
+    document.documentElement.classList.toggle("mz-inapp-browser-banner-visible", Boolean(visible));
+  }
+
+  function dismissInAppBrowserBanner(banner) {
+    if (banner) banner.hidden = true;
+    setInAppBrowserBannerVisible(false);
+    try {
+      sessionStorage.setItem(IN_APP_BROWSER_BANNER_DISMISS_KEY, "1");
+    } catch {
+      //
+    }
+  }
+
+  /**
+   * LINE 等：MarchinZ のシェア URL に openExternalBrowser=1 を付与
+   * @param {string} urlStr
+   * @returns {string}
+   */
+  function withOpenExternalBrowserParam(urlStr) {
+    const raw = String(urlStr || "").trim();
+    if (!raw) return raw;
+    const beforeHash = raw.split("#")[0];
+    if (/(?:^|[?&])openExternalBrowser=1(?:&|$)/i.test(beforeHash)) return raw;
+    try {
+      const u = new URL(raw);
+      u.searchParams.set("openExternalBrowser", "1");
+      return u.toString();
+    } catch {
+      const hashIdx = raw.indexOf("#");
+      const base = hashIdx >= 0 ? raw.slice(0, hashIdx) : raw;
+      const hash = hashIdx >= 0 ? raw.slice(hashIdx) : "";
+      const sep = base.includes("?") ? "&" : "?";
+      return `${base}${sep}openExternalBrowser=1${hash}`;
+    }
+  }
+
+  function initInAppBrowserBanner() {
+    if (!detectInAppBrowser()) {
+      setInAppBrowserBannerVisible(false);
+      return false;
+    }
+    try {
+      if (sessionStorage.getItem(IN_APP_BROWSER_BANNER_DISMISS_KEY) === "1") {
+        setInAppBrowserBannerVisible(false);
+        return true;
+      }
+    } catch {
+      //
+    }
+
+    const staleOverlay = document.getElementById("mz-inapp-browser-overlay");
+    if (staleOverlay) staleOverlay.remove();
+    document.documentElement.classList.remove("mz-inapp-browser-blocked");
+
+    let banner = document.getElementById("mz-inapp-browser-banner");
+    if (!banner) {
+      banner = document.createElement("aside");
+      banner.id = "mz-inapp-browser-banner";
+      banner.className = "mz-inapp-browser-banner";
+      banner.setAttribute("role", "status");
+      banner.setAttribute("aria-live", "polite");
+
+      const inner = document.createElement("div");
+      inner.className = "mz-inapp-browser-banner__inner";
+
+      const textWrap = document.createElement("div");
+      textWrap.className = "mz-inapp-browser-banner__text";
+
+      const title = document.createElement("p");
+      title.className = "mz-inapp-browser-banner__title";
+      title.textContent = IN_APP_BROWSER_BANNER_TITLE;
+
+      const desc = document.createElement("p");
+      desc.className = "mz-inapp-browser-banner__desc";
+      desc.textContent = IN_APP_BROWSER_BANNER_MESSAGE;
+
+      textWrap.append(title, desc);
+
+      const actions = document.createElement("div");
+      actions.className = "mz-inapp-browser-banner__actions";
+
+      const copyBtn = document.createElement("button");
+      copyBtn.type = "button";
+      copyBtn.className = "mz-inapp-browser-banner__copy";
+      copyBtn.textContent = "URLをコピー";
+      copyBtn.addEventListener("click", () => {
+        const url = withOpenExternalBrowserParam(String(location.href || publicBaseUrl).trim());
+        const done = () =>
+          window.alert("URLをコピーしました。Safari または Chrome のアドレス欄に貼り付けて開いてください。");
+        if (navigator.clipboard?.writeText) {
+          void navigator.clipboard.writeText(url).then(done).catch(() => window.prompt("URLをコピー", url));
+        } else {
+          window.prompt("次のURLをコピーして Safari / Chrome で開いてください", url);
+        }
+      });
+
+      const dismissBtn = document.createElement("button");
+      dismissBtn.type = "button";
+      dismissBtn.className = "mz-inapp-browser-banner__dismiss";
+      dismissBtn.textContent = "とじる";
+      dismissBtn.setAttribute("aria-label", "案内をとじる");
+      dismissBtn.addEventListener("click", () => {
+        dismissInAppBrowserBanner(banner);
+      });
+
+      actions.append(copyBtn, dismissBtn);
+      inner.append(textWrap, actions);
+      banner.appendChild(inner);
+      document.body.appendChild(banner);
+    }
+    banner.hidden = false;
+    const titleEl = banner.querySelector(".mz-inapp-browser-banner__title");
+    const descEl = banner.querySelector(".mz-inapp-browser-banner__desc");
+    if (titleEl) titleEl.textContent = IN_APP_BROWSER_BANNER_TITLE;
+    if (descEl) descEl.textContent = IN_APP_BROWSER_BANNER_MESSAGE;
+    setInAppBrowserBannerVisible(true);
+    return true;
+  }
+
+  const initInAppBrowserBlock = initInAppBrowserBanner;
+
+  window.MarchinZInAppBrowser = {
+    detect: detectInAppBrowser,
+    isBlocked: () => detectInAppBrowser(),
+    init: initInAppBrowserBanner,
+    initInAppBrowserBanner,
+  };
+
+  window.MarchinZUrlShare = {
+    withOpenExternalBrowserParam,
+  };
+
+  initInAppBrowserBanner();
+
+  const mzAssetVersion =
+    typeof document !== "undefined"
+      ? String(document.documentElement.getAttribute("data-mz-version") || "").trim()
+      : "";
+  /** URL シェア用 OGP（全ページ共通・`ogp-card.png` 1200×630） */
+  const siteOgImage = `${publicBaseUrl}ogp-card.png${
+    mzAssetVersion ? `?v=${encodeURIComponent(mzAssetVersion)}` : ""
+  }`;
+  const defaultOgImage = siteOgImage;
+  const mllOgImage = siteOgImage;
 
   /** TOP（#top）検索・ブラウザタブ用（OG の mll と揃える） */
   const HOME_SEO_TITLE =
@@ -75,15 +249,22 @@
         "マーチンズ/MarchinZ。MarchinZ Note（イベントごとの公開ノート）。みんなの更新が新しい順に並びます。",
       image: mllOgImage,
     },
+    moments: {
+      title: "MarchinZ/マーチンズ — モーメント",
+      description:
+        "マーチンズ/MarchinZ。MarchinZ Moment（マーチングの「今」を気軽に共有）。みんなの更新が新しい順に並びます。",
+      image: mllOgImage,
+    },
     profile: {
       title: "MarchinZ/マーチンズ — プロフィール",
       description:
         "マーチンズ/MarchinZ。MarchinZ Log・大会動画マイリスト・YouTube マイリスト・MarchinZ Noteなど、登録ユーザーの公開プロフィールです。",
       image: mllOgImage,
     },
-    moderation: {
-      title: "MarchinZ/マーチンズ — 通報管理",
-      description: "マーチンズ/MarchinZ。管理者向けの通報確認とモデレーション操作ページです。",
+    admin: {
+      title: "MarchinZ/マーチンズ — 管理（管理者）",
+      description:
+        "マーチンズ/MarchinZ。管理者向けの通報確認・モデレーションと、サイト全体お知らせの配信です。",
       image: mllOgImage,
     },
     youtube: {
@@ -144,7 +325,8 @@
     mll: document.getElementById("page-mll"),
     community: document.getElementById("page-community"),
     profile: document.getElementById("page-profile"),
-    moderation: document.getElementById("page-moderation"),
+    ugc: document.getElementById("page-ugc"),
+    admin: document.getElementById("page-admin"),
     videos: document.getElementById("page-videos"),
     youtube: document.getElementById("page-youtube"),
     webmagazine: document.getElementById("page-webmagazine"),
@@ -285,6 +467,27 @@
   const navLinks = document.querySelectorAll(
     ".site-nav a[data-page], .footer-nav a[data-page], .site-mobile-drawer-nav a[data-page]",
   );
+
+  /** ヘッダー／フッター／ドロワー：同一タブでハッシュ遷移（意図しない新規タブを防ぐ） */
+  function setupInternalNavLinkClicks() {
+    navLinks.forEach((a) => {
+      if (!(a instanceof HTMLAnchorElement)) return;
+      if (a.dataset.internalNavWired === "1") return;
+      a.dataset.internalNavWired = "1";
+      a.removeAttribute("target");
+      a.addEventListener("click", (ev) => {
+        const href = String(a.getAttribute("href") || "").trim();
+        if (!href.startsWith("#")) return;
+        ev.preventDefault();
+        if (location.hash !== href) {
+          location.hash = href;
+        } else {
+          syncFromHash();
+        }
+        window.scrollTo({ top: 0, behavior: "auto" });
+      });
+    });
+  }
   const metaDescription = document.getElementById("meta-description");
   const metaOgTitle = document.getElementById("meta-og-title");
   const metaOgDescription = document.getElementById("meta-og-description");
@@ -314,11 +517,23 @@
   }
 
   /** @readonly */
-  const COMMUNITY_HUB_PANEL_SUFFIXES = ["events", "notes", "board"];
+  const COMMUNITY_HUB_PANEL_SUFFIXES = ["events", "moments", "board", "notes"];
 
   function normalizeCommunityTab(tab) {
     const x = String(tab ?? "events").trim().toLowerCase();
     return COMMUNITY_HUB_PANEL_SUFFIXES.includes(x) ? x : "events";
+  }
+
+  /** @type {{ pageId: string, communityTab: string|null }} */
+  let mzLastRoute = { pageId: "", communityTab: null };
+
+  function notifyRouteLeave(prev) {
+    if (prev.pageId === "community" && prev.communityTab === "board") {
+      window.MarchinZCommunityComposeDraft?.onLeaveBoard?.();
+    }
+    if (prev.pageId === "community" && prev.communityTab === "events") {
+      window.MarchinZCalendarEventDraft?.onLeaveEvents?.();
+    }
   }
 
   /** @param {string} tab */
@@ -333,6 +548,11 @@
       const panel = document.getElementById(`community-hub-panel-${key}`);
       if (panel) panel.hidden = key !== t;
     });
+    if (t === "events") {
+      window.MarchinZResetCalendarKindFilter?.();
+    } else if (t === "board") {
+      window.MarchinZResetCommunityBoardFilter?.();
+    }
   }
 
   function setupCommunityHubTabButtons() {
@@ -343,9 +563,11 @@
         const nextHash =
           tab === "events"
             ? "#community/events"
-            : tab === "notes"
-              ? "#community/notes"
-              : "#community/board";
+            : tab === "moments"
+              ? "#community/moments"
+              : tab === "board"
+                ? "#community/board"
+                : "#community/notes";
         if (location.hash !== nextHash) {
           location.hash = nextHash;
         } else {
@@ -356,12 +578,32 @@
           ) {
             void window.MarchinZMlnPublicFeed.refresh();
           }
+          if (
+            normalizeCommunityTab(tab) === "moments" &&
+            typeof window.MarchinZMomentFeed?.refresh === "function"
+          ) {
+            void window.MarchinZMomentFeed.refresh();
+          }
         }
       });
     });
   }
 
-  /** @returns {{ pageId: string, communityTab: string|null }} */
+  const UGC_KIND_SUFFIXES = [
+    "signup",
+    "event",
+    "moment",
+    "board",
+    "board_reply",
+    "note",
+    "mll_log",
+    "video_mylist",
+    "yt_mylist",
+    "video_search",
+    "search_share",
+  ];
+
+  /** @returns {{ pageId: string, communityTab: string|null, adminTab?: string|null, ugcKind?: string|null }} */
   function routeFromHash() {
     let h = hashRouteBase();
     if (REMOVED_HASH_TO_VIDEOS.has(h)) {
@@ -372,23 +614,72 @@
       h = "ops";
       history.replaceState(null, "", `${location.pathname}${location.search}#ops`);
     }
-    if (h === "moderation" && !isAdminNow()) {
-      h = "mll";
-      history.replaceState(null, "", `${location.pathname}${location.search}#top`);
+    if (h === "moderation") {
+      if (!isAdminNow()) {
+        history.replaceState(null, "", `${location.pathname}${location.search}#top`);
+        return { pageId: "mll", communityTab: null, adminTab: null };
+      }
+      history.replaceState(null, "", `${location.pathname}${location.search}#admin/reports`);
+      return { pageId: "admin", communityTab: null, adminTab: "reports" };
     }
-    if (h === "top") return { pageId: "mll", communityTab: null };
-    if (h === "events") return { pageId: "community", communityTab: "events" };
-    if (h === "notes") return { pageId: "community", communityTab: "notes" };
+    if (h === "ugc" || h.startsWith("ugc/")) {
+      if (!isAdminNow()) {
+        history.replaceState(null, "", `${location.pathname}${location.search}#top`);
+        return { pageId: "mll", communityTab: null, adminTab: null, ugcKind: null };
+      }
+      if (h === "ugc") {
+        history.replaceState(null, "", `${location.pathname}${location.search}#ugc/signup`);
+        return { pageId: "ugc", communityTab: null, adminTab: null, ugcKind: "signup" };
+      }
+      const seg = h.slice("ugc/".length).trim().toLowerCase();
+      const kind = UGC_KIND_SUFFIXES.includes(seg) ? seg : "signup";
+      if (seg && !UGC_KIND_SUFFIXES.includes(seg)) {
+        history.replaceState(null, "", `${location.pathname}${location.search}#ugc/signup`);
+      }
+      return { pageId: "ugc", communityTab: null, adminTab: null, ugcKind: kind };
+    }
+    if (h === "admin/ugc") {
+      if (!isAdminNow()) {
+        history.replaceState(null, "", `${location.pathname}${location.search}#top`);
+        return { pageId: "mll", communityTab: null, adminTab: null, ugcKind: null };
+      }
+      history.replaceState(null, "", `${location.pathname}${location.search}#ugc/signup`);
+      return { pageId: "ugc", communityTab: null, adminTab: null, ugcKind: "signup" };
+    }
+    if (h === "admin" || h.startsWith("admin/")) {
+      if (!isAdminNow()) {
+        history.replaceState(null, "", `${location.pathname}${location.search}#top`);
+        return { pageId: "mll", communityTab: null, adminTab: null, ugcKind: null };
+      }
+      if (h === "admin") {
+        history.replaceState(null, "", `${location.pathname}${location.search}#admin/reports`);
+        return { pageId: "admin", communityTab: null, adminTab: "reports", ugcKind: null };
+      }
+      let adminTab = "reports";
+      const seg = h.slice("admin/".length).trim().toLowerCase();
+      if (seg === "announce") adminTab = "announce";
+      else if (seg === "trash") adminTab = "trash";
+      else if (seg === "banned") adminTab = "banned";
+      else if (seg !== "reports" && seg !== "") {
+        history.replaceState(null, "", `${location.pathname}${location.search}#admin/reports`);
+        adminTab = "reports";
+      }
+      return { pageId: "admin", communityTab: null, adminTab, ugcKind: null };
+    }
+    if (h === "top") return { pageId: "mll", communityTab: null, adminTab: null };
+    if (h === "events") return { pageId: "community", communityTab: "events", adminTab: null };
+    if (h === "notes") return { pageId: "community", communityTab: "notes", adminTab: null };
+    if (h === "moments") return { pageId: "community", communityTab: "moments", adminTab: null };
     if (h === "community" || h.startsWith("community/")) {
       let tab = "events";
       if (h.startsWith("community/")) {
         const seg = h.slice("community/".length).trim().toLowerCase();
         if (COMMUNITY_HUB_PANEL_SUFFIXES.includes(seg)) tab = seg;
       }
-      return { pageId: "community", communityTab: tab };
+      return { pageId: "community", communityTab: tab, adminTab: null };
     }
-    if (pageIds.includes(h)) return { pageId: h, communityTab: null };
-    return { pageId: "mll", communityTab: null };
+    if (pageIds.includes(h)) return { pageId: h, communityTab: null, adminTab: null };
+    return { pageId: "mll", communityTab: null, adminTab: null };
   }
 
   function pageFromHash() {
@@ -397,12 +688,14 @@
 
   /**
    * @param {string} id
-   * @param {{ communityTab?: string|null }} [routeOpts]
+   * @param {{ communityTab?: string|null, adminTab?: string|null, ugcKind?: string|null }} [routeOpts]
    */
   function showPage(id, routeOpts = {}) {
-    if (id === "moderation" && !isAdminNow()) {
+    if ((id === "admin" || id === "ugc") && !isAdminNow()) {
       id = "mll";
     }
+    const commTab = id === "community" ? normalizeCommunityTab(routeOpts.communityTab ?? "events") : null;
+    notifyRouteLeave(mzLastRoute);
     pageIds.forEach((key) => {
       const el = pages[key];
       if (el) el.hidden = key !== id;
@@ -414,7 +707,6 @@
         window.__marchinzCloseVideosBrowseOverlay();
       }
     }
-    const commTab = id === "community" ? normalizeCommunityTab(routeOpts.communityTab ?? "events") : null;
     navLinks.forEach((a) => {
       const sub = String(a.dataset.communitySubtab || "")
         .trim()
@@ -441,9 +733,35 @@
     } else if (id === "community") {
       const t = normalizeCommunityTab(routeOpts.communityTab ?? "events");
       const piece =
-        t === "events" ? titles.events : t === "notes" ? titles.notes : titles.community;
+        t === "events"
+          ? titles.events
+          : t === "moments"
+            ? titles.moments
+            : t === "notes"
+              ? titles.notes
+              : titles.community;
       document.title = `MarchinZ/マーチンズ — ${piece}`;
       activateCommunityHubTab(t);
+    } else if (id === "ugc") {
+      document.title = `MarchinZ/マーチンズ — ${titles.ugc}`;
+    } else if (id === "admin") {
+      const rawAt = String(routeOpts.adminTab || "").trim().toLowerCase();
+      const at =
+        rawAt === "announce"
+          ? "announce"
+          : rawAt === "trash"
+            ? "trash"
+            : rawAt === "banned"
+              ? "banned"
+              : "reports";
+      document.title =
+        at === "announce"
+          ? `MarchinZ/マーチンズ — ${titles.admin}（サイトお知らせ）`
+          : at === "trash"
+            ? `MarchinZ/マーチンズ — ${titles.admin}（ゴミ箱）`
+            : at === "banned"
+              ? `MarchinZ/マーチンズ — ${titles.admin}（凍結アカウント）`
+              : `MarchinZ/マーチンズ — ${titles.admin}（通報）`;
     } else {
       document.title = `MarchinZ/マーチンズ — ${titles[id] || titles.mll}`;
     }
@@ -454,7 +772,11 @@
       id === "login" ||
       id === "signup" ||
       id === "profile" ||
-      (id === "community" && normalizeCommunityTab(routeOpts.communityTab ?? "events") === "notes")
+      id === "ugc" ||
+      id === "admin" ||
+      (id === "community" &&
+        (normalizeCommunityTab(routeOpts.communityTab ?? "events") === "notes" ||
+          normalizeCommunityTab(routeOpts.communityTab ?? "events") === "moments"))
     ) {
       requestAnimationFrame(() => {
         window.scrollTo({ top: 0, behavior: "auto" });
@@ -471,6 +793,12 @@
         window.MarchinZVideoMylist.renderList();
       }
     }
+    mzLastRoute = { pageId: id, communityTab: commTab };
+    if (id === "community" && commTab === "board") {
+      window.MarchinZCommunityComposeDraft?.onEnterBoard?.();
+    } else if (id === "community" && commTab === "events") {
+      window.MarchinZCalendarEventDraft?.onEnterEvents?.();
+    }
     if (id === "youtube") {
       if (typeof window.__marchinzResetYoutubeCategoryTabs === "function") {
         window.__marchinzResetYoutubeCategoryTabs();
@@ -485,12 +813,99 @@
       const firstJump = document.querySelector(".media-jump-tab");
       if (firstJump) setMediaJumpTabActive(firstJump);
     }
-    if (
-      id === "community" &&
-      normalizeCommunityTab(routeOpts.communityTab ?? "events") === "notes" &&
-      typeof window.MarchinZMlnPublicFeed?.refresh === "function"
-    ) {
-      void window.MarchinZMlnPublicFeed.refresh();
+    if (id === "community" && normalizeCommunityTab(routeOpts.communityTab ?? "events") === "notes") {
+      if (typeof window.MarchinZMlnPublicFeed?.ensureInitialLoad === "function") {
+        void window.MarchinZMlnPublicFeed.ensureInitialLoad();
+      } else if (typeof window.MarchinZMlnPublicFeed?.refresh === "function") {
+        void window.MarchinZMlnPublicFeed.refresh();
+      }
+    }
+    if (id === "community" && normalizeCommunityTab(routeOpts.communityTab ?? "events") === "moments") {
+      if (typeof window.MarchinZMomentFeed?.ensureInitialLoad === "function") {
+        void window.MarchinZMomentFeed.ensureInitialLoad();
+      } else if (typeof window.MarchinZMomentFeed?.refresh === "function") {
+        void window.MarchinZMomentFeed.refresh();
+      }
+    }
+    if (id === "community") {
+      const ct = normalizeCommunityTab(routeOpts.communityTab ?? "events");
+      if (ct === "events" || ct === "board") {
+        try {
+          void window.MarchinZCommunityUpdates?.refresh?.(ct === "board" ? "board" : "event");
+        } catch {
+          //
+        }
+      }
+    }
+    if (id === "ugc") {
+      const kind = UGC_KIND_SUFFIXES.includes(String(routeOpts.ugcKind || ""))
+        ? String(routeOpts.ugcKind)
+        : "signup";
+      try {
+        window.MarchinZAdminUgc?.setKind?.(kind);
+        void window.MarchinZAdminUgc?.refreshBadges?.();
+        void window.MarchinZAdminUgc?.refreshNavSignupCount?.();
+        void window.MarchinZAdminUgc?.refresh?.();
+      } catch {
+        //
+      }
+    }
+    if (id === "admin") {
+      try {
+        void window.MarchinZAdminUgc?.refreshBadges?.();
+        void window.MarchinZAdminUgc?.refreshNavSignupCount?.();
+      } catch {
+        //
+      }
+      const rawAt = String(routeOpts.adminTab || "").trim().toLowerCase();
+      const at =
+        rawAt === "announce"
+          ? "announce"
+          : rawAt === "trash"
+            ? "trash"
+            : rawAt === "banned"
+              ? "banned"
+              : "reports";
+      try {
+        window.MarchinZAdminShell?.setTab?.(at);
+      } catch {
+        //
+      }
+    }
+
+    try {
+      window.MarchinZCoreEngagement?.stop();
+    } catch {
+      //
+    }
+    try {
+      window.MarchinZTrackRouteView?.(id, routeOpts);
+    } catch {
+      //
+    }
+    let coreSurface = "";
+    if (id === "videos") {
+      coreSurface = "videos_browse";
+    } else if (id === "community") {
+      coreSurface = "community_browse";
+    } else if (id === "media") {
+      coreSurface = "media_browse";
+    } else if (id === "profile") {
+      const full = location.hash.replace(/^#/, "");
+      const qi = full.indexOf("?");
+      if (qi !== -1) {
+        const tab = new URLSearchParams(full.slice(qi + 1)).get("tab");
+        if (String(tab || "").trim().toLowerCase() === "logdiary") {
+          coreSurface = "log_diary";
+        }
+      }
+    }
+    if (coreSurface) {
+      try {
+        window.MarchinZCoreEngagement?.start(coreSurface);
+      } catch {
+        //
+      }
     }
   }
 
@@ -501,7 +916,7 @@
 
   /**
    * @param {string} id
-   * @param {{ communityTab?: string|null }} [routeOpts]
+   * @param {{ communityTab?: string|null, adminTab?: string|null, ugcKind?: string|null }} [routeOpts]
    */
   function updateMetaForPage(id, routeOpts = {}) {
     let ogKey = id;
@@ -509,6 +924,7 @@
       const t = normalizeCommunityTab(routeOpts.communityTab ?? "events");
       if (t === "events") ogKey = "events";
       else if (t === "notes") ogKey = "notes";
+      else if (t === "moments") ogKey = "moments";
       else ogKey = "community";
     }
     const og = ogByPage[ogKey] || ogByPage.videos;
@@ -521,9 +937,29 @@
       url =
         t === "events"
           ? `${publicBaseUrl}#community/events`
-          : t === "notes"
-            ? `${publicBaseUrl}#community/notes`
-            : `${publicBaseUrl}#community/board`;
+          : t === "moments"
+            ? `${publicBaseUrl}#community/moments`
+            : t === "board"
+              ? `${publicBaseUrl}#community/board`
+              : `${publicBaseUrl}#community/notes`;
+    }
+    if (id === "ugc") {
+      const kind = UGC_KIND_SUFFIXES.includes(String(routeOpts.ugcKind || ""))
+        ? String(routeOpts.ugcKind)
+        : "signup";
+      url = `${publicBaseUrl}#ugc/${kind}`;
+    }
+    if (id === "admin") {
+      const rawAt = String(routeOpts.adminTab || "").trim().toLowerCase();
+      const at =
+        rawAt === "announce"
+          ? "announce"
+          : rawAt === "trash"
+            ? "trash"
+            : rawAt === "banned"
+              ? "banned"
+              : "reports";
+      url = `${publicBaseUrl}#admin/${at}`;
     }
     if (id === "profile") {
       const h = location.hash.replace(/^#/, "").trim();
@@ -544,7 +980,11 @@
   /** プロフィールの `tab=` 変更など、ハッシュだけ変わったあとに OG / Twitter の URL を揃える */
   window.MarchinZRefreshSeoFromLocation = function marchinZRefreshSeoFromLocation() {
     const r = routeFromHash();
-    updateMetaForPage(r.pageId, { communityTab: r.communityTab });
+    updateMetaForPage(r.pageId, {
+      communityTab: r.communityTab,
+      adminTab: r.adminTab,
+      ugcKind: r.ugcKind,
+    });
   };
 
   function syncFromHash() {
@@ -552,7 +992,11 @@
       history.replaceState(null, "", `${location.pathname}${location.search}#top`);
     }
     const r = routeFromHash();
-    showPage(r.pageId, { communityTab: r.communityTab });
+    showPage(r.pageId, {
+      communityTab: r.communityTab,
+      adminTab: r.adminTab,
+      ugcKind: r.ugcKind,
+    });
     if (typeof window.MarchinZUserProfile?.onRouteShow === "function") {
       window.MarchinZUserProfile.onRouteShow(r.pageId);
     }
@@ -609,7 +1053,7 @@
 
   async function setupYoutubePage() {
     /** 掲載リスト表記用。データ更新のたびに yyyymmdd へ合わせて更新する。 */
-    const YOUTUBE_LIST_DATE_YMD = "20260501";
+    const YOUTUBE_LIST_DATE_YMD = "20260520";
     const list = document.getElementById("youtube-channel-list");
     const moreBtn = document.getElementById("youtube-more-btn");
     const visibleCountEl = document.getElementById("youtube-visible-count");
@@ -2298,6 +2742,7 @@
     let currentCategory = "all";
     let currentSort = "new";
     let visibleCount = 5;
+    let youtubeChannelSearch = "";
     let currentFiltered = [];
     const debugYoutube = new URLSearchParams(location.search).get("debugYoutube") === "1";
     const oembedTitleCache = {};
@@ -2724,7 +3169,14 @@
             mylistBtn.textContent = "追加済み";
           }
         } catch (e) {
-          window.alert(String(e?.message || e || "エラーが発生しました。"));
+          const code = String(e?.code || "");
+          if (code === "permission-denied") {
+            window.alert(
+              "マイリストへの保存が拒否されました。\nFirebase の Firestore ルール（firebase/firestore.rules）を本番プロジェクトにデプロイしてから、ページを再読み込みしてください。",
+            );
+          } else {
+            window.alert(String(e?.message || e || "エラーが発生しました。"));
+          }
         } finally {
           if (mylistBtn.textContent === "マイリストに追加") {
             mylistBtn.disabled = false;
@@ -2769,7 +3221,12 @@
         currentCategory === "all"
           ? [...channelsWithOrder]
           : channelsWithOrder.filter((x) => x.category === currentCategory);
-      const sorted = base.sort((a, b) => {
+      const needle = youtubeChannelSearch.trim().toLowerCase();
+      const scoped =
+        needle.length > 0
+          ? base.filter((x) => String(x.name || "").toLowerCase().includes(needle))
+          : base;
+      const sorted = scoped.sort((a, b) => {
         if (currentSort === "name") {
           return typeof MarchinZSort !== "undefined" && MarchinZSort && MarchinZSort.compare
             ? MarchinZSort.compare(a.name, b.name)
@@ -2786,12 +3243,19 @@
       if (total === 1) list.classList.add("youtube-channel-list--total-1");
       else if (total === 2) list.classList.add("youtube-channel-list--total-2");
 
-      const pageRows = sorted.slice(0, visibleCount);
-      const moreAvailable = total > 0 && visibleCount < total;
-      const peekRow = moreAvailable ? sorted[visibleCount] : null;
+      let pageRows = sorted.slice(0, Math.min(visibleCount, total));
+      let moreAvailable = total > 0 && pageRows.length < total;
+      let peekRow = moreAvailable ? sorted[pageRows.length] : null;
       const gridCols = getYoutubeGridColumnCount();
-      const rem = pageRows.length % gridCols;
-      const emptySlots = rem === 0 ? 0 : gridCols - rem;
+      let rem = pageRows.length % gridCols;
+      let emptySlots = rem === 0 ? 0 : gridCols - rem;
+      if (moreAvailable && total - pageRows.length === 1) {
+        pageRows = sorted.slice(0, total);
+        moreAvailable = false;
+        peekRow = null;
+        rem = pageRows.length % gridCols;
+        emptySlots = rem === 0 ? 0 : gridCols - rem;
+      }
       const useInlinePeek = Boolean(moreAvailable && peekRow && emptySlots > 0 && moreBtn);
 
       if (moreBtn && youtubeMoreWrap && list.contains(moreBtn)) {
@@ -2813,6 +3277,7 @@
         }
         moreBtn.textContent = "もっと見る";
         moreBtn.hidden = !moreAvailable;
+        moreBtn.disabled = !moreAvailable;
         moreBtn.title = moreAvailable ? "さらにチャンネルを表示します" : "";
       }
       if (youtubeMoreWrap) {
@@ -2832,9 +3297,10 @@
       }
       const publishedScopeBtn = document.getElementById("youtube-published-list-open");
       if (publishedScopeBtn) {
+        const publishedTotal = base.length;
         publishedScopeBtn.setAttribute(
           "aria-label",
-          `掲載チャンネル名一覧を開く（この区分 ${currentFiltered.length}チャンネル）`,
+          `掲載チャンネル名一覧を開く（${publishedTotal}チャンネル）`,
         );
       }
     }
@@ -2869,8 +3335,23 @@
 
     if (moreBtn) {
       moreBtn.addEventListener("click", () => {
-        visibleCount += 10;
+        const cap = currentFiltered.length;
+        visibleCount = Math.min(visibleCount + 10, cap > 0 ? cap : visibleCount + 10);
         renderYoutubeCards();
+      });
+    }
+
+    const ytSearchEl = document.getElementById("youtube-channel-search");
+    if (ytSearchEl && !ytSearchEl.dataset.ytSearchWired) {
+      ytSearchEl.dataset.ytSearchWired = "1";
+      ytSearchEl.addEventListener("input", () => {
+        youtubeChannelSearch = String(ytSearchEl.value || "");
+        visibleCount = 5;
+        setYoutubeResultsLoading(true);
+        requestAnimationFrame(() => {
+          renderYoutubeCards();
+          setYoutubeResultsLoading(false);
+        });
       });
     }
 
@@ -2923,6 +3404,9 @@
       currentCategory = "all";
       currentSort = "new";
       visibleCount = 5;
+      youtubeChannelSearch = "";
+      const ytSearchReset = document.getElementById("youtube-channel-search");
+      if (ytSearchReset) ytSearchReset.value = "";
       tabs.forEach((btn) => {
         const cat = btn.getAttribute("data-yt-category") || "all";
         btn.setAttribute("aria-selected", cat === "all" ? "true" : "false");
@@ -2993,6 +3477,7 @@
     syncFromHash();
   });
   setupCommunityHubTabButtons();
+  setupInternalNavLinkClicks();
   enforceAdminOnlyVisibility();
   updateSiteBrandAuthEntryLinks();
   /** `#profile?uid=…&tab=logdiary&event=…` のクエリ（user-profile-page / event-log-diary 用） */

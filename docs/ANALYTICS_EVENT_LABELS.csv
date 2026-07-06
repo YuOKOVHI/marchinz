@@ -1,6 +1,10 @@
 event_name,display_label,primary_breakdown_1,primary_breakdown_2
 login_start,ログイン開始（Google）,entry,
-login_success,ログイン成功,admin,
+login_success,ログイン成功（実サインイン時のみ）,admin,
+login_action,ログインアクション（実サインイン時のみ）,method|auth_flow,admin
+mz_route_view,仮想ページ遷移（SPA）,page_id,community_tab
+mz_core_engagement_start,コア画面エンゲージ開始,surface,
+mz_core_engagement_pulse,コア画面エンゲージパルス（30秒）,surface,pulse_index
 search_run,動画検索実行,tab,has_team|has_event|has_free
 mylist_add,マイリスト追加,target,list_id
 share_click,シェア操作,kind,target

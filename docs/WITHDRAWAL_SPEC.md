@@ -24,9 +24,11 @@
    - `video_bookmarks`, `channel_bookmarks`, `video_lists`, `channel_lists`, `event_log_diaries`, **`notifications`**
 3. **Firestore — `mll_logs`** で `user_id == uid` のドキュメントをバッチ削除
 4. **Firestore — `mll_profiles/{uid}` ルート**
-   - `withdrawn: true`, `display_name: "退会ユーザー"`, `avatar_url` / `cover_image_url` を空、`withdrawn_at` / `updated_at` を設定
-   - **ルールの `keys().hasOnly(allowlist)` を満たすため**、既存ドキュメントに含まれる **許容フィールド以外は `FieldValue.delete()` で削除**（過去バージョンや手編集で混入した未知フィールド対策）
+   - 既に `withdrawn: true` かつ `display_name: "退会ユーザー"` の場合は **ルート再書き込みをスキップ**（前回 Auth 削除のみ失敗した再試行用）
+   - 途中失敗で `withdrawn` だけ立っている／表示名が未マスクの場合は **ルートを再 `set`**
+   - 未退会のときのみ **allowlist 内のフィールドのみ**で `set` 全置換（`withdrawn: true`, `display_name: "退会ユーザー"`, 画像 URL 空 等）
    - **`created_at` / `marchinz_public_id` / 凍結系（`banned` 等）は維持**（運用・監査のため）
+   - ルール `mllProfileSelfWithdrawOk` は **削除キーを `affectedKeys` で検証しない**（`request.resource.data.keys()` のみ検証）
 5. **Firebase Authentication — `currentUser.delete()`**
    - 既に削除済み（`auth/user-not-found`）は成功扱い
 

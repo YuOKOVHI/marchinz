@@ -17,8 +17,11 @@
 
   /** @param {import("firebase").auth.User|null|undefined} user */
   function actorDisplayName(user) {
+    const nick = String(window.MLL_AUTH?.getDisplayName?.() || "").trim();
+    if (nick) return nick.slice(0, 120);
     return (
-      String(user?.user_metadata?.full_name || user?.user_metadata?.name || "ユーザー").trim().slice(0, 120) || "ユーザー"
+      String(user?.user_metadata?.full_name || user?.user_metadata?.name || "ユーザー").trim().slice(0, 120) ||
+      "ユーザー"
     );
   }
 

@@ -1,0 +1,1085 @@
+# MarchinZ カバー切り抜き — Gemini共有用（完全版）
+生成元: 010_MarchinZ / data-mz-version=1.24.24
+注意: pointerdown リスナー・#mz-crop-dialog 背面閉じリスナーは現行コードに存在しません。
+
+
+================================================================================
+## auth.js — DOM取得（profileDialog, inputAvatar/Cover）
+================================================================================
+
+```javascript
+  const profileDialog = document.getElementById("mz-profile-dialog");
+  const settingsDialog = document.getElementById("mz-settings-dialog");
+  const withdrawDoneDialog = document.getElementById("mz-withdraw-done-dialog");
+
+  const btnLogout = document.getElementById("btn-logout");
+  const profileForm = document.getElementById("profile-form");
+  const inputDisplayName = document.getElementById("profile-display-name");
+  const inputAvatarFile = document.getElementById("profile-avatar-file");
+  const inputCoverFile = document.getElementById("profile-cover-file");
+```
+
+
+================================================================================
+## auth.js — click / keydown / profileDialog overlay click
+================================================================================
+
+```javascript
+  document.addEventListener("click", () => {
+    closeAccountDropdown();
+  });
+
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") {
+      if (legalGateBlocking) {
+        ev.preventDefault();
+        return;
+      }
+      /* クロップ中の Esc 閉じは無効（背面プロフィールモーダルへのバブリング・誤閉じ防止） */
+      // if (cropDialog && !cropDialog.hidden) {
+      //   ev.preventDefault();
+      //   closeCropDialog(null);
+      //   return;
+      // }
+      closeAccountDropdown();
+      closeProfileDialog();
+      closeSettingsDialog();
+      closeWithdrawDoneDialog();
+    }
+  });
+
+  if (userAccountDropdown) {
+    userAccountDropdown.addEventListener("click", (ev) => ev.stopPropagation());
+  }
+
+  [profileDialog, settingsDialog, withdrawDoneDialog].forEach((overlay) => {
+    if (!overlay) return;
+    overlay.addEventListener("click", (ev) => {
+      if (cropDialog && !cropDialog.hidden) return;
+      if (ev.target === overlay) {
+        if (overlay === profileDialog) closeProfileDialog();
+        if (overlay === settingsDialog) closeSettingsDialog();
+        if (overlay === withdrawDoneDialog) closeWithdrawDoneDialog();
+      }
+    });
+  });
+```
+
+
+================================================================================
+## auth.js — profileForm submit リスナー全体
+================================================================================
+
+```javascript
+  if (profileForm) {
+    profileForm.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      if (!currentUser) return;
+      if (legalGateBlocking) return;
+      if (currentProfileWithdrawn) return;
+      const profileSaveBtn = profileForm.querySelector('button[type="submit"]');
+      const profileNameError = document.getElementById("profile-error-display-name");
+      const setProfileError = (el, message) => {
+        if (!(el instanceof HTMLElement)) return;
+        el.textContent = String(message || "");
+        el.hidden = !message;
+      };
+      const profileErrorPrefecture = document.getElementById("profile-error-prefecture");
+      const profileErrorGender = document.getElementById("profile-error-gender");
+      const profileErrorBirthdate = document.getElementById("profile-error-birthdate");
+      const profileErrorAttrs = document.getElementById("profile-error-attributes");
+      setProfileError(profileNameError, "");
+      setProfileError(profileErrorPrefecture, "");
+      setProfileError(profileErrorGender, "");
+      setProfileError(profileErrorBirthdate, "");
+      setProfileError(profileErrorAttrs, "");
+      const displayName = (inputDisplayName?.value || "").trim();
+      if (!displayName) {
+        setProfileError(profileNameError, "入力してください");
+        inputDisplayName?.focus();
+        return;
+      }
+      const prefecture = String(profilePrefecture?.value || "").trim();
+      const gender = String(profileGender?.value || "").trim();
+      if (gender && !PROFILE_GENDER_VALUES.includes(gender)) {
+        setProfileError(profileErrorGender, "性別を正しく選択してください");
+        profileGender?.focus();
+        return;
+      }
+      const birthRaw = String(profileBirthdate?.value || "").trim();
+      if (birthRaw && !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(birthRaw)) {
+        setProfileError(profileErrorBirthdate, "誕生日を正しく入力してください");
+        profileBirthdate?.focus();
+        return;
+      }
+      const bio = String(profileBio?.value || "").trim();
+      if (bio.length > 300) {
+        const bioWarn = document.getElementById("profile-bio-warn");
+        if (bioWarn) { bioWarn.textContent = `プロフィールは300文字以内にしてください（現在 ${bio.length} 文字）`; bioWarn.hidden = false; }
+        profileBio?.focus();
+        return;
+      }
+      let mergedProfileAttrs = [];
+      try {
+        const existingProf = await fetchProfile(currentUser);
+        mergedProfileAttrs = mergeProfileAttributesForSave(collectProfileFormAttributeSelections(), existingProf.profile_attributes);
+      } catch {
+        mergedProfileAttrs = mergeProfileAttributesForSave(collectProfileFormAttributeSelections(), []);
+      }
+      if (mergedProfileAttrs.length < 1) {
+        setProfileError(profileErrorAttrs, "属性を1つ以上選んでください");
+        return;
+      }
+      try {
+        const dupSnap = await db.collection("mll_profiles").where("display_name", "==", displayName).limit(10).get();
+        const dup = dupSnap.docs.find((d) => d.id !== currentUser.id && !Boolean((d.data() || {}).withdrawn));
+        if (dup) {
+          alert("その表示名（ニックネーム）は既に使われています。別の名前を入力してください。");
+          inputDisplayName?.focus();
+          return;
+        }
+      } catch {
+        // Query failure should not block user forever; continue to save attempt.
+      }
+      const fv = window.firebase?.firestore?.FieldValue;
+      const payload = {
+        id: currentUser.id,
+        display_name: displayName,
+        profile_address_prefecture: prefecture,
+        profile_address_prefecture_public: Boolean(
+          profileAddressPrefecturePublic instanceof HTMLInputElement && profileAddressPrefecturePublic.checked,
+        ),
+        profile_bio: bio,
+        profile_attributes: mergedProfileAttrs,
+        updated_at: new Date().toISOString(),
+      };
+      if (fv?.delete) {
+        payload.profile_prefecture = fv.delete();
+        payload.profile_gender = fv.delete();
+        payload.profile_birthdate = fv.delete();
+      }
+      const st = window.MLL_AUTH?.getStorage?.();
+      const needAvatar = Boolean(croppedAvatarBlob);
+      const needCover = Boolean(croppedCoverBlob);
+      if ((needAvatar || needCover) && !st) {
+        alert(AUTH_MESSAGE.storageUnavailable);
+        return;
+      }
+      if (profileSaveBtn instanceof HTMLButtonElement) profileSaveBtn.disabled = true;
+      showProcessingOverlay("処理中...");
+      try {
+        if (st && needAvatar) {
+          const blob = await compressProfileImageForUpload(croppedAvatarBlob);
+          payload.avatar_url = await uploadProfileJpeg(st, currentUser.id, "avatar.jpg", blob);
+          croppedAvatarBlob = null;
+        }
+        if (st && needCover) {
+          const blob = await compressProfileImageForUpload(croppedCoverBlob);
+          payload.cover_image_url = await uploadProfileJpeg(st, currentUser.id, "cover.jpg", blob);
+          croppedCoverBlob = null;
+          if (fv?.delete) {
+            payload.cover_image_urls = fv.delete();
+            payload.cover_slideshow_style = fv.delete();
+          }
+        }
+        const profRoot = db.collection("mll_profiles").doc(currentUser.id);
+        const sensRef = profRoot.collection(PROFILE_SENSITIVE_PRIVATE_COLLECTION).doc(PROFILE_SENSITIVE_PRIVATE_DOC_ID);
+        const sensPayload = { updated_at: new Date().toISOString() };
+        if (gender) sensPayload.profile_gender = gender;
+        if (birthRaw) {
+          try {
+            const existingSens = await sensRef.get();
+            const ed = existingSens.data() || {};
+            const existingBirth = String(ed.profile_birthdate ?? "").trim();
+            const bdayChanged = Number(ed.birthdate_change_count || 0);
+            const bdayAllowed = Boolean(ed.birthdate_change_allowed);
+            if (existingBirth && existingBirth !== birthRaw && bdayChanged >= 1 && !bdayAllowed) {
+              setProfileError(profileErrorBirthdate, "誕生日の変更は1回までです。変更が必要な場合はお問い合わせください。");
+              hideProcessingOverlay();
+              if (profileSaveBtn instanceof HTMLButtonElement) profileSaveBtn.disabled = false;
+              return;
+            }
+            if (existingBirth && existingBirth !== birthRaw) {
+              sensPayload.birthdate_change_count = (bdayChanged || 0) + 1;
+            }
+          } catch { /* first time save – no existing doc */ }
+          sensPayload.profile_birthdate = birthRaw;
+        }
+        await sensRef.set(sensPayload, { merge: true });
+        await profRoot.set(payload, { merge: true });
+      } catch (e) {
+        if (String(e?.message || "") === window.MarchinZImage?.ERR_TOO_LARGE) {
+          window.alert(`code: ${(e?.code || "image/too-large").toString()}\nmessage: ${AUTH_MESSAGE.fileTooLarge}`);
+          return;
+        }
+        window.alert(`code: ${(e?.code || "unknown").toString()}\nmessage: ${(e?.message || authFriendlyErrorMessage(e, AUTH_MESSAGE.saveFailed)).toString()}`);
+        return;
+      } finally {
+        if (profileSaveBtn instanceof HTMLButtonElement) profileSaveBtn.disabled = false;
+        hideProcessingOverlay();
+      }
+      const p = await fetchProfile(currentUser);
+      showLoggedInView(p.display_name, p.avatar_url);
+      profileSetupRequired = false;
+      closeProfileDialog();
+      showEphemeralGlobalMessage("変更を保存しました");
+      window.dispatchEvent(new CustomEvent("marchinz-profile-saved", { detail: { id: currentUser.id } }));
+    });
+  }
+```
+
+
+================================================================================
+## auth.js — profileRawMaxBytes ～ inputCoverFile change（クロップブロック全体）
+================================================================================
+
+```javascript
+  function profileRawMaxBytes() {
+    return window.MarchinZImage?.RAW_INPUT_MAX_BYTES || 20 * 1024 * 1024;
+  }
+
+  const cropDialog = document.getElementById("mz-crop-dialog");
+  const cropImage = document.getElementById("mz-crop-image");
+  const btnCropConfirm = document.getElementById("btn-crop-confirm");
+  const btnCropCancel = document.getElementById("btn-crop-cancel");
+  const btnCropCancel2 = document.getElementById("btn-crop-cancel2");
+  let activeCropper = null;
+  let cropResolve = null;
+  let cropMode = "avatar";
+  let croppedAvatarBlob = null;
+  let croppedCoverBlob = null;
+  let cropImageReadyHandled = false;
+
+  function setProfileModalInertWhileCrop(inertOn) {
+    if (!profileDialog) return;
+    if (inertOn) profileDialog.setAttribute("inert", "");
+    else profileDialog.removeAttribute("inert");
+  }
+
+  /** @param {File} file */
+  function isHeicLikeFile(file) {
+    const type = String(file.type || "").toLowerCase();
+    if (type === "image/heic" || type === "image/heif" || type === "image/heic-sequence") return true;
+    const name = String(file.name || "").toLowerCase();
+    return /\.hei[cf]$/.test(name);
+  }
+
+  async function ensureHeic2anyReady() {
+    if (typeof window.heic2any === "function") return true;
+    window.alert("HEIC変換モジュールの読み込みに失敗しました。ページを再読み込みしてください。");
+    return false;
+  }
+
+  /**
+   * HEIC/HEIF は JPEG に変換してから Cropper へ渡す。
+   * @param {File} file
+   * @returns {Promise<File|null>}
+   */
+  async function normalizeProfileImageFileForCrop(file) {
+    if (!file) return null;
+    if (!isHeicLikeFile(file)) return file;
+    if (!(await ensureHeic2anyReady())) return null;
+    try {
+      const converted = await window.heic2any({
+        blob: file,
+        toType: "image/jpeg",
+        quality: 0.9,
+      });
+      const outBlob = Array.isArray(converted) ? converted[0] : converted;
+      if (!(outBlob instanceof Blob)) return null;
+      const stem = String(file.name || "photo").replace(/\.[^.]+$/i, "") || "photo";
+      return new File([outBlob], `${stem}.jpg`, { type: "image/jpeg", lastModified: Date.now() });
+    } catch (e) {
+      console.warn(e);
+      window.alert(
+        "HEIC形式の写真をJPEGへ変換できませんでした。カメラの「互換性優先」設定にするか、別の写真をお試しください。",
+      );
+      return null;
+    }
+  }
+
+  /** @param {File|null|undefined} rawFile */
+  async function pickProfileImageForCrop(rawFile) {
+    if (!rawFile) return null;
+    if (rawFile.size > profileRawMaxBytes()) {
+      window.alert(AUTH_MESSAGE.fileTooLarge);
+      return null;
+    }
+    return normalizeProfileImageFileForCrop(rawFile);
+  }
+
+  /** プロフィール表示スロット（シネスコ 2.35:1）と同じ横長比 */
+  const COVER_CROP_ASPECT = 2.35;
+  const COVER_EXPORT_WIDTH = 1200;
+  const COVER_EXPORT_HEIGHT = 510;
+
+  function destroyActiveCropper() {
+    if (activeCropper) {
+      activeCropper.destroy();
+      activeCropper = null;
+    }
+  }
+
+  let cropResizeHandler = null;
+  let cropOrientationHandler = null;
+  let cropVisualViewportHandler = null;
+
+  function detachCropperResizeListeners() {
+    if (cropResizeHandler) {
+      window.removeEventListener("resize", cropResizeHandler);
+      cropResizeHandler = null;
+    }
+    if (cropOrientationHandler) {
+      window.removeEventListener("orientationchange", cropOrientationHandler);
+      cropOrientationHandler = null;
+    }
+    if (cropVisualViewportHandler && window.visualViewport) {
+      window.visualViewport.removeEventListener("resize", cropVisualViewportHandler);
+      cropVisualViewportHandler = null;
+    }
+  }
+
+  function scheduleCropperReflow() {
+    if (!activeCropper) return;
+    activeCropper.resize();
+    if (cropMode === "cover") fitCoverCropBox();
+  }
+
+  function attachCropperResizeListeners() {
+    detachCropperResizeListeners();
+    cropResizeHandler = () => scheduleCropperReflow();
+    cropOrientationHandler = () => window.setTimeout(scheduleCropperReflow, 180);
+    window.addEventListener("resize", cropResizeHandler, { passive: true });
+    window.addEventListener("orientationchange", cropOrientationHandler);
+    if (window.visualViewport) {
+      cropVisualViewportHandler = () => window.setTimeout(scheduleCropperReflow, 120);
+      window.visualViewport.addEventListener("resize", cropVisualViewportHandler);
+    }
+  }
+
+  /** モーダル表示・レイアウト確定後に Cropper を起動（Safari の寸法ずれ対策） */
+  function waitForCropDialogLayout() {
+    return new Promise((resolve) => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          window.setTimeout(resolve, 80);
+        });
+      });
+    });
+  }
+
+  /** 表示中の画像（canvas）の内側に、2.35:1 の枠を最大フィットさせる */
+  function fitCoverCropBox() {
+    if (!activeCropper || cropMode !== "cover") return;
+    const image = activeCropper.getImageData();
+    if (!image?.width || !image?.height) return;
+    let cropW = image.width;
+    let cropH = cropW / COVER_CROP_ASPECT;
+    if (cropH > image.height) {
+      cropH = image.height;
+      cropW = cropH * COVER_CROP_ASPECT;
+    }
+    activeCropper.setCropBoxData({
+      left: image.left + (image.width - cropW) / 2,
+      top: image.top + (image.height - cropH) / 2,
+      width: cropW,
+      height: cropH,
+    });
+  }
+
+  function finalizeCoverCropLayout() {
+    const place = () => {
+      activeCropper?.resize();
+      fitCoverCropBox();
+    };
+    place();
+    requestAnimationFrame(() => {
+      place();
+      requestAnimationFrame(place);
+    });
+  }
+
+  /** @param {"avatar"|"cover"} mode */
+  async function initCropperAfterDialogReady(mode) {
+    await waitForCropDialogLayout();
+    if (!window.Cropper) {
+      window.alert("画像編集モジュールの読み込みに失敗しました。ページを再読み込みしてください。");
+      closeCropDialog(null);
+      return;
+    }
+    destroyActiveCropper();
+    if (mode === "avatar") {
+      activeCropper = new window.Cropper(cropImage, {
+        aspectRatio: 1,
+        viewMode: 1,
+        dragMode: "move",
+        zoomOnTouch: false,
+        autoCropArea: 0.9,
+        responsive: true,
+        cropBoxResizable: true,
+        background: false,
+        ready() {
+          activeCropper?.resize();
+        },
+      });
+      attachCropperResizeListeners();
+      return;
+    }
+    activeCropper = new window.Cropper(cropImage, {
+      aspectRatio: COVER_CROP_ASPECT,
+      viewMode: 2,
+      dragMode: "move",
+      zoomOnTouch: false,
+      autoCropArea: 1,
+      responsive: true,
+      restore: false,
+      zoomOnWheel: true,
+      wheelZoomRatio: 0.08,
+      cropBoxResizable: false,
+      cropBoxMovable: false,
+      toggleDragModeOnDblclick: false,
+      background: false,
+      ready() {
+        finalizeCoverCropLayout();
+      },
+    });
+    attachCropperResizeListeners();
+    finalizeCoverCropLayout();
+  }
+
+  function openCropDialog(file, mode) {
+    if (!cropDialog || !cropImage) return Promise.resolve(null);
+    cropMode = mode;
+    cropImageReadyHandled = false;
+    setProfileModalInertWhileCrop(true);
+    const url = URL.createObjectURL(file);
+    const container = cropImage.closest(".mz-crop-container");
+    if (container) {
+      container.classList.toggle("mz-crop-avatar", mode === "avatar");
+      container.classList.toggle("mz-crop-cover", mode === "cover");
+    }
+    destroyActiveCropper();
+    cropImage.removeAttribute("style");
+    cropImage.src = "";
+    cropDialog.hidden = false;
+    document.documentElement.classList.add("mz-crop-dialog-open");
+    void cropDialog.offsetHeight;
+    return new Promise((resolve) => {
+      cropResolve = resolve;
+      const onReady = () => {
+        if (cropImageReadyHandled) return;
+        cropImageReadyHandled = true;
+        cropImage.onload = null;
+        void initCropperAfterDialogReady(mode).catch(() => closeCropDialog(null));
+      };
+      cropImage.onerror = () => {
+        URL.revokeObjectURL(url);
+        window.alert("画像の読み込みに失敗しました。画像形式をご確認ください。");
+        closeCropDialog(null);
+      };
+      cropImage.onload = onReady;
+      cropImage.src = url;
+      if (cropImage.complete && cropImage.naturalWidth > 0) onReady();
+    });
+  }
+
+  function closeCropDialog(result) {
+    setProfileModalInertWhileCrop(false);
+    detachCropperResizeListeners();
+    destroyActiveCropper();
+    if (cropImage?.src?.startsWith("blob:")) URL.revokeObjectURL(cropImage.src);
+    if (cropDialog) {
+      cropDialog.hidden = true;
+    }
+    document.documentElement.classList.remove("mz-crop-dialog-open");
+    if (cropResolve) {
+      cropResolve(result);
+      cropResolve = null;
+    }
+  }
+
+  const btnCropZoomIn = document.getElementById("btn-crop-zoom-in");
+  const btnCropZoomOut = document.getElementById("btn-crop-zoom-out");
+  btnCropZoomIn?.addEventListener("click", () => { if (activeCropper) activeCropper.zoom(0.1); });
+  btnCropZoomOut?.addEventListener("click", () => { if (activeCropper) activeCropper.zoom(-0.1); });
+
+  btnCropConfirm?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!activeCropper) return closeCropDialog(null);
+    const dim =
+      cropMode === "avatar"
+        ? { width: 512, height: 512, imageSmoothingEnabled: true, imageSmoothingQuality: "high" }
+        : {
+            width: COVER_EXPORT_WIDTH,
+            height: COVER_EXPORT_HEIGHT,
+            imageSmoothingEnabled: true,
+            imageSmoothingQuality: "high",
+          };
+    const canvas = activeCropper.getCroppedCanvas(dim);
+    if (!canvas) {
+      window.alert("画像の切り抜きに失敗しました。拡大・縮小してから、もう一度「決定」を押してください。");
+      return;
+    }
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        window.alert("画像の保存準備に失敗しました。別の画像をお試しください。");
+        return;
+      }
+      closeCropDialog(blob);
+    }, "image/jpeg", 0.9);
+  });
+  btnCropCancel?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    closeCropDialog(null);
+  });
+  btnCropCancel2?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    closeCropDialog(null);
+  });
+  /* 背面タップでは閉じない（Safari ファントム click/pointerdown 対策）。決定・キャンセルのみ。 */
+
+  inputAvatarFile?.addEventListener("change", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const f = inputAvatarFile.files?.[0];
+    const img = document.getElementById("profile-avatar-preview");
+    if (!(img instanceof HTMLImageElement)) return;
+    if (img.src.startsWith("blob:")) URL.revokeObjectURL(img.src);
+    if (!f) {
+      croppedAvatarBlob = null;
+      void hydrateProfileForm().catch(() => {});
+      return;
+    }
+    const prepared = await pickProfileImageForCrop(f);
+    if (!prepared) {
+      inputAvatarFile.value = "";
+      croppedAvatarBlob = null;
+      return;
+    }
+    const blob = await openCropDialog(prepared, "avatar");
+    if (!blob) {
+      inputAvatarFile.value = "";
+      croppedAvatarBlob = null;
+      return;
+    }
+    croppedAvatarBlob = blob;
+    img.src = URL.createObjectURL(blob);
+    img.hidden = false;
+  });
+
+  inputCoverFile?.addEventListener("change", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const f = inputCoverFile.files?.[0];
+    const img = document.getElementById("profile-cover-preview");
+    if (!(img instanceof HTMLImageElement)) return;
+    if (img.src.startsWith("blob:")) URL.revokeObjectURL(img.src);
+    if (!f) {
+      croppedCoverBlob = null;
+      void hydrateProfileForm().catch(() => {});
+      return;
+    }
+    const prepared = await pickProfileImageForCrop(f);
+    if (!prepared) {
+      inputCoverFile.value = "";
+      croppedCoverBlob = null;
+      return;
+    }
+    const blob = await openCropDialog(prepared, "cover");
+    if (!blob) {
+      inputCoverFile.value = "";
+      croppedCoverBlob = null;
+      return;
+    }
+    croppedCoverBlob = blob;
+    img.src = URL.createObjectURL(blob);
+    img.hidden = false;
+  });
+```
+
+
+================================================================================
+## auth.js — v1.24.21 診断版のみ（1.24.22で削除・参考）
+================================================================================
+
+```javascript
+function debugCropDialogDomStructure() {
+  const profileDlg = document.getElementById("mz-profile-dialog");
+  const cropDlg = document.getElementById("mz-crop-dialog");
+  if (profileDlg && cropDlg && profileDlg.contains(cropDlg)) {
+    console.error(
+      "!!! [MarchinZ Debug] 警告: #mz-crop-dialog が #mz-profile-dialog の中にあります！これでは inert 付与時に自分自身も消滅します !!!",
+    );
+  } else {
+    console.log("[MarchinZ Debug] DOM OK: #mz-crop-dialog は #mz-profile-dialog の外側です");
+  }
+}
+
+// openCropDialog (1.24.21): 現行本体と同じ処理を try/catch + console.log で包んだだけ
+
+function closeCropDialog(result) {
+  console.error("!!! [MarchinZ Debug] closeCropDialog が呼び出されました !!!", {
+    resultKind: result == null ? "null" : result instanceof Blob ? "blob" : typeof result,
+  });
+  console.trace("呼び出し元の追跡ログ（StackTrace）:");
+  return;
+  // 以下は現行 closeCropDialog と同じ
+}
+
+document.addEventListener(
+  "submit",
+  (e) => {
+    if (e.target.closest("#mz-profile-dialog") || e.target.closest("#mz-crop-dialog")) {
+      console.error(
+        "!!! [MarchinZ Debug] フォームの意図しない Submit（リロード）を検知し、強制ブロックしました !!!",
+        e.target,
+      );
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  },
+  true,
+);
+
+window.addEventListener("error", (ev) => {
+  if (cropDialog && !cropDialog.hidden) {
+    console.error("!!! [MarchinZ Debug] window.onerror（クロップ表示中）!!!", ev.error || ev.message);
+  }
+});
+
+window.addEventListener("unhandledrejection", (ev) => {
+  if (cropDialog && !cropDialog.hidden) {
+    console.error("!!! [MarchinZ Debug] unhandledrejection（クロップ表示中）!!!", ev.reason);
+  }
+});
+```
+
+
+================================================================================
+## index.html — data-mz-version
+================================================================================
+
+```html
+<!DOCTYPE html>
+<html lang="ja" data-mz-version="1.24.24">
+```
+
+
+================================================================================
+## index.html — cropper.css
+================================================================================
+
+```html
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css" />
+    <link rel="stylesheet" href="styles.css?v=1.24.24" />
+```
+
+
+================================================================================
+## index.html — #mz-profile-dialog ～ #profile-form 全文
+================================================================================
+
+```html
+    <div id="mz-profile-dialog" class="mz-dialog-overlay" hidden>
+      <div
+        class="mz-dialog mz-dialog--profile-edit"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="mz-profile-dialog-title"
+      >
+        <div class="mz-dialog-head">
+          <h2 id="mz-profile-dialog-title" class="mz-dialog-title">プロフィール編集</h2>
+          <button type="button" class="mz-dialog-close-btn" data-mz-close-dialog="profile" aria-label="閉じる">
+            ×
+          </button>
+        </div>
+        <div class="mz-dialog-body">
+          <form id="profile-form" class="profile-form mz-profile-dialog-form" data-mz-profile-form>
+            <label class="search-label-full">
+              表示名（ニックネーム）
+              <input type="text" id="profile-display-name" maxlength="120" required autocomplete="nickname" />
+            </label>
+            <p class="mll-log-meta mz-profile-field-note">
+              サイト上で他ユーザーに見える名前です。Google アカウントの氏名とは別に設定され、ログインのたびに上書きされません。
+            </p>
+            <p id="profile-error-display-name" class="mll-field-error" hidden></p>
+            <label class="search-label-full calendar-ev-venue-label">
+              居住地（都道府県まで）
+              <select id="profile-prefecture" aria-label="都道府県"></select>
+            </label>
+            <p id="profile-error-prefecture" class="mll-field-error" hidden></p>
+            <label class="mz-profile-checkbox-label">
+              <input type="checkbox" id="profile-address-prefecture-public" checked />
+              <span class="mz-profile-checkbox-text">都道府県を公開する</span>
+            </label>
+            <label class="search-label-full">
+              性別（他のユーザーには表示されません）
+              <select id="profile-gender" aria-label="性別">
+                <option value="">選択してください</option>
+                <option value="男性">男性</option>
+                <option value="女性">女性</option>
+                <option value="無回答">無回答</option>
+              </select>
+            </label>
+            <p id="profile-error-gender" class="mll-field-error" hidden></p>
+            <label class="search-label-full">
+              誕生日（他のユーザーには表示されません）
+              <input type="date" id="profile-birthdate" aria-label="誕生日" min="1900-01-01" />
+            </label>
+            <p id="profile-bday-change-note" class="mll-log-meta mz-profile-field-note" hidden>
+              誕生日の変更は1回までです。変更済みの場合はお問い合わせください。
+            </p>
+            <p id="profile-error-birthdate" class="mll-field-error" hidden></p>
+            <div class="profile-form-attributes-block" aria-labelledby="profile-form-attrs-heading">
+              <p id="profile-form-attrs-heading" class="profile-form-attributes-heading">カテゴリー（複数選択可能）</p>
+              <div class="mz-profile-attr-badges" role="group" aria-labelledby="profile-form-attrs-heading">
+                <label class="mz-profile-attr-badge"
+                  ><input type="checkbox" class="mz-profile-attr-badge__input" data-profile-form-attr="プレイヤー" /><span
+                    class="mz-profile-attr-badge__face"
+                    >プレイヤー</span
+                  ></label
+                >
+                <label class="mz-profile-attr-badge"
+                  ><input type="checkbox" class="mz-profile-attr-badge__input" data-profile-form-attr="指導者" /><span
+                    class="mz-profile-attr-badge__face"
+                    >指導者</span
+                  ></label
+                >
+                <label class="mz-profile-attr-badge"
+                  ><input type="checkbox" class="mz-profile-attr-badge__input" data-profile-form-attr="チームスタッフ" /><span
+                    class="mz-profile-attr-badge__face"
+                    >チームスタッフ</span
+                  ></label
+                >
+                <label class="mz-profile-attr-badge"
+                  ><input type="checkbox" class="mz-profile-attr-badge__input" data-profile-form-attr="クリエイター" /><span
+                    class="mz-profile-attr-badge__face"
+                    >クリエイター</span
+                  ></label
+                >
+                <label class="mz-profile-attr-badge"
+                  ><input type="checkbox" class="mz-profile-attr-badge__input" data-profile-form-attr="運営/スタッフ" /><span
+                    class="mz-profile-attr-badge__face"
+                    >運営/スタッフ</span
+                  ></label
+                >
+                <label class="mz-profile-attr-badge"
+                  ><input type="checkbox" class="mz-profile-attr-badge__input" data-profile-form-attr="元プレイヤー" /><span
+                    class="mz-profile-attr-badge__face"
+                    >元プレイヤー</span
+                  ></label
+                >
+                <label class="mz-profile-attr-badge"
+                  ><input type="checkbox" class="mz-profile-attr-badge__input" data-profile-form-attr="保護者" /><span
+                    class="mz-profile-attr-badge__face"
+                    >保護者</span
+                  ></label
+                >
+                <label class="mz-profile-attr-badge"
+                  ><input type="checkbox" class="mz-profile-attr-badge__input" data-profile-form-attr="ファン" /><span
+                    class="mz-profile-attr-badge__face"
+                    >ファン</span
+                  ></label
+                >
+                <label class="mz-profile-attr-badge"
+                  ><input type="checkbox" class="mz-profile-attr-badge__input" data-profile-form-attr="ショップ" /><span
+                    class="mz-profile-attr-badge__face"
+                    >ショップ</span
+                  ></label
+                >
+              </div>
+            </div>
+            <p id="profile-error-attributes" class="mll-field-error" hidden></p>
+            <label class="search-label-full">
+              プロフィール
+              <textarea id="profile-bio" maxlength="300" rows="4" placeholder="自己紹介やひとことなど"></textarea>
+              <p id="profile-bio-warn" class="mll-field-error" hidden></p>
+            </label>
+            <label class="search-label-full">
+              アイコン画像
+              <input
+                type="file"
+                id="profile-avatar-file"
+                accept="image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif"
+              />
+            </label>
+            <div class="profile-form-preview-row">
+              <img id="profile-avatar-preview" class="profile-form-preview profile-form-preview--avatar" alt="" width="96" height="96" loading="lazy" decoding="async" />
+            </div>
+            <label class="search-label-full">
+              カバー写真（1枚）
+              <input
+                type="file"
+                id="profile-cover-file"
+                accept="image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif"
+              />
+            </label>
+            <p class="profile-form-cover-hint">推奨サイズ 1200 × 510 px</p>
+            <div class="profile-form-preview-row">
+              <img id="profile-cover-preview" class="profile-form-preview profile-form-preview--cover" alt="" loading="lazy" decoding="async" hidden />
+            </div>
+            <div class="search-share-row">
+              <button type="submit" class="btn-share-search">保存</button>
+              <button type="button" id="btn-profile-cancel" class="btn-reset-search">キャンセル</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+```
+
+
+================================================================================
+## index.html — #mz-crop-dialog 全文
+================================================================================
+
+```html
+    <div id="mz-crop-dialog" class="mz-dialog-overlay" hidden>
+      <div class="mz-dialog mz-dialog--crop" role="dialog" aria-modal="true" aria-labelledby="mz-crop-title">
+        <div class="mz-dialog-head">
+          <h2 id="mz-crop-title" class="mz-dialog-title">画像を調整</h2>
+          <button type="button" id="btn-crop-cancel" class="mz-dialog-close-btn" aria-label="キャンセル">×</button>
+        </div>
+        <div class="mz-crop-body">
+          <div class="mz-crop-container">
+            <img id="mz-crop-image" alt="" />
+          </div>
+        </div>
+        <div class="mz-crop-zoom-bar">
+          <button type="button" id="btn-crop-zoom-out" class="mz-crop-zoom-btn" aria-label="縮小">−</button>
+          <button type="button" id="btn-crop-zoom-in" class="mz-crop-zoom-btn" aria-label="拡大">＋</button>
+        </div>
+        <div class="mz-crop-actions">
+          <button type="button" id="btn-crop-cancel2" class="btn-share-search mz-crop-btn--cancel">キャンセル</button>
+          <button type="button" id="btn-crop-confirm" class="btn-share-search mz-crop-btn--confirm">決定</button>
+        </div>
+      </div>
+    </div>
+```
+
+
+================================================================================
+## index.html — cropperjs / heic2any / auth.js 読み込み順
+================================================================================
+
+```html
+    <script defer src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
+    <script defer src="marchinz-default-assets.js?v=1.24.24"></script>
+    <script defer src="marchinz-image-compress.js?v=1.24.24"></script>
+    <script defer src="marchinz-rate-limit.js?v=1.24.24"></script>
+    <script defer src="auth-config.js?v=1.24.24"></script>
+    <script defer src="auth.js?v=1.24.24"></script>
+```
+
+================================================================================
+## index.html — DOM階層（要約）
+================================================================================
+
+body
+├── #mz-profile-dialog.mz-dialog-overlay
+│   └── .mz-dialog--profile-edit
+│       └── #profile-form
+│           ├── #profile-avatar-file (type=file)
+│           └── #profile-cover-file (type=file)
+├── #mz-settings-dialog …
+└── #mz-crop-dialog.mz-dialog-overlay   ← #mz-profile-dialog の兄弟（内側ではない）
+    └── .mz-dialog--crop
+        ├── .mz-crop-body > .mz-crop-container > #mz-crop-image
+        ├── .mz-crop-zoom-bar
+        └── .mz-crop-actions
+
+
+================================================================================
+## styles.css — クロップモーダル全体
+================================================================================
+
+```css
+/* ── クロップモーダル ── */
+.mz-dialog--crop {
+  width: min(92vw, 720px);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+.mz-crop-body {
+  flex: 1 1 auto;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #111;
+  min-height: 280px;
+  max-height: 60vh;
+  width: 100%;
+  box-sizing: border-box;
+}
+.mz-crop-container {
+  width: 100%;
+  height: 100%;
+  max-height: 60vh;
+  box-sizing: border-box;
+}
+#mz-crop-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+.mz-crop-container img {
+  display: block;
+  max-width: 100%;
+}
+.mz-crop-zoom-bar {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  padding: 8px 16px 0;
+  background: var(--surface, #fff);
+}
+.mz-crop-zoom-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--border, #e2e8f0);
+  background: var(--surface-alt, #f1f5f9);
+  font-size: 1.3rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.mz-crop-zoom-btn:active {
+  background: var(--border, #e2e8f0);
+}
+.mz-crop-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  padding: 8px 16px 12px;
+  background: var(--surface, #fff);
+}
+.mz-crop-btn--cancel {
+  background: var(--surface-alt, #f1f5f9) !important;
+  color: var(--text, #1e293b) !important;
+}
+.mz-crop-btn--confirm {
+  background: var(--accent, #2563eb) !important;
+  color: #fff !important;
+}
+.mz-crop-avatar .cropper-view-box,
+.mz-crop-avatar .cropper-face {
+  border-radius: 50%;
+}
+
+.mz-crop-container.mz-crop-cover {
+  width: min(100%, 720px);
+  margin: 0 auto;
+  aspect-ratio: 2.35 / 1;
+  max-height: min(60vh, calc(100vw * 4 / 13));
+  height: auto;
+}
+
+/* Cropper 本体だけコンテナに合わせる（crop-box 等を 100% 固定すると枠と出力がずれる） */
+.mz-crop-container.mz-crop-cover > .cropper-container {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+@media (max-width: 599px) {
+  .mz-dialog--crop {
+    width: 100%;
+    max-height: 96vh;
+  }
+
+  .mz-crop-body {
+    min-height: 50vh;
+    max-height: 58vh;
+    align-items: stretch;
+  }
+
+  .mz-crop-container {
+    min-height: 300px;
+    height: 50vh;
+    max-height: 58vh;
+  }
+
+  .mz-crop-container.mz-crop-cover {
+    width: 100%;
+    max-width: 100%;
+    min-height: 300px;
+    height: max(300px, min(50vh, calc((100vw - 2rem) / 2.35)));
+    max-height: 58vh;
+    aspect-ratio: 2.35 / 1;
+  }
+}
+```
+
+
+================================================================================
+## styles.css — .mz-dialog-overlay / [hidden] / z-index
+================================================================================
+
+```css
+.mz-dialog-overlay {
+  box-sizing: border-box;
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0;
+  margin: 0;
+  overflow: auto;
+  z-index: 12800;
+  background: rgba(12, 16, 32, 0.55);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+
+html.mz-crop-dialog-open #mz-crop-dialog.mz-dialog-overlay:not([hidden]) {
+  z-index: 13100;
+}
+
+.mz-dialog-overlay[hidden] {
+  display: none !important;
+}
+```
+
+================================================================================
+## 変更履歴 v1.24.21 → v1.24.22（作業ログベース）
+================================================================================
+
+【1.24.21 で追加（診断）】
+- debugCropDialogDomStructure()
+- openCropDialog を try/catch で囲み console.log / debugCropDialogDomStructure
+- closeCropDialog 先頭: console.error + console.trace + return（凍結）
+- document submit 捕捉（capture）
+- window error / unhandledrejection リスナー
+
+【1.24.22 で削除】
+- 上記デバッグ一式
+- closeCropDialog 凍結解除（通常クローズ復帰）
+
+【1.24.22 で追加】
+- initCropperAfterDialogReady: zoomOnTouch: false（avatar/cover 両方）
+
+【openCropDialog 本体ロジック】
+- 1.24.21 診断版と 1.24.22 現行で同一（ラッパー除去のみ）。削除されていない。
+
+【現行に無いもの】
+- pointerdown リスナー（cropDialog 背面閉じ）
+- cropDialog.addEventListener("click" / "pointerdown")
+- isCropBackdropDismissActive フラグ（過去版で削除済みの可能性）
+
+================================================================================
+## v1.24.23 / 1.24.24（クロップ以外）
+================================================================================
+- 1.24.23: Note著者UI、掲示板composeモーダル（auth.jsクロップ変更なし）
+- 1.24.24: マイページNoteを mln-feed-card レイアウト（auth.jsクロップ変更なし）

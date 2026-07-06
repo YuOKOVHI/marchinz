@@ -49,6 +49,11 @@ REPLACE_AFTER_NFKC: dict[str, str] = {
     "THE 永野STARS": "THE 永野 STARS",
     # Jr. と Team の間など
     "東海学院大学Jr.マーチングバンドTeam KOBADAI": "東海学院大学Jr.マーチングバンド Team KOBADAI",
+    "岐阜ジュニアマーチングバンドThe Diamind": "岐\u2fa9ジュニアマーチングバンド The Diamind",
+    "パルプ・フィクション from Guard Team Unity": "パルプ・フィクション from Unity",
+    "DER GLANZ CG": "DER GLANZ カラーガード",
+    "Via Jr.  〜チームZoo〜": "Via Jr. 〜チームZoo〜",
+    "Via Jr.  〜チーム⾰命〜": "Via Jr. 〜チーム⾰命〜",
     "東海学院大学Jr.マーチングバンドTeam SYU": "東海学院大学Jr.マーチングバンド TEAM SYU",
     "横浜市ジュニアマーチングバンドBayWind": "横浜市ジュニアマーチングバンド BayWind",
     "関東学院マーチングバンドWinds": "関東学院マーチングバンド Winds",
@@ -87,11 +92,11 @@ def normalize_team_name(raw: str) -> str:
     if s == "TOHO MARCHING BAND 3しまい":
         s = "TMB team 3しまい"
 
-    # Via Jr.: NFKC と空白整理後、`〜チームZoo` と `〜チーム革命` で固定
+    # Via Jr.: NFKC と空白整理後、`〜チームZoo〜` / `〜チーム⾰命〜` で固定
     if s.startswith("Via Jr.") and ("チームZoo" in s or "チーム zoo" in s.lower()):
         s = "Via Jr. 〜チームZoo〜"
-    elif s.startswith("Via Jr.") and "革命" in s:
-        s = "Via Jr. 〜チーム革命〜"
+    elif s.startswith("Via Jr.") and ("⾰命" in s or "革命" in s):
+        s = "Via Jr. 〜チーム⾰命〜"
 
     # つつじが丘ジュニアマーチングバンド の英語 / 略記ゆれ（同一団体扱い）
     if s in ("Tsutsujigaoka Jr. MarchingBand", "つつじが丘 Jr.MB"):
@@ -101,13 +106,17 @@ def normalize_team_name(raw: str) -> str:
     if s == "Bluujua Colorguard":
         s = "Bluujua"
 
-    # 宇治市立：学校名の「槇/槙」混在の一方に（マーチングバンド名は schools 表記に合わせる）
-    if s == "宇治市立槇島小学校マーチングバンド":
-        s = "宇治市立槙島小学校マーチングバンド"
+    # 宇治市立：略称 → 正式なマーチングバンド名
+    if s == "宇治市立槙島小学校":
+        s = "宇治市立槇島小学校マーチングバンド"
 
     # ゆかとしぃ / ゆかとしー（同一表記に）
     if s == "ゆかとしー":
         s = "ゆかとしぃ"
+
+    # 大会名プレースホルダ（一覧に出さない）
+    if s == "東海オープン":
+        s = ""
 
     # T&T / TT（短い略称の表記ゆれ）
     if s == "TT":

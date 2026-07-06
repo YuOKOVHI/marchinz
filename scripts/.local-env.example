@@ -1,0 +1,6 @@
+# このファイルをコピーして .local-env にリネームし、パスを埋めてください（.local-env は git に含めません）
+# repair-mll-log-roles.mjs で使ったのと同じ JSON で OK
+export GOOGLE_APPLICATION_CREDENTIALS="/Users/pc20/Downloads/your-service-account.json"
+export FIREBASE_PROJECT_ID="marchinz-app"
+# 任意: まず本人だけ試すとき
+# export MIGRATE_USER_ID="YOUR_FIREBASE_AUTH_UID"

@@ -13,6 +13,47 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // event_log_diaries ドキュメントの親プロフィール UID（mll_profiles/{uid}/event_log_diaries/{eventId}）
+    function diaryProfileOwnerUid() {
+      return resource.ref.parent.parent.id;
+    }
+
+    function momentProfileOwnerUid() {
+      return resource.ref.parent.parent.id;
+    }
+
+    // 退会・凍結ユーザーは他者向けの Log / Note / マイリストを読めない（プロフィールの section_vis と併用）
+    function profileOwnerActiveForPublicContent(uid) {
+      return !exists(/databases/$(database)/documents/mll_profiles/$(uid))
+        || (
+          (!get(/databases/$(database)/documents/mll_profiles/$(uid)).data.keys().hasAny(['withdrawn'])
+            || get(/databases/$(database)/documents/mll_profiles/$(uid)).data.withdrawn != true)
+          && (!get(/databases/$(database)/documents/mll_profiles/$(uid)).data.keys().hasAny(['banned'])
+            || get(/databases/$(database)/documents/mll_profiles/$(uid)).data.banned != true)
+        );
+    }
+
+    // コミュニティ「ノート」collection group 一覧（mln-public-feed: where visibility==public のみ）。
+    // Rules are not filters: クエリに無い profileOwnerActive / section_vis は載せない。
+    // 凍結・退会ユーザーの除外は loadProfilesMinimal 後のクライアント hide フィルタのみ。
+    match /{path=**}/event_log_diaries/{eventId} {
+      allow read: if resource != null
+        && (
+          (signedIn() && diaryProfileOwnerUid() == request.auth.uid)
+          || (!resource.data.keys().hasAny(['visibility']) || resource.data.visibility == 'public')
+          || (isPrivileged() && requesterProfileNotBanned())
+        );
+    }
+
+    // コミュニティ「モーメント」collection group 一覧（mll-moment.js: orderBy updated_at desc）
+    match /{path=**}/moments/{momentId} {
+      allow read: if resource != null
+        && (
+          (signedIn() && momentProfileOwnerUid() == request.auth.uid)
+          || (!resource.data.keys().hasAny(['visibility']) || resource.data.visibility == 'public')
+        );
+    }
+
     function signedIn() {
       return request.auth != null;
     }
@@ -91,7 +132,10 @@ service cloud.firestore {
         && requesterProfileNotBanned()
         && request.resource.data.user_id == resource.data.user_id
         && d.removedKeys().size() == 0
-        && d.affectedKeys().hasOnly(['event_date', 'event_name', 'venue', 'role_label'])
+        && d.affectedKeys().hasOnly([
+          'event_date', 'event_name', 'venue', 'role', 'role_label',
+          'calendar_event_id', 'liked_by', 'note', 'ticket_url', 'official_url', 'updated_at'
+        ])
         && request.resource.data.event_date is string
         && request.resource.data.event_date.size() >= 8
         && request.resource.data.event_date.size() <= 16
@@ -101,9 +145,43 @@ service cloud.firestore {
         && request.resource.data.venue is string
         && request.resource.data.venue.size() > 0
         && request.resource.data.venue.size() <= 48
+        && request.resource.data.role is string
+        && request.resource.data.role in ['watch', 'perform', 'team_staff', 'ops']
         && request.resource.data.role_label is string
         && request.resource.data.role_label.size() > 0
-        && request.resource.data.role_label.size() <= 120;
+        && request.resource.data.role_label.size() <= 120
+        && (
+          !d.affectedKeys().hasAny(['calendar_event_id'])
+          || (
+            request.resource.data.calendar_event_id is string
+            && request.resource.data.calendar_event_id.size() >= 8
+            && request.resource.data.calendar_event_id.size() <= 128
+          )
+        )
+        && (
+          !d.affectedKeys().hasAny(['note'])
+          || (request.resource.data.note is string && request.resource.data.note.size() <= 2000)
+        )
+        && (
+          !d.affectedKeys().hasAny(['ticket_url'])
+          || (request.resource.data.ticket_url is string && request.resource.data.ticket_url.size() <= 2000)
+        )
+        && (
+          !d.affectedKeys().hasAny(['official_url'])
+          || (request.resource.data.official_url is string && request.resource.data.official_url.size() <= 2000)
+        )
+        && (
+          !d.affectedKeys().hasAny(['liked_by'])
+          || request.resource.data.liked_by is map
+        )
+        && (
+          !d.affectedKeys().hasAny(['updated_at'])
+          || (
+            request.resource.data.updated_at is string
+            && request.resource.data.updated_at.size() >= 10
+            && request.resource.data.updated_at.size() <= 40
+          )
+        );
     }
 
     // MLL ライフログ: visibility 未設定は公開扱い（既存データ互換）
@@ -114,27 +192,39 @@ service cloud.firestore {
 
     // プロフィール上の各タブ（mll_profiles の section_vis_*、未設定は公開）
     function sectionMllPublic(uid) {
-      return !exists(/databases/$(database)/documents/mll_profiles/$(uid))
-        || !get(/databases/$(database)/documents/mll_profiles/$(uid)).data.keys().hasAny(['section_vis_mll'])
-        || get(/databases/$(database)/documents/mll_profiles/$(uid)).data.section_vis_mll == 'public';
+      return profileOwnerActiveForPublicContent(uid)
+        && (
+          !exists(/databases/$(database)/documents/mll_profiles/$(uid))
+          || !get(/databases/$(database)/documents/mll_profiles/$(uid)).data.keys().hasAny(['section_vis_mll'])
+          || get(/databases/$(database)/documents/mll_profiles/$(uid)).data.section_vis_mll == 'public'
+        );
     }
 
     function sectionVideosPublic(uid) {
-      return !exists(/databases/$(database)/documents/mll_profiles/$(uid))
-        || !get(/databases/$(database)/documents/mll_profiles/$(uid)).data.keys().hasAny(['section_vis_videos'])
-        || get(/databases/$(database)/documents/mll_profiles/$(uid)).data.section_vis_videos == 'public';
+      return profileOwnerActiveForPublicContent(uid)
+        && (
+          !exists(/databases/$(database)/documents/mll_profiles/$(uid))
+          || !get(/databases/$(database)/documents/mll_profiles/$(uid)).data.keys().hasAny(['section_vis_videos'])
+          || get(/databases/$(database)/documents/mll_profiles/$(uid)).data.section_vis_videos == 'public'
+        );
     }
 
     function sectionYtPublic(uid) {
-      return !exists(/databases/$(database)/documents/mll_profiles/$(uid))
-        || !get(/databases/$(database)/documents/mll_profiles/$(uid)).data.keys().hasAny(['section_vis_yt'])
-        || get(/databases/$(database)/documents/mll_profiles/$(uid)).data.section_vis_yt == 'public';
+      return profileOwnerActiveForPublicContent(uid)
+        && (
+          !exists(/databases/$(database)/documents/mll_profiles/$(uid))
+          || !get(/databases/$(database)/documents/mll_profiles/$(uid)).data.keys().hasAny(['section_vis_yt'])
+          || get(/databases/$(database)/documents/mll_profiles/$(uid)).data.section_vis_yt == 'public'
+        );
     }
 
     function sectionLogdiaryPublic(uid) {
-      return !exists(/databases/$(database)/documents/mll_profiles/$(uid))
-        || !get(/databases/$(database)/documents/mll_profiles/$(uid)).data.keys().hasAny(['section_vis_logdiary'])
-        || get(/databases/$(database)/documents/mll_profiles/$(uid)).data.section_vis_logdiary == 'public';
+      return profileOwnerActiveForPublicContent(uid)
+        && (
+          !exists(/databases/$(database)/documents/mll_profiles/$(uid))
+          || !get(/databases/$(database)/documents/mll_profiles/$(uid)).data.keys().hasAny(['section_vis_logdiary'])
+          || get(/databases/$(database)/documents/mll_profiles/$(uid)).data.section_vis_logdiary == 'public'
+        );
     }
 
     function videoBookmarkListIdRead() {
@@ -148,9 +238,24 @@ service cloud.firestore {
 
     function videoListIsPublicForRead(profileUid, listId) {
       let p = /databases/$(database)/documents/mll_profiles/$(profileUid)/video_lists/$(listId);
-      return !exists(p)
-        || !get(p).data.keys().hasAny(['visibility'])
-        || get(p).data.visibility == 'public';
+      return profileOwnerActiveForPublicContent(profileUid)
+        && sectionVideosPublic(profileUid)
+        && (
+          !exists(p)
+          || !get(p).data.keys().hasAny(['visibility'])
+          || get(p).data.visibility == 'public'
+        );
+    }
+
+    // videoListIsPublicForRead と同じ基準（visibility 未設定は公開扱い）
+    function videoListDocVisPublic() {
+      return !resource.data.keys().hasAny(['visibility'])
+        || resource.data.visibility == 'public';
+    }
+
+    function channelListDocVisPublic() {
+      return !resource.data.keys().hasAny(['visibility'])
+        || resource.data.visibility == 'public';
     }
 
     function channelBookmarkListIdRead() {
@@ -164,9 +269,13 @@ service cloud.firestore {
 
     function channelListIsPublicForRead(profileUid, listId) {
       let p = /databases/$(database)/documents/mll_profiles/$(profileUid)/channel_lists/$(listId);
-      return !exists(p)
-        || !get(p).data.keys().hasAny(['visibility'])
-        || get(p).data.visibility == 'public';
+      return profileOwnerActiveForPublicContent(profileUid)
+        && sectionYtPublic(profileUid)
+        && (
+          !exists(p)
+          || !get(p).data.keys().hasAny(['visibility'])
+          || get(p).data.visibility == 'public'
+        );
     }
 
     function videoBookmarkSortOnly() {
@@ -183,11 +292,70 @@ service cloud.firestore {
         && request.resource.data.sort_index <= 2147483647;
     }
 
+    // マイリスト保存（create / 本人による upsert 共通）
+    function videoBookmarkPayloadOk(uid) {
+      return request.resource.data.keys().hasOnly([
+        'list_id', 'url', 'video_id', 'org_team', 'display_name', 'event_title',
+        'channel_name', 'channel_url', 'category', 'added_at', 'sort_index'
+      ])
+        && request.resource.data.list_id is string
+        && request.resource.data.list_id.size() > 0
+        && request.resource.data.list_id.size() <= 64
+        && exists(/databases/$(database)/documents/mll_profiles/$(uid)/video_lists/$(request.resource.data.list_id))
+        && request.resource.data.url is string
+        && request.resource.data.url.size() > 0
+        && request.resource.data.url.size() <= 2048
+        && request.resource.data.video_id is string
+        && request.resource.data.video_id.size() <= 32
+        && request.resource.data.org_team is string
+        && request.resource.data.org_team.size() <= 300
+        && request.resource.data.display_name is string
+        && request.resource.data.display_name.size() <= 300
+        && request.resource.data.event_title is string
+        && request.resource.data.event_title.size() <= 500
+        && request.resource.data.channel_name is string
+        && request.resource.data.channel_name.size() <= 200
+        && request.resource.data.channel_url is string
+        && request.resource.data.channel_url.size() <= 2048
+        && request.resource.data.category is string
+        && request.resource.data.category.size() <= 80
+        && request.resource.data.added_at is string
+        && request.resource.data.added_at.size() <= 40
+        && request.resource.data.sort_index is int
+        && request.resource.data.sort_index >= 0
+        && request.resource.data.sort_index <= 2147483647;
+    }
+
+    function channelBookmarkPayloadOk(uid) {
+      return request.resource.data.keys().hasOnly([
+        'list_id', 'sort_index', 'channel_url', 'channel_name', 'channel_logo', 'category',
+        'added_at'
+      ])
+        && request.resource.data.list_id is string
+        && request.resource.data.list_id.size() > 0
+        && request.resource.data.list_id.size() <= 64
+        && exists(/databases/$(database)/documents/mll_profiles/$(uid)/channel_lists/$(request.resource.data.list_id))
+        && request.resource.data.sort_index is int
+        && request.resource.data.sort_index >= 0
+        && request.resource.data.sort_index <= 2147483647
+        && request.resource.data.channel_url is string
+        && request.resource.data.channel_url.size() > 0
+        && request.resource.data.channel_url.size() <= 2048
+        && request.resource.data.channel_name is string
+        && request.resource.data.channel_name.size() > 0
+        && request.resource.data.channel_name.size() <= 280
+        && request.resource.data.channel_logo is string
+        && request.resource.data.channel_logo.size() <= 2048
+        && request.resource.data.category is string
+        && request.resource.data.category.size() <= 80
+        && request.resource.data.added_at is string
+        && request.resource.data.added_at.size() <= 40;
+    }
+
     // プロフィール上のマイリスト動画カード: 閲覧可能なユーザーが liked_by の自分キーのみ更新
     function videoBookmarkReadableByActor(profileUid) {
       return signedIn() && request.auth.uid == profileUid
         || (signedIn()
-          && sectionVideosPublic(profileUid)
           && videoListIsPublicForRead(profileUid, videoBookmarkListIdRead()));
     }
 
@@ -205,7 +373,6 @@ service cloud.firestore {
     function channelBookmarkReadableByActor(profileUid) {
       return signedIn() && request.auth.uid == profileUid
         || (signedIn()
-          && sectionYtPublic(profileUid)
           && channelListIsPublicForRead(profileUid, channelBookmarkListIdRead()));
     }
 
@@ -220,10 +387,27 @@ service cloud.firestore {
         && channelBookmarkReadableByActor(profileUid);
     }
 
+    function isVideoListLikeOnlyPatch() {
+      let d = request.resource.data.diff(resource.data);
+      return signedIn()
+        && requesterCanAct()
+        && d.affectedKeys().hasOnly(['liked_by'])
+        && likedByMapDiffOnlyOwnUid()
+        && requesterProfileNotBanned();
+    }
+
+    function isChannelListLikeOnlyPatch() {
+      let d = request.resource.data.diff(resource.data);
+      return signedIn()
+        && requesterCanAct()
+        && d.affectedKeys().hasOnly(['liked_by'])
+        && likedByMapDiffOnlyOwnUid()
+        && requesterProfileNotBanned();
+    }
+
     function diaryEntryReadableByActor(profileUid) {
       return signedIn() && request.auth.uid == profileUid
-        || (signedIn()
-          && sectionLogdiaryPublic(profileUid)
+        || (resource != null
           && (!resource.data.keys().hasAny(['visibility']) || resource.data.visibility == 'public'));
     }
 
@@ -236,6 +420,23 @@ service cloud.firestore {
         && likedByMapDiffOnlyOwnUid()
         && requesterProfileNotBanned()
         && diaryEntryReadableByActor(profileUid);
+    }
+
+    function momentEntryReadableByActor(profileUid) {
+      return signedIn() && request.auth.uid == profileUid
+        || (resource != null
+          && (!resource.data.keys().hasAny(['visibility']) || resource.data.visibility == 'public'));
+    }
+
+    function isMomentLikeOnlyPatch(profileUid) {
+      let d = request.resource.data.diff(resource.data);
+      return signedIn()
+        && requesterCanAct()
+        && request.auth.uid != profileUid
+        && d.affectedKeys().hasOnly(['liked_by'])
+        && likedByMapDiffOnlyOwnUid()
+        && requesterProfileNotBanned()
+        && momentEntryReadableByActor(profileUid);
     }
 
     // --- mll_profiles/{uid} ルート: クライアント更新可能キーの allowlist（任意フィールド増殖を防止） ---
@@ -278,7 +479,14 @@ service cloud.firestore {
         // 管理人が付与する凍結フラグ。クライアントの本文更新時は文書全体の検証に含まれるため列入が必要（差分変更は update 側で拒否）
         'banned',
         'banned_at',
-        'banned_reason'
+        'banned_reason',
+        // 運営サイト全体お知らせの既読（値は mll_site_announcements/current の updated_at）
+        'last_read_announcement_at',
+        // UI 改善 B テストへの任意協力
+        'b_test_opt_in',
+        'b_test_opt_in_at',
+        'b_test_consent_version',
+        'b_test_prompt_dismissed_at'
       ]);
     }
 
@@ -315,84 +523,120 @@ service cloud.firestore {
           && request.resource.data[name] in ['public', 'private']);
     }
 
-    function mllProfileOptionalFieldsOk() {
-      return (!request.resource.data.keys().hasAny(['avatar_url'])
+    // 差分更新時: 変更されたキーだけ検証（既存 doc の型ゆれで無関係な保存が弾かれないようにする）
+    function mllProfileOptionalFieldsOkForAffected(aff) {
+      return (!aff.hasAny(['avatar_url'])
           || (request.resource.data.avatar_url is string
             && request.resource.data.avatar_url.size() <= 2048))
-        && (!request.resource.data.keys().hasAny(['cover_image_url'])
+        && (!aff.hasAny(['cover_image_url'])
           || (request.resource.data.cover_image_url is string
             && request.resource.data.cover_image_url.size() <= 2048))
-        && (!request.resource.data.keys().hasAny(['marchinz_public_id'])
+        && (!aff.hasAny(['marchinz_public_id'])
           || (request.resource.data.marchinz_public_id is string
             && request.resource.data.marchinz_public_id.size() <= 20
             && (request.resource.data.marchinz_public_id == ""
-              || request.resource.data.marchinz_public_id.matches('^[0-9]{3,20}$'))))
-        && (!request.resource.data.keys().hasAny(['withdrawn'])
+              || request.resource.data.marchinz_public_id.matches('^[0-9]{1,20}$'))))
+        && (!aff.hasAny(['withdrawn'])
           || request.resource.data.withdrawn is bool)
-        && (!request.resource.data.keys().hasAny(['withdrawn_at'])
+        && (!aff.hasAny(['withdrawn_at'])
           || (request.resource.data.withdrawn_at is string
             && request.resource.data.withdrawn_at.size() >= 10
             && request.resource.data.withdrawn_at.size() <= 48))
-        && (!request.resource.data.keys().hasAny(['cover_image_urls'])
+        && (!aff.hasAny(['cover_image_urls'])
           || (request.resource.data.cover_image_urls is list
             && request.resource.data.cover_image_urls.size() <= 10))
-        && (!request.resource.data.keys().hasAny(['cover_slideshow_style'])
+        && (!aff.hasAny(['cover_slideshow_style'])
           || (request.resource.data.cover_slideshow_style is string
             && request.resource.data.cover_slideshow_style.size() <= 120))
-        && mllProfileProfCountField('prof_count_mll')
-        && mllProfileProfCountField('prof_count_videos')
-        && mllProfileProfCountField('prof_count_yt')
-        && mllProfileProfCountField('prof_count_logdiary')
-        && mllProfileSectionVisField('section_vis_mll')
-        && mllProfileSectionVisField('section_vis_videos')
-        && mllProfileSectionVisField('section_vis_yt')
-        && mllProfileSectionVisField('section_vis_logdiary')
-        && (!request.resource.data.keys().hasAny(['profile_bio'])
+        && (!aff.hasAny(['prof_count_mll'])
+          || mllProfileProfCountField('prof_count_mll'))
+        && (!aff.hasAny(['prof_count_videos'])
+          || mllProfileProfCountField('prof_count_videos'))
+        && (!aff.hasAny(['prof_count_yt'])
+          || mllProfileProfCountField('prof_count_yt'))
+        && (!aff.hasAny(['prof_count_logdiary'])
+          || mllProfileProfCountField('prof_count_logdiary'))
+        && (!aff.hasAny(['section_vis_mll'])
+          || mllProfileSectionVisField('section_vis_mll'))
+        && (!aff.hasAny(['section_vis_videos'])
+          || mllProfileSectionVisField('section_vis_videos'))
+        && (!aff.hasAny(['section_vis_yt'])
+          || mllProfileSectionVisField('section_vis_yt'))
+        && (!aff.hasAny(['section_vis_logdiary'])
+          || mllProfileSectionVisField('section_vis_logdiary'))
+        && (!aff.hasAny(['profile_bio'])
           || (request.resource.data.profile_bio is string
             && request.resource.data.profile_bio.size() <= 4000))
-        && (!request.resource.data.keys().hasAny(['profile_address_prefecture'])
+        && (!aff.hasAny(['profile_address_prefecture'])
           || (request.resource.data.profile_address_prefecture is string
             && request.resource.data.profile_address_prefecture.size() <= 24))
-        && (!request.resource.data.keys().hasAny(['profile_address_prefecture_public'])
+        && (!aff.hasAny(['profile_address_prefecture_public'])
           || request.resource.data.profile_address_prefecture_public is bool)
-        && (!request.resource.data.keys().hasAny(['profile_prefecture'])
+        && (!aff.hasAny(['profile_prefecture'])
           || (request.resource.data.profile_prefecture is string
             && request.resource.data.profile_prefecture.size() <= 24))
-        && (!request.resource.data.keys().hasAny(['profile_attributes'])
+        && (!aff.hasAny(['profile_attributes'])
           || (request.resource.data.profile_attributes is list
             && request.resource.data.profile_attributes.size() <= 20))
-        && (!request.resource.data.keys().hasAny(['like_show_mll'])
+        && (!aff.hasAny(['like_show_mll'])
           || request.resource.data.like_show_mll is bool)
-        && (!request.resource.data.keys().hasAny(['like_show_community'])
+        && (!aff.hasAny(['like_show_community'])
           || request.resource.data.like_show_community is bool)
-        && (!request.resource.data.keys().hasAny(['like_show_calendar'])
+        && (!aff.hasAny(['like_show_calendar'])
           || request.resource.data.like_show_calendar is bool)
-        && (!request.resource.data.keys().hasAny(['like_show_video_bookmark'])
+        && (!aff.hasAny(['like_show_video_bookmark'])
           || request.resource.data.like_show_video_bookmark is bool)
-        && (!request.resource.data.keys().hasAny(['like_show_channel_bookmark'])
+        && (!aff.hasAny(['like_show_channel_bookmark'])
           || request.resource.data.like_show_channel_bookmark is bool)
-        && (!request.resource.data.keys().hasAny(['like_show_log_diary'])
+        && (!aff.hasAny(['like_show_log_diary'])
           || request.resource.data.like_show_log_diary is bool)
-        && (!request.resource.data.keys().hasAny(['legal_policy_accepted_version'])
+        && (!aff.hasAny(['legal_policy_accepted_version'])
           || (request.resource.data.legal_policy_accepted_version is string
             && request.resource.data.legal_policy_accepted_version.size() > 0
             && request.resource.data.legal_policy_accepted_version.size() <= 48))
-        && (!request.resource.data.keys().hasAny(['legal_policy_accepted_at'])
-          || request.resource.data.legal_policy_accepted_at is timestamp)
-        && (!request.resource.data.keys().hasAny(['banned'])
+        && (!aff.hasAny(['legal_policy_accepted_at'])
+          || request.resource.data.legal_policy_accepted_at is timestamp
+          || (request.resource.data.legal_policy_accepted_at is string
+            && request.resource.data.legal_policy_accepted_at.size() >= 10
+            && request.resource.data.legal_policy_accepted_at.size() <= 48))
+        && (!aff.hasAny(['banned'])
           || request.resource.data.banned is bool)
-        && (!request.resource.data.keys().hasAny(['banned_at'])
+        && (!aff.hasAny(['banned_at'])
           || (request.resource.data.banned_at is string
             && request.resource.data.banned_at.size() >= 0
             && request.resource.data.banned_at.size() <= 48))
-        && (!request.resource.data.keys().hasAny(['banned_reason'])
+        && (!aff.hasAny(['banned_reason'])
           || (request.resource.data.banned_reason is string
-            && request.resource.data.banned_reason.size() <= 500));
+            && request.resource.data.banned_reason.size() <= 500))
+        && (!aff.hasAny(['last_read_announcement_at'])
+          || (request.resource.data.last_read_announcement_at is string
+            && request.resource.data.last_read_announcement_at.size() >= 10
+            && request.resource.data.last_read_announcement_at.size() <= 48))
+        && (!aff.hasAny(['b_test_opt_in'])
+          || request.resource.data.b_test_opt_in is bool)
+        && (!aff.hasAny(['b_test_opt_in_at'])
+          || (request.resource.data.b_test_opt_in_at is string
+            && request.resource.data.b_test_opt_in_at.size() >= 0
+            && request.resource.data.b_test_opt_in_at.size() <= 48))
+        && (!aff.hasAny(['b_test_consent_version'])
+          || (request.resource.data.b_test_consent_version is string
+            && request.resource.data.b_test_consent_version.size() <= 48))
+        && (!aff.hasAny(['b_test_prompt_dismissed_at'])
+          || (request.resource.data.b_test_prompt_dismissed_at is string
+            && request.resource.data.b_test_prompt_dismissed_at.size() >= 0
+            && request.resource.data.b_test_prompt_dismissed_at.size() <= 48));
     }
 
+    function mllProfileOptionalFieldsOk() {
+      return mllProfileOptionalFieldsOkForAffected(request.resource.data.keys());
+    }
+
+    // created_at は通常不変だが、退会→再登録（withdrawn true→false）時のみ更新を許可
     function mllProfileCreatedAtImmutOk() {
       return !resource.data.keys().hasAny(['created_at'])
-        || request.resource.data.created_at == resource.data.created_at;
+        || request.resource.data.created_at == resource.data.created_at
+        || (resource.data.keys().hasAny(['withdrawn']) && resource.data.withdrawn == true
+            && request.resource.data.keys().hasAny(['withdrawn']) && request.resource.data.withdrawn == false);
     }
 
     function mllProfileMarchinzIdImmutOk() {
@@ -403,19 +647,23 @@ service cloud.firestore {
         || request.resource.data.marchinz_public_id == resource.data.marchinz_public_id;
     }
 
+    // 退会ロック: 通常は withdrawn=true を撤回不可。ただし本人の再登録（withdrawn→false）は許可
     function mllProfileWithdrawnLockOk() {
       return !resource.data.keys().hasAny(['withdrawn'])
         || resource.data.withdrawn != true
-        || (request.resource.data.keys().hasAny(['withdrawn']) && request.resource.data.withdrawn == true);
+        || (request.resource.data.keys().hasAny(['withdrawn']) && request.resource.data.withdrawn is bool);
     }
 
-    // create / update 共通（resource を参照しない）
+    // create / update 共通（update 時は変更フィールドのみ型検証）
     function mllProfileValuesOk(uid) {
+      let aff = resource == null
+        ? request.resource.data.keys()
+        : request.resource.data.diff(resource.data).affectedKeys();
       return mllProfileKeysAllowlisted()
         && mllProfileIdOk(uid)
         && mllProfileDisplayNameOk()
         && mllProfileTimestampsOk()
-        && mllProfileOptionalFieldsOk();
+        && mllProfileOptionalFieldsOkForAffected(aff);
     }
 
     // 既存ドキュメントの update のみ（create では使わない）
@@ -425,18 +673,133 @@ service cloud.firestore {
         && mllProfileWithdrawnLockOk();
     }
 
+    // 本人プロフィール保存: 変更フィールドだけ allowlist 検証（レガシーキーが残っていても更新可）
+    function mllProfilePatchKeysAllowlisted() {
+      let d = request.resource.data.diff(resource.data);
+      return d.affectedKeys().hasOnly([
+        'id',
+        'display_name',
+        'avatar_url',
+        'cover_image_url',
+        'created_at',
+        'updated_at',
+        'marchinz_public_id',
+        'withdrawn',
+        'withdrawn_at',
+        'cover_image_urls',
+        'cover_slideshow_style',
+        'prof_count_mll',
+        'prof_count_videos',
+        'prof_count_yt',
+        'prof_count_logdiary',
+        'section_vis_mll',
+        'section_vis_videos',
+        'section_vis_yt',
+        'section_vis_logdiary',
+        'profile_bio',
+        'profile_address_prefecture',
+        'profile_address_prefecture_public',
+        'profile_prefecture',
+        'profile_attributes',
+        'profile_gender',
+        'profile_birthdate',
+        'like_show_mll',
+        'like_show_community',
+        'like_show_calendar',
+        'like_show_video_bookmark',
+        'like_show_channel_bookmark',
+        'like_show_log_diary',
+        'legal_policy_accepted_version',
+        'legal_policy_accepted_at',
+        'banned',
+        'banned_at',
+        'banned_reason',
+        'last_read_announcement_at',
+        'b_test_opt_in',
+        'b_test_opt_in_at',
+        'b_test_consent_version',
+        'b_test_prompt_dismissed_at'
+      ]);
+    }
+
+    function mllProfileSelfUpdateDiffOk(uid) {
+      let d = request.resource.data.diff(resource.data);
+      return request.auth.uid == uid
+        && d.removedKeys().size() == 0
+        && mllProfilePatchKeysAllowlisted()
+        && mllProfileIdOk(uid)
+        && mllProfileDisplayNameOk()
+        && mllProfileTimestampsOk()
+        && mllProfileOptionalFieldsOkForAffected(d.affectedKeys());
+    }
+
+    // レガシーキー削除＋通常更新（FieldValue.delete あり）
+    function mllProfileSelfCleanupUpdateOk(uid) {
+      let d = request.resource.data.diff(resource.data);
+      return request.auth.uid == uid
+        && mllProfileKeysAllowlisted()
+        && mllProfileIdOk(uid)
+        && mllProfileDisplayNameOk()
+        && mllProfileTimestampsOk()
+        && mllProfileOptionalFieldsOkForAffected(request.resource.data.keys());
+    }
+
+    // レガシーフィールド削除のみ（removedKeys のみ・値の変更なし）
+    function mllProfileSelfLegacyDeleteOnlyOk(uid) {
+      let d = request.resource.data.diff(resource.data);
+      return request.auth.uid == uid
+        && mllProfileKeysAllowlisted()
+        && d.affectedKeys().hasOnly(['updated_at'])
+        && d.removedKeys().size() > 0
+        && mllProfileTimestampsOk();
+    }
+
     // mll_profiles/{uid}/profile_private/default — 性別・誕生日は本人のみ読める（ルート文書には載せない）
     function mllProfilePrivateSensitiveOk() {
-      return request.resource.data.keys().hasOnly(['profile_gender', 'profile_birthdate', 'updated_at'])
-        && request.resource.data.profile_gender is string
-        && request.resource.data.profile_gender in ['男性', '女性', 'その他', '無回答']
-        && request.resource.data.profile_birthdate is string
-        && request.resource.data.profile_birthdate.size() <= 12
-        && (request.resource.data.profile_birthdate == ''
-          || request.resource.data.profile_birthdate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'))
+      return request.resource.data.keys().hasOnly(['profile_gender', 'profile_birthdate', 'birthdate_change_count', 'birthdate_change_allowed', 'updated_at'])
+        && (!request.resource.data.keys().hasAny(['profile_gender'])
+          || (request.resource.data.profile_gender is string
+            && request.resource.data.profile_gender in ['', '男性', '女性', 'その他', '無回答']))
+        && (!request.resource.data.keys().hasAny(['profile_birthdate'])
+          || (request.resource.data.profile_birthdate is string
+            && request.resource.data.profile_birthdate.size() <= 12
+            && (request.resource.data.profile_birthdate == ''
+              || request.resource.data.profile_birthdate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'))))
+        && (!request.resource.data.keys().hasAny(['birthdate_change_count'])
+          || request.resource.data.birthdate_change_count is int)
+        && (!request.resource.data.keys().hasAny(['birthdate_change_allowed'])
+          || request.resource.data.birthdate_change_allowed is bool)
         && request.resource.data.updated_at is string
         && request.resource.data.updated_at.size() >= 10
         && request.resource.data.updated_at.size() <= 48;
+    }
+
+    function mllProfilePrivateSelfUpdateOk() {
+      let d = request.resource.data.diff(resource.data);
+      return d.removedKeys().size() == 0
+        && d.affectedKeys().hasOnly([
+          'profile_gender',
+          'profile_birthdate',
+          'birthdate_change_count',
+          'birthdate_change_allowed',
+          'updated_at'
+        ])
+        && (!d.affectedKeys().hasAny(['profile_gender'])
+          || (request.resource.data.profile_gender is string
+            && request.resource.data.profile_gender in ['', '男性', '女性', 'その他', '無回答']))
+        && (!d.affectedKeys().hasAny(['profile_birthdate'])
+          || (request.resource.data.profile_birthdate is string
+            && request.resource.data.profile_birthdate.size() <= 12
+            && (request.resource.data.profile_birthdate == ''
+              || request.resource.data.profile_birthdate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'))))
+        && (!d.affectedKeys().hasAny(['birthdate_change_count'])
+          || request.resource.data.birthdate_change_count is int)
+        && (!d.affectedKeys().hasAny(['birthdate_change_allowed'])
+          || request.resource.data.birthdate_change_allowed is bool)
+        && (!d.affectedKeys().hasAny(['updated_at'])
+          || (request.resource.data.updated_at is string
+            && request.resource.data.updated_at.size() >= 10
+            && request.resource.data.updated_at.size() <= 48));
     }
 
     function profilePrivateDocReadable(uid) {
@@ -470,6 +833,35 @@ service cloud.firestore {
       return requesterProfileNotWithdrawn() && requesterProfileNotBanned();
     }
 
+    // 退会処理中: 凍結ユーザーでも自分のサブコレクション等を削除できる。
+    // 前回退会が途中失敗して withdrawn=true のまま残っている場合の再試行も許可するため、
+    // 操作者プロフィールの withdrawn 状態は見ない（パス上の profileUid が本人であることのみ）。
+    function profileOwnerSelfDeleteOwn(profileUid) {
+      return signedIn() && request.auth.uid == profileUid;
+    }
+
+    // 本人による退会（withdrawn=true へ。クライアントは allowlist 内のフィールドのみ set）
+    // 途中失敗後の再試行（既に withdrawn=true）も許可。requesterCanAct は見ない（凍結・退会済みの完了処理用）。
+    function mllProfileSelfWithdrawOk(uid) {
+      return signedIn()
+        && request.auth.uid == uid
+        && resource != null
+        && request.resource.data.keys().hasAny(['withdrawn'])
+        && request.resource.data.withdrawn == true
+        && request.resource.data.display_name == '退会ユーザー'
+        && mllProfileKeysAllowlisted()
+        && mllProfileIdOk(uid)
+        && mllProfileDisplayNameOk()
+        && mllProfileTimestampsOk()
+        && mllProfileMarchinzIdImmutOk()
+        && mllProfileOptionalFieldsOkForAffected(request.resource.data.keys())
+        && (
+          !resource.data.keys().hasAny(['withdrawn'])
+          || resource.data.withdrawn != true
+          || resource.data.display_name == '退会ユーザー'
+        );
+    }
+
     // 他者プロフィールの凍結関連フィールドのみを管理人が変更するとき（merge 後の全文に対し diff で検証）
     function mllProfileBanAdminPatchOk(targetUid) {
       let d = request.resource.data.diff(resource.data);
@@ -494,10 +886,22 @@ service cloud.firestore {
     }
 
     // 本人による mll_profiles ルート更新: 退会済みドキュメントは管理人以外が触れない
+    // 退会済みプロフィールの本人更新は原則禁止。ただし再登録（withdrawn→false）は許可
     function mllProfileRootSelfUpdateNotWithdrawn() {
       return isPrivileged()
         || !resource.data.keys().hasAny(['withdrawn'])
-        || resource.data.withdrawn != true;
+        || resource.data.withdrawn != true
+        || (request.resource.data.keys().hasAny(['withdrawn']) && request.resource.data.withdrawn == false);
+    }
+
+    // MarchinZ Log 一括公開のみ（プロフィール画面のトグル）
+    function mllProfileSectionVisMllPatchOk() {
+      let d = request.resource.data.diff(resource.data);
+      return d.affectedKeys().hasOnly(['section_vis_mll', 'updated_at'])
+        && mllProfileSectionVisField('section_vis_mll')
+        && request.resource.data.updated_at is string
+        && request.resource.data.updated_at.size() >= 10
+        && request.resource.data.updated_at.size() <= 48;
     }
 
     match /mll_privileged_uids/{uid} {
@@ -528,15 +932,78 @@ service cloud.firestore {
         && isMarchinzPublicIdCounterBump();
     }
 
+    // 運営サイト全体お知らせ（Phase 1: ログイン済みのみ read。書込は mll_privileged_uids のみ）
+    function siteAnnouncementKeysOk() {
+      return request.resource.data.keys().hasOnly([
+        'title',
+        'body',
+        'link_href',
+        'link_label',
+        'active',
+        'published_at',
+        'updated_at',
+        'created_by_uid'
+      ]);
+    }
+
+    function siteAnnouncementValuesOk() {
+      return siteAnnouncementKeysOk()
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 120
+        && request.resource.data.body is string
+        && request.resource.data.body.size() <= 8000
+        && request.resource.data.active is bool
+        && request.resource.data.published_at is string
+        && request.resource.data.published_at.size() >= 10
+        && request.resource.data.published_at.size() <= 48
+        && request.resource.data.updated_at is string
+        && request.resource.data.updated_at.size() >= 10
+        && request.resource.data.updated_at.size() <= 48
+        && (!request.resource.data.keys().hasAny(['link_href'])
+          || (request.resource.data.link_href is string
+            && request.resource.data.link_href.size() <= 2048))
+        && (!request.resource.data.keys().hasAny(['link_label'])
+          || (request.resource.data.link_label is string
+            && request.resource.data.link_label.size() <= 80))
+        && (!request.resource.data.keys().hasAny(['created_by_uid'])
+          || (request.resource.data.created_by_uid is string
+            && request.resource.data.created_by_uid == request.auth.uid));
+    }
+
+    match /mll_site_announcements/{docId} {
+      allow read: if signedIn();
+      allow create: if isPrivileged()
+        && requesterCanAct()
+        && docId == 'current'
+        && siteAnnouncementValuesOk();
+      allow update: if isPrivileged()
+        && requesterCanAct()
+        && docId == 'current'
+        && siteAnnouncementValuesOk();
+      allow delete: if isPrivileged() && requesterCanAct() && docId == 'current';
+    }
+
+    function communityOpsThemeAllowedOnWrite() {
+      return request.resource.data.get('theme', '') != '運営より' || isPrivileged();
+    }
+
     match /mll_community_posts/{postId} {
-      allow read: if true;
+      allow read: if signedIn()
+        || (
+          resource.data.get('theme', '') != '質問'
+          && resource.data.get('theme', '') != '見学募集'
+          && resource.data.get('theme', '') != 'その他'
+        );
 
       allow create: if signedIn()
         && request.resource.data.user_id == request.auth.uid
-        && requesterCanAct();
+        && requesterCanAct()
+        && communityOpsThemeAllowedOnWrite();
 
       allow update: if signedIn()
         && immutableCoreUnchanged()
+        && communityOpsThemeAllowedOnWrite()
         && (
           (isPrivileged() && requesterProfileNotBanned())
           || (
@@ -564,6 +1031,54 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    match /mll_note_reports/{reportId} {
+      allow read: if isPrivileged();
+      allow create: if signedIn()
+        && request.resource.data.reporter_id == request.auth.uid
+        && requesterCanAct()
+        && request.resource.data.keys().hasOnly([
+          'reporter_id', 'target_uid', 'event_id', 'note_title', 'reason', 'created_at'
+        ])
+        && request.resource.data.target_uid is string
+        && request.resource.data.target_uid.size() >= 8
+        && request.resource.data.target_uid.size() <= 128
+        && request.resource.data.event_id is string
+        && request.resource.data.event_id.size() > 0
+        && request.resource.data.event_id.size() <= 128
+        && request.resource.data.note_title is string
+        && request.resource.data.note_title.size() <= 30
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() <= 500
+        && request.resource.data.created_at is string
+        && request.resource.data.created_at.size() > 0
+        && request.resource.data.created_at.size() <= 40;
+      allow update, delete: if false;
+    }
+
+    match /mll_moment_reports/{reportId} {
+      allow read: if isPrivileged();
+      allow create: if signedIn()
+        && request.resource.data.reporter_id == request.auth.uid
+        && requesterCanAct()
+        && request.resource.data.keys().hasOnly([
+          'reporter_id', 'target_uid', 'moment_id', 'body_excerpt', 'reason', 'created_at'
+        ])
+        && request.resource.data.target_uid is string
+        && request.resource.data.target_uid.size() >= 8
+        && request.resource.data.target_uid.size() <= 128
+        && request.resource.data.moment_id is string
+        && request.resource.data.moment_id.size() > 0
+        && request.resource.data.moment_id.size() <= 128
+        && request.resource.data.body_excerpt is string
+        && request.resource.data.body_excerpt.size() <= 120
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() <= 500
+        && request.resource.data.created_at is string
+        && request.resource.data.created_at.size() > 0
+        && request.resource.data.created_at.size() <= 40;
+      allow update, delete: if false;
+    }
+
     match /mll_mylist_reports/{reportId} {
       allow read: if isPrivileged();
       allow create: if signedIn()
@@ -584,6 +1099,183 @@ service cloud.firestore {
         && request.resource.data.created_at is string
         && request.resource.data.created_at.size() > 0
         && request.resource.data.created_at.size() <= 40;
+      allow update, delete: if false;
+    }
+
+  // 運営 UGC フィード（いいねは記録しない）。create は投稿者本人、read は特権 UID のみ。
+    match /mll_admin_ugc_feed/{feedId} {
+      function adminUgcFeedAllowedKeys() {
+        return [
+            'kind', 'action', 'actor_uid', 'actor_name', 'created_at', 'target_label', 'target_href',
+            'public_id', 'event_kind', 'event_date', 'event_name', 'event_id',
+            'post_id', 'thread_root_id', 'moment_id', 'note_event_id', 'list_id', 'log_id',
+            'search_query', 'share_channel'
+          ];
+      }
+
+      function adminUgcFeedSearchKindsOk() {
+        let sq = request.resource.data.search_query;
+        let sqOk = sq is string && sq.size() > 0 && sq.size() <= 200;
+        return request.resource.data.kind == 'video_search'
+          && sqOk
+          && request.resource.data.action == 'create'
+          || request.resource.data.kind == 'search_share'
+          && sqOk
+          && request.resource.data.share_channel is string
+          && request.resource.data.share_channel in ['copy', 'x', 'line', 'instagram', 'facebook']
+          && request.resource.data.action == 'create';
+      }
+
+      function adminUgcFeedCreateOk() {
+        return request.resource.data.keys().hasOnly(adminUgcFeedAllowedKeys())
+          && request.resource.data.kind is string
+          && request.resource.data.kind in [
+            'signup', 'event', 'moment', 'board', 'board_reply', 'note', 'mll_log', 'video_mylist', 'yt_mylist',
+            'video_search', 'search_share'
+          ]
+          && request.resource.data.action is string
+          && request.resource.data.action in ['create', 'delete']
+          && request.resource.data.actor_uid is string
+          && request.resource.data.actor_uid.size() >= 8
+          && request.resource.data.actor_uid.size() <= 128
+          && request.resource.data.actor_uid == request.auth.uid
+          && request.resource.data.actor_name is string
+          && request.resource.data.actor_name.size() > 0
+          && request.resource.data.actor_name.size() <= 120
+          && request.resource.data.created_at is string
+          && request.resource.data.created_at.size() > 0
+          && request.resource.data.created_at.size() <= 48
+          && request.resource.data.target_label is string
+          && request.resource.data.target_label.size() <= 200
+          && request.resource.data.target_href is string
+          && request.resource.data.target_href.size() <= 512
+          && (
+            !(request.resource.data.kind in ['video_search', 'search_share'])
+            || adminUgcFeedSearchKindsOk()
+          );
+      }
+
+      function adminUgcGuestVideoSearchCreateOk() {
+        return request.resource.data.keys().hasOnly([
+            'kind', 'action', 'actor_uid', 'actor_name', 'created_at', 'target_label', 'target_href', 'search_query'
+          ])
+          && request.resource.data.kind == 'video_search'
+          && request.resource.data.action == 'create'
+          && request.resource.data.actor_uid == 'mll_guest'
+          && request.resource.data.actor_name == 'ゲスト'
+          && request.resource.data.search_query is string
+          && request.resource.data.search_query.size() > 0
+          && request.resource.data.search_query.size() <= 200
+          && request.resource.data.created_at is string
+          && request.resource.data.created_at.size() > 0
+          && request.resource.data.created_at.size() <= 48
+          && request.resource.data.target_label is string
+          && request.resource.data.target_label.size() <= 200
+          && request.resource.data.target_href is string
+          && request.resource.data.target_href.size() <= 512;
+      }
+
+      function adminUgcGuestSearchShareCreateOk() {
+        return request.resource.data.keys().hasOnly([
+            'kind', 'action', 'actor_uid', 'actor_name', 'created_at', 'target_label', 'target_href',
+            'search_query', 'share_channel'
+          ])
+          && request.resource.data.kind == 'search_share'
+          && request.resource.data.action == 'create'
+          && request.resource.data.actor_uid == 'mll_guest'
+          && request.resource.data.actor_name == 'ゲスト'
+          && request.resource.data.search_query is string
+          && request.resource.data.search_query.size() > 0
+          && request.resource.data.search_query.size() <= 200
+          && request.resource.data.share_channel is string
+          && request.resource.data.share_channel in ['copy', 'x', 'line', 'instagram', 'facebook']
+          && request.resource.data.created_at is string
+          && request.resource.data.created_at.size() > 0
+          && request.resource.data.created_at.size() <= 48
+          && request.resource.data.target_label is string
+          && request.resource.data.target_label.size() <= 80
+          && request.resource.data.target_href is string
+          && request.resource.data.target_href.size() <= 512;
+      }
+
+      function adminUgcGuestFeedCreateOk() {
+        return request.auth == null
+          && (
+            adminUgcGuestVideoSearchCreateOk()
+            || adminUgcGuestSearchShareCreateOk()
+          );
+      }
+
+      allow read: if isPrivileged();
+      allow create: if adminUgcGuestFeedCreateOk()
+        || (
+          signedIn()
+          && requesterCanAct()
+          && adminUgcFeedCreateOk()
+        );
+      allow update, delete: if false;
+    }
+
+    // コミュニティ「更新情報」（演奏会等・掲示板タブ）。Board は未ログイン時に非公開カテゴリを read 拒否。
+    match /mll_community_updates/{updateId} {
+      function communityUpdateBoardGuestReadable() {
+        return resource.data.get('post_theme', '') != '質問'
+          && resource.data.get('post_theme', '') != '見学募集'
+          && resource.data.get('post_theme', '') != 'その他';
+      }
+
+      function communityUpdateEventCreateOk() {
+        return request.resource.data.keys().hasOnly([
+            'kind', 'action', 'actor_uid', 'actor_name', 'created_at', 'target_href', 'emoji',
+            'event_id', 'event_date', 'event_name'
+          ])
+          && request.resource.data.event_id is string
+          && request.resource.data.event_date is string
+          && request.resource.data.event_name is string;
+      }
+
+      function communityUpdateBoardCreateOk() {
+        return request.resource.data.keys().hasOnly([
+            'kind', 'action', 'actor_uid', 'actor_name', 'created_at', 'target_href', 'emoji',
+            'post_id', 'post_title', 'post_theme'
+          ])
+          && request.resource.data.post_id is string
+          && request.resource.data.post_title is string
+          && request.resource.data.post_theme is string;
+      }
+
+      function communityUpdateCreateOk() {
+        return request.resource.data.kind is string
+          && request.resource.data.kind in ['event', 'board']
+          && request.resource.data.action == 'create'
+          && request.resource.data.actor_uid is string
+          && request.resource.data.actor_uid.size() >= 8
+          && request.resource.data.actor_uid.size() <= 128
+          && request.resource.data.actor_uid == request.auth.uid
+          && request.resource.data.actor_name is string
+          && request.resource.data.actor_name.size() > 0
+          && request.resource.data.actor_name.size() <= 120
+          && request.resource.data.created_at is string
+          && request.resource.data.created_at.size() > 0
+          && request.resource.data.created_at.size() <= 48
+          && request.resource.data.target_href is string
+          && request.resource.data.target_href.size() <= 512
+          && request.resource.data.emoji is string
+          && request.resource.data.emoji.size() > 0
+          && request.resource.data.emoji.size() <= 8
+          && (
+            (request.resource.data.kind == 'event' && communityUpdateEventCreateOk())
+            || (request.resource.data.kind == 'board' && communityUpdateBoardCreateOk())
+          );
+      }
+
+      allow read: if resource.data.kind == 'event'
+        || (resource.data.kind == 'board' && (signedIn() || communityUpdateBoardGuestReadable()));
+
+      allow create: if signedIn()
+        && requesterCanAct()
+        && communityUpdateCreateOk();
+
       allow update, delete: if false;
     }
 
@@ -609,13 +1301,40 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/mll_profiles/$(uid))
         && (
           (isPrivileged() && request.auth.uid != uid && mllProfileBanAdminPatchOk(uid))
+          || (request.auth.uid == uid && mllProfileSelfWithdrawOk(uid))
           || (
             (request.auth.uid == uid || isPrivileged())
             && !(request.resource.data.diff(resource.data).affectedKeys().hasAny(['banned', 'banned_at', 'banned_reason']))
             && (
               isPrivileged()
               || (
+                request.auth.uid == uid
+                && requesterCanAct()
+                && mllProfileSectionVisMllPatchOk()
+              )
+              || (
                 mllProfileValuesOk(uid)
+                && mllProfileUpdateInvariantsOk()
+                && mllProfileRootSelfUpdateNotWithdrawn()
+              )
+              || (
+                request.auth.uid == uid
+                && requesterCanAct()
+                && mllProfileSelfUpdateDiffOk(uid)
+                && mllProfileUpdateInvariantsOk()
+                && mllProfileRootSelfUpdateNotWithdrawn()
+              )
+              || (
+                request.auth.uid == uid
+                && requesterCanAct()
+                && mllProfileSelfCleanupUpdateOk(uid)
+                && mllProfileUpdateInvariantsOk()
+                && mllProfileRootSelfUpdateNotWithdrawn()
+              )
+              || (
+                request.auth.uid == uid
+                && requesterCanAct()
+                && mllProfileSelfLegacyDeleteOnlyOk(uid)
                 && mllProfileUpdateInvariantsOk()
                 && mllProfileRootSelfUpdateNotWithdrawn()
               )
@@ -630,24 +1349,27 @@ service cloud.firestore {
 
         allow create, update: if docId == 'default'
           && profilePrivateDocWritable(uid)
-          && mllProfilePrivateSensitiveOk();
+          && (
+            resource == null
+              ? mllProfilePrivateSensitiveOk()
+              : mllProfilePrivateSelfUpdateOk()
+          );
 
         allow delete: if docId == 'default'
-          && signedIn()
-          && request.auth.uid == uid;
+          && profileOwnerSelfDeleteOwn(uid);
       }
 
       // 動画マイリストの「リスト」単位（名前・公開／非公開・表示順 list_order）
       match /video_lists/{listId} {
         allow read: if (signedIn() && request.auth.uid == uid)
-          || (signedIn()
-            && sectionVideosPublic(uid)
-            && resource.data.visibility == 'public');
+          || (videoListDocVisPublic()
+            && profileOwnerActiveForPublicContent(uid)
+            && sectionVideosPublic(uid));
 
         allow create: if signedIn()
           && request.auth.uid == uid
           && requesterCanAct()
-          && request.resource.data.keys().hasOnly(['name', 'oshi_text', 'visibility', 'list_order', 'created_at', 'updated_at'])
+          && request.resource.data.keys().hasOnly(['name', 'oshi_text', 'visibility', 'list_order', 'liked_by', 'created_at', 'updated_at'])
           && request.resource.data.name is string
           && request.resource.data.name.size() > 0
           && request.resource.data.name.size() <= 120
@@ -657,6 +1379,7 @@ service cloud.firestore {
           && request.resource.data.list_order is int
           && request.resource.data.list_order >= 0
           && request.resource.data.list_order <= 2000000
+          && request.resource.data.liked_by is map
           && request.resource.data.created_at is string
           && request.resource.data.created_at.size() > 0
           && request.resource.data.created_at.size() <= 40
@@ -665,71 +1388,44 @@ service cloud.firestore {
           && request.resource.data.updated_at.size() <= 40;
 
         allow update: if signedIn()
-          && request.auth.uid == uid
           && requesterCanAct()
-          && request.resource.data.keys().hasOnly(['name', 'oshi_text', 'visibility', 'list_order', 'created_at', 'updated_at'])
-          && request.resource.data.name is string
-          && request.resource.data.name.size() > 0
-          && request.resource.data.name.size() <= 120
-          && request.resource.data.oshi_text is string
-          && request.resource.data.oshi_text.size() <= 240
-          && request.resource.data.visibility in ['public', 'private']
-          && request.resource.data.list_order is int
-          && request.resource.data.list_order >= 0
-          && request.resource.data.list_order <= 2000000
-          && request.resource.data.created_at is string
-          && request.resource.data.created_at.size() <= 40
-          && request.resource.data.updated_at is string
-          && request.resource.data.updated_at.size() <= 40;
+          && (
+            (request.auth.uid == uid
+              && request.resource.data.keys().hasOnly(['name', 'oshi_text', 'visibility', 'list_order', 'liked_by', 'created_at', 'updated_at'])
+              && request.resource.data.name is string
+              && request.resource.data.name.size() > 0
+              && request.resource.data.name.size() <= 120
+              && request.resource.data.oshi_text is string
+              && request.resource.data.oshi_text.size() <= 240
+              && request.resource.data.visibility in ['public', 'private']
+              && request.resource.data.list_order is int
+              && request.resource.data.list_order >= 0
+              && request.resource.data.list_order <= 2000000
+              && request.resource.data.created_at is string
+              && request.resource.data.created_at.size() <= 40
+              && request.resource.data.updated_at is string
+              && request.resource.data.updated_at.size() <= 40)
+            || isVideoListLikeOnlyPatch()
+          );
 
-        allow delete: if signedIn() && request.auth.uid == uid && requesterCanAct();
+        allow delete: if profileOwnerSelfDeleteOwn(uid);
       }
 
       // 大会動画カードから保存（ブックマークは list_id でリストに紐付け）
       match /video_bookmarks/{bid} {
         allow read: if (signedIn() && request.auth.uid == uid)
-          || (signedIn()
-            && sectionVideosPublic(uid)
-            && videoListIsPublicForRead(uid, videoBookmarkListIdRead()));
+          || videoListIsPublicForRead(uid, videoBookmarkListIdRead());
 
         allow create: if signedIn()
           && request.auth.uid == uid
           && requesterCanAct()
-          && request.resource.data.keys().hasOnly([
-            'list_id', 'url', 'video_id', 'org_team', 'display_name', 'event_title',
-            'channel_name', 'channel_url', 'category', 'added_at', 'sort_index'
-          ])
-          && request.resource.data.list_id is string
-          && request.resource.data.list_id.size() > 0
-          && request.resource.data.list_id.size() <= 64
-          && exists(/databases/$(database)/documents/mll_profiles/$(uid)/video_lists/$(request.resource.data.list_id))
-          && request.resource.data.url is string
-          && request.resource.data.url.size() > 0
-          && request.resource.data.url.size() <= 2048
-          && request.resource.data.video_id is string
-          && request.resource.data.video_id.size() <= 32
-          && request.resource.data.org_team is string
-          && request.resource.data.org_team.size() <= 300
-          && request.resource.data.display_name is string
-          && request.resource.data.display_name.size() <= 300
-          && request.resource.data.event_title is string
-          && request.resource.data.event_title.size() <= 500
-          && request.resource.data.channel_name is string
-          && request.resource.data.channel_name.size() <= 200
-          && request.resource.data.channel_url is string
-          && request.resource.data.channel_url.size() <= 2048
-          && request.resource.data.category is string
-          && request.resource.data.category.size() <= 80
-          && request.resource.data.added_at is string
-          && request.resource.data.added_at.size() <= 40
-          && request.resource.data.sort_index is int
-          && request.resource.data.sort_index >= 0
-          && request.resource.data.sort_index <= 2147483647;
-        allow delete: if signedIn() && request.auth.uid == uid && requesterCanAct();
+          && videoBookmarkPayloadOk(uid);
+        allow delete: if profileOwnerSelfDeleteOwn(uid);
         allow update: if signedIn()
           && requesterCanAct()
           && (
             (request.auth.uid == uid && videoBookmarkSortOnly())
+            || (request.auth.uid == uid && videoBookmarkPayloadOk(uid))
             || isVideoBookmarkLikeOnlyPatch(uid)
           );
       }
@@ -737,14 +1433,14 @@ service cloud.firestore {
       // YouTube マイリストのリスト単位（動画マイリストの video_lists と同型）
       match /channel_lists/{listId} {
         allow read: if (signedIn() && request.auth.uid == uid)
-          || (signedIn()
-            && sectionYtPublic(uid)
-            && resource.data.visibility == 'public');
+          || (channelListDocVisPublic()
+            && profileOwnerActiveForPublicContent(uid)
+            && sectionYtPublic(uid));
 
         allow create: if signedIn()
           && request.auth.uid == uid
           && requesterCanAct()
-          && request.resource.data.keys().hasOnly(['name', 'oshi_text', 'visibility', 'list_order', 'created_at', 'updated_at'])
+          && request.resource.data.keys().hasOnly(['name', 'oshi_text', 'visibility', 'list_order', 'liked_by', 'created_at', 'updated_at'])
           && request.resource.data.name is string
           && request.resource.data.name.size() > 0
           && request.resource.data.name.size() <= 120
@@ -754,6 +1450,7 @@ service cloud.firestore {
           && request.resource.data.list_order is int
           && request.resource.data.list_order >= 0
           && request.resource.data.list_order <= 2000000
+          && request.resource.data.liked_by is map
           && request.resource.data.created_at is string
           && request.resource.data.created_at.size() > 0
           && request.resource.data.created_at.size() <= 40
@@ -762,62 +1459,42 @@ service cloud.firestore {
           && request.resource.data.updated_at.size() <= 40;
 
         allow update: if signedIn()
-          && request.auth.uid == uid
           && requesterCanAct()
-          && request.resource.data.keys().hasOnly(['name', 'oshi_text', 'visibility', 'list_order', 'created_at', 'updated_at'])
-          && request.resource.data.name is string
-          && request.resource.data.name.size() > 0
-          && request.resource.data.name.size() <= 120
-          && request.resource.data.oshi_text is string
-          && request.resource.data.oshi_text.size() <= 240
-          && request.resource.data.visibility in ['public', 'private']
-          && request.resource.data.list_order is int
-          && request.resource.data.list_order >= 0
-          && request.resource.data.list_order <= 2000000
-          && request.resource.data.created_at is string
-          && request.resource.data.created_at.size() <= 40
-          && request.resource.data.updated_at is string
-          && request.resource.data.updated_at.size() <= 40;
+          && (
+            (request.auth.uid == uid
+              && request.resource.data.keys().hasOnly(['name', 'oshi_text', 'visibility', 'list_order', 'liked_by', 'created_at', 'updated_at'])
+              && request.resource.data.name is string
+              && request.resource.data.name.size() > 0
+              && request.resource.data.name.size() <= 120
+              && request.resource.data.oshi_text is string
+              && request.resource.data.oshi_text.size() <= 240
+              && request.resource.data.visibility in ['public', 'private']
+              && request.resource.data.list_order is int
+              && request.resource.data.list_order >= 0
+              && request.resource.data.list_order <= 2000000
+              && request.resource.data.created_at is string
+              && request.resource.data.created_at.size() <= 40
+              && request.resource.data.updated_at is string
+              && request.resource.data.updated_at.size() <= 40)
+            || isChannelListLikeOnlyPatch()
+          );
 
-        allow delete: if signedIn() && request.auth.uid == uid && requesterCanAct();
+        allow delete: if profileOwnerSelfDeleteOwn(uid);
       }
 
       match /channel_bookmarks/{bid} {
         allow read: if (signedIn() && request.auth.uid == uid)
-          || (signedIn()
-            && sectionYtPublic(uid)
-            && channelListIsPublicForRead(uid, channelBookmarkListIdRead()));
+          || channelListIsPublicForRead(uid, channelBookmarkListIdRead());
         allow create: if signedIn()
           && request.auth.uid == uid
           && requesterCanAct()
-          && request.resource.data.keys().hasOnly([
-            'list_id', 'sort_index', 'channel_url', 'channel_name', 'channel_logo', 'category',
-            'added_at'
-          ])
-          && request.resource.data.list_id is string
-          && request.resource.data.list_id.size() > 0
-          && request.resource.data.list_id.size() <= 64
-          && exists(/databases/$(database)/documents/mll_profiles/$(uid)/channel_lists/$(request.resource.data.list_id))
-          && request.resource.data.sort_index is int
-          && request.resource.data.sort_index >= 0
-          && request.resource.data.sort_index <= 2147483647
-          && request.resource.data.channel_url is string
-          && request.resource.data.channel_url.size() > 0
-          && request.resource.data.channel_url.size() <= 2048
-          && request.resource.data.channel_name is string
-          && request.resource.data.channel_name.size() > 0
-          && request.resource.data.channel_name.size() <= 280
-          && request.resource.data.channel_logo is string
-          && request.resource.data.channel_logo.size() <= 2048
-          && request.resource.data.category is string
-          && request.resource.data.category.size() <= 80
-          && request.resource.data.added_at is string
-          && request.resource.data.added_at.size() <= 40;
-        allow delete: if signedIn() && request.auth.uid == uid && requesterCanAct();
+          && channelBookmarkPayloadOk(uid);
+        allow delete: if profileOwnerSelfDeleteOwn(uid);
         allow update: if signedIn()
           && requesterCanAct()
           && (
             (request.auth.uid == uid && channelBookmarkSortOnly())
+            || (request.auth.uid == uid && channelBookmarkPayloadOk(uid))
             || isChannelBookmarkLikeOnlyPatch(uid)
           );
       }
@@ -832,7 +1509,9 @@ service cloud.firestore {
             && request.resource.data.kind is string
             && request.resource.data.kind in [
               'like_mll_log', 'like_community_post', 'like_calendar_event',
-              'like_video_bookmark', 'like_channel_bookmark', 'like_log_diary'
+              'like_video_bookmark', 'like_channel_bookmark', 'like_log_diary',
+              'like_moment',
+              'like_video_list', 'like_channel_list'
             ]
             && request.resource.data.actor_uid is string
             && request.resource.data.actor_uid.size() >= 8
@@ -861,14 +1540,22 @@ service cloud.firestore {
             && request.resource.data.created_at.size() <= 48;
         }
 
+        function notifWasUnread() {
+          return !resource.data.keys().hasAny(['read'])
+            || resource.data.read == false
+            || resource.data.read == null;
+        }
+
         function notifReadMarkOk() {
           let d = request.resource.data.diff(resource.data);
           return d.affectedKeys().hasOnly(['read'])
             && request.resource.data.read == true
-            && resource.data.read == false;
+            && notifWasUnread();
         }
 
-        allow read: if signedIn() && request.auth.uid == uid;
+        // owner は全件。いいねした actor は自分が送った通知のみ読める（72h 重複抑止クエリ用）。
+        allow read: if signedIn()
+          && (request.auth.uid == uid || resource.data.actor_uid == request.auth.uid);
 
         allow create: if signedIn()
           && requesterCanAct()
@@ -878,30 +1565,65 @@ service cloud.firestore {
           && request.auth.uid == uid
           && notifReadMarkOk();
 
-        allow delete: if signedIn() && request.auth.uid == uid;
+        allow delete: if profileOwnerSelfDeleteOwn(uid);
+      }
+
+      // 運営 UGC 既読（管理者本人の mll_profiles 配下。特権 UID のみ）
+      match /admin_ugc_reads/{feedId} {
+        function adminUgcReadMarkOk() {
+          return request.resource.data.keys().hasOnly(['read', 'read_at'])
+            && request.resource.data.read == true
+            && request.resource.data.read_at is string
+            && request.resource.data.read_at.size() > 0
+            && request.resource.data.read_at.size() <= 48;
+        }
+
+        allow read: if signedIn()
+          && request.auth.uid == uid
+          && isPrivileged();
+
+        allow create, update: if signedIn()
+          && request.auth.uid == uid
+          && isPrivileged()
+          && adminUgcReadMarkOk();
+
+        allow delete: if false;
       }
 
       // Log日記（イベント参加登録済みのイベントごとに任意・写真最大10・本文2000字・公開/非公開）
       match /event_log_diaries/{eventId} {
-        // 本人は非公開も読める。その他は「公開日記プロフィール＋公開 visibility」のみ（未ログインでも読める ─ フィード一覧用）
+        // 本人は非公開も読める。その他は visibility==public のみ（未ログイン・共有 URL 可。section_vis_logdiary はプロフィール一覧 UI 用）
         allow read: if (signedIn() && request.auth.uid == uid)
           || (
             resource != null
-            && sectionLogdiaryPublic(uid)
+            && profileOwnerActiveForPublicContent(uid)
             && (!resource.data.keys().hasAny(['visibility']) || resource.data.visibility == 'public')
-          );
+          )
+          || (isPrivileged() && requesterProfileNotBanned());
 
         function diaryFieldsOk() {
           return request.resource.data.keys().hasOnly([
             'body', 'visibility', 'photo_urls',
-            'event_title', 'event_date', 'participation_style',
-            'created_at', 'updated_at'
+            'note_title', 'event_title', 'event_date', 'participation_style',
+            'cover_photo_index',
+            'created_at', 'updated_at', 'liked_by'
           ])
           && request.resource.data.body is string
           && request.resource.data.body.size() <= 2000
+          && request.resource.data.note_title is string
+          && request.resource.data.note_title.size() > 0
+          && request.resource.data.note_title.size() <= 30
           && request.resource.data.visibility in ['public', 'private']
           && request.resource.data.photo_urls is list
           && request.resource.data.photo_urls.size() <= 4
+          && (
+            !request.resource.data.keys().hasAny(['cover_photo_index'])
+            || (
+              request.resource.data.cover_photo_index is int
+              && request.resource.data.cover_photo_index >= 0
+              && request.resource.data.cover_photo_index <= 3
+            )
+          )
           && request.resource.data.event_title is string
           && request.resource.data.event_title.size() > 0
           && request.resource.data.event_title.size() <= 200
@@ -916,7 +1638,11 @@ service cloud.firestore {
           && request.resource.data.created_at.size() <= 40
           && request.resource.data.updated_at is string
           && request.resource.data.updated_at.size() > 0
-          && request.resource.data.updated_at.size() <= 40;
+          && request.resource.data.updated_at.size() <= 40
+          && (
+            !request.resource.data.keys().hasAny(['liked_by'])
+            || request.resource.data.liked_by is map
+          );
         }
 
         function hasAttendanceForEvent() {
@@ -926,10 +1652,13 @@ service cloud.firestore {
         }
 
         allow create: if signedIn()
-          && request.auth.uid == uid
           && requesterCanAct()
           && hasAttendanceForEvent()
-          && diaryFieldsOk();
+          && diaryFieldsOk()
+          && (
+            request.auth.uid == uid
+            || (isPrivileged() && requesterProfileNotBanned())
+          );
 
         allow update: if signedIn()
           && requesterCanAct()
@@ -937,9 +1666,68 @@ service cloud.firestore {
           && (
             (request.auth.uid == uid && hasAttendanceForEvent() && diaryFieldsOk())
             || isDiaryLikeOnlyPatch(uid)
+            || (isPrivileged() && requesterProfileNotBanned() && hasAttendanceForEvent() && diaryFieldsOk())
           );
 
-        allow delete: if signedIn() && request.auth.uid == uid && requesterCanAct();
+        allow delete: if profileOwnerSelfDeleteOwn(uid)
+          || (isPrivileged() && requesterProfileNotBanned());
+      }
+
+      // MarchinZ Moment（常時公開・本文400字・写真最大4枚）
+      match /moments/{momentId} {
+        allow read: if (signedIn() && request.auth.uid == uid)
+          || (
+            resource != null
+            && profileOwnerActiveForPublicContent(uid)
+            && (!resource.data.keys().hasAny(['visibility']) || resource.data.visibility == 'public')
+          );
+
+        function momentFieldsOk() {
+          return request.resource.data.keys().hasOnly([
+            'body', 'visibility', 'photo_urls', 'cover_photo_index',
+            'created_at', 'updated_at', 'liked_by'
+          ])
+          && request.resource.data.body is string
+          && request.resource.data.body.size() > 0
+          && request.resource.data.body.size() <= 400
+          && request.resource.data.visibility == 'public'
+          && request.resource.data.photo_urls is list
+          && request.resource.data.photo_urls.size() <= 4
+          && (
+            !request.resource.data.keys().hasAny(['cover_photo_index'])
+            || (
+              request.resource.data.cover_photo_index is int
+              && request.resource.data.cover_photo_index >= 0
+              && request.resource.data.cover_photo_index <= 3
+            )
+          )
+          && request.resource.data.created_at is string
+          && request.resource.data.created_at.size() > 0
+          && request.resource.data.created_at.size() <= 40
+          && request.resource.data.updated_at is string
+          && request.resource.data.updated_at.size() > 0
+          && request.resource.data.updated_at.size() <= 40
+          && (
+            !request.resource.data.keys().hasAny(['liked_by'])
+            || request.resource.data.liked_by is map
+          );
+        }
+
+        allow create: if signedIn()
+          && request.auth.uid == uid
+          && requesterCanAct()
+          && momentFieldsOk();
+
+        allow update: if signedIn()
+          && requesterCanAct()
+          && resource != null
+          && (
+            (request.auth.uid == uid && momentFieldsOk())
+            || isMomentLikeOnlyPatch(uid)
+          );
+
+        allow delete: if profileOwnerSelfDeleteOwn(uid)
+          || (isPrivileged() && requesterProfileNotBanned());
       }
     }
 
@@ -953,6 +1741,7 @@ service cloud.firestore {
         && (
           (signedIn() && resource.data.user_id == request.auth.uid)
           || (mllLogDocIsPublic() && sectionMllPublic(resource.data.user_id))
+          || (isPrivileged() && requesterProfileNotBanned())
         );
 
       allow create: if signedIn()
@@ -977,8 +1766,10 @@ service cloud.firestore {
           || isMllLogCalendarMergePatch()
         );
       allow delete: if signedIn()
-        && requesterCanAct()
-        && resource.data.user_id == request.auth.uid;
+        && (
+          resource.data.user_id == request.auth.uid
+          || (isPrivileged() && requesterProfileNotBanned())
+        );
     }
 
     // イベントページ用カレンダー（いいね・作成者編集・管理人）
@@ -988,6 +1779,53 @@ service cloud.firestore {
         && d.removedKeys().size() == 0
         && d.affectedKeys().hasOnly(['liked_by'])
         && likedByMapDiffOnlyOwnUid();
+    }
+
+    // 運営: ゴミ箱から掲示を復元（作成者を運営 UID に引き継ぎ）
+    function isCalendarEventRestorePatch() {
+      let d = request.resource.data.diff(resource.data);
+      return isPrivileged()
+        && requesterProfileNotBanned()
+        && resource.data.status == 'trashed'
+        && request.resource.data.status == 'active'
+        && request.resource.data.created_by == request.auth.uid
+        && request.resource.data.trashed_at == ''
+        && request.resource.data.trashed_by == ''
+        && request.resource.data.creator_display_name is string
+        && request.resource.data.creator_display_name.size() >= 1
+        && request.resource.data.creator_display_name.size() <= 120
+        && request.resource.data.creator_avatar_url is string
+        && request.resource.data.creator_avatar_url.size() <= 2000
+        && request.resource.data.restored_at is string
+        && request.resource.data.restored_at.size() >= 10
+        && request.resource.data.restored_at.size() <= 40
+        && request.resource.data.restored_by == request.auth.uid
+        && request.resource.data.original_created_by is string
+        && request.resource.data.original_created_by.size() <= 128
+        && d.removedKeys().size() == 0
+        && d.affectedKeys().hasOnly([
+          'status', 'trashed_at', 'trashed_by', 'created_by',
+          'creator_display_name', 'creator_avatar_url',
+          'original_created_by', 'restored_at', 'restored_by'
+        ]);
+    }
+
+    // 作成者・管理人: 掲示をゴミ箱へ（物理削除しない）
+    function isCalendarEventTrashPatch() {
+      let d = request.resource.data.diff(resource.data);
+      return signedIn()
+        && requesterCanAct()
+        && request.resource.data.created_by == resource.data.created_by
+        && resource.data.created_by == request.auth.uid
+        && d.removedKeys().size() == 0
+        && d.affectedKeys().hasOnly(['status', 'trashed_at', 'trashed_by'])
+        && request.resource.data.status == 'trashed'
+        && request.resource.data.trashed_at is string
+        && request.resource.data.trashed_at.size() >= 10
+        && request.resource.data.trashed_at.size() <= 40
+        && request.resource.data.trashed_by is string
+        && request.resource.data.trashed_by.size() >= 8
+        && request.resource.data.trashed_by.size() <= 128;
     }
 
     match /mll_calendar_events/{eventId} {
@@ -1006,7 +1844,7 @@ service cloud.firestore {
           'created_by', 'liked_by',
           'creator_display_name', 'creator_avatar_url', 'created_at'
         ])
-        && request.resource.data.kind in ['イベント', '演奏会', '大会']
+        && request.resource.data.kind in ['イベント', '演奏会', '大会', '一般', '高校', '中学生以下', 'カラーガード', '海外']
         && request.resource.data.date is string
         && request.resource.data.title is string
         && request.resource.data.title.size() > 0
@@ -1024,15 +1862,21 @@ service cloud.firestore {
         && request.resource.data.created_at is string;
 
       allow update: if signedIn()
-        && request.resource.data.created_by == resource.data.created_by
-        && request.resource.data.kind in ['イベント', '演奏会', '大会']
+        && request.resource.data.kind in ['イベント', '演奏会', '大会', '一般', '高校', '中学生以下', 'カラーガード', '海外']
         && (
-          (isPrivileged() && requesterProfileNotBanned())
+          isCalendarEventRestorePatch()
           || (
-            requesterCanAct()
+            request.resource.data.created_by == resource.data.created_by
             && (
-              isCalendarEventLikeOnlyPatch()
-              || resource.data.created_by == request.auth.uid
+              (isPrivileged() && requesterProfileNotBanned())
+              || (
+                requesterCanAct()
+                && (
+                  isCalendarEventLikeOnlyPatch()
+                  || isCalendarEventTrashPatch()
+                  || resource.data.created_by == request.auth.uid
+                )
+              )
             )
           )
         );
@@ -1043,15 +1887,31 @@ service cloud.firestore {
           || (requesterCanAct() && resource.data.created_by == request.auth.uid)
         );
 
-      match /attendees/{uid} {
-        allow read: if true;
-        allow create, update: if signedIn()
-          && request.auth.uid == uid
-          && requesterCanAct()
+      function isCalendarAttendeeMergeWrite() {
+        return isPrivileged()
+          && requesterProfileNotBanned()
           && request.resource.data.keys().hasOnly(['style'])
           && request.resource.data.style is string
           && request.resource.data.style in ['観戦', '出演', 'スタッフ/運営', 'チームスタッフ'];
-        allow delete: if signedIn() && request.auth.uid == uid && requesterCanAct();
+      }
+
+      match /attendees/{uid} {
+        allow read: if true;
+        allow create, update: if signedIn()
+          && requesterCanAct()
+          && (
+            (
+              request.auth.uid == uid
+              && request.resource.data.keys().hasOnly(['style'])
+              && request.resource.data.style is string
+              && request.resource.data.style in ['観戦', '出演', 'スタッフ/運営', 'チームスタッフ']
+            )
+            || isCalendarAttendeeMergeWrite()
+          );
+        allow delete: if signedIn() && requesterCanAct() && (
+          request.auth.uid == uid
+          || (isPrivileged() && requesterProfileNotBanned())
+        );
       }
     }
 

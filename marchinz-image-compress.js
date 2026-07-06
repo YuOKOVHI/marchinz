@@ -15,7 +15,7 @@
 
   /**
    * @param {File} file
-   * @param {{ maxSizeMB?: number; maxWidthOrHeight?: number }=} overrides
+   * @param {{ maxSizeMB?: number; maxWidthOrHeight?: number; useWebWorker?: boolean; initialQuality?: number }=} overrides
    * @returns {Promise<Blob>}
    */
   async function compressForUpload(file, overrides) {
@@ -30,17 +30,19 @@
     }
     const maxSizeMB = overrides?.maxSizeMB ?? 0.3;
     const maxWidthOrHeight = overrides?.maxWidthOrHeight ?? 1024;
+    const wantWorker = overrides?.useWebWorker !== false;
     const baseOpts = {
       maxSizeMB,
       maxWidthOrHeight,
-      useWebWorker: true,
+      useWebWorker: wantWorker,
       fileType: "image/jpeg",
-      initialQuality: 0.82,
+      initialQuality: overrides?.initialQuality ?? 0.82,
     };
     try {
       const out = await ic(file, baseOpts);
       return out instanceof Blob ? out : file;
     } catch (e) {
+      if (!wantWorker) throw e;
       console.warn("[MarchinZ] imageCompression (worker) retry without worker", e);
       const out = await ic(file, { ...baseOpts, useWebWorker: false });
       return out instanceof Blob ? out : file;
@@ -131,11 +133,113 @@
     container.appendChild(cell);
   }
 
+  /** @type {{ el: HTMLElement; onKey: (ev: KeyboardEvent) => void } | null} */
+  let activePhotoLightbox = null;
+
+  function closePhotoLightbox() {
+    if (!activePhotoLightbox) return;
+    document.removeEventListener("keydown", activePhotoLightbox.onKey);
+    try {
+      activePhotoLightbox.el.remove();
+    } catch {
+      //
+    }
+    document.documentElement.classList.remove("mz-photo-lightbox-open");
+    document.body.classList.remove("mz-photo-lightbox-open");
+    activePhotoLightbox = null;
+  }
+
+  /**
+   * 掲示板など：画像を画面内に収めて表示（拡大しすぎない）
+   * @param {string[]} urls
+   * @param {number} [startIndex=0]
+   */
+  function openPhotoLightbox(urls, startIndex = 0) {
+    const list = (Array.isArray(urls) ? urls : [])
+      .map((u) => String(u || "").trim())
+      .filter((u) => /^https?:\/\//i.test(u));
+    if (!list.length) return;
+    closePhotoLightbox();
+    let idx = Math.max(0, Math.min(Number(startIndex) || 0, list.length - 1));
+
+    const root = document.createElement("div");
+    root.className = "mz-photo-lightbox";
+    root.setAttribute("role", "dialog");
+    root.setAttribute("aria-modal", "true");
+    root.setAttribute("aria-label", "画像を表示");
+
+    const backdrop = document.createElement("button");
+    backdrop.type = "button";
+    backdrop.className = "mz-photo-lightbox-backdrop";
+    backdrop.setAttribute("aria-label", "閉じる");
+    backdrop.tabIndex = -1;
+
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "mz-photo-lightbox-close";
+    closeBtn.setAttribute("aria-label", "閉じる");
+    closeBtn.textContent = "×";
+
+    const frame = document.createElement("div");
+    frame.className = "mz-photo-lightbox-frame";
+
+    const img = document.createElement("img");
+    img.className = "mz-photo-lightbox-img";
+    img.alt = "";
+    img.draggable = false;
+    bindImgGuards(img);
+
+    const show = () => {
+      img.src = list[idx];
+      img.alt = list.length > 1 ? `画像 ${idx + 1} / ${list.length}` : "投稿画像";
+    };
+
+    const onKey = (ev) => {
+      if (ev.key === "Escape") {
+        ev.preventDefault();
+        closePhotoLightbox();
+        return;
+      }
+      if (list.length < 2) return;
+      if (ev.key === "ArrowLeft") {
+        ev.preventDefault();
+        idx = (idx - 1 + list.length) % list.length;
+        show();
+      } else if (ev.key === "ArrowRight") {
+        ev.preventDefault();
+        idx = (idx + 1) % list.length;
+        show();
+      }
+    };
+
+    backdrop.addEventListener("click", () => closePhotoLightbox());
+    closeBtn.addEventListener("click", () => closePhotoLightbox());
+    root.addEventListener("click", (ev) => {
+      if (ev.target === root || ev.target === frame) closePhotoLightbox();
+    });
+    img.addEventListener("click", (ev) => ev.stopPropagation());
+
+    frame.appendChild(img);
+    root.appendChild(backdrop);
+    root.appendChild(frame);
+    root.appendChild(closeBtn);
+    document.body.appendChild(root);
+    document.documentElement.classList.add("mz-photo-lightbox-open");
+    document.body.classList.add("mz-photo-lightbox-open");
+    show();
+    document.addEventListener("keydown", onKey);
+    activePhotoLightbox = { el: root, onKey };
+    closeBtn.focus();
+  }
+
   window.MarchinZImage = {
     RAW_INPUT_MAX_BYTES,
     ERR_TOO_LARGE,
     compressForUpload,
+    bindImgGuards,
     ensureProtectedImgWrap,
     appendProtectedPhoto,
+    openPhotoLightbox,
+    closePhotoLightbox,
   };
 })();
