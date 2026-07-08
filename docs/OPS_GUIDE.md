@@ -90,6 +90,24 @@ firebase deploy --only firestore:rules,storage
 
 反映後、ブラウザでハードリロードして再試行してください。
 
+### Storage バケットの CORS 設定（2026-07-08 設定済み・重要）
+
+バケット `marchinz-app.firebasestorage.app` には **GCS の CORS 設定**が入っています。役割は2つ:
+
+1. **本番からのアップロード**（Storage SDK の put。PUT/POST/Authorization/x-goog-resumable が必要）
+2. **canvas への画像描画**（MarchinZ Log 動画書き出しが Note 写真/アバターを crossOrigin で読む。GET が必要）
+
+現在の設定（2エントリ）:
+
+| origin | method | 用途 |
+|--------|--------|------|
+| `https://marchinz.netlify.app` | GET/HEAD/PUT/POST/DELETE | 本番のアップロード+動画書き出し |
+| `http://localhost:8000`, `http://localhost:8123` | 同上 | ローカル開発 |
+
+**注意**: この設定を消したり GET だけに絞ったりすると、**本番の画像アップロードが全滅**します（プロフィール/Note/Moment/掲示板/Days 写真）。オリジン追加（独自ドメイン移行等）は既存エントリを保ったまま追記すること。
+
+設定方法: gsutil 不要。firebase CLI ログイン済みなら GCS JSON API に PATCH できる（`storage.googleapis.com/storage/v1/b/{bucket}` の `cors` フィールド。firebase-tools の保存トークンを流用するスクリプト例はセッション記録参照）。または Google Cloud Console → Cloud Storage → バケット → 設定 → CORS。
+
 ## 4) デプロイ前チェック
 
 - `#mll` で投稿して一覧に反映される

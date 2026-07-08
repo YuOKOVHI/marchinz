@@ -4,11 +4,12 @@
  * Leaflet には依存せず、Web Mercator を自前計算してオフスクリーン canvas(1080×1920 縦型)へ
  * 地図タイル+軌跡+アバター+停留カードを再描画し、canvas.captureStream + MediaRecorder で録画する。
  *
- * CORS メモ(2026-07 実測):
+ * CORS メモ(2026-07-08 更新):
  *   - CARTO タイル / lh3.googleusercontent.com(Googleアバター) … crossOrigin="anonymous" で taint なし
- *   - firebasestorage.googleapis.com(Note写真・アップロードアバター) … バケット CORS 未設定のため taint する
- *     → crossOrigin ロードに失敗した画像は canvas に描かず、プレースホルダへ自動フォールバック
- *       (1枚でも taint すると captureStream 全体が失敗するため、失敗の局所化が最優先)
+ *   - firebasestorage.googleapis.com(Note写真・アップロードアバター) … バケットに CORS 設定済み
+ *     (marchinz.netlify.app + localhost:8000/8123 に GET 許可。docs/OPS_GUIDE.md「Storage CORS」参照)
+ *     → 通常は taint せず写真が動画に写る。未許可オリジンや設定退行時は crossOrigin ロードに失敗し、
+ *       プレースホルダへ自動フォールバック(1枚でも taint すると captureStream 全体が失敗するため)
  */
 (function () {
   "use strict";
