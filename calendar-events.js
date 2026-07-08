@@ -2894,13 +2894,19 @@
 
   function renderCurrentView() {
     window.MarchinZEventMap?.refresh(
-      eventsCache.map((ev) => ({
-        id: ev.id,
-        kind: ev.kind,
-        date: ev.date,
-        title: ev.title,
-        venue_pref: ev.venue_pref,
-      })),
+      eventsCache.map((ev) => {
+        // 吹き出しの参加予定者アイコン用: 公開 Log 参加者のアバターURL(カードの顔アイコンと同じ集合)
+        const faceUids = getMllPublicFaceUids(ev);
+        return {
+          id: ev.id,
+          kind: ev.kind,
+          date: ev.date,
+          title: ev.title,
+          venue_pref: ev.venue_pref,
+          faces: faceUids.slice(0, 8).map((uid) => profileMini(uid).avatar || ""),
+          faces_total: faceUids.length,
+        };
+      }),
     );
     const controlsRow = document.querySelector(".calendar-ev-controls-row");
     const yearReel = document.getElementById("calendar-ev-year-reel");

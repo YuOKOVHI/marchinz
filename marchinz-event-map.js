@@ -35,6 +35,40 @@
     return t.getMonth() + 1 + "/" + t.getDate() + "(" + POP_WDAYS[t.getDay()] + ")";
   }
 
+  /**
+   * 吹き出しの参加予定者アイコン(facepile)。Apple Watch の連絡先クラスタのように、
+   * 人数が増えるほどアイコンを小さく重ねて表示する。ev.faces はアバターURL配列(空文字=未設定)。
+   * @param {HTMLElement|null} host
+   * @param {{faces?: string[], faces_total?: number}} ev
+   */
+  function appendPopFaces(host, ev) {
+    if (!host || !Array.isArray(ev.faces) || !ev.faces.length) return;
+    var total = Number(ev.faces_total) || ev.faces.length;
+    // 人数でサイズ段階を決める(多いほど小さく)
+    var size = total <= 3 ? "s1" : total <= 6 ? "s2" : "s3";
+    var row = document.createElement("span");
+    row.className = "mz-evmap-pop-faces mz-evmap-pop-faces--" + size;
+    var shown = ev.faces.slice(0, 7);
+    shown.forEach(function (u, i) {
+      var im = document.createElement("img");
+      im.className = "mz-evmap-pop-face";
+      im.alt = "";
+      im.loading = "lazy";
+      im.decoding = "async";
+      im.style.zIndex = String(shown.length - i);
+      im.src = u || "logo/marchinz-logo.png";
+      im.onerror = function () { im.src = "logo/marchinz-logo.png"; im.onerror = null; };
+      row.appendChild(im);
+    });
+    if (total > shown.length) {
+      var more = document.createElement("span");
+      more.className = "mz-evmap-pop-face-more";
+      more.textContent = "+" + (total - shown.length);
+      row.appendChild(more);
+    }
+    host.appendChild(row);
+  }
+
   function todayKey() {
     var n = new Date();
     return n.getFullYear() + "-" + String(n.getMonth() + 1).padStart(2, "0") + "-" + String(n.getDate()).padStart(2, "0");
@@ -144,8 +178,12 @@
           var d = String(ev.date).slice(0, 10);
           return d >= today && d <= soonKey;
         });
+        // 揺れはピンごとにランダム周期・位相(風で揺れる風船のように、全部同じ動きにならない)
+        var swayDur = (2.6 + Math.random() * 1.8).toFixed(2) + "s";
+        var swayDelay = (0.7 + Math.random() * 2.2).toFixed(2) + "s";
         var html =
-          '<span class="mz-evmap-pin' + (soon ? " mz-evmap-pin--soon" : "") + '" style="--pin:' + color + ";--mz-drop:" + (dropIndex++ * 70) + 'ms">' +
+          '<span class="mz-evmap-pin' + (soon ? " mz-evmap-pin--soon" : "") + '" style="--pin:' + color +
+          ";--mz-drop:" + (dropIndex++ * 70) + "ms;--mz-sway-dur:" + swayDur + ";--mz-sway-delay:" + swayDelay + '">' +
           (soon ? '<span class="mz-evmap-pulse"></span>' : "") +
           '<span class="mz-evmap-pin-count">' + list.length + "</span></span>";
         // アンカーはバルーン下端の尖り(46px目)= 実際の開催地に合わせる
@@ -170,6 +208,7 @@
             '<span class="mz-evmap-pop-title"></span></span>' +
             '<span class="mz-evmap-pop-go" aria-hidden="true">→</span>';
           item.querySelector(".mz-evmap-pop-title").textContent = ev.title || "";
+          appendPopFaces(item.querySelector(".mz-evmap-pop-main"), ev);
           item.addEventListener("click", function () {
             map.closePopup();
             jumpToCard(ev.id);

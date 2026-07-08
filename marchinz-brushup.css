@@ -1686,25 +1686,17 @@ a.calendar-ev-topline-creator-name-link:hover {
   pointer-events: none;
 }
 
-/* 直近1ヶ月のイベントは頭がふわふわ弾んでワクワク感を出す。
-   後方の .mz-evmap-pin(落下のみ)に負けないよう2クラスで詳細度を上げる */
-.mz-evmap-pin.mz-evmap-pin--soon {
-  animation: mz-pin-drop 0.55s cubic-bezier(0.2, 1.5, 0.4, 1) both, mz-evmap-bob 1.5s ease-in-out 0.6s infinite;
-}
+/* 直近1ヶ月のイベント: 全ピン共通のランダム揺れ(後方定義)に任せ、
+   区別はパルスリング(.mz-evmap-pulse)で行う */
 
 @keyframes mz-evmap-pulse {
   0% { transform: scale(1); opacity: 0.85; }
   100% { transform: scale(2.1); opacity: 0; }
 }
 
-@keyframes mz-evmap-bob {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-4px); }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .mz-evmap-pulse { animation: none; display: none; }
-  .mz-evmap-pin--soon { animation: none; }
+  .mz-evmap-pin { animation: none; }
 }
 
 /* ポップアップ外枠(Leafletラッパー): 丸みと柔らかい影で「可愛く」 */
@@ -1790,6 +1782,42 @@ a.calendar-ev-topline-creator-name-link:hover {
   font-size: 0.85rem;
   font-weight: 700;
   color: var(--pin, #1e4fd6);
+}
+
+/* 参加予定者アイコン(facepile): Apple Watch のクラスタのように、人数が多いほど小さく重ねる */
+.mz-evmap-pop-faces {
+  display: flex;
+  align-items: center;
+  margin-top: 0.3rem;
+}
+
+.mz-evmap-pop-faces--s1 { --face: 26px; }
+.mz-evmap-pop-faces--s2 { --face: 21px; }
+.mz-evmap-pop-faces--s3 { --face: 17px; }
+
+.mz-evmap-pop-face {
+  width: var(--face, 24px);
+  height: var(--face, 24px);
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(15, 33, 56, 0.28);
+  background: #eef1f5;
+  margin-left: calc(var(--face, 24px) * -0.34);
+  position: relative;
+}
+
+.mz-evmap-pop-face:first-child { margin-left: 0; }
+
+.mz-evmap-pop-face-more {
+  margin-left: 0.32rem;
+  padding: 0.1rem 0.42rem;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--pin, #1e4fd6);
+  background: rgba(30, 79, 214, 0.1);
+  white-space: nowrap;
 }
 
 .mz-evmap-pop-more { margin: 0.3rem 0 0; font-size: 0.7rem; color: var(--muted); text-align: center; }
@@ -2047,11 +2075,13 @@ a.calendar-ev-topline-creator-name-link:hover {
    イベントマップの「楽しい動き」強化
    ========================================================================== */
 
-/* ピン: 上から落ちてぽよんと着地(スタッガーは JS が --mz-drop を付与) */
+/* ピン: 上から落ちてぽよんと着地(スタッガーは JS が --mz-drop を付与)→
+   その後は足先を支点に風船のようにゆらゆら(周期・位相は JS がピンごとにランダム付与) */
 .mz-evmap-pin {
-  animation: mz-pin-drop 0.55s cubic-bezier(0.2, 1.5, 0.4, 1) both;
-  animation-delay: var(--mz-drop, 0ms);
-  transition: transform 0.18s cubic-bezier(0.2, 1.6, 0.4, 1);
+  animation:
+    mz-pin-drop 0.55s cubic-bezier(0.2, 1.5, 0.4, 1) var(--mz-drop, 0ms) both,
+    mz-evmap-sway var(--mz-sway-dur, 3.2s) ease-in-out var(--mz-sway-delay, 1s) infinite;
+  transform-origin: 50% calc(100% + 6px); /* バルーンの足先(開催地)を支点に */
   cursor: pointer;
 }
 
@@ -2061,9 +2091,17 @@ a.calendar-ev-topline-creator-name-link:hover {
   100% { transform: translateY(0) scale(1); }
 }
 
-/* ホバーでぷるんと拡大 */
+@keyframes mz-evmap-sway {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(3deg); }
+  75% { transform: rotate(-3deg); }
+}
+
+/* ホバーでぷるんと拡大(無限の揺れアニメが transform を握るため、ホバー中はアニメを外す) */
 .mz-evmap-icon:hover .mz-evmap-pin {
+  animation: none;
   transform: scale(1.22) rotate(-4deg);
+  transition: transform 0.18s cubic-bezier(0.2, 1.6, 0.4, 1);
 }
 
 /* 吹き出し: ぽよんと出現 + ブランド角丸。
