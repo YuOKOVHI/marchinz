@@ -72,6 +72,8 @@
     excludedOrgTeams: new Set(),
     /** 配信元絞り込み（""=すべて, "matsuri"=マーチング祭, "drumcorps"=DrumcorpsfunTV） */
     sourceFilter: "",
+    /** 配信年での絞り込み（null=すべて, "2026" など西暦4桁の文字列） */
+    yearFilter: null,
     recentSearches: [],
   };
 
@@ -950,16 +952,23 @@
     return wrap;
   }
 
+  /** カタカナ→ひらがな折りたたみ。検索側と行側の双方に掛けて、かな表記ゆれを吸収する */
+  function foldKanaToHiragana(s) {
+    return String(s).replace(/[ァ-ヶ]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0x60));
+  }
+
   function normalize(s) {
-    return (s || "").toString().toLowerCase();
+    return foldKanaToHiragana((s || "").toString().normalize("NFKC").toLowerCase());
   }
 
   /** 団体/チームの部分一致（表記ゆれ吸収・チップ並び用） */
   function normalizeTeamSearchKey(s) {
-    return String(s ?? "")
-      .trim()
-      .normalize("NFKC")
-      .toLowerCase();
+    return foldKanaToHiragana(
+      String(s ?? "")
+        .trim()
+        .normalize("NFKC")
+        .toLowerCase()
+    );
   }
 
   /** 表示中チップの並び: 完全一致 > 接頭 > 接尾(例: Nana→KaeNana) > その他の部分一致 */
@@ -1435,6 +1444,49 @@
     setSearchOverlay(false);
   }
 
+  /** 年フィルタチップ: state.rows の配信年からチップを生成(降順)。クリックでトグル */
+  function renderYearChips() {
+    const wrap = $("#video-year-chips");
+    if (!wrap) return;
+    const years = [...new Set(state.rows.map((row) => String(row["配信日"] ?? "").slice(0, 4)))]
+      .filter((y) => /^\d{4}$/.test(y))
+      .sort((a, b) => b.localeCompare(a));
+    wrap.replaceChildren();
+    if (!years.length) {
+      wrap.hidden = true;
+      return;
+    }
+    const label = document.createElement("span");
+    label.className = "mz-year-chips-label";
+    label.textContent = "年で絞り込み";
+    wrap.appendChild(label);
+    for (const y of years) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "mz-year-chip";
+      btn.dataset.year = y;
+      btn.textContent = y;
+      btn.setAttribute("aria-pressed", "false");
+      btn.addEventListener("click", () => {
+        state.yearFilter = state.yearFilter === y ? null : y;
+        renderYearChipActiveState();
+        applyFilter();
+        render();
+      });
+      wrap.appendChild(btn);
+    }
+    wrap.hidden = false;
+    renderYearChipActiveState();
+  }
+
+  function renderYearChipActiveState() {
+    document.querySelectorAll("#video-year-chips .mz-year-chip").forEach((btn) => {
+      const active = btn.dataset.year === state.yearFilter;
+      btn.classList.toggle("mz-year-chip--active", active);
+      btn.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+  }
+
   function applyFilter() {
     state.recommendVisibleCount = RECOMMEND_INITIAL;
     const teamQ = normalizeTeamSearchKey((qTeam?.value ?? "").trim());
@@ -1468,6 +1520,10 @@
       const rowIsFocus = hasTheFocusToken(rawOrg) || hasTheFocusToken(rowDisplayName(row));
 
       if (state.excludedOrgTeams.has(rawOrg)) return false;
+
+      if (state.yearFilter && String(row["配信日"] ?? "").slice(0, 4) !== state.yearFilter) {
+        return false;
+      }
 
       if (state.exactOrgTeam !== null) {
         if (isFocusSelected) {
@@ -3103,6 +3159,7 @@
       });
       state.filtered = [...state.rows];
       rebuildMarchinzOrgMaps();
+      renderYearChips();
       const urlPage = readUrlState();
       applyFilter();
       if (urlPage !== null) {
@@ -3137,6 +3194,8 @@
     if (qFree) qFree.value = "";
     if (optMatchExact) optMatchExact.checked = false;
     if (optCrossBoth) optCrossBoth.checked = true;
+    state.yearFilter = null;
+    renderYearChipActiveState();
     applyFilter();
     renderBrowsePanel();
     setSearchOverlay(false);

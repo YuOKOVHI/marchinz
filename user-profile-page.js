@@ -50,13 +50,14 @@
   let adminBanCtx = { db: /** @type {any} */ (null), targetUid: "" };
 
   /** `data-prof-tab` / `#prof-pane-*` / `?tab=` / section_vis_* と一致（index.html と揃える） */
-  const PROFILE_TAB_KEYS = /** @type {readonly ["notifs", "ops", "mll", "logdiary", "videos", "yt"]} */ ([
+  const PROFILE_TAB_KEYS = /** @type {readonly ["notifs", "ops", "mll", "logdiary", "videos", "yt", "base"]} */ ([
     "notifs",
     "ops",
     "mll",
     "logdiary",
     "videos",
     "yt",
+    "base",
   ]);
 
   const DEFAULT_VIDEO_LIST_ID = "default";
@@ -3442,7 +3443,7 @@
   }
 
   function profileOwnerInboxTab(tab) {
-    return tab === "notifs" || tab === "ops";
+    return tab === "notifs" || tab === "ops" || tab === "base";
   }
 
   function setProfileTab(t) {
@@ -3482,7 +3483,7 @@
         continue;
       }
       pane.hidden = p !== tab;
-      if (p === "notifs" || p === "ops") pane.removeAttribute("aria-hidden");
+      if (p === "notifs" || p === "ops" || p === "base") pane.removeAttribute("aria-hidden");
     }
   }
 
@@ -3952,7 +3953,7 @@
         if (!(btn instanceof HTMLElement)) return;
         const k = btn.getAttribute("data-prof-tab") || "";
         if (!isValidProfileTab(k)) return;
-        if (k === "notifs" || k === "ops") {
+        if (k === "notifs" || k === "ops" || k === "base") {
           btn.hidden = true;
           return;
         }
@@ -4176,10 +4177,22 @@
         opsPane.removeAttribute("aria-hidden");
       }
     }
+    const tabBase = el("#prof-tab-base");
+    if (tabBase) tabBase.hidden = !showOwnerChrome;
+    const basePane = el("#prof-pane-base");
+    if (basePane) {
+      if (!showOwnerChrome) {
+        basePane.hidden = true;
+        basePane.setAttribute("aria-hidden", "true");
+      } else {
+        basePane.removeAttribute("aria-hidden");
+      }
+    }
     if (showOwnerChrome) {
       await renderNotificationsPane(db, targetUid, notifsSnap);
       if (isProfileLoadStale(gen, targetUid)) return;
       renderOpsPane();
+      window.MarchinZBase?.mount(targetUid);
     } else {
       const nh = el("#prof-notifs-list");
       if (nh) nh.replaceChildren();

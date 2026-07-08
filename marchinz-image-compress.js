@@ -77,9 +77,29 @@
    * 既存の img を内側ラップ＋透明オーバーレイで囲む（同一 img に対して一度だけ）。
    * @param {HTMLImageElement} img
    */
+  /**
+   * 縦長画像(スマホスクショ等)に mz-img-portrait を付与する。
+   * 一覧カードの固定比クロップで意図しない断片が見えるのを防ぐため、
+   * CSS 側で縦長のみ object-fit: contain に切り替える判定に使う。
+   * @param {HTMLImageElement} img
+   */
+  function tagPortraitOrientation(img) {
+    const apply = () => {
+      if (img.naturalWidth > 0 && img.naturalHeight > img.naturalWidth * 1.15) {
+        img.classList.add("mz-img-portrait");
+      }
+    };
+    if (img.complete && img.naturalWidth > 0) {
+      apply();
+    } else {
+      img.addEventListener("load", apply, { once: true });
+    }
+  }
+
   function ensureProtectedImgWrap(img) {
     if (!img) return;
     bindImgGuards(img);
+    tagPortraitOrientation(img);
     if (img.closest(".marchinz-protected-photo-inner")) return;
     const p = img.parentElement;
     if (!p) return;
@@ -117,6 +137,7 @@
     img.decoding = "async";
     if (o.classNameImg) img.className = o.classNameImg;
     bindImgGuards(img);
+    tagPortraitOrientation(img);
     const overlay = document.createElement("span");
     overlay.className = "marchinz-protected-photo-overlay";
     overlay.setAttribute("aria-hidden", "true");

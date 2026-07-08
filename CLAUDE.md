@@ -18,12 +18,13 @@
 
 ---
 
-## 絶対禁止（ディレクター・大河内様の明示指示があるまで）
+## デプロイ運用（2026-07-08 改訂: 「git push = 本番デプロイ」）
 
-- `netlify deploy`（`--prod` 含む）
-- `firebase deploy`（rules / hosting / storage すべて）
-- `git commit` / `git push` / GitHub Actions の手動起動
-- 上記を「念のため」「確認のため」に実行しない
+- **本番反映は `git push origin main`**（Netlify が GitHub 連携で自動ビルド・公開）
+- push 前に必須: ①localhost で該当ハッシュを実機確認 ②`data-mz-version` と触った JS の `?v=` を更新 ③`python3 check_data.py` が OK
+- **UI が大きく変わる変更は、push 前にディレクター（大河内様）のローカル確認 OK を得る**
+- `firebase deploy`（rules/storage）は影響が大きいため、従来どおり**ディレクター承認後のみ**
+- GitHub Actions（YouTube 日次更新+Gemini ダイジェスト）は自動運転。手動起動は自由
 
 ## 必須ルール（毎回の変更）
 
@@ -41,20 +42,15 @@ python3 -m http.server 8000
 
 ---
 
-## 本番・Git の真実（最重要）
+## 本番・Git の真実（2026-07-08 改訂: 三層乖離は解消済み）
 
 | 層 | 内容 |
 |----|------|
-| **本番 Netlify** | **このフォルダから手動** `netlify deploy --prod` のみ。自動デプロイは停止運用 |
-| **GitHub `origin/main`** | YouTube 等の **データ** を Actions が日次更新。サイト JS は古いコミットベースのことあり |
-| **ローカル作業コピー** | **1.26.x の実装の正**。`git pull` だけでは本番と一致しない |
+| **GitHub `origin/main`** | **唯一の正**。サイト実装+データの両方。Actions が毎朝データを自動 commit |
+| **本番 Netlify** | `main` への push で自動ビルド・公開（GitHub 連携） |
+| **ローカル作業コピー** | main のチェックアウト。作業→検証→push |
 
-データだけ GitHub から取り込む例:
-
-```bash
-git fetch origin main
-git checkout origin/main -- youtube-list/YouTubeリスト.csv youtube-list/youtube-list.inline.js data.json data.inline.js
-```
+旧運用（ローカルが正・手動 netlify deploy・main は古い JS）は **2026-07-08 の v1.29.1 push で終了**。`git pull` すれば本番と同じものが手に入る。
 
 ---
 

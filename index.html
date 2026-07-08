@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-version="1.26.65">
+<html lang="ja" data-mz-version="1.29.1">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -62,7 +62,7 @@
     <link rel="manifest" href="manifest.webmanifest?v=1.25.64" />
     <link rel="apple-touch-icon" href="pwa/icon-192.png?v=1.25.64" />
     <link rel="icon" type="image/x-icon" href="favicon.ico?v=1.25.64" />
-    <link rel="icon" type="image/png" href="favicon.png?v=1.25.64" />
+    <link rel="icon" type="image/png" href="favicon.png?v=1.27.0" />
     <title>マーチンズ/MarchinZ | 残す、見つける、盛り上げる！マーチングコミュニティ「マーチンズ」</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -73,6 +73,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css" />
     <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css?v=1.25.64" />
     <link rel="stylesheet" href="styles.css?v=1.26.58" />
+    <link rel="stylesheet" href="marchinz-brushup.css?v=1.29.1" />
     <!-- Microsoft Clarity -->
     <script type="text/javascript">
       (function(c,l,a,r,i,t,y){
@@ -983,6 +984,7 @@
               </div>
             </div>
           </div>
+          <div id="video-year-chips" class="mz-year-chips" hidden role="group" aria-label="配信年で絞り込み"></div>
           <p class="rights-notice rights-notice--page-foot rights-notice--youtube-foot rights-notice--videos-under-sort" role="note">
             動画はYouTube等の共有機能（埋め込み）を利用して表示しています。掲載されている動画の著作権、肖像権、および一切の権利は、各権利所有者および配信元に帰属します。
           </p>
@@ -1245,8 +1247,39 @@
                   <a href="#youtube" data-page="youtube" class="mll-lp-inline-link">YouTube一覧</a>
                 </div>
               </div>
-              <div class="mll-lp-hero-visual" aria-hidden="true">
-                <div class="mll-lp-hero-art">
+              <div class="mll-lp-hero-visual">
+                <div id="mz-hero-dash" class="mz-hero-dash" hidden>
+                  <div class="mz-hero-dash-head">
+                    <span class="mz-hero-dash-label" lang="en">TODAY'S MARCHINZ</span>
+                    <span id="mz-dash-date" class="mz-hero-dash-date"></span>
+                  </div>
+                  <a id="mz-dash-countdown" class="mz-dash-countdown" href="#community/events" data-page="community" hidden>
+                    <span class="mz-dash-count-num"><b id="mz-dash-days">–</b><span class="mz-dash-count-unit">日後</span></span>
+                    <span class="mz-dash-count-body">
+                      <span class="mz-dash-count-eyebrow" lang="en">NEXT EVENT</span>
+                      <span id="mz-dash-ev-title" class="mz-dash-ev-title"></span>
+                      <span class="mz-dash-count-meta">
+                        <span id="mz-dash-ev-kind" class="mz-dash-kind"></span>
+                        <span id="mz-dash-ev-pref"></span>
+                        <span id="mz-dash-ev-date"></span>
+                      </span>
+                    </span>
+                  </a>
+                  <a id="mz-dash-video" class="mz-dash-video" target="_blank" rel="noopener noreferrer" hidden>
+                    <img id="mz-dash-video-thumb" class="mz-dash-video-thumb" alt="" loading="lazy" decoding="async" />
+                    <span class="mz-dash-video-body">
+                      <span class="mz-dash-video-eyebrow" lang="en">LATEST VIDEO</span>
+                      <span id="mz-dash-video-title" class="mz-dash-video-title"></span>
+                    </span>
+                    <span class="mz-dash-video-play" aria-hidden="true">▶</span>
+                  </a>
+                  <div class="mz-dash-stats">
+                    <a href="#videos" data-page="videos" class="mz-dash-stat"><b id="mz-dash-stat-videos">–</b><span>大会動画</span></a>
+                    <a href="#community/events" data-page="community" class="mz-dash-stat"><b id="mz-dash-stat-events">–</b><span>今後の予定</span></a>
+                    <a href="#youtube" data-page="youtube" class="mz-dash-stat"><b id="mz-dash-stat-channels">–</b><span>チャンネル</span></a>
+                  </div>
+                </div>
+                <div class="mll-lp-hero-art" aria-hidden="true">
                   <img
                     src="images/lp/hero-show.png?v=1.6.45"
                     alt=""
@@ -1257,6 +1290,42 @@
                   />
                 </div>
               </div>
+            </div>
+          </section>
+
+          <section class="mll-lp-band" data-mz-top-section hidden aria-labelledby="mz-top-events-h">
+            <div class="mll-lp-container">
+              <div class="mz-top-fresh-head">
+                <h2 id="mz-top-events-h" class="mll-lp-section-head">近日開催予定</h2>
+                <a href="#community/events" data-page="community" class="mz-top-more-link">すべて見る →</a>
+              </div>
+              <div id="mz-top-events-grid" class="mz-event-grid" hidden></div>
+            </div>
+          </section>
+
+          <section class="mll-lp-band" data-mz-top-section hidden aria-label="今週のマーチング">
+            <div class="mll-lp-container">
+              <div id="mz-top-digest" hidden></div>
+            </div>
+          </section>
+
+          <section class="mll-lp-band" data-mz-top-section hidden aria-labelledby="mz-top-yt-h">
+            <div class="mll-lp-container">
+              <div class="mz-top-fresh-head">
+                <h2 id="mz-top-yt-h" class="mll-lp-section-head">YouTube 新着</h2>
+                <a href="#youtube" data-page="youtube" class="mz-top-more-link">チャンネル一覧へ →</a>
+              </div>
+              <div id="mz-top-yt-grid" class="mz-video-grid" hidden></div>
+            </div>
+          </section>
+
+          <section class="mll-lp-band" data-mz-top-section hidden aria-labelledby="mz-top-fresh-h">
+            <div class="mll-lp-container">
+              <div class="mz-top-fresh-head">
+                <h2 id="mz-top-fresh-h" class="mll-lp-section-head">新着の大会動画</h2>
+                <a href="#videos" data-page="videos" class="mz-top-more-link">すべて見る →</a>
+              </div>
+              <div id="mz-top-video-grid" class="mz-video-grid" hidden></div>
             </div>
           </section>
 
@@ -1513,6 +1582,9 @@
               <button type="button" class="user-profile-tab" id="prof-tab-yt" role="tab" data-prof-tab="yt" aria-selected="false" aria-controls="prof-pane-yt" tabindex="-1">
                 YouTube マイリスト <span id="prof-count-yt" class="user-profile-tab-count">0</span>
               </button>
+              <button type="button" class="user-profile-tab user-profile-tab--base" id="prof-tab-base" role="tab" data-prof-tab="base" aria-selected="false" aria-controls="prof-pane-base" tabindex="-1" hidden>
+                🏠 MarchinZ Base
+              </button>
             </nav>
             <div
               id="prof-pane-notifs"
@@ -1551,6 +1623,11 @@
                 >
                   MarchinZ Log：公開
                 </button>
+                <button type="button" id="mz-journey-open-btn" class="mz-journey-open-btn">
+                  <span class="mz-journey-open-icon" aria-hidden="true">🗺️</span>
+                  あしあとを再生
+                  <span class="mz-journey-open-sub">Log の足取りを地図でたどる</span>
+                </button>
                 <div id="prof-mll-main"></div>
                 <div id="prof-mll-purge-mount" class="user-profile-mll-purge-mount" hidden></div>
               </div>
@@ -1582,6 +1659,10 @@
                 推し団体/チームの公式 YouTube と推しポイント！。<a href="#youtube">YouTubeページから登録！</a>
               </p>
               <div id="prof-mylist-yt" class="user-profile-mylist-videos-root"></div>
+            </div>
+            <div id="prof-pane-base" class="user-profile-tab-pane" hidden role="tabpanel" aria-labelledby="prof-tab-base">
+              <p class="user-profile-pane-lead">練習・楽器・本番の記録。あなただけの部室です(この内容は非公開)。</p>
+              <div id="mz-base-root" class="mz-base-root"></div>
             </div>
           </div>
         </section>
@@ -1660,6 +1741,20 @@
             <div class="calendar-ev-lead-register-line">
               <span class="static-panel-lead calendar-ev-lead-inline">演奏会や大会の観戦/出場の記録を残す「MarchinZ Log」</span>
             </div>
+            <section id="mz-event-map-block" class="mz-event-map-block" hidden aria-label="開催地マップ">
+              <div class="mz-event-map-head">
+                <button type="button" class="mz-event-map-toggle" data-evmap-toggle aria-expanded="true">
+                  🗾 マップで見る
+                </button>
+                <div class="mz-evmap-chips" role="group" aria-label="期間で絞り込み">
+                  <button type="button" class="mz-evmap-chip mz-evmap-chip--active" data-evmap-period="upcoming">今後</button>
+                  <button type="button" class="mz-evmap-chip" data-evmap-period="3mo">3ヶ月以内</button>
+                  <button type="button" class="mz-evmap-chip" data-evmap-period="all">全期間</button>
+                </div>
+                <span class="mz-evmap-count" data-evmap-count aria-live="polite"></span>
+              </div>
+              <div id="mz-event-map" class="mz-event-map"></div>
+            </section>
             <section
               id="community-updates-event"
               class="community-updates"
@@ -3457,6 +3552,29 @@
 
     </main>
 
+    <nav class="mz-tabbar" aria-label="モバイル下部ナビゲーション">
+      <a href="#top" data-page="mll" class="mz-tabbar-link">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l-2 0 9 -9 9 9 -2 0" /><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-7" /><path d="M9 21v-6a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v6" /></svg>
+        <span>TOP</span>
+      </a>
+      <a href="#videos" data-page="videos" class="mz-tabbar-link">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 10l4.553 -2.276a1 1 0 0 1 1.447 .894v6.764a1 1 0 0 1 -1.447 .894l-4.553 -2.276v-4z" /><rect x="3" y="6" width="12" height="12" rx="2" /></svg>
+        <span>大会動画</span>
+      </a>
+      <a href="#youtube" data-page="youtube" class="mz-tabbar-link">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="4" /><path d="M10 9l5 3l-5 3z" /></svg>
+        <span>YouTube</span>
+      </a>
+      <a href="#community/events" data-page="community" class="mz-tabbar-link">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="7" r="4" /><path d="M3 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /><path d="M21 21v-2a4 4 0 0 0 -3 -3.85" /></svg>
+        <span>コミュニティ</span>
+      </a>
+      <a href="#profile" data-page="profile" class="mz-tabbar-link">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="10" r="3" /><path d="M6.168 18.849a4 4 0 0 1 3.832 -2.849h4a4 4 0 0 1 3.834 2.855" /></svg>
+        <span>マイページ</span>
+      </a>
+    </nav>
+
     <div id="auth-loading-overlay" class="auth-loading-overlay" aria-hidden="true">
       <div class="auth-loading-overlay-inner" role="status" aria-live="polite">
         <span class="auth-loading-spinner" aria-hidden="true"></span>
@@ -3567,25 +3685,32 @@
           </a>
         </p>
       </div>
-      <nav class="footer-nav" aria-label="サイト内ページとポリシー">
-        <div class="footer-nav-inner">
-          <a href="#top" data-page="mll" class="footer-nav-link">TOP</a
-          ><span class="footer-nav-sep" aria-hidden="true">/</span
-          ><a href="#community/events" data-page="community" class="footer-nav-link">コミュニティ</a
-          ><span class="footer-nav-sep" aria-hidden="true">/</span
-          ><a href="#videos" data-page="videos" class="footer-nav-link">大会動画</a
-          ><span class="footer-nav-sep" aria-hidden="true">/</span
-          ><a href="#youtube" data-page="youtube" class="footer-nav-link">YouTube</a
-          ><span class="footer-nav-sep" aria-hidden="true">/</span
-          ><a href="#webmagazine" data-page="webmagazine" class="footer-nav-link">メディア</a
-          ><span class="footer-nav-sep" aria-hidden="true">/</span
-          ><a href="#creators" data-page="creators" class="footer-nav-link">クリエイター</a
-          ><span class="footer-nav-sep" aria-hidden="true">/</span
-          ><a href="#ops" data-page="ops" class="footer-nav-link">運営</a
-          ><span class="footer-nav-sep" aria-hidden="true">/</span
-          ><a href="#terms" data-page="terms" class="footer-nav-link">利用規約</a
-          ><span class="footer-nav-sep" aria-hidden="true">/</span
-          ><a href="#privacy" data-page="privacy" class="footer-nav-link">プライバシーポリシー</a>
+      <nav class="footer-nav mz-footer-grid" aria-label="サイト内ページとポリシー">
+        <div class="mz-footer-brand">
+          <p class="mz-footer-logo" lang="en">MarchinZ</p>
+          <p class="mz-footer-tagline">残す、見つける、盛り上げる！<br />マーチングコミュニティ「マーチンズ」</p>
+        </div>
+        <div class="mz-footer-col">
+          <p class="mz-footer-col-head">みる・さがす</p>
+          <a href="#top" data-page="mll" class="footer-nav-link">TOP</a>
+          <a href="#videos" data-page="videos" class="footer-nav-link">大会動画</a>
+          <a href="#youtube" data-page="youtube" class="footer-nav-link">YouTube</a>
+          <a href="#webmagazine" data-page="webmagazine" class="footer-nav-link">メディア</a>
+          <a href="#creators" data-page="creators" class="footer-nav-link">クリエイター</a>
+        </div>
+        <div class="mz-footer-col">
+          <p class="mz-footer-col-head">つながる</p>
+          <a href="#community/events" data-page="community" class="footer-nav-link">イベント</a>
+          <a href="#community/moments" data-page="community" class="footer-nav-link">モーメント</a>
+          <a href="#community/board" data-page="community" class="footer-nav-link">掲示板</a>
+          <a href="#community/notes" data-page="community" class="footer-nav-link">ノート</a>
+          <a href="#profile" data-page="profile" class="footer-nav-link">マイページ</a>
+        </div>
+        <div class="mz-footer-col">
+          <p class="mz-footer-col-head">サイト情報</p>
+          <a href="#ops" data-page="ops" class="footer-nav-link">運営について</a>
+          <a href="#terms" data-page="terms" class="footer-nav-link">利用規約</a>
+          <a href="#privacy" data-page="privacy" class="footer-nav-link">プライバシーポリシー</a>
         </div>
       </nav>
       <p class="footer-copy">
@@ -3613,8 +3738,9 @@
     <script defer src="marchinz-admin-ugc.js?v=1.26.65"></script>
     <script defer src="marchinz-admin-trash.js?v=1.25.105"></script>
     <script defer src="marchinz-admin-banned.js?v=1.25.64"></script>
-    <script defer src="site-nav.js?v=1.26.65"></script>
+    <script defer src="site-nav.js?v=1.27.0"></script>
     <script defer src="data.inline.js?v=1.26.36"></script>
+    <script defer src="digest.inline.js?v=1.27.0"></script>
     <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
     <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
     <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
@@ -3624,7 +3750,7 @@
     <script defer src="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
     <script defer src="marchinz-default-assets.js?v=1.25.64"></script>
-    <script defer src="marchinz-image-compress.js?v=1.25.64"></script>
+    <script defer src="marchinz-image-compress.js?v=1.27.1"></script>
     <script defer src="marchinz-rate-limit.js?v=1.25.64"></script>
     <script defer src="auth-config.js?v=1.26.0"></script>
     <script defer src="auth.js?v=1.26.61"></script>
@@ -3637,16 +3763,21 @@
     <script defer src="marchinz-like-show.js?v=1.26.61"></script>
     <script defer src="marchinz-engage-ui.js?v=1.25.64"></script>
     <script defer src="marchinz-icons.js?v=1.26.28"></script>
-    <script defer src="mll-role.js?v=1.26.65"></script>
+    <script defer src="mll-role.js?v=1.28.0"></script>
     <script defer src="mll-video-mylist.js?v=1.26.62"></script>
     <script defer src="mll.js?v=1.26.62"></script>
-    <script defer src="calendar-events.js?v=1.26.62"></script>
+    <script defer src="calendar-events.js?v=1.28.0"></script>
     <script defer src="community.js?v=1.26.62"></script>
     <script defer src="event-log-diary.js?v=1.26.62"></script>
     <script defer src="mln-public-feed.js?v=1.25.79"></script>
     <script defer src="mll-moment.js?v=1.26.62"></script>
-    <script defer src="user-profile-page.js?v=1.26.44"></script>
-    <script defer src="app.js?v=1.26.60"></script>
+    <script defer src="user-profile-page.js?v=1.29.0"></script>
+    <script defer src="marchinz-base.js?v=1.29.0"></script>
+    <script defer src="app.js?v=1.27.0"></script>
+    <script defer src="marchinz-top-highlights.js?v=1.29.1"></script>
+    <script defer src="marchinz-confetti.js?v=1.28.0"></script>
+    <script defer src="marchinz-journey.js?v=1.29.0"></script>
+    <script defer src="marchinz-event-map.js?v=1.29.0"></script>
     <script>
       (function () {
         if (!("serviceWorker" in navigator)) return;

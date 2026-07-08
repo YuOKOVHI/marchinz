@@ -1359,6 +1359,62 @@ service cloud.firestore {
           && profileOwnerSelfDeleteOwn(uid);
       }
 
+      // MarchinZ Base（練習ログ・楽器メンテ・ショウ覚えメモ）: 完全非公開・本人のみ read/write。
+      // profile_private と同じ本人限定パターンを再利用し、公開設定（section_vis_*）は持たない。
+      match /base_practice_logs/{docId} {
+        allow read, delete: if profilePrivateDocReadable(uid);
+        allow create, update: if profilePrivateDocWritable(uid)
+          && request.resource.data.keys().hasOnly(['date', 'tags', 'minutes', 'memo', 'created_at', 'updated_at'])
+          && request.resource.data.date is string
+          && request.resource.data.date.size() > 0
+          && request.resource.data.date.size() <= 10
+          && request.resource.data.tags is list
+          && request.resource.data.tags.size() <= 6
+          && request.resource.data.minutes is int
+          && request.resource.data.minutes >= 0
+          && request.resource.data.minutes <= 1440
+          && request.resource.data.memo is string
+          && request.resource.data.memo.size() <= 800;
+      }
+
+      match /base_instruments/{docId} {
+        allow read, delete: if profilePrivateDocReadable(uid);
+        allow create, update: if profilePrivateDocWritable(uid)
+          && request.resource.data.keys().hasOnly(
+            ['name', 'type', 'photo_url', 'maintenance_log', 'next_due_date', 'created_at', 'updated_at']
+          )
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 80
+          && request.resource.data.type is string
+          && request.resource.data.type.size() <= 40
+          && request.resource.data.photo_url is string
+          && request.resource.data.photo_url.size() <= 1000
+          && request.resource.data.maintenance_log is list
+          && request.resource.data.maintenance_log.size() <= 100
+          && request.resource.data.next_due_date is string
+          && request.resource.data.next_due_date.size() <= 10;
+      }
+
+      match /base_show_notes/{docId} {
+        allow read, delete: if profilePrivateDocReadable(uid);
+        allow create, update: if profilePrivateDocWritable(uid)
+          && request.resource.data.keys().hasOnly(
+            ['title', 'counts_text', 'position_text', 'caution_text', 'photo_url', 'created_at', 'updated_at']
+          )
+          && request.resource.data.title is string
+          && request.resource.data.title.size() > 0
+          && request.resource.data.title.size() <= 120
+          && request.resource.data.counts_text is string
+          && request.resource.data.counts_text.size() <= 2000
+          && request.resource.data.position_text is string
+          && request.resource.data.position_text.size() <= 2000
+          && request.resource.data.caution_text is string
+          && request.resource.data.caution_text.size() <= 2000
+          && request.resource.data.photo_url is string
+          && request.resource.data.photo_url.size() <= 1000;
+      }
+
       // 動画マイリストの「リスト」単位（名前・公開／非公開・表示順 list_order）
       match /video_lists/{listId} {
         allow read: if (signedIn() && request.auth.uid == uid)

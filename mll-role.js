@@ -564,6 +564,7 @@
     const logId = existing?.id || `${uid}_${Date.now()}`;
     const isNewLog = !existing;
     await db.collection("mll_logs").doc(logId).set(logPayload, { merge: true });
+    if (isNewLog) window.MarchinZConfetti?.burst();
     if (isNewLog && window.MarchinZAdminUgcLog?.recordMllLog) {
       const actorName = String(window.MLL_AUTH?.getDisplayName?.() || "").trim();
       void window.MarchinZAdminUgcLog.recordMllLog({

@@ -465,7 +465,7 @@
   setupMobileDrawer();
 
   const navLinks = document.querySelectorAll(
-    ".site-nav a[data-page], .footer-nav a[data-page], .site-mobile-drawer-nav a[data-page]",
+    ".site-nav a[data-page], .footer-nav a[data-page], .site-mobile-drawer-nav a[data-page], .mz-tabbar a[data-page]",
   );
 
   /** ヘッダー／フッター／ドロワー：同一タブでハッシュ遷移（意図しない新規タブを防ぐ） */
@@ -3221,11 +3221,13 @@
         currentCategory === "all"
           ? [...channelsWithOrder]
           : channelsWithOrder.filter((x) => x.category === currentCategory);
-      const needle = youtubeChannelSearch.trim().toLowerCase();
-      const scoped =
-        needle.length > 0
-          ? base.filter((x) => String(x.name || "").toLowerCase().includes(needle))
-          : base;
+      const foldKana = (s) =>
+        String(s || "")
+          .normalize("NFKC")
+          .toLowerCase()
+          .replace(/[ァ-ヶ]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0x60));
+      const needle = foldKana(youtubeChannelSearch.trim());
+      const scoped = needle.length > 0 ? base.filter((x) => foldKana(x.name).includes(needle)) : base;
       const sorted = scoped.sort((a, b) => {
         if (currentSort === "name") {
           return typeof MarchinZSort !== "undefined" && MarchinZSort && MarchinZSort.compare

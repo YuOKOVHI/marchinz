@@ -1,0 +1,2228 @@
+/*
+ * MarchinZ Brushup Layer (v1.27.0) — 案1「モダンクリーン進化」
+ * styles.css の後に読み込むオーバーレイ。ブランド3色(navy/blue/amber)は維持し、
+ * 余白・角丸・影・タイポグラフィ・カードUIを刷新する。
+ * ロールバックは index.html のこの <link> を外すだけ。
+ */
+
+:root {
+  --bg: #f5f6f8;
+  --border: rgba(15, 33, 56, 0.1);
+  --shadow: rgba(15, 33, 56, 0.08);
+
+  --mz-radius-card: 16px;
+  --mz-radius-ctl: 10px;
+  --mz-radius-thumb: 12px;
+  --mz-shadow-card: 0 1px 2px rgba(15, 33, 56, 0.05), 0 4px 16px rgba(15, 33, 56, 0.06);
+  --mz-shadow-card-hover: 0 2px 4px rgba(15, 33, 56, 0.07), 0 10px 28px rgba(15, 33, 56, 0.12);
+  --mz-shadow-pop: 0 8px 32px rgba(15, 33, 56, 0.18);
+  --mz-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", Meiryo, sans-serif;
+  --mz-tabbar-h: 3.6rem;
+}
+
+body {
+  font-family: var(--mz-font);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: 0.01em;
+}
+
+/* ---------- グローバルナビ(ピル化) ---------- */
+
+.site-nav {
+  background: var(--navy);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06) inset;
+}
+
+.site-nav-inner {
+  gap: 0.35rem;
+  padding: 0.45rem 0.6rem 0.7rem;
+}
+
+.site-nav-link {
+  border: none;
+  border-radius: 999px;
+  padding: 0.42rem 0.95rem;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.78);
+  background: rgba(255, 255, 255, 0.08);
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.site-nav-link:hover {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  text-decoration: none;
+}
+
+.site-nav-link.site-nav-link-active,
+.site-nav-link.site-nav-link-active:hover {
+  background: var(--blue);
+  color: #fff;
+  box-shadow: none;
+}
+
+/* ---------- パネル/カードの基礎 ---------- */
+
+.mll-panel,
+.search-panel,
+.static-panel,
+.user-profile-panel,
+.community-panel,
+.mz-admin-panel {
+  border-radius: var(--mz-radius-card);
+  border: 0.5px solid var(--border);
+  box-shadow: var(--mz-shadow-card);
+  background: var(--panel);
+}
+
+/* ---------- ページ見出し ---------- */
+
+.mz-philosophy-header {
+  margin-bottom: 1.1rem;
+}
+
+.mz-philosophy-label--en {
+  letter-spacing: 0.14em;
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+.mz-philosophy-heading {
+  font-size: 1.45rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.mz-philosophy-rule {
+  height: 3px;
+  width: 44px;
+  border-radius: 2px;
+  background: var(--amber-bright);
+}
+
+/* ---------- タブ(セグメント化) ---------- */
+
+.tabs.mz-tab-strip-yamap {
+  background: rgba(15, 33, 56, 0.06);
+  border-radius: 12px;
+  padding: 4px;
+  gap: 4px;
+  border: none;
+}
+
+.tabs.mz-tab-strip-yamap [role="tab"] {
+  border: none;
+  border-radius: 9px;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.tabs.mz-tab-strip-yamap [role="tab"][aria-selected="true"] {
+  background: #fff;
+  color: var(--navy);
+  box-shadow: 0 1px 3px rgba(15, 33, 56, 0.14);
+}
+
+/* ---------- 検索まわり ---------- */
+
+.search-panel input[type="search"],
+.search-panel input[type="text"],
+input[type="search"] {
+  border-radius: var(--mz-radius-ctl);
+  border: 1px solid var(--border);
+  background: #fff;
+  min-height: 2.7rem;
+  padding: 0.45rem 0.85rem;
+  font-size: 16px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+input[type="search"]:focus,
+.search-panel input[type="text"]:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(30, 79, 214, 0.15);
+}
+
+/* ---------- ボタン ---------- */
+
+.sort-btn,
+.page-btn,
+.btn-reset-search,
+.browse-inline-trigger,
+.recommend-more {
+  border-radius: var(--mz-radius-ctl);
+  border: 1px solid var(--border);
+  background: #fff;
+  font-weight: 600;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+.sort-btn:hover,
+.page-btn:hover,
+.recommend-more:hover {
+  border-color: var(--blue);
+  background: #f4f7ff;
+}
+
+.sort-btn:active,
+.page-btn:active {
+  transform: scale(0.97);
+}
+
+.sort-btn[aria-pressed="true"],
+.sort-btn.sort-btn-active {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: #fff;
+}
+
+.mll-lp-btn,
+.btn-share-search {
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+.mll-lp-btn--primary {
+  background: var(--blue);
+  border-color: var(--blue);
+  box-shadow: 0 4px 14px rgba(30, 79, 214, 0.35);
+}
+
+.mll-lp-btn--primary:hover {
+  background: var(--blue-deep);
+}
+
+/* ---------- 動画カード ---------- */
+
+ul.recommend-list,
+ul.video-result-list {
+  gap: 0.9rem;
+}
+
+.recommend-item {
+  border-radius: var(--mz-radius-card);
+  border: 0.5px solid var(--border);
+  background: #fff;
+  box-shadow: var(--mz-shadow-card);
+  overflow: hidden;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+@media (hover: hover) {
+  .recommend-item:hover {
+    box-shadow: var(--mz-shadow-card-hover);
+    transform: translateY(-2px);
+  }
+}
+
+.recommend-item-thumb-wrap {
+  border-radius: 0;
+}
+
+.recommend-item-thumb {
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  width: 100%;
+  display: block;
+}
+
+.skeleton-card {
+  border-radius: var(--mz-radius-card);
+}
+
+/* ==========================================================================
+   MarchinZ Log イベントカード刷新（#community/events, プロフィール）
+   既存の .calendar-ev-* クラスを維持したまま見た目だけ上書き。
+   kind 別アクセント色を CSS 変数で持たせ、上帯とチップに反映する。
+   ========================================================================== */
+
+.mll-log-item.calendar-ev-card {
+  --mz-ev-accent: var(--blue);
+  --mz-ev-accent-soft: #e8f1fe;
+  position: relative;
+  margin: 0 0 0.9rem;
+  padding: 1rem 1.15rem 0.9rem;
+  border: 0.5px solid var(--border);
+  border-left: none;
+  border-radius: var(--mz-radius-card);
+  background: #fff;
+  box-shadow: var(--mz-shadow-card);
+  overflow: hidden;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+/* 左の太いボーダーは廃止し、上辺の細いアクセント帯に置き換える */
+.mll-log-item.calendar-ev-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: var(--mz-ev-accent);
+}
+
+@media (hover: hover) {
+  .mll-log-item.calendar-ev-card:hover {
+    box-shadow: var(--mz-shadow-card-hover);
+    transform: translateY(-2px);
+  }
+}
+
+/* kind 別アクセント（詳細度をベース .mll-log-item.calendar-ev-card = 0,2,0 に合わせるため
+   .calendar-ev-card を二重掛けして 0,2,0 とし、後勝ちで確実に上書きする） */
+.calendar-ev-card.calendar-ev-card--kind-ensoukai   { --mz-ev-accent: #7c3aed; --mz-ev-accent-soft: #f1eafe; }
+.calendar-ev-card.calendar-ev-card--kind-taikai     { --mz-ev-accent: #1e4fd6; --mz-ev-accent-soft: #e8f1fe; }
+.calendar-ev-card.calendar-ev-card--kind-event      { --mz-ev-accent: #92400e; --mz-ev-accent-soft: #fbeacb; }
+.calendar-ev-card.calendar-ev-card--kind-ippan      { --mz-ev-accent: #0f7a6c; --mz-ev-accent-soft: #e2f5f1; }
+.calendar-ev-card.calendar-ev-card--kind-koukou     { --mz-ev-accent: #be185d; --mz-ev-accent-soft: #fce7f0; }
+.calendar-ev-card.calendar-ev-card--kind-chuugaku   { --mz-ev-accent: #2563a8; --mz-ev-accent-soft: #e6f0fa; }
+.calendar-ev-card.calendar-ev-card--kind-colourguard{ --mz-ev-accent: #c2410c; --mz-ev-accent-soft: #fdeae0; }
+.calendar-ev-card.calendar-ev-card--kind-kaigai     { --mz-ev-accent: #475569; --mz-ev-accent-soft: #eef1f5; }
+
+/* --- 上段: メタチップ + 記入者 --- */
+.calendar-ev-card .calendar-ev-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.55rem;
+}
+
+.calendar-ev-card .calendar-ev-meta-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.calendar-ev-card .calendar-ev-meta-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0.3rem 0.6rem;
+  border-radius: 999px;
+  border: none;
+  color: var(--muted);
+  background: rgba(15, 33, 56, 0.06);
+  letter-spacing: 0.01em;
+}
+
+.calendar-ev-card .calendar-ev-meta-chip--date {
+  font-variant-numeric: tabular-nums;
+  color: var(--navy);
+  background: rgba(15, 33, 56, 0.08);
+}
+
+.calendar-ev-card .calendar-ev-meta-chip--kind {
+  color: var(--mz-ev-accent);
+  background: var(--mz-ev-accent-soft);
+}
+
+.calendar-ev-card .calendar-ev-topline-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: none;
+}
+
+.calendar-ev-card .calendar-ev-topline-kinyuu {
+  font-size: 0.66rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.calendar-ev-card .calendar-ev-topline-creator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.calendar-ev-card .calendar-ev-topline-creator-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--border);
+}
+
+.calendar-ev-card .calendar-ev-topline-creator-name {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text);
+  max-width: 8.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+a.calendar-ev-topline-creator-name-link:hover {
+  color: var(--blue);
+  text-decoration: underline;
+}
+
+/* --- 中段: タイトル + いいね --- */
+.calendar-ev-card .calendar-ev-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: none;
+  padding: 0;
+  margin: 0 0 0.7rem;
+}
+
+.calendar-ev-card .calendar-ev-title-text {
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--text-strong);
+  letter-spacing: 0.01em;
+}
+
+.calendar-ev-card .calendar-ev-title-url {
+  margin: 0.3rem 0 0;
+  font-size: 0.76rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-ev-card .calendar-ev-title-url a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.calendar-ev-card .calendar-ev-title-url a:hover {
+  color: var(--blue);
+  text-decoration: underline;
+}
+
+/* --- 下段: MarchinZ Log --- */
+.calendar-ev-card .calendar-ev-mll-log-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0.5rem 0 0;
+  padding: 0.7rem 0 0;
+  border-top: 0.5px solid var(--border);
+}
+
+.calendar-ev-card .calendar-ev-mll-log-left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.calendar-ev-card .calendar-ev-mll-log-count-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--navy);
+  background: var(--mz-ev-accent-soft);
+  border: none;
+  border-radius: 999px;
+  padding: 0.32rem 0.7rem;
+  cursor: pointer;
+}
+
+.calendar-ev-card button.calendar-ev-mll-log-count-chip:hover {
+  filter: brightness(0.96);
+}
+
+.calendar-ev-card .calendar-ev-mll-log-save-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  flex: none;
+  min-height: 38px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 0.45rem 1.15rem;
+  border: 1px solid var(--mz-ev-accent);
+  color: var(--mz-ev-accent);
+  background: #fff;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+}
+
+.calendar-ev-card .calendar-ev-mll-log-save-btn:hover {
+  background: var(--mz-ev-accent);
+  color: #fff;
+}
+
+.calendar-ev-card .calendar-ev-mll-log-save-btn:active {
+  transform: scale(0.97);
+}
+
+/* 参加済みなど強調バリアント（塗り） */
+.calendar-ev-card .calendar-ev-mll-log-save-btn--primary,
+.calendar-ev-card .calendar-ev-mll-log-save-btn--done {
+  background: var(--mz-ev-accent);
+  color: #fff;
+}
+
+.calendar-ev-card .calendar-ev-mll-log-save-btn--primary:hover,
+.calendar-ev-card .calendar-ev-mll-log-save-btn--done:hover {
+  filter: brightness(0.95);
+  background: var(--mz-ev-accent);
+  color: #fff;
+}
+
+/* いいね行のホスト位置調整 */
+.calendar-ev-card .calendar-ev-like-host {
+  flex: none;
+}
+
+/* スマホ最適化 */
+@media (max-width: 640px) {
+  .mll-log-item.calendar-ev-card {
+    padding: 0.85rem 0.9rem 0.8rem;
+  }
+
+  .calendar-ev-card .calendar-ev-topline {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .calendar-ev-card .calendar-ev-title-text {
+    font-size: 0.96rem;
+  }
+
+  .calendar-ev-card .calendar-ev-mll-log-save-btn {
+    padding: 0.42rem 0.9rem;
+    font-size: 0.76rem;
+  }
+}
+
+/* ---------- 年フィルタチップ ---------- */
+
+.mz-year-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.7rem 0 0.2rem;
+}
+
+.mz-year-chips-label {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--muted);
+  margin-right: 0.2rem;
+}
+
+.mz-year-chip {
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 999px;
+  padding: 0.28rem 0.85rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--navy);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.mz-year-chip:hover {
+  border-color: var(--blue);
+  background: #f4f7ff;
+}
+
+.mz-year-chip--active,
+.mz-year-chip--active:hover {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: #fff;
+}
+
+/* ---------- ページネーション ---------- */
+
+.pagination-inner {
+  gap: 0.5rem;
+}
+
+.pagination-status {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- フッター ---------- */
+
+.site-footer {
+  background: var(--navy);
+  border-top: none;
+}
+
+/* ---------- トップLP調整 ---------- */
+
+.mll-lp-pill {
+  border-radius: var(--mz-radius-card);
+  border: 0.5px solid var(--border);
+  background: #fff;
+  box-shadow: var(--mz-shadow-card);
+  padding: 1.1rem 1.1rem 1.25rem;
+}
+
+/* ---------- トップ「新着」セクション ---------- */
+
+.mz-top-fresh-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.8rem;
+  margin-bottom: 0.9rem;
+}
+
+.mz-top-fresh-head .mll-lp-section-head {
+  margin: 0;
+  text-align: left;
+}
+
+.mz-top-more-link {
+  flex: none;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--blue);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.mz-top-more-link:hover {
+  text-decoration: underline;
+}
+
+.mz-video-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.9rem;
+}
+
+.mz-video-card {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--mz-radius-card);
+  border: 0.5px solid var(--border);
+  background: #fff;
+  box-shadow: var(--mz-shadow-card);
+  overflow: hidden;
+  color: inherit;
+  text-decoration: none;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+@media (hover: hover) {
+  .mz-video-card:hover {
+    box-shadow: var(--mz-shadow-card-hover);
+    transform: translateY(-2px);
+    text-decoration: none;
+  }
+}
+
+.mz-video-card-thumb-wrap {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: #16305c;
+}
+
+.mz-video-card-thumb {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.mz-video-card-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: var(--amber-bright);
+  color: #fff;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.mz-video-card-body {
+  padding: 0.7rem 0.85rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+}
+
+.mz-video-card-title {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--text-strong);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.mz-video-card-meta {
+  margin: 0;
+  font-size: 0.74rem;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.mz-video-card-channel {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  font-size: 0.74rem;
+  color: var(--muted);
+}
+
+.mz-video-card-channel-logo {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: none;
+}
+
+/* ---------- 近日開催予定イベント(TOP) ---------- */
+
+.mz-event-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: 0.8rem;
+}
+
+.mz-event-card {
+  --mz-ev-accent: #1e4fd6;
+  --mz-ev-accent-soft: #e8f1fe;
+  display: flex;
+  align-items: stretch;
+  gap: 0.85rem;
+  padding: 0.75rem 0.9rem;
+  border: 0.5px solid var(--border);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: var(--mz-shadow-card);
+  text-decoration: none;
+  color: inherit;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+@media (hover: hover) {
+  .mz-event-card:hover {
+    box-shadow: var(--mz-shadow-card-hover);
+    transform: translateY(-2px);
+    text-decoration: none;
+  }
+}
+
+.mz-event-card--kind-ensoukai   { --mz-ev-accent: #7c3aed; --mz-ev-accent-soft: #f1eafe; }
+.mz-event-card--kind-taikai     { --mz-ev-accent: #1e4fd6; --mz-ev-accent-soft: #e8f1fe; }
+.mz-event-card--kind-event      { --mz-ev-accent: #92400e; --mz-ev-accent-soft: #fbeacb; }
+.mz-event-card--kind-ippan      { --mz-ev-accent: #0f7a6c; --mz-ev-accent-soft: #e2f5f1; }
+.mz-event-card--kind-koukou     { --mz-ev-accent: #be185d; --mz-ev-accent-soft: #fce7f0; }
+.mz-event-card--kind-chuugaku   { --mz-ev-accent: #2563a8; --mz-ev-accent-soft: #e6f0fa; }
+.mz-event-card--kind-colourguard{ --mz-ev-accent: #c2410c; --mz-ev-accent-soft: #fdeae0; }
+.mz-event-card--kind-kaigai     { --mz-ev-accent: #475569; --mz-ev-accent-soft: #eef1f5; }
+
+.mz-event-card-date {
+  flex: none;
+  width: 3.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: var(--mz-ev-accent-soft);
+  color: var(--mz-ev-accent);
+  padding: 0.4rem 0;
+}
+
+.mz-event-card-month {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.mz-event-card-day {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+
+.mz-event-card-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.25rem;
+}
+
+.mz-event-card-toprow {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.mz-event-card-kind {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  color: var(--mz-ev-accent);
+  background: var(--mz-ev-accent-soft);
+}
+
+.mz-event-card-title {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--text-strong);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.mz-event-card-venue {
+  margin: 0;
+  font-size: 0.74rem;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.mz-event-card-venue-pin {
+  margin-right: 0.1rem;
+  font-size: 0.7rem;
+}
+
+/* ---------- 今週のマーチング(AIダイジェスト) ---------- */
+
+.mz-digest-card {
+  border-radius: var(--mz-radius-card);
+  border: 0.5px solid var(--border);
+  background: #fff;
+  box-shadow: var(--mz-shadow-card);
+  padding: 1.1rem 1.2rem;
+}
+
+.mz-digest-label {
+  display: inline-block;
+  background: var(--yellow-soft);
+  color: var(--blue-deep);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 3px 10px;
+  border-radius: 999px;
+  margin: 0 0 0.5rem;
+}
+
+.mz-digest-text {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.85;
+}
+
+.mz-digest-date {
+  margin: 0.6rem 0 0;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+/* ---------- モバイル下部タブナビ ---------- */
+
+.mz-tabbar {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .mz-tabbar {
+    display: flex;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 90;
+    background: rgba(255, 255, 255, 0.96);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    border-top: 0.5px solid var(--border);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .mz-tabbar-link {
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-height: var(--mz-tabbar-h);
+    font-size: 0.66rem;
+    font-weight: 700;
+    color: #8a94a6;
+    text-decoration: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .mz-tabbar-link svg {
+    width: 22px;
+    height: 22px;
+    stroke: currentColor;
+  }
+
+  .mz-tabbar-link.site-nav-link-active {
+    color: var(--blue);
+  }
+
+  .mz-tabbar-link:active {
+    color: var(--navy);
+  }
+
+  body {
+    padding-bottom: calc(var(--mz-tabbar-h) + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* ---------- 快適性 ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .recommend-item,
+  .mz-video-card,
+  .sort-btn,
+  .page-btn {
+    transition: none;
+  }
+}
+
+/* ==========================================================================
+   改善: 一覧カードの縦長画像(スマホスクショ等)はクロップせず全体を表示する。
+   16:10 中央クロップだと、縦長スクショの文章の一部(例:「す。」)だけが
+   切り出されて意味不明な断片に見えるため。横長写真は従来どおりクロップ。
+   縦長判定は marchinz-image-compress.js が .mz-img-portrait を付与する。
+   ========================================================================== */
+
+.mln-feed-card-cover:has(img.mz-img-portrait) {
+  background: #16305c;
+}
+
+.mln-feed-card-cover img.mz-img-portrait {
+  object-fit: contain;
+}
+
+/* ==========================================================================
+   改善: Moment/Note ビューア(拡大表示)では写真をクロップせず全体を表示する。
+   一覧カードは 16:9/4:3 クロップのままで良いが、拡大表示で縦長写真(スクショ等)を
+   中央クロップすると意図しない断片(例: 文末の「す。」だけ)が見えてしまうため。
+   ========================================================================== */
+
+.eld-dialog .mln-note-viewer-cover {
+  aspect-ratio: auto;
+  height: auto;
+  background: #eef1f5;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.eld-dialog .mln-note-viewer-cover .marchinz-protected-photo-cell,
+.eld-dialog .mln-note-viewer-cover .marchinz-protected-photo-inner {
+  display: block;
+  height: auto;
+}
+
+.eld-dialog .mln-note-viewer-cover .mln-feed-card-cover-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: min(62vh, 560px);
+  object-fit: contain;
+}
+
+/* ==========================================================================
+   v1.28 — もう一段の大胆刷新
+   ========================================================================== */
+
+/* ---------- 1) スティッキー・ガラスナビ(デスクトップ) ---------- */
+
+.site-nav {
+  position: sticky;
+  top: 0;
+  z-index: 120;
+  background: rgba(255, 255, 255, 0.86);
+  -webkit-backdrop-filter: blur(14px) saturate(1.5);
+  backdrop-filter: blur(14px) saturate(1.5);
+  border-bottom: 0.5px solid var(--border);
+  box-shadow: 0 1px 12px rgba(15, 33, 56, 0.06);
+}
+
+.site-nav-inner {
+  padding: 0.5rem 0.6rem;
+}
+
+.site-nav-link {
+  color: var(--muted);
+  background: transparent;
+}
+
+.site-nav-link:hover {
+  background: rgba(15, 33, 56, 0.07);
+  color: var(--navy);
+}
+
+.site-nav-link.site-nav-link-active,
+.site-nav-link.site-nav-link-active:hover {
+  background: var(--blue);
+  color: #fff;
+}
+
+/* ---------- 2) タイポグラフィ大型化 ---------- */
+
+.mz-philosophy-label--en {
+  color: var(--amber-bright);
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  font-size: 0.7rem;
+}
+
+.mz-philosophy-heading {
+  font-size: 1.75rem;
+  line-height: 1.3;
+}
+
+.page-hero.mz-philosophy-header {
+  margin: 0.3rem 0 1.4rem;
+}
+
+.mll-lp-section-head {
+  font-size: 1.3rem;
+  letter-spacing: 0.01em;
+}
+
+/* ---------- 3) モーメント = Threads風タイムライン ---------- */
+
+#community-hub-panel-moments #mlm-feed-cards.mln-feed-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+#community-hub-panel-moments .mln-feed-card {
+  display: flex;
+  flex-direction: column;
+  border: none;
+  border-bottom: 0.5px solid var(--border);
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  padding: 1.1rem 0.4rem 1rem;
+  transition: background 0.15s ease;
+}
+
+#community-hub-panel-moments .mln-feed-card:hover {
+  background: rgba(15, 33, 56, 0.025);
+  transform: none;
+  box-shadow: none;
+}
+
+#community-hub-panel-moments .mln-feed-card .mln-feed-card-head { order: 0; display: flex; align-items: center; gap: 0.6rem; margin: 0 0 0.45rem; }
+#community-hub-panel-moments .mln-feed-card .mln-feed-card-title-row { order: 1; margin: 0; }
+#community-hub-panel-moments .mln-feed-card .mln-feed-card-cover { order: 2; margin: 0.6rem 0 0.2rem; border-radius: 14px; border: 0.5px solid var(--border); }
+#community-hub-panel-moments .mln-feed-card .mln-feed-card-engage { order: 3; }
+
+#community-hub-panel-moments .mln-feed-card-head-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+}
+
+#community-hub-panel-moments .mln-feed-card-author {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+#community-hub-panel-moments .mln-feed-card-head-date {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+#community-hub-panel-moments .mln-feed-card-head-date::before {
+  content: "・";
+  margin: 0 0.15rem;
+}
+
+#community-hub-panel-moments .mlm-feed-card-text {
+  font-size: 0.98rem;
+  line-height: 1.75;
+  -webkit-line-clamp: unset;
+  display: block;
+  overflow: visible;
+}
+
+/* ---------- 4) フッター(サイトマップ型) ---------- */
+
+.site-footer {
+  background: var(--navy);
+  padding-top: 1.6rem;
+}
+
+.mz-footer-grid {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr 1fr 1fr;
+  gap: 1.6rem;
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 1.4rem 1.2rem 1.6rem;
+  text-align: left;
+}
+
+.mz-footer-logo {
+  margin: 0 0 0.5rem;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.03em;
+}
+
+.mz-footer-tagline {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.8;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.mz-footer-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.mz-footer-col-head {
+  margin: 0 0 0.25rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--amber-bright);
+}
+
+.mz-footer-grid .footer-nav-link {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.85rem;
+  text-decoration: none;
+  width: fit-content;
+}
+
+.mz-footer-grid .footer-nav-link:hover {
+  color: #fff;
+  text-decoration: underline;
+}
+
+@media (max-width: 720px) {
+  .mz-footer-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .mz-footer-brand {
+    grid-column: 1 / -1;
+  }
+}
+
+/* ---------- 5) いいねハートの弾け演出 ---------- */
+
+.community-like-btn {
+  position: relative;
+}
+
+.community-like-btn--pop .community-like-heart {
+  animation: mz-heart-pop 0.5s cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+
+.community-like-btn--pop::before {
+  content: "";
+  position: absolute;
+  left: 0.85em;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  pointer-events: none;
+  background: transparent;
+  box-shadow:
+    0 -14px 0 -1px #e0245e, 10px -10px 0 -1px #d97706,
+    14px 0 0 -1px #1e4fd6, 10px 10px 0 -1px #e0245e,
+    0 14px 0 -1px #d97706, -10px 10px 0 -1px #1e4fd6,
+    -14px 0 0 -1px #e0245e, -10px -10px 0 -1px #d97706;
+  animation: mz-heart-burst 0.55s ease-out forwards;
+}
+
+@keyframes mz-heart-pop {
+  0% { transform: scale(0.4); }
+  55% { transform: scale(1.45); }
+  100% { transform: scale(1); }
+}
+
+@keyframes mz-heart-burst {
+  0% { transform: translateY(-50%) scale(0.3); opacity: 1; }
+  80% { opacity: 0.9; }
+  100% { transform: translateY(-50%) scale(1.5); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .community-like-btn--pop .community-like-heart,
+  .community-like-btn--pop::before {
+    animation: none;
+  }
+}
+
+/* ---------- 6) MarchinZ Journey ---------- */
+
+.mz-journey-open-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  margin: 0.3rem 0 0.9rem;
+  padding: 0.75rem 1rem;
+  border: 0.5px solid var(--border);
+  border-radius: 14px;
+  background: linear-gradient(120deg, #f0f5ff 0%, #fdf3e3 100%);
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--navy);
+  cursor: pointer;
+  box-shadow: var(--mz-shadow-card);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.mz-journey-open-btn:hover {
+  box-shadow: var(--mz-shadow-card-hover);
+  transform: translateY(-1px);
+}
+
+.mz-journey-open-icon { font-size: 1.2rem; }
+
+.mz-journey-open-sub {
+  margin-left: auto;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.mz-journey-dialog {
+  width: min(860px, 96vw);
+  max-height: 94vh;
+  padding: 0;
+  border: none;
+  border-radius: 18px;
+  background: transparent;
+}
+
+.mz-journey-dialog::backdrop {
+  background: rgba(9, 16, 28, 0.6);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+
+.mz-journey-surface {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1rem 1.1rem 1.1rem;
+  border-radius: 18px;
+  background: #fff;
+  max-height: 94vh;
+  box-sizing: border-box;
+}
+
+.mz-journey-x {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  z-index: 5;
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 999px;
+  border: 0.5px solid var(--border);
+  background: #fff;
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+
+.mz-journey-eyebrow {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: var(--amber-bright);
+}
+
+.mz-journey-title {
+  margin: 0.1rem 0 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--navy);
+}
+
+.mz-journey-map {
+  width: 100%;
+  height: min(52vh, 460px);
+  border-radius: 14px;
+  overflow: hidden;
+  border: 0.5px solid var(--border);
+  background: #dfe8f2;
+}
+
+.mz-journey-avatar-icon { background: none; border: none; }
+
+.mz-journey-avatar-ring {
+  display: block;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  padding: 2px;
+  background: #fff;
+  box-shadow: 0 2px 10px rgba(15, 33, 56, 0.35);
+  border: 2px solid var(--blue);
+  box-sizing: border-box;
+}
+
+.mz-journey-avatar-ring img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+}
+
+.mz-journey-card {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.75rem 0.95rem;
+  border: 0.5px solid var(--border);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: var(--mz-shadow-card);
+  min-height: 3.6rem;
+}
+
+.mz-journey-card--bounce {
+  animation: mz-journey-bounce 0.45s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+
+@keyframes mz-journey-bounce {
+  0% { transform: translateY(10px); opacity: 0.4; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+.mz-journey-card-year {
+  flex: none;
+  font-size: 1.45rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--blue);
+  min-width: 3.4rem;
+  text-align: center;
+  background: #e8f1fe;
+  border-radius: 10px;
+  padding: 0.35rem 0.4rem;
+}
+
+.mz-journey-card-body { min-width: 0; display: flex; flex-direction: column; gap: 0.2rem; }
+
+.mz-journey-card-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--text-strong);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.mz-journey-card-meta { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+
+.mz-journey-card-pref { font-size: 0.78rem; color: var(--muted); font-weight: 600; }
+
+.mz-journey-card-role {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--amber);
+  background: #fdf0dc;
+  border-radius: 999px;
+  padding: 0.16rem 0.55rem;
+}
+
+.mz-journey-summary { width: 100%; text-align: center; }
+
+.mz-journey-summary-head { margin: 0 0 0.4rem; font-size: 1.05rem; font-weight: 700; color: var(--navy); }
+
+.mz-journey-summary-stats {
+  margin: 0 0 0.6rem;
+  display: flex;
+  justify-content: center;
+  gap: 1.2rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.mz-journey-summary-stats b { font-size: 1.35rem; color: var(--blue); margin-right: 0.12rem; }
+
+.mz-journey-share-btn {
+  border: 1px solid var(--blue);
+  color: var(--blue);
+  background: #fff;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.82rem;
+  padding: 0.45rem 1.2rem;
+  cursor: pointer;
+}
+
+.mz-journey-share-btn:hover { background: var(--blue); color: #fff; }
+
+.mz-journey-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.mz-journey-btn {
+  flex: none;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 999px;
+  border: 0.5px solid var(--border);
+  background: #fff;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.mz-journey-btn--play {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: #fff;
+  width: 2.8rem;
+  height: 2.8rem;
+}
+
+.mz-journey-progress {
+  flex: 1 1 auto;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(15, 33, 56, 0.1);
+  overflow: hidden;
+}
+
+.mz-journey-progress-bar {
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: var(--blue);
+  transition: width 0.35s ease;
+}
+
+.mz-journey-year {
+  flex: none;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--navy);
+  font-variant-numeric: tabular-nums;
+  min-width: 3.6rem;
+  text-align: center;
+}
+
+.mz-journey-speed { width: auto; padding: 0 0.7rem; font-weight: 700; font-size: 0.78rem; }
+
+.mz-journey-msg { margin: 0; font-size: 0.8rem; color: var(--muted); }
+
+@media (max-width: 640px) {
+  .mz-journey-dialog { width: 100vw; max-width: 100vw; max-height: 100vh; border-radius: 0; }
+  .mz-journey-surface { border-radius: 0; min-height: 100vh; }
+  .mz-journey-map { height: 46vh; }
+  .mz-journey-open-sub { display: none; }
+}
+
+/* ---------- 7) イベントマップ ---------- */
+
+.mz-event-map-block {
+  margin: 0 0 1rem;
+  border: 0.5px solid var(--border);
+  border-radius: var(--mz-radius-card);
+  background: #fff;
+  box-shadow: var(--mz-shadow-card);
+  overflow: hidden;
+}
+
+.mz-event-map-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0.6rem 0.8rem;
+}
+
+.mz-event-map-toggle {
+  border: none;
+  background: transparent;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--navy);
+  cursor: pointer;
+  padding: 0.2rem 0.3rem;
+}
+
+.mz-event-map-toggle::after {
+  content: "▲";
+  font-size: 0.6rem;
+  margin-left: 0.4rem;
+  color: var(--muted);
+}
+
+.mz-event-map-block--closed .mz-event-map-toggle::after { content: "▼"; }
+
+.mz-evmap-chips { display: flex; gap: 0.35rem; }
+
+.mz-evmap-chip {
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--muted);
+  padding: 0.24rem 0.7rem;
+  cursor: pointer;
+}
+
+.mz-evmap-chip--active {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: #fff;
+}
+
+.mz-evmap-count { margin-left: auto; font-size: 0.72rem; color: var(--muted); }
+
+.mz-event-map {
+  width: 100%;
+  height: 380px;
+  background: #dfe8f2;
+}
+
+.mz-event-map-block--closed .mz-event-map,
+.mz-event-map-block--closed .mz-evmap-chips,
+.mz-event-map-block--closed .mz-evmap-count { display: none; }
+
+@media (max-width: 640px) {
+  .mz-event-map { height: 45vh; }
+}
+
+.mz-evmap-icon { background: none; border: none; }
+
+.mz-evmap-pin {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--pin, #1e4fd6);
+  border: 2.5px solid #fff;
+  box-shadow: 0 2px 8px rgba(15, 33, 56, 0.35);
+  box-sizing: border-box;
+}
+
+.mz-evmap-pin-count {
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.mz-evmap-pulse {
+  position: absolute;
+  inset: -2.5px;
+  border-radius: 50%;
+  border: 2.5px solid var(--pin, #1e4fd6);
+  animation: mz-evmap-pulse 1.8s ease-out infinite;
+  pointer-events: none;
+}
+
+@keyframes mz-evmap-pulse {
+  0% { transform: scale(1); opacity: 0.85; }
+  100% { transform: scale(2.1); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mz-evmap-pulse { animation: none; display: none; }
+}
+
+.mz-evmap-pop { min-width: 220px; }
+
+.mz-evmap-pop-head {
+  margin: 0 0 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--navy);
+}
+
+.mz-evmap-pop-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 0.32rem 0.15rem;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.mz-evmap-pop-item:hover { background: rgba(30, 79, 214, 0.08); }
+
+.mz-evmap-pop-date {
+  flex: none;
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--navy);
+}
+
+.mz-evmap-pop-kind {
+  flex: none;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--pin, #1e4fd6);
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 0.08rem 0.4rem;
+}
+
+.mz-evmap-pop-title {
+  font-size: 0.76rem;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mz-evmap-pop-more { margin: 0.3rem 0 0; font-size: 0.7rem; color: var(--muted); }
+
+/* ==========================================================================
+   v1.29 — MarchinZ Base（本人限定タブ: 練習ログ・楽器メンテ・ショウ覚え）
+   ========================================================================== */
+
+.user-profile-tab--base { position: relative; }
+
+.mz-base-root { margin-top: 0.6rem; }
+
+.mz-base-subtabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: rgba(15, 33, 56, 0.06);
+  border-radius: 12px;
+  margin-bottom: 1rem;
+}
+
+.mz-base-subtab {
+  flex: 1 1 0;
+  border: none;
+  border-radius: 9px;
+  padding: 0.5rem 0.4rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.mz-base-subtab--active {
+  background: #fff;
+  color: var(--navy);
+  box-shadow: 0 1px 3px rgba(15, 33, 56, 0.14);
+}
+
+.mz-base-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.mz-base-stat {
+  background: var(--panel-tint);
+  border-radius: 12px;
+  padding: 0.7rem 0.5rem;
+  text-align: center;
+}
+
+.mz-base-stat-num {
+  display: block;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--blue);
+  font-variant-numeric: tabular-nums;
+}
+
+.mz-base-stat-label {
+  display: block;
+  font-size: 0.66rem;
+  color: var(--muted);
+  margin-top: 0.15rem;
+}
+
+.mz-base-add-btn {
+  width: 100%;
+  padding: 0.65rem;
+  margin-bottom: 0.8rem;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--blue);
+  font-weight: 700;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.mz-base-add-btn:hover { background: #f4f7ff; border-color: var(--blue); }
+
+.mz-base-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 0.9rem;
+  margin-bottom: 1rem;
+  border: 0.5px solid var(--border);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.mz-base-field { display: flex; flex-direction: column; gap: 0.3rem; }
+
+.mz-base-field-label { font-size: 0.76rem; font-weight: 700; color: var(--navy); }
+
+.mz-base-field input[type="text"],
+.mz-base-field input[type="date"],
+.mz-base-field input[type="number"],
+.mz-base-field input[type="file"],
+.mz-base-field textarea {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.5rem 0.7rem;
+  font-size: 16px;
+  font-family: inherit;
+}
+
+.mz-base-tag-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+
+.mz-base-tag-chip {
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 999px;
+  padding: 0.32rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.mz-base-tag-chip--on { background: var(--blue); border-color: var(--blue); color: #fff; }
+
+.mz-base-form-msg { margin: 0; font-size: 0.78rem; color: #c0392b; }
+
+.mz-base-submit-btn {
+  align-self: flex-start;
+  border: none;
+  background: var(--blue);
+  color: #fff;
+  border-radius: 999px;
+  padding: 0.55rem 1.3rem;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.mz-base-submit-btn:disabled { opacity: 0.6; cursor: default; }
+
+.mz-base-empty { color: var(--muted); font-size: 0.85rem; text-align: center; padding: 1.5rem 0; }
+
+.mz-base-practice-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+
+.mz-base-practice-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.7rem 0.85rem;
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.mz-base-practice-left { min-width: 0; }
+
+.mz-base-practice-date { font-size: 0.78rem; font-weight: 700; color: var(--navy); font-variant-numeric: tabular-nums; }
+
+.mz-base-practice-tags { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.3rem; }
+
+.mz-base-practice-tag {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--blue);
+  background: #e8f1fe;
+  border-radius: 999px;
+  padding: 0.12rem 0.5rem;
+}
+
+.mz-base-practice-memo { margin: 0.35rem 0 0; font-size: 0.8rem; color: var(--muted); line-height: 1.5; }
+
+.mz-base-practice-right { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 0.3rem; }
+
+.mz-base-practice-min { font-size: 0.9rem; font-weight: 700; color: var(--navy); font-variant-numeric: tabular-nums; }
+
+.mz-base-del-btn { border: none; background: none; color: var(--muted); font-size: 0.7rem; cursor: pointer; text-decoration: underline; padding: 0; }
+
+.mz-base-del-btn:hover { color: #c0392b; }
+
+.mz-base-del-btn--card { align-self: flex-start; margin-top: 0.4rem; }
+
+.mz-base-instrument-grid,
+.mz-base-shownote-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 0.8rem;
+}
+
+.mz-base-instrument-card,
+.mz-base-shownote-card {
+  border: 0.5px solid var(--border);
+  border-radius: 14px;
+  background: #fff;
+  overflow: hidden;
+  box-shadow: var(--mz-shadow-card);
+}
+
+.mz-base-instrument-photo,
+.mz-base-shownote-photo {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  display: block;
+}
+
+.mz-base-instrument-body,
+.mz-base-shownote-body { padding: 0.75rem 0.85rem 0.85rem; }
+
+.mz-base-instrument-name,
+.mz-base-shownote-title { margin: 0 0 0.2rem; font-size: 0.95rem; font-weight: 700; color: var(--text-strong); }
+
+.mz-base-instrument-type { margin: 0 0 0.5rem; font-size: 0.76rem; color: var(--muted); }
+
+.mz-base-due-badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--navy);
+  background: var(--panel-tint);
+  border-radius: 999px;
+  padding: 0.2rem 0.6rem;
+  margin-bottom: 0.5rem;
+}
+
+.mz-base-due-badge--soon { background: #fdecea; color: #c0392b; }
+
+.mz-base-maint-list { list-style: none; margin: 0 0 0.6rem; padding: 0; display: flex; flex-direction: column; gap: 0.2rem; }
+
+.mz-base-maint-item { font-size: 0.74rem; color: var(--muted); }
+
+.mz-base-mini-btn {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 8px;
+  padding: 0.4rem;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--blue);
+  cursor: pointer;
+}
+
+.mz-base-shownote-block { margin: 0 0 0.5rem; }
+
+.mz-base-shownote-block-label { display: block; font-size: 0.68rem; font-weight: 700; color: var(--blue); margin-bottom: 0.15rem; }
+
+.mz-base-shownote-block--caution .mz-base-shownote-block-label { color: #c0392b; }
+
+.mz-base-shownote-block-text { margin: 0; font-size: 0.8rem; color: var(--text); line-height: 1.6; white-space: pre-wrap; }
+
+/* ==========================================================================
+   イベントマップの「楽しい動き」強化
+   ========================================================================== */
+
+/* ピン: 上から落ちてぽよんと着地(スタッガーは JS が --mz-drop を付与) */
+.mz-evmap-pin {
+  animation: mz-pin-drop 0.55s cubic-bezier(0.2, 1.5, 0.4, 1) both;
+  animation-delay: var(--mz-drop, 0ms);
+  transition: transform 0.18s cubic-bezier(0.2, 1.6, 0.4, 1);
+  cursor: pointer;
+}
+
+@keyframes mz-pin-drop {
+  0% { transform: translateY(-26px) scale(0.4); opacity: 0; }
+  70% { transform: translateY(3px) scale(1.08); opacity: 1; }
+  100% { transform: translateY(0) scale(1); }
+}
+
+/* ホバーでぷるんと拡大 */
+.mz-evmap-icon:hover .mz-evmap-pin {
+  transform: scale(1.22) rotate(-4deg);
+}
+
+/* 吹き出し: ぽよんと出現 + ブランド角丸 */
+.leaflet-popup {
+  animation: mz-pop-in 0.32s cubic-bezier(0.2, 1.5, 0.4, 1) both;
+}
+
+@keyframes mz-pop-in {
+  0% { transform: translateY(10px) scale(0.86); opacity: 0; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+.leaflet-popup-content-wrapper {
+  border-radius: 14px;
+  box-shadow: var(--mz-shadow-pop);
+}
+
+.leaflet-popup-content { margin: 0.75rem 0.85rem; }
+
+/* 吹き出し内アイテム: ホバーで矢印スライド */
+.mz-evmap-pop-item { position: relative; padding-right: 1.2rem; transition: background 0.15s ease, transform 0.15s ease; }
+
+.mz-evmap-pop-item::after {
+  content: "→";
+  position: absolute;
+  right: 0.3rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.72rem;
+  color: var(--blue);
+  opacity: 0;
+  transition: opacity 0.15s ease, right 0.15s ease;
+}
+
+.mz-evmap-pop-item:hover { transform: translateX(2px); }
+.mz-evmap-pop-item:hover::after { opacity: 1; right: 0.15rem; }
+
+/* 吹き出し→リスト着地時のカード: アクセント色でどんとパルス */
+.calendar-ev-card.calendar-ev-card--highlight {
+  animation: mz-card-land 1.6s cubic-bezier(0.2, 1.2, 0.4, 1) 2;
+}
+
+@keyframes mz-card-land {
+  0% { box-shadow: 0 0 0 0 rgba(30, 79, 214, 0.45), var(--mz-shadow-card-hover); transform: scale(1.012); }
+  60% { box-shadow: 0 0 0 14px rgba(30, 79, 214, 0), var(--mz-shadow-card); }
+  100% { box-shadow: 0 0 0 0 rgba(30, 79, 214, 0), var(--mz-shadow-card); transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mz-evmap-pin,
+  .leaflet-popup,
+  .calendar-ev-card.calendar-ev-card--highlight { animation: none; }
+  .mz-evmap-icon:hover .mz-evmap-pin { transform: none; }
+}
+
+/* ==========================================================================
+   ベースマップのデザイン刷新(CARTO Positron 採用 + ブランド馴染みトーン)
+   ========================================================================== */
+
+/* タイルをほんのり温かいブランドトーンへ(彩度を落として紙のような質感に) */
+.mz-event-map .leaflet-tile-pane,
+.mz-journey-map .leaflet-tile-pane {
+  filter: saturate(0.82) sepia(0.05) contrast(1.02);
+}
+
+/* 海(タイル外)の色をサイト背景と調和させる */
+.mz-event-map,
+.mz-journey-map {
+  background: #eef3f8;
+}
+
+.mz-event-map .leaflet-container,
+.mz-journey-map .leaflet-container {
+  background: #eef3f8;
+  font-family: var(--mz-font);
+}
+
+/* 帰属表記: 必須表示を保ちつつ控えめに */
+.mz-event-map .leaflet-control-attribution,
+.mz-journey-map .leaflet-control-attribution {
+  background: rgba(255, 255, 255, 0.72);
+  color: rgba(12, 15, 20, 0.45);
+  font-size: 9px;
+  padding: 1px 6px;
+  border-radius: 8px 0 0 0;
+}
+
+.mz-event-map .leaflet-control-attribution a,
+.mz-journey-map .leaflet-control-attribution a {
+  color: rgba(12, 15, 20, 0.55);
+}
+
+/* ズームボタンをブランドの丸ボタンに */
+.mz-event-map .leaflet-control-zoom,
+.mz-journey-map .leaflet-control-zoom {
+  border: none;
+  box-shadow: var(--mz-shadow-card);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.mz-event-map .leaflet-control-zoom a,
+.mz-journey-map .leaflet-control-zoom a {
+  width: 32px;
+  height: 32px;
+  line-height: 32px;
+  color: var(--navy);
+  border-color: var(--border);
+  font-weight: 700;
+}
+
+/* ==========================================================================
+   ヒーロー・ダッシュボード(TOPの顔を「生きている」画面へ) + ロゴ帯圧縮
+   ========================================================================== */
+
+/* ロゴ帯: デスクトップは高さを圧縮してファーストビューにコンテンツを入れる */
+@media (min-width: 901px) {
+  .site-brand { padding: 0.55rem 1.5rem 0.5rem; }
+  .site-logo { max-height: 60px; width: auto; }
+  .site-brand-tagline { font-size: 0.6rem; margin-top: 0.15rem; }
+}
+
+.mz-hero-dash {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  width: min(420px, 100%);
+  margin-left: auto;
+}
+
+.mz-hero-dash-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0 0.2rem;
+}
+
+.mz-hero-dash-label {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: var(--amber-bright);
+}
+
+.mz-hero-dash-date {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* カウントダウン(主役) */
+.mz-dash-countdown {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.9rem 1rem;
+  border-radius: 16px;
+  background: var(--navy);
+  color: #fff;
+  text-decoration: none;
+  box-shadow: 0 10px 30px rgba(15, 33, 56, 0.28);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+@media (hover: hover) {
+  .mz-dash-countdown:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 14px 36px rgba(15, 33, 56, 0.36);
+    text-decoration: none;
+  }
+}
+
+.mz-dash-count-num {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 4.6rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.mz-dash-count-num b {
+  font-size: 1.9rem;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: #ffd76a;
+}
+
+.mz-dash-count-unit { font-size: 0.66rem; font-weight: 700; color: rgba(255, 255, 255, 0.75); }
+
+.mz-dash-count-body { min-width: 0; display: flex; flex-direction: column; gap: 0.22rem; }
+
+.mz-dash-count-eyebrow { font-size: 0.6rem; font-weight: 700; letter-spacing: 0.18em; color: #8fb4e8; }
+
+.mz-dash-ev-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.mz-dash-count-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.78);
+  font-variant-numeric: tabular-nums;
+}
+
+.mz-dash-kind {
+  font-size: 0.64rem;
+  font-weight: 700;
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+}
+
+/* 最新動画 */
+.mz-dash-video {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 14px;
+  background: #fff;
+  border: 0.5px solid var(--border);
+  box-shadow: var(--mz-shadow-card);
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+@media (hover: hover) {
+  .mz-dash-video:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--mz-shadow-card-hover);
+    text-decoration: none;
+  }
+}
+
+.mz-dash-video-thumb {
+  flex: none;
+  width: 96px;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 9px;
+  background: #16305c;
+}
+
+.mz-dash-video-body { min-width: 0; display: flex; flex-direction: column; gap: 0.18rem; }
+
+.mz-dash-video-eyebrow { font-size: 0.58rem; font-weight: 700; letter-spacing: 0.16em; color: var(--amber-bright); }
+
+.mz-dash-video-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--text-strong);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.mz-dash-video-play {
+  flex: none;
+  margin-left: auto;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--blue);
+  color: #fff;
+  font-size: 0.7rem;
+}
+
+/* ミニ統計 */
+.mz-dash-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.55rem;
+}
+
+.mz-dash-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  padding: 0.55rem 0.3rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 0.5px solid var(--border);
+  text-decoration: none;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.mz-dash-stat:hover { background: #fff; transform: translateY(-1px); text-decoration: none; }
+
+.mz-dash-stat b { font-size: 1.05rem; color: var(--blue); font-variant-numeric: tabular-nums; }
+
+.mz-dash-stat span { font-size: 0.62rem; font-weight: 700; color: var(--muted); }
+
+@media (max-width: 900px) {
+  .mz-hero-dash { width: 100%; margin: 0.9rem 0 0; }
+  .mz-dash-count-num b { font-size: 1.6rem; }
+}

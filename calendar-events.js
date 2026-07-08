@@ -2848,6 +2848,15 @@
   }
 
   function renderCurrentView() {
+    window.MarchinZEventMap?.refresh(
+      eventsCache.map((ev) => ({
+        id: ev.id,
+        kind: ev.kind,
+        date: ev.date,
+        title: ev.title,
+        venue_pref: ev.venue_pref,
+      })),
+    );
     const controlsRow = document.querySelector(".calendar-ev-controls-row");
     const yearReel = document.getElementById("calendar-ev-year-reel");
     listWrapEl?.classList.toggle("calendar-ev-list-wrap--calendar-mode", viewMode === "calendar");

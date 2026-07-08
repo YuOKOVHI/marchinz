@@ -18,3 +18,9 @@ _metadata_cache.json
 logo/Gemini_Generated_Image_*.png
 logo/logo_font.png
 logo/logo_image.png
+
+# ルート直下の未参照アセット(logo_image.png 5.1MB は index.html/JS から未参照)
+logo_image.png
+backups/
+_snapshots/
+scripts/node_modules/

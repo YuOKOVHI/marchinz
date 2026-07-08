@@ -1,0 +1,422 @@
+/*
+ * marchinz-top-highlights.js (v1.27.0)
+ * トップページ(#page-mll)に「新着の大会動画」「YouTube 新着」「今週のマーチング(AIダイジェスト)」を描画する。
+ * データ源はすべて既存の inline データ(window.__MARCHINZ_DATA / __YOUTUBE_LIST_ROWS / __MARCHINZ_DIGEST)。
+ * データが無い・壊れている場合はセクションを hidden のまま残し、他機能へ影響しない。
+ */
+(function () {
+  "use strict";
+
+  var FRESH_LIMIT = 6;
+  var YT_LIMIT = 4;
+
+  function extractVideoId(url) {
+    if (!url) return null;
+    var m = String(url).match(/[?&]v=([\w-]{6,})/) || String(url).match(/youtu\.be\/([\w-]{6,})/);
+    return m ? m[1] : null;
+  }
+
+  function thumbUrl(videoId) {
+    return videoId ? "https://img.youtube.com/vi/" + videoId + "/hqdefault.jpg" : null;
+  }
+
+  function parseDate(s) {
+    if (!s) return 0;
+    var t = Date.parse(String(s).replace(/\//g, "-"));
+    return isNaN(t) ? 0 : t;
+  }
+
+  function daysAgoLabel(ts) {
+    if (!ts) return "";
+    var diff = Math.floor((Date.now() - ts) / 86400000);
+    if (diff <= 0) return "今日";
+    if (diff === 1) return "昨日";
+    if (diff < 30) return diff + "日前";
+    var d = new Date(ts);
+    return d.getFullYear() + "/" + (d.getMonth() + 1) + "/" + d.getDate();
+  }
+
+  function el(tag, className, text) {
+    var node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text != null) node.textContent = text;
+    return node;
+  }
+
+  function buildVideoCard(opts) {
+    var a = el("a", "mz-video-card");
+    a.href = opts.url;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+
+    var thumbWrap = el("div", "mz-video-card-thumb-wrap");
+    if (opts.thumb) {
+      var img = el("img", "mz-video-card-thumb");
+      img.src = opts.thumb;
+      img.alt = "";
+      img.loading = "lazy";
+      img.decoding = "async";
+      thumbWrap.appendChild(img);
+    }
+    if (opts.badge) thumbWrap.appendChild(el("span", "mz-video-card-badge", opts.badge));
+    a.appendChild(thumbWrap);
+
+    var body = el("div", "mz-video-card-body");
+    body.appendChild(el("p", "mz-video-card-title", opts.title));
+    if (opts.channelName) {
+      var ch = el("p", "mz-video-card-channel");
+      if (opts.channelLogo) {
+        var logo = el("img", "mz-video-card-channel-logo");
+        logo.src = opts.channelLogo;
+        logo.alt = "";
+        logo.loading = "lazy";
+        ch.appendChild(logo);
+      }
+      ch.appendChild(document.createTextNode(opts.channelName));
+      body.appendChild(ch);
+    }
+    if (opts.meta) body.appendChild(el("p", "mz-video-card-meta", opts.meta));
+    a.appendChild(body);
+    return a;
+  }
+
+  function renderFreshVideos() {
+    var grid = document.getElementById("mz-top-video-grid");
+    var data = window.__MARCHINZ_DATA;
+    if (!grid || !data || !Array.isArray(data.rows) || !data.rows.length) return;
+
+    var seen = {};
+    var rows = data.rows
+      .slice()
+      .sort(function (a, b) {
+        return parseDate(b["配信日"]) - parseDate(a["配信日"]);
+      })
+      .filter(function (row) {
+        var id = extractVideoId(row["URL"]);
+        if (!id || seen[id]) return false;
+        seen[id] = true;
+        return true;
+      })
+      .slice(0, FRESH_LIMIT);
+    if (!rows.length) return;
+
+    var newestTs = parseDate(rows[0]["配信日"]);
+    rows.forEach(function (row, i) {
+      var ts = parseDate(row["配信日"]);
+      grid.appendChild(
+        buildVideoCard({
+          url: row["URL"],
+          thumb: thumbUrl(extractVideoId(row["URL"])),
+          badge: i === 0 || (newestTs && ts === newestTs) ? "NEW" : "",
+          title: row["大会名"] || row["団体/チーム名"] || "大会動画",
+          meta: [row["動画配信元"], daysAgoLabel(ts)].filter(Boolean).join(" ・ "),
+        })
+      );
+    });
+    grid.hidden = false;
+    var section = grid.closest("[data-mz-top-section]");
+    if (section) section.hidden = false;
+  }
+
+  function renderYoutubeFresh() {
+    var grid = document.getElementById("mz-top-yt-grid");
+    var rows = window.__YOUTUBE_LIST_ROWS;
+    if (!grid || !Array.isArray(rows) || !rows.length) return;
+
+    var items = rows
+      .slice()
+      .filter(function (r) {
+        return extractVideoId(r["最新動画URL"]);
+      })
+      .sort(function (a, b) {
+        return parseDate(b["最新動画配信日"]) - parseDate(a["最新動画配信日"]);
+      })
+      .slice(0, YT_LIMIT);
+    if (!items.length) return;
+
+    items.forEach(function (r) {
+      grid.appendChild(
+        buildVideoCard({
+          url: r["最新動画URL"],
+          thumb: thumbUrl(extractVideoId(r["最新動画URL"])),
+          badge: "",
+          title: r["最新動画タイトル"] || "最新動画",
+          channelName: r["チャンネル名"] || "",
+          channelLogo: r["ロゴ画像URL"] || "",
+          meta: daysAgoLabel(parseDate(r["最新動画配信日"])),
+        })
+      );
+    });
+    grid.hidden = false;
+    var section = grid.closest("[data-mz-top-section]");
+    if (section) section.hidden = false;
+  }
+
+  function renderDigest() {
+    var box = document.getElementById("mz-top-digest");
+    var digest = window.__MARCHINZ_DIGEST;
+    if (!box || !digest || !digest.text) return;
+    var card = el("div", "mz-digest-card");
+    card.appendChild(el("p", "mz-digest-label", "今週のマーチング"));
+    var textEl = el("p", "mz-digest-text", String(digest.text));
+    card.appendChild(textEl);
+    if (digest.generated_at) {
+      card.appendChild(el("p", "mz-digest-date", "AIによる自動生成 ・ " + String(digest.generated_at).slice(0, 10)));
+    }
+    box.appendChild(card);
+    box.hidden = false;
+    var section = box.closest("[data-mz-top-section]");
+    if (section) section.hidden = false;
+  }
+
+  var EVENTS_LIMIT = 6;
+  var MONTHS = ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月"];
+
+  function eventKindSlug(kind) {
+    switch (kind) {
+      case "演奏会": return "ensoukai";
+      case "大会": return "taikai";
+      case "イベント": return "event";
+      case "一般": return "ippan";
+      case "高校": return "koukou";
+      case "中学生以下": return "chuugaku";
+      case "カラーガード": return "colourguard";
+      case "海外": return "kaigai";
+      default: return "other";
+    }
+  }
+
+  function buildEventCard(ev) {
+    var ts = parseDate(ev.date);
+    var d = ts ? new Date(ts) : null;
+    var slug = eventKindSlug(ev.kind);
+    var a = el("a", "mz-event-card mz-event-card--kind-" + slug);
+    a.href = "#community/events";
+    a.setAttribute("data-page", "community");
+
+    var dateBox = el("div", "mz-event-card-date");
+    dateBox.appendChild(el("span", "mz-event-card-month", d ? MONTHS[d.getMonth()] : ""));
+    dateBox.appendChild(el("span", "mz-event-card-day", d ? String(d.getDate()) : "-"));
+    a.appendChild(dateBox);
+
+    var body = el("div", "mz-event-card-body");
+    var topRow = el("div", "mz-event-card-toprow");
+    if (ev.kind) topRow.appendChild(el("span", "mz-event-card-kind", ev.kind));
+    body.appendChild(topRow);
+    body.appendChild(el("p", "mz-event-card-title", ev.title || "（無題）"));
+    var venue = String(ev.venue_pref || "").trim();
+    if (venue) {
+      var v = el("p", "mz-event-card-venue");
+      v.appendChild(el("span", "mz-event-card-venue-pin", "📍"));
+      v.appendChild(document.createTextNode(venue));
+      body.appendChild(v);
+    }
+    a.appendChild(body);
+    return a;
+  }
+
+  function todayKey() {
+    var n = new Date();
+    return (
+      n.getFullYear() +
+      "-" +
+      String(n.getMonth() + 1).padStart(2, "0") +
+      "-" +
+      String(n.getDate()).padStart(2, "0")
+    );
+  }
+
+  function renderUpcomingEvents(rows) {
+    var grid = document.getElementById("mz-top-events-grid");
+    if (!grid) return;
+    var today = todayKey();
+    var upcoming = rows
+      .filter(function (ev) {
+        if (String(ev.status || "").trim() === "trashed") return false;
+        var date = String(ev.date || "").slice(0, 10);
+        return date && date >= today;
+      })
+      .sort(function (a, b) {
+        return String(a.date).localeCompare(String(b.date));
+      })
+      .slice(0, EVENTS_LIMIT);
+    try {
+      renderDashCountdown(upcoming);
+    } catch (e) {
+      if (window.console && console.warn) console.warn("[mz-top-highlights] dash", e);
+    }
+    if (!upcoming.length) return;
+    grid.replaceChildren();
+    upcoming.forEach(function (ev) {
+      grid.appendChild(buildEventCard(ev));
+    });
+    grid.hidden = false;
+    var section = grid.closest("[data-mz-top-section]");
+    if (section) section.hidden = false;
+  }
+
+  /* ---------- ヒーロー・ダッシュボード ---------- */
+
+  var KIND_COLORS = {
+    演奏会: ["#7c3aed", "#f1eafe"], 大会: ["#1e4fd6", "#e8f1fe"], イベント: ["#92400e", "#fbeacb"],
+    一般: ["#0f7a6c", "#e2f5f1"], 高校: ["#be185d", "#fce7f0"], 中学生以下: ["#2563a8", "#e6f0fa"],
+    カラーガード: ["#c2410c", "#fdeae0"], 海外: ["#475569", "#eef1f5"],
+  };
+  var WEEKDAYS_JA = ["日", "月", "火", "水", "木", "金", "土"];
+
+  function showHeroDash() {
+    var dash = document.getElementById("mz-hero-dash");
+    if (!dash) return null;
+    if (dash.hidden) {
+      dash.hidden = false;
+      var art = document.querySelector(".mll-lp-hero-art");
+      if (art) art.hidden = true;
+    }
+    return dash;
+  }
+
+  function renderDashStatic() {
+    var dash = document.getElementById("mz-hero-dash");
+    if (!dash) return;
+
+    var dateEl = document.getElementById("mz-dash-date");
+    if (dateEl) {
+      var now = new Date();
+      dateEl.textContent =
+        now.getMonth() + 1 + "/" + now.getDate() + "(" + WEEKDAYS_JA[now.getDay()] + ")";
+    }
+
+    var rows = (window.__MARCHINZ_DATA && window.__MARCHINZ_DATA.rows) || [];
+    var seen = {};
+    rows.forEach(function (r) {
+      var id = extractVideoId(r["URL"]);
+      if (id) seen[id] = 1;
+    });
+    var videoCount = Object.keys(seen).length;
+    var ytRows = Array.isArray(window.__YOUTUBE_LIST_ROWS) ? window.__YOUTUBE_LIST_ROWS : [];
+
+    var sv = document.getElementById("mz-dash-stat-videos");
+    if (sv && videoCount) sv.textContent = String(videoCount);
+    var sc = document.getElementById("mz-dash-stat-channels");
+    if (sc && ytRows.length) sc.textContent = String(ytRows.length);
+
+    var latest = ytRows
+      .filter(function (r) { return extractVideoId(r["最新動画URL"]); })
+      .sort(function (a, b) { return parseDate(b["最新動画配信日"]) - parseDate(a["最新動画配信日"]); })[0];
+    if (latest) {
+      var link = document.getElementById("mz-dash-video");
+      var thumb = document.getElementById("mz-dash-video-thumb");
+      var title = document.getElementById("mz-dash-video-title");
+      if (link && thumb && title) {
+        link.href = latest["最新動画URL"];
+        thumb.src = thumbUrl(extractVideoId(latest["最新動画URL"]));
+        title.textContent = latest["最新動画タイトル"] || "最新動画";
+        link.hidden = false;
+      }
+    }
+
+    if (videoCount || ytRows.length || latest) showHeroDash();
+  }
+
+  function renderDashCountdown(upcoming) {
+    var box = document.getElementById("mz-dash-countdown");
+    if (!box) return;
+    var se = document.getElementById("mz-dash-stat-events");
+    if (se) se.textContent = String(upcoming.length);
+    var ev = upcoming[0];
+    if (!ev) return;
+    var ts = parseDate(ev.date);
+    if (!ts) return;
+    var days = Math.max(0, Math.round((ts - new Date(new Date().toDateString()).getTime()) / 86400000));
+    var daysEl = document.getElementById("mz-dash-days");
+    var unitEl = box.querySelector(".mz-dash-count-unit");
+    if (daysEl) daysEl.textContent = days === 0 ? "今日" : String(days);
+    if (unitEl) unitEl.textContent = days === 0 ? "開催!" : "日後";
+    var titleEl = document.getElementById("mz-dash-ev-title");
+    if (titleEl) titleEl.textContent = ev.title || "(無題)";
+    var kindEl = document.getElementById("mz-dash-ev-kind");
+    if (kindEl) {
+      kindEl.textContent = ev.kind || "";
+      kindEl.hidden = !ev.kind;
+      var c = KIND_COLORS[ev.kind];
+      if (c) {
+        kindEl.style.color = c[0];
+        kindEl.style.background = c[1];
+      }
+    }
+    var prefEl = document.getElementById("mz-dash-ev-pref");
+    if (prefEl) prefEl.textContent = ev.venue_pref ? "📍" + ev.venue_pref : "";
+    var dEl = document.getElementById("mz-dash-ev-date");
+    if (dEl) {
+      var d = new Date(ts);
+      dEl.textContent = d.getMonth() + 1 + "/" + d.getDate() + "(" + WEEKDAYS_JA[d.getDay()] + ")";
+    }
+    box.hidden = false;
+    showHeroDash();
+  }
+
+  var eventsLoaded = false;
+
+  function loadUpcomingEvents() {
+    if (eventsLoaded) return;
+    var db = null;
+    try {
+      db = window.MLL_AUTH && window.MLL_AUTH.getDb && window.MLL_AUTH.getDb();
+    } catch (e) {
+      db = null;
+    }
+    if (!db) return;
+    eventsLoaded = true;
+    db.collection("mll_calendar_events")
+      .orderBy("date", "desc")
+      .limit(400)
+      .get()
+      .then(function (snap) {
+        var rows = [];
+        snap.forEach(function (doc) {
+          var x = doc.data() || {};
+          rows.push({
+            id: doc.id,
+            kind: String(x.kind || ""),
+            date: String(x.date || ""),
+            title: String(x.title || ""),
+            venue_pref: String(x.venue_pref || "").trim(),
+            status: String(x.status || ""),
+          });
+        });
+        renderUpcomingEvents(rows);
+      })
+      .catch(function (err) {
+        eventsLoaded = false;
+        if (window.console && console.warn) console.warn("[mz-top-highlights] events", err);
+      });
+  }
+
+  function init() {
+    try {
+      renderDashStatic();
+      renderDigest();
+      renderFreshVideos();
+      renderYoutubeFresh();
+      loadUpcomingEvents();
+      // Firebase 初期化が遅れて getDb() が null のときは、認証確定イベントで再試行
+      window.addEventListener("mll-auth-changed", loadUpcomingEvents);
+      var tries = 0;
+      var timer = setInterval(function () {
+        if (eventsLoaded || ++tries > 20) {
+          clearInterval(timer);
+          return;
+        }
+        loadUpcomingEvents();
+      }, 400);
+    } catch (err) {
+      if (window.console && console.warn) console.warn("[mz-top-highlights]", err);
+    }
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
+})();

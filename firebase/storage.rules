@@ -82,6 +82,18 @@ service firebase.storage {
         && (request.auth.uid == userId || isPrivileged());
     }
 
+    // MarchinZ Base（練習ログ・楽器・ショウメモの写真）: 完全非公開・本人のみ read/write
+    match /mll_base_media/{userId}/{fileName} {
+      allow read: if signedIn() && request.auth.uid == userId;
+
+      allow write: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.size < 8 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+
+      allow delete: if signedIn() && request.auth.uid == userId;
+    }
+
     match /{path=**} {
       allow read, write: if false;
     }
