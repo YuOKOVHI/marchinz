@@ -960,30 +960,36 @@ a.calendar-ev-topline-creator-name-link:hover {
 
 /* ==========================================================================
    改善: Moment/Note ビューア(拡大表示)では写真をクロップせず全体を表示する。
-   一覧カードは 16:9/4:3 クロップのままで良いが、拡大表示で縦長写真(スクショ等)を
-   中央クロップすると意図しない断片(例: 文末の「す。」だけ)が見えてしまうため。
+   帯(レターボックス)は出さない: コンテナを画像の幅にシュリンクラップして中央寄せ。
+   :has 付きセレクタは、一覧カード用の縦長紺帯ルール(0,2,1)に勝つための上書き。
    ========================================================================== */
 
-.eld-dialog .mln-note-viewer-cover {
+.eld-dialog .mln-note-viewer-cover,
+.eld-dialog .mln-note-viewer-cover:has(img.mz-img-portrait) {
   aspect-ratio: auto;
   height: auto;
-  background: #eef1f5;
-  border-radius: 12px;
-  overflow: hidden;
+  background: transparent;
+  border-radius: 0;
+  overflow: visible;
 }
 
 .eld-dialog .mln-note-viewer-cover .marchinz-protected-photo-cell,
 .eld-dialog .mln-note-viewer-cover .marchinz-protected-photo-inner {
   display: block;
   height: auto;
+  width: fit-content;
+  margin-inline: auto;
 }
 
 .eld-dialog .mln-note-viewer-cover .mln-feed-card-cover-img {
   display: block;
-  width: 100%;
+  width: auto;
+  max-width: 100%;
   height: auto;
   max-height: min(62vh, 560px);
   object-fit: contain;
+  margin-inline: auto;
+  border-radius: 12px;
 }
 
 /* ==========================================================================
@@ -1078,6 +1084,21 @@ a.calendar-ev-topline-creator-name-link:hover {
 #community-hub-panel-moments .mln-feed-card .mln-feed-card-title-row { order: 1; margin: 0; }
 #community-hub-panel-moments .mln-feed-card .mln-feed-card-cover { order: 2; margin: 0.6rem 0 0.2rem; border-radius: 14px; border: 0.5px solid var(--border); }
 #community-hub-panel-moments .mln-feed-card .mln-feed-card-engage { order: 3; }
+
+/* モーメントのサムネは正方形クロップで統一(縦長スクショの紺帯レターボックスをやめる)。
+   :has 付きは一覧カード用の縦長紺帯ルール(0,2,1)への上書き。 */
+#community-hub-panel-moments .mln-feed-card .mln-feed-card-cover,
+#community-hub-panel-moments .mln-feed-card .mln-feed-card-cover:has(img.mz-img-portrait) {
+  aspect-ratio: 1 / 1;
+  width: auto;
+  max-width: 440px;
+  margin-inline: auto;
+  background: var(--row-alt, #eceff1);
+}
+
+#community-hub-panel-moments .mln-feed-card .mln-feed-card-cover img.mz-img-portrait {
+  object-fit: cover;
+}
 
 #community-hub-panel-moments .mln-feed-card-head-avatar {
   width: 44px;
