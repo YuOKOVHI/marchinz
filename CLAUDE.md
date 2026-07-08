@@ -33,6 +33,7 @@
 3. **触った JS**: `index.html` 末尾の同ファイル `?v=` を同版に更新
 4. **最小 diff**。既存の IIFE + `window.*` グローバルに合わせる（TypeScript / bundler なし）
 5. **検証**: `file://` は不可（Firebase Auth が動かない）
+6. **UI アイコンはカラー絵文字禁止**。Font Awesome のモノクロ（`<i class="fa-solid fa-…">`、`vendor/fontawesome`）で統一し CSS で色を継承。既存のカラー絵文字（🗾📅🗺️等）を見かけたら置換候補（シェア用テキスト内の絵文字は対象外）。
 
 ```bash
 cd 010_MarchinZ   # このリポジトリルート

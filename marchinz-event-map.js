@@ -17,9 +17,10 @@
   /** 日本周辺に視点を固定(大陸側へ迷子にならない) */
   var JAPAN_BOUNDS = [[22.0, 120.0], [47.5, 151.0]];
 
+  // ピンの色は種別を表す(ポップアップの種別ラベルと対応)。楽しく見えるよう鮮やかめに統一。
   var KIND_COLORS = {
-    演奏会: "#7c3aed", 大会: "#1e4fd6", イベント: "#92400e", 一般: "#0f7a6c",
-    高校: "#be185d", 中学生以下: "#2563a8", カラーガード: "#c2410c", 海外: "#475569",
+    演奏会: "#8b5cf6", 大会: "#2563eb", イベント: "#f59e0b", 一般: "#10b981",
+    高校: "#ec4899", 中学生以下: "#0ea5e9", カラーガード: "#f97316", 海外: "#64748b",
   };
 
   function coords() { return window.MarchinZJourneyPrefCoords || {}; }
@@ -144,10 +145,11 @@
           return d >= today && d <= soonKey;
         });
         var html =
-          '<span class="mz-evmap-pin" style="--pin:' + color + ";--mz-drop:" + (dropIndex++ * 70) + 'ms">' +
+          '<span class="mz-evmap-pin' + (soon ? " mz-evmap-pin--soon" : "") + '" style="--pin:' + color + ";--mz-drop:" + (dropIndex++ * 70) + 'ms">' +
           (soon ? '<span class="mz-evmap-pulse"></span>' : "") +
           '<span class="mz-evmap-pin-count">' + list.length + "</span></span>";
-        var icon = L.divIcon({ className: "mz-evmap-icon", html: html, iconSize: [34, 34], iconAnchor: [17, 17] });
+        // アンカーはバルーン下端の尖り(46px目)= 実際の開催地に合わせる
+        var icon = L.divIcon({ className: "mz-evmap-icon", html: html, iconSize: [40, 46], iconAnchor: [20, 46] });
         var m = L.marker(c, { icon: icon }).addTo(markerLayer);
         var pop = document.createElement("div");
         pop.className = "mz-evmap-pop";

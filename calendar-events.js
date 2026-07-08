@@ -1827,7 +1827,7 @@
       gcalBtn.href = gcalUrl;
       gcalBtn.target = "_blank";
       gcalBtn.rel = "noopener noreferrer";
-      gcalBtn.textContent = "📅 カレンダーに登録";
+      gcalBtn.innerHTML = '<i class="fa-solid fa-calendar-plus" aria-hidden="true"></i> カレンダーに登録';
       gcalRow.appendChild(gcalBtn);
       titleCol.appendChild(gcalRow);
     }

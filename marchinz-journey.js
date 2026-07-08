@@ -97,7 +97,7 @@
       '<div class="mz-journey-progress"><div class="mz-journey-progress-bar" data-journey-bar></div></div>' +
       '<span class="mz-journey-year" data-journey-year></span>' +
       '<button type="button" class="mz-journey-btn mz-journey-speed" data-journey-speed aria-label="再生速度">1x</button>' +
-      '<button type="button" class="mz-journey-btn mz-journey-export-btn" data-journey-export aria-label="動画を保存">📹</button>' +
+      '<button type="button" class="mz-journey-btn mz-journey-export-btn" data-journey-export aria-label="動画を保存"><i class="fa-solid fa-video" aria-hidden="true"></i></button>' +
       "</div>" +
       '<p class="mz-journey-msg" data-journey-msg hidden></p>' +
       "</div>";
@@ -232,7 +232,7 @@
       '<span><b>' + span + "</b>年間</span><span><b>" + prefCount + "</b>都道府県</span><span><b>" + stops.length + "</b>の記録</span></p>" +
       '<div class="mz-journey-summary-actions">' +
       '<button type="button" class="mz-journey-share-btn" data-journey-share>シェア文をコピー</button>' +
-      '<button type="button" class="mz-journey-share-btn mz-journey-export-cta" data-journey-export-cta>📹 動画を保存</button>' +
+      '<button type="button" class="mz-journey-share-btn mz-journey-export-cta" data-journey-export-cta><i class="fa-solid fa-video" aria-hidden="true"></i> 動画を保存</button>' +
       "</div></div>";
     els.card.hidden = false;
     els.card.querySelector("[data-journey-share]").addEventListener("click", function () {

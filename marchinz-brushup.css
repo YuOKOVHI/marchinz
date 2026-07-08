@@ -78,6 +78,18 @@ body {
   background: var(--panel);
 }
 
+/* マイページ: カード枠に対して内容が密着していた(padding 0)ので余白を確保。
+   カバー画像は角丸カードとして中に収める既存デザインを踏襲(全幅ブリードにはしない)。 */
+#page-profile .user-profile-panel {
+  padding: 1.5rem 1.5rem 2rem;
+}
+
+@media (max-width: 600px) {
+  #page-profile .user-profile-panel {
+    padding: 1rem 1rem 1.5rem;
+  }
+}
+
 /* ---------- ページ見出し ---------- */
 
 .mz-philosophy-header {
@@ -1103,10 +1115,13 @@ a.calendar-ev-topline-creator-name-link:hover {
   padding-top: 1.6rem;
 }
 
-.mz-footer-grid {
+/* .site-footer .footer-nav(styles.css・旧全幅フッター用、詳細度0,2,0)が
+   margin/width を上書きしてグリッドが左に寄るため、同詳細度で確実に中央寄せする */
+.site-footer .mz-footer-grid {
   display: grid;
   grid-template-columns: 1.3fr 1fr 1fr 1fr;
   gap: 1.6rem;
+  width: auto;
   max-width: 980px;
   margin: 0 auto;
   padding: 1.4rem 1.2rem 1.6rem;
@@ -1151,6 +1166,17 @@ a.calendar-ev-topline-creator-name-link:hover {
 
 .site-footer p.mz-footer-col-head {
   color: var(--amber-bright);
+}
+
+/* コピーライト行(styles.css は暗い --muted。濃紺フッターで読めるよう白系に) */
+.site-footer p.footer-copy {
+  color: rgba(255, 255, 255, 0.75);
+  text-align: center;
+  padding-bottom: 1.1rem;
+}
+
+.site-footer p.footer-copy .footer-app-ver {
+  color: rgba(255, 255, 255, 0.5);
 }
 
 .mz-footer-grid .footer-nav-link {
@@ -1587,34 +1613,62 @@ a.calendar-ev-topline-creator-name-link:hover {
 
 .mz-evmap-icon { background: none; border: none; }
 
+/* バルーン型ピン: 丸い頭(光沢つき) + 下向きの尖り。頭に件数。 */
 .mz-evmap-pin {
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
-  background: var(--pin, #1e4fd6);
-  border: 2.5px solid #fff;
-  box-shadow: 0 2px 8px rgba(15, 33, 56, 0.35);
+  background:
+    radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0) 55%),
+    var(--pin, #2563eb);
+  border: 3px solid #fff;
+  box-shadow: 0 4px 10px rgba(15, 33, 56, 0.35);
   box-sizing: border-box;
+}
+
+/* 下端の尖り(開催地を指す足)。白フチを2辺だけ描いて頭の輪郭とつなげる */
+.mz-evmap-pin::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  width: 13px;
+  height: 13px;
+  margin-left: -6.5px;
+  background: var(--pin, #2563eb);
+  border: 3px solid #fff;
+  border-top-color: transparent;
+  border-left-color: transparent;
+  transform: rotate(45deg);
+  box-sizing: border-box;
+  z-index: -1;
 }
 
 .mz-evmap-pin-count {
   color: #fff;
-  font-size: 0.8rem;
-  font-weight: 700;
+  font-size: 0.86rem;
+  font-weight: 800;
   font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 1px rgba(15, 33, 56, 0.28);
 }
 
 .mz-evmap-pulse {
   position: absolute;
-  inset: -2.5px;
+  inset: -3px;
   border-radius: 50%;
-  border: 2.5px solid var(--pin, #1e4fd6);
+  border: 3px solid var(--pin, #2563eb);
   animation: mz-evmap-pulse 1.8s ease-out infinite;
   pointer-events: none;
+}
+
+/* 直近1ヶ月のイベントは頭がふわふわ弾んでワクワク感を出す。
+   後方の .mz-evmap-pin(落下のみ)に負けないよう2クラスで詳細度を上げる */
+.mz-evmap-pin.mz-evmap-pin--soon {
+  animation: mz-pin-drop 0.55s cubic-bezier(0.2, 1.5, 0.4, 1) both, mz-evmap-bob 1.5s ease-in-out 0.6s infinite;
 }
 
 @keyframes mz-evmap-pulse {
@@ -1622,8 +1676,14 @@ a.calendar-ev-topline-creator-name-link:hover {
   100% { transform: scale(2.1); opacity: 0; }
 }
 
+@keyframes mz-evmap-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .mz-evmap-pulse { animation: none; display: none; }
+  .mz-evmap-pin--soon { animation: none; }
 }
 
 /* ポップアップ外枠(Leafletラッパー): 丸みと柔らかい影で「可愛く」 */
