@@ -34,6 +34,7 @@
 4. **最小 diff**。既存の IIFE + `window.*` グローバルに合わせる（TypeScript / bundler なし）
 5. **検証**: `file://` は不可（Firebase Auth が動かない）
 6. **UI アイコンはカラー絵文字禁止**。Font Awesome のモノクロ（`<i class="fa-solid fa-…">`、`vendor/fontawesome`）で統一し CSS で色を継承。既存のカラー絵文字（🗾📅🗺️等）を見かけたら置換候補（シェア用テキスト内の絵文字は対象外）。
+7. **動作環境はスマホ・Safari(iOS)を最優先**（iPhone アプリ化予定、2026-07-08 方針）。レイアウト・検証はモバイルファースト（375px 幅を第一に確認）。新しい Web API / CSS 機能は **iOS Safari 16 以降で動くこと**を採用基準にし、それより新しい機能はフォールバック必須。タップ領域・セーフエリア（`env(safe-area-inset-*)`、`viewport-fit=cover` 設定済み）・ホバー非依存（`:hover` は装飾のみ、機能は click/tap）に配慮。
 
 ```bash
 cd 010_MarchinZ   # このリポジトリルート
