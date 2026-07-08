@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-version="1.29.1">
+<html lang="ja" data-mz-version="1.30.0">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -73,7 +73,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css" />
     <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css?v=1.25.64" />
     <link rel="stylesheet" href="styles.css?v=1.26.58" />
-    <link rel="stylesheet" href="marchinz-brushup.css?v=1.29.1" />
+    <link rel="stylesheet" href="marchinz-brushup.css?v=1.30.0" />
     <!-- Microsoft Clarity -->
     <script type="text/javascript">
       (function(c,l,a,r,i,t,y){
@@ -1299,6 +1299,21 @@
                 <h2 id="mz-top-events-h" class="mll-lp-section-head">近日開催予定</h2>
                 <a href="#community/events" data-page="community" class="mz-top-more-link">すべて見る →</a>
               </div>
+              <section id="mz-top-event-map-block" class="mz-event-map-block" hidden aria-label="開催地マップ">
+                <div class="mz-event-map-head">
+                  <label class="mz-event-map-toggle">
+                    <input type="checkbox" class="mz-event-map-toggle-input" data-evmap-toggle checked />
+                    🗾 マップで見る
+                  </label>
+                  <div class="mz-evmap-chips" role="group" aria-label="期間で絞り込み">
+                    <button type="button" class="mz-evmap-chip mz-evmap-chip--active" data-evmap-period="upcoming">今後</button>
+                    <button type="button" class="mz-evmap-chip" data-evmap-period="3mo">3ヶ月以内</button>
+                    <button type="button" class="mz-evmap-chip" data-evmap-period="all">全期間</button>
+                  </div>
+                  <span class="mz-evmap-count" data-evmap-count aria-live="polite"></span>
+                </div>
+                <div id="mz-top-event-map" class="mz-event-map"></div>
+              </section>
               <div id="mz-top-events-grid" class="mz-event-grid" hidden></div>
             </div>
           </section>
@@ -1583,7 +1598,7 @@
                 YouTube マイリスト <span id="prof-count-yt" class="user-profile-tab-count">0</span>
               </button>
               <button type="button" class="user-profile-tab user-profile-tab--base" id="prof-tab-base" role="tab" data-prof-tab="base" aria-selected="false" aria-controls="prof-pane-base" tabindex="-1" hidden>
-                🏠 MarchinZ Base
+                <i class="fa-solid fa-drum" aria-hidden="true"></i> MarchinZ Days
               </button>
             </nav>
             <div
@@ -1625,7 +1640,7 @@
                 </button>
                 <button type="button" id="mz-journey-open-btn" class="mz-journey-open-btn">
                   <span class="mz-journey-open-icon" aria-hidden="true">🗺️</span>
-                  あしあとを再生
+                  MarchinZ Logを再生
                   <span class="mz-journey-open-sub">Log の足取りを地図でたどる</span>
                 </button>
                 <div id="prof-mll-main"></div>
@@ -1661,7 +1676,7 @@
               <div id="prof-mylist-yt" class="user-profile-mylist-videos-root"></div>
             </div>
             <div id="prof-pane-base" class="user-profile-tab-pane" hidden role="tabpanel" aria-labelledby="prof-tab-base">
-              <p class="user-profile-pane-lead">練習・楽器・本番の記録。あなただけの部室です(この内容は非公開)。</p>
+              <p class="user-profile-pane-lead">練習・楽器・本番の記録に、チューナーとメトロノーム。あなただけの部室です(この内容は非公開)。</p>
               <div id="mz-base-root" class="mz-base-root"></div>
             </div>
           </div>
@@ -1743,9 +1758,10 @@
             </div>
             <section id="mz-event-map-block" class="mz-event-map-block" hidden aria-label="開催地マップ">
               <div class="mz-event-map-head">
-                <button type="button" class="mz-event-map-toggle" data-evmap-toggle aria-expanded="true">
+                <label class="mz-event-map-toggle">
+                  <input type="checkbox" class="mz-event-map-toggle-input" data-evmap-toggle checked />
                   🗾 マップで見る
-                </button>
+                </label>
                 <div class="mz-evmap-chips" role="group" aria-label="期間で絞り込み">
                   <button type="button" class="mz-evmap-chip mz-evmap-chip--active" data-evmap-period="upcoming">今後</button>
                   <button type="button" class="mz-evmap-chip" data-evmap-period="3mo">3ヶ月以内</button>
@@ -3609,7 +3625,7 @@
         </div>
         <div class="community-login-dialog-brand">
           <img
-            src="logo/mll-logo.png"
+            src="logo/marchinz-logo.png"
             alt=""
             width="120"
             decoding="async"
@@ -3753,7 +3769,7 @@
     <script defer src="marchinz-image-compress.js?v=1.27.1"></script>
     <script defer src="marchinz-rate-limit.js?v=1.25.64"></script>
     <script defer src="auth-config.js?v=1.26.0"></script>
-    <script defer src="auth.js?v=1.26.61"></script>
+    <script defer src="auth.js?v=1.30.0"></script>
     <script defer src="marchinz-admin-ugc-log.js?v=1.26.65"></script>
     <script defer src="marchinz-community-updates.js?v=1.26.28"></script>
     <script defer src="marchinz-b-test.js?v=1.25.64"></script>
@@ -3766,18 +3782,19 @@
     <script defer src="mll-role.js?v=1.28.0"></script>
     <script defer src="mll-video-mylist.js?v=1.26.62"></script>
     <script defer src="mll.js?v=1.26.62"></script>
-    <script defer src="calendar-events.js?v=1.28.0"></script>
+    <script defer src="calendar-events.js?v=1.30.0"></script>
     <script defer src="community.js?v=1.26.62"></script>
     <script defer src="event-log-diary.js?v=1.26.62"></script>
     <script defer src="mln-public-feed.js?v=1.25.79"></script>
     <script defer src="mll-moment.js?v=1.26.62"></script>
     <script defer src="user-profile-page.js?v=1.29.0"></script>
-    <script defer src="marchinz-base.js?v=1.29.0"></script>
-    <script defer src="app.js?v=1.27.0"></script>
-    <script defer src="marchinz-top-highlights.js?v=1.29.1"></script>
+    <script defer src="marchinz-base.js?v=1.30.0"></script>
+    <script defer src="app.js?v=1.30.0"></script>
+    <script defer src="marchinz-top-highlights.js?v=1.30.0"></script>
     <script defer src="marchinz-confetti.js?v=1.28.0"></script>
-    <script defer src="marchinz-journey.js?v=1.29.0"></script>
-    <script defer src="marchinz-event-map.js?v=1.29.0"></script>
+    <script defer src="marchinz-journey.js?v=1.30.0"></script>
+    <script defer src="marchinz-journey-export.js?v=1.30.0"></script>
+    <script defer src="marchinz-event-map.js?v=1.30.0"></script>
     <script>
       (function () {
         if (!("serviceWorker" in navigator)) return;

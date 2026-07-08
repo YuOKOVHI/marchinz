@@ -7,7 +7,7 @@
 (function () {
   "use strict";
 
-  var FRESH_LIMIT = 6;
+  var FRESH_LIMIT = 4;
   var YT_LIMIT = 4;
 
   function extractVideoId(url) {
@@ -230,9 +230,11 @@
     var grid = document.getElementById("mz-top-events-grid");
     if (!grid) return;
     var today = todayKey();
-    var upcoming = rows
+    var notTrashed = rows.filter(function (ev) {
+      return String(ev.status || "").trim() !== "trashed";
+    });
+    var upcoming = notTrashed
       .filter(function (ev) {
-        if (String(ev.status || "").trim() === "trashed") return false;
         var date = String(ev.date || "").slice(0, 10);
         return date && date >= today;
       })
@@ -253,6 +255,12 @@
     grid.hidden = false;
     var section = grid.closest("[data-mz-top-section]");
     if (section) section.hidden = false;
+    // マップの表示判定(offsetParent)はセクションが見える状態になってから行う
+    try {
+      window.MarchinZEventMapTop?.refresh(notTrashed);
+    } catch (e) {
+      if (window.console && console.warn) console.warn("[mz-top-highlights] map", e);
+    }
   }
 
   /* ---------- ヒーロー・ダッシュボード ---------- */

@@ -1444,12 +1444,14 @@
     setSearchOverlay(false);
   }
 
-  /** 年フィルタチップ: state.rows の配信年からチップを生成(降順)。クリックでトグル */
-  function renderYearChips() {
+  /** 年フィルタチップ: 現在のタブ/検索/絞込み(年フィルタ自体を除く)に該当する行の配信年からチップを生成(降順)。クリックでトグル */
+  function renderYearChips(rows) {
     const wrap = $("#video-year-chips");
     if (!wrap) return;
-    const years = [...new Set(state.rows.map((row) => String(row["配信日"] ?? "").slice(0, 4)))]
+    const sourceForYears = rows ?? state.rows;
+    const years = [...new Set(sourceForYears.map((row) => String(row["配信日"] ?? "").slice(0, 4)))]
       .filter((y) => /^\d{4}$/.test(y))
+      .filter((y) => Number(y) >= 2018) // 2017以前は対象動画が少ないためチップを出さない
       .sort((a, b) => b.localeCompare(a));
     wrap.replaceChildren();
     if (!years.length) {
@@ -1511,7 +1513,7 @@
       ? state.rows.filter((row) => isVisibleRow(row))
       : state.rows.filter((row) => rowCategory(row) === state.tab && isVisibleRow(row));
 
-    state.filtered = sourceRows.filter((row) => {
+    const filterPredicate = (row, { skipYear = false } = {}) => {
       const orgTeam = normalize(rowOrgTeam(row));
       const display = normalize(rowDisplayName(row));
       const ev = normalize(row["大会名"]);
@@ -1521,7 +1523,7 @@
 
       if (state.excludedOrgTeams.has(rawOrg)) return false;
 
-      if (state.yearFilter && String(row["配信日"] ?? "").slice(0, 4) !== state.yearFilter) {
+      if (!skipYear && state.yearFilter && String(row["配信日"] ?? "").slice(0, 4) !== state.yearFilter) {
         return false;
       }
 
@@ -1573,7 +1575,10 @@
       if (f && !hay.includes(f)) return false;
       if (!rowMatchesVideoSourceFilter(row)) return false;
       return true;
-    });
+    };
+
+    state.filtered = sourceRows.filter((row) => filterPredicate(row));
+    renderYearChips(sourceRows.filter((row) => filterPredicate(row, { skipYear: true })));
     if (shouldUseInitialRandom()) {
       const matsuriOnly = state.filtered.filter((row) => isMarchingMatsuriVideo(row));
       state.filtered = applyInitialRandomOrder(matsuriOnly);

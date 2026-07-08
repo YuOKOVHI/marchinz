@@ -1762,6 +1762,17 @@
       } catch {
         // ignore
       }
+      // localhost 開発時のみ popup を使う。authDomain は本番固定（marchinz.netlify.app）のため、
+      // localhost:port からの signInWithRedirect はオリジン不一致でブラウザのサードパーティ
+      // Storage 分離により認証情報を戻せず、getRedirectResult が「エラーも無く null」を返して
+      // 静かに失敗する。popup は postMessage で結果を受け取るため影響を受けない。
+      // 本番（オリジン == authDomain）や in-app ブラウザは従来どおり redirect を使う。
+      if (isLocalDevHost()) {
+        setAuthRedirectPending(false);
+        await auth.signInWithPopup(provider);
+        // 認証成功後は onAuthStateChanged → onSignedIn がログイン後処理を行う
+        return;
+      }
       await auth.signInWithRedirect(provider);
       return;
     } catch (err) {

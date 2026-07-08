@@ -163,6 +163,12 @@ input[type="search"]:focus,
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
 }
 
+/* .sort-btn の元の color:#f4f7fb（styles.css）はダーク背景前提。
+   このファイルで背景を白に変えたため、通常状態は文字色も明るく上書きする(押下状態は既存どおり白文字のまま)。 */
+.sort-btn {
+  color: var(--navy);
+}
+
 .sort-btn:hover,
 .page-btn:hover,
 .recommend-more:hover {
@@ -1008,7 +1014,7 @@ a.calendar-ev-topline-creator-name-link:hover {
 /* ---------- 2) タイポグラフィ大型化 ---------- */
 
 .mz-philosophy-label--en {
-  color: var(--amber-bright);
+  color: var(--muted);
   font-weight: 700;
   letter-spacing: 0.2em;
   font-size: 0.7rem;
@@ -1111,7 +1117,6 @@ a.calendar-ev-topline-creator-name-link:hover {
   margin: 0 0 0.5rem;
   font-size: 1.25rem;
   font-weight: 700;
-  color: #fff;
   letter-spacing: 0.03em;
 }
 
@@ -1119,7 +1124,6 @@ a.calendar-ev-topline-creator-name-link:hover {
   margin: 0;
   font-size: 0.78rem;
   line-height: 1.8;
-  color: rgba(255, 255, 255, 0.62);
 }
 
 .mz-footer-col {
@@ -1133,6 +1137,19 @@ a.calendar-ev-topline-creator-name-link:hover {
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.14em;
+}
+
+/* .site-footer p（styles.css）は要素セレクタ分だけ詳細度が高く、
+   上の各 color 指定に(class 1つでは)勝てないため、ここで確実に上書きする */
+.site-footer p.mz-footer-logo {
+  color: #fff;
+}
+
+.site-footer p.mz-footer-tagline {
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.site-footer p.mz-footer-col-head {
   color: var(--amber-bright);
 }
 
@@ -1374,6 +1391,18 @@ a.calendar-ev-topline-creator-name-link:hover {
 
 .mz-journey-card-meta { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 
+/* Note 表紙写真(ある停留のみ)。カード右端の丸サムネ */
+.mz-journey-card-photo {
+  flex: none;
+  width: 52px;
+  height: 52px;
+  margin-left: auto;
+  border-radius: 12px;
+  object-fit: cover;
+  border: 0.5px solid var(--border);
+  box-shadow: 0 1px 4px rgba(15, 33, 56, 0.18);
+}
+
 .mz-journey-card-pref { font-size: 0.78rem; color: var(--muted); font-weight: 600; }
 
 .mz-journey-card-role {
@@ -1412,6 +1441,13 @@ a.calendar-ev-topline-creator-name-link:hover {
 }
 
 .mz-journey-share-btn:hover { background: var(--blue); color: #fff; }
+
+.mz-journey-summary-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
 
 .mz-journey-controls {
   display: flex;
@@ -1495,23 +1531,24 @@ a.calendar-ev-topline-creator-name-link:hover {
 }
 
 .mz-event-map-toggle {
-  border: none;
-  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
   font-size: 0.9rem;
   font-weight: 700;
   color: var(--navy);
   cursor: pointer;
   padding: 0.2rem 0.3rem;
+  user-select: none;
 }
 
-.mz-event-map-toggle::after {
-  content: "▲";
-  font-size: 0.6rem;
-  margin-left: 0.4rem;
-  color: var(--muted);
+.mz-event-map-toggle-input {
+  width: 1.05rem;
+  height: 1.05rem;
+  margin: 0;
+  accent-color: var(--blue);
+  cursor: pointer;
 }
-
-.mz-event-map-block--closed .mz-event-map-toggle::after { content: "▼"; }
 
 .mz-evmap-chips { display: flex; gap: 0.35rem; }
 
@@ -1589,10 +1626,19 @@ a.calendar-ev-topline-creator-name-link:hover {
   .mz-evmap-pulse { animation: none; display: none; }
 }
 
-.mz-evmap-pop { min-width: 220px; }
+/* ポップアップ外枠(Leafletラッパー): 丸みと柔らかい影で「可愛く」 */
+.mz-evmap-popup .leaflet-popup-content-wrapper {
+  border-radius: 16px;
+  box-shadow: 0 8px 28px rgba(15, 33, 56, 0.22);
+  border: 0.5px solid var(--border);
+}
+
+.mz-evmap-popup .leaflet-popup-content { margin: 0.65rem 0.7rem; }
+
+.mz-evmap-pop { min-width: 195px; }
 
 .mz-evmap-pop-head {
-  margin: 0 0 0.4rem;
+  margin: 0 0 0.45rem;
   font-size: 0.8rem;
   font-weight: 700;
   color: var(--navy);
@@ -1601,45 +1647,71 @@ a.calendar-ev-topline-creator-name-link:hover {
 .mz-evmap-pop-item {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.5rem;
   width: 100%;
   border: none;
   background: transparent;
-  padding: 0.32rem 0.15rem;
-  border-radius: 8px;
+  padding: 0.4rem 0.35rem;
+  border-radius: 10px;
   cursor: pointer;
   text-align: left;
+  border-left: 3px solid var(--pin, #1e4fd6);
+  margin-bottom: 0.2rem;
+  background: rgba(15, 33, 56, 0.035);
+  transition: background 0.15s ease, transform 0.15s ease;
 }
 
-.mz-evmap-pop-item:hover { background: rgba(30, 79, 214, 0.08); }
+.mz-evmap-pop-item:hover {
+  background: rgba(30, 79, 214, 0.1);
+  transform: translateX(2px);
+}
 
 .mz-evmap-pop-date {
   flex: none;
-  font-size: 0.72rem;
+  font-size: 0.74rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  color: var(--navy);
-}
-
-.mz-evmap-pop-kind {
-  flex: none;
-  font-size: 0.62rem;
-  font-weight: 700;
-  color: var(--pin, #1e4fd6);
-  border: 1px solid currentColor;
+  color: #fff;
+  background: var(--pin, #1e4fd6);
   border-radius: 999px;
-  padding: 0.08rem 0.4rem;
-}
-
-.mz-evmap-pop-title {
-  font-size: 0.76rem;
-  color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
+  padding: 0.14rem 0.5rem;
   white-space: nowrap;
 }
 
-.mz-evmap-pop-more { margin: 0.3rem 0 0; font-size: 0.7rem; color: var(--muted); }
+.mz-evmap-pop-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.08rem;
+}
+
+.mz-evmap-pop-kind {
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: var(--pin, #1e4fd6);
+  letter-spacing: 0.06em;
+}
+
+.mz-evmap-pop-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.mz-evmap-pop-go {
+  flex: none;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--pin, #1e4fd6);
+}
+
+.mz-evmap-pop-more { margin: 0.3rem 0 0; font-size: 0.7rem; color: var(--muted); text-align: center; }
 
 /* ==========================================================================
    v1.29 — MarchinZ Base（本人限定タブ: 練習ログ・楽器メンテ・ショウ覚え）
@@ -1913,9 +1985,15 @@ a.calendar-ev-topline-creator-name-link:hover {
   transform: scale(1.22) rotate(-4deg);
 }
 
-/* 吹き出し: ぽよんと出現 + ブランド角丸 */
-.leaflet-popup {
+/* 吹き出し: ぽよんと出現 + ブランド角丸。
+   注意: .leaflet-popup 自体に transform アニメを付けてはいけない。
+   fill-mode(both/forwards)のキーフレーム transform が Leaflet の位置決め用
+   インライン translate3d を上書きし、ポップアップが地図の隅へ飛ぶ(v1.29.1のバグ)。
+   アニメは Leaflet が transform を触らない内側ラッパーへ付ける。 */
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip-container {
   animation: mz-pop-in 0.32s cubic-bezier(0.2, 1.5, 0.4, 1) both;
+  transform-origin: bottom center;
 }
 
 @keyframes mz-pop-in {
@@ -1961,7 +2039,8 @@ a.calendar-ev-topline-creator-name-link:hover {
 
 @media (prefers-reduced-motion: reduce) {
   .mz-evmap-pin,
-  .leaflet-popup,
+  .leaflet-popup-content-wrapper,
+  .leaflet-popup-tip-container,
   .calendar-ev-card.calendar-ev-card--highlight { animation: none; }
   .mz-evmap-icon:hover .mz-evmap-pin { transform: none; }
 }
@@ -2226,3 +2305,262 @@ a.calendar-ev-topline-creator-name-link:hover {
   .mz-hero-dash { width: 100%; margin: 0.9rem 0 0; }
   .mz-dash-count-num b { font-size: 1.6rem; }
 }
+
+/* ---------- イベントカード: Googleカレンダー登録 (v1.30.0) ---------- */
+
+.calendar-ev-gcal-row {
+  margin: 0.35rem 0 0;
+}
+
+.calendar-ev-gcal-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--navy);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--mz-radius-ctl);
+  text-decoration: none;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.calendar-ev-gcal-btn:hover {
+  border-color: var(--blue);
+  background: #f4f7ff;
+  text-decoration: none;
+}
+
+/* ==========================================================================
+   v1.30 — MarchinZ Days: 本番カウントダウン + ツール(メトロノーム/チューナー)
+   ========================================================================== */
+
+.mz-base-countdown-wrap { margin-bottom: 1rem; }
+
+.mz-base-countdown-hero {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.85rem 1rem;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--navy) 0%, #1e3a6e 100%);
+  color: #fff;
+  box-shadow: var(--mz-shadow-card);
+  margin-bottom: 0.5rem;
+}
+
+.mz-base-countdown-icon { font-size: 1.6rem; }
+
+.mz-base-countdown-body { min-width: 0; }
+
+.mz-base-countdown-name {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.mz-base-countdown-days {
+  margin: 0.05rem 0 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #ffd76a;
+  font-variant-numeric: tabular-nums;
+}
+
+.mz-base-countdown-date { margin: 0; font-size: 0.72rem; color: rgba(255, 255, 255, 0.65); }
+
+.mz-base-countdown-detail { margin-top: 0.5rem; }
+
+.mz-base-countdown-list { list-style: none; margin: 0 0 0.6rem; padding: 0; }
+
+.mz-base-countdown-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.4rem 0.2rem;
+  border-bottom: 0.5px solid var(--border);
+  font-size: 0.82rem;
+}
+
+.mz-base-countdown-row-date { font-variant-numeric: tabular-nums; color: var(--muted); flex: none; }
+
+.mz-base-countdown-row-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+
+.mz-base-countdown-row-left { flex: none; font-size: 0.72rem; font-weight: 700; color: var(--blue); }
+
+/* 楽器カード: メーカー/品番/購入日 */
+.mz-base-instrument-spec { margin: 0.1rem 0 0; font-size: 0.74rem; color: var(--muted); }
+
+/* ---------- ツール共通 ---------- */
+
+.mz-base-tool-sec {
+  border: 0.5px solid var(--border);
+  border-radius: var(--mz-radius-card);
+  background: #fff;
+  box-shadow: var(--mz-shadow-card);
+  padding: 1rem 1.1rem 1.15rem;
+  margin-bottom: 1rem;
+}
+
+.mz-base-tool-head { margin: 0 0 0.6rem; font-size: 0.95rem; font-weight: 700; color: var(--navy); }
+
+.mz-base-tool-row { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin: 0.5rem 0; }
+
+.mz-base-field--inline { display: inline-flex; align-items: center; gap: 0.4rem; }
+
+.mz-base-field--inline select { padding: 0.3rem 0.5rem; border: 1px solid var(--border); border-radius: 8px; }
+
+.mz-base-accent-label { font-size: 0.82rem; font-weight: 600; cursor: pointer; }
+
+.mz-base-accent-label input { accent-color: var(--blue); width: 1rem; height: 1rem; }
+
+.mz-base-tool-chips { display: flex; gap: 0.35rem; flex-wrap: wrap; margin: 0.55rem 0; }
+
+.mz-base-tool-toggle { margin-top: 0.5rem; }
+
+.mz-base-tool-toggle--on { background: #b3261e; border-color: #b3261e; }
+
+/* ---------- メトロノーム ---------- */
+
+.mz-base-bpm-wrap { display: flex; align-items: baseline; gap: 0.3rem; justify-content: center; }
+
+.mz-base-bpm-num {
+  font-size: 2.6rem;
+  font-weight: 700;
+  color: var(--navy);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.mz-base-bpm-unit { font-size: 0.8rem; font-weight: 700; color: var(--muted); }
+
+.mz-base-beat-dots { display: flex; gap: 0.5rem; justify-content: center; margin: 0.55rem 0; min-height: 14px; }
+
+.mz-base-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: rgba(15, 33, 56, 0.15);
+  transition: background 0.08s ease, transform 0.08s ease;
+}
+
+.mz-base-dot--hit { background: var(--blue); transform: scale(1.25); }
+
+.mz-base-dot--accent { background: var(--amber-bright); }
+
+.mz-base-bpm-slider { width: 100%; accent-color: var(--blue); margin: 0.35rem 0; }
+
+.mz-base-bpm-ctrl { display: flex; gap: 0.4rem; justify-content: center; flex-wrap: wrap; margin: 0.35rem 0; }
+
+.mz-base-tap-btn { min-width: 4.5rem; font-weight: 700; }
+
+/* ---------- チューナー ---------- */
+
+.mz-base-tuner-note {
+  margin: 0.3rem 0;
+  text-align: center;
+  font-size: 2.2rem;
+  font-weight: 700;
+  color: var(--navy);
+  min-height: 2.6rem;
+  line-height: 1.15;
+}
+
+.mz-base-tuner-note small { font-size: 0.95rem; color: var(--muted); font-weight: 600; }
+
+.mz-base-cents-bar {
+  position: relative;
+  height: 34px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #fde3e1 0%, #eef4ff 38%, #dcf5e8 46%, #dcf5e8 54%, #eef4ff 62%, #fde3e1 100%);
+  border: 0.5px solid var(--border);
+  overflow: hidden;
+  margin: 0.35rem 0;
+}
+
+.mz-base-cents-center {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: rgba(15, 33, 56, 0.35);
+}
+
+.mz-base-needle {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 50%;
+  width: 6px;
+  margin-left: -3px;
+  border-radius: 3px;
+  background: var(--navy);
+  transition: left 0.08s linear, background 0.12s ease;
+}
+
+.mz-base-needle--ok { background: #0f9d58; }
+
+.mz-base-cent-txt { margin: 0.15rem 0 0; text-align: center; font-size: 0.85rem; font-weight: 600; color: var(--muted); }
+
+.mz-base-cent-txt--ok { color: #0f9d58; }
+
+.mz-base-freq-txt { margin: 0; text-align: center; font-size: 0.72rem; color: var(--muted); font-variant-numeric: tabular-nums; min-height: 1em; }
+
+/* ---------- MarchinZ Log 動画書き出し(marchinz-journey-export.js) ---------- */
+
+.mz-jexp-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 33, 56, 0.55);
+  backdrop-filter: blur(2px);
+  border-radius: inherit;
+}
+
+.mz-jexp-panel {
+  width: min(420px, 92%);
+  max-height: 92%;
+  overflow-y: auto;
+  background: #fff;
+  border-radius: 18px;
+  box-shadow: 0 12px 40px rgba(15, 33, 56, 0.35);
+  padding: 1rem 1.1rem 1.2rem;
+  text-align: center;
+}
+
+.mz-jexp-title { margin: 0 0 0.3rem; font-size: 1rem; font-weight: 700; color: var(--navy); }
+
+.mz-jexp-status { margin: 0 0 0.55rem; font-size: 0.82rem; font-weight: 600; color: var(--muted); }
+
+.mz-jexp-preview { display: flex; justify-content: center; }
+
+.mz-jexp-canvas {
+  width: auto;
+  max-width: 100%;
+  max-height: 46vh;
+  border-radius: 12px;
+  border: 0.5px solid var(--border);
+  background: #f4f6fb;
+}
+
+.mz-jexp-note { margin: 0.5rem 0 0; font-size: 0.72rem; color: #b3261e; font-weight: 600; }
+
+.mz-jexp-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 0.7rem;
+}
+
+.mz-jexp-actions .mz-journey-share-btn { text-decoration: none; }
+
+.mz-jexp-primary { background: var(--blue); color: #fff; }

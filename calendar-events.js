@@ -1754,6 +1754,37 @@
   }
 
   /** @param {object} ev @param {object|null} me */
+  /**
+   * Googleカレンダー「終日イベント」登録URL。dates は開始日/翌日(排他的終了)の YYYYMMDD 形式。
+   * @param {object} ev
+   * @returns {string|null} 日付が不正なら null(ボタンを出さない)
+   */
+  function buildGoogleCalendarUrl(ev) {
+    const d = String(ev.date || "").slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return null;
+    const start = d.replace(/-/g, "");
+    const dt = new Date(`${d}T00:00:00`);
+    if (Number.isNaN(dt.getTime())) return null;
+    dt.setDate(dt.getDate() + 1);
+    const end =
+      dt.getFullYear() +
+      String(dt.getMonth() + 1).padStart(2, "0") +
+      String(dt.getDate()).padStart(2, "0");
+    const detailsParts = [];
+    const evUrl = String(ev.event_url || "").trim();
+    if (/^https?:\/\/.+/i.test(evUrl)) detailsParts.push(evUrl);
+    detailsParts.push("MarchinZ イベント一覧: https://marchinz.netlify.app/#community/events");
+    const params = new URLSearchParams({
+      action: "TEMPLATE",
+      text: String(ev.title || "").trim() || "マーチングイベント",
+      dates: `${start}/${end}`,
+      details: detailsParts.join("\n"),
+    });
+    const loc = String(ev.venue_pref || "").trim();
+    if (loc) params.set("location", loc);
+    return `https://calendar.google.com/calendar/render?${params.toString()}`;
+  }
+
   function buildCalendarCardLi(ev, me) {
     const li = document.createElement("li");
     const kSlug = kindSlugForCss(ev.kind);
@@ -1785,6 +1816,20 @@
       a.textContent = host;
       urlRow.appendChild(a);
       titleCol.appendChild(urlRow);
+    }
+
+    const gcalUrl = buildGoogleCalendarUrl(ev);
+    if (gcalUrl) {
+      const gcalRow = document.createElement("p");
+      gcalRow.className = "calendar-ev-gcal-row";
+      const gcalBtn = document.createElement("a");
+      gcalBtn.className = "calendar-ev-gcal-btn";
+      gcalBtn.href = gcalUrl;
+      gcalBtn.target = "_blank";
+      gcalBtn.rel = "noopener noreferrer";
+      gcalBtn.textContent = "📅 カレンダーに登録";
+      gcalRow.appendChild(gcalBtn);
+      titleCol.appendChild(gcalRow);
     }
 
     titleRow.appendChild(titleCol);

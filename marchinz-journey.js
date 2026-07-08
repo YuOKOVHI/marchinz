@@ -1,9 +1,11 @@
 /*
- * marchinz-journey.js (v1.28.0) — MarchinZ Journey
+ * marchinz-journey.js (v1.30.0) — MarchinZ Log 再生(旧称 Journey)
  * MarchinZ Log(年代・県・大会名)から「足取り」を日本地図上でアニメーション再生する。
  * - Leaflet 1.9 + OpenStreetMap タイルを初回起動時に動的ロード(初期ページ重量ゼロ増)
- * - プロフィール(#profile &tab=mll)の「あしあとを再生」ボタンから起動
+ * - プロフィール(#profile &tab=mll)の「MarchinZ Logを再生」ボタンから起動
  * - 公開制御は Firestore ルール任せ(他人のプロフィールでは公開 Log のみ読める)
+ * - Note(event_log_diaries)の表紙写真があれば停留カードに表示
+ * - 動画書き出しは marchinz-journey-export.js(window.MarchinZJourneyExport)
  */
 (function () {
   "use strict";
@@ -84,8 +86,8 @@
     dlg.innerHTML =
       '<div class="mz-journey-surface" role="document">' +
       '<button type="button" class="mz-journey-x" data-journey-close aria-label="閉じる">×</button>' +
-      '<div class="mz-journey-head"><span class="mz-journey-eyebrow" lang="en">MARCHINZ JOURNEY</span>' +
-      '<p class="mz-journey-title" data-journey-title>あしあと</p></div>' +
+      '<div class="mz-journey-head"><span class="mz-journey-eyebrow" lang="en">MARCHINZ LOG</span>' +
+      '<p class="mz-journey-title" data-journey-title>MarchinZ Log</p></div>' +
       '<div class="mz-journey-map" data-journey-map aria-label="足取りの地図"></div>' +
       '<div class="mz-journey-card" data-journey-card hidden></div>' +
       '<div class="mz-journey-controls" data-journey-controls hidden>' +
@@ -95,6 +97,7 @@
       '<div class="mz-journey-progress"><div class="mz-journey-progress-bar" data-journey-bar></div></div>' +
       '<span class="mz-journey-year" data-journey-year></span>' +
       '<button type="button" class="mz-journey-btn mz-journey-speed" data-journey-speed aria-label="再生速度">1x</button>' +
+      '<button type="button" class="mz-journey-btn mz-journey-export-btn" data-journey-export aria-label="動画を保存">📹</button>' +
       "</div>" +
       '<p class="mz-journey-msg" data-journey-msg hidden></p>' +
       "</div>";
@@ -118,6 +121,7 @@
     els.prev.addEventListener("click", function () { jump(-1); });
     els.next.addEventListener("click", function () { jump(1); });
     els.speed.addEventListener("click", cycleSpeed);
+    dlg.querySelector("[data-journey-export]").addEventListener("click", startExport);
     return dlg;
   }
 
@@ -142,6 +146,25 @@
   var summaryShown = false;
   var avatarUrl = "";
   var displayName = "";
+  var currentUid = "";
+
+  /** 再生を止めて動画書き出し(marchinz-journey-export.js)へ引き渡す */
+  function startExport() {
+    if (!stops.length) return;
+    if (!window.MarchinZJourneyExport) {
+      window.alert("動画書き出し機能を読み込めませんでした。ページを再読み込みしてお試しください。");
+      return;
+    }
+    stopPlayback();
+    els.play.textContent = "▶";
+    window.MarchinZJourneyExport.start({
+      uid: currentUid,
+      stops: stops,
+      displayName: displayName,
+      avatarUrl: avatarUrl,
+      host: dlg, // <dialog> の top layer 内に UI を出すため(body 直下だと modal の下に隠れる)
+    });
+  }
 
   var TRAVEL_MS = 1700;
   var DWELL_MS = 1500;
@@ -173,6 +196,16 @@
     els.card.querySelector(".mz-journey-card-pref").textContent = "📍 " + stop.pref;
     var roleEl = els.card.querySelector(".mz-journey-card-role");
     if (roleEl) roleEl.textContent = stop.roleLabel;
+    if (stop.notePhoto) {
+      var ph = document.createElement("img");
+      ph.className = "mz-journey-card-photo";
+      ph.src = stop.notePhoto;
+      ph.alt = "";
+      ph.loading = "lazy";
+      ph.decoding = "async";
+      ph.onerror = function () { ph.remove(); };
+      els.card.appendChild(ph);
+    }
     els.card.hidden = false;
     els.card.classList.remove("mz-journey-card--bounce");
     void els.card.offsetWidth;
@@ -190,15 +223,17 @@
     stops.forEach(function (s) { prefs[s.pref] = 1; });
     var prefCount = Object.keys(prefs).length;
     var shareText =
-      (displayName ? displayName + "の" : "私の") + "マーチングの足あと🗺️ " +
+      (displayName ? displayName + "の" : "私の") + "MarchinZ Log🗺️ " +
       span + "年間・" + prefCount + "都道府県・" + stops.length + "の記録 #MarchinZ https://marchinz.netlify.app";
     els.card.innerHTML =
       '<div class="mz-journey-summary">' +
-      '<p class="mz-journey-summary-head">🏁 あしあとまとめ</p>' +
+      '<p class="mz-journey-summary-head">🏁 MarchinZ Log まとめ</p>' +
       '<p class="mz-journey-summary-stats">' +
       '<span><b>' + span + "</b>年間</span><span><b>" + prefCount + "</b>都道府県</span><span><b>" + stops.length + "</b>の記録</span></p>" +
+      '<div class="mz-journey-summary-actions">' +
       '<button type="button" class="mz-journey-share-btn" data-journey-share>シェア文をコピー</button>' +
-      "</div>";
+      '<button type="button" class="mz-journey-share-btn mz-journey-export-cta" data-journey-export-cta>📹 動画を保存</button>' +
+      "</div></div>";
     els.card.hidden = false;
     els.card.querySelector("[data-journey-share]").addEventListener("click", function () {
       var btn = this;
@@ -206,6 +241,7 @@
         .then(function () { btn.textContent = "コピーしました!"; })
         .catch(function () { window.prompt("コピーしてください", shareText); });
     });
+    els.card.querySelector("[data-journey-export-cta]").addEventListener("click", startExport);
     els.play.textContent = "↻";
     window.MarchinZConfetti?.burst();
     if (map) {
@@ -317,12 +353,13 @@
   async function open(uid, name) {
     uid = String(uid || "").trim();
     if (!uid) return;
+    currentUid = uid;
     displayName = String(name || "").trim();
     buildDialog();
     setMsg("");
     els.card.hidden = true;
     els.controls.hidden = true;
-    els.title.textContent = (displayName ? displayName + "さんの" : "") + "あしあと";
+    els.title.textContent = (displayName ? displayName + "さんの" : "") + "MarchinZ Log";
     dlg.removeAttribute("hidden");
     try { if (!dlg.open) dlg.showModal(); } catch (e) { dlg.setAttribute("open", ""); }
     setMsg("読み込み中…");
@@ -343,6 +380,7 @@
           title: String(d.event_name || "").trim(),
           venue: String(d.venue || "").trim(),
           roleLabel: String(d.role_label || "").trim(),
+          eventId: String(d.calendar_event_id || "").trim(),
         });
       });
     } catch (e) {
@@ -356,7 +394,7 @@
       var pd = p.exists ? p.data() || {} : {};
       avatarUrl = String(pd.avatar_url || "").trim();
       if (!displayName) displayName = String(pd.display_name || "").trim();
-      els.title.textContent = (displayName ? displayName + "さんの" : "") + "あしあと";
+      els.title.textContent = (displayName ? displayName + "さんの" : "") + "MarchinZ Log";
     } catch (e) { /* avatar は任意 */ }
 
     logs.sort(function (a, b) { return String(a.date).localeCompare(String(b.date)); });
@@ -366,13 +404,41 @@
       if (!lg.date) { skipped += 1; return; }
       var c = prefCoord(lg.venue);
       if (!c) { skipped += 1; return; }
-      stops.push({ coord: c, pref: lg.venue, date: lg.date, title: lg.title, roleLabel: lg.roleLabel });
+      stops.push({ coord: c, pref: lg.venue, date: lg.date, title: lg.title, roleLabel: lg.roleLabel, eventId: lg.eventId, notePhoto: "" });
     });
 
     if (!stops.length) {
       setMsg("場所つきの公開 Log がまだありません。イベントに参加して Log を残すと、ここに足あとが描かれます。");
       return;
     }
+
+    // Note(event_log_diaries)の表紙写真を停留カードに出す。
+    // 他人の非公開 Note は permission-denied になるため、1件ずつ get して個別に握りつぶす。
+    try {
+      var eventIds = [];
+      stops.forEach(function (s) {
+        if (s.eventId && eventIds.indexOf(s.eventId) === -1) eventIds.push(s.eventId);
+      });
+      var coverByEventId = {};
+      await Promise.all(
+        eventIds.map(function (eid) {
+          return db
+            .collection("mll_profiles").doc(uid)
+            .collection("event_log_diaries").doc(eid)
+            .get()
+            .then(function (noteSnap) {
+              if (!noteSnap.exists) return;
+              var nd = noteSnap.data() || {};
+              var cover = window.MarchinZDefaultAssets?.noteCoverUrl?.(nd.photo_urls, nd.cover_photo_index) || "";
+              if (cover) coverByEventId[eid] = cover;
+            })
+            .catch(function () { /* 非公開・権限なしはスキップ */ });
+        }),
+      );
+      stops.forEach(function (s) {
+        if (s.eventId && coverByEventId[s.eventId]) s.notePhoto = coverByEventId[s.eventId];
+      });
+    } catch (e) { /* Note 写真は任意装飾。失敗しても再生は続行 */ }
 
     setMsg(skipped > 0 ? skipped + "件は場所未登録のためスキップしました" : "");
 

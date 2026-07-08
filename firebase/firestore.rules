@@ -1381,19 +1381,41 @@ service cloud.firestore {
         allow read, delete: if profilePrivateDocReadable(uid);
         allow create, update: if profilePrivateDocWritable(uid)
           && request.resource.data.keys().hasOnly(
-            ['name', 'type', 'photo_url', 'maintenance_log', 'next_due_date', 'created_at', 'updated_at']
+            ['name', 'type', 'maker', 'model_number', 'purchase_date', 'photo_url', 'maintenance_log', 'next_due_date', 'created_at', 'updated_at']
           )
           && request.resource.data.name is string
           && request.resource.data.name.size() > 0
           && request.resource.data.name.size() <= 80
           && request.resource.data.type is string
           && request.resource.data.type.size() <= 40
+          // maker / model_number / purchase_date は v1.30 で追加(任意)。
+          // update は「更新後のドキュメント全体」が検証対象になるため、旧ドキュメント
+          // (これらのフィールドが無い)へのメンテ記録追記が通るよう hasAny で存在時のみ型検証する。
+          && (!request.resource.data.keys().hasAny(['maker'])
+            || (request.resource.data.maker is string && request.resource.data.maker.size() <= 60))
+          && (!request.resource.data.keys().hasAny(['model_number'])
+            || (request.resource.data.model_number is string && request.resource.data.model_number.size() <= 60))
+          && (!request.resource.data.keys().hasAny(['purchase_date'])
+            || (request.resource.data.purchase_date is string && request.resource.data.purchase_date.size() <= 10))
           && request.resource.data.photo_url is string
           && request.resource.data.photo_url.size() <= 1000
           && request.resource.data.maintenance_log is list
           && request.resource.data.maintenance_log.size() <= 100
           && request.resource.data.next_due_date is string
           && request.resource.data.next_due_date.size() <= 10;
+      }
+
+      // 本番カウントダウン(v1.30): 名前と日付だけの小さなドキュメント。本人のみ read/write。
+      match /base_countdowns/{docId} {
+        allow read, delete: if profilePrivateDocReadable(uid);
+        allow create, update: if profilePrivateDocWritable(uid)
+          && request.resource.data.keys().hasOnly(['name', 'date', 'created_at', 'updated_at'])
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 60
+          && request.resource.data.date is string
+          && request.resource.data.date.size() > 0
+          && request.resource.data.date.size() <= 10;
       }
 
       match /base_show_notes/{docId} {
