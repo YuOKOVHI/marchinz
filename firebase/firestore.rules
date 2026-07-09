@@ -1380,11 +1380,12 @@ service cloud.firestore {
             || (request.resource.data.goal_ids is list && request.resource.data.goal_ids.size() <= 10));
       }
 
-      // 目標(コーチング)(v1.32): 複数設定可。練習ログの goal_ids から進捗を集計する。本人のみ read/write。
+      // 目標(コーチング)(v1.32): 複数設定可。進捗は累計 progress_minutes を練習保存時に increment
+      // (練習ログの読み込み窓 limit(200) に依存させない。ログ削除で進捗は減らない=積み上げ実績の思想)。
       match /base_goals/{docId} {
         allow read, delete: if profilePrivateDocReadable(uid);
         allow create, update: if profilePrivateDocWritable(uid)
-          && request.resource.data.keys().hasOnly(['title', 'why', 'target_date', 'target_minutes', 'status', 'achieved_at', 'created_at', 'updated_at'])
+          && request.resource.data.keys().hasOnly(['title', 'why', 'target_date', 'target_minutes', 'progress_minutes', 'status', 'achieved_at', 'created_at', 'updated_at'])
           && request.resource.data.title is string
           && request.resource.data.title.size() > 0
           && request.resource.data.title.size() <= 80
@@ -1395,6 +1396,10 @@ service cloud.firestore {
           && request.resource.data.target_minutes is int
           && request.resource.data.target_minutes >= 0
           && request.resource.data.target_minutes <= 600000
+          && (!request.resource.data.keys().hasAny(['progress_minutes'])
+            || (request.resource.data.progress_minutes is int
+              && request.resource.data.progress_minutes >= 0
+              && request.resource.data.progress_minutes <= 6000000))
           && request.resource.data.status in ['active', 'achieved', 'archived']
           && request.resource.data.achieved_at is string
           && request.resource.data.achieved_at.size() <= 30;

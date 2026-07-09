@@ -117,16 +117,19 @@
     const db = getDb();
     if (!db) return;
     const gen = ++loadGen;
+    // 各コレクション個別に catch: 1本の permission-denied(ルール未反映等)が他を巻き込まないように
+    const q = (name, build) =>
+      build(db.collection("mll_profiles").doc(uid).collection(name)).get().catch((err) => {
+        console.warn(`[MarchinZBase] load ${name}`, err);
+        return null;
+      });
     const [pSnap, iSnap, sSnap, cSnap, gSnap] = await Promise.all([
-      db.collection("mll_profiles").doc(uid).collection("base_practice_logs").orderBy("date", "desc").limit(200).get(),
-      db.collection("mll_profiles").doc(uid).collection("base_instruments").limit(50).get(),
-      db.collection("mll_profiles").doc(uid).collection("base_show_notes").orderBy("created_at", "desc").limit(100).get(),
-      db.collection("mll_profiles").doc(uid).collection("base_countdowns").orderBy("date").limit(20).get(),
-      db.collection("mll_profiles").doc(uid).collection("base_goals").orderBy("created_at", "desc").limit(30).get(),
-    ]).catch((err) => {
-      console.warn("[MarchinZBase] load", err);
-      return [null, null, null, null, null];
-    });
+      q("base_practice_logs", (c) => c.orderBy("date", "desc").limit(200)),
+      q("base_instruments", (c) => c.limit(50)),
+      q("base_show_notes", (c) => c.orderBy("created_at", "desc").limit(100)),
+      q("base_countdowns", (c) => c.orderBy("date").limit(20)),
+      q("base_goals", (c) => c.orderBy("created_at", "desc").limit(30)),
+    ]);
     if (gen !== loadGen) return;
     practiceLogs = pSnap ? pSnap.docs.map((d) => ({ id: d.id, ...d.data() })) : [];
     instruments = iSnap ? iSnap.docs.map((d) => ({ id: d.id, ...d.data() })) : [];
@@ -141,6 +144,8 @@
   function render() {
     // サブタブ切替で DOM を作り直すため、鳴っている音・マイクは必ずここで止める
     stopTools();
+    // 開いたままのメンテダイアログも回収(SPA遷移で body 直下に残らないように)
+    document.getElementById("mz-base-maint-dialog")?.remove();
     const host = root();
     if (!host) return;
     host.replaceChildren();
@@ -211,7 +216,18 @@
 
   function renderPractice(panel) {
     renderCountdownBlock(panel);
+
+    // 主役の「記録する」導線は常にファーストビュー(目標や統計より上)に置く
+    const addBtn = el("button", "mz-base-add-btn", "+ 練習ログを記録");
+    addBtn.type = "button";
+    const form = buildPracticeForm();
+    form.hidden = true;
+    addBtn.addEventListener("click", () => { form.hidden = !form.hidden; });
+    panel.appendChild(addBtn);
+    panel.appendChild(form);
+
     renderGoalsBlock(panel);
+
     const now = Date.now();
     const weekAgo = now - 7 * 86400000;
     const weekMinutes = practiceLogs
@@ -224,7 +240,14 @@
 
     const stats = el("div", "mz-base-stats");
     const s0 = el("div", "mz-base-stat" + (streak >= 3 ? " mz-base-stat--fire" : ""));
-    s0.appendChild(el("span", "mz-base-stat-num", streak > 0 ? `🔥${streak}` : "—"));
+    const s0num = el("span", "mz-base-stat-num");
+    if (streak > 0) {
+      s0num.innerHTML = '<i class="fa-solid fa-fire" aria-hidden="true"></i> ';
+      s0num.appendChild(document.createTextNode(String(streak)));
+    } else {
+      s0num.textContent = "—";
+    }
+    s0.appendChild(s0num);
     s0.appendChild(el("span", "mz-base-stat-label", "連続記録(日)"));
     stats.appendChild(s0);
     const s1 = el("div", "mz-base-stat");
@@ -240,14 +263,6 @@
     s3.appendChild(el("span", "mz-base-stat-label", "よく練習する内容"));
     stats.appendChild(s3);
     panel.appendChild(stats);
-
-    const addBtn = el("button", "mz-base-add-btn", "+ 練習ログを記録");
-    addBtn.type = "button";
-    const form = buildPracticeForm();
-    form.hidden = true;
-    addBtn.addEventListener("click", () => { form.hidden = !form.hidden; });
-    panel.appendChild(addBtn);
-    panel.appendChild(form);
 
     const list = el("ul", "mz-base-practice-list");
     if (!practiceLogs.length) {
@@ -293,6 +308,22 @@
     minInput.max = "1440";
     minInput.placeholder = "60";
     minRow.appendChild(minInput);
+    // よく使う分数はタップだけで入力完了(数字キーボードを開かせない)
+    const quickMins = el("div", "mz-base-tag-chips mz-base-min-chips");
+    [15, 30, 60, 90].forEach((m) => {
+      const chip = el("button", "mz-base-tag-chip", `${m}分`);
+      chip.type = "button";
+      chip.addEventListener("click", () => {
+        minInput.value = String(m);
+        quickMins.querySelectorAll(".mz-base-tag-chip--on").forEach((c) => c.classList.remove("mz-base-tag-chip--on"));
+        chip.classList.add("mz-base-tag-chip--on");
+      });
+      quickMins.appendChild(chip);
+    });
+    minInput.addEventListener("input", () => {
+      quickMins.querySelectorAll(".mz-base-tag-chip--on").forEach((c) => c.classList.remove("mz-base-tag-chip--on"));
+    });
+    minRow.appendChild(quickMins);
     form.appendChild(minRow);
 
     // どの目標に向けた練習か(コーチング: 毎回目標との接続を意識してもらう)
@@ -303,7 +334,9 @@
       goalWrap.appendChild(el("span", "mz-base-field-label", "どの目標に向けた練習?"));
       const goalChips = el("div", "mz-base-tag-chips");
       goalOptions.forEach((g, i) => {
-        const chip = el("button", "mz-base-tag-chip mz-base-goal-chip", `🎯 ${g.title}`);
+        const chip = el("button", "mz-base-tag-chip mz-base-goal-chip");
+        chip.innerHTML = '<i class="fa-solid fa-bullseye" aria-hidden="true"></i> ';
+        chip.appendChild(document.createTextNode(g.title || ""));
         chip.type = "button";
         // 目標が1つだけなら最初から選択済みにして手間ゼロに
         if (goalOptions.length === 1 && i === 0) {
@@ -342,19 +375,27 @@
       const db = getDb();
       if (!db || !mountedUid) return;
       submit.disabled = true;
-      try {
-        // 応援メッセージ用の「保存前」文脈(復帰・初回判定は保存前の状態から取る)
-        const isFirst = practiceLogs.length === 0;
-        const lastDate = practiceLogs
-          .map((l) => String(l.date || "").slice(0, 10))
-          .sort()
-          .pop();
-        const gapDays = lastDate
-          ? Math.round((new Date(todayStr() + "T00:00:00") - new Date(lastDate + "T00:00:00")) / 86400000)
-          : 0;
-        const minutesVal = Math.max(0, Math.min(1440, Number(minInput.value) || 0));
-        const goalIds = Array.from(selectedGoals);
 
+      // 応援メッセージ用の「保存前」文脈(復帰・初回・進捗跨ぎ判定は保存前の状態から取る)
+      const isFirst = practiceLogs.length === 0;
+      const lastDate = practiceLogs
+        .map((l) => String(l.date || "").slice(0, 10))
+        .sort()
+        .pop();
+      const gapDays = lastDate
+        ? Math.round((new Date(todayStr() + "T00:00:00") - new Date(lastDate + "T00:00:00")) / 86400000)
+        : 0;
+      const minutesVal = Math.max(0, Math.min(1440, Number(minInput.value) || 0));
+      // ルール上限(10件)に合わせて切り詰め
+      const goalIds = Array.from(selectedGoals).slice(0, 10);
+      const pctBeforeById = {};
+      goalIds.forEach((gid) => {
+        const g = goals.find((x) => x.id === gid);
+        const target = g ? Number(g.target_minutes) || 0 : 0;
+        pctBeforeById[gid] = target > 0 ? Math.min(100, Math.round((goalProgressMinutes(g) / target) * 100)) : null;
+      });
+
+      try {
         const nowIso = new Date().toISOString();
         await db
           .collection("mll_profiles")
@@ -365,14 +406,41 @@
             tags: Array.from(selected),
             minutes: minutesVal,
             memo: String(memoInput.value || "").trim().slice(0, 800),
-            goal_ids: goalIds,
+            // 目標未選択なら goal_ids 自体を送らない(旧ルール配信中でも保存が通るロールバック耐性)
+            ...(goalIds.length ? { goal_ids: goalIds } : {}),
             created_at: nowIso,
             updated_at: nowIso,
           });
-        window.MarchinZConfetti?.burst({ count: 40, duration: 700 });
-        await loadAll(mountedUid); // ここで practiceLogs が最新化され、フォームも作り直される
+        // 目標の累計進捗をインクリメント(表示窓 limit(200) に依存しない恒久カウンタ)
+        if (goalIds.length && minutesVal > 0 && window.firebase?.firestore?.FieldValue?.increment) {
+          await Promise.all(
+            goalIds.map((gid) =>
+              db
+                .collection("mll_profiles")
+                .doc(mountedUid)
+                .collection("base_goals")
+                .doc(gid)
+                .update({
+                  progress_minutes: window.firebase.firestore.FieldValue.increment(minutesVal),
+                  updated_at: nowIso,
+                })
+                .catch((e) => console.warn("[MarchinZBase] goal progress", e)),
+            ),
+          );
+        }
+      } catch (e) {
+        console.warn("[MarchinZBase] practice add", e);
+        msg.textContent = "保存に失敗しました。時間をおいて再度お試しください。";
+        msg.hidden = false;
+        submit.disabled = false;
+        return;
+      }
 
-        // 保存後の文脈で応援メッセージ(トーストは body 直下なので再描画後も残る)
+      // 保存は成功済み。以降(再読込・応援演出)の失敗を「保存失敗」と誤表示しない
+      try {
+        window.MarchinZConfetti?.burst({ count: 40, duration: 700 });
+        await loadAll(mountedUid); // practiceLogs/goals が最新化され、フォームも作り直される
+
         const now = new Date();
         const week = practiceLogs
           .filter((l) => new Date(String(l.date) + "T00:00:00").getTime() >= now.getTime() - 7 * 86400000)
@@ -388,16 +456,15 @@
             const g = goals.find((x) => x.id === gid);
             if (!g) return null;
             const target = Number(g.target_minutes) || 0;
-            const done = goalProgressMinutes(gid);
             return {
               title: g.title || "",
-              pct: target > 0 ? Math.min(100, Math.round((done / target) * 100)) : null,
+              pct: target > 0 ? Math.min(100, Math.round((goalProgressMinutes(g) / target) * 100)) : null,
+              pctBefore: pctBeforeById[gid],
             };
           })
           .filter(Boolean);
         showCheerToast(
           pickCheerMessage({
-            minutes: minutesVal,
             goalViews,
             streak: calcStreak(),
             weekMinutes: week,
@@ -409,10 +476,7 @@
           goalViews,
         );
       } catch (e) {
-        console.warn("[MarchinZBase] practice add", e);
-        msg.textContent = "保存に失敗しました。時間をおいて再度お試しください。";
-        msg.hidden = false;
-        submit.disabled = false;
+        console.warn("[MarchinZBase] post-save", e);
       }
     });
 
@@ -451,7 +515,9 @@
     if (next) {
       const d = daysUntil(next.date);
       const hero = el("div", "mz-base-countdown-hero");
-      hero.appendChild(el("span", "mz-base-countdown-icon", "🎺"));
+      const heroIcon = el("span", "mz-base-countdown-icon");
+      heroIcon.innerHTML = '<i class="fa-solid fa-flag-checkered" aria-hidden="true"></i>';
+      hero.appendChild(heroIcon);
       const body = el("div", "mz-base-countdown-body");
       body.appendChild(el("p", "mz-base-countdown-name", next.name || "次の本番"));
       body.appendChild(
@@ -574,12 +640,13 @@
     return goals.filter((g) => String(g.status || "active") === "active");
   }
 
-  /** goal_ids に goalId を含む練習の合計分数 */
-  function goalProgressMinutes(goalId) {
-    return practiceLogs.reduce((sum, l) => {
-      const ids = Array.isArray(l.goal_ids) ? l.goal_ids : [];
-      return ids.indexOf(goalId) !== -1 ? sum + (Number(l.minutes) || 0) : sum;
-    }, 0);
+  /**
+   * 目標の累計練習分数。練習保存時に increment する恒久カウンタ(progress_minutes)を読む。
+   * 練習ログの読み込み窓 limit(200) に依存しないので、古いログが窓から落ちても進捗は後退しない。
+   * (ログ削除でも減らない=「積み上げた事実」を進捗とみなすコーチング上の割り切り)
+   */
+  function goalProgressMinutes(g) {
+    return Math.max(0, Number(g && g.progress_minutes) || 0);
   }
 
   function fmtHours(min) {
@@ -616,7 +683,9 @@
     const achieved = goals.filter((g) => String(g.status) === "achieved");
     if (achieved.length) {
       const hof = el("details", "mz-base-goal-hof");
-      const sum = el("summary", "mz-base-goal-hof-head", `🏆 達成した目標 ${achieved.length}件`);
+      const sum = el("summary", "mz-base-goal-hof-head");
+      sum.innerHTML = '<i class="fa-solid fa-trophy" aria-hidden="true"></i> ';
+      sum.appendChild(document.createTextNode(`達成した目標 ${achieved.length}件`));
       hof.appendChild(sum);
       achieved.forEach((g) => {
         const row = el("div", "mz-base-goal-hof-row");
@@ -653,7 +722,7 @@
 
     const target = Number(g.target_minutes) || 0;
     if (target > 0) {
-      const done = goalProgressMinutes(g.id);
+      const done = goalProgressMinutes(g);
       const pct = Math.min(100, Math.round((done / target) * 100));
       const barWrap = el("div", "mz-base-goal-bar");
       const bar = el("span", "mz-base-goal-bar-fill");
@@ -666,7 +735,12 @@
     }
 
     const acts = el("div", "mz-base-goal-actions");
-    const doneBtn = el("button", "mz-base-mini-btn mz-base-goal-achieve-btn", "🏆 達成した!");
+    const del = el("button", "mz-base-del-btn", "削除");
+    del.type = "button";
+    del.addEventListener("click", () => removeDoc("base_goals", g.id, () => loadAll(mountedUid)));
+    acts.appendChild(del);
+    const doneBtn = el("button", "mz-base-submit-btn mz-base-goal-achieve-btn");
+    doneBtn.innerHTML = '<i class="fa-solid fa-trophy" aria-hidden="true"></i> 達成した!';
     doneBtn.type = "button";
     doneBtn.addEventListener("click", async () => {
       const db = getDb();
@@ -679,18 +753,16 @@
           updated_at: new Date().toISOString(),
         });
         window.MarchinZConfetti?.burst({ count: 120, duration: 1600 });
-        showCheerToast(`🏆 「${g.title}」達成、おめでとう!この積み重ねはもう誰にも消せません。`, []);
+        showCheerToast(`「${g.title}」達成、おめでとう!この積み重ねはもう誰にも消せません。`, [], "🏆 達成!");
         await loadAll(mountedUid);
+        // 達成直後は殿堂入りリストを開いて「消えた」と感じさせない
+        document.querySelector(".mz-base-goal-hof")?.setAttribute("open", "");
       } catch (e) {
         console.warn("[MarchinZBase] goal achieve", e);
         doneBtn.disabled = false;
       }
     });
     acts.appendChild(doneBtn);
-    const del = el("button", "mz-base-del-btn", "削除");
-    del.type = "button";
-    del.addEventListener("click", () => removeDoc("base_goals", g.id, () => loadAll(mountedUid)));
-    acts.appendChild(del);
     card.appendChild(acts);
     return card;
   }
@@ -704,7 +776,7 @@
     titleInput.type = "text";
     titleInput.maxLength = 80;
     titleInput.required = true;
-    titleInput.placeholder = "例: 関東大会のステージに立つ";
+    titleInput.placeholder = "例: ロングトーンを毎日続けて大会に立つ";
     titleRow.appendChild(titleInput);
     form.appendChild(titleRow);
 
@@ -755,13 +827,14 @@
           why: whyInput.value.trim().slice(0, 200),
           target_date: String(dateInput.value || "").slice(0, 10),
           target_minutes: Math.max(0, Math.min(600000, Math.round((Number(hoursInput.value) || 0) * 60))),
+          progress_minutes: 0,
           status: "active",
           achieved_at: "",
           created_at: nowIso,
           updated_at: nowIso,
         });
         window.MarchinZConfetti?.burst({ count: 50, duration: 800 });
-        showCheerToast("🎯 目標を立てました。ここからの一歩一歩が全部この目標につながります。", []);
+        showCheerToast("目標を立てました。ここからの一歩一歩が全部この目標につながります。", [], "🎯 新しい目標");
         await loadAll(mountedUid);
       } catch (e) {
         console.warn("[MarchinZBase] goal add", e);
@@ -789,21 +862,27 @@
   let lastCheerIndex = -1;
 
   /**
-   * 文脈つき応援メッセージを1つ選ぶ。優先度:
-   * 目標達成間近/マイルストーン > ストリーク節目 > 復帰 > 週間比較 > 初回 > 汎用
-   * @param {{minutes: number, goalViews: {title: string, pct: number|null}[], streak: number,
+   * 文脈つき応援メッセージを1つ選ぶ。優先度(実装順):
+   * 目標100%/90%到達 > マイルストーン跨ぎ(25/50/75) > 初回 > 7日以上の復帰 >
+   * ストリーク節目と「節目まであと1日」 > 継続中(間引きあり) > 週間比較 > 朝練/夜練 > 汎用ローテ
+   * @param {{goalViews: {title: string, pct: number|null, pctBefore?: number|null}[], streak: number,
    *          weekMinutes: number, prevWeekMinutes: number, gapDays: number, isFirst: boolean, hour: number}} ctx
    */
   function pickCheerMessage(ctx) {
     const g = ctx.goalViews.find((x) => x.pct != null);
-    if (g && g.pct >= 100) return `🎉 目標「${g.title}」の練習時間、ついに100%!「達成した!」ボタンを押す準備はいい?`;
-    if (g && g.pct >= 90) return `🔜 「${g.title}」まで残りわずか(${g.pct}%)。ゴールテープが見えています。`;
-    if (g && [25, 50, 75].some((m) => g.pct >= m && g.pct < m + 8))
+    const before = g && g.pctBefore != null ? g.pctBefore : g ? g.pct : null;
+    if (g && g.pct >= 100 && before < 100) return `🎉 目標「${g.title}」の練習時間、ついに100%!「達成した!」ボタンを押す準備はいい?`;
+    if (g && g.pct >= 90 && g.pct < 100) return `🔜 「${g.title}」まで残りわずか(${g.pct}%)。ゴールテープが見えています。`;
+    // 1回の練習で大きく進んでも取りこぼさない「跨ぎ」判定(保存前pct < 節目 <= 保存後pct)
+    if (g && [75, 50, 25].some((m) => before < m && g.pct >= m))
       return `📈 「${g.title}」が${g.pct}%到達。積み上がってきた手応え、ありますよね。`;
     if (ctx.isFirst) return "🎺 記念すべき1回目の記録!ここがすべてのスタートラインです。";
     if (ctx.gapDays >= 7) return `おかえりなさい!${ctx.gapDays}日ぶりの再開。戻ってきたこと自体が実力です。`;
-    if ([3, 7, 14, 30, 50, 100].indexOf(ctx.streak) !== -1) return `🔥 ${ctx.streak}日連続!習慣が実力に変わっていく音がします。`;
-    if (ctx.streak >= 2) return `🔥 ${ctx.streak}日連続で継続中。この火、絶やさずにいきましょう。`;
+    const MILESTONES = [3, 7, 14, 30, 50, 100];
+    if (MILESTONES.indexOf(ctx.streak) !== -1) return `🔥 ${ctx.streak}日連続!習慣が実力に変わっていく音がします。`;
+    if (MILESTONES.indexOf(ctx.streak + 1) !== -1) return `あと1日で${ctx.streak + 1}日連続🔥 明日の自分に楽しみを残しておきましょう。`;
+    // 連続中の定型は毎回は出さない(他の文脈や汎用メッセージにも出番を回す)
+    if (ctx.streak >= 2 && Math.random() < 0.5) return `🔥 ${ctx.streak}日連続で継続中。この火、絶やさずにいきましょう。`;
     if (ctx.prevWeekMinutes > 0 && ctx.weekMinutes > ctx.prevWeekMinutes)
       return `📊 今週${fmtHours(ctx.weekMinutes)}。先週(${fmtHours(ctx.prevWeekMinutes)})の自分をもう超えました。`;
     if (ctx.hour < 9) return "🌅 朝練は最高のスタートダッシュ。今日一日、いい音が続きますように。";
@@ -815,16 +894,18 @@
   }
 
   /**
-   * 応援トースト(記録直後に下からスライドイン)。goalViews があれば進捗バーも見せる。
+   * 応援トースト(下からスライドイン)。goalViews があれば進捗バーも見せる。
+   * 見たい人には6.5秒、急ぐ人にはトースト全体タップで即退場。
    * @param {string} message
-   * @param {{title: string, pct: number|null, doneMin?: number, targetMin?: number}[]} goalViews
+   * @param {{title: string, pct: number|null}[]} goalViews
+   * @param {string} [head] 見出し(既定「記録しました!」。達成・目標作成・メンテはイベントに合わせる)
    */
-  function showCheerToast(message, goalViews) {
+  function showCheerToast(message, goalViews, head) {
     document.querySelectorAll(".mz-base-cheer").forEach((n) => n.remove());
     const toast = el("div", "mz-base-cheer");
     toast.setAttribute("role", "status");
     const inner = el("div", "mz-base-cheer-inner");
-    inner.appendChild(el("p", "mz-base-cheer-head", "記録しました!"));
+    inner.appendChild(el("p", "mz-base-cheer-head", head || "記録しました!"));
     inner.appendChild(el("p", "mz-base-cheer-msg", message));
     (goalViews || []).forEach((gv) => {
       if (gv.pct == null) return;
@@ -832,20 +913,21 @@
       row.appendChild(el("span", "mz-base-cheer-goal-name", gv.title));
       const bar = el("span", "mz-base-cheer-goal-bar");
       const fill = el("span", "mz-base-cheer-goal-fill");
-      fill.style.width = "0%";
+      // 保存前の値から今回分だけ伸びる(前進の実感)。pctBefore が無ければ 0 から
+      fill.style.width = `${Math.max(0, Math.min(100, Number(gv.pctBefore) || 0))}%`;
       bar.appendChild(fill);
       row.appendChild(bar);
       row.appendChild(el("span", "mz-base-cheer-goal-pct", `${gv.pct}%`));
       inner.appendChild(row);
-      // スライドイン後にバーがすっと伸びる(達成感の演出)
       window.setTimeout(() => { fill.style.width = `${Math.min(100, gv.pct)}%`; }, 350);
     });
     const close = el("button", "mz-base-cheer-x", "×");
     close.type = "button";
     close.setAttribute("aria-label", "閉じる");
-    close.addEventListener("click", () => toast.remove());
     inner.appendChild(close);
     toast.appendChild(inner);
+    // どこをタップしても閉じる(×はスクリーンリーダー/明示操作用)
+    toast.addEventListener("click", () => toast.remove());
     document.body.appendChild(toast);
     window.setTimeout(() => {
       toast.classList.add("mz-base-cheer--out");
@@ -992,11 +1074,17 @@
     const makerModel = [String(inst.maker || "").trim(), String(inst.model_number || "").trim()]
       .filter(Boolean)
       .join(" ・ ");
-    if (makerModel) body.appendChild(el("p", "mz-base-instrument-spec", `🏷 ${makerModel}`));
+    if (makerModel) {
+      const spec = el("p", "mz-base-instrument-spec");
+      spec.innerHTML = '<i class="fa-solid fa-tag" aria-hidden="true"></i> ';
+      spec.appendChild(document.createTextNode(makerModel));
+      body.appendChild(spec);
+    }
     if (inst.purchase_date) {
-      body.appendChild(
-        el("p", "mz-base-instrument-spec", `🛒 購入日 ${String(inst.purchase_date).replace(/-/g, "/")}`),
-      );
+      const spec2 = el("p", "mz-base-instrument-spec");
+      spec2.innerHTML = '<i class="fa-solid fa-cart-shopping" aria-hidden="true"></i> ';
+      spec2.appendChild(document.createTextNode(`購入日 ${String(inst.purchase_date).replace(/-/g, "/")}`));
+      body.appendChild(spec2);
     }
 
     const due = daysUntil(inst.next_due_date);
@@ -1141,7 +1229,7 @@
         })
         .then(() => {
           dlg.close();
-          showCheerToast(`🔧 「${inst.name}」お手入れ完了。道具を大切にする人は、音も大切にできる人です。`, []);
+          showCheerToast(`「${inst.name}」お手入れ完了。道具を大切にする人は、音も大切にできる人です。`, [], "🔧 お手入れ記録");
           return loadAll(mountedUid);
         })
         .catch((e) => {
@@ -1396,7 +1484,9 @@
   function renderTools(panel) {
     /* --- メトロノーム --- */
     const metroSec = el("section", "mz-base-tool-sec");
-    metroSec.appendChild(el("p", "mz-base-tool-head", "🥁 メトロノーム"));
+    const metroHead = el("p", "mz-base-tool-head");
+    metroHead.innerHTML = '<i class="fa-solid fa-stopwatch" aria-hidden="true"></i> メトロノーム';
+    metroSec.appendChild(metroHead);
 
     const bpmWrap = el("div", "mz-base-bpm-wrap");
     const bpmNum = el("span", "mz-base-bpm-num", String(toolsSettings.bpm));
@@ -1546,7 +1636,9 @@
 
     /* --- チューナー --- */
     const tunerSec = el("section", "mz-base-tool-sec");
-    tunerSec.appendChild(el("p", "mz-base-tool-head", `🎯 チューナー(A4=${TUNER_A4}Hz)`));
+    const tunerHead = el("p", "mz-base-tool-head");
+    tunerHead.innerHTML = `<i class="fa-solid fa-gauge-high" aria-hidden="true"></i> チューナー(A4=${TUNER_A4}Hz)`;
+    tunerSec.appendChild(tunerHead);
 
     const noteName = el("p", "mz-base-tuner-note", "--");
     tunerSec.appendChild(noteName);

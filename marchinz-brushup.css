@@ -2789,7 +2789,8 @@ a.calendar-ev-topline-creator-name-link:hover {
   display: block;
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, var(--blue) 0%, #7c3aed 130%);
+  /* 達成に近づくほど温かい色へ(トースト内バーの amber と同じ視覚言語) */
+  background: linear-gradient(90deg, var(--blue) 0%, var(--amber-bright) 140%);
   transition: width 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
@@ -2809,11 +2810,16 @@ a.calendar-ev-topline-creator-name-link:hover {
   margin-top: 0.5rem;
 }
 
+/* 機能中いちばん押して嬉しいボタン。submit級のサイズ+アンバー塗りで主役に */
 .mz-base-goal-achieve-btn {
-  border-color: var(--amber-bright);
-  color: var(--amber);
+  background: linear-gradient(135deg, var(--amber-bright) 0%, #b45309 130%);
+  border: none;
+  color: #fff;
   font-weight: 700;
+  margin-top: 0;
 }
+
+.mz-base-goal-actions .mz-base-del-btn { margin-right: auto; }
 
 .mz-base-goal-hof {
   margin-top: 0.6rem;
@@ -2951,20 +2957,28 @@ a.calendar-ev-topline-creator-name-link:hover {
   font-variant-numeric: tabular-nums;
 }
 
+.mz-base-cheer-inner { cursor: pointer; } /* トースト全体タップで閉じられる */
+
 .mz-base-cheer-x {
   position: absolute;
-  top: 0.4rem;
-  right: 0.5rem;
+  top: 0;
+  right: 0;
   border: none;
   background: transparent;
   color: rgba(255, 255, 255, 0.6);
   font-size: 1.1rem;
   cursor: pointer;
-  padding: 0.2rem 0.4rem;
+  /* 44pxヒットエリア(見た目は小さく、押しやすさは指サイズ) */
+  min-width: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .mz-base-cheer, .mz-base-cheer--out { animation: none; }
+  .mz-base-cheer-goal-fill, .mz-base-goal-bar-fill { transition: none; }
 }
 
 /* ---------- 楽器メンテのリマインダーバナー ---------- */
@@ -3043,7 +3057,15 @@ a.calendar-ev-topline-creator-name-link:hover {
 
 .mz-base-maint-dialog::backdrop {
   background: rgba(15, 33, 56, 0.45);
+  -webkit-backdrop-filter: blur(2px);
   backdrop-filter: blur(2px);
+}
+
+/* v1.32 でチップの役割が増えたため(内容タグ/分数/目標/メンテ種類)、タップ領域を底上げ */
+.mz-base-tag-chip {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
 }
 
 .mz-base-maint-surface {
