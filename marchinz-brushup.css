@@ -1722,6 +1722,7 @@ a.calendar-ev-topline-creator-name-link:hover {
   align-items: center;
   gap: 0.5rem;
   width: 100%;
+  min-height: 44px; /* スマホのタップ領域(v1.33.1: 隣の行の誤タップ対策) */
   border: none;
   background: transparent;
   padding: 0.4rem 0.35rem;
@@ -2217,20 +2218,29 @@ a.calendar-ev-topline-creator-name-link:hover {
   transition: transform 0.18s cubic-bezier(0.2, 1.6, 0.4, 1);
 }
 
-/* 吹き出し: ぽよんと出現 + ブランド角丸。
+/* カード(ポップアップ)表示中は揺れ・パルスを一時停止(JS が popupopen で付与、閉じたら再開)。
+   読んでいる間に背後がざわつかない・酔わないための静止時間(v1.33.1) */
+.mz-evmap--reading .mz-evmap-pin,
+.mz-evmap--reading .mz-evmap-pulse {
+  animation-play-state: paused;
+}
+
+/* 吹き出し: その場でフワッと出現(フェード+ごく小さなスケール)+ ブランド角丸。
+   v1.33.1: 「動くのは一度に1つ」— 開く瞬間は autoPan(地図)が動くので、カード自体は
+   大きく動かさない(旧: translateY+scale0.86 のぽよんが、パンと重なると「ガクッ」に見えた)。
    注意: .leaflet-popup 自体に transform アニメを付けてはいけない。
    fill-mode(both/forwards)のキーフレーム transform が Leaflet の位置決め用
    インライン translate3d を上書きし、ポップアップが地図の隅へ飛ぶ(v1.29.1のバグ)。
    アニメは Leaflet が transform を触らない内側ラッパーへ付ける。 */
 .leaflet-popup-content-wrapper,
 .leaflet-popup-tip-container {
-  animation: mz-pop-in 0.32s cubic-bezier(0.2, 1.5, 0.4, 1) both;
+  animation: mz-pop-in 0.22s ease-out both;
   transform-origin: bottom center;
 }
 
 @keyframes mz-pop-in {
-  0% { transform: translateY(10px) scale(0.86); opacity: 0; }
-  100% { transform: translateY(0) scale(1); opacity: 1; }
+  0% { transform: scale(0.97); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
 }
 
 .leaflet-popup-content-wrapper {

@@ -1,5 +1,5 @@
 /*
- * marchinz-event-map.js (v1.29.2) — イベントマップ
+ * marchinz-event-map.js (v1.33.1) — イベントマップ
  * #community/events のリスト前、および TOP の「近日開催予定」に、開催地・時期を日本地図で一望するセクション。
  * calendar-events.js が renderCurrentView 後に window.MarchinZEventMap.refresh(events) を呼ぶ（#community/events 側）。
  * marchinz-top-highlights.js が renderUpcomingEvents 後に window.MarchinZEventMapTop.refresh(events) を呼ぶ（TOP 側）。
@@ -129,6 +129,16 @@
           L.control.zoom({ position: "bottomright" }).addTo(map);
           markerLayer = L.layerGroup().addTo(map);
           map.setView([37.5, 137.2], 5);
+          // カード(ポップアップ)を読んでいる間は装飾アニメ(揺れ・パルス)を止める。
+          // 「動くのは一度に1つ」: 開く瞬間は地図パンだけが動き、読む時間は静止、閉じたら再開。
+          map.on("popupopen", function () {
+            var el = mapEl();
+            if (el) el.classList.add("mz-evmap--reading");
+          });
+          map.on("popupclose", function () {
+            var el = mapEl();
+            if (el) el.classList.remove("mz-evmap--reading");
+          });
           return map;
         })
         .catch(function (err) {
@@ -193,7 +203,9 @@
         pop.className = "mz-evmap-pop";
         var head = document.createElement("p");
         head.className = "mz-evmap-pop-head";
-        head.textContent = "📍 " + pref + "・" + list.length + "件";
+        // UIアイコンはFAモノクロ統一(📍カラー絵文字の置換、CLAUDE.md 必須ルール6)
+        head.innerHTML = '<i class="fa-solid fa-location-dot" aria-hidden="true"></i> ';
+        head.appendChild(document.createTextNode(pref + "・" + list.length + "件"));
         pop.appendChild(head);
         list.slice(0, 3).forEach(function (ev) {
           var kColor = KIND_COLORS[ev.kind] || "#1e4fd6";
@@ -221,11 +233,13 @@
           more.textContent = "ほか " + (list.length - 3) + " 件はリストで";
           pop.appendChild(more);
         }
-        // keepInView: 地図の縁でポップアップが切れないよう自動パンで常に可視域へ収める
+        // autoPan: 開く瞬間に一度だけ地図をパンしてポップアップを可視域へ収める。
+        // keepInView は使わない(v1.33.1): 表示中ずっと地図を引き戻すため、カードを
+        // 開いたまま隣を見ようとするスワイプと地図がケンカして操作しづらかった。
         m.bindPopup(pop, {
           maxWidth: 250,
           minWidth: 200,
-          keepInView: true,
+          keepInView: false,
           autoPan: true,
           autoPanPadding: L.point(28, 28),
           className: "mz-evmap-popup",
