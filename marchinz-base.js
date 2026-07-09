@@ -1,5 +1,5 @@
 /*
- * marchinz-base.js (v1.30.0) — MarchinZ Days(旧称 MarchinZ Base。内部ID・コレクション名は base_* を維持)
+ * marchinz-base.js (v1.33.0) — MarchinZ Days(旧称 MarchinZ Base。内部ID・コレクション名は base_* を維持)
  * 現役マーチャー向けの「毎日戻ってくる部室」。プロフィールの本人限定タブ
  * (#prof-pane-base、user-profile-page.js が showOwnerChrome 時に window.MarchinZBase.mount(uid) を呼ぶ)。
  *
@@ -18,7 +18,14 @@
   "use strict";
 
   const root = () => document.getElementById("mz-base-root");
-  const PRACTICE_TAGS = ["基礎", "曲", "ドリル", "筋トレ", "その他"];
+  // v1.33: ガード(手具)と楽器なし練習(イメトレ・譜読み)を追加。全選択7件は rules の tags<=8 に収まる
+  const PRACTICE_TAGS = ["基礎", "曲", "ドリル", "手具・ガード", "筋トレ", "イメトレ・譜読み", "その他"];
+  /** 今日の調子(任意)。mark は UI 表示記号、value が Firestore 保存値 */
+  const CONDITIONS = [
+    { value: "good", mark: "◎", label: "好調" },
+    { value: "soso", mark: "○", label: "ふつう" },
+    { value: "bad", mark: "△", label: "不調" },
+  ];
 
   let mountedUid = "";
   let activeSub = "practice";
@@ -248,7 +255,7 @@
       s0num.textContent = "—";
     }
     s0.appendChild(s0num);
-    s0.appendChild(el("span", "mz-base-stat-label", "連続記録(日)"));
+    s0.appendChild(el("span", "mz-base-stat-label", "連続記録(日)・休み1日OK"));
     stats.appendChild(s0);
     const s1 = el("div", "mz-base-stat");
     s1.appendChild(el("span", "mz-base-stat-num", String(Math.round((weekMinutes / 60) * 10) / 10)));
@@ -263,6 +270,8 @@
     s3.appendChild(el("span", "mz-base-stat-label", "よく練習する内容"));
     stats.appendChild(s3);
     panel.appendChild(stats);
+
+    renderReviewBlock(panel);
 
     const list = el("ul", "mz-base-practice-list");
     if (!practiceLogs.length) {
@@ -285,9 +294,12 @@
     form.appendChild(dateRow);
 
     const tagWrap = el("div", "mz-base-field");
-    tagWrap.appendChild(el("span", "mz-base-field-label", "内容"));
+    const tagHead = el("span", "mz-base-field-label-row");
+    tagHead.appendChild(el("span", "mz-base-field-label", "内容"));
     const chipsRow = el("div", "mz-base-tag-chips");
     const selected = new Set();
+    /** @type {Map<string, HTMLElement>} */
+    const tagChipByName = new Map();
     PRACTICE_TAGS.forEach((tag) => {
       const chip = el("button", "mz-base-tag-chip", tag);
       chip.type = "button";
@@ -295,8 +307,27 @@
         if (selected.has(tag)) { selected.delete(tag); chip.classList.remove("mz-base-tag-chip--on"); }
         else { selected.add(tag); chip.classList.add("mz-base-tag-chip--on"); }
       });
+      tagChipByName.set(tag, chip);
       chipsRow.appendChild(chip);
     });
+    // 「前回と同じ」: 部活勢は毎日ほぼ同じ内容。直近ログの内容+分数をワンタップで再現
+    const last = practiceLogs[0] || null;
+    if (last) {
+      const repeatBtn = el("button", "mz-base-mini-btn mz-base-repeat-btn", "前回と同じにする");
+      repeatBtn.type = "button";
+      repeatBtn.addEventListener("click", () => {
+        selected.clear();
+        tagChipByName.forEach((chip) => chip.classList.remove("mz-base-tag-chip--on"));
+        (Array.isArray(last.tags) ? last.tags : []).forEach((t) => {
+          const chip = tagChipByName.get(t);
+          if (chip) { selected.add(t); chip.classList.add("mz-base-tag-chip--on"); }
+        });
+        minInput.value = String(Number(last.minutes) || "");
+        quickMins.querySelectorAll(".mz-base-tag-chip--on").forEach((c) => c.classList.remove("mz-base-tag-chip--on"));
+      });
+      tagHead.appendChild(repeatBtn);
+    }
+    tagWrap.appendChild(tagHead);
     tagWrap.appendChild(chipsRow);
     form.appendChild(tagWrap);
 
@@ -325,6 +356,25 @@
     });
     minRow.appendChild(quickMins);
     form.appendChild(minRow);
+
+    // 今日の調子(任意・単一選択)。メモを書かなくても波が残る
+    let selectedCondition = "";
+    const condWrap = el("div", "mz-base-field");
+    condWrap.appendChild(el("span", "mz-base-field-label", "今日の調子(任意)"));
+    const condChips = el("div", "mz-base-tag-chips");
+    CONDITIONS.forEach((c) => {
+      const chip = el("button", "mz-base-tag-chip mz-base-cond-chip", `${c.mark} ${c.label}`);
+      chip.type = "button";
+      chip.addEventListener("click", () => {
+        const wasOn = selectedCondition === c.value;
+        selectedCondition = wasOn ? "" : c.value;
+        condChips.querySelectorAll(".mz-base-tag-chip--on").forEach((n) => n.classList.remove("mz-base-tag-chip--on"));
+        if (!wasOn) chip.classList.add("mz-base-tag-chip--on");
+      });
+      condChips.appendChild(chip);
+    });
+    condWrap.appendChild(condChips);
+    form.appendChild(condWrap);
 
     // どの目標に向けた練習か(コーチング: 毎回目標との接続を意識してもらう)
     const selectedGoals = new Set();
@@ -403,11 +453,12 @@
           .collection("base_practice_logs")
           .add({
             date: dateInput.value || todayStr(),
-            tags: Array.from(selected),
+            tags: Array.from(selected).slice(0, 8),
             minutes: minutesVal,
             memo: String(memoInput.value || "").trim().slice(0, 800),
-            // 目標未選択なら goal_ids 自体を送らない(旧ルール配信中でも保存が通るロールバック耐性)
+            // 任意フィールドは未選択なら送らない(旧ルール配信中でも保存が通るロールバック耐性)
             ...(goalIds.length ? { goal_ids: goalIds } : {}),
+            ...(selectedCondition ? { condition: selectedCondition } : {}),
             created_at: nowIso,
             updated_at: nowIso,
           });
@@ -486,7 +537,15 @@
   function buildPracticeRow(log) {
     const li = el("li", "mz-base-practice-row");
     const left = el("div", "mz-base-practice-left");
-    left.appendChild(el("span", "mz-base-practice-date", String(log.date || "").replace(/-/g, "/")));
+    const dateLine = el("span", "mz-base-practice-date", String(log.date || "").replace(/-/g, "/"));
+    const cond = CONDITIONS.find((c) => c.value === log.condition);
+    if (cond) {
+      const mark = el("span", `mz-base-practice-cond mz-base-practice-cond--${cond.value}`, cond.mark);
+      mark.setAttribute("aria-label", `調子: ${cond.label}`);
+      mark.title = `調子: ${cond.label}`;
+      dateLine.appendChild(mark);
+    }
+    left.appendChild(dateLine);
     const tagsWrap = el("div", "mz-base-practice-tags");
     (Array.isArray(log.tags) ? log.tags : []).forEach((t) => tagsWrap.appendChild(el("span", "mz-base-practice-tag", t)));
     left.appendChild(tagsWrap);
@@ -501,6 +560,75 @@
     right.appendChild(del);
     li.appendChild(right);
     return li;
+  }
+
+  /* ---------- 1a) ふりかえり(月間サマリー+ヒートマップ) ---------- */
+
+  /**
+   * 「今月の合計・回数・タグ内訳」と直近12週間のヒートマップ。
+   * データは読み込み済みの practiceLogs(直近200件窓)から作る。1日複数回練習しても
+   * 200件あれば12週はまず収まる。窓から溢れた古い日は空白になるだけで実害なし。
+   */
+  function renderReviewBlock(panel) {
+    if (!practiceLogs.length) return;
+    const wrap = el("section", "mz-base-review");
+    const title = el("p", "mz-base-review-title");
+    title.innerHTML = '<i class="fa-solid fa-chart-column" aria-hidden="true"></i> ふりかえり';
+    wrap.appendChild(title);
+
+    // 今月サマリー
+    const ym = todayStr().slice(0, 7);
+    const monthLogs = practiceLogs.filter((l) => String(l.date || "").slice(0, 7) === ym);
+    const monthMin = monthLogs.reduce((s, l) => s + (Number(l.minutes) || 0), 0);
+    const line = el("p", "mz-base-review-month");
+    line.appendChild(el("b", null, `${Number(ym.slice(5))}月`));
+    line.appendChild(document.createTextNode(` ${fmtHours(monthMin)}・${monthLogs.length}回`));
+    const monthTags = {};
+    monthLogs.forEach((l) => (Array.isArray(l.tags) ? l.tags : []).forEach((t) => { monthTags[t] = (monthTags[t] || 0) + 1; }));
+    Object.keys(monthTags)
+      .sort((a, b) => monthTags[b] - monthTags[a])
+      .slice(0, 3)
+      .forEach((t) => line.appendChild(el("span", "mz-base-review-tag", `${t} ${monthTags[t]}`)));
+    wrap.appendChild(line);
+
+    // ヒートマップ: 列=週(古→新)、行=月〜日。今週は途中まで、未来セルは透明
+    const byDate = {};
+    practiceLogs.forEach((l) => {
+      const k = String(l.date || "").slice(0, 10);
+      if (k) byDate[k] = (byDate[k] || 0) + (Number(l.minutes) || 0);
+    });
+    const key = (dt) =>
+      `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+    const todayKey = todayStr();
+    const start = new Date();
+    start.setDate(start.getDate() - ((start.getDay() + 6) % 7) - 7 * 11); // 12週前の月曜
+    const grid = el("div", "mz-hm-grid");
+    grid.setAttribute("role", "img");
+    grid.setAttribute("aria-label", "直近12週間の練習ヒートマップ");
+    const cur = new Date(start);
+    for (let i = 0; i < 12 * 7; i++) {
+      const k = key(cur);
+      const cell = el("span", "mz-hm-cell");
+      if (k > todayKey) {
+        cell.classList.add("mz-hm-cell--future");
+      } else {
+        const min = byDate[k] || 0;
+        const lv = min <= 0 ? 0 : min < 30 ? 1 : min < 60 ? 2 : min < 120 ? 3 : 4;
+        cell.classList.add(`mz-hm-l${lv}`);
+        cell.title = `${k.slice(5).replace("-", "/")} ${min ? `${min}分` : "記録なし"}`;
+      }
+      grid.appendChild(cell);
+      cur.setDate(cur.getDate() + 1);
+    }
+    const hmWrap = el("div", "mz-hm-wrap");
+    const dayCol = el("div", "mz-hm-days");
+    ["月", "", "水", "", "金", "", "日"].forEach((d) => dayCol.appendChild(el("span", "mz-hm-day", d)));
+    hmWrap.appendChild(dayCol);
+    hmWrap.appendChild(grid);
+    wrap.appendChild(hmWrap);
+    wrap.appendChild(el("p", "mz-base-review-note", "直近12週間・色が濃いほど長く練習した日"));
+
+    panel.appendChild(wrap);
   }
 
   /* ---------- 1b) 本番カウントダウン(練習ログタブ最上部) ---------- */
@@ -619,18 +747,33 @@
 
   /* ---------- 1c) 目標(コーチング) ---------- */
 
-  /** 練習日のユニーク集合から「今日または昨日を起点にした連続記録日数」 */
+  /**
+   * 練習日のユニーク集合から連続記録日数。数えるのは練習した日だけ(休息日はカウントしない)。
+   * v1.33: 休みが1日までなら途切れない(週数回ペースの社会人・記録忘れ1日の救済)。
+   * 起点も同じ考え方で今日→昨日→一昨日まで遡って探す。
+   */
   function calcStreak() {
     const days = new Set(practiceLogs.map((l) => String(l.date || "").slice(0, 10)).filter(Boolean));
     if (!days.size) return 0;
     const d = new Date();
     const key = (dt) =>
       `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
-    // 今日まだ記録していなくてもストリークは昨日まで継続扱い(その日のうちに途切れ表示しない)
-    if (!days.has(key(d))) d.setDate(d.getDate() - 1);
+    let probe = 0;
+    while (!days.has(key(d)) && probe < 2) {
+      d.setDate(d.getDate() - 1);
+      probe += 1;
+    }
+    if (!days.has(key(d))) return 0;
     let streak = 0;
-    while (days.has(key(d))) {
-      streak += 1;
+    let rest = 0;
+    for (;;) {
+      if (days.has(key(d))) {
+        streak += 1;
+        rest = 0;
+      } else {
+        rest += 1;
+        if (rest > 1) break;
+      }
       d.setDate(d.getDate() - 1);
     }
     return streak;

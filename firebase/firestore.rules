@@ -1364,12 +1364,13 @@ service cloud.firestore {
       match /base_practice_logs/{docId} {
         allow read, delete: if profilePrivateDocReadable(uid);
         allow create, update: if profilePrivateDocWritable(uid)
-          && request.resource.data.keys().hasOnly(['date', 'tags', 'minutes', 'memo', 'goal_ids', 'created_at', 'updated_at'])
+          && request.resource.data.keys().hasOnly(['date', 'tags', 'minutes', 'memo', 'goal_ids', 'condition', 'created_at', 'updated_at'])
           && request.resource.data.date is string
           && request.resource.data.date.size() > 0
           && request.resource.data.date.size() <= 10
           && request.resource.data.tags is list
-          && request.resource.data.tags.size() <= 6
+          // v1.33: タグ選択肢が7種になったため上限を 6→8 に(全選択+余裕1)
+          && request.resource.data.tags.size() <= 8
           && request.resource.data.minutes is int
           && request.resource.data.minutes >= 0
           && request.resource.data.minutes <= 1440
@@ -1377,7 +1378,10 @@ service cloud.firestore {
           && request.resource.data.memo.size() <= 800
           // goal_ids は v1.32 で追加(任意)。旧ドキュメントの update 互換のため存在時のみ検証
           && (!request.resource.data.keys().hasAny(['goal_ids'])
-            || (request.resource.data.goal_ids is list && request.resource.data.goal_ids.size() <= 10));
+            || (request.resource.data.goal_ids is list && request.resource.data.goal_ids.size() <= 10))
+          // condition(今日の調子)は v1.33 で追加(任意)。存在時のみ検証
+          && (!request.resource.data.keys().hasAny(['condition'])
+            || request.resource.data.condition in ['good', 'soso', 'bad']);
       }
 
       // 目標(コーチング)(v1.32): 複数設定可。進捗は累計 progress_minutes を練習保存時に increment

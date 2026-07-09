@@ -1108,7 +1108,11 @@
   });
 
   if (userAccountDropdown) {
-    userAccountDropdown.addEventListener("click", (ev) => ev.stopPropagation());
+    userAccountDropdown.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      // アンカー項目(プロフィール/Days)はハッシュ遷移してもメニューが開いたまま残るので明示的に閉じる
+      if (ev.target instanceof Element && ev.target.closest("a[href^='#']")) closeAccountDropdown();
+    });
   }
 
   [profileDialog, settingsDialog, withdrawDoneDialog].forEach((overlay) => {
