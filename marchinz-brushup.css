@@ -2683,3 +2683,385 @@ a.calendar-ev-topline-creator-name-link:hover {
 .mz-jexp-actions .mz-journey-share-btn { text-decoration: none; }
 
 .mz-jexp-primary { background: var(--blue); color: #fff; }
+
+/* ==========================================================================
+   v1.32 — MarchinZ Days: 目標コーチング + 応援トースト + メンテリマインダー
+   ========================================================================== */
+
+/* ---------- 目標 ---------- */
+
+.mz-base-goals {
+  margin-bottom: 1rem;
+}
+
+.mz-base-goals-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+
+.mz-base-goals-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--navy);
+  flex: none;
+  white-space: nowrap;
+}
+
+.mz-base-goals-head .mz-base-mini-btn { flex: none; width: auto; }
+
+.mz-base-goals-empty {
+  margin: 0 0 0.4rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  padding: 0.7rem 0.9rem;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: rgba(15, 33, 56, 0.02);
+}
+
+.mz-base-goal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.mz-base-goal-card {
+  border: 0.5px solid var(--border);
+  border-left: 4px solid var(--blue);
+  border-radius: 14px;
+  background: linear-gradient(135deg, #fff 0%, #f7faff 100%);
+  box-shadow: var(--mz-shadow-card);
+  padding: 0.75rem 0.9rem;
+}
+
+.mz-base-goal-card-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.mz-base-goal-name {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--navy);
+  min-width: 0;
+}
+
+.mz-base-goal-deadline {
+  flex: none;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.12rem 0.5rem;
+  white-space: nowrap;
+}
+
+.mz-base-goal-deadline--near {
+  color: #b3261e;
+  border-color: rgba(179, 38, 30, 0.4);
+  background: rgba(179, 38, 30, 0.06);
+}
+
+.mz-base-goal-why {
+  margin: 0.25rem 0 0;
+  font-size: 0.76rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.mz-base-goal-bar {
+  margin-top: 0.55rem;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(15, 33, 56, 0.08);
+  overflow: hidden;
+}
+
+.mz-base-goal-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--blue) 0%, #7c3aed 130%);
+  transition: width 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.mz-base-goal-bar-label {
+  margin: 0.25rem 0 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.mz-base-goal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.mz-base-goal-achieve-btn {
+  border-color: var(--amber-bright);
+  color: var(--amber);
+  font-weight: 700;
+}
+
+.mz-base-goal-hof {
+  margin-top: 0.6rem;
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  padding: 0.45rem 0.7rem;
+  background: #fffdf4;
+}
+
+.mz-base-goal-hof-head {
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--amber);
+}
+
+.mz-base-goal-hof-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+  border-top: 0.5px solid var(--border);
+  font-size: 0.8rem;
+}
+
+.mz-base-goal-hof-title { flex: 1 1 auto; min-width: 0; font-weight: 600; }
+
+.mz-base-goal-hof-date { flex: none; color: var(--muted); font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+
+.mz-base-goal-chip { font-weight: 700; }
+
+/* ---------- ストリーク統計 ---------- */
+
+.mz-base-stat--fire {
+  background: linear-gradient(160deg, #fff7ed 0%, #ffedd5 100%);
+  border-color: rgba(249, 115, 22, 0.35);
+}
+
+/* ---------- 応援トースト ---------- */
+
+.mz-base-cheer {
+  position: fixed;
+  left: 50%;
+  bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 240;
+  width: min(420px, calc(100vw - 2rem));
+  animation: mz-cheer-in 0.45s cubic-bezier(0.2, 1.3, 0.4, 1) both;
+}
+
+/* モバイルは下部タブナビの上に出す(重なり回避) */
+@media (max-width: 720px) {
+  .mz-base-cheer {
+    bottom: calc(4.6rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+.mz-base-cheer--out {
+  animation: mz-cheer-out 0.4s ease both;
+}
+
+@keyframes mz-cheer-in {
+  0% { transform: translateX(-50%) translateY(60px); opacity: 0; }
+  100% { transform: translateX(-50%) translateY(0); opacity: 1; }
+}
+
+@keyframes mz-cheer-out {
+  0% { transform: translateX(-50%) translateY(0); opacity: 1; }
+  100% { transform: translateX(-50%) translateY(40px); opacity: 0; }
+}
+
+.mz-base-cheer-inner {
+  position: relative;
+  border-radius: 18px;
+  background: linear-gradient(140deg, #0f2138 0%, #1e3a6e 100%);
+  color: #fff;
+  box-shadow: 0 14px 40px rgba(15, 33, 56, 0.45);
+  padding: 0.9rem 2.1rem 0.95rem 1.05rem;
+}
+
+.mz-base-cheer-head {
+  margin: 0 0 0.2rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: #ffd76a;
+}
+
+.mz-base-cheer-msg {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.mz-base-cheer-goal {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.55rem;
+}
+
+.mz-base-cheer-goal-name {
+  flex: none;
+  max-width: 38%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.mz-base-cheer-goal-bar {
+  flex: 1 1 auto;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  overflow: hidden;
+}
+
+.mz-base-cheer-goal-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #ffd76a 0%, #f59e0b 100%);
+  transition: width 0.9s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.mz-base-cheer-goal-pct {
+  flex: none;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #ffd76a;
+  font-variant-numeric: tabular-nums;
+}
+
+.mz-base-cheer-x {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.5rem;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 0.2rem 0.4rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mz-base-cheer, .mz-base-cheer--out { animation: none; }
+}
+
+/* ---------- 楽器メンテのリマインダーバナー ---------- */
+
+.mz-base-maint-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  text-align: left;
+  border: 1px solid rgba(217, 119, 6, 0.4);
+  border-radius: 14px;
+  background: linear-gradient(135deg, #fff7e6 0%, #ffefc9 100%);
+  box-shadow: var(--mz-shadow-card);
+  padding: 0.65rem 0.85rem;
+  margin-bottom: 0.9rem;
+  cursor: pointer;
+}
+
+.mz-base-maint-banner--overdue {
+  border-color: rgba(179, 38, 30, 0.45);
+  background: linear-gradient(135deg, #fdeceb 0%, #fadcd9 100%);
+}
+
+.mz-base-maint-banner-icon {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  color: var(--amber);
+  box-shadow: 0 1px 4px rgba(15, 33, 56, 0.15);
+}
+
+.mz-base-maint-banner--overdue .mz-base-maint-banner-icon { color: #b3261e; }
+
+.mz-base-maint-banner-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.06rem;
+}
+
+.mz-base-maint-banner-text {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--navy);
+  line-height: 1.35;
+}
+
+.mz-base-maint-banner-more { font-size: 0.68rem; color: var(--muted); }
+
+.mz-base-maint-banner-go {
+  flex: none;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--amber);
+  white-space: nowrap;
+}
+
+.mz-base-maint-banner--overdue .mz-base-maint-banner-go { color: #b3261e; }
+
+/* ---------- メンテ記録ダイアログ ---------- */
+
+.mz-base-maint-dialog {
+  border: none;
+  border-radius: 18px;
+  padding: 0;
+  width: min(440px, calc(100vw - 2rem));
+  box-shadow: 0 18px 60px rgba(15, 33, 56, 0.4);
+}
+
+.mz-base-maint-dialog::backdrop {
+  background: rgba(15, 33, 56, 0.45);
+  backdrop-filter: blur(2px);
+}
+
+.mz-base-maint-surface {
+  padding: 1.1rem 1.15rem 1.2rem;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.mz-base-maint-head {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--navy);
+}
+
+.mz-base-maint-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  margin-top: 0.2rem;
+}

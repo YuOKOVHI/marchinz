@@ -8,7 +8,10 @@
  *   mll_profiles/{uid}/base_instruments/{id}    楽器（メーカー/品番/購入日 + メンテ履歴を配列で内包）
  *   mll_profiles/{uid}/base_show_notes/{id}     ショウ覚えメモ（カウント・立ち位置・注意点）
  *   mll_profiles/{uid}/base_countdowns/{id}     本番カウントダウン（名前・日付）
+ *   mll_profiles/{uid}/base_goals/{id}          目標（コーチング: タイトル・理由・期限・目標時間・状態）
  * 写真: Storage mll_base_media/{uid}/{fileName}（firebase/storage.rules 参照）
+ * コーチング: 練習ログは goal_ids で目標に紐付き、保存時に文脈つき応援メッセージ(ストリーク/進捗/復帰)を表示。
+ * 楽器メンテ: 種類ごとの推奨サイクルから次回目安日を自動提案し、期限が近いと Days 上部にリマインダーを出す。
  * ツール(メトロノーム/チューナー)は BandRoom 由来の Web Audio 実装。設定は localStorage mz_days_tools。
  */
 (() => {
@@ -27,6 +30,8 @@
   let showNotes = [];
   /** @type {any[]} */
   let countdowns = [];
+  /** @type {any[]} */
+  let goals = [];
   let loadGen = 0;
 
   /* ツール(メトロノーム/チューナー)状態。AudioContext は遅延生成して使い回す(close しない) */
@@ -112,20 +117,22 @@
     const db = getDb();
     if (!db) return;
     const gen = ++loadGen;
-    const [pSnap, iSnap, sSnap, cSnap] = await Promise.all([
+    const [pSnap, iSnap, sSnap, cSnap, gSnap] = await Promise.all([
       db.collection("mll_profiles").doc(uid).collection("base_practice_logs").orderBy("date", "desc").limit(200).get(),
       db.collection("mll_profiles").doc(uid).collection("base_instruments").limit(50).get(),
       db.collection("mll_profiles").doc(uid).collection("base_show_notes").orderBy("created_at", "desc").limit(100).get(),
       db.collection("mll_profiles").doc(uid).collection("base_countdowns").orderBy("date").limit(20).get(),
+      db.collection("mll_profiles").doc(uid).collection("base_goals").orderBy("created_at", "desc").limit(30).get(),
     ]).catch((err) => {
       console.warn("[MarchinZBase] load", err);
-      return [null, null, null, null];
+      return [null, null, null, null, null];
     });
     if (gen !== loadGen) return;
     practiceLogs = pSnap ? pSnap.docs.map((d) => ({ id: d.id, ...d.data() })) : [];
     instruments = iSnap ? iSnap.docs.map((d) => ({ id: d.id, ...d.data() })) : [];
     showNotes = sSnap ? sSnap.docs.map((d) => ({ id: d.id, ...d.data() })) : [];
     countdowns = cSnap ? cSnap.docs.map((d) => ({ id: d.id, ...d.data() })) : [];
+    goals = gSnap ? gSnap.docs.map((d) => ({ id: d.id, ...d.data() })) : [];
     render();
   }
 
@@ -155,6 +162,8 @@
     });
     host.appendChild(tabs);
 
+    renderMaintReminder(host);
+
     const panel = el("div", "mz-base-panel");
     host.appendChild(panel);
     if (activeSub === "practice") renderPractice(panel);
@@ -163,10 +172,46 @@
     else renderShowNotes(panel);
   }
 
+  /**
+   * 楽器メンテの期限リマインダー(全サブタブ共通・subtabs 直下)。
+   * next_due_date が「期限切れ or 7日以内」の楽器があれば、最も近い1件+残数を出す。
+   * タップで楽器メンテタブへ。
+   */
+  function renderMaintReminder(host) {
+    const due = instruments
+      .map((inst) => ({ inst, days: daysUntil(inst.next_due_date) }))
+      .filter((x) => x.days != null && x.days <= 7)
+      .sort((a, b) => a.days - b.days);
+    if (!due.length) return;
+    const top = due[0];
+    const banner = el("button", "mz-base-maint-banner" + (top.days < 0 ? " mz-base-maint-banner--overdue" : ""));
+    banner.type = "button";
+    const icon = el("span", "mz-base-maint-banner-icon");
+    icon.innerHTML = '<i class="fa-solid fa-screwdriver-wrench" aria-hidden="true"></i>';
+    banner.appendChild(icon);
+    const body = el("span", "mz-base-maint-banner-body");
+    const label =
+      top.days < 0
+        ? `「${top.inst.name}」のメンテ目安日を過ぎています(${String(top.inst.next_due_date).slice(5).replace("-", "/")})`
+        : top.days === 0
+          ? `今日は「${top.inst.name}」のメンテ目安日です`
+          : `「${top.inst.name}」のメンテ目安まであと${top.days}日`;
+    body.appendChild(el("span", "mz-base-maint-banner-text", label));
+    if (due.length > 1) body.appendChild(el("span", "mz-base-maint-banner-more", `ほか${due.length - 1}件`));
+    banner.appendChild(body);
+    banner.appendChild(el("span", "mz-base-maint-banner-go", "確認 →"));
+    banner.addEventListener("click", () => {
+      activeSub = "instruments";
+      render();
+    });
+    host.appendChild(banner);
+  }
+
   /* ---------- 1) 練習ログ ---------- */
 
   function renderPractice(panel) {
     renderCountdownBlock(panel);
+    renderGoalsBlock(panel);
     const now = Date.now();
     const weekAgo = now - 7 * 86400000;
     const weekMinutes = practiceLogs
@@ -175,8 +220,13 @@
     const tagCount = {};
     practiceLogs.forEach((l) => (Array.isArray(l.tags) ? l.tags : []).forEach((t) => { tagCount[t] = (tagCount[t] || 0) + 1; }));
     const topTag = Object.keys(tagCount).sort((a, b) => tagCount[b] - tagCount[a])[0];
+    const streak = calcStreak();
 
     const stats = el("div", "mz-base-stats");
+    const s0 = el("div", "mz-base-stat" + (streak >= 3 ? " mz-base-stat--fire" : ""));
+    s0.appendChild(el("span", "mz-base-stat-num", streak > 0 ? `🔥${streak}` : "—"));
+    s0.appendChild(el("span", "mz-base-stat-label", "連続記録(日)"));
+    stats.appendChild(s0);
     const s1 = el("div", "mz-base-stat");
     s1.appendChild(el("span", "mz-base-stat-num", String(Math.round((weekMinutes / 60) * 10) / 10)));
     s1.appendChild(el("span", "mz-base-stat-label", "今週の練習時間(h)"));
@@ -245,6 +295,31 @@
     minRow.appendChild(minInput);
     form.appendChild(minRow);
 
+    // どの目標に向けた練習か(コーチング: 毎回目標との接続を意識してもらう)
+    const selectedGoals = new Set();
+    const goalOptions = activeGoals();
+    if (goalOptions.length) {
+      const goalWrap = el("div", "mz-base-field");
+      goalWrap.appendChild(el("span", "mz-base-field-label", "どの目標に向けた練習?"));
+      const goalChips = el("div", "mz-base-tag-chips");
+      goalOptions.forEach((g, i) => {
+        const chip = el("button", "mz-base-tag-chip mz-base-goal-chip", `🎯 ${g.title}`);
+        chip.type = "button";
+        // 目標が1つだけなら最初から選択済みにして手間ゼロに
+        if (goalOptions.length === 1 && i === 0) {
+          selectedGoals.add(g.id);
+          chip.classList.add("mz-base-tag-chip--on");
+        }
+        chip.addEventListener("click", () => {
+          if (selectedGoals.has(g.id)) { selectedGoals.delete(g.id); chip.classList.remove("mz-base-tag-chip--on"); }
+          else { selectedGoals.add(g.id); chip.classList.add("mz-base-tag-chip--on"); }
+        });
+        goalChips.appendChild(chip);
+      });
+      goalWrap.appendChild(goalChips);
+      form.appendChild(goalWrap);
+    }
+
     const memoRow = el("label", "mz-base-field");
     memoRow.appendChild(el("span", "mz-base-field-label", "メモ"));
     const memoInput = document.createElement("textarea");
@@ -268,6 +343,18 @@
       if (!db || !mountedUid) return;
       submit.disabled = true;
       try {
+        // 応援メッセージ用の「保存前」文脈(復帰・初回判定は保存前の状態から取る)
+        const isFirst = practiceLogs.length === 0;
+        const lastDate = practiceLogs
+          .map((l) => String(l.date || "").slice(0, 10))
+          .sort()
+          .pop();
+        const gapDays = lastDate
+          ? Math.round((new Date(todayStr() + "T00:00:00") - new Date(lastDate + "T00:00:00")) / 86400000)
+          : 0;
+        const minutesVal = Math.max(0, Math.min(1440, Number(minInput.value) || 0));
+        const goalIds = Array.from(selectedGoals);
+
         const nowIso = new Date().toISOString();
         await db
           .collection("mll_profiles")
@@ -276,23 +363,55 @@
           .add({
             date: dateInput.value || todayStr(),
             tags: Array.from(selected),
-            minutes: Math.max(0, Math.min(1440, Number(minInput.value) || 0)),
+            minutes: minutesVal,
             memo: String(memoInput.value || "").trim().slice(0, 800),
+            goal_ids: goalIds,
             created_at: nowIso,
             updated_at: nowIso,
           });
         window.MarchinZConfetti?.burst({ count: 40, duration: 700 });
-        form.reset();
-        selected.clear();
-        chipsRow.querySelectorAll(".mz-base-tag-chip--on").forEach((c) => c.classList.remove("mz-base-tag-chip--on"));
-        dateInput.value = todayStr();
-        form.hidden = true;
-        await loadAll(mountedUid);
+        await loadAll(mountedUid); // ここで practiceLogs が最新化され、フォームも作り直される
+
+        // 保存後の文脈で応援メッセージ(トーストは body 直下なので再描画後も残る)
+        const now = new Date();
+        const week = practiceLogs
+          .filter((l) => new Date(String(l.date) + "T00:00:00").getTime() >= now.getTime() - 7 * 86400000)
+          .reduce((s, l) => s + (Number(l.minutes) || 0), 0);
+        const prevWeek = practiceLogs
+          .filter((l) => {
+            const t = new Date(String(l.date) + "T00:00:00").getTime();
+            return t >= now.getTime() - 14 * 86400000 && t < now.getTime() - 7 * 86400000;
+          })
+          .reduce((s, l) => s + (Number(l.minutes) || 0), 0);
+        const goalViews = goalIds
+          .map((gid) => {
+            const g = goals.find((x) => x.id === gid);
+            if (!g) return null;
+            const target = Number(g.target_minutes) || 0;
+            const done = goalProgressMinutes(gid);
+            return {
+              title: g.title || "",
+              pct: target > 0 ? Math.min(100, Math.round((done / target) * 100)) : null,
+            };
+          })
+          .filter(Boolean);
+        showCheerToast(
+          pickCheerMessage({
+            minutes: minutesVal,
+            goalViews,
+            streak: calcStreak(),
+            weekMinutes: week,
+            prevWeekMinutes: prevWeek,
+            gapDays,
+            isFirst,
+            hour: now.getHours(),
+          }),
+          goalViews,
+        );
       } catch (e) {
         console.warn("[MarchinZBase] practice add", e);
         msg.textContent = "保存に失敗しました。時間をおいて再度お試しください。";
         msg.hidden = false;
-      } finally {
         submit.disabled = false;
       }
     });
@@ -430,6 +549,308 @@
     detail.appendChild(form);
 
     panel.appendChild(wrap);
+  }
+
+  /* ---------- 1c) 目標(コーチング) ---------- */
+
+  /** 練習日のユニーク集合から「今日または昨日を起点にした連続記録日数」 */
+  function calcStreak() {
+    const days = new Set(practiceLogs.map((l) => String(l.date || "").slice(0, 10)).filter(Boolean));
+    if (!days.size) return 0;
+    const d = new Date();
+    const key = (dt) =>
+      `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+    // 今日まだ記録していなくてもストリークは昨日まで継続扱い(その日のうちに途切れ表示しない)
+    if (!days.has(key(d))) d.setDate(d.getDate() - 1);
+    let streak = 0;
+    while (days.has(key(d))) {
+      streak += 1;
+      d.setDate(d.getDate() - 1);
+    }
+    return streak;
+  }
+
+  function activeGoals() {
+    return goals.filter((g) => String(g.status || "active") === "active");
+  }
+
+  /** goal_ids に goalId を含む練習の合計分数 */
+  function goalProgressMinutes(goalId) {
+    return practiceLogs.reduce((sum, l) => {
+      const ids = Array.isArray(l.goal_ids) ? l.goal_ids : [];
+      return ids.indexOf(goalId) !== -1 ? sum + (Number(l.minutes) || 0) : sum;
+    }, 0);
+  }
+
+  function fmtHours(min) {
+    const h = Math.round((min / 60) * 10) / 10;
+    return h >= 1 ? `${h}h` : `${min}分`;
+  }
+
+  function renderGoalsBlock(panel) {
+    const wrap = el("section", "mz-base-goals");
+    const head = el("div", "mz-base-goals-head");
+    const title = el("p", "mz-base-goals-title");
+    title.innerHTML = '<i class="fa-solid fa-bullseye" aria-hidden="true"></i> 目標';
+    head.appendChild(title);
+    const addBtn = el("button", "mz-base-mini-btn", "+ 目標を追加");
+    addBtn.type = "button";
+    head.appendChild(addBtn);
+    wrap.appendChild(head);
+
+    const form = buildGoalForm();
+    form.hidden = true;
+    addBtn.addEventListener("click", () => { form.hidden = !form.hidden; });
+
+    const actives = activeGoals();
+    if (!actives.length) {
+      const empty = el("p", "mz-base-goals-empty", "目標を立てると、練習の一歩一歩がそこへ向かいます。小さくてOK。");
+      wrap.appendChild(empty);
+    } else {
+      const list = el("div", "mz-base-goal-list");
+      actives.forEach((g) => list.appendChild(buildGoalCard(g)));
+      wrap.appendChild(list);
+    }
+    wrap.appendChild(form);
+
+    const achieved = goals.filter((g) => String(g.status) === "achieved");
+    if (achieved.length) {
+      const hof = el("details", "mz-base-goal-hof");
+      const sum = el("summary", "mz-base-goal-hof-head", `🏆 達成した目標 ${achieved.length}件`);
+      hof.appendChild(sum);
+      achieved.forEach((g) => {
+        const row = el("div", "mz-base-goal-hof-row");
+        row.appendChild(el("span", "mz-base-goal-hof-title", g.title || ""));
+        row.appendChild(el("span", "mz-base-goal-hof-date", String(g.achieved_at || "").slice(0, 10).replace(/-/g, "/")));
+        const del = el("button", "mz-base-del-btn", "削除");
+        del.type = "button";
+        del.addEventListener("click", () => removeDoc("base_goals", g.id, () => loadAll(mountedUid)));
+        row.appendChild(del);
+        hof.appendChild(row);
+      });
+      wrap.appendChild(hof);
+    }
+
+    panel.appendChild(wrap);
+  }
+
+  function buildGoalCard(g) {
+    const card = el("div", "mz-base-goal-card");
+    const top = el("div", "mz-base-goal-card-top");
+    top.appendChild(el("p", "mz-base-goal-name", g.title || ""));
+    const dLeft = daysUntil(g.target_date);
+    if (g.target_date && dLeft != null) {
+      top.appendChild(
+        el(
+          "span",
+          "mz-base-goal-deadline" + (dLeft <= 14 ? " mz-base-goal-deadline--near" : ""),
+          dLeft < 0 ? "期限すぎ" : dLeft === 0 ? "今日まで" : `あと${dLeft}日`,
+        ),
+      );
+    }
+    card.appendChild(top);
+    if (g.why) card.appendChild(el("p", "mz-base-goal-why", `— ${g.why}`));
+
+    const target = Number(g.target_minutes) || 0;
+    if (target > 0) {
+      const done = goalProgressMinutes(g.id);
+      const pct = Math.min(100, Math.round((done / target) * 100));
+      const barWrap = el("div", "mz-base-goal-bar");
+      const bar = el("span", "mz-base-goal-bar-fill");
+      bar.style.width = `${pct}%`;
+      barWrap.appendChild(bar);
+      card.appendChild(barWrap);
+      card.appendChild(
+        el("p", "mz-base-goal-bar-label", `${fmtHours(done)} / ${fmtHours(target)}(${pct}%)`),
+      );
+    }
+
+    const acts = el("div", "mz-base-goal-actions");
+    const doneBtn = el("button", "mz-base-mini-btn mz-base-goal-achieve-btn", "🏆 達成した!");
+    doneBtn.type = "button";
+    doneBtn.addEventListener("click", async () => {
+      const db = getDb();
+      if (!db || !mountedUid) return;
+      doneBtn.disabled = true;
+      try {
+        await db.collection("mll_profiles").doc(mountedUid).collection("base_goals").doc(g.id).update({
+          status: "achieved",
+          achieved_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+        window.MarchinZConfetti?.burst({ count: 120, duration: 1600 });
+        showCheerToast(`🏆 「${g.title}」達成、おめでとう!この積み重ねはもう誰にも消せません。`, []);
+        await loadAll(mountedUid);
+      } catch (e) {
+        console.warn("[MarchinZBase] goal achieve", e);
+        doneBtn.disabled = false;
+      }
+    });
+    acts.appendChild(doneBtn);
+    const del = el("button", "mz-base-del-btn", "削除");
+    del.type = "button";
+    del.addEventListener("click", () => removeDoc("base_goals", g.id, () => loadAll(mountedUid)));
+    acts.appendChild(del);
+    card.appendChild(acts);
+    return card;
+  }
+
+  function buildGoalForm() {
+    const form = el("form", "mz-base-form mz-base-goal-form");
+
+    const titleRow = el("label", "mz-base-field");
+    titleRow.appendChild(el("span", "mz-base-field-label", "目標"));
+    const titleInput = document.createElement("input");
+    titleInput.type = "text";
+    titleInput.maxLength = 80;
+    titleInput.required = true;
+    titleInput.placeholder = "例: 関東大会のステージに立つ";
+    titleRow.appendChild(titleInput);
+    form.appendChild(titleRow);
+
+    const whyRow = el("label", "mz-base-field");
+    whyRow.appendChild(el("span", "mz-base-field-label", "なぜ達成したい?(任意)"));
+    const whyInput = document.createElement("input");
+    whyInput.type = "text";
+    whyInput.maxLength = 200;
+    whyInput.placeholder = "例: 去年の悔しさを晴らしたいから";
+    whyRow.appendChild(whyInput);
+    form.appendChild(whyRow);
+
+    const dateRow = el("label", "mz-base-field");
+    dateRow.appendChild(el("span", "mz-base-field-label", "期限(任意)"));
+    const dateInput = document.createElement("input");
+    dateInput.type = "date";
+    dateRow.appendChild(dateInput);
+    form.appendChild(dateRow);
+
+    const minRow = el("label", "mz-base-field");
+    minRow.appendChild(el("span", "mz-base-field-label", "目標練習時間(時間・任意)"));
+    const hoursInput = document.createElement("input");
+    hoursInput.type = "number";
+    hoursInput.min = "0";
+    hoursInput.max = "10000";
+    hoursInput.step = "0.5";
+    hoursInput.placeholder = "例: 50";
+    minRow.appendChild(hoursInput);
+    form.appendChild(minRow);
+
+    const msg = el("p", "mz-base-form-msg");
+    msg.hidden = true;
+    form.appendChild(msg);
+
+    const submit = el("button", "mz-base-submit-btn", "目標を立てる");
+    submit.type = "submit";
+    form.appendChild(submit);
+
+    form.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const db = getDb();
+      if (!db || !mountedUid || !titleInput.value.trim()) return;
+      submit.disabled = true;
+      try {
+        const nowIso = new Date().toISOString();
+        await db.collection("mll_profiles").doc(mountedUid).collection("base_goals").add({
+          title: titleInput.value.trim().slice(0, 80),
+          why: whyInput.value.trim().slice(0, 200),
+          target_date: String(dateInput.value || "").slice(0, 10),
+          target_minutes: Math.max(0, Math.min(600000, Math.round((Number(hoursInput.value) || 0) * 60))),
+          status: "active",
+          achieved_at: "",
+          created_at: nowIso,
+          updated_at: nowIso,
+        });
+        window.MarchinZConfetti?.burst({ count: 50, duration: 800 });
+        showCheerToast("🎯 目標を立てました。ここからの一歩一歩が全部この目標につながります。", []);
+        await loadAll(mountedUid);
+      } catch (e) {
+        console.warn("[MarchinZBase] goal add", e);
+        msg.textContent = "保存に失敗しました。";
+        msg.hidden = false;
+        submit.disabled = false;
+      }
+    });
+
+    return form;
+  }
+
+  /* ---------- 1d) 応援メッセージ(コーチング) ---------- */
+
+  const CHEER_GENERIC = [
+    "今日も自分との約束を守りました。それがいちばん強い。",
+    "記録した時点で、昨日の自分より一歩前へ。",
+    "続けている人にだけ見える景色があります。",
+    "小さな積み重ねは、本番の1秒に化けます。",
+    "「やった」という事実は消えません。ナイス練習!",
+    "楽器を出したこと自体が、もう勝ちです。",
+    "コツコツは最強の飛び道具。",
+    "今日の1回は、未来のあなたへの仕送りです。",
+  ];
+  let lastCheerIndex = -1;
+
+  /**
+   * 文脈つき応援メッセージを1つ選ぶ。優先度:
+   * 目標達成間近/マイルストーン > ストリーク節目 > 復帰 > 週間比較 > 初回 > 汎用
+   * @param {{minutes: number, goalViews: {title: string, pct: number|null}[], streak: number,
+   *          weekMinutes: number, prevWeekMinutes: number, gapDays: number, isFirst: boolean, hour: number}} ctx
+   */
+  function pickCheerMessage(ctx) {
+    const g = ctx.goalViews.find((x) => x.pct != null);
+    if (g && g.pct >= 100) return `🎉 目標「${g.title}」の練習時間、ついに100%!「達成した!」ボタンを押す準備はいい?`;
+    if (g && g.pct >= 90) return `🔜 「${g.title}」まで残りわずか(${g.pct}%)。ゴールテープが見えています。`;
+    if (g && [25, 50, 75].some((m) => g.pct >= m && g.pct < m + 8))
+      return `📈 「${g.title}」が${g.pct}%到達。積み上がってきた手応え、ありますよね。`;
+    if (ctx.isFirst) return "🎺 記念すべき1回目の記録!ここがすべてのスタートラインです。";
+    if (ctx.gapDays >= 7) return `おかえりなさい!${ctx.gapDays}日ぶりの再開。戻ってきたこと自体が実力です。`;
+    if ([3, 7, 14, 30, 50, 100].indexOf(ctx.streak) !== -1) return `🔥 ${ctx.streak}日連続!習慣が実力に変わっていく音がします。`;
+    if (ctx.streak >= 2) return `🔥 ${ctx.streak}日連続で継続中。この火、絶やさずにいきましょう。`;
+    if (ctx.prevWeekMinutes > 0 && ctx.weekMinutes > ctx.prevWeekMinutes)
+      return `📊 今週${fmtHours(ctx.weekMinutes)}。先週(${fmtHours(ctx.prevWeekMinutes)})の自分をもう超えました。`;
+    if (ctx.hour < 9) return "🌅 朝練は最高のスタートダッシュ。今日一日、いい音が続きますように。";
+    if (ctx.hour >= 21) return "🌙 一日の終わりに楽器と向き合うその姿勢、かっこいいです。";
+    let i = Math.floor(Math.random() * CHEER_GENERIC.length);
+    if (i === lastCheerIndex) i = (i + 1) % CHEER_GENERIC.length;
+    lastCheerIndex = i;
+    return CHEER_GENERIC[i];
+  }
+
+  /**
+   * 応援トースト(記録直後に下からスライドイン)。goalViews があれば進捗バーも見せる。
+   * @param {string} message
+   * @param {{title: string, pct: number|null, doneMin?: number, targetMin?: number}[]} goalViews
+   */
+  function showCheerToast(message, goalViews) {
+    document.querySelectorAll(".mz-base-cheer").forEach((n) => n.remove());
+    const toast = el("div", "mz-base-cheer");
+    toast.setAttribute("role", "status");
+    const inner = el("div", "mz-base-cheer-inner");
+    inner.appendChild(el("p", "mz-base-cheer-head", "記録しました!"));
+    inner.appendChild(el("p", "mz-base-cheer-msg", message));
+    (goalViews || []).forEach((gv) => {
+      if (gv.pct == null) return;
+      const row = el("div", "mz-base-cheer-goal");
+      row.appendChild(el("span", "mz-base-cheer-goal-name", gv.title));
+      const bar = el("span", "mz-base-cheer-goal-bar");
+      const fill = el("span", "mz-base-cheer-goal-fill");
+      fill.style.width = "0%";
+      bar.appendChild(fill);
+      row.appendChild(bar);
+      row.appendChild(el("span", "mz-base-cheer-goal-pct", `${gv.pct}%`));
+      inner.appendChild(row);
+      // スライドイン後にバーがすっと伸びる(達成感の演出)
+      window.setTimeout(() => { fill.style.width = `${Math.min(100, gv.pct)}%`; }, 350);
+    });
+    const close = el("button", "mz-base-cheer-x", "×");
+    close.type = "button";
+    close.setAttribute("aria-label", "閉じる");
+    close.addEventListener("click", () => toast.remove());
+    inner.appendChild(close);
+    toast.appendChild(inner);
+    document.body.appendChild(toast);
+    window.setTimeout(() => {
+      toast.classList.add("mz-base-cheer--out");
+      window.setTimeout(() => toast.remove(), 450);
+    }, 6500);
   }
 
   /* ---------- 2) 楽器メンテ ---------- */
@@ -613,27 +1034,130 @@
     return card;
   }
 
+  /** メンテ種類 → 推奨サイクル(日)。選ぶと次回目安日を自動提案する(編集可) */
+  const MAINT_KINDS = [
+    ["オイル差し", 14],
+    ["グリス塗り", 30],
+    ["スワブ・清掃", 7],
+    ["リード交換", 14],
+    ["弦・ヘッド交換", 90],
+    ["リペア・調整", 180],
+    ["その他", 0],
+  ];
+
+  function addDaysStr(baseDateStr, days) {
+    const d = new Date(String(baseDateStr) + "T00:00:00");
+    if (Number.isNaN(d.getTime()) || !days) return "";
+    d.setDate(d.getDate() + days);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+
   function openMaintDialog(inst) {
-    const kind = window.prompt("メンテ内容(例: オイル差し / リペア / リード交換)", "オイル差し");
-    if (kind == null) return;
-    const date = window.prompt("実施日 (YYYY-MM-DD)", todayStr()) || todayStr();
-    const nextDue = window.prompt("次回目安日 (YYYY-MM-DD・不要なら空欄)", "") || "";
-    const memo = window.prompt("メモ(任意)", "") || "";
-    const db = getDb();
-    if (!db || !mountedUid) return;
-    const log = Array.isArray(inst.maintenance_log) ? inst.maintenance_log.slice() : [];
-    log.push({ date, kind: String(kind).trim().slice(0, 40), memo: String(memo).trim().slice(0, 200) });
-    db.collection("mll_profiles")
-      .doc(mountedUid)
-      .collection("base_instruments")
-      .doc(inst.id)
-      .update({
-        maintenance_log: log.slice(-100),
-        next_due_date: nextDue.trim().slice(0, 10),
-        updated_at: new Date().toISOString(),
-      })
-      .then(() => loadAll(mountedUid))
-      .catch((e) => console.warn("[MarchinZBase] maint add", e));
+    document.getElementById("mz-base-maint-dialog")?.remove();
+    const dlg = document.createElement("dialog");
+    dlg.id = "mz-base-maint-dialog";
+    dlg.className = "mz-base-maint-dialog";
+    const surface = el("div", "mz-base-maint-surface");
+
+    const head = el("p", "mz-base-maint-head");
+    head.innerHTML = '<i class="fa-solid fa-screwdriver-wrench" aria-hidden="true"></i> ';
+    head.appendChild(document.createTextNode(`メンテ記録 — ${inst.name || ""}`));
+    surface.appendChild(head);
+
+    let kindValue = MAINT_KINDS[0][0];
+
+    const dateRow = el("label", "mz-base-field");
+    dateRow.appendChild(el("span", "mz-base-field-label", "実施日"));
+    const dateInput = document.createElement("input");
+    dateInput.type = "date";
+    dateInput.value = todayStr();
+    dateRow.appendChild(dateInput);
+
+    const nextRow = el("label", "mz-base-field");
+    nextRow.appendChild(el("span", "mz-base-field-label", "次回目安日(自動提案・編集可)"));
+    const nextInput = document.createElement("input");
+    nextInput.type = "date";
+    nextRow.appendChild(nextInput);
+
+    const suggestNext = () => {
+      const days = (MAINT_KINDS.find(([k]) => k === kindValue) || [])[1] || 0;
+      nextInput.value = days ? addDaysStr(dateInput.value || todayStr(), days) : "";
+    };
+
+    const kindWrap = el("div", "mz-base-field");
+    kindWrap.appendChild(el("span", "mz-base-field-label", "内容"));
+    const kindChips = el("div", "mz-base-tag-chips");
+    MAINT_KINDS.forEach(([k, days], i) => {
+      const chip = el("button", "mz-base-tag-chip" + (i === 0 ? " mz-base-tag-chip--on" : ""), days ? `${k}(${days}日毎)` : k);
+      chip.type = "button";
+      chip.addEventListener("click", () => {
+        kindValue = k;
+        kindChips.querySelectorAll(".mz-base-tag-chip--on").forEach((c) => c.classList.remove("mz-base-tag-chip--on"));
+        chip.classList.add("mz-base-tag-chip--on");
+        suggestNext();
+      });
+      kindChips.appendChild(chip);
+    });
+    kindWrap.appendChild(kindChips);
+    surface.appendChild(kindWrap);
+    surface.appendChild(dateRow);
+    dateInput.addEventListener("change", suggestNext);
+    surface.appendChild(nextRow);
+    suggestNext();
+
+    const memoRow = el("label", "mz-base-field");
+    memoRow.appendChild(el("span", "mz-base-field-label", "メモ(任意)"));
+    const memoInput = document.createElement("input");
+    memoInput.type = "text";
+    memoInput.maxLength = 200;
+    memoInput.placeholder = "例: 3番管の動きが渋い";
+    memoRow.appendChild(memoInput);
+    surface.appendChild(memoRow);
+
+    const actions = el("div", "mz-base-maint-actions");
+    const cancel = el("button", "mz-base-mini-btn", "キャンセル");
+    cancel.type = "button";
+    cancel.addEventListener("click", () => dlg.close());
+    const save = el("button", "mz-base-submit-btn", "記録する");
+    save.type = "button";
+    save.addEventListener("click", () => {
+      const db = getDb();
+      if (!db || !mountedUid) return;
+      save.disabled = true;
+      const log = Array.isArray(inst.maintenance_log) ? inst.maintenance_log.slice() : [];
+      log.push({
+        date: String(dateInput.value || todayStr()).slice(0, 10),
+        kind: kindValue.slice(0, 40),
+        memo: String(memoInput.value || "").trim().slice(0, 200),
+      });
+      db.collection("mll_profiles")
+        .doc(mountedUid)
+        .collection("base_instruments")
+        .doc(inst.id)
+        .update({
+          maintenance_log: log.slice(-100),
+          next_due_date: String(nextInput.value || "").slice(0, 10),
+          updated_at: new Date().toISOString(),
+        })
+        .then(() => {
+          dlg.close();
+          showCheerToast(`🔧 「${inst.name}」お手入れ完了。道具を大切にする人は、音も大切にできる人です。`, []);
+          return loadAll(mountedUid);
+        })
+        .catch((e) => {
+          console.warn("[MarchinZBase] maint add", e);
+          save.disabled = false;
+        });
+    });
+    actions.appendChild(cancel);
+    actions.appendChild(save);
+    surface.appendChild(actions);
+
+    dlg.appendChild(surface);
+    dlg.addEventListener("close", () => dlg.remove());
+    dlg.addEventListener("click", (ev) => { if (ev.target === dlg) dlg.close(); });
+    document.body.appendChild(dlg);
+    try { dlg.showModal(); } catch { dlg.setAttribute("open", ""); }
   }
 
   /* ---------- 3) ショウ覚えメモ ---------- */

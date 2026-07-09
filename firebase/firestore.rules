@@ -1364,7 +1364,7 @@ service cloud.firestore {
       match /base_practice_logs/{docId} {
         allow read, delete: if profilePrivateDocReadable(uid);
         allow create, update: if profilePrivateDocWritable(uid)
-          && request.resource.data.keys().hasOnly(['date', 'tags', 'minutes', 'memo', 'created_at', 'updated_at'])
+          && request.resource.data.keys().hasOnly(['date', 'tags', 'minutes', 'memo', 'goal_ids', 'created_at', 'updated_at'])
           && request.resource.data.date is string
           && request.resource.data.date.size() > 0
           && request.resource.data.date.size() <= 10
@@ -1374,7 +1374,30 @@ service cloud.firestore {
           && request.resource.data.minutes >= 0
           && request.resource.data.minutes <= 1440
           && request.resource.data.memo is string
-          && request.resource.data.memo.size() <= 800;
+          && request.resource.data.memo.size() <= 800
+          // goal_ids は v1.32 で追加(任意)。旧ドキュメントの update 互換のため存在時のみ検証
+          && (!request.resource.data.keys().hasAny(['goal_ids'])
+            || (request.resource.data.goal_ids is list && request.resource.data.goal_ids.size() <= 10));
+      }
+
+      // 目標(コーチング)(v1.32): 複数設定可。練習ログの goal_ids から進捗を集計する。本人のみ read/write。
+      match /base_goals/{docId} {
+        allow read, delete: if profilePrivateDocReadable(uid);
+        allow create, update: if profilePrivateDocWritable(uid)
+          && request.resource.data.keys().hasOnly(['title', 'why', 'target_date', 'target_minutes', 'status', 'achieved_at', 'created_at', 'updated_at'])
+          && request.resource.data.title is string
+          && request.resource.data.title.size() > 0
+          && request.resource.data.title.size() <= 80
+          && request.resource.data.why is string
+          && request.resource.data.why.size() <= 200
+          && request.resource.data.target_date is string
+          && request.resource.data.target_date.size() <= 10
+          && request.resource.data.target_minutes is int
+          && request.resource.data.target_minutes >= 0
+          && request.resource.data.target_minutes <= 600000
+          && request.resource.data.status in ['active', 'achieved', 'archived']
+          && request.resource.data.achieved_at is string
+          && request.resource.data.achieved_at.size() <= 30;
       }
 
       match /base_instruments/{docId} {
