@@ -226,6 +226,97 @@
     );
   }
 
+  /* ---------- マップ吹き出しの参加予定者アイコン(イベントページと同じ顔集合) ---------- */
+
+  var topFaceProfileCache = {}; // uid -> {avatar, withdrawn, visMll, showMll}
+  var FACE_ATTENDEE_EVENT_CAP = 30; // attendees を読むイベント数の上限(TOP を軽く保つ)
+
+  function topGetDb() {
+    try { return (window.MLL_AUTH && window.MLL_AUTH.getDb && window.MLL_AUTH.getDb()) || null; }
+    catch (e) { return null; }
+  }
+
+  /** 対象 uid のプロフィールを最小限だけロード(avatar と公開判定)。キャッシュ利用 */
+  function loadFaceProfiles(db, uids) {
+    var need = uids.filter(function (u) { return u && !topFaceProfileCache[u]; });
+    return Promise.all(
+      need.map(function (uid) {
+        return db.collection("mll_profiles").doc(uid).get()
+          .then(function (snap) {
+            var p = (snap && snap.data && snap.data()) || {};
+            topFaceProfileCache[uid] = {
+              avatar: String(p.avatar_url || "").trim(),
+              withdrawn: Boolean(p.withdrawn),
+              visMll: String(p.section_vis_mll || "public"),
+              showMll: p.like_show_mll !== false,
+            };
+          })
+          .catch(function () {
+            topFaceProfileCache[uid] = { avatar: "", withdrawn: false, visMll: "public", showMll: true };
+          });
+      }),
+    );
+  }
+
+  /** イベント配列に faces/faces_total を付与(公開MLLログ + 直近の参加登録)。イベントMAPの getMllPublicFaceUids 相当 */
+  function attachEventFaces(mapEvents) {
+    var db = topGetDb();
+    var role = window.MarchinZMllRole;
+    if (!db || !role || !role.queryMllLogsForFeed) return Promise.resolve(mapEvents);
+
+    var today = todayKey();
+    var uidsByEventId = {}; // eventId -> Set(uid)
+    function add(eid, uid) {
+      if (!eid || !uid) return;
+      (uidsByEventId[eid] = uidsByEventId[eid] || {})[uid] = 1;
+    }
+
+    var viewer = null;
+    try { viewer = (window.MLL_AUTH.getUser && window.MLL_AUTH.getUser()) || null; } catch (e) { /* noop */ }
+
+    // ① 公開 MLL ログ(1クエリで全イベント分)を calendar_event_id で紐付け
+    var logsP = role.queryMllLogsForFeed(db, viewer && viewer.id).then(function (rows) {
+      (rows || []).forEach(function (x) {
+        if (String(x.visibility || "").trim() === "private") return;
+        add(String(x.calendar_event_id || "").trim(), String(x.user_id || "").trim());
+      });
+    }).catch(function () { /* 権限やオフラインは無視 */ });
+
+    // ② 直近イベント(参加登録が意味を持つ未来イベント)の attendees を読む
+    var upcomingIds = mapEvents
+      .filter(function (ev) { return String(ev.date || "").slice(0, 10) >= today; })
+      .map(function (ev) { return String(ev.id || "").trim(); })
+      .filter(Boolean)
+      .slice(0, FACE_ATTENDEE_EVENT_CAP);
+    var attP = Promise.all(upcomingIds.map(function (eid) {
+      return db.collection("mll_calendar_events").doc(eid).collection("attendees").get()
+        .then(function (sub) { sub.forEach(function (d) { add(eid, d.id); }); })
+        .catch(function () { /* noop */ });
+    }));
+
+    return Promise.all([logsP, attP]).then(function () {
+      var allUids = {};
+      Object.keys(uidsByEventId).forEach(function (eid) {
+        Object.keys(uidsByEventId[eid]).forEach(function (u) { allUids[u] = 1; });
+      });
+      return loadFaceProfiles(db, Object.keys(allUids)).then(function () {
+        mapEvents.forEach(function (ev) {
+          var set = uidsByEventId[String(ev.id || "").trim()];
+          if (!set) { ev.faces = []; ev.faces_total = 0; return; }
+          // イベントページの公開判定と同じ: 退会/非公開/非表示を除外
+          var uids = Object.keys(set).filter(function (u) {
+            var pr = topFaceProfileCache[u];
+            if (!pr) return true;
+            return !pr.withdrawn && pr.visMll !== "private" && pr.showMll !== false;
+          });
+          ev.faces = uids.slice(0, 8).map(function (u) { return (topFaceProfileCache[u] || {}).avatar || ""; });
+          ev.faces_total = uids.length;
+        });
+        return mapEvents;
+      });
+    });
+  }
+
   function renderUpcomingEvents(rows) {
     var grid = document.getElementById("mz-top-events-grid");
     if (!grid) return;
@@ -255,12 +346,28 @@
     grid.hidden = false;
     var section = grid.closest("[data-mz-top-section]");
     if (section) section.hidden = false;
-    // マップの表示判定(offsetParent)はセクションが見える状態になってから行う
-    try {
-      window.MarchinZEventMapTop?.refresh(notTrashed);
-    } catch (e) {
-      if (window.console && console.warn) console.warn("[mz-top-highlights] map", e);
-    }
+    // マップの表示判定(offsetParent)はセクションが見える状態になってから行う。
+    // ピンの落下アニメが二度走らないよう、参加者データを読んでから一度だけ描画する
+    // (イベントページと同じ方式)。顔ロードが遅い/失敗しても最大2.5秒で顔なし描画にフォールバック。
+    var drawn = false;
+    var drawMap = function () {
+      if (drawn) return;
+      drawn = true;
+      try {
+        window.MarchinZEventMapTop?.refresh(notTrashed);
+      } catch (e) {
+        if (window.console && console.warn) console.warn("[mz-top-highlights] map", e);
+      }
+    };
+    var fallback = window.setTimeout(drawMap, 2500);
+    attachEventFaces(notTrashed)
+      .catch(function (e) {
+        if (window.console && console.warn) console.warn("[mz-top-highlights] faces", e);
+      })
+      .then(function () {
+        window.clearTimeout(fallback);
+        drawMap();
+      });
   }
 
   /* ---------- ヒーロー・ダッシュボード ---------- */
