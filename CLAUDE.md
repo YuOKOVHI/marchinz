@@ -18,13 +18,14 @@
 
 ---
 
-## デプロイ運用（2026-07-08 改訂: 「git push = 本番デプロイ」）
+## デプロイ運用（2026-07-08 改訂: 「git push = 本番デプロイ」／2026-07-12 改訂: push はまとめて）
 
 - **本番反映は `git push origin main`**（Netlify が GitHub 連携で自動ビルド・公開）
+- **push のたびに Netlify のビルドクレジットを消費する。コミットは都度作ってよいが、push は作業がまとまってから最後に1回にまとめる**（Netlify が Credits ベースの課金になり、2026-07-12 にクレジット上限到達でサイトが一時停止した実績あり。細かい push の回数がそのままビルド回数＝消費に直結する）
 - push 前に必須: ①localhost で該当ハッシュを実機確認 ②`data-mz-version` と触った JS の `?v=` を更新 ③`python3 check_data.py` が OK
 - **UI が大きく変わる変更は、push 前にディレクター（大河内様）のローカル確認 OK を得る**
 - `firebase deploy`（rules/storage）は影響が大きいため、従来どおり**ディレクター承認後のみ**
-- GitHub Actions（YouTube 日次更新+Gemini ダイジェスト）は自動運転。手動起動は自由
+- GitHub Actions（YouTube 日次更新+Gemini ダイジェスト）は自動運転。手動起動は自由（これも push のたびにビルドを誘発するため、頻度が気になれば見直し候補）
 
 ## 必須ルール（毎回の変更）
 
