@@ -4219,6 +4219,72 @@ main {
   color: var(--muted);
 }
 
+/* フッター広告バナー(Kindle Unlimited・Artlist・公式X)。フッター上部に横一列で中央寄せ */
+.footer-banner {
+  margin: 0 0 0.6rem;
+}
+
+.footer-banner-row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0 auto 0.9rem;
+  flex-wrap: nowrap;
+  width: fit-content;
+}
+
+.footer-banner-row .footer-banner {
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+.footer-banner a {
+  display: block;
+  width: auto;
+  margin: 0 auto;
+}
+
+.footer-banner img {
+  display: block;
+  height: 56px;
+  width: auto;
+  max-width: 100%;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+.footer-banner-artlist a {
+  max-width: none;
+}
+
+.footer-banner-x .x-logo-link {
+  width: 56px;
+  height: 56px;
+  border: 1px solid #111;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #111;
+  color: #fff;
+  padding: 0;
+  line-height: 1;
+  text-decoration: none;
+}
+
+.footer-banner-x .x-logo-icon {
+  width: 2rem;
+  height: 2rem;
+  display: block;
+}
+
+.footer-banner-x .x-logo-link:hover {
+  background: #000;
+  border-color: #000;
+  text-decoration: none;
+}
+
 .x-logo-link {
   display: inline-flex;
   align-items: center;
@@ -15596,6 +15662,53 @@ button.mz-site-announcement-banner-link {
 
   body .site-mobile-drawer-nav {
     padding: 0.12rem var(--mz-mobile-block-pr) 0.65rem var(--mz-mobile-block-pl);
+  }
+
+  /* フッター3リンク画像は横一列固定・中央寄せ（間隔は詰める） */
+  body .footer-banner-row {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    max-width: 100%;
+    gap: 0.12rem;
+    overflow-x: hidden;
+  }
+
+  body .footer-banner-row .footer-banner {
+    margin: 0;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+  }
+
+  body .footer-banner a {
+    display: inline-flex;
+    width: auto;
+    align-items: center;
+    justify-content: center;
+    line-height: 0;
+  }
+
+  body .footer-banner img {
+    display: block;
+    width: auto;
+    height: clamp(28px, 7vw, 32px);
+    max-width: 32vw;
+    object-fit: contain;
+  }
+
+  /* Xは横長長方形を固定（広がりすぎ防止） */
+  body .footer-banner-x .x-logo-link {
+    width: clamp(42px, 11vw, 50px);
+    height: clamp(28px, 7vw, 32px);
+    border-radius: 5px;
+  }
+
+  body .footer-banner-x .x-logo-icon {
+    width: 1rem;
+    height: 1rem;
   }
 
   /* 並び順（ラベル＋ボタン）と絞込みを2グループで折り返し */
