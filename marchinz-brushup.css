@@ -2218,12 +2218,85 @@ a.calendar-ev-topline-creator-name-link:hover {
   transition: transform 0.18s cubic-bezier(0.2, 1.6, 0.4, 1);
 }
 
-/* カード(ポップアップ)表示中は揺れ・パルスを一時停止(JS が popupopen で付与、閉じたら再開)。
+/* カード(ポップアップ/シート)表示中は揺れ・パルスを一時停止(JS が付け外し、閉じたら再開)。
    読んでいる間に背後がざわつかない・酔わないための静止時間(v1.33.1) */
 .mz-evmap--reading .mz-evmap-pin,
 .mz-evmap--reading .mz-evmap-pulse {
   animation-play-state: paused;
 }
+
+/* スマホ用ボトムシート(v1.33.2): 狭いマップ内に吹き出しを収める構造が不安定の原因
+   だったため、タップで画面下からシートを出す(Googleマップ型。マップは上に見えたまま)。
+   注意: display は [open] にだけ当てる — 素の .mz-evmap-sheet に当てると
+   UA の dialog:not([open]){display:none} を打ち消して閉状態でも見えてしまう。 */
+.mz-evmap-sheet {
+  position: fixed;
+  inset: auto 0 0 0;
+  margin: 0 auto;
+  width: 100%;
+  max-width: 520px;
+  max-height: 70vh;
+  max-height: 70dvh;
+  border: none;
+  border-radius: 16px 16px 0 0;
+  padding: 0.3rem 0.9rem calc(0.9rem + env(safe-area-inset-bottom));
+  background: #fff;
+  color: var(--text);
+  box-shadow: 0 -10px 40px rgba(15, 33, 56, 0.3);
+  animation: mz-sheet-up 0.28s ease-out both;
+}
+
+.mz-evmap-sheet[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+@keyframes mz-sheet-up {
+  0% { transform: translateY(100%); }
+  100% { transform: translateY(0); }
+}
+
+.mz-evmap-sheet::backdrop {
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.mz-evmap-sheet-grab {
+  flex: none;
+  width: 40px;
+  height: 4px;
+  border-radius: 999px;
+  background: #d3dae6;
+  margin: 0.4rem auto 0.55rem;
+}
+
+.mz-evmap-sheet-close {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  width: 44px;
+  height: 44px;
+  border: none;
+  background: transparent;
+  font-size: 1.35rem;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 999px;
+}
+
+.mz-evmap-sheet-body {
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* シート内は吹き出しよりひと回りゆったり(行52px・文字大きめ) */
+.mz-evmap-sheet .mz-evmap-pop { min-width: 0; }
+.mz-evmap-sheet .mz-evmap-pop-head { font-size: 0.92rem; padding-right: 44px; }
+.mz-evmap-sheet .mz-evmap-pop-item { min-height: 52px; padding: 0.55rem 1.4rem 0.55rem 0.55rem; margin-bottom: 0.3rem; }
+.mz-evmap-sheet .mz-evmap-pop-title { font-size: 0.88rem; }
+.mz-evmap-sheet .mz-evmap-pop-kind { font-size: 0.66rem; }
+.mz-evmap-sheet .mz-evmap-pop-date { font-size: 0.76rem; }
 
 /* 吹き出し: その場でフワッと出現(フェード+ごく小さなスケール)+ ブランド角丸。
    v1.33.1: 「動くのは一度に1つ」— 開く瞬間は autoPan(地図)が動くので、カード自体は
@@ -2283,6 +2356,7 @@ a.calendar-ev-topline-creator-name-link:hover {
   .mz-evmap-pin,
   .leaflet-popup-content-wrapper,
   .leaflet-popup-tip-container,
+  .mz-evmap-sheet,
   .calendar-ev-card.calendar-ev-card--highlight { animation: none; }
   .mz-evmap-icon:hover .mz-evmap-pin { transform: none; }
 }

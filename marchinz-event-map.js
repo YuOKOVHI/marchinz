@@ -1,5 +1,5 @@
 /*
- * marchinz-event-map.js (v1.33.1) — イベントマップ
+ * marchinz-event-map.js (v1.33.2) — イベントマップ
  * #community/events のリスト前、および TOP の「近日開催予定」に、開催地・時期を日本地図で一望するセクション。
  * calendar-events.js が renderCurrentView 後に window.MarchinZEventMap.refresh(events) を呼ぶ（#community/events 側）。
  * marchinz-top-highlights.js が renderUpcomingEvents 後に window.MarchinZEventMapTop.refresh(events) を呼ぶ（TOP 側）。
@@ -68,6 +68,140 @@
     }
     host.appendChild(row);
   }
+
+  /**
+   * スマホ(狭幅)ではボトムシート、それ以外は従来のLeafletポップアップ(v1.33.2)。
+   * 回転・ウィンドウリサイズに追従できるようタップの瞬間に評価する。767pxは既存慣例(community.js)。
+   */
+  function isSheetMode() {
+    return window.matchMedia("(max-width: 767px)").matches;
+  }
+
+  /**
+   * 「県内イベント一覧」DOM(見出し+イベント行+facepile)。ポップアップとボトムシートで共用。
+   * @param {string} pref
+   * @param {any[]} list 日付昇順ソート済み
+   * @param {{limit?: number, onPick: (ev: any) => void}} opts limit省略時は全件表示
+   */
+  function buildPrefPop(pref, list, opts) {
+    var limit = opts.limit || list.length;
+    var pop = document.createElement("div");
+    pop.className = "mz-evmap-pop";
+    var head = document.createElement("p");
+    head.className = "mz-evmap-pop-head";
+    // UIアイコンはFAモノクロ統一(CLAUDE.md 必須ルール6)
+    head.innerHTML = '<i class="fa-solid fa-location-dot" aria-hidden="true"></i> ';
+    head.appendChild(document.createTextNode(pref + "・" + list.length + "件"));
+    pop.appendChild(head);
+    list.slice(0, limit).forEach(function (ev) {
+      var kColor = KIND_COLORS[ev.kind] || "#1e4fd6";
+      var item = document.createElement("button");
+      item.type = "button";
+      item.className = "mz-evmap-pop-item";
+      item.style.setProperty("--pin", kColor);
+      item.innerHTML =
+        '<span class="mz-evmap-pop-date">' + fmtStopDate(ev.date) + "</span>" +
+        '<span class="mz-evmap-pop-main">' +
+        '<span class="mz-evmap-pop-kind">' + (ev.kind || "") + "</span>" +
+        '<span class="mz-evmap-pop-title"></span></span>' +
+        '<span class="mz-evmap-pop-go" aria-hidden="true">→</span>';
+      item.querySelector(".mz-evmap-pop-title").textContent = ev.title || "";
+      appendPopFaces(item.querySelector(".mz-evmap-pop-main"), ev);
+      item.addEventListener("click", function () { opts.onPick(ev); });
+      pop.appendChild(item);
+    });
+    if (list.length > limit) {
+      var more = document.createElement("p");
+      more.className = "mz-evmap-pop-more";
+      more.textContent = "ほか " + (list.length - limit) + " 件はリストで";
+      pop.appendChild(more);
+    }
+    return pop;
+  }
+
+  /* ---------- ボトムシート(スマホ、v1.33.2) ----------
+   * 狭いマップ(45vh)内にLeafletの吹き出しを収める構造が不安定の原因だったため、
+   * スマホでは画面下からのシートで表示する(マップは上に見えたまま・一切動かさない)。
+   * ネイティブ <dialog>+showModal(): スクロールロック/ESC/top-layerが標準で付く
+   * (既存前例: marchinz-base.js のメンテダイアログ、marchinz-journey.js)。
+   * 1枚を遅延生成してイベント/TOP両マップで使い回す。 */
+  var sheetDlg = null;
+  var sheetOnClose = null;
+
+  /** 後片付け(揺れ再開など)。多重呼び出しは no-op */
+  function runSheetOnClose() {
+    var f = sheetOnClose;
+    sheetOnClose = null;
+    if (f) f();
+  }
+
+  /** 自前のクローズ経路は close イベントに依存させない(発火しない環境でも後片付けが漏れない) */
+  function closeSheet() {
+    if (sheetDlg && sheetDlg.open) {
+      try { sheetDlg.close(); } catch (e) { /* noop */ }
+    }
+    runSheetOnClose();
+  }
+
+  function ensureSheet() {
+    if (sheetDlg) return sheetDlg;
+    var dlg = document.createElement("dialog");
+    dlg.className = "mz-evmap-sheet";
+    // backdrop(シート外)タップで閉じる。シート内のクリックは子要素が target になる
+    dlg.addEventListener("click", function (ev) {
+      if (ev.target === dlg) closeSheet();
+    });
+    // ESC 等ネイティブ経路のフォールバック(closeSheet 済みなら no-op)
+    dlg.addEventListener("close", runSheetOnClose);
+    document.body.appendChild(dlg);
+    sheetDlg = dlg;
+    return dlg;
+  }
+
+  function sheetIsOpen() {
+    return Boolean(sheetDlg && sheetDlg.open);
+  }
+
+  /**
+   * @param {string} pref
+   * @param {any[]} list
+   * @param {(ev: any) => void} onPick 行タップ時(シートは閉じた後に呼ばれる)
+   * @param {() => void} onClose 閉じ方によらず必ず1回呼ばれる
+   */
+  function openEventSheet(pref, list, onPick, onClose) {
+    var dlg = ensureSheet();
+    sheetOnClose = onClose || null;
+    dlg.replaceChildren();
+    var grab = document.createElement("div");
+    grab.className = "mz-evmap-sheet-grab";
+    grab.setAttribute("aria-hidden", "true");
+    dlg.appendChild(grab);
+    var closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "mz-evmap-sheet-close";
+    closeBtn.setAttribute("aria-label", "閉じる");
+    closeBtn.textContent = "×";
+    closeBtn.addEventListener("click", closeSheet);
+    dlg.appendChild(closeBtn);
+    var body = document.createElement("div");
+    body.className = "mz-evmap-sheet-body";
+    body.appendChild(
+      buildPrefPop(pref, list, {
+        onPick: function (ev) {
+          closeSheet();
+          onPick(ev);
+        },
+      }),
+    );
+    dlg.appendChild(body);
+    if (typeof dlg.showModal === "function") dlg.showModal();
+    else dlg.setAttribute("open", "");
+  }
+
+  // ブラウザバック等でページが変わったらシートを道連れに閉じる(開きっぱなし防止)
+  window.addEventListener("hashchange", function () {
+    if (sheetIsOpen()) closeSheet();
+  });
 
   function todayKey() {
     var n = new Date();
@@ -199,50 +333,35 @@
         // アンカーはバルーン下端の尖り(46px目)= 実際の開催地に合わせる
         var icon = L.divIcon({ className: "mz-evmap-icon", html: html, iconSize: [40, 46], iconAnchor: [20, 46] });
         var m = L.marker(c, { icon: icon }).addTo(markerLayer);
-        var pop = document.createElement("div");
-        pop.className = "mz-evmap-pop";
-        var head = document.createElement("p");
-        head.className = "mz-evmap-pop-head";
-        // UIアイコンはFAモノクロ統一(📍カラー絵文字の置換、CLAUDE.md 必須ルール6)
-        head.innerHTML = '<i class="fa-solid fa-location-dot" aria-hidden="true"></i> ';
-        head.appendChild(document.createTextNode(pref + "・" + list.length + "件"));
-        pop.appendChild(head);
-        list.slice(0, 3).forEach(function (ev) {
-          var kColor = KIND_COLORS[ev.kind] || "#1e4fd6";
-          var item = document.createElement("button");
-          item.type = "button";
-          item.className = "mz-evmap-pop-item";
-          item.style.setProperty("--pin", kColor);
-          item.innerHTML =
-            '<span class="mz-evmap-pop-date">' + fmtStopDate(ev.date) + "</span>" +
-            '<span class="mz-evmap-pop-main">' +
-            '<span class="mz-evmap-pop-kind">' + (ev.kind || "") + "</span>" +
-            '<span class="mz-evmap-pop-title"></span></span>' +
-            '<span class="mz-evmap-pop-go" aria-hidden="true">→</span>';
-          item.querySelector(".mz-evmap-pop-title").textContent = ev.title || "";
-          appendPopFaces(item.querySelector(".mz-evmap-pop-main"), ev);
-          item.addEventListener("click", function () {
+        m.on("click", function () {
+          var pick = function (ev) {
             map.closePopup();
             jumpToCard(ev.id);
-          });
-          pop.appendChild(item);
-        });
-        if (list.length > 3) {
-          var more = document.createElement("p");
-          more.className = "mz-evmap-pop-more";
-          more.textContent = "ほか " + (list.length - 3) + " 件はリストで";
-          pop.appendChild(more);
-        }
-        // autoPan: 開く瞬間に一度だけ地図をパンしてポップアップを可視域へ収める。
-        // keepInView は使わない(v1.33.1): 表示中ずっと地図を引き戻すため、カードを
-        // 開いたまま隣を見ようとするスワイプと地図がケンカして操作しづらかった。
-        m.bindPopup(pop, {
-          maxWidth: 250,
-          minWidth: 200,
-          keepInView: false,
-          autoPan: true,
-          autoPanPadding: L.point(28, 28),
-          className: "mz-evmap-popup",
+          };
+          if (isSheetMode()) {
+            // スマホ: ボトムシートで表示。マップは一切動かさない(autoPanなし=不安定要因ゼロ)。
+            // 表示中は揺れ・パルスを止める(.mz-evmap--reading、ポップアップ時と同じ静止時間)
+            var el = mapEl();
+            if (el) el.classList.add("mz-evmap--reading");
+            openEventSheet(pref, list, pick, function () {
+              var el2 = mapEl();
+              if (el2) el2.classList.remove("mz-evmap--reading");
+            });
+            return;
+          }
+          // デスクトップ: 従来の吹き出し(3件+「ほか◯件」)。autoPanは開く瞬間の1回だけ、
+          // keepInView は使わない(v1.33.1: 表示中の引き戻しがスワイプとケンカするため)。
+          L.popup({
+            maxWidth: 250,
+            minWidth: 200,
+            keepInView: false,
+            autoPan: true,
+            autoPanPadding: L.point(28, 28),
+            className: "mz-evmap-popup",
+          })
+            .setLatLng(c)
+            .setContent(buildPrefPop(pref, list, { limit: 3, onPick: pick }))
+            .openOn(map);
         });
       });
       var cnt = block() && block().querySelector("[data-evmap-count]");
@@ -259,9 +378,10 @@
       if (!isOpen() || !cfg.panelVisible()) return;
       ensureMap().then(function (m) {
         if (!m) return;
-        // ポップアップを開いて読んでいる最中のバックグラウンド更新(参加者情報の遅延取得等)では
+        // ポップアップ/シートを開いて読んでいる最中のバックグラウンド更新(参加者情報の遅延取得等)では
         // 作り直さない(閉じられる・地図が飛ぶのを防ぐ)。次の更新タイミングで反映される。
         if (m._popup && typeof m._popup.isOpen === "function" && m._popup.isOpen()) return;
+        if (sheetIsOpen()) return;
         window.setTimeout(function () { m.invalidateSize(); renderMarkers(); }, 80);
       });
     }
