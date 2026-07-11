@@ -1148,19 +1148,6 @@ a.calendar-ev-topline-creator-name-link:hover {
   gap: 0.45rem;
 }
 
-.mz-footer-col-head {
-  margin: 0 0 0.25rem;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-}
-
-/* .site-footer p（styles.css）は要素セレクタ分だけ詳細度が高く、
-   上の color 指定に(class 1つでは)勝てないため、ここで確実に上書きする */
-.site-footer p.mz-footer-col-head {
-  color: var(--amber-bright);
-}
-
 /* コピーライト行(styles.css は暗い --muted。濃紺フッターで読めるよう白系に) */
 .site-footer p.footer-copy {
   color: rgba(255, 255, 255, 0.75);
@@ -1184,16 +1171,23 @@ a.calendar-ev-topline-creator-name-link:hover {
   text-decoration: underline;
 }
 
-/* スマホは3列だと「プライバシーポリシー」等の長いリンクが窮屈なため1列に積む */
+/* スマホも3列を維持(見出しが無くなった分、詰めて収める) */
 @media (max-width: 720px) {
   .site-footer .mz-footer-grid {
-    grid-template-columns: 1fr;
-    max-width: 320px;
+    gap: 0.6rem;
+    max-width: 400px;
+    padding: 1.2rem 0.8rem 1.4rem;
     text-align: center;
   }
 
   .mz-footer-col {
     align-items: center;
+    gap: 0.55rem;
+  }
+
+  .mz-footer-grid .footer-nav-link {
+    font-size: 0.76rem;
+    line-height: 1.3;
   }
 }
 
