@@ -382,11 +382,8 @@
   function showHeroDash() {
     var dash = document.getElementById("mz-hero-dash");
     if (!dash) return null;
-    if (dash.hidden) {
-      dash.hidden = false;
-      var art = document.querySelector(".mll-lp-hero-art");
-      if (art) art.hidden = true;
-    }
+    // v1.34: キービジュアル(.mll-lp-hero-art)は隠さず、画像の下にダッシュボードを併記する
+    dash.hidden = false;
     return dash;
   }
 
@@ -514,6 +511,8 @@
       renderFreshVideos();
       renderYoutubeFresh();
       loadUpcomingEvents();
+      // 練習ツール(メトロノーム/チューナー)ブロック。ログイン不要(v1.34)
+      window.MarchinZBase?.mountTools?.(document.getElementById("mz-top-tools"));
       // Firebase 初期化が遅れて getDb() が null のときは、認証確定イベントで再試行
       window.addEventListener("mll-auth-changed", loadUpcomingEvents);
       var tries = 0;

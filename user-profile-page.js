@@ -3713,9 +3713,28 @@
     root?.querySelector(".user-profile-layout")?.classList.remove("user-profile-layout--loading");
   }
 
+  /**
+   * loadAndRenderCore の全終了経路(途中 return・例外・stale)で「読み込み中の半透明
+   * (--loading)」を確実に解除するラッパー(v1.34: マイページが半透明のまま残るバグ修正)。
+   * 自分より新しいロードが始まっているときは、解除もそのロードに任せる。
+   */
   async function loadAndRender() {
     const gen = ++profileLoadSeq;
     const targetUid = uidFromRoute();
+    try {
+      await loadAndRenderCore(gen, targetUid);
+    } catch (e) {
+      console.warn("[profile] load", e);
+      setText("#prof-load-msg", "読み込みに失敗しました。時間をおいて再度お試しください。");
+    } finally {
+      if (gen === profileLoadSeq) {
+        root?.querySelector(".user-profile-layout")?.classList.remove("user-profile-layout--loading");
+      }
+    }
+  }
+
+  /** @param {number} gen @param {string} targetUid */
+  async function loadAndRenderCore(gen, targetUid) {
     const db = getDb();
     const viewer = window.MLL_AUTH?.getUser?.() || null;
     const realViewerId = viewer?.id || null;

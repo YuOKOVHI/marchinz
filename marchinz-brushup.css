@@ -579,6 +579,30 @@ a.calendar-ev-topline-creator-name-link:hover {
   font-variant-numeric: tabular-nums;
 }
 
+/* ---------- iOS Safari の左右ブレ対策(v1.34) ----------
+   body{overflow-x:hidden}(styles.css)は iOS のルートスクローラに効かず、
+   縦スクロール中の斜めドラッグや横スクロールUIの端でページ全体が左右にバウンスする。
+   ルートのタッチ操作を「縦パン+ピンチズームのみ」に制限して根絶する(iOS 13+)。
+   ※ overflow-x:clip は相方の overflow-y を巻き込んで縦スクロールを殺すため使わない。 */
+html {
+  overscroll-behavior-x: none; /* Safari 16+ の保険(ルートの横ラバーバンド禁止) */
+}
+
+body {
+  touch-action: pan-y pinch-zoom;
+}
+
+/* 横スクロールUIは自身がスクロールを担当するので body の制限は及ばないが、
+   横パンの許可を明示し、端に達してもページへスクロールを連鎖させない */
+.user-profile-tabs,
+.mz-tab-strip-yamap,
+.community-updates-scroll,
+.pagination-inner,
+.mz-hm-grid {
+  touch-action: pan-x pan-y;
+  overscroll-behavior-x: contain;
+}
+
 /* フッターのスタイルは「4) フッター」セクション(後方)に統合済み */
 
 /* ---------- トップLP調整 ---------- */
@@ -2395,6 +2419,123 @@ a.calendar-ev-topline-creator-name-link:hover {
   .site-brand { padding: 0.55rem 1.5rem 0.5rem; }
   .site-logo { max-height: 60px; width: auto; }
   .site-brand-tagline { font-size: 0.6rem; margin-top: 0.15rem; }
+}
+
+/* v1.34: キービジュアル(画像)とダッシュボードを縦積みで併記 */
+.mll-lp-hero-visual {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+/* ---------- TOP「練習ツール」ブロック(v1.34、ログイン不要) ---------- */
+
+.mz-top-tools-lead {
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+
+/* 狭幅ではリード文を出さない(見出しの折返し防止。ツール自体が用途を語る) */
+@media (max-width: 719px) {
+  .mz-top-tools-lead { display: none; }
+}
+
+/* BPM調整ボタン(-5/-1/+1/+5/TAP)は横一列に(mini-btn の width:100% を打ち消す)。
+   Days のツールタブにも効く改善 */
+.mz-base-bpm-ctrl .mz-base-mini-btn {
+  display: inline-block;
+  width: auto;
+  flex: 1 1 3rem;
+  min-height: 40px;
+}
+
+@media (min-width: 860px) {
+  .mz-top-tools {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    align-items: start;
+  }
+
+  .mz-top-tools .mz-base-tool-sec { margin-bottom: 0; }
+  .mz-top-tools .mz-top-tools-guide { grid-column: 1 / -1; }
+}
+
+.mz-top-tools-guide {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem 1rem;
+  padding: 0.9rem 1rem;
+  border-radius: var(--mz-radius-card);
+  background: var(--navy);
+}
+
+.mz-top-tools-guide-msg {
+  margin: 0;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+/* ---------- メトロノームのマイプリセット(v1.34) ---------- */
+
+.mz-base-my-presets {
+  margin-top: 0.7rem;
+  padding-top: 0.7rem;
+  border-top: 1px dashed var(--border);
+}
+
+.mz-base-my-presets-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.45rem;
+}
+
+.mz-base-mini-btn.mz-base-preset-save {
+  display: inline-block;
+  width: auto;
+  min-height: 40px;
+  padding: 0.3rem 0.8rem;
+  border-radius: 999px;
+}
+
+.mz-base-preset-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  overflow: hidden;
+}
+
+.mz-base-preset-apply {
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  padding: 0.32rem 0.2rem 0.32rem 0.75rem;
+  min-height: 40px;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+
+.mz-base-preset-del {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1;
+  padding: 0.32rem 0.6rem 0.32rem 0.3rem;
+  min-height: 40px;
+  cursor: pointer;
+}
+
+.mz-base-preset-del:hover { color: #c0392b; }
+
+.mz-base-my-presets-empty {
+  font-size: 0.74rem;
+  color: var(--muted);
 }
 
 .mz-hero-dash {

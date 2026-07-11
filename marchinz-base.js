@@ -1,5 +1,7 @@
 /*
- * marchinz-base.js (v1.33.0) — MarchinZ Days(旧称 MarchinZ Base。内部ID・コレクション名は base_* を維持)
+ * marchinz-base.js (v1.34.0) — MarchinZ Days(旧称 MarchinZ Base。内部ID・コレクション名は base_* を維持)
+ * v1.34: ツール(メトロノーム/チューナー)は TOP の「練習ツール」ブロックにもマウント(mountTools、ログイン不要)。
+ *        メトロノームにマイテンポプリセット(最大10個、localStorage mz_days_tools.presets)。
  * 現役マーチャー向けの「毎日戻ってくる部室」。プロフィールの本人限定タブ
  * (#prof-pane-base、user-profile-page.js が showOwnerChrome 時に window.MarchinZBase.mount(uid) を呼ぶ)。
  *
@@ -62,7 +64,7 @@
   const toolsSettings = loadToolsSettings();
 
   function loadToolsSettings() {
-    const def = { bpm: 120, beats: 4, accent: true, transpose: "C" };
+    const def = { bpm: 120, beats: 4, accent: true, transpose: "C", presets: [] };
     try {
       const raw = JSON.parse(localStorage.getItem(TOOLS_SETTINGS_KEY) || "{}");
       return {
@@ -70,6 +72,11 @@
         beats: Math.min(8, Math.max(2, Number(raw.beats) || def.beats)),
         accent: raw.accent !== false,
         transpose: ["C", "B♭", "E♭", "F"].includes(raw.transpose) ? raw.transpose : def.transpose,
+        // マイテンポプリセット(v1.34): BPM値を最大10個、ブラウザ(localStorage)に保存
+        presets: (Array.isArray(raw.presets) ? raw.presets : [])
+          .map((n) => Math.round(Number(n)))
+          .filter((n) => n >= 30 && n <= 260)
+          .slice(0, 10),
       };
     } catch {
       return def;
@@ -1624,7 +1631,12 @@
     return sr / T0;
   }
 
-  function renderTools(panel) {
+  /**
+   * メトロノーム/チューナー。ログイン不要(Firestoreを触らない・localStorageのみ)。
+   * @param {HTMLElement} panel
+   * @param {{context?: "top"}} [opts] "top" = TOPページの誰でも使えるブロック(末尾にDays誘導を出す)
+   */
+  function renderTools(panel, opts) {
     /* --- メトロノーム --- */
     const metroSec = el("section", "mz-base-tool-sec");
     const metroHead = el("p", "mz-base-tool-head");
@@ -1728,6 +1740,56 @@
     });
     metroSec.appendChild(presets);
 
+    // マイテンポプリセット(v1.34): いまのBPMをワンタップ保存、最大10個(localStorage)。
+    // チップ本体で適用、右の×で削除。
+    const myWrap = el("div", "mz-base-my-presets");
+    const myHead = el("div", "mz-base-my-presets-head");
+    myHead.appendChild(el("span", "mz-base-field-label", "マイプリセット"));
+    const saveBtn = el("button", "mz-base-mini-btn mz-base-preset-save", "+ いまのテンポを保存");
+    saveBtn.type = "button";
+    myHead.appendChild(saveBtn);
+    myWrap.appendChild(myHead);
+    const myChips = el("div", "mz-base-tool-chips mz-base-my-preset-chips");
+    myWrap.appendChild(myChips);
+    const renderMyPresets = () => {
+      myChips.replaceChildren();
+      toolsSettings.presets.forEach((b, i) => {
+        const chip = el("span", "mz-base-tag-chip mz-base-preset-chip");
+        const apply = el("button", "mz-base-preset-apply", `♩=${b}`);
+        apply.type = "button";
+        apply.setAttribute("aria-label", `テンポ ${b} を呼び出す`);
+        apply.addEventListener("click", () => setBpm(b));
+        chip.appendChild(apply);
+        const del = el("button", "mz-base-preset-del", "×");
+        del.type = "button";
+        del.setAttribute("aria-label", `プリセット ${b} を削除`);
+        del.addEventListener("click", () => {
+          toolsSettings.presets.splice(i, 1);
+          saveToolsSettings();
+          renderMyPresets();
+        });
+        chip.appendChild(del);
+        myChips.appendChild(chip);
+      });
+      if (!toolsSettings.presets.length) {
+        myChips.appendChild(el("span", "mz-base-my-presets-empty", "よく使うテンポを保存しておけます(10個まで)"));
+      }
+      const full = toolsSettings.presets.length >= 10;
+      saveBtn.disabled = full;
+      saveBtn.textContent = full ? "プリセットは10個まで" : "+ いまのテンポを保存";
+    };
+    saveBtn.addEventListener("click", () => {
+      if (toolsSettings.presets.length >= 10) return;
+      if (!toolsSettings.presets.includes(toolsSettings.bpm)) {
+        toolsSettings.presets.push(toolsSettings.bpm);
+        toolsSettings.presets.sort((a, b) => a - b);
+        saveToolsSettings();
+      }
+      renderMyPresets();
+    });
+    renderMyPresets();
+    metroSec.appendChild(myWrap);
+
     const metroBtn = el("button", "mz-base-submit-btn mz-base-tool-toggle", "▶ スタート");
     metroBtn.type = "button";
     const metroScheduler = () => {
@@ -1818,7 +1880,8 @@
     renderTrans();
     tunerSec.appendChild(transRow);
 
-    const tunerBtn = el("button", "mz-base-submit-btn mz-base-tool-toggle", "🎤 マイクをオンにする");
+    const tunerBtn = el("button", "mz-base-submit-btn mz-base-tool-toggle");
+    tunerBtn.innerHTML = '<i class="fa-solid fa-microphone" aria-hidden="true"></i> マイクをオンにする';
     tunerBtn.type = "button";
     const tunerLoop = () => {
       if (!tunerOn || !tunerAnalyser || !audioCtx || !tunerBuf) return;
@@ -1855,7 +1918,7 @@
           tunerStream = null;
         }
         tunerAnalyser = null;
-        tunerBtn.textContent = "🎤 マイクをオンにする";
+        tunerBtn.innerHTML = '<i class="fa-solid fa-microphone" aria-hidden="true"></i> マイクをオンにする';
         tunerBtn.classList.remove("mz-base-tool-toggle--on");
         noteName.textContent = "--";
         centTxt.textContent = "マイクをオフにしました";
@@ -1877,12 +1940,58 @@
       tunerBuf = new Float32Array(tunerAnalyser.fftSize);
       src.connect(tunerAnalyser);
       tunerOn = true;
-      tunerBtn.textContent = "⏹ マイクをオフにする";
+      tunerBtn.innerHTML = '<i class="fa-solid fa-stop" aria-hidden="true"></i> マイクをオフにする';
       tunerBtn.classList.add("mz-base-tool-toggle--on");
       tunerLoop();
     });
     tunerSec.appendChild(tunerBtn);
     panel.appendChild(tunerSec);
+
+    // TOPブロックでは練習記録への誘導を出す(ツールは誰でも・記録はDaysで)
+    if (opts && opts.context === "top") {
+      const guide = el("div", "mz-top-tools-guide");
+      const loggedIn = Boolean(window.MLL_AUTH?.getUser?.()?.id);
+      const msg = el("p", "mz-top-tools-guide-msg");
+      msg.textContent = loggedIn
+        ? "今日の練習、そのまま記録に残しませんか?ストリークと目標が待っています。"
+        : "練習の記録・目標・ストリークは、無料登録で使える MarchinZ Days に。";
+      guide.appendChild(msg);
+      const cta = document.createElement("a");
+      cta.className = "mll-lp-btn mll-lp-btn--primary mz-top-tools-guide-btn";
+      cta.href = loggedIn ? "#profile?tab=base" : "#signup";
+      cta.innerHTML = loggedIn
+        ? '<i class="fa-solid fa-drum" aria-hidden="true"></i> 練習を記録する'
+        : '<i class="fa-solid fa-drum" aria-hidden="true"></i> 登録して練習記録をつける';
+      if (!loggedIn) cta.setAttribute("data-mll-auth-entry", "signup");
+      guide.appendChild(cta);
+      panel.appendChild(guide);
+    }
+  }
+
+  /**
+   * TOPページの「練習ツール」ブロック用マウント(v1.34)。ログイン不要。
+   * TOP以外のページへ移動したら(=祖先 .page が hidden になったら)音・マイクを止める。
+   * @param {HTMLElement|null} host
+   */
+  function mountTools(host) {
+    if (!host || host.dataset.mzToolsMounted) return;
+    host.dataset.mzToolsMounted = "1";
+    const remount = () => {
+      stopTools();
+      host.replaceChildren();
+      renderTools(host, { context: "top" });
+    };
+    renderTools(host, { context: "top" });
+    const page = host.closest(".page");
+    if (page) {
+      new MutationObserver(() => {
+        // 離脱で音・マイクを止め、再表示で作り直す(ボタンが「ストップ」のまま残る表示不整合を防ぐ)
+        if (page.hidden) stopTools();
+        else remount();
+      }).observe(page, { attributes: true, attributeFilter: ["hidden"] });
+    }
+    // ログイン状態が変わったら誘導の文言/リンク先を作り直す
+    window.addEventListener("mll-auth-changed", remount);
   }
 
   /* ---------- 共通削除 ---------- */
@@ -1930,5 +2039,5 @@
     loadAll(uid);
   }
 
-  window.MarchinZBase = { mount };
+  window.MarchinZBase = { mount, mountTools };
 })();
