@@ -2421,14 +2421,17 @@ body {
   .site-brand-tagline { font-size: 0.6rem; margin-top: 0.15rem; }
 }
 
-/* v1.34: キービジュアル(画像)とダッシュボードを縦積みで併記 */
-.mll-lp-hero-visual {
-  display: flex;
-  flex-direction: column;
-  gap: 0.9rem;
+/* ---------- セクション見出しの英字 eyebrow(v1.34: TODAY'S MARCHINZ と対) ---------- */
+.mz-section-eyebrow {
+  display: block;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: var(--amber-bright);
+  margin-bottom: 0.15rem;
 }
 
-/* ---------- TOP「練習ツール」ブロック(v1.34、ログイン不要) ---------- */
+/* ---------- TOP「練習ツール」ブロック(v1.34、ログイン不要・アコーディオン) ---------- */
 
 .mz-top-tools-lead {
   font-size: 0.76rem;
@@ -2440,6 +2443,54 @@ body {
   .mz-top-tools-lead { display: none; }
 }
 
+/* ツール起動アイコン(押すとその下にパネルが開く) */
+.mz-top-tools-launcher {
+  display: flex;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+
+.mz-top-tool-launch {
+  flex: 1 1 8rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 88px;
+  justify-content: center;
+  padding: 0.9rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--mz-radius-card);
+  background: #fff;
+  box-shadow: var(--mz-shadow-card);
+  color: var(--navy);
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.12s ease;
+}
+
+.mz-top-tool-launch i {
+  font-size: 1.5rem;
+  color: var(--blue);
+}
+
+.mz-top-tool-launch:hover { border-color: var(--blue); background: #f4f7ff; }
+
+.mz-top-tool-launch--on {
+  border-color: var(--blue);
+  background: var(--blue);
+  color: #fff;
+}
+
+.mz-top-tool-launch--on i { color: #fff; }
+
+.mz-top-tools-panel {
+  margin-top: 0.9rem;
+}
+
+.mz-top-tools-panel .mz-base-tool-sec { margin-bottom: 0; }
+
 /* BPM調整ボタン(-5/-1/+1/+5/TAP)は横一列に(mini-btn の width:100% を打ち消す)。
    Days のツールタブにも効く改善 */
 .mz-base-bpm-ctrl .mz-base-mini-btn {
@@ -2449,19 +2500,8 @@ body {
   min-height: 40px;
 }
 
-@media (min-width: 860px) {
-  .mz-top-tools {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
-    align-items: start;
-  }
-
-  .mz-top-tools .mz-base-tool-sec { margin-bottom: 0; }
-  .mz-top-tools .mz-top-tools-guide { grid-column: 1 / -1; }
-}
-
 .mz-top-tools-guide {
+  margin-top: 0.9rem;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -2538,12 +2578,13 @@ body {
   color: var(--muted);
 }
 
+/* v1.34: ヒーローから独立ブロック(TODAY'S MARCHINZ)へ移動。中央寄せのカードに */
 .mz-hero-dash {
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
-  width: min(420px, 100%);
-  margin-left: auto;
+  width: min(460px, 100%);
+  margin: 0 auto;
 }
 
 .mz-hero-dash-head {
@@ -2728,7 +2769,7 @@ body {
 .mz-dash-stat span { font-size: 0.62rem; font-weight: 700; color: var(--muted); }
 
 @media (max-width: 900px) {
-  .mz-hero-dash { width: 100%; margin: 0.9rem 0 0; }
+  .mz-hero-dash { width: 100%; margin: 0 auto; }
   .mz-dash-count-num b { font-size: 1.6rem; }
 }
 

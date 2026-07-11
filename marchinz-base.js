@@ -1556,9 +1556,10 @@
   const NOTE_EN = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"];
   /** 記譜音 = 実音 + オフセット(半音) */
   const TUNER_TRANSPOSE = { "C": 0, "B♭": 2, "E♭": 9, "F": 7 };
+  // 初期プリセット4種(v1.34: 用途がすぐ分かる代表テンポに整理)。ユーザーは下の
+  // 「マイプリセット」で自分のテンポを追加保存できる(localStorage)。
   const METRO_PRESETS = [
-    ["基礎練ゆっくり", 60], ["バラード", 72], ["コンサートマーチ", 112],
-    ["行進(マーチ)", 120], ["速いマーチ", 132], ["8分音符練習", 144],
+    ["ゆっくり", 60], ["マーチ", 120], ["8分音符練習", 144], ["ハイテンポ", 220],
   ];
 
   function ensureAudioCtx() {
@@ -1632,12 +1633,11 @@
   }
 
   /**
-   * メトロノーム/チューナー。ログイン不要(Firestoreを触らない・localStorageのみ)。
-   * @param {HTMLElement} panel
-   * @param {{context?: "top"}} [opts] "top" = TOPページの誰でも使えるブロック(末尾にDays誘導を出す)
+   * メトロノーム1台ぶんのUI(見出し〜スタートボタン)を組み立てて返す。
+   * 音・拍数はモジュール変数(metroOn 等)を共有するので、同時に1台だけ動く前提。
+   * ログイン不要(Firestoreを触らない・localStorageのみ)。
    */
-  function renderTools(panel, opts) {
-    /* --- メトロノーム --- */
+  function buildMetroSection() {
     const metroSec = el("section", "mz-base-tool-sec");
     const metroHead = el("p", "mz-base-tool-head");
     metroHead.innerHTML = '<i class="fa-solid fa-stopwatch" aria-hidden="true"></i> メトロノーム';
@@ -1837,9 +1837,11 @@
       metroRafId = requestAnimationFrame(metroDraw);
     });
     metroSec.appendChild(metroBtn);
-    panel.appendChild(metroSec);
+    return metroSec;
+  }
 
-    /* --- チューナー --- */
+  /** チューナー1台ぶんのUI。ログイン不要。 */
+  function buildTunerSection() {
     const tunerSec = el("section", "mz-base-tool-sec");
     const tunerHead = el("p", "mz-base-tool-head");
     tunerHead.innerHTML = `<i class="fa-solid fa-gauge-high" aria-hidden="true"></i> チューナー(A4=${TUNER_A4}Hz)`;
@@ -1945,53 +1947,102 @@
       tunerLoop();
     });
     tunerSec.appendChild(tunerBtn);
-    panel.appendChild(tunerSec);
+    return tunerSec;
+  }
 
-    // TOPブロックでは練習記録への誘導を出す(ツールは誰でも・記録はDaysで)
-    if (opts && opts.context === "top") {
-      const guide = el("div", "mz-top-tools-guide");
-      const loggedIn = Boolean(window.MLL_AUTH?.getUser?.()?.id);
-      const msg = el("p", "mz-top-tools-guide-msg");
-      msg.textContent = loggedIn
-        ? "今日の練習、そのまま記録に残しませんか?ストリークと目標が待っています。"
-        : "練習の記録・目標・ストリークは、無料登録で使える MarchinZ Days に。";
-      guide.appendChild(msg);
-      const cta = document.createElement("a");
-      cta.className = "mll-lp-btn mll-lp-btn--primary mz-top-tools-guide-btn";
-      cta.href = loggedIn ? "#profile?tab=base" : "#signup";
-      cta.innerHTML = loggedIn
-        ? '<i class="fa-solid fa-drum" aria-hidden="true"></i> 練習を記録する'
-        : '<i class="fa-solid fa-drum" aria-hidden="true"></i> 登録して練習記録をつける';
-      if (!loggedIn) cta.setAttribute("data-mll-auth-entry", "signup");
-      guide.appendChild(cta);
-      panel.appendChild(guide);
-    }
+  /** TOPブロック用の「練習記録(Days)への誘導」カードを返す(ツールは誰でも・記録はDaysで)。 */
+  function buildTopGuide() {
+    const guide = el("div", "mz-top-tools-guide");
+    const loggedIn = Boolean(window.MLL_AUTH?.getUser?.()?.id);
+    const msg = el("p", "mz-top-tools-guide-msg");
+    msg.textContent = loggedIn
+      ? "今日の練習、そのまま記録に残しませんか?ストリークと目標が待っています。"
+      : "練習の記録・目標・ストリークは、無料登録で使える MarchinZ Days に。";
+    guide.appendChild(msg);
+    const cta = document.createElement("a");
+    cta.className = "mll-lp-btn mll-lp-btn--primary mz-top-tools-guide-btn";
+    cta.href = loggedIn ? "#profile?tab=base" : "#signup";
+    cta.innerHTML = loggedIn
+      ? '<i class="fa-solid fa-drum" aria-hidden="true"></i> 練習を記録する'
+      : '<i class="fa-solid fa-drum" aria-hidden="true"></i> 登録して練習記録をつける';
+    if (!loggedIn) cta.setAttribute("data-mll-auth-entry", "signup");
+    guide.appendChild(cta);
+    return guide;
+  }
+
+  /**
+   * Days のツールタブ用: メトロノームとチューナーを両方縦に並べる(常時展開)。
+   * @param {HTMLElement} panel
+   */
+  function renderTools(panel) {
+    panel.appendChild(buildMetroSection());
+    panel.appendChild(buildTunerSection());
   }
 
   /**
    * TOPページの「練習ツール」ブロック用マウント(v1.34)。ログイン不要。
+   * アイコンを押すとそのツールが下に開くアコーディオン(初期は閉じ、TOPを軽く保つ)。
    * TOP以外のページへ移動したら(=祖先 .page が hidden になったら)音・マイクを止める。
    * @param {HTMLElement|null} host
    */
   function mountTools(host) {
     if (!host || host.dataset.mzToolsMounted) return;
     host.dataset.mzToolsMounted = "1";
-    const remount = () => {
+
+    const TOOL_DEFS = [
+      { key: "metro", icon: "fa-stopwatch", label: "メトロノーム", build: buildMetroSection },
+      { key: "tuner", icon: "fa-gauge-high", label: "チューナー", build: buildTunerSection },
+    ];
+
+    const render = () => {
       stopTools();
       host.replaceChildren();
-      renderTools(host, { context: "top" });
+      let active = "";
+      const btns = {};
+
+      const launcher = el("div", "mz-top-tools-launcher");
+      const panel = el("div", "mz-top-tools-panel");
+      panel.hidden = true;
+
+      TOOL_DEFS.forEach((t) => {
+        const b = el("button", "mz-top-tool-launch");
+        b.type = "button";
+        b.setAttribute("aria-expanded", "false");
+        b.innerHTML =
+          '<i class="fa-solid ' + t.icon + '" aria-hidden="true"></i><span>' + t.label + "</span>";
+        b.addEventListener("click", () => {
+          // 切替・開閉のたびに鳴っている音・マイクを止める(同時に1台だけの前提を守る)
+          stopTools();
+          active = active === t.key ? "" : t.key;
+          if (active) panel.replaceChildren(t.build());
+          else panel.replaceChildren();
+          panel.hidden = !active;
+          Object.keys(btns).forEach((k) => {
+            const on = k === active;
+            btns[k].classList.toggle("mz-top-tool-launch--on", on);
+            btns[k].setAttribute("aria-expanded", on ? "true" : "false");
+          });
+        });
+        btns[t.key] = b;
+        launcher.appendChild(b);
+      });
+
+      host.appendChild(launcher);
+      host.appendChild(panel);
+      host.appendChild(buildTopGuide());
     };
-    renderTools(host, { context: "top" });
+
+    render();
     const page = host.closest(".page");
     if (page) {
       new MutationObserver(() => {
-        // 離脱で音・マイクを止め、再表示で作り直す(ボタンが「ストップ」のまま残る表示不整合を防ぐ)
+        // 離脱で音・マイクを止め、再表示で作り直す(開いていたツールも畳んで初期状態に戻す)
         if (page.hidden) stopTools();
-        else remount();
+        else render();
       }).observe(page, { attributes: true, attributeFilter: ["hidden"] });
     }
     // ログイン状態が変わったら誘導の文言/リンク先を作り直す
-    window.addEventListener("mll-auth-changed", remount);
+    window.addEventListener("mll-auth-changed", render);
   }
 
   /* ---------- 共通削除 ---------- */
