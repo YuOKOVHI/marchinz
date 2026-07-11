@@ -579,12 +579,7 @@ a.calendar-ev-topline-creator-name-link:hover {
   font-variant-numeric: tabular-nums;
 }
 
-/* ---------- フッター ---------- */
-
-.site-footer {
-  background: var(--navy);
-  border-top: none;
-}
+/* フッターのスタイルは「4) フッター」セクション(後方)に統合済み */
 
 /* ---------- トップLP調整 ---------- */
 
@@ -1129,37 +1124,22 @@ a.calendar-ev-topline-creator-name-link:hover {
   overflow: visible;
 }
 
-/* ---------- 4) フッター(サイトマップ型) ---------- */
+/* ---------- 4) フッター(ページリンクのみ、v1.33.3 で広告バナー・ブランド見出しを撤去) ---------- */
 
 .site-footer {
   background: var(--navy);
+  border-top: none;
   padding-top: 1.6rem;
 }
 
-/* .site-footer .footer-nav(styles.css・旧全幅フッター用、詳細度0,2,0)が
-   margin/width を上書きしてグリッドが左に寄るため、同詳細度で確実に中央寄せする */
 .site-footer .mz-footer-grid {
   display: grid;
-  grid-template-columns: 1.3fr 1fr 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 1.6rem;
-  width: auto;
-  max-width: 980px;
+  max-width: 780px;
   margin: 0 auto;
   padding: 1.4rem 1.2rem 1.6rem;
   text-align: left;
-}
-
-.mz-footer-logo {
-  margin: 0 0 0.5rem;
-  font-size: 1.25rem;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-}
-
-.mz-footer-tagline {
-  margin: 0;
-  font-size: 0.78rem;
-  line-height: 1.8;
 }
 
 .mz-footer-col {
@@ -1176,15 +1156,7 @@ a.calendar-ev-topline-creator-name-link:hover {
 }
 
 /* .site-footer p（styles.css）は要素セレクタ分だけ詳細度が高く、
-   上の各 color 指定に(class 1つでは)勝てないため、ここで確実に上書きする */
-.site-footer p.mz-footer-logo {
-  color: #fff;
-}
-
-.site-footer p.mz-footer-tagline {
-  color: rgba(255, 255, 255, 0.62);
-}
-
+   上の color 指定に(class 1つでは)勝てないため、ここで確実に上書きする */
 .site-footer p.mz-footer-col-head {
   color: var(--amber-bright);
 }
@@ -1212,13 +1184,16 @@ a.calendar-ev-topline-creator-name-link:hover {
   text-decoration: underline;
 }
 
+/* スマホは3列だと「プライバシーポリシー」等の長いリンクが窮屈なため1列に積む */
 @media (max-width: 720px) {
-  .mz-footer-grid {
-    grid-template-columns: 1fr 1fr;
+  .site-footer .mz-footer-grid {
+    grid-template-columns: 1fr;
+    max-width: 320px;
+    text-align: center;
   }
 
-  .mz-footer-brand {
-    grid-column: 1 / -1;
+  .mz-footer-col {
+    align-items: center;
   }
 }
 
