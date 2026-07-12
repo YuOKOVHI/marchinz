@@ -427,7 +427,23 @@
       }
     }
 
-    if (videoCount || ytRows.length || latest) showHeroDash();
+    // 最新の note 記事(両アカウント混合の先頭)。データは marchinz-notes.inline.js
+    var note = (Array.isArray(window.__MARCHINZ_NOTES) ? window.__MARCHINZ_NOTES : [])
+      .slice()
+      .sort(function (a, b) { return parseDate(b.pubDate) - parseDate(a.pubDate); })[0];
+    if (note) {
+      var noteLink = document.getElementById("mz-dash-note");
+      var noteThumb = document.getElementById("mz-dash-note-thumb");
+      var noteTitle = document.getElementById("mz-dash-note-title");
+      if (noteLink && noteTitle) {
+        noteLink.href = note.url;
+        if (noteThumb && note.thumb) noteThumb.src = note.thumb;
+        noteTitle.textContent = note.title || "note";
+        noteLink.hidden = false;
+      }
+    }
+
+    if (videoCount || ytRows.length || latest || note) showHeroDash();
   }
 
   function renderDashCountdown(upcoming) {
