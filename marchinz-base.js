@@ -1950,15 +1950,11 @@
     return tunerSec;
   }
 
-  /** TOPブロック用の「練習記録(Days)への誘導」カードを返す(ツールは誰でも・記録はDaysで)。 */
+  /** TOPブロック用の「練習記録(Days)への誘導」カードを返す(ツールは誰でも・記録はDaysで)。
+   * v1.34.1: 説明文は削除し、CTAボタンのみのすっきりしたカードに。 */
   function buildTopGuide() {
     const guide = el("div", "mz-top-tools-guide");
     const loggedIn = Boolean(window.MLL_AUTH?.getUser?.()?.id);
-    const msg = el("p", "mz-top-tools-guide-msg");
-    msg.textContent = loggedIn
-      ? "今日の練習、そのまま記録に残しませんか?ストリークと目標が待っています。"
-      : "練習の記録・目標サポートは、無料登録で使える MarchinZ Days に。";
-    guide.appendChild(msg);
     const cta = document.createElement("a");
     cta.className = "mll-lp-btn mll-lp-btn--primary mz-top-tools-guide-btn";
     cta.href = loggedIn ? "#profile?tab=base" : "#signup";
