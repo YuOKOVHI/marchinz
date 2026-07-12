@@ -1139,6 +1139,14 @@ html.mz-youtube-embed-open {
   border: 1px solid transparent;
 }
 
+/* 管理者専用ナビ(管理/UGC)は JS が admin 判定するまで hidden 属性で隠れているが、
+   .site-nav-link / .site-mobile-drawer-nav-link の display 指定が UA の [hidden] を
+   打ち消し、認証確定前に一瞬見えてしまう(FOUC)。data-admin-only + hidden の間は
+   確実に隠す。admin 確定時は JS が hidden 属性を外すのでこのルールは外れ表示される。 */
+[data-admin-only][hidden] {
+  display: none !important;
+}
+
 .site-nav-link:hover {
   color: #fff;
   background: rgba(255, 255, 255, 0.12);
