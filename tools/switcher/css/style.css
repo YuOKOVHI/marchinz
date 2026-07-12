@@ -14,8 +14,14 @@ body { background: var(--bg); color: var(--tx); font-family: -apple-system, Blin
 /* ヘッダーは本体TOPと同じクリーム地+ネイビー文字 */
 .topbar { display: flex; align-items: center; justify-content: space-between; padding: 10px 18px;
   background: var(--cream); border-bottom: 1px solid var(--line); }
-.brand { font-size: 18px; color: var(--navy); }
-.brand-sub { color: var(--tx2); font-size: 12px; margin-left: 8px; }
+/* MarchinZ本体のロゴを先頭に置き、あくまでMarchinZページ内であることを示す */
+.head-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.mz-home { display: inline-flex; align-items: center; flex-shrink: 0; }
+.mz-logo { height: 34px; width: auto; display: block; }
+.tool-name {
+  display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 700;
+  color: var(--navy); white-space: nowrap; padding-left: 10px; border-left: 1px solid var(--line);
+}
 .caps-badge { font-size: 12px; color: var(--tx2); background: #fff; border: 1px solid var(--line); padding: 4px 10px; border-radius: 20px; }
 
 /* MarchinZ 統合(ベータ版バッジ+戻るリンク)。バッジは本体 .mz-ctools-beta と同配色 */
@@ -126,6 +132,37 @@ body { background: var(--bg); color: var(--tx); font-family: -apple-system, Blin
 
 .empty-slot-label { color: var(--tx2); }
 
+/* ============ 最初の選択フェーズ(つくる動画を選ぶ) ============ */
+/* display:flex は UA の [hidden]=display:none を打ち消すため明示的に殺す */
+.mode-select[hidden] { display: none; }
+.mode-select { display: flex; justify-content: center; padding: 32px 16px; }
+.mode-inner { width: 100%; max-width: 720px; text-align: center; }
+.mode-title { font-size: 22px; font-weight: 700; color: var(--navy); }
+.mode-lead { font-size: 13px; color: var(--tx2); margin-top: 6px; margin-bottom: 22px; }
+.mode-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.mode-card {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 8px; text-align: left;
+  padding: 22px 20px; background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+  box-shadow: var(--shadow-card); cursor: pointer; font-family: inherit; transition: .15s;
+}
+.mode-card:hover { border-color: var(--acc); transform: translateY(-2px); box-shadow: 0 6px 22px rgba(15,33,56,.12); }
+.mode-card-icon {
+  width: 52px; height: 52px; display: flex; align-items: center; justify-content: center;
+  border-radius: 14px; background: #e8f1fe; color: var(--acc); margin-bottom: 4px;
+}
+.mode-card-name { font-size: 16px; font-weight: 700; color: var(--navy); }
+.mode-card-desc { font-size: 12.5px; color: var(--tx2); line-height: 1.6; }
+
+.mode-back-bar { display: flex; align-items: center; gap: 12px; padding: 12px 18px 0; }
+.mode-back { background: none; border: none; color: var(--acc); font-size: 13px; cursor: pointer; font-family: inherit; padding: 4px 0; }
+.mode-back:hover { color: var(--acc-deep); text-decoration: underline; }
+.mode-current { font-size: 12px; color: var(--tx2); font-weight: 700; }
+
+@media (max-width: 560px) {
+  .mode-cards { grid-template-columns: 1fr; }
+  .mode-select { padding: 24px 12px; }
+}
+
 /* ============ タイムライン(スイッチング/ワイプ) ============ */
 .timeline-wrap { width: 100%; max-width: 720px; }
 .tl-strip { position: relative; height: 44px; background: var(--panel2); border: 1px solid var(--line);
@@ -149,7 +186,8 @@ body { background: var(--bg); color: var(--tx); font-family: -apple-system, Blin
   .side { width: 100%; }
   #cv { max-height: 52vh; }
   .topbar { padding: 8px 12px; }
-  .brand-sub { display: none; }
+  .mz-logo { height: 28px; }
+  .tool-name { font-size: 13px; padding-left: 8px; }
   .btn { padding: 11px 16px; }
   .btn.small { padding: 8px 12px; font-size: 12px; }
   .btn.round { width: 52px; height: 52px; }

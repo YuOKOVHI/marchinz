@@ -188,9 +188,37 @@ MC.ui.updateTransport = () => {
   MC.timeline.updateHead();
 };
 
+/* --- 最初のモード選択(縦型作成 / 自動スイッチング) --- */
+MC.ui.MODES = {
+  vertical: { preset: "9x16", layoutId: "v2",     label: "縦型動画" },
+  switch:   { preset: "16x9", layoutId: "switch", label: "自動スイッチング動画" },
+};
+
+MC.ui.chooseMode = (mode, { silent = false } = {}) => {
+  const m = MC.ui.MODES[mode] || MC.ui.MODES.vertical;
+  MC.S.mode = mode;
+  if (!silent) { MC.S.preset = m.preset; MC.S.layoutId = m.layoutId; MC.saveState(); }
+  MC.ui.$("#modeSelect").hidden = true;
+  MC.ui.$("#workspace").hidden = false;
+  const lbl = MC.ui.$("#modeLabel");
+  if (lbl) lbl.textContent = m.label;
+  MC.preview.applyPreset();
+  MC.ui.renderAll();
+};
+
+MC.ui.showModeSelect = () => {
+  MC.ui.$("#workspace").hidden = true;
+  MC.ui.$("#modeSelect").hidden = false;
+};
+
 /* --- イベント配線 --- */
 MC.ui.wire = () => {
   const $ = MC.ui.$;
+
+  document.querySelectorAll(".mode-card").forEach(card =>
+    card.onclick = () => MC.ui.chooseMode(card.dataset.mode));
+  $("#modeBackBtn").onclick = () => MC.ui.showModeSelect();
+
   const dz = $("#dropZone"), fi = $("#fileInput");
   dz.onclick = () => fi.click();
   fi.onchange = () => { MC.media.addFiles([...fi.files]); fi.value = ""; };

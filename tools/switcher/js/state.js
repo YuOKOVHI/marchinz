@@ -4,6 +4,7 @@
 window.MC = {
   S: {
     clips: [],            // Clipオブジェクト(media.js参照)
+    mode: null,           // 最初の選択(vertical=縦型 / switch=自動スイッチング)
     layoutId: "v2",
     preset: "9x16",
     audioClipId: null,    // 書き出し/再生に使う音声のクリップ

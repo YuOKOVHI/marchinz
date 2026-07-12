@@ -8,13 +8,52 @@
 </head>
 <body>
 <header class="topbar">
-  <div class="brand"><b>MarchinZ Switcher</b> <span class="beta-badge">ベータ版</span> <span class="brand-sub">ランスルー同期・自動スイッチング</span></div>
+  <div class="head-left">
+    <a href="/#top" class="mz-home" aria-label="MarchinZ ホームへ">
+      <img src="/logo/marchinz-logo.png" alt="MarchinZ / マーチンズ" class="mz-logo" width="150" decoding="async">
+    </a>
+    <span class="tool-name">Switcher<span class="beta-badge">ベータ版</span></span>
+  </div>
   <div class="head-right">
     <div id="capsBadge" class="caps-badge">対応確認中…</div>
-    <a href="/#creators" class="back-link">← MarchinZへ</a>
+    <a href="/#creators" class="back-link">← 戻る</a>
   </div>
 </header>
 
+<section id="modeSelect" class="mode-select">
+  <div class="mode-inner">
+    <h2 class="mode-title">つくる動画を選ぶ</h2>
+    <p class="mode-lead">あとから細かく調整できます</p>
+    <div class="mode-cards">
+      <button type="button" class="mode-card" data-mode="vertical">
+        <span class="mode-card-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="7" y="2.5" width="10" height="19" rx="2.5"></rect>
+            <line x1="7" y1="12" x2="17" y2="12"></line>
+          </svg>
+        </span>
+        <span class="mode-card-name">縦型動画作成</span>
+        <span class="mode-card-desc">みんなで撮ったランスルー動画を、自動で同期！</span>
+      </button>
+      <button type="button" class="mode-card" data-mode="switch">
+        <span class="mode-card-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2.5" y="5" width="19" height="14" rx="2"></rect>
+            <rect x="13.5" y="12" width="6" height="5" rx="1"></rect>
+          </svg>
+        </span>
+        <span class="mode-card-name">自動スイッチング動画</span>
+        <span class="mode-card-desc">横型動画で、自動で複数カメラをスイッチング、またはワイプ表示！</span>
+      </button>
+    </div>
+  </div>
+</section>
+
+<div id="workspace" hidden>
+<div class="mode-back-bar">
+  <button type="button" id="modeBackBtn" class="mode-back">← つくる動画を選び直す</button>
+  <span id="modeLabel" class="mode-current"></span>
+</div>
 <main class="wrap">
   <aside class="side">
 
@@ -137,6 +176,7 @@
     </div>
   </section>
 </main>
+</div><!-- /#workspace -->
 
 <div id="toast" class="toast"></div>
 

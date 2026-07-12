@@ -36,6 +36,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   // 自動テストモード: ?test で test_clips.json のクリップを読み込む
   if (new URLSearchParams(location.search).has("test")) {
     MC.testMode = true;
+    MC.ui.chooseMode("switch", { silent: true });  // モード選択をスキップ
     try {
       const list = await (await fetch("test_clips.json")).json();
       const files = [];
