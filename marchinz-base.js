@@ -1835,6 +1835,7 @@
       metroBtn.textContent = "⏸ ストップ";
       metroBtn.classList.add("mz-base-tool-toggle--on");
       metroRafId = requestAnimationFrame(metroDraw);
+      void window.MarchinZAdminUgcLog?.recordToolUse?.({ toolId: "metronome", toolName: "メトロノーム", targetHref: "#top" });
     });
     metroSec.appendChild(metroBtn);
     return metroSec;
@@ -1945,6 +1946,7 @@
       tunerBtn.innerHTML = '<i class="fa-solid fa-stop" aria-hidden="true"></i> マイクをオフにする';
       tunerBtn.classList.add("mz-base-tool-toggle--on");
       tunerLoop();
+      void window.MarchinZAdminUgcLog?.recordToolUse?.({ toolId: "tuner", toolName: "チューナー", targetHref: "#top" });
     });
     tunerSec.appendChild(tunerBtn);
     return tunerSec;

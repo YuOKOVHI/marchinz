@@ -1101,8 +1101,16 @@ service cloud.firestore {
             'kind', 'action', 'actor_uid', 'actor_name', 'created_at', 'target_label', 'target_href',
             'public_id', 'event_kind', 'event_date', 'event_name', 'event_id',
             'post_id', 'thread_root_id', 'moment_id', 'note_event_id', 'list_id', 'log_id',
-            'search_query', 'share_channel'
+            'search_query', 'share_channel', 'tool_id'
           ];
+      }
+
+      // ツール利用(メトロノーム/チューナー/Privacy/Switcher)。ログイン不要ツールのためゲストも記録可
+      function adminUgcFeedToolUseOk() {
+        return request.resource.data.kind == 'tool_use'
+          && request.resource.data.action == 'create'
+          && request.resource.data.tool_id is string
+          && request.resource.data.tool_id in ['metronome', 'tuner', 'privacy', 'switcher'];
       }
 
       function adminUgcFeedSearchKindsOk() {
@@ -1123,7 +1131,7 @@ service cloud.firestore {
           && request.resource.data.kind is string
           && request.resource.data.kind in [
             'signup', 'event', 'moment', 'board', 'board_reply', 'note', 'mll_log', 'video_mylist', 'yt_mylist',
-            'video_search', 'search_share'
+            'video_search', 'search_share', 'tool_use'
           ]
           && request.resource.data.action is string
           && request.resource.data.action in ['create', 'delete']
@@ -1144,6 +1152,10 @@ service cloud.firestore {
           && (
             !(request.resource.data.kind in ['video_search', 'search_share'])
             || adminUgcFeedSearchKindsOk()
+          )
+          && (
+            request.resource.data.kind != 'tool_use'
+            || adminUgcFeedToolUseOk()
           );
       }
 
@@ -1190,11 +1202,31 @@ service cloud.firestore {
           && request.resource.data.target_href.size() <= 512;
       }
 
+      function adminUgcGuestToolUseCreateOk() {
+        return request.resource.data.keys().hasOnly([
+            'kind', 'action', 'actor_uid', 'actor_name', 'created_at', 'target_label', 'target_href', 'tool_id'
+          ])
+          && request.resource.data.kind == 'tool_use'
+          && request.resource.data.action == 'create'
+          && request.resource.data.actor_uid == 'mll_guest'
+          && request.resource.data.actor_name == 'ゲスト'
+          && request.resource.data.tool_id is string
+          && request.resource.data.tool_id in ['metronome', 'tuner', 'privacy', 'switcher']
+          && request.resource.data.created_at is string
+          && request.resource.data.created_at.size() > 0
+          && request.resource.data.created_at.size() <= 48
+          && request.resource.data.target_label is string
+          && request.resource.data.target_label.size() <= 80
+          && request.resource.data.target_href is string
+          && request.resource.data.target_href.size() <= 512;
+      }
+
       function adminUgcGuestFeedCreateOk() {
         return request.auth == null
           && (
             adminUgcGuestVideoSearchCreateOk()
             || adminUgcGuestSearchShareCreateOk()
+            || adminUgcGuestToolUseCreateOk()
           );
       }
 

@@ -131,13 +131,18 @@
   let lastVideoSearchAt = 0;
   const VIDEO_SEARCH_MIN_GAP_MS = 3000;
 
+  const TOOL_USE_IDS = ["metronome", "tuner", "privacy", "switcher"];
+  /** ページ滞在中に記録済みのツール(同一ツールの連打・再スタートを重複記録しない) */
+  const recordedToolUses = new Set();
+
   /** @param {Record<string, unknown>} raw @returns {Promise<boolean>} */
   async function record(raw) {
     const db = getDb();
     if (!db) return false;
     const kind = String(raw.kind || "").trim();
     if (!kind) return false;
-    const searchFeedKind = kind === "video_search" || kind === "search_share";
+    // ゲスト(未ログイン)でも記録できる種別: 検索系+ツール利用(ログイン不要ツールのため)
+    const searchFeedKind = kind === "video_search" || kind === "search_share" || kind === "tool_use";
     const actor = resolveActor(raw);
     if (!searchFeedKind && (actor.isGuest || !actor.uid)) return false;
     const actorName = await actorDisplayNameForRecord(raw, actor.uid, actor.isGuest);
@@ -165,6 +170,7 @@
       "search_query",
       "share_channel",
       "log_id",
+      "tool_id",
     ];
     for (const k of optKeys) {
       const v = String(raw[k] ?? "").trim();
@@ -358,6 +364,27 @@
         if (ok) lastVideoSearchAt = Date.now();
       });
     },
+    /**
+     * ツール利用の記録(メトロノーム/チューナー=開始時、Privacy/Switcher=カードから開いた時)。
+     * ログイン不要ツールのためゲストも記録可。同一ツールはページ滞在中1回だけ(連打スパム防止)。
+     * @param {{ toolId: "metronome"|"tuner"|"privacy"|"switcher"; toolName: string; targetHref?: string }} p
+     * @returns {Promise<boolean>}
+     */
+    recordToolUse(p) {
+      const toolId = String(p.toolId || "").trim();
+      const toolName = String(p.toolName || "").trim().slice(0, 80);
+      if (!TOOL_USE_IDS.includes(toolId) || !toolName) return Promise.resolve(false);
+      if (recordedToolUses.has(toolId)) return Promise.resolve(false);
+      recordedToolUses.add(toolId);
+      const href = String(p.targetHref || "#top").trim().slice(0, 512) || "#top";
+      return record({
+        kind: "tool_use",
+        action: "create",
+        tool_id: toolId,
+        target_label: toolName,
+        target_href: href,
+      });
+    },
     /** @param {{ query: string; channel: string; channelLabel?: string; targetHref?: string }} p */
     recordSearchShare(p) {
       const query = String(p.query || "").trim().slice(0, 200);
@@ -377,4 +404,32 @@
       });
     },
   };
+
+  // Privacy/Switcher: TOP・クリエイターページのカード(a.mz-ctool-card)から開いた時に記録。
+  // ツールページは別ページ(SPA外)のため、通常クリックは書き込み完了(最大500ms)を待ってから遷移する。
+  // cmd/ctrl+クリック等の新規タブ系は元ページが残る=書き込みが完走するので素通し。
+  document.addEventListener("click", (ev) => {
+    const a = ev.target instanceof Element ? ev.target.closest("a.mz-ctool-card") : null;
+    if (!(a instanceof HTMLAnchorElement)) return;
+    const href = a.getAttribute("href") || "";
+    const toolId = href.includes("/tools/privacy/")
+      ? "privacy"
+      : href.includes("/tools/switcher/")
+        ? "switcher"
+        : "";
+    if (!toolId) return;
+    const toolName = toolId === "privacy" ? "MarchinZ Privacy" : "MarchinZ Switcher";
+    const isPlainLeftClick =
+      ev.button === 0 && !ev.metaKey && !ev.ctrlKey && !ev.shiftKey && !ev.altKey;
+    if (!isPlainLeftClick || recordedToolUses.has(toolId)) {
+      void window.MarchinZAdminUgcLog.recordToolUse({ toolId, toolName, targetHref: href });
+      return;
+    }
+    ev.preventDefault();
+    const go = () => { window.location.href = href; };
+    Promise.race([
+      window.MarchinZAdminUgcLog.recordToolUse({ toolId, toolName, targetHref: href }),
+      new Promise((resolve) => setTimeout(resolve, 500)),
+    ]).then(go, go);
+  });
 })();

@@ -16,6 +16,7 @@
     "video_search",
     "search_share",
     "mll_log",
+    "tool_use",
   ]);
 
   const GUEST_ACTOR_UID = "mll_guest";
@@ -101,6 +102,9 @@
       const en = String(row.event_name || row.target_label || "イベント").trim() || "イベント";
       return ed ? `${ed}の${en}` : en;
     }
+    if (kind === "tool_use") {
+      return String(row.target_label || "ツール").trim() || "ツール";
+    }
     return String(row.target_label || "投稿").trim() || "投稿";
   }
 
@@ -125,6 +129,7 @@
     if (kind === "video_mylist") return "を作成しました";
     if (kind === "yt_mylist") return "を作成しました";
     if (kind === "mll_log") return "に MarchinZ Log を残しました";
+    if (kind === "tool_use") return "を使いました";
     return "しました";
   }
 
@@ -420,12 +425,21 @@
         const targetLink = document.createElement("a");
         targetLink.className = "admin-ugc-target-link";
         const href = String(row.target_href || "#").trim() || "#";
-        targetLink.href = href.startsWith("#") ? href : `#${href}`;
+        // tool_use のツールページは "/tools/…"(ハッシュ外の別ページ)なのでそのまま遷移する
+        const isPagePath = href.startsWith("/");
+        targetLink.href = isPagePath || href.startsWith("#") ? href : `#${href}`;
         targetLink.textContent = targetPhrase(row);
         targetLink.addEventListener("click", (e) => {
           e.preventDefault();
           e.stopPropagation();
-          void markRead(fid).then(() => navigateHash(targetLink.getAttribute("href") || ""));
+          void markRead(fid).then(() => {
+            const h = targetLink.getAttribute("href") || "";
+            if (h.startsWith("/")) {
+              window.location.href = h;
+            } else {
+              navigateHash(h);
+            }
+          });
         });
         line.appendChild(targetLink);
         line.appendChild(document.createTextNode(suffixVerb(row)));
