@@ -358,7 +358,36 @@ MC.ui.renderFinish = () => {
   MC.ui.$("#colorStrengthRow").style.display = on ? "flex" : "none";
   MC.ui.$("#colorStrength").value = MC.S.colorStrength;
   MC.ui.$("#filterSelect").value = MC.S.filterId;
+
+  // 自動水平補正のマスターON/OFFトグル
+  const htoggle = MC.ui.$("#horizonToggle");
   const rows = MC.ui.$("#horizonRows");
+  if (htoggle) {
+    htoggle.checked = !!MC.S.horizonOn;
+    rows.style.display = MC.S.horizonOn ? "" : "none";
+    htoggle.onchange = async e => {
+      MC.S.horizonOn = e.target.checked;
+      MC.saveState();
+      if (MC.S.horizonOn) {
+        // ONにしたら未設定(rot=0)のスロットを一括で自動検出。手動調整済みの値は温存。
+        htoggle.disabled = true;
+        MC.ui.$("#finishStatus").textContent = "水平の傾きを自動検出中…";
+        try {
+          for (const c of MC.S.clips) {
+            if (c.rot) continue;
+            try { const sug = await MC.horizon.suggest(c); if (sug != null && sug !== 0) c.rot = sug; } catch (_) { /* noop */ }
+          }
+        } finally { htoggle.disabled = false; }
+        MC.ui.$("#finishStatus").textContent = "自動水平補正: ON";
+        MC.saveState();
+      } else {
+        MC.ui.$("#finishStatus").textContent = "自動水平補正: OFF";
+      }
+      MC.ui.renderFinish();
+      MC.preview.draw();
+    };
+  }
+
   rows.innerHTML = "";
   for (const c of MC.S.clips) {
     const div = document.createElement("div");

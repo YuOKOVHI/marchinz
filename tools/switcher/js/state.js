@@ -19,6 +19,7 @@ window.MC = {
     wipePos: "br", wipeSize: 0.32,
     /* Phase 3: 仕上げ */
     colorOn: false, colorStrength: 0.8,
+    horizonOn: false,     // 自動水平補正のマスターON/OFF(仕上げ)
     filterId: "none",
   },
   caps: { h264: false, aac: false },

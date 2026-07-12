@@ -64,7 +64,7 @@ MC.drawSource = (ctx, src, rx, ry, rw, rh, pan = 0.5) => {
 MC.prepSrc = (clip, src) => {
   if (!src) return null;
   if (MC.color && MC.color.active(clip)) src = MC.color.process(clip, src);
-  if (clip.rot) src = Object.assign({}, src, { fineRot: clip.rot * Math.PI / 180 });
+  if (MC.S.horizonOn && clip.rot) src = Object.assign({}, src, { fineRot: clip.rot * Math.PI / 180 });
   return src;
 };
 
