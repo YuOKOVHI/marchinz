@@ -101,6 +101,27 @@ matchKey で `mll_calendar_events` が 0 件の Log は **更新しません**�
 2. https://marchinz.netlify.app マイページ → MarchinZ Log（件数・重複行）
 3. 問題があれば Firebase エクスポートから復元
 
+## section_vis_mll バックフィル（v1.35.1+）
+
+`mll_logs` 読み取りルールの section_vis_mll チェックを `get(mll_profiles)` から
+`resource.data.section_vis_mll`（非正規化フィールド）参照に変更した（public feed クエリが
+get()/exists() 上限(10回)を超えて permission-denied になる問題の修正）。既存ログにはこの
+フィールドが無いため、`mll_profiles` の現在値を一括コピーする。
+
+```bash
+cd scripts
+node backfill-mll-section-vis.mjs --dry-run
+node backfill-mll-section-vis.mjs --dry-run --user-id=YOUR_FIREBASE_AUTH_UID
+node backfill-mll-section-vis.mjs
+```
+
+### 本番デプロイ順
+
+1. `cd firebase && firebase deploy --only firestore:rules`
+2. `node backfill-mll-section-vis.mjs --dry-run` で確認
+3. `node backfill-mll-section-vis.mjs` 本番実行
+4. Netlify へサイト JS（mll-role.js / user-profile-page.js）をデプロイ
+
 ## 関連
 
 - `repair-mll-log-roles.mjs` — role / role_label 補正（別スクリプト）

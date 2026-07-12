@@ -191,15 +191,7 @@ service cloud.firestore {
     }
 
     // プロフィール上の各タブ（mll_profiles の section_vis_*、未設定は公開）
-    function sectionMllPublic(uid) {
-      return profileOwnerActiveForPublicContent(uid)
-        && (
-          !exists(/databases/$(database)/documents/mll_profiles/$(uid))
-          || !get(/databases/$(database)/documents/mll_profiles/$(uid)).data.keys().hasAny(['section_vis_mll'])
-          || get(/databases/$(database)/documents/mll_profiles/$(uid)).data.section_vis_mll == 'public'
-        );
-    }
-
+    // mll_logs の section_vis_mll は上の mllLogSectionVisPublic() で非正規化フィールドとして参照する
     function sectionVideosPublic(uid) {
       return profileOwnerActiveForPublicContent(uid)
         && (
@@ -1841,17 +1833,32 @@ service cloud.firestore {
       }
     }
 
+    // section_vis_mll は mll_profiles の設定をログ作成/更新時・トグル変更時に複製した非正規化フィールド
+    // （プロフィール設定を都度 get() すると public feed クエリ(where visibility==public で複数件取得)が
+    // ドキュメントごとに get() を消費し、クエリ1回あたりの get()/exists() 上限(10回)を超えて
+    // permission-denied になるため。resource 自身のフィールドを見るだけなら get() は発生しない）
+    function mllLogSectionVisPublic() {
+      return !resource.data.keys().hasAny(['section_vis_mll'])
+        || resource.data.section_vis_mll == 'public';
+    }
+
     match /mll_logs/{logId} {
-      // 本人は非公開含め常に読める。それ以外は「MLL タブ公開かつドキュメントが公開」のみ（未ログインでも公開ログは読める）
+      // 本人は非公開含め常に読める。それ以外は「ドキュメントが公開」かつ「MLLタブが公開」のみ（未ログインでも公開ログは読める）
+      // user_idガードをOR全体の外側に置くと、Firestoreがlistクエリ(where visibility==public)を
+      // 「クエリのフィルタだけでは規則を満たせる保証がない」と判定し、permission-deniedで拒否する
+      // （本番実測で確認・v1.35.2）。ガードが不要なpublic分岐には適用せず、self-read/admin分岐の
+      // 内側だけに限定することで、public分岐がクエリフィルタのみで証明可能な形を保つ。
+      function mllLogUserIdGuardOk() {
+        return resource.data.keys().hasAny(['user_id'])
+          && resource.data.user_id is string
+          && resource.data.user_id.size() >= 8
+          && resource.data.user_id.size() <= 128;
+      }
       allow read: if resource != null
-        && resource.data.keys().hasAny(['user_id'])
-        && resource.data.user_id is string
-        && resource.data.user_id.size() >= 8
-        && resource.data.user_id.size() <= 128
         && (
-          (signedIn() && resource.data.user_id == request.auth.uid)
-          || (mllLogDocIsPublic() && sectionMllPublic(resource.data.user_id))
-          || (isPrivileged() && requesterProfileNotBanned())
+          (signedIn() && mllLogUserIdGuardOk() && resource.data.user_id == request.auth.uid)
+          || (mllLogDocIsPublic() && mllLogSectionVisPublic())
+          || (isPrivileged() && mllLogUserIdGuardOk() && requesterProfileNotBanned())
         );
 
       allow create: if signedIn()
@@ -1860,6 +1867,10 @@ service cloud.firestore {
         && (
           !request.resource.data.keys().hasAny(['visibility'])
           || request.resource.data.visibility in ['public', 'private']
+        )
+        && (
+          !request.resource.data.keys().hasAny(['section_vis_mll'])
+          || request.resource.data.section_vis_mll in ['public', 'private']
         );
       allow update: if signedIn()
         && requesterCanAct()
@@ -1870,6 +1881,10 @@ service cloud.firestore {
             && (
               !request.resource.data.keys().hasAny(['visibility'])
               || request.resource.data.visibility in ['public', 'private']
+            )
+            && (
+              !request.resource.data.keys().hasAny(['section_vis_mll'])
+              || request.resource.data.section_vis_mll in ['public', 'private']
             )
           )
           || isMllLogLikeOnlyPatch()

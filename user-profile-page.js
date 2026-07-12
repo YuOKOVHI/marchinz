@@ -342,6 +342,27 @@
     }
   }
 
+  /**
+   * mll_logs.section_vis_mll は mll_profiles の非正規化コピー（Firestore rules の list クエリ get() 上限回避のため）。
+   * トグル変更時は本人の全ログへ同期する。
+   * @param {import('firebase').firestore.Firestore} db
+   * @param {string} uid
+   * @param {"public"|"private"} next
+   */
+  async function syncMllLogsSectionVis(db, uid, next) {
+    const snap = await db.collection("mll_logs").where("user_id", "==", uid).get();
+    const docs = [];
+    snap.forEach((d) => docs.push(d));
+    const CHUNK = 400;
+    for (let i = 0; i < docs.length; i += CHUNK) {
+      const batch = db.batch();
+      for (const d of docs.slice(i, i + CHUNK)) {
+        batch.update(d.ref, { section_vis_mll: next });
+      }
+      await batch.commit();
+    }
+  }
+
   /** @param {"public"|"private"} currentVis */
   async function toggleMllSectionVisibility(currentVis) {
     const next = currentVis === "public" ? "private" : "public";
@@ -355,6 +376,11 @@
         section_vis_mll: next,
         updated_at: new Date().toISOString(),
       });
+      try {
+        await syncMllLogsSectionVis(db, uid, next);
+      } catch (e) {
+        console.warn("[user-profile-page] syncMllLogsSectionVis", e);
+      }
       renderMllSectionVisControls(next, true);
       void loadAndRender().catch(() => {});
     } catch (e) {

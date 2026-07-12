@@ -519,6 +519,21 @@
     }
   }
 
+  /**
+   * mll_profiles の MLL タブ公開設定を読む（非正規化: mll_logs.section_vis_mll へ複製する用）
+   * @param {import('firebase').firestore.Firestore} db
+   * @param {string} uid
+   */
+  async function readMllSectionVisFromProfile(db, uid) {
+    try {
+      const snap = await db.collection("mll_profiles").doc(uid).get();
+      const v = String(snap?.data()?.section_vis_mll || "").trim();
+      return v === "private" ? "private" : "public";
+    } catch {
+      return "public";
+    }
+  }
+
   async function syncUserInvolvementForCalendar(db, user, eventId, ev, participationValue) {
     const uid = String(user?.id || "").trim();
     const eid = String(eventId || "").trim();
@@ -541,6 +556,7 @@
       eventName: ev?.title,
       venue: ev?.venue_pref,
     });
+    const sectionVisMll = await readMllSectionVisFromProfile(db, uid);
     const logPayload = {
       user_id: uid,
       event_name: String(ev?.title || "").trim(),
@@ -552,6 +568,7 @@
       note: "",
       ticket_url: "",
       visibility: "public",
+      section_vis_mll: sectionVisMll,
       created_at: existing?.data?.created_at || nowIso,
       updated_at: nowIso,
       liked_by:
