@@ -9,6 +9,7 @@
 
   var FRESH_LIMIT = 4;
   var YT_LIMIT = 4;
+  var NOTE_TOP_LIMIT = 4;
 
   function extractVideoId(url) {
     if (!url) return null;
@@ -152,6 +153,32 @@
     if (section) section.hidden = false;
   }
 
+  function renderTopNotes() {
+    var grid = document.getElementById("mz-top-note-grid");
+    var notes = window.__MARCHINZ_NOTES;
+    if (!grid || !Array.isArray(notes) || !notes.length) return;
+    var items = notes
+      .slice()
+      .sort(function (a, b) { return parseDate(b.pubDate) - parseDate(a.pubDate); })
+      .slice(0, NOTE_TOP_LIMIT);
+    if (!items.length) return;
+    grid.replaceChildren();
+    items.forEach(function (n) {
+      grid.appendChild(
+        buildVideoCard({
+          url: n.url,
+          thumb: n.thumb,
+          title: n.title || "note",
+          channelName: n.accountLabel || "",
+          meta: daysAgoLabel(parseDate(n.pubDate)),
+        })
+      );
+    });
+    grid.hidden = false;
+    var section = grid.closest("[data-mz-top-section]");
+    if (section) section.hidden = false;
+  }
+
   function renderMediaNotes() {
     var grid = document.getElementById("mz-media-note-grid");
     var notes = window.__MARCHINZ_NOTES;
@@ -191,7 +218,7 @@
     if (section) section.hidden = false;
   }
 
-  var EVENTS_LIMIT = 6;
+  var EVENTS_LIMIT = 8;
   var MONTHS = ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月"];
 
   function eventKindSlug(kind) {
@@ -555,6 +582,7 @@
       renderDigest();
       renderFreshVideos();
       renderYoutubeFresh();
+      renderTopNotes();
       renderMediaNotes();
       loadUpcomingEvents();
       // 練習ツール(メトロノーム/チューナー)ブロック。ログイン不要(v1.34)
