@@ -1,15 +1,33 @@
+/* MarchinZ 本体・他クリエイターツール(Privacy/Switcher)と同一トークンでライト統一 */
 :root {
-  --bg: #0f1116;
-  --card: #171a21;
-  --line: #262b36;
-  --fg: #e8eaf0;
-  --sub: #8b93a5;
-  --accent: #4da3ff;
-  --accent-dark: #2f7fd6;
+  --bg: #f4f6f8;
+  --card: #ffffff;
+  --line: rgba(15, 33, 56, 0.12);
+  --fg: #0c0f14;
+  --sub: rgba(12, 15, 20, 0.55);
+  --navy: #0f2138;
+  --accent: #1e4fd6;
+  --accent-dark: #163b9e;
+  --ok: #1e7a43;
+  --shadow-card: 0 1px 2px rgba(15, 33, 56, 0.05), 0 4px 16px rgba(15, 33, 56, 0.06);
 }
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-html, body { background: var(--bg); color: var(--fg); font-family: -apple-system, "Hiragino Sans", sans-serif; }
-body { min-height: 100dvh; display: flex; flex-direction: column; }
+html { background: #eef1f5; }
+html, body { color: var(--fg); font-family: -apple-system, "Hiragino Sans", sans-serif; }
+body { min-height: 100dvh; display: flex; flex-direction: column; background: transparent; }
+
+/* 3ツール共通: キービジュアルの上に白い透明を重ねた背景(iOS配慮でposition:fixed) */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: linear-gradient(rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.88)), url("/images/lp/hero-show.png");
+  background-size: cover;
+  background-position: center top;
+  background-repeat: no-repeat;
+}
 
 /* MarchinZ 標準ヘッダ(Switcher/Privacy と同一・本体白基調)。
    本文はダークテーマのため、ヘッダのみ実色で自己完結させる(reangleの--line等と混ざらないよう変数不使用) */
@@ -47,7 +65,7 @@ body { min-height: 100dvh; display: flex; flex-direction: column; }
 main { flex: 1; width: 100%; max-width: 640px; margin: 0 auto; padding: 16px; }
 .card {
   background: var(--card); border: 1px solid var(--line); border-radius: 16px;
-  padding: 16px; margin-bottom: 14px;
+  padding: 16px; margin-bottom: 14px; box-shadow: var(--shadow-card);
 }
 
 /* ① 選択 */
@@ -56,9 +74,10 @@ main { flex: 1; width: 100%; max-width: 640px; margin: 0 auto; padding: 16px; }
 .drop-title { font-size: 15px; margin-bottom: 20px; line-height: 1.6; }
 .big-btn {
   display: block; width: 100%; padding: 16px; font-size: 17px; font-weight: 700;
-  color: #fff; background: var(--accent-dark); border: none; border-radius: 12px;
+  color: #fff; background: var(--accent); border: none; border-radius: 12px;
   cursor: pointer;
 }
+.big-btn:hover { background: var(--accent-dark); }
 .big-btn:disabled { opacity: 0.5; }
 .note { font-size: 12px; color: var(--sub); margin-top: 12px; line-height: 1.7; }
 
@@ -72,7 +91,7 @@ main { flex: 1; width: 100%; max-width: 640px; margin: 0 auto; padding: 16px; }
 .hidden-video { position: fixed; width: 2px; height: 2px; opacity: 0; pointer-events: none; left: -10px; top: -10px; }
 .transport { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
 .mini-btn {
-  background: var(--line); color: var(--fg); border: none; border-radius: 8px;
+  background: #fff; color: var(--navy); border: 1px solid var(--line); border-radius: 8px;
   padding: 8px 12px; font-size: 13px; cursor: pointer; white-space: nowrap;
 }
 .mini-btn.compare { user-select: none; -webkit-user-select: none; touch-action: none; }
@@ -118,14 +137,14 @@ select {
 #progressBar { height: 100%; width: 0; background: var(--accent); transition: width 0.2s; }
 #progressWrap { text-align: center; }
 #progressWrap .text-btn { margin-top: 10px; }
-.done { font-size: 14px; margin-top: 14px; color: #7ed99a; line-height: 1.6; word-break: break-all; }
+.done { font-size: 14px; margin-top: 14px; color: var(--ok); line-height: 1.6; word-break: break-all; }
 #saveBtn { margin: 14px 0 10px; }
 
 footer { text-align: center; padding: 16px calc(16px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)); font-size: 11px; color: var(--sub); }
 
 #toast {
   position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%) translateY(20px);
-  background: #262b36; color: var(--fg); font-size: 13px; padding: 10px 18px;
+  background: #262b36; color: #fff; font-size: 13px; padding: 10px 18px;
   border-radius: 999px; opacity: 0; pointer-events: none; transition: all 0.25s;
   max-width: 90vw; text-align: center;
 }

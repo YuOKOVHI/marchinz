@@ -3037,19 +3037,41 @@ body {
 
 .mz-base-bpm-unit { font-size: 0.8rem; font-weight: 700; color: var(--muted); }
 
-.mz-base-beat-dots { display: flex; gap: 0.5rem; justify-content: center; margin: 0.55rem 0; min-height: 14px; }
+.mz-base-beat-dots { display: flex; gap: 0.25rem; justify-content: center; margin: 0.3rem 0; min-height: 30px; }
+.mz-base-accent-hint { font-size: 0.72rem; color: var(--muted); white-space: nowrap; }
 
+/* 拍ドット: タップでアクセント設定。視覚は14pxだが当たり判定は30pxに広げる */
 .mz-base-dot {
-  width: 12px;
-  height: 12px;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
   border-radius: 50%;
-  background: rgba(15, 33, 56, 0.15);
-  transition: background 0.08s ease, transform 0.08s ease;
+  background: transparent;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.mz-base-dot--hit { background: var(--blue); transform: scale(1.25); }
+.mz-base-dot::before {
+  content: "";
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: rgba(15, 33, 56, 0.15);
+  transition: background 0.08s ease, transform 0.08s ease, box-shadow 0.08s ease;
+}
 
-.mz-base-dot--accent { background: var(--amber-bright); }
+/* 常設アクセント(ユーザー設定) */
+.mz-base-dot--acc::before { background: var(--amber-bright); box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.22); }
+
+/* 再生中の現在拍 */
+.mz-base-dot--hit::before { background: var(--blue); transform: scale(1.25); }
+
+/* 再生中かつアクセント拍 */
+.mz-base-dot--accent::before { background: var(--amber-bright); }
 
 .mz-base-bpm-slider { width: 100%; accent-color: var(--blue); margin: 0.35rem 0; }
 

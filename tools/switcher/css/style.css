@@ -9,7 +9,21 @@
   --cream: #fefcef;
   --shadow-card: 0 1px 2px rgba(15, 33, 56, 0.05), 0 4px 16px rgba(15, 33, 56, 0.06);
 }
-body { background: var(--bg); color: var(--tx); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", Meiryo, sans-serif; font-size: 14px; }
+html { background: #eef1f5; }
+body { background: transparent; color: var(--tx); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", Meiryo, sans-serif; font-size: 14px; }
+
+/* 3ツール共通: キービジュアルの上に白い透明を重ねた背景(iOS配慮でposition:fixed) */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: linear-gradient(rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.88)), url("/images/lp/hero-show.png");
+  background-size: cover;
+  background-position: center top;
+  background-repeat: no-repeat;
+}
 
 /* ヘッダーは本体TOPと同じクリーム地+ネイビー文字 */
 .topbar { display: flex; align-items: center; justify-content: space-between; padding: 10px 18px;

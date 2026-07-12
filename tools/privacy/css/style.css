@@ -14,8 +14,22 @@
   --shadow-card: 0 1px 2px rgba(15, 33, 56, 0.05), 0 4px 16px rgba(15, 33, 56, 0.06);
 }
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-html, body { background: var(--bg); color: var(--fg); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", Meiryo, sans-serif; }
-body { min-height: 100dvh; display: flex; flex-direction: column; }
+html { background: #eef1f5; }
+html, body { color: var(--fg); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", Meiryo, sans-serif; }
+body { min-height: 100dvh; display: flex; flex-direction: column; background: transparent; }
+
+/* 3ツール共通: キービジュアルの上に白い透明を重ねた背景(iOS配慮でposition:fixed) */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: linear-gradient(rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.88)), url("/images/lp/hero-show.png");
+  background-size: cover;
+  background-position: center top;
+  background-repeat: no-repeat;
+}
 
 /* ヘッダーは本体TOPと同じクリーム地+ネイビー文字 */
 header {

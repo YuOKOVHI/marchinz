@@ -63,19 +63,29 @@
   let tunerRafId = 0;
   const toolsSettings = loadToolsSettings();
 
+  // アクセント配列を拍数ちょうどの長さに整える(不足はfalse、超過は切り捨て)
+  function normAccents(arr, beats) {
+    return Array.from({ length: beats }, (_, i) => !!(arr && arr[i]));
+  }
+
   function loadToolsSettings() {
-    const def = { bpm: 120, beats: 4, accent: true, transpose: "C", presets: [] };
+    const def = { bpm: 120, beats: 4, accents: [true, false, false, false], transpose: "C", presets: [] };
     try {
       const raw = JSON.parse(localStorage.getItem(TOOLS_SETTINGS_KEY) || "{}");
+      const beats = Math.min(8, Math.max(2, Number(raw.beats) || def.beats));
+      // アクセント: 新形式(accents配列)を優先。旧形式(accent真偽=1拍目のみ)からは移行する
+      const rawAccents = Array.isArray(raw.accents)
+        ? raw.accents
+        : [raw.accent !== false];
       return {
-        bpm: Math.min(260, Math.max(30, Number(raw.bpm) || def.bpm)),
-        beats: Math.min(8, Math.max(2, Number(raw.beats) || def.beats)),
-        accent: raw.accent !== false,
+        bpm: Math.min(400, Math.max(30, Number(raw.bpm) || def.bpm)),
+        beats,
+        accents: normAccents(rawAccents, beats),
         transpose: ["C", "B♭", "E♭", "F"].includes(raw.transpose) ? raw.transpose : def.transpose,
         // マイテンポプリセット(v1.34): BPM値を最大10個、ブラウザ(localStorage)に保存
         presets: (Array.isArray(raw.presets) ? raw.presets : [])
           .map((n) => Math.round(Number(n)))
-          .filter((n) => n >= 30 && n <= 260)
+          .filter((n) => n >= 30 && n <= 400)
           .slice(0, 10),
       };
     } catch {
@@ -1655,14 +1665,14 @@
     const slider = document.createElement("input");
     slider.type = "range";
     slider.min = "30";
-    slider.max = "260";
+    slider.max = "400";
     slider.value = String(toolsSettings.bpm);
     slider.className = "mz-base-bpm-slider";
     slider.setAttribute("aria-label", "テンポ(BPM)");
     metroSec.appendChild(slider);
 
     const setBpm = (v) => {
-      v = Math.min(260, Math.max(30, Math.round(v)));
+      v = Math.min(400, Math.max(30, Math.round(v)));
       toolsSettings.bpm = v;
       saveToolsSettings();
       bpmNum.textContent = String(v);
@@ -1706,29 +1716,33 @@
     beatsSel.value = String(toolsSettings.beats);
     beatsLabel.appendChild(beatsSel);
     beatRow.appendChild(beatsLabel);
-    const accentLabel = el("label", "mz-base-field mz-base-field--inline mz-base-accent-label");
-    const accentInput = document.createElement("input");
-    accentInput.type = "checkbox";
-    accentInput.checked = toolsSettings.accent;
-    accentLabel.appendChild(accentInput);
-    accentLabel.appendChild(document.createTextNode(" 1拍目アクセント"));
-    beatRow.appendChild(accentLabel);
+    beatRow.appendChild(el("span", "mz-base-accent-hint", "拍の丸をタップでアクセント"));
     metroSec.appendChild(beatRow);
 
+    // 拍ドット: タップで各拍のアクセントを自由に切り替え(1拍目以外もOK)
     const renderDots = () => {
       dots.replaceChildren();
-      for (let i = 0; i < toolsSettings.beats; i++) dots.appendChild(el("span", "mz-base-dot"));
+      for (let i = 0; i < toolsSettings.beats; i++) {
+        const dot = el("button", "mz-base-dot");
+        dot.type = "button";
+        dot.setAttribute("aria-label", `${i + 1}拍目のアクセント`);
+        dot.setAttribute("aria-pressed", toolsSettings.accents[i] ? "true" : "false");
+        if (toolsSettings.accents[i]) dot.classList.add("mz-base-dot--acc");
+        dot.addEventListener("click", () => {
+          toolsSettings.accents[i] = !toolsSettings.accents[i];
+          saveToolsSettings();
+          renderDots();
+        });
+        dots.appendChild(dot);
+      }
     };
     renderDots();
     beatsSel.addEventListener("change", () => {
       toolsSettings.beats = Number(beatsSel.value) || 4;
+      toolsSettings.accents = normAccents(toolsSettings.accents, toolsSettings.beats);
       saveToolsSettings();
       metroBeatIdx = 0;
       renderDots();
-    });
-    accentInput.addEventListener("change", () => {
-      toolsSettings.accent = accentInput.checked;
-      saveToolsSettings();
     });
 
     const presets = el("div", "mz-base-tool-chips");
@@ -1795,7 +1809,7 @@
     const metroScheduler = () => {
       if (!audioCtx) return;
       while (metroNextNote < audioCtx.currentTime + 0.1) {
-        const accent = toolsSettings.accent && metroBeatIdx === 0;
+        const accent = !!toolsSettings.accents[metroBeatIdx];
         metroClick(metroNextNote, accent);
         metroDrawQ.push({ time: metroNextNote, beat: metroBeatIdx, accent });
         metroNextNote += 60 / toolsSettings.bpm;
