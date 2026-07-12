@@ -343,7 +343,7 @@ MC.exporter.exportMP4 = async onProgress => {
     onProgress(1, "MP4を組み立て中…");
     muxer.finalize();
     const blob = new Blob([muxer.target.buffer], { type: "video/mp4" });
-    const name = `MarchCut_${MC.S.preset}_${new Date().toISOString().slice(0, 10)}.mp4`;
+    const name = `MarchinZ_Switcher_${MC.S.preset}_${new Date().toISOString().slice(0, 10)}.mp4`;
     MC.exporter.download(blob, name);
     MC.log(`export done: ${name} bytes=${blob.size} frames=${totalFrames} audio=${audioOk}`);
     return { blob, name };
@@ -391,7 +391,7 @@ MC.exporter.exportRealtime = async onProgress => {
   if (MC.exporter.cancelFlag) throw new Error("キャンセルしました");
   const isMp4 = mime.startsWith("video/mp4");
   const blob = new Blob(chunks, { type: isMp4 ? "video/mp4" : "video/webm" });
-  const name = `MarchCut_${MC.S.preset}_${new Date().toISOString().slice(0, 10)}.${isMp4 ? "mp4" : "webm"}`;
+  const name = `MarchinZ_Switcher_${MC.S.preset}_${new Date().toISOString().slice(0, 10)}.${isMp4 ? "mp4" : "webm"}`;
   MC.exporter.download(blob, name);
   return { blob, name };
 };

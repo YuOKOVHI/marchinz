@@ -195,6 +195,8 @@ body { background: var(--bg); color: var(--tx); font-family: -apple-system, Blin
   .dropzone { padding: 16px; }
   .transport, .trim-row { max-width: 100%; }
   input[type=range] { min-height: 32px; }  /* タッチしやすく */
+  /* iOS Safariはfont-size<16pxのselect/inputフォーカスでページをズームするため16px固定 */
+  .wrap select, .wrap input[type="number"] { font-size: 16px; }
 }
 /* iOSセーフエリア */
 @supports (padding: env(safe-area-inset-bottom)) {

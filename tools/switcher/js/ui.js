@@ -18,6 +18,10 @@ MC.ui.fmtTime = s => {
   return `${m}:${sec}`;
 };
 
+/* innerHTMLへ流し込むファイル名等のHTMLエスケープ(自己XSS防止) */
+MC.ui.esc = s => String(s).replace(/[&<>"']/g,
+  ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+
 MC.ui.renderAll = () => {
   MC.ui.renderClips();
   MC.ui.renderAudio();
@@ -42,7 +46,7 @@ MC.ui.renderClips = () => {
     card.innerHTML = `
       ${c.thumb ? `<img class="clip-thumb" src="${c.thumb}">` : `<div class="clip-thumb"></div>`}
       <div class="clip-info">
-        <div class="clip-name" title="${c.name}">${c.name}</div>
+        <div class="clip-name" title="${MC.ui.esc(c.name)}">${MC.ui.esc(c.name)}</div>
         <div class="clip-meta">${c.width}×${c.height}・${MC.ui.fmtTime(c.duration)}</div>
         <div class="clip-sync">
           <span class="sync-badge ${badgeCls}">${c.syncMethod}</span>
@@ -82,7 +86,7 @@ MC.ui.renderAudio = () => {
       : (c.hasAudio === false ? "音声なし" : "未解析");
     label.innerHTML = `
       <input type="radio" name="audioClip" ${MC.S.audioClipId === c.id ? "checked" : ""} ${c.hasAudio === false ? "disabled" : ""}>
-      <span>${c.name.length > 18 ? c.name.slice(0, 17) + "…" : c.name}</span>
+      <span>${MC.ui.esc(c.name.length > 18 ? c.name.slice(0, 17) + "…" : c.name)}</span>
       ${reco && reco.id === c.id ? `<span class="reco-badge">おすすめ</span>` : ""}
       <span class="audio-stat">${stat}</span>`;
     label.querySelector("input").onchange = () => {
@@ -122,7 +126,7 @@ MC.ui.renderLayout = () => {
   if (L.type === "wipe") {
     const ws = MC.ui.$("#wipeCamSelect");
     ws.innerHTML = MC.S.clips.map(c =>
-      `<option value="${c.id}" ${MC.S.wipeClipId === c.id ? "selected" : ""}>${c.name.slice(0, 12)}</option>`).join("");
+      `<option value="${c.id}" ${MC.S.wipeClipId === c.id ? "selected" : ""}>${MC.ui.esc(c.name.slice(0, 12))}</option>`).join("");
     MC.ui.$("#wipePosSelect").value = MC.S.wipePos;
     MC.ui.$("#wipeSizeRange").value = MC.S.wipeSize;
   }
@@ -137,7 +141,7 @@ MC.ui.renderLayout = () => {
     div.innerHTML = `<label>カメラ ${i + 1}</label>`;
     const s = document.createElement("select");
     s.innerHTML = `<option value="">（なし）</option>` +
-      MC.S.clips.map(c => `<option value="${c.id}" ${MC.S.slots[i] === c.id ? "selected" : ""}>${c.name}</option>`).join("");
+      MC.S.clips.map(c => `<option value="${c.id}" ${MC.S.slots[i] === c.id ? "selected" : ""}>${MC.ui.esc(c.name)}</option>`).join("");
     s.onchange = () => { MC.S.slots[i] = s.value ? parseInt(s.value) : null; MC.saveState(); };
     div.appendChild(s);
     rows.appendChild(div);
@@ -207,6 +211,7 @@ MC.ui.chooseMode = (mode, { silent = false } = {}) => {
 };
 
 MC.ui.showModeSelect = () => {
+  MC.preview.pause();  // 選択画面の裏で音が鳴り続けないように
   MC.ui.$("#workspace").hidden = true;
   MC.ui.$("#modeSelect").hidden = false;
 };
@@ -359,7 +364,7 @@ MC.ui.renderFinish = () => {
     const div = document.createElement("div");
     div.className = "slot-row";
     div.innerHTML = `
-      <label title="${c.name}">${c.name.length > 8 ? c.name.slice(0, 7) + "…" : c.name}</label>
+      <label title="${MC.ui.esc(c.name)}">${MC.ui.esc(c.name.length > 8 ? c.name.slice(0, 7) + "…" : c.name)}</label>
       <input type="range" class="hrot" min="-5" max="5" step="0.1" value="${c.rot || 0}" style="flex:1; accent-color:var(--acc)">
       <span class="hval hint" style="width:44px; text-align:right">${(c.rot || 0).toFixed(1)}°</span>
       <button class="btn small hauto" title="傾きを自動検出">📐</button>`;
