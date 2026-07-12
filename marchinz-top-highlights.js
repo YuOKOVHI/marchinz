@@ -152,6 +152,28 @@
     if (section) section.hidden = false;
   }
 
+  function renderMediaNotes() {
+    var grid = document.getElementById("mz-media-note-grid");
+    var notes = window.__MARCHINZ_NOTES;
+    if (!grid || !Array.isArray(notes) || !notes.length) return;
+    grid.innerHTML = "";
+    notes
+      .slice()
+      .sort(function (a, b) { return parseDate(b.pubDate) - parseDate(a.pubDate); })
+      .forEach(function (n) {
+        grid.appendChild(
+          buildVideoCard({
+            url: n.url,
+            thumb: n.thumb,
+            title: n.title || "note",
+            channelName: n.accountLabel || "",
+            meta: daysAgoLabel(parseDate(n.pubDate)),
+          })
+        );
+      });
+    grid.hidden = false;
+  }
+
   function renderDigest() {
     var box = document.getElementById("mz-top-digest");
     var digest = window.__MARCHINZ_DIGEST;
@@ -533,6 +555,7 @@
       renderDigest();
       renderFreshVideos();
       renderYoutubeFresh();
+      renderMediaNotes();
       loadUpcomingEvents();
       // 練習ツール(メトロノーム/チューナー)ブロック。ログイン不要(v1.34)
       window.MarchinZBase?.mountTools?.(document.getElementById("mz-top-tools"));
