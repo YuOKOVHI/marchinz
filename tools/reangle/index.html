@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ReAngle — 斜め撮り動画を正面に</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M8 6h8l4 13H4Z" opacity="0.45"></path>
+      <rect x="5" y="9" width="14" height="10" rx="1" stroke-dasharray="2.5 2.5"></rect>
+    </svg>
+    <h1>ReAngle</h1>
+  </div>
+  <span id="statusPill" class="pill">読み込み中…</span>
+</header>
+
+<main>
+  <!-- ① 動画を選ぶ -->
+  <section id="dropSection" class="card drop">
+    <p class="drop-title">斜めから撮った動画を、正面から撮ったように補正します</p>
+    <button id="pickBtn" class="big-btn">動画を選ぶ</button>
+    <input id="fileInput" type="file" accept="video/*" hidden>
+    <p class="note">すべてスマホ/PCの中だけで処理します。動画はどこにも送信されません。無料です。</p>
+  </section>
+
+  <!-- ② プレビュー+調整+書き出し -->
+  <section id="editorSection" hidden>
+    <div class="card">
+      <div class="clip-row">
+        <span id="clipName" class="clip-name"></span>
+        <button id="backBtn" class="text-btn">別の動画</button>
+      </div>
+      <div class="preview-wrap">
+        <canvas id="previewCanvas"></canvas>
+        <canvas id="cornerOverlay"></canvas>
+      </div>
+      <div class="transport">
+        <button id="playBtn" class="mini-btn">▶ 再生</button>
+        <input id="seekBar" type="range" min="0" max="100" step="0.01" value="0">
+        <span id="timeLabel" class="time">0:00 / 0:00</span>
+        <button id="compareBtn" class="mini-btn compare">元を見る</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div id="tabSeg" class="seg">
+        <button data-tab="corners" class="on">床の四隅</button>
+        <button data-tab="adjust">補正</button>
+      </div>
+
+      <div id="panelCorners" class="panel">
+        <p class="hint">床の四隅に青いハンドルをドラッグして合わせてください。演技者が少ないフレームにシークすると合わせやすいです。</p>
+        <div class="btn-row">
+          <button id="redetectBtn" class="mini-btn">自動検出をやり直す</button>
+          <button id="resetBtn" class="mini-btn">リセット</button>
+        </div>
+      </div>
+
+      <div id="panelAdjust" class="panel" hidden>
+        <div class="setting">
+          <label>補正の強さ <b id="strengthVal"></b></label>
+          <input id="strengthRange" type="range" min="0" max="100" step="1" value="60">
+        </div>
+        <div class="setting">
+          <label>ズーム <b id="zoomVal"></b></label>
+          <input id="zoomRange" type="range" min="100" max="200" step="1" value="100">
+        </div>
+        <div class="setting">
+          <label>縦位置 <b id="panVal"></b></label>
+          <input id="panRange" type="range" min="-30" max="30" step="1" value="0">
+        </div>
+        <div class="setting row">
+          <label class="inline-label">出力</label>
+          <select id="resSel">
+            <option value="1080" selected>フルHDで保存(速い)</option>
+            <option value="orig">元の解像度のまま</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <button id="exportBtn" class="big-btn accent">正面に補正して保存</button>
+      <div id="progressWrap" hidden>
+        <div class="bar"><div id="progressBar"></div></div>
+        <p id="progressText" class="note"></p>
+        <button id="cancelBtn" class="text-btn">中止する</button>
+      </div>
+      <div id="doneCard" hidden>
+        <p id="doneText" class="done"></p>
+        <button id="saveBtn" class="big-btn accent">動画を保存</button>
+        <p id="doneNote" class="note"></p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <p>端末内で完結・無料 | MarchinZ ファミリー(サイトへ移行予定)</p>
+</footer>
+
+<div id="toast"></div>
+<div id="loupe" hidden><canvas width="240" height="240"></canvas></div>
+
+<script src="vendor/mp4box.all.min.js"></script>
+<script src="vendor/mp4-muxer.min.js"></script>
+<script src="js/app.js"></script>
+<script src="js/homography.js"></script>
+<script src="js/demux.js"></script>
+<script src="js/warp.js"></script>
+<script src="js/detect.js"></script>
+<script src="js/corners.js"></script>
+<script src="js/preview.js"></script>
+<script src="js/exporter.js"></script>
+<script src="js/ui.js"></script>
+</body>
+</html>
