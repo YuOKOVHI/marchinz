@@ -226,51 +226,169 @@
     try {
       /* --- 1) ビュー決定 + タイルプリフェッチ --- */
       setStatus("地図を準備中…");
-      var coords = stops.map(function (s) { return s.coord; });
-      var fit = pickZoom(coords);
-      var z = fit ? fit.z : 4;
-      var cx;
-      var cyRaw;
-      if (fit) {
-        cx = (fit.minX + fit.maxX) / 2;
-        cyRaw = (fit.minY + fit.maxY) / 2;
-      } else {
-        cx = lngToX(137.2, z);
-        cyRaw = latToY(37.5, z);
+      var coords = stops.map(function (s) { return s.coord; }); // [lat,lng]
+
+      // ---- 移動カメラ(プレビュー journey.js と同じ「各停留に寄りつつ巡る」動き) ----
+      // 従来は pickZoom で全体が収まる1ズームに固定し地図を1枚だけ事前描画していた(=引いた絵)。
+      // ここではカメラ中心(アバター追従)とズームを時刻ごとに変え、毎フレーム、その視界の
+      // タイルをキャッシュから描き直す。タイルはカメラ経路を先読みして必要分だけ一括ロードする。
+      var DWELL_ZOOM_MAX = 12;
+      var MIN_ZOOM = 4;
+
+      function lerp(a, b, e) { return a + (b - a) * e; }
+
+      /** coords(=[[lat,lng],...])の bbox が (地図領域-余白) に収まる最大ズーム(小数) */
+      function fitZoomFor(cs, padPx) {
+        if (!cs.length) return MIN_ZOOM;
+        var minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity;
+        cs.forEach(function (c) {
+          if (c[1] < minLng) minLng = c[1]; if (c[1] > maxLng) maxLng = c[1];
+          if (c[0] < minLat) minLat = c[0]; if (c[0] > maxLat) maxLat = c[0];
+        });
+        var fitW = Math.max(64, W - padPx * 2), fitH = Math.max(64, MAP_H - padPx * 2);
+        var spanX0 = Math.abs(lngToX(maxLng, 0) - lngToX(minLng, 0)) || 1e-6; // z0 の世界px
+        var spanY0 = Math.abs(latToY(maxLat, 0) - latToY(minLat, 0)) || 1e-6;
+        var z = Math.min(Math.log(fitW / spanX0) / Math.LN2, Math.log(fitH / spanY0) / Math.LN2);
+        return Math.max(MIN_ZOOM, Math.min(DWELL_ZOOM_MAX, z));
       }
-      if (coords.length === 1) z = Math.min(7, z); // 1県のみは寄りすぎない
-      var originX = cx - W / 2;
-      var originY = cyRaw - MAP_H / 2;
+      function centerOf(cs) {
+        var la = 0, ln = 0;
+        cs.forEach(function (c) { la += c[0]; ln += c[1]; });
+        return { lat: la / cs.length, lng: ln / cs.length };
+      }
 
-      var bg = document.createElement("canvas");
-      bg.width = W;
-      bg.height = MAP_H;
-      var bctx = bg.getContext("2d");
-      bctx.fillStyle = "#dfe8f2";
-      bctx.fillRect(0, 0, W, MAP_H);
+      var overallFit = fitZoomFor(coords, 140);          // 全体表示(intro/outro)のズーム
+      var overallCenter = centerOf(coords);
+      // 停留の寄りズーム: 全体との差を確保しつつ寄る。1県のみは控えめ上限。タイル数次第で後段引き下げ。
+      var dwellZoom = Math.min(DWELL_ZOOM_MAX, Math.max(overallFit + 1.6, coords.length === 1 ? 12 : 10.5));
 
-      var t0x = Math.floor(originX / 256);
-      var t0y = Math.floor(originY / 256);
-      var t1x = Math.floor((originX + W) / 256);
-      var t1y = Math.floor((originY + MAP_H) / 256);
-      var maxTile = Math.pow(2, z);
-      var tileJobs = [];
-      var sIdx = 0;
-      for (var ty = t0y; ty <= t1y; ty++) {
-        for (var tx = t0x; tx <= t1x; tx++) {
+      var tl = buildTimeline(stops.length);
+
+      /** 時刻 t のアバター現在地(geo)+カード情報 */
+      function playheadGeo(t) {
+        if (t < INTRO_MS) return { lat: coords[0][0], lng: coords[0][1], cardIdx: -1, doneCount: 0 };
+        var last = tl.segs[tl.segs.length - 1];
+        if (t >= last.dwellEnd) return { lat: coords[coords.length - 1][0], lng: coords[coords.length - 1][1], cardIdx: stops.length - 1, doneCount: stops.length, outro: true };
+        for (var i = 0; i < tl.segs.length; i++) {
+          var sg = tl.segs[i];
+          if (t < sg.dwellStart) {
+            var k = easeInOut(Math.min(1, (t - sg.travelStart) / Math.max(1, tl.travel)));
+            var a = coords[Math.max(0, i - 1)], b = coords[i];
+            return { lat: lerp(a[0], b[0], k), lng: lerp(a[1], b[1], k), cardIdx: i - 1, doneCount: i };
+          }
+          if (t < sg.dwellEnd) return { lat: coords[i][0], lng: coords[i][1], cardIdx: i, doneCount: i + 1 };
+        }
+        return { lat: coords[coords.length - 1][0], lng: coords[coords.length - 1][1], cardIdx: stops.length - 1, doneCount: stops.length };
+      }
+
+      /** 時刻 t のカメラ {lng,lat,zoom} */
+      function cameraAt(t) {
+        var g = playheadGeo(t);
+        var last = tl.segs[tl.segs.length - 1];
+        if (t < INTRO_MS) {
+          // イントロ: 全体からアバターへ寄る
+          var ki = easeInOut(Math.min(1, t / Math.max(1, INTRO_MS)));
+          return { lng: lerp(overallCenter.lng, coords[0][1], ki), lat: lerp(overallCenter.lat, coords[0][0], ki), zoom: lerp(overallFit, dwellZoom, ki) };
+        }
+        if (t >= last.dwellEnd) {
+          // アウトロ: 最後の停留から全体へ引く(プレビューの flyToBounds 相当)
+          var ko = easeInOut(Math.min(1, (t - last.dwellEnd) / Math.max(1, OUTRO_MS)));
+          return { lng: lerp(coords[coords.length - 1][1], overallCenter.lng, ko), lat: lerp(coords[coords.length - 1][0], overallCenter.lat, ko), zoom: lerp(dwellZoom, overallFit, ko) };
+        }
+        var zoom = dwellZoom;
+        for (var i = 0; i < tl.segs.length; i++) {
+          var sg = tl.segs[i];
+          if (t < sg.dwellStart) {
+            if (i > 0) {
+              // 移動中は隣接2点が収まるまで一旦引いて、また寄る(sinで谷)
+              var k = Math.min(1, (t - sg.travelStart) / Math.max(1, tl.travel));
+              var segFit = fitZoomFor([coords[i - 1], coords[i]], 200);
+              zoom = lerp(dwellZoom, Math.min(dwellZoom, segFit), Math.sin(Math.PI * k));
+            }
+            break;
+          }
+          if (t < sg.dwellEnd) { zoom = dwellZoom; break; }
+        }
+        return { lng: g.lng, lat: g.lat, zoom: zoom };
+      }
+
+      /** geo → 地図領域canvas座標(0..W × 0..MAP_H) */
+      function project(lng, lat, cam) {
+        var zi = Math.round(cam.zoom), scale = Math.pow(2, cam.zoom - zi);
+        var cwx = lngToX(cam.lng, zi), cwy = latToY(cam.lat, zi);
+        return [W / 2 + (lngToX(lng, zi) - cwx) * scale, MAP_H / 2 + (latToY(lat, zi) - cwy) * scale];
+      }
+
+      // ---- 必要タイルを先読み(カメラ経路をサンプリングして集合化) ----
+      function addTilesForCam(cam, set) {
+        var zi = Math.round(cam.zoom), scale = Math.pow(2, cam.zoom - zi);
+        var cwx = lngToX(cam.lng, zi), cwy = latToY(cam.lat, zi);
+        var maxTile = Math.pow(2, zi);
+        var hx = (W / 2) / scale, hy = (MAP_H / 2) / scale;
+        var t0x = Math.floor((cwx - hx) / 256), t1x = Math.floor((cwx + hx) / 256);
+        var t0y = Math.floor((cwy - hy) / 256), t1y = Math.floor((cwy + hy) / 256);
+        for (var ty = t0y; ty <= t1y; ty++) {
           if (ty < 0 || ty >= maxTile) continue;
-          var wx = ((tx % maxTile) + maxTile) % maxTile;
-          var url = TILE_URL_TPL.replace("{s}", SUBS[sIdx++ % SUBS.length]).replace("{z}", String(z)).replace("{x}", String(wx)).replace("{y}", String(ty));
-          tileJobs.push({ url: url, dx: tx * 256 - originX, dy: ty * 256 - originY });
+          for (var tx = t0x; tx <= t1x; tx++) {
+            var wx = ((tx % maxTile) + maxTile) % maxTile;
+            set[zi + "/" + wx + "/" + ty] = [zi, wx, ty];
+          }
         }
       }
-      var tiles = await Promise.all(tileJobs.map(function (j) { return loadCrossOriginImage(j.url, 10000); }));
+      var MAX_TILES = 420;
+      var tileSet = {};
+      while (true) {
+        tileSet = {};
+        for (var ts = 0; ts <= tl.total; ts += 80) addTilesForCam(cameraAt(ts), tileSet);
+        addTilesForCam(cameraAt(tl.total - 1), tileSet);
+        if (Object.keys(tileSet).length <= MAX_TILES || dwellZoom <= overallFit + 0.5) break;
+        dwellZoom -= 0.5; // 寄りを弱めてタイル数を削減
+      }
+
+      var tileCache = {};
+      var tileKeys = Object.keys(tileSet);
+      var loadedCount = 0;
+      var loadIdx = 0;
+      async function tileWorker() {
+        while (loadIdx < tileKeys.length) {
+          if (cancelled) return;
+          var myIdx = loadIdx++;
+          var key = tileKeys[myIdx];
+          var zxy = tileSet[key];
+          var url = TILE_URL_TPL
+            .replace("{s}", SUBS[myIdx % SUBS.length])
+            .replace("{z}", String(zxy[0])).replace("{x}", String(zxy[1])).replace("{y}", String(zxy[2]));
+          var img = await loadCrossOriginImage(url, 10000);
+          if (img) tileCache[key] = img;
+          loadedCount++;
+          if (loadedCount % 15 === 0) setStatus("地図を準備中… " + Math.round((loadedCount / tileKeys.length) * 100) + "%");
+        }
+      }
+      var workers = [];
+      for (var wi = 0; wi < 8; wi++) workers.push(tileWorker());
+      await Promise.all(workers);
       if (cancelled) return;
-      tiles.forEach(function (img, i) {
-        var j = tileJobs[i];
-        if (img) bctx.drawImage(img, j.dx, j.dy, 256, 256);
-        else { bctx.fillStyle = "#e7edf4"; bctx.fillRect(j.dx, j.dy, 256, 256); }
-      });
+
+      /** cam のビューポートを tileCache から地図領域(0,0,W,MAP_H)へ描く */
+      function drawMap(cam) {
+        var zi = Math.round(cam.zoom), scale = Math.pow(2, cam.zoom - zi);
+        var cwx = lngToX(cam.lng, zi), cwy = latToY(cam.lat, zi);
+        var maxTile = Math.pow(2, zi);
+        var hx = (W / 2) / scale, hy = (MAP_H / 2) / scale;
+        var t0x = Math.floor((cwx - hx) / 256), t1x = Math.floor((cwx + hx) / 256);
+        var t0y = Math.floor((cwy - hy) / 256), t1y = Math.floor((cwy + hy) / 256);
+        var sz = 256 * scale + 1; // 継ぎ目防止に+1px
+        for (var ty = t0y; ty <= t1y; ty++) {
+          for (var tx = t0x; tx <= t1x; tx++) {
+            var wx = ((tx % maxTile) + maxTile) % maxTile;
+            var dx = (tx * 256 - cwx) * scale + W / 2;
+            var dy = (ty * 256 - cwy) * scale + MAP_H / 2;
+            var img = tileCache[zi + "/" + wx + "/" + ty];
+            if (img) ctx.drawImage(img, dx, dy, sz, sz);
+            else { ctx.fillStyle = "#e7edf4"; ctx.fillRect(dx, dy, sz, sz); }
+          }
+        }
+      }
 
       /* --- 2) アバター/Note 写真のプリロード --- */
       setStatus("写真を準備中…");
@@ -300,37 +418,17 @@
       recorder.ondataavailable = function (ev) { if (ev.data && ev.data.size) chunks.push(ev.data); };
       var recorderStopped = new Promise(function (resolve) { recorder.onstop = resolve; });
 
-      /* --- 4) シーン事前計算 --- */
-      var tl = buildTimeline(stops.length);
-      var px = stops.map(function (s) {
-        return [lngToX(s.coord[1], z) - originX, latToY(s.coord[0], z) - originY];
-      });
+      /* --- 4) シーン事前計算(tl・カメラは上で定義済み) --- */
       var years = stops.map(function (s) { return Number(String(s.date).slice(0, 4)); }).filter(Boolean);
       var yearSpan = years.length ? Math.max(1, Math.max.apply(null, years) - Math.min.apply(null, years) + 1) : stops.length;
       var prefSet = {};
       stops.forEach(function (s) { prefSet[s.pref] = 1; });
       var prefCount = Object.keys(prefSet).length;
 
-      /** 現在時刻 t(ms) の再生位置: {i, pos(px), showCardIdx} */
-      function playhead(t) {
-        if (t < INTRO_MS) return { pos: px[0], cardIdx: -1, doneCount: 0 };
-        var last = tl.segs[tl.segs.length - 1];
-        if (t >= last.dwellEnd) return { pos: px[px.length - 1], cardIdx: stops.length - 1, doneCount: stops.length, outro: t >= last.dwellEnd };
-        for (var i = 0; i < tl.segs.length; i++) {
-          var sg = tl.segs[i];
-          if (t < sg.dwellStart) {
-            var k = easeInOut(Math.min(1, (t - sg.travelStart) / Math.max(1, tl.travel)));
-            var from = px[Math.max(0, i - 1)];
-            var to = px[i];
-            return { pos: [from[0] + (to[0] - from[0]) * k, from[1] + (to[1] - from[1]) * k], cardIdx: i - 1, doneCount: i };
-          }
-          if (t < sg.dwellEnd) return { pos: px[i], cardIdx: i, doneCount: i + 1 };
-        }
-        return { pos: px[px.length - 1], cardIdx: stops.length - 1, doneCount: stops.length };
-      }
-
       function drawFrame(t) {
-        var ph = playhead(t);
+        var cam = cameraAt(t);
+        var ph = playheadGeo(t);
+        var avatarPos = project(ph.lng, ph.lat, cam); // アバターの地図領域座標
         var isOutro = t >= tl.total - OUTRO_MS;
 
         // 背景(全体)
@@ -353,28 +451,36 @@
         var nm = String(opts.displayName || "").trim();
         ctx.fillText((nm ? nm + " の" : "私の") + " MarchinZ Log 🗺️", 48, 148);
 
-        // 地図
-        ctx.drawImage(bg, 0, MAP_Y);
+        // 地図(移動カメラ) — 地図領域にクリップして毎フレーム描き直す
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, MAP_Y, W, MAP_H);
+        ctx.clip();
+        ctx.translate(0, MAP_Y);
+        drawMap(cam);
 
         // 軌跡(通過済み + 現在の移動分)
-        ctx.save();
-        ctx.translate(0, MAP_Y);
         ctx.strokeStyle = "#1e4fd6";
         ctx.lineWidth = 7;
         ctx.lineCap = "round";
         ctx.setLineDash([2, 18]);
         ctx.beginPath();
         var lastIdx = Math.max(0, ph.doneCount - 1);
-        ctx.moveTo(px[0][0], px[0][1]);
-        for (var li = 1; li <= lastIdx; li++) ctx.lineTo(px[li][0], px[li][1]);
-        ctx.lineTo(ph.pos[0], ph.pos[1]);
+        var p0 = project(coords[0][1], coords[0][0], cam);
+        ctx.moveTo(p0[0], p0[1]);
+        for (var li = 1; li <= lastIdx; li++) {
+          var pli = project(coords[li][1], coords[li][0], cam);
+          ctx.lineTo(pli[0], pli[1]);
+        }
+        ctx.lineTo(avatarPos[0], avatarPos[1]);
         ctx.stroke();
         ctx.setLineDash([]);
 
         // 通過済み停留ドット
         for (var di = 0; di < ph.doneCount; di++) {
+          var pdi = project(coords[di][1], coords[di][0], cam);
           ctx.beginPath();
-          ctx.arc(px[di][0], px[di][1], 11, 0, Math.PI * 2);
+          ctx.arc(pdi[0], pdi[1], 11, 0, Math.PI * 2);
           ctx.fillStyle = "#1e4fd6";
           ctx.fill();
           ctx.lineWidth = 4;
@@ -388,7 +494,7 @@
           var dt = (t - sg2.dwellStart) / Math.max(1, tl.dwell);
           if (dt >= 0 && dt <= 1) {
             ctx.beginPath();
-            ctx.arc(ph.pos[0], ph.pos[1], 40 + 46 * dt, 0, Math.PI * 2);
+            ctx.arc(avatarPos[0], avatarPos[1], 40 + 46 * dt, 0, Math.PI * 2);
             ctx.strokeStyle = "rgba(30, 79, 214, " + (0.55 * (1 - dt)).toFixed(3) + ")";
             ctx.lineWidth = 6;
             ctx.stroke();
@@ -396,8 +502,8 @@
         }
 
         // アバターマーカー
-        var ax = ph.pos[0];
-        var ay = ph.pos[1];
+        var ax = avatarPos[0];
+        var ay = avatarPos[1];
         ctx.beginPath();
         ctx.arc(ax, ay, 46, 0, Math.PI * 2);
         ctx.fillStyle = "#ffffff";
