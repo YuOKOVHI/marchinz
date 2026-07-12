@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MarchinZ Switch — ランスルー同期・自動スイッチング〈ベータ版〉</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><b>MarchinZ Switch</b> <span class="beta-badge">ベータ版</span> <span class="brand-sub">ランスルー同期・自動スイッチング</span></div>
+  <div class="head-right">
+    <div id="capsBadge" class="caps-badge">対応確認中…</div>
+    <a href="/#creators" class="back-link">← MarchinZへ</a>
+  </div>
+</header>
+
+<main class="wrap">
+  <aside class="side">
+
+    <section class="panel" id="dropSec">
+      <h2>1. 動画を読み込む <span class="hint">(2〜3本)</span></h2>
+      <div id="dropZone" class="dropzone">
+        <div class="dz-icon">🎬</div>
+        <div>ここにドラッグ&ドロップ<br>またはクリックして選択</div>
+        <input type="file" id="fileInput" accept="video/mp4,video/quicktime,video/*" multiple hidden>
+      </div>
+      <div id="clipCards" class="clip-cards"></div>
+    </section>
+
+    <section class="panel" id="syncSec">
+      <h2>2. 同期 <span class="hint">音の波形で自動合わせ</span></h2>
+      <div class="row">
+        <button id="syncBtn" class="btn primary" disabled>🔊 波形で同期する</button>
+      </div>
+      <div id="syncStatus" class="status"></div>
+    </section>
+
+    <section class="panel" id="audioSec">
+      <h2>3. 使う音声 <span class="hint">いちばん良い音におすすめ印</span></h2>
+      <div id="audioChoices" class="audio-choices"><span class="hint">クリップを読み込むと表示されます</span></div>
+    </section>
+
+    <section class="panel" id="layoutSec">
+      <h2>4. レイアウト</h2>
+      <div class="row preset-row" id="presetRow"></div>
+      <select id="layoutSelect" class="select"></select>
+      <div id="slotRows" class="slot-rows"></div>
+      <div id="autocutPanel" style="display:none">
+        <div class="row">
+          <label class="hint">拍子</label>
+          <select id="bpbSelect" class="select" style="width:auto; margin:0">
+            <option value="4">4/4</option><option value="2">2/4</option><option value="3">3/4</option>
+          </select>
+          <button id="autocutBtn" class="btn primary">🥁 自動カット割</button>
+        </div>
+        <div id="wipeOpts" class="row" style="display:none">
+          <label class="hint">小窓</label>
+          <select id="wipeCamSelect" class="select" style="width:auto; margin:0"></select>
+          <select id="wipePosSelect" class="select" style="width:auto; margin:0">
+            <option value="br">右下</option><option value="bl">左下</option>
+            <option value="tr">右上</option><option value="tl">左上</option>
+          </select>
+          <input type="range" id="wipeSizeRange" min="0.2" max="0.45" step="0.01" style="flex:1">
+        </div>
+        <div id="autocutStatus" class="status"></div>
+      </div>
+    </section>
+
+    <section class="panel" id="finishSec">
+      <h2>5. 仕上げ <span class="hint">色・水平・トリム提案</span></h2>
+      <div class="row">
+        <button id="colorMatchBtn" class="btn">🎨 自動カラーマッチ</button>
+        <button id="colorClearBtn" class="btn small ghost" style="display:none">解除</button>
+      </div>
+      <div class="row" id="colorStrengthRow" style="display:none">
+        <label class="hint">強さ</label>
+        <input type="range" id="colorStrength" min="0" max="1" step="0.05" value="0.8" style="flex:1">
+      </div>
+      <div class="row">
+        <label class="hint">フィルター</label>
+        <select id="filterSelect" class="select" style="width:auto; margin:0"></select>
+      </div>
+      <div id="horizonRows" class="slot-rows"></div>
+      <div class="row" style="margin-top:10px">
+        <button id="saluteBtn" class="btn">🎺 演奏区間を検出 <span class="hint">サリュート考慮</span></button>
+      </div>
+      <div class="row" id="saluteRow" style="display:none">
+        <span id="saluteInfo"></span>
+        <label class="hint">前振り</label>
+        <input id="preRoll" type="number" value="8" min="0" max="30" style="width:52px; background:var(--panel2); color:var(--tx); border:1px solid var(--line); border-radius:6px; padding:4px">秒
+        <button id="saluteInBtn" class="btn small">INに反映</button>
+        <button id="saluteOutBtn" class="btn small">OUTに反映</button>
+      </div>
+      <div id="finishStatus" class="status"></div>
+    </section>
+
+    <section class="panel" id="exportSec">
+      <h2>6. 書き出し</h2>
+      <div id="exportMode" class="status"></div>
+      <div class="row">
+        <button id="exportBtn" class="btn primary big" disabled>📤 MP4を書き出す</button>
+        <button id="cancelBtn" class="btn danger" style="display:none">中止</button>
+      </div>
+      <div id="exportProgress" class="progress" style="display:none">
+        <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+        <div id="progressText" class="progress-text"></div>
+      </div>
+    </section>
+
+  </aside>
+
+  <section class="stage">
+    <div class="canvas-holder"><canvas id="cv" width="1080" height="1920"></canvas></div>
+    <div class="transport">
+      <button id="playBtn" class="btn round" title="再生/停止">▶</button>
+      <div class="scrub-wrap">
+        <div id="scrubTicks"></div>
+        <input type="range" id="scrub" min="0" max="0" step="0.01" value="0">
+      </div>
+      <span id="timeLabel" class="time-label">0:00.0 / 0:00.0</span>
+    </div>
+    <div class="trim-row">
+      <button id="trimInBtn" class="btn small">現在位置を IN に</button>
+      <button id="trimOutBtn" class="btn small">現在位置を OUT に</button>
+      <span id="trimLabel" class="hint"></span>
+      <button id="trimResetBtn" class="btn small ghost">リセット</button>
+    </div>
+    <div id="timelineWrap" class="timeline-wrap" style="display:none">
+      <div id="timelineStrip" class="tl-strip"></div>
+      <div id="timelineToolbar" class="tl-toolbar" style="display:none">
+        <span class="tl-info hint"></span>
+        <button class="btn small" id="tlCamBtn">📷 カメラ変更</button>
+        <button class="btn small" id="tlTransBtn">◇ カット⇄ディゾルブ</button>
+        <button class="btn small" id="tlMergeBtn">🧹 前と結合</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="toast" class="toast"></div>
+
+<script src="vendor/mp4box.all.min.js"></script>
+<script src="vendor/mp4-muxer.min.js"></script>
+<script src="vendor/fft.js"></script>
+<script src="js/state.js"></script>
+<script src="js/layout.js"></script>
+<script src="js/media.js"></script>
+<script src="js/demux.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/sync.js"></script>
+<script src="js/beats.js"></script>
+<script src="js/colormatch.js"></script>
+<script src="js/horizon.js"></script>
+<script src="js/salute.js"></script>
+<script src="js/preview.js"></script>
+<script src="js/timeline.js"></script>
+<script src="js/exporter.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

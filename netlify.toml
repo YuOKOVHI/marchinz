@@ -25,6 +25,23 @@
   [headers.values]
     Cache-Control = "public, max-age=300, must-revalidate"
 
+# クリエイターツール(v1.35): 顔検出モデルの MIME を明示(拡張子 .tflite は既定表が無い)
+[[headers]]
+  for = "/*.tflite"
+  [headers.values]
+    Content-Type = "application/octet-stream"
+
+# クリエイターツールの vendor(MediaPipe WASM 約11MB 等)は不変に近いので長めにキャッシュ(帯域節約)
+[[headers]]
+  for = "/tools/privacy/vendor/*"
+  [headers.values]
+    Cache-Control = "public, max-age=604800"
+
+[[headers]]
+  for = "/tools/switch/vendor/*"
+  [headers.values]
+    Cache-Control = "public, max-age=604800"
+
 # P2: 静的ホストの最低限セキュリティヘッダー（CSP はインラインスクリプト都合で未設定）
 [[headers]]
   for = "/sw.js"
@@ -43,4 +60,6 @@
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
-    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+    # microphone は self を許可(v1.35で修正): Days/TOP のチューナーが getUserMedia(audio) を使う。
+    # 旧値 microphone=() は自オリジンも拒否するため、本番でマイクが常に失敗していた
+    Permissions-Policy = "camera=(), microphone=(self), geolocation=()"

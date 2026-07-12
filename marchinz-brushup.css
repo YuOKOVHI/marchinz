@@ -1215,6 +1215,77 @@ body {
   }
 }
 
+/* ---------- クリエイターツール(ベータ版)カード(v1.35) ---------- */
+
+.mz-ctools-heading { display: flex; align-items: center; gap: 0.55rem; }
+
+.mz-ctools-beta {
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: #8a6d1a;
+  background: #fdf3d7;
+  border: 1px solid #ecd9a0;
+  border-radius: 999px;
+  padding: 0.14rem 0.55rem;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.mz-ctools-lead { margin-bottom: 0.7rem; }
+
+.mz-ctools-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.8rem;
+}
+
+@media (max-width: 719px) {
+  .mz-ctools-grid { grid-template-columns: 1fr; }
+}
+
+.mz-ctool-card {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.95rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--mz-radius-card);
+  background: #fff;
+  box-shadow: var(--mz-shadow-card);
+  text-decoration: none;
+  color: var(--text);
+  transition: border-color 0.15s ease, transform 0.12s ease;
+}
+
+.mz-ctool-card:hover {
+  border-color: var(--blue);
+  transform: translateY(-1px);
+  text-decoration: none;
+}
+
+.mz-ctool-icon {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: var(--panel-tint);
+  color: var(--blue);
+  font-size: 1.15rem;
+}
+
+.mz-ctool-body { min-width: 0; display: flex; flex-direction: column; gap: 0.12rem; }
+
+.mz-ctool-name { font-weight: 700; font-size: 0.92rem; color: var(--navy); }
+
+.mz-ctool-desc { font-size: 0.75rem; color: var(--muted); line-height: 1.5; }
+
+.mz-ctool-go { margin-left: auto; flex: none; color: var(--blue); font-size: 0.85rem; }
+
+.mz-ctools-note { font-size: 0.72rem; margin-bottom: 1.6rem; }
+
 /* ---------- 5) いいねハートの弾け演出 ---------- */
 
 .community-like-btn {
