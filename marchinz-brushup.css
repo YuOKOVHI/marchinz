@@ -2610,6 +2610,13 @@ body {
   min-height: 40px;
 }
 
+/* TOPのCREATOR TOOLSカード(クリエイターページの mz-ctool-card を再利用し、
+   TODAY/練習ツールと同じウィジェット幅に揃える) */
+.mz-top-ctools {
+  width: min(var(--mz-widget-w), 100%);
+  margin: 0 auto;
+}
+
 .mz-top-tools-guide {
   margin-top: 0.9rem;
   display: flex;

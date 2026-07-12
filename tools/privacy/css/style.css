@@ -1,56 +1,65 @@
+/* MarchinZ 本体のトンマナ(白基調・ネイビー/ブルー/アンバー3色)に統一。
+   トークンは styles.css の :root と同値。レイアウトは変えず色だけ差し替える */
 :root {
-  --bg: #0f1116;
-  --card: #171a21;
-  --line: #262b36;
-  --fg: #e8eaf0;
-  --sub: #8b93a5;
-  --accent: #4da3ff;
-  --accent-dark: #2f7fd6;
+  --bg: #f4f6f8;
+  --card: #ffffff;
+  --line: rgba(15, 33, 56, 0.12);
+  --fg: #0c0f14;
+  --sub: rgba(12, 15, 20, 0.55);
+  --navy: #0f2138;
+  --accent: #1e4fd6;
+  --accent-dark: #163b9e;
+  --cream: #fefcef;
+  --ok: #1e7a43;
+  --shadow-card: 0 1px 2px rgba(15, 33, 56, 0.05), 0 4px 16px rgba(15, 33, 56, 0.06);
 }
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-html, body { background: var(--bg); color: var(--fg); font-family: -apple-system, "Hiragino Sans", sans-serif; }
+html, body { background: var(--bg); color: var(--fg); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", Meiryo, sans-serif; }
 body { min-height: 100dvh; display: flex; flex-direction: column; }
 
+/* ヘッダーは本体TOPと同じクリーム地+ネイビー文字 */
 header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 14px 16px; border-bottom: 1px solid var(--line);
+  background: var(--cream);
 }
 .logo { display: flex; align-items: center; gap: 8px; color: var(--accent); min-width: 0; }
-.logo h1 { font-size: 17px; color: var(--fg); white-space: nowrap; }
+.logo h1 { font-size: 17px; color: var(--navy); white-space: nowrap; }
 .pill {
   font-size: 11px; color: var(--sub); border: 1px solid var(--line);
-  border-radius: 999px; padding: 4px 10px; white-space: nowrap;
+  border-radius: 999px; padding: 4px 10px; white-space: nowrap; background: #fff;
 }
-.pill.ready { color: #7ed99a; border-color: #2d4a38; }
+.pill.ready { color: var(--ok); border-color: #b7dfc6; background: #eef9f2; }
 
-/* MarchinZ 統合(ベータ版バッジ+戻るリンク) */
+/* MarchinZ 統合(ベータ版バッジ+戻るリンク)。バッジは本体 .mz-ctools-beta と同配色 */
 .beta-badge {
-  flex-shrink: 0; font-size: 10px; font-weight: 700; color: #f0b429;
-  border: 1px solid #5a4a1e; border-radius: 999px; padding: 2px 8px; white-space: nowrap;
+  flex-shrink: 0; font-size: 10px; font-weight: 700; color: #8a6d1a; background: #fdf3d7;
+  border: 1px solid #ecd9a0; border-radius: 999px; padding: 2px 8px; white-space: nowrap;
 }
 .head-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.back-link { font-size: 12px; color: var(--sub); text-decoration: none; white-space: nowrap; padding: 4px 2px; }
-.back-link:hover { color: var(--fg); }
-footer .foot-link { color: var(--sub); }
+.back-link { font-size: 12px; color: var(--accent); text-decoration: none; white-space: nowrap; padding: 4px 2px; }
+.back-link:hover { color: var(--accent-dark); text-decoration: underline; }
+footer .foot-link { color: var(--accent); }
 /* 狭幅では状態ピルを畳んでヘッダー1行を守る(状態はトースト/ボタン活性でも分かる) */
 @media (max-width: 430px) { header .pill { display: none; } }
 
 main { flex: 1; width: 100%; max-width: 640px; margin: 0 auto; padding: 16px; }
 .card {
   background: var(--card); border: 1px solid var(--line); border-radius: 16px;
-  padding: 16px; margin-bottom: 14px;
+  padding: 16px; margin-bottom: 14px; box-shadow: var(--shadow-card);
 }
 
 /* ① 選択 */
 .drop { text-align: center; padding: 40px 20px; }
 .drop.drag { border-color: var(--accent); }
-.drop-title { font-size: 15px; margin-bottom: 20px; line-height: 1.6; }
+.drop-title { font-size: 15px; margin-bottom: 20px; line-height: 1.6; color: var(--navy); font-weight: 700; }
 .big-btn {
   display: block; width: 100%; padding: 16px; font-size: 17px; font-weight: 700;
-  color: #fff; background: var(--accent-dark); border: none; border-radius: 12px;
+  color: #fff; background: var(--accent); border: none; border-radius: 12px;
   cursor: pointer;
 }
-.big-btn.accent { background: var(--accent-dark); }
+.big-btn.accent { background: var(--accent); }
+.big-btn:hover { background: var(--accent-dark); }
 .big-btn:disabled { opacity: 0.5; }
 .note { font-size: 12px; color: var(--sub); margin-top: 12px; line-height: 1.7; }
 
@@ -63,10 +72,11 @@ main { flex: 1; width: 100%; max-width: 640px; margin: 0 auto; padding: 16px; }
 .hidden-video { position: fixed; width: 2px; height: 2px; opacity: 0; pointer-events: none; left: -10px; top: -10px; }
 .transport { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
 .mini-btn {
-  background: var(--line); color: var(--fg); border: none; border-radius: 8px;
+  background: #fff; color: var(--navy); border: 1px solid var(--line); border-radius: 8px;
   padding: 8px 12px; font-size: 13px; cursor: pointer; white-space: nowrap;
 }
-.transport input[type="range"] { flex: 1; }
+.mini-btn:hover { border-color: var(--accent); background: #f4f7ff; }
+.transport input[type="range"] { flex: 1; accent-color: var(--accent); }
 body[data-kind="image"] .video-only { display: none !important; }
 .time { font-size: 12px; color: var(--sub); white-space: nowrap; font-variant-numeric: tabular-nums; }
 
@@ -79,31 +89,31 @@ body[data-kind="image"] .video-only { display: none !important; }
 .seg { display: flex; gap: 6px; }
 .seg button {
   flex: 1; padding: 12px 0; font-size: 14px; border-radius: 10px; cursor: pointer;
-  background: var(--bg); color: var(--sub); border: 1px solid var(--line);
+  background: #fff; color: var(--sub); border: 1px solid var(--line);
 }
-.seg button.on { background: var(--accent-dark); color: #fff; border-color: var(--accent-dark); font-weight: 700; }
+.seg button.on { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 700; }
 .setting.row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .chk { display: flex !important; align-items: center; gap: 8px; margin: 0 !important; color: var(--fg) !important; font-size: 13px; }
 .chk input { width: 18px; height: 18px; accent-color: var(--accent); }
 select {
-  background: var(--bg); color: var(--fg); border: 1px solid var(--line);
+  background: #fff; color: var(--fg); border: 1px solid var(--line);
   border-radius: 8px; padding: 8px 10px; font-size: 13px;
 }
 
 /* 進捗 */
-.bar { height: 10px; background: var(--bg); border-radius: 999px; overflow: hidden; margin-top: 14px; }
+.bar { height: 10px; background: rgba(15, 33, 56, 0.08); border-radius: 999px; overflow: hidden; margin-top: 14px; }
 #progressBar { height: 100%; width: 0; background: var(--accent); transition: width 0.2s; }
 #progressWrap { text-align: center; }
 #progressWrap .text-btn { margin-top: 10px; }
-.done { font-size: 14px; margin-top: 14px; color: #7ed99a; line-height: 1.6; word-break: break-all; }
+.done { font-size: 14px; margin-top: 14px; color: var(--ok); line-height: 1.6; word-break: break-all; }
 #saveBtn { margin: 14px 0 10px; }
 
 footer { text-align: center; padding: 16px; font-size: 11px; color: var(--sub); }
 
 #toast {
   position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%) translateY(20px);
-  background: #262b36; color: var(--fg); font-size: 13px; padding: 10px 18px;
+  background: var(--navy); color: #fff; font-size: 13px; padding: 10px 18px;
   border-radius: 999px; opacity: 0; pointer-events: none; transition: all 0.25s;
-  max-width: 90vw; text-align: center;
+  max-width: 90vw; text-align: center; box-shadow: 0 8px 32px rgba(15, 33, 56, 0.18);
 }
 #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
