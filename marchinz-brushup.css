@@ -2432,10 +2432,29 @@ body {
 }
 
 /* ---------- TOP「練習ツール」ブロック(v1.34、ログイン不要・アコーディオン) ---------- */
+/* v1.34.1: TODAY'S MARCHINZ ブロック内のサブセクションとして配置。ウィジェット幅で
+   ダッシュボードと縦に揃え、上に区切りの余白を取る */
+.mz-today-tools-head {
+  width: min(var(--mz-widget-w), 100%);
+  margin: 1.7rem auto 0.75rem;
+}
+
+.mz-today-tools-title {
+  display: block;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--navy);
+  line-height: 1.3;
+}
 
 .mz-top-tools-lead {
   font-size: 0.76rem;
   color: var(--muted);
+}
+
+.mz-today-tools-head .mz-top-tools-lead {
+  display: block;
+  margin-top: 0.1rem;
 }
 
 /* 狭幅ではリード文を出さない(見出しの折返し防止。ツール自体が用途を語る) */

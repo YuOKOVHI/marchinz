@@ -1957,7 +1957,7 @@
     const msg = el("p", "mz-top-tools-guide-msg");
     msg.textContent = loggedIn
       ? "今日の練習、そのまま記録に残しませんか?ストリークと目標が待っています。"
-      : "練習の記録・目標・ストリークは、無料登録で使える MarchinZ Days に。";
+      : "練習の記録・目標サポートは、無料登録で使える MarchinZ Days に。";
     guide.appendChild(msg);
     const cta = document.createElement("a");
     cta.className = "mll-lp-btn mll-lp-btn--primary mz-top-tools-guide-btn";
