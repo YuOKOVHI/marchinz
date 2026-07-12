@@ -3568,3 +3568,31 @@ body {
   gap: 0.55rem;
   margin-top: 0.2rem;
 }
+
+/* v1.35.3 TOP新着グリッドのモバイル最適化 ---------------------------------- */
+/* 近日開催予定: PCは最大8件、スマホは3件だけ表示 */
+@media (max-width: 640px) {
+  #mz-top-events-grid > *:nth-child(n + 4) {
+    display: none;
+  }
+  /* 新着の大会動画・新着note: スマホは縦2×横2で小さめに */
+  #mz-top-video-grid,
+  #mz-top-note-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.6rem;
+  }
+  #mz-top-video-grid .mz-video-card-title,
+  #mz-top-note-grid .mz-video-card-title {
+    font-size: 0.78rem;
+  }
+  #mz-top-video-grid .mz-video-card-body,
+  #mz-top-note-grid .mz-video-card-body {
+    padding: 0.5rem 0.55rem 0.6rem;
+  }
+  #mz-top-video-grid .mz-video-card-channel,
+  #mz-top-note-grid .mz-video-card-channel,
+  #mz-top-video-grid .mz-video-card-meta,
+  #mz-top-note-grid .mz-video-card-meta {
+    font-size: 0.68rem;
+  }
+}
