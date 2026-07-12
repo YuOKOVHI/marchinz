@@ -3725,7 +3725,10 @@
       await loadAndRenderCore(gen, targetUid);
     } catch (e) {
       console.warn("[profile] load", e);
-      setText("#prof-load-msg", "読み込みに失敗しました。時間をおいて再度お試しください。");
+      // 古いロードの例外が新しい画面にエラーメッセージを出さないよう、最新ロードのときだけ表示
+      if (gen === profileLoadSeq) {
+        setText("#prof-load-msg", "読み込みに失敗しました。時間をおいて再度お試しください。");
+      }
     } finally {
       if (gen === profileLoadSeq) {
         root?.querySelector(".user-profile-layout")?.classList.remove("user-profile-layout--loading");

@@ -2443,11 +2443,14 @@ body {
   .mz-top-tools-lead { display: none; }
 }
 
-/* ツール起動アイコン(押すとその下にパネルが開く) */
+/* ツール起動アイコン(押すとその下にパネルが開く)。
+   v1.34.1: TODAY と同じウィジェット幅(640px)に揃え、巨大ボタン化を防ぐ */
 .mz-top-tools-launcher {
   display: flex;
   gap: 0.7rem;
   flex-wrap: wrap;
+  width: min(var(--mz-widget-w), 100%);
+  margin: 0 auto;
 }
 
 .mz-top-tool-launch {
@@ -2487,9 +2490,24 @@ body {
 
 .mz-top-tools-panel {
   margin-top: 0.9rem;
+  width: min(var(--mz-widget-w), 100%);
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .mz-top-tools-panel .mz-base-tool-sec { margin-bottom: 0; }
+
+/* 「押すと開く」手掛かりの chevron。開いている間は反転 */
+.mz-top-tool-launch .mz-top-tool-chevron {
+  font-size: 0.7rem;
+  color: var(--muted);
+  transition: transform 0.18s ease;
+}
+
+.mz-top-tool-launch--on .mz-top-tool-chevron {
+  color: #fff;
+  transform: rotate(180deg);
+}
 
 /* BPM調整ボタン(-5/-1/+1/+5/TAP)は横一列に(mini-btn の width:100% を打ち消す)。
    Days のツールタブにも効く改善 */
@@ -2510,6 +2528,10 @@ body {
   padding: 0.9rem 1rem;
   border-radius: var(--mz-radius-card);
   background: var(--navy);
+  width: min(var(--mz-widget-w), 100%);
+  margin-left: auto;
+  margin-right: auto;
+  box-sizing: border-box;
 }
 
 .mz-top-tools-guide-msg {
@@ -2578,13 +2600,25 @@ body {
   color: var(--muted);
 }
 
-/* v1.34: ヒーローから独立ブロック(TODAY'S MARCHINZ)へ移動。中央寄せのカードに */
+/* v1.34: ヒーローから独立ブロック(TODAY'S MARCHINZ)へ移動。中央寄せのカードに。
+   v1.34.1: デスクトップの間延び解消のため、TODAY/TOOLS/誘導を同じ640px幅の
+   「ウィジェットカラム」に統一(--mz-widget-w)。 */
+:root { --mz-widget-w: 640px; }
+
 .mz-hero-dash {
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
-  width: min(460px, 100%);
+  width: min(var(--mz-widget-w), 100%);
   margin: 0 auto;
+}
+
+/* display:flex が UA の [hidden] を打ち消し、イベント0件でも「−日後」の骨組みが
+   露出していた(v1.34.1 本番実測で発覚)。サイト慣例どおり明示する */
+.mz-hero-dash[hidden],
+.mz-dash-countdown[hidden],
+.mz-dash-video[hidden] {
+  display: none !important;
 }
 
 .mz-hero-dash-head {

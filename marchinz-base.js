@@ -2009,7 +2009,8 @@
         b.type = "button";
         b.setAttribute("aria-expanded", "false");
         b.innerHTML =
-          '<i class="fa-solid ' + t.icon + '" aria-hidden="true"></i><span>' + t.label + "</span>";
+          '<i class="fa-solid ' + t.icon + '" aria-hidden="true"></i><span>' + t.label + "</span>" +
+          '<i class="fa-solid fa-chevron-down mz-top-tool-chevron" aria-hidden="true"></i>';
         b.addEventListener("click", () => {
           // 切替・開閉のたびに鳴っている音・マイクを止める(同時に1台だけの前提を守る)
           stopTools();
@@ -2041,8 +2042,16 @@
         else render();
       }).observe(page, { attributes: true, attributeFilter: ["hidden"] });
     }
-    // ログイン状態が変わったら誘導の文言/リンク先を作り直す
-    window.addEventListener("mll-auth-changed", render);
+    // ログイン状態が変わったら誘導の文言/リンク先を追従させる。
+    // 演奏・チューニング中に作り直すと音・マイクが止まってしまうため、その間は誘導カードだけ差し替える
+    window.addEventListener("mll-auth-changed", () => {
+      if (metroOn || tunerOn) {
+        const oldGuide = host.querySelector(".mz-top-tools-guide");
+        if (oldGuide) oldGuide.replaceWith(buildTopGuide());
+        return;
+      }
+      render();
+    });
   }
 
   /* ---------- 共通削除 ---------- */

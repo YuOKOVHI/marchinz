@@ -457,7 +457,14 @@
       }
     }
     var prefEl = document.getElementById("mz-dash-ev-pref");
-    if (prefEl) prefEl.textContent = ev.venue_pref ? "📍" + ev.venue_pref : "";
+    if (prefEl) {
+      // UIアイコンはFAモノクロ統一(📍カラー絵文字の置換、CLAUDE.md 必須ルール6)
+      prefEl.replaceChildren();
+      if (ev.venue_pref) {
+        prefEl.innerHTML = '<i class="fa-solid fa-location-dot" aria-hidden="true"></i> ';
+        prefEl.appendChild(document.createTextNode(ev.venue_pref));
+      }
+    }
     var dEl = document.getElementById("mz-dash-ev-date");
     if (dEl) {
       var d = new Date(ts);
