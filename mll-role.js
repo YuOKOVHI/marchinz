@@ -1655,7 +1655,19 @@
       });
     };
     try {
-      merge(await col.where("visibility", "==", "public").orderBy("created_at", "desc").limit(MLL_QUERY_LIMIT).get());
+      // ルール側は visibility と section_vis_mll の両方が resource.data 上で
+      // 'public' であることを要求する（クエリフィルタのみで証明可能な形限定）。
+      // section_vis_mll を where に含めないと list クエリごと permission-denied になる
+      // （本番実測で確認）。未バックフィルの旧ログ（フィールド未設定）はこの絞り込みで
+      // 一時的に対象外になるが、権限エラーで全滅するより優先する。
+      merge(
+        await col
+          .where("visibility", "==", "public")
+          .where("section_vis_mll", "==", "public")
+          .orderBy("created_at", "desc")
+          .limit(MLL_QUERY_LIMIT)
+          .get(),
+      );
     } catch (e) {
       console.warn("[mll-role] public mll_logs feed", e);
     }
