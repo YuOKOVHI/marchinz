@@ -38,7 +38,7 @@
     Cache-Control = "public, max-age=604800"
 
 [[headers]]
-  for = "/tools/switch/vendor/*"
+  for = "/tools/switcher/vendor/*"
   [headers.values]
     Cache-Control = "public, max-age=604800"
 
