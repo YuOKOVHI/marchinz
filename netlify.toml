@@ -42,6 +42,11 @@
   [headers.values]
     Cache-Control = "public, max-age=604800"
 
+[[headers]]
+  for = "/tools/reangle/vendor/*"
+  [headers.values]
+    Cache-Control = "public, max-age=604800"
+
 # P2: 静的ホストの最低限セキュリティヘッダー（CSP はインラインスクリプト都合で未設定）
 [[headers]]
   for = "/sw.js"

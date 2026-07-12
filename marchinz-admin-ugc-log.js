@@ -131,7 +131,7 @@
   let lastVideoSearchAt = 0;
   const VIDEO_SEARCH_MIN_GAP_MS = 3000;
 
-  const TOOL_USE_IDS = ["metronome", "tuner", "privacy", "switcher"];
+  const TOOL_USE_IDS = ["metronome", "tuner", "privacy", "switcher", "reangle"];
   /** ページ滞在中に記録済みのツール(同一ツールの連打・再スタートを重複記録しない) */
   const recordedToolUses = new Set();
 
@@ -367,7 +367,7 @@
     /**
      * ツール利用の記録(メトロノーム/チューナー=開始時、Privacy/Switcher=カードから開いた時)。
      * ログイン不要ツールのためゲストも記録可。同一ツールはページ滞在中1回だけ(連打スパム防止)。
-     * @param {{ toolId: "metronome"|"tuner"|"privacy"|"switcher"; toolName: string; targetHref?: string }} p
+     * @param {{ toolId: "metronome"|"tuner"|"privacy"|"switcher"|"reangle"; toolName: string; targetHref?: string }} p
      * @returns {Promise<boolean>}
      */
     recordToolUse(p) {
@@ -416,9 +416,14 @@
       ? "privacy"
       : href.includes("/tools/switcher/")
         ? "switcher"
-        : "";
+        : href.includes("/tools/reangle/")
+          ? "reangle"
+          : "";
     if (!toolId) return;
-    const toolName = toolId === "privacy" ? "MarchinZ Privacy" : "MarchinZ Switcher";
+    const toolName =
+      toolId === "privacy" ? "MarchinZ Privacy"
+        : toolId === "switcher" ? "MarchinZ Switcher"
+          : "MarchinZ ReAngle";
     const isPlainLeftClick =
       ev.button === 0 && !ev.metaKey && !ev.ctrlKey && !ev.shiftKey && !ev.altKey;
     if (!isPlainLeftClick || recordedToolUses.has(toolId)) {
