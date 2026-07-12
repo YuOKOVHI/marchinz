@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>ReAngle — 斜め撮り動画を正面に</title>
+<link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -20,6 +21,10 @@
     <a href="/#creators" class="back-link">← 戻る</a>
   </div>
 </header>
+
+<p class="beta-disclaimer">
+  <i class="fa-solid fa-triangle-exclamation"></i> 本ツールは<strong>ベータ版</strong>です。動作は保証されません。ご利用は自己責任でお願いします（補正のズレ・不具合について当方は責任を負いません）。
+</p>
 
 <main>
   <!-- ① 動画を選ぶ -->
@@ -42,7 +47,7 @@
         <canvas id="cornerOverlay"></canvas>
       </div>
       <div class="transport">
-        <button id="playBtn" class="mini-btn">▶ 再生</button>
+        <button id="playBtn" class="mini-btn"><i class="fa-solid fa-play"></i> 再生</button>
         <input id="seekBar" type="range" min="0" max="100" step="0.01" value="0">
         <span id="timeLabel" class="time">0:00 / 0:00</span>
         <button id="compareBtn" class="mini-btn compare">元を見る</button>

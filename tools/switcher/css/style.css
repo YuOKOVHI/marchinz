@@ -202,3 +202,10 @@ body { background: var(--bg); color: var(--tx); font-family: -apple-system, Blin
 @supports (padding: env(safe-area-inset-bottom)) {
   .wrap { padding-bottom: calc(14px + env(safe-area-inset-bottom)); }
 }
+
+/* ベータ免責バナー(Reangle/Privacy と共通のトーン) */
+.beta-disclaimer {
+  margin: 0; padding: 8px 16px; font-size: 12px; line-height: 1.5;
+  color: #8a6d3b; background: #fbf6e6; border-bottom: 1px solid #eadfbf; text-align: center;
+}
+.beta-disclaimer i { margin-right: 2px; }

@@ -12,6 +12,8 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (saved.preset && MC.PRESETS[saved.preset]) MC.S.preset = saved.preset;
     if (saved.layoutId && MC.LAYOUTS[saved.layoutId]) MC.S.layoutId = saved.layoutId;
     if (saved.colorOn != null) MC.S.colorOn = saved.colorOn;
+    if (saved.horizonOn != null) MC.S.horizonOn = saved.horizonOn;
+    else if (Array.isArray(saved.clips) && saved.clips.some(c => c.rot)) MC.S.horizonOn = true; // 旧プロジェクト移行: rot設定済みなら水平補正ONを維持
     if (saved.colorStrength != null) MC.S.colorStrength = saved.colorStrength;
     if (saved.filterId && MC.color.FILTERS[saved.filterId]) MC.S.filterId = saved.filterId;
     if (saved.beatsPerBar) MC.S.beatsPerBar = saved.beatsPerBar;

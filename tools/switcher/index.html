@@ -14,6 +14,7 @@
 <meta property="og:url" content="https://marchinz.netlify.app/tools/switcher/">
 <meta property="og:image" content="https://marchinz.netlify.app/ogp-card.png">
 <meta name="twitter:card" content="summary_large_image">
+<link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -30,8 +31,8 @@
   </div>
 </header>
 
-<p class="beta-disclaimer" style="margin:0; padding:8px 16px; font-size:12px; line-height:1.5; color:#8a6d3b; background:#fbf6e6; border-bottom:1px solid #eadfbf; text-align:center;">
-  ⚠️ 本ツールは<strong>ベータ版</strong>です。動作は保証されません。ご利用は自己責任でお願いします（生成結果・不具合について当方は責任を負いません）。
+<p class="beta-disclaimer">
+  <i class="fa-solid fa-triangle-exclamation"></i> 本ツールは<strong>ベータ版</strong>です。動作は保証されません。ご利用は自己責任でお願いします（生成結果・不具合について当方は責任を負いません）。
 </p>
 
 <section id="modeSelect" class="mode-select">
@@ -141,7 +142,7 @@
       </label>
       <div id="horizonRows" class="slot-rows"></div>
       <div class="row" style="margin-top:10px">
-        <button id="saluteBtn" class="btn">🎺 演奏区間を検出 <span class="hint">サリュート考慮</span></button>
+        <button id="saluteBtn" class="btn"><i class="fa-solid fa-music"></i> 演奏区間を検出 <span class="hint">サリュート考慮</span></button>
       </div>
       <div class="row" id="saluteRow" style="display:none">
         <span id="saluteInfo"></span>
@@ -171,7 +172,7 @@
   <section class="stage">
     <div class="canvas-holder"><canvas id="cv" width="1080" height="1920"></canvas></div>
     <div class="transport">
-      <button id="playBtn" class="btn round" title="再生/停止">▶</button>
+      <button id="playBtn" class="btn round" title="再生/停止"><i class="fa-solid fa-play"></i></button>
       <div class="scrub-wrap">
         <div id="scrubTicks"></div>
         <input type="range" id="scrub" min="0" max="0" step="0.01" value="0">

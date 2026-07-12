@@ -132,3 +132,10 @@ footer { text-align: center; padding: 16px; font-size: 11px; color: var(--sub); 
 @media (max-width: 900px) {
   select { font-size: 16px; }
 }
+
+/* ベータ免責バナー(Reangle/Switcher と共通のトーン) */
+.beta-disclaimer {
+  margin: 0; padding: 8px 16px; font-size: 12px; line-height: 1.5;
+  color: #8a6d3b; background: #fbf6e6; border-bottom: 1px solid #eadfbf; text-align: center;
+}
+.beta-disclaimer i { margin-right: 2px; }

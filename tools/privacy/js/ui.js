@@ -115,7 +115,9 @@ MZ.ui.updateTime = () => {
   if (!c || c.kind !== "video") return;
   $("timeLabel").textContent = `${MZ.ui.fmtTime(c.video.currentTime)} / ${MZ.ui.fmtTime(c.duration)}`;
   if (!MZ.ui._seeking) $("seekBar").value = c.video.currentTime;
-  $("playBtn").textContent = c.video.paused ? "▶ 再生" : "⏸ 一時停止";
+  $("playBtn").innerHTML = c.video.paused
+    ? '<i class="fa-solid fa-play"></i> 再生'
+    : '<i class="fa-solid fa-pause"></i> 一時停止';
 };
 
 /* ---- 書き出し ---- */

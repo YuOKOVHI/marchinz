@@ -82,6 +82,7 @@ MC.saveState = () => {
       trimIn: MC.S.trimIn, trimOut: MC.S.trimOut,
       beatsPerBar: MC.S.beatsPerBar, wipePos: MC.S.wipePos, wipeSize: MC.S.wipeSize,
       colorOn: MC.S.colorOn, colorStrength: MC.S.colorStrength, filterId: MC.S.filterId,
+      horizonOn: MC.S.horizonOn,
       clips: MC.S.clips.map(c => ({
         key: MC.clipKey(c), offset: c.offset, confidence: c.confidence,
         syncMethod: c.syncMethod, pan: c.pan,

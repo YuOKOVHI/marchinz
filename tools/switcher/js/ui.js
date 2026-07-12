@@ -186,7 +186,7 @@ MC.ui.updateTransport = () => {
   if (parseFloat(scrub.max) !== dur) scrub.max = dur;
   if (!MC.ui._scrubbing) scrub.value = MC.S.t;
   MC.ui.$("#timeLabel").textContent = `${MC.ui.fmtTime(MC.S.t)} / ${MC.ui.fmtTime(dur)}`;
-  MC.ui.$("#playBtn").textContent = MC.S.playing ? "⏸" : "▶";
+  MC.ui.$("#playBtn").innerHTML = MC.S.playing ? '<i class="fa-solid fa-pause"></i>' : '<i class="fa-solid fa-play"></i>';
   const [tIn, tOut] = MC.trimRange();
   MC.ui.$("#trimLabel").textContent = dur ? `書き出し範囲: ${MC.ui.fmtTime(tIn)} 〜 ${MC.ui.fmtTime(tOut)}` : "";
   MC.timeline.updateHead();

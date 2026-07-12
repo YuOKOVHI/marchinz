@@ -14,6 +14,7 @@
 <meta property="og:url" content="https://marchinz.netlify.app/tools/privacy/">
 <meta property="og:image" content="https://marchinz.netlify.app/ogp-card.png">
 <meta name="twitter:card" content="summary_large_image">
+<link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -31,8 +32,8 @@
   </div>
 </header>
 
-<p class="beta-disclaimer" style="margin:0; padding:8px 16px; font-size:12px; line-height:1.5; color:#8a6d3b; background:#fbf6e6; border-bottom:1px solid #eadfbf; text-align:center;">
-  ⚠️ 本ツールは<strong>ベータ版</strong>です。動作は保証されません。ご利用は自己責任でお願いします（モザイクの掛かり漏れ・不具合について当方は責任を負いません）。
+<p class="beta-disclaimer">
+  <i class="fa-solid fa-triangle-exclamation"></i> 本ツールは<strong>ベータ版</strong>です。動作は保証されません。ご利用は自己責任でお願いします（モザイクの掛かり漏れ・不具合について当方は責任を負いません）。
 </p>
 
 <main>
@@ -55,7 +56,7 @@
         <canvas id="previewCanvas"></canvas>
       </div>
       <div class="transport video-only">
-        <button id="playBtn" class="mini-btn">▶ 再生</button>
+        <button id="playBtn" class="mini-btn"><i class="fa-solid fa-play"></i> 再生</button>
         <input id="seekBar" type="range" min="0" max="100" step="0.01" value="0">
         <span id="timeLabel" class="time">0:00 / 0:00</span>
       </div>

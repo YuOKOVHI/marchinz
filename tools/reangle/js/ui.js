@@ -110,7 +110,9 @@ RA.ui.updateTime = () => {
   if (!c) return;
   $("timeLabel").textContent = `${RA.ui.fmtTime(c.video.currentTime)} / ${RA.ui.fmtTime(c.duration)}`;
   if (!RA.ui._seeking) $("seekBar").value = c.video.currentTime;
-  $("playBtn").textContent = c.video.paused ? "▶ 再生" : "⏸ 一時停止";
+  $("playBtn").innerHTML = c.video.paused
+    ? '<i class="fa-solid fa-play"></i> 再生'
+    : '<i class="fa-solid fa-pause"></i> 一時停止';
 };
 
 /* ---- タブ(四隅 / 補正) ---- */
