@@ -1966,6 +1966,41 @@ body {
 
 .mz-base-add-btn:hover { background: #f4f7ff; border-color: var(--blue); }
 
+/* ワンタップ記録(前回と同じで今日を保存)。フォームを開かず1タップで完了する主導線 */
+.mz-base-quick-btn {
+  width: 100%;
+  padding: 0.65rem;
+  margin: -0.3rem 0 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  border: 1px solid var(--blue);
+  border-radius: 12px;
+  background: var(--blue);
+  color: #fff;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.mz-base-quick-btn:hover { background: #163b9e; }
+
+.mz-base-quick-btn:disabled { opacity: 0.55; cursor: default; }
+
+.mz-base-quick-btn-main { font-weight: 700; }
+
+.mz-base-quick-btn-sub { font-size: 0.76rem; color: rgba(255, 255, 255, 0.82); }
+
+/* 楽器カードのメンテ操作列(ワンタップ「今日やった」+ ダイアログ起動) */
+.mz-base-maint-btn-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+.mz-base-maint-quick { border-color: var(--blue); color: #fff; background: var(--blue); font-weight: 700; }
+
+.mz-base-maint-quick:hover { background: #163b9e; }
+
+.mz-base-maint-quick:disabled { opacity: 0.55; cursor: default; }
+
 .mz-base-form {
   display: flex;
   flex-direction: column;

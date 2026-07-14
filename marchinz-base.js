@@ -248,6 +248,39 @@
     form.hidden = true;
     addBtn.addEventListener("click", () => { form.hidden = !form.hidden; });
     panel.appendChild(addBtn);
+
+    // ワンタップ記録: 前回の内容+分数(+目標)で今日を即保存。フォームを開かずに完了する
+    const lastLog = practiceLogs[0] || null;
+    const lastMinutes = lastLog ? Math.max(0, Math.min(1440, Number(lastLog.minutes) || 0)) : 0;
+    if (lastLog && lastMinutes > 0) {
+      const lastTags = (Array.isArray(lastLog.tags) ? lastLog.tags : []).slice(0, 8);
+      const quick = el("button", "mz-base-quick-btn");
+      quick.type = "button";
+      quick.innerHTML = '<i class="fa-solid fa-bolt" aria-hidden="true"></i> ';
+      quick.appendChild(el("span", "mz-base-quick-btn-main", "前回と同じで今日を記録"));
+      quick.appendChild(el("span", "mz-base-quick-btn-sub", `${lastTags.join("・") || "内容なし"}・${lastMinutes}分`));
+      const quickMsg = el("p", "mz-base-form-msg");
+      quickMsg.hidden = true;
+      quick.addEventListener("click", async () => {
+        quick.disabled = true;
+        const activeIds = new Set(activeGoals().map((g) => g.id));
+        const ok = await savePracticeLog({
+          date: todayStr(),
+          tags: lastTags,
+          minutes: lastMinutes,
+          memo: "",
+          goalIds: (Array.isArray(lastLog.goal_ids) ? lastLog.goal_ids : []).filter((id) => activeIds.has(id)),
+          condition: "",
+        });
+        if (!ok) {
+          quickMsg.textContent = "保存に失敗しました。時間をおいて再度お試しください。";
+          quickMsg.hidden = false;
+          quick.disabled = false;
+        }
+      });
+      panel.appendChild(quick);
+      panel.appendChild(quickMsg);
+    }
     panel.appendChild(form);
 
     renderGoalsBlock(panel);
@@ -439,116 +472,134 @@
 
     form.addEventListener("submit", async (ev) => {
       ev.preventDefault();
-      const db = getDb();
-      if (!db || !mountedUid) return;
       submit.disabled = true;
-
-      // 応援メッセージ用の「保存前」文脈(復帰・初回・進捗跨ぎ判定は保存前の状態から取る)
-      const isFirst = practiceLogs.length === 0;
-      const lastDate = practiceLogs
-        .map((l) => String(l.date || "").slice(0, 10))
-        .sort()
-        .pop();
-      const gapDays = lastDate
-        ? Math.round((new Date(todayStr() + "T00:00:00") - new Date(lastDate + "T00:00:00")) / 86400000)
-        : 0;
-      const minutesVal = Math.max(0, Math.min(1440, Number(minInput.value) || 0));
-      // ルール上限(10件)に合わせて切り詰め
-      const goalIds = Array.from(selectedGoals).slice(0, 10);
-      const pctBeforeById = {};
-      goalIds.forEach((gid) => {
-        const g = goals.find((x) => x.id === gid);
-        const target = g ? Number(g.target_minutes) || 0 : 0;
-        pctBeforeById[gid] = target > 0 ? Math.min(100, Math.round((goalProgressMinutes(g) / target) * 100)) : null;
+      const ok = await savePracticeLog({
+        date: dateInput.value || todayStr(),
+        tags: Array.from(selected).slice(0, 8),
+        minutes: Math.max(0, Math.min(1440, Number(minInput.value) || 0)),
+        memo: String(memoInput.value || "").trim().slice(0, 800),
+        goalIds: Array.from(selectedGoals).slice(0, 10),
+        condition: selectedCondition,
       });
-
-      try {
-        const nowIso = new Date().toISOString();
-        await db
-          .collection("mll_profiles")
-          .doc(mountedUid)
-          .collection("base_practice_logs")
-          .add({
-            date: dateInput.value || todayStr(),
-            tags: Array.from(selected).slice(0, 8),
-            minutes: minutesVal,
-            memo: String(memoInput.value || "").trim().slice(0, 800),
-            // 任意フィールドは未選択なら送らない(旧ルール配信中でも保存が通るロールバック耐性)
-            ...(goalIds.length ? { goal_ids: goalIds } : {}),
-            ...(selectedCondition ? { condition: selectedCondition } : {}),
-            created_at: nowIso,
-            updated_at: nowIso,
-          });
-        // 目標の累計進捗をインクリメント(表示窓 limit(200) に依存しない恒久カウンタ)
-        if (goalIds.length && minutesVal > 0 && window.firebase?.firestore?.FieldValue?.increment) {
-          await Promise.all(
-            goalIds.map((gid) =>
-              db
-                .collection("mll_profiles")
-                .doc(mountedUid)
-                .collection("base_goals")
-                .doc(gid)
-                .update({
-                  progress_minutes: window.firebase.firestore.FieldValue.increment(minutesVal),
-                  updated_at: nowIso,
-                })
-                .catch((e) => console.warn("[MarchinZBase] goal progress", e)),
-            ),
-          );
-        }
-      } catch (e) {
-        console.warn("[MarchinZBase] practice add", e);
+      if (!ok) {
         msg.textContent = "保存に失敗しました。時間をおいて再度お試しください。";
         msg.hidden = false;
         submit.disabled = false;
-        return;
-      }
-
-      // 保存は成功済み。以降(再読込・応援演出)の失敗を「保存失敗」と誤表示しない
-      try {
-        window.MarchinZConfetti?.burst({ count: 40, duration: 700 });
-        await loadAll(mountedUid); // practiceLogs/goals が最新化され、フォームも作り直される
-
-        const now = new Date();
-        const week = practiceLogs
-          .filter((l) => new Date(String(l.date) + "T00:00:00").getTime() >= now.getTime() - 7 * 86400000)
-          .reduce((s, l) => s + (Number(l.minutes) || 0), 0);
-        const prevWeek = practiceLogs
-          .filter((l) => {
-            const t = new Date(String(l.date) + "T00:00:00").getTime();
-            return t >= now.getTime() - 14 * 86400000 && t < now.getTime() - 7 * 86400000;
-          })
-          .reduce((s, l) => s + (Number(l.minutes) || 0), 0);
-        const goalViews = goalIds
-          .map((gid) => {
-            const g = goals.find((x) => x.id === gid);
-            if (!g) return null;
-            const target = Number(g.target_minutes) || 0;
-            return {
-              title: g.title || "",
-              pct: target > 0 ? Math.min(100, Math.round((goalProgressMinutes(g) / target) * 100)) : null,
-              pctBefore: pctBeforeById[gid],
-            };
-          })
-          .filter(Boolean);
-        showCheerToast(
-          pickCheerMessage({
-            goalViews,
-            streak: calcStreak(),
-            weekMinutes: week,
-            prevWeekMinutes: prevWeek,
-            gapDays,
-            isFirst,
-            hour: now.getHours(),
-          }),
-          goalViews,
-        );
-      } catch (e) {
-        console.warn("[MarchinZBase] post-save", e);
       }
     });
 
     return form;
+  }
+
+  /**
+   * 練習ログの保存+応援演出。フォームとワンタップ記録の共通経路。
+   * 成功時は loadAll で再描画されるため呼び出し側の後始末は不要。失敗時のみ false を返す。
+   */
+  async function savePracticeLog({ date, tags, minutes, memo, goalIds, condition }) {
+    const db = getDb();
+    if (!db || !mountedUid) return false;
+
+    // 応援メッセージ用の「保存前」文脈(復帰・初回・進捗跨ぎ判定は保存前の状態から取る)
+    const isFirst = practiceLogs.length === 0;
+    const lastDate = practiceLogs
+      .map((l) => String(l.date || "").slice(0, 10))
+      .sort()
+      .pop();
+    const gapDays = lastDate
+      ? Math.round((new Date(todayStr() + "T00:00:00") - new Date(lastDate + "T00:00:00")) / 86400000)
+      : 0;
+    const minutesVal = Math.max(0, Math.min(1440, Number(minutes) || 0));
+    // ルール上限(10件)に合わせて切り詰め
+    goalIds = (Array.isArray(goalIds) ? goalIds : []).slice(0, 10);
+    const pctBeforeById = {};
+    goalIds.forEach((gid) => {
+      const g = goals.find((x) => x.id === gid);
+      const target = g ? Number(g.target_minutes) || 0 : 0;
+      pctBeforeById[gid] = target > 0 ? Math.min(100, Math.round((goalProgressMinutes(g) / target) * 100)) : null;
+    });
+
+    try {
+      const nowIso = new Date().toISOString();
+      await db
+        .collection("mll_profiles")
+        .doc(mountedUid)
+        .collection("base_practice_logs")
+        .add({
+          date: String(date || todayStr()).slice(0, 10),
+          tags: (Array.isArray(tags) ? tags : []).slice(0, 8),
+          minutes: minutesVal,
+          memo: String(memo || "").trim().slice(0, 800),
+          // 任意フィールドは未選択なら送らない(旧ルール配信中でも保存が通るロールバック耐性)
+          ...(goalIds.length ? { goal_ids: goalIds } : {}),
+          ...(condition ? { condition } : {}),
+          created_at: nowIso,
+          updated_at: nowIso,
+        });
+      // 目標の累計進捗をインクリメント(表示窓 limit(200) に依存しない恒久カウンタ)
+      if (goalIds.length && minutesVal > 0 && window.firebase?.firestore?.FieldValue?.increment) {
+        await Promise.all(
+          goalIds.map((gid) =>
+            db
+              .collection("mll_profiles")
+              .doc(mountedUid)
+              .collection("base_goals")
+              .doc(gid)
+              .update({
+                progress_minutes: window.firebase.firestore.FieldValue.increment(minutesVal),
+                updated_at: nowIso,
+              })
+              .catch((e) => console.warn("[MarchinZBase] goal progress", e)),
+          ),
+        );
+      }
+    } catch (e) {
+      console.warn("[MarchinZBase] practice add", e);
+      return false;
+    }
+
+    // 保存は成功済み。以降(再読込・応援演出)の失敗を「保存失敗」と誤表示しない
+    try {
+      window.MarchinZConfetti?.burst({ count: 40, duration: 700 });
+      await loadAll(mountedUid); // practiceLogs/goals が最新化され、フォームも作り直される
+
+      const now = new Date();
+      const week = practiceLogs
+        .filter((l) => new Date(String(l.date) + "T00:00:00").getTime() >= now.getTime() - 7 * 86400000)
+        .reduce((s, l) => s + (Number(l.minutes) || 0), 0);
+      const prevWeek = practiceLogs
+        .filter((l) => {
+          const t = new Date(String(l.date) + "T00:00:00").getTime();
+          return t >= now.getTime() - 14 * 86400000 && t < now.getTime() - 7 * 86400000;
+        })
+        .reduce((s, l) => s + (Number(l.minutes) || 0), 0);
+      const goalViews = goalIds
+        .map((gid) => {
+          const g = goals.find((x) => x.id === gid);
+          if (!g) return null;
+          const target = Number(g.target_minutes) || 0;
+          return {
+            title: g.title || "",
+            pct: target > 0 ? Math.min(100, Math.round((goalProgressMinutes(g) / target) * 100)) : null,
+            pctBefore: pctBeforeById[gid],
+          };
+        })
+        .filter(Boolean);
+      showCheerToast(
+        pickCheerMessage({
+          goalViews,
+          streak: calcStreak(),
+          weekMinutes: week,
+          prevWeekMinutes: prevWeek,
+          gapDays,
+          isFirst,
+          hour: now.getHours(),
+        }),
+        goalViews,
+      );
+    } catch (e) {
+      console.warn("[MarchinZBase] post-save", e);
+    }
+    return true;
   }
 
   function buildPracticeRow(log) {
@@ -1268,10 +1319,46 @@
       body.appendChild(hist);
     }
 
-    const addMaintBtn = el("button", "mz-base-mini-btn", "メンテ記録を追加");
+    // ワンタップ記録: 前回と同じ種類のメンテを今日やったことにして、次回目安も自動更新
+    const lastMaint = log.length ? log[log.length - 1] : null;
+    const btnRow = el("div", "mz-base-maint-btn-row");
+    if (lastMaint && lastMaint.kind) {
+      const quick = el("button", "mz-base-mini-btn mz-base-maint-quick");
+      quick.innerHTML = '<i class="fa-solid fa-check" aria-hidden="true"></i> ';
+      quick.appendChild(document.createTextNode(`「${lastMaint.kind}」を今日やった`));
+      quick.type = "button";
+      quick.addEventListener("click", () => {
+        const db = getDb();
+        if (!db || !mountedUid) return;
+        quick.disabled = true;
+        const cycleDays = (MAINT_KINDS.find(([k]) => k === lastMaint.kind) || [])[1] || 0;
+        const newLog = log.slice();
+        newLog.push({ date: todayStr(), kind: String(lastMaint.kind).slice(0, 40), memo: "" });
+        db.collection("mll_profiles")
+          .doc(mountedUid)
+          .collection("base_instruments")
+          .doc(inst.id)
+          .update({
+            maintenance_log: newLog.slice(-100),
+            next_due_date: cycleDays ? addDaysStr(todayStr(), cycleDays) : "",
+            updated_at: new Date().toISOString(),
+          })
+          .then(() => {
+            showCheerToast(`「${inst.name}」お手入れ完了。道具を大切にする人は、音も大切にできる人です。`, [], "🔧 お手入れ記録");
+            return loadAll(mountedUid);
+          })
+          .catch((e) => {
+            console.warn("[MarchinZBase] maint quick", e);
+            quick.disabled = false;
+          });
+      });
+      btnRow.appendChild(quick);
+    }
+    const addMaintBtn = el("button", "mz-base-mini-btn", lastMaint ? "別の内容を記録" : "メンテ記録を追加");
     addMaintBtn.type = "button";
     addMaintBtn.addEventListener("click", () => openMaintDialog(inst));
-    body.appendChild(addMaintBtn);
+    btnRow.appendChild(addMaintBtn);
+    body.appendChild(btnRow);
 
     const del = el("button", "mz-base-del-btn mz-base-del-btn--card", "この楽器を削除");
     del.type = "button";
@@ -1312,7 +1399,10 @@
     head.appendChild(document.createTextNode(`メンテ記録 — ${inst.name || ""}`));
     surface.appendChild(head);
 
-    let kindValue = MAINT_KINDS[0][0];
+    // 初期選択は「前回と同じ種類」(毎回同じお手入れが大半のため)。履歴が無ければ先頭
+    const instLog = Array.isArray(inst.maintenance_log) ? inst.maintenance_log : [];
+    const lastKind = instLog.length ? String(instLog[instLog.length - 1].kind || "") : "";
+    let kindValue = MAINT_KINDS.some(([k]) => k === lastKind) ? lastKind : MAINT_KINDS[0][0];
 
     const dateRow = el("label", "mz-base-field");
     dateRow.appendChild(el("span", "mz-base-field-label", "実施日"));
@@ -1335,8 +1425,8 @@
     const kindWrap = el("div", "mz-base-field");
     kindWrap.appendChild(el("span", "mz-base-field-label", "内容"));
     const kindChips = el("div", "mz-base-tag-chips");
-    MAINT_KINDS.forEach(([k, days], i) => {
-      const chip = el("button", "mz-base-tag-chip" + (i === 0 ? " mz-base-tag-chip--on" : ""), days ? `${k}(${days}日毎)` : k);
+    MAINT_KINDS.forEach(([k, days]) => {
+      const chip = el("button", "mz-base-tag-chip" + (k === kindValue ? " mz-base-tag-chip--on" : ""), days ? `${k}(${days}日毎)` : k);
       chip.type = "button";
       chip.addEventListener("click", () => {
         kindValue = k;
