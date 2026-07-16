@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-version="1.35.9">
+<html lang="ja" data-mz-version="1.36.0">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -1919,6 +1919,12 @@
                   inputmode="url"
                 />
               </label>
+              <div class="calendar-ev-autofill-row">
+                <button type="button" id="calendar-ev-autofill" class="calendar-ev-autofill-btn">
+                  <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> URLの内容から仮入力
+                </button>
+                <span class="calendar-ev-autofill-hint">イベントページのURLを入れて押すと、名前や日付を仮で入れます（内容は要確認）</span>
+              </div>
               <label class="search-label-full">
                 あなたの関わり方（MarchinZ Log）（任意）
                 <select id="calendar-ev-participation" name="calendar-ev-participation" aria-label="あなたの関わり方（MarchinZ Log）">
@@ -3866,6 +3872,7 @@
     <script defer src="site-nav.js?v=1.27.0"></script>
     <script defer src="data.inline.js?v=1.26.36"></script>
     <script defer src="digest.inline.js?v=1.27.0"></script>
+    <script defer src="marchinz-data-refresh.js?v=1.36.0"></script>
     <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
     <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
     <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>

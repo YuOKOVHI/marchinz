@@ -3336,6 +3336,50 @@
     onEnterEvents: onCalendarEventEnterEvents,
   };
 
+  // URLから仮入力(v1.36): イベントページのメタ情報(JSON-LD/OGP/本文)からタイトル・開催日・
+  // 都道府県・種別を推定して「空欄にだけ」入れる。最後は本人が確認してから登録する
+  const autofillBtn = document.getElementById("calendar-ev-autofill");
+  if (autofillBtn) {
+    autofillBtn.addEventListener("click", async () => {
+      const rawUrl = String(inputUrl?.value || "").trim();
+      if (!rawUrl) {
+        setFormMsg("先にURL欄へイベントページのURLを入れてください。", true);
+        inputUrl?.focus();
+        return;
+      }
+      autofillBtn.disabled = true;
+      setFormMsg("ページを読み取っています…");
+      try {
+        const res = await fetch(`/.netlify/functions/event-scrape?url=${encodeURIComponent(rawUrl)}`);
+        const data = await res.json().catch(() => null);
+        if (!data || !data.ok) {
+          setFormMsg((data && data.error) || "このページからは読み取れませんでした。お手数ですが手入力をお願いします。", true);
+          return;
+        }
+        const filled = [];
+        const fill = (el, value, label) => {
+          if (!el || !value || String(el.value || "").trim()) return;
+          el.value = value;
+          el.dispatchEvent(new Event("change", { bubbles: true })); // 下書き保存と連動させる
+          filled.push(label);
+        };
+        fill(inputTitle, data.title, "イベント名");
+        fill(inputDate, data.date, "開催日");
+        if (data.pref && JP_PREFS.includes(data.pref)) fill(selectVenue, data.pref, "開催地");
+        fill(selectKind, data.kind, "種別");
+        setFormMsg(
+          filled.length
+            ? `仮で入力しました（${filled.join("・")}）。内容を確認してから登録してください。`
+            : "読み取れましたが、すでに入力済みのため変更していません。",
+        );
+      } catch {
+        setFormMsg("読み取りに失敗しました。通信環境を確認してもう一度お試しください。", true);
+      } finally {
+        autofillBtn.disabled = false;
+      }
+    });
+  }
+
   const calendarDraftInputs = [inputDate, selectVenue, inputTitle, inputUrl, selectParticipation, selectKind];
   calendarDraftInputs.forEach((el) => {
     if (!el) return;

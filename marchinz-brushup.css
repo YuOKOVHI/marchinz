@@ -3653,3 +3653,36 @@ body {
     font-size: 0.68rem;
   }
 }
+
+/* イベント登録: URLから仮入力(v1.36) */
+.calendar-ev-autofill-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin: -0.35rem 0 0.35rem;
+}
+
+.calendar-ev-autofill-btn {
+  flex-shrink: 0;
+  padding: 0.5rem 0.85rem;
+  border: 1px solid var(--blue);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--blue);
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.calendar-ev-autofill-btn:hover { background: #f4f7ff; }
+
+.calendar-ev-autofill-btn:disabled { opacity: 0.55; cursor: default; }
+
+.calendar-ev-autofill-hint {
+  flex: 1;
+  min-width: 200px;
+  font-size: 0.72rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
