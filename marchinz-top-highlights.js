@@ -579,6 +579,24 @@
     }
   }
 
+  // 実行時データリフレッシュ(marchinz-data-refresh.js)後の再描画。
+  // renderFreshVideos/renderYoutubeFresh/renderDigest は追記型のため、先に空にしてから再実行する
+  document.addEventListener("mz:data-refreshed", function () {
+    try {
+      ["mz-top-video-grid", "mz-top-yt-grid", "mz-top-note-grid", "mz-top-digest"].forEach(function (id) {
+        var n = document.getElementById(id);
+        if (n) n.replaceChildren();
+      });
+      renderDashStatic();
+      renderDigest();
+      renderFreshVideos();
+      renderYoutubeFresh();
+      renderTopNotes();
+    } catch (err) {
+      if (window.console && console.warn) console.warn("[mz-top-highlights] refresh", err);
+    }
+  });
+
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);
   } else {

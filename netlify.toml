@@ -4,6 +4,14 @@
 [build]
   command = "bash ./netlify_prebuild_refresh.sh"
   publish = "."
+  # 毎朝5時のbot(YouTube/note/digestデータのみのpush)ではビルドしない(クレジット節約)。
+  # exit 0 = ビルドをスキップ。データ系以外に差分があるときだけビルドが走る。
+  # スキップ中のデータ鮮度は marchinz-data-refresh.js が実行時にGitHubから直接取得して担保する。
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- . ':(exclude)data.json' ':(exclude)data.inline.js' ':(exclude)digest.inline.js' ':(exclude)marchinz-notes.inline.js' ':(exclude)youtube-list/'"
+
+# イベント登録の「URLから仮入力」用サーバレス関数(CORS回避のためサーバ側でページを取得)
+[functions]
+  directory = "netlify/functions"
 
 # Firebase Auth helper endpoints を Netlify 側でプロキシし、1st-party の同一オリジンに見せる
 [[redirects]]
