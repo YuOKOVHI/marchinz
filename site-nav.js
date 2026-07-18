@@ -7,6 +7,7 @@
     "community",
     "profile",
     "ugc",
+    "ugc-tools",
     "admin",
     "videos",
     "youtube",
@@ -26,6 +27,7 @@
     moments: "モーメント",
     profile: "プロフィール",
     ugc: "UGC",
+    "ugc-tools": "UGC（ツール）",
     admin: "管理",
     videos: "大会動画",
     youtube: "YouTube",
@@ -326,6 +328,7 @@
     community: document.getElementById("page-community"),
     profile: document.getElementById("page-profile"),
     ugc: document.getElementById("page-ugc"),
+    "ugc-tools": document.getElementById("page-ugc-tools"),
     admin: document.getElementById("page-admin"),
     videos: document.getElementById("page-videos"),
     youtube: document.getElementById("page-youtube"),
@@ -622,6 +625,16 @@
       history.replaceState(null, "", `${location.pathname}${location.search}#admin/reports`);
       return { pageId: "admin", communityTab: null, adminTab: "reports" };
     }
+    if (h === "ugc-tools" || h === "ugc/tool_use") {
+      if (!isAdminNow()) {
+        history.replaceState(null, "", `${location.pathname}${location.search}#top`);
+        return { pageId: "mll", communityTab: null, adminTab: null, ugcKind: null };
+      }
+      if (h !== "ugc-tools") {
+        history.replaceState(null, "", `${location.pathname}${location.search}#ugc-tools`);
+      }
+      return { pageId: "ugc-tools", communityTab: null, adminTab: null, ugcKind: null };
+    }
     if (h === "ugc" || h.startsWith("ugc/")) {
       if (!isAdminNow()) {
         history.replaceState(null, "", `${location.pathname}${location.search}#top`);
@@ -691,7 +704,7 @@
    * @param {{ communityTab?: string|null, adminTab?: string|null, ugcKind?: string|null }} [routeOpts]
    */
   function showPage(id, routeOpts = {}) {
-    if ((id === "admin" || id === "ugc") && !isAdminNow()) {
+    if ((id === "admin" || id === "ugc" || id === "ugc-tools") && !isAdminNow()) {
       id = "mll";
     }
     const commTab = id === "community" ? normalizeCommunityTab(routeOpts.communityTab ?? "events") : null;
@@ -773,6 +786,7 @@
       id === "signup" ||
       id === "profile" ||
       id === "ugc" ||
+      id === "ugc-tools" ||
       id === "admin" ||
       (id === "community" &&
         (normalizeCommunityTab(routeOpts.communityTab ?? "events") === "notes" ||
@@ -846,6 +860,14 @@
         void window.MarchinZAdminUgc?.refreshBadges?.();
         void window.MarchinZAdminUgc?.refreshNavSignupCount?.();
         void window.MarchinZAdminUgc?.refresh?.();
+      } catch {
+        //
+      }
+    }
+    if (id === "ugc-tools") {
+      try {
+        void window.MarchinZAdminUgcTools?.refresh?.();
+        void window.MarchinZAdminUgcTools?.refreshBadge?.();
       } catch {
         //
       }

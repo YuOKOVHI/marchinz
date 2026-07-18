@@ -1,5 +1,6 @@
 /**
- * 運営 UGC フィード（#ugc/*）: 未読・既読は通知と同型
+ * 運営 UGC フィード（#ugc/* と #ugc-tools）: 未読・既読は通知と同型。
+ * tool_use は独立ページ「UGC（ツール）」(#ugc-tools) で扱う(v1.36.7)。
  */
 (function () {
   "use strict";
@@ -16,7 +17,6 @@
     "video_search",
     "search_share",
     "mll_log",
-    "tool_use",
   ]);
 
   const GUEST_ACTOR_UID = "mll_guest";
@@ -620,20 +620,6 @@
     void refreshNavSignupCount();
     setMsg("読み込み中…");
     try {
-      const summaryHost = el("admin-ugc-tool-summary");
-      if (activeKind === "tool_use" && summaryHost) {
-        summaryHost.hidden = false;
-        try {
-          renderToolSummary(await loadToolUseSummaryRows(db));
-        } catch (e) {
-          console.warn("[MarchinZ] tool summary", e);
-          summaryHost.hidden = true;
-          summaryHost.replaceChildren();
-        }
-      } else if (summaryHost) {
-        summaryHost.hidden = true;
-        summaryHost.replaceChildren();
-      }
       const rows = await loadFeedRows(db, activeKind);
       const ids = rows.map((r) => String(r.id));
       const readMap = await loadReadMap(db, me.id, ids);
@@ -694,6 +680,248 @@
     });
   }
 
+  // ───────────────────────────────────────────────
+  // 独立ページ「UGC（ツール）」(#ugc-tools): tool_use 専用の一覧+サマリー+一括既読
+  // ───────────────────────────────────────────────
+
+  /** @type {"unread"|"read"} */
+  let toolsFilterMode = "unread";
+
+  function setToolsMsg(text, isErr) {
+    const m = el("admin-ugc-tools-msg");
+    if (!m) return;
+    m.textContent = text || "";
+    m.hidden = !text;
+    m.classList.toggle("ops-announcement-msg--err", Boolean(isErr));
+  }
+
+  /** ナビの「UGC（ツール）」バッジ(tool_use 未読数)を更新 */
+  async function refreshToolsBadge() {
+    const paint = (n) => {
+      document.querySelectorAll("[data-ugc-tools-nav-badge]").forEach((node) => {
+        if (!(node instanceof HTMLElement)) return;
+        if (n > 0) {
+          node.textContent = n > 99 ? "99+" : String(n);
+          node.hidden = false;
+        } else {
+          node.hidden = true;
+        }
+      });
+    };
+    if (!isAdminUi()) {
+      paint(0);
+      return;
+    }
+    const db = getDb();
+    const me = getUser();
+    if (!db || !me?.id) {
+      paint(0);
+      return;
+    }
+    try {
+      paint(await countUnreadForKind(db, me.id, "tool_use"));
+    } catch {
+      paint(0);
+    }
+  }
+
+  /** tool_use 専用の一覧描画(未読/既読フィルタは toolsFilterMode) */
+  function paintToolsList(host, rows, readMap) {
+    host.replaceChildren();
+    feedState = rows.map((r) => ({
+      id: String(r.id),
+      read: readMap.get(String(r.id)) === true,
+    }));
+
+    const visible = rows.filter((r) => {
+      const isRead = readMap.get(String(r.id)) === true;
+      return toolsFilterMode === "read" ? isRead : !isRead;
+    });
+
+    const empty = el("admin-ugc-tools-empty");
+    if (empty) {
+      empty.textContent =
+        toolsFilterMode === "unread" ? "未読のツール利用はありません" : "既読のツール利用はありません";
+      empty.hidden = visible.length > 0;
+    }
+
+    for (const row of visible) {
+      const fid = String(row.id);
+      const isRead = readMap.get(fid) === true;
+      const article = document.createElement("article");
+      article.className = "user-prof-notif admin-ugc-item" + (isRead ? "" : " user-prof-notif--unread");
+      article.dataset.adminUgcId = fid;
+      if (isRead) article.dataset.mzRead = "1";
+
+      const body = document.createElement("div");
+      body.className = "user-prof-notif-body admin-ugc-body";
+      const line = document.createElement("p");
+      line.className = "user-prof-notif-line1 admin-ugc-line";
+      line.appendChild(document.createTextNode(`${fmtYmd(String(row.created_at || ""))}に `));
+
+      const actorUid = String(row.actor_uid || "").trim();
+      const isGuestActor =
+        actorUid === GUEST_ACTOR_UID || String(row.actor_name || "").trim() === "ゲスト";
+      const actorName = `${String(row.actor_name || "ユーザー").trim()}さん`;
+      if (!isGuestActor && actorUid) {
+        const actorLink = document.createElement("a");
+        actorLink.className = "user-prof-notif-actor";
+        actorLink.href = `#profile?uid=${encodeURIComponent(actorUid)}`;
+        actorLink.textContent = actorName;
+        actorLink.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          void markRead(fid).then(() => {
+            void refreshToolsBadge();
+            navigateHash(actorLink.getAttribute("href") || "");
+          });
+        });
+        line.appendChild(actorLink);
+      } else {
+        const actorSpan = document.createElement("span");
+        actorSpan.className = "user-prof-notif-actor";
+        actorSpan.textContent = actorName;
+        line.appendChild(actorSpan);
+      }
+
+      line.appendChild(document.createTextNode("が "));
+      const targetLink = document.createElement("a");
+      targetLink.className = "admin-ugc-target-link";
+      const href = String(row.target_href || "#").trim() || "#";
+      const isPagePath = href.startsWith("/");
+      targetLink.href = isPagePath || href.startsWith("#") ? href : `#${href}`;
+      targetLink.textContent = targetPhrase(row);
+      targetLink.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        void markRead(fid).then(() => {
+          void refreshToolsBadge();
+          const h = targetLink.getAttribute("href") || "";
+          if (h.startsWith("/")) {
+            window.location.href = h;
+          } else {
+            navigateHash(h);
+          }
+        });
+      });
+      line.appendChild(targetLink);
+      line.appendChild(document.createTextNode("を使いました"));
+
+      body.appendChild(line);
+      article.appendChild(body);
+      article.addEventListener("click", () => {
+        void markRead(fid).then(() => {
+          article.classList.remove("user-prof-notif--unread");
+          article.dataset.mzRead = "1";
+          void refreshToolsBadge();
+        });
+      });
+      host.appendChild(article);
+    }
+  }
+
+  async function toolsRefresh() {
+    const host = el("admin-ugc-tools-list");
+    if (!host) return;
+    if (!isAdminUi()) {
+      host.replaceChildren();
+      setToolsMsg("管理者のみ利用できます。", true);
+      return;
+    }
+    const db = getDb();
+    const me = getUser();
+    if (!db || !me?.id) {
+      setToolsMsg("ログインしてください。", true);
+      return;
+    }
+    setToolsMsg("読み込み中…");
+    try {
+      const summaryHost = el("admin-ugc-tool-summary");
+      if (summaryHost) {
+        try {
+          renderToolSummary(await loadToolUseSummaryRows(db));
+        } catch (e) {
+          console.warn("[MarchinZ] tool summary", e);
+          summaryHost.replaceChildren();
+        }
+      }
+      const rows = await loadFeedRows(db, "tool_use");
+      const readMap = await loadReadMap(db, me.id, rows.map((r) => String(r.id)));
+      paintToolsList(host, rows, readMap);
+      setToolsMsg("");
+      void refreshToolsBadge();
+    } catch (e) {
+      console.warn(e);
+      const code = String(e?.code || "");
+      setToolsMsg(
+        code === "permission-denied"
+          ? "UGC フィードを読み取る権限がありません。"
+          : "一覧を読み込めませんでした。",
+        true,
+      );
+    }
+  }
+
+  /** tool_use を全期間(直近2000件)まとめて既読化。ルール上 {read, read_at} のみ書ける */
+  async function markAllToolsRead() {
+    const db = getDb();
+    const me = getUser();
+    if (!db || !me?.id || !isAdminUi()) return;
+    if (!window.confirm("ツール利用の記録をすべて既読にしますか？")) return;
+    const btn = el("admin-ugc-tools-allread");
+    if (btn instanceof HTMLButtonElement) btn.disabled = true;
+    setToolsMsg("既読にしています…");
+    try {
+      const rows = await loadToolUseSummaryRows(db);
+      const now = new Date().toISOString();
+      const col = db.collection("mll_profiles").doc(me.id).collection("admin_ugc_reads");
+      for (let i = 0; i < rows.length; i += 400) {
+        const batch = db.batch();
+        rows.slice(i, i + 400).forEach((r) => {
+          batch.set(col.doc(String(r.id)), { read: true, read_at: now }, { merge: true });
+        });
+        await batch.commit();
+      }
+      setToolsMsg(`${rows.length} 件を既読にしました。`);
+      void refreshToolsBadge();
+      void toolsRefresh();
+    } catch (e) {
+      console.warn("[MarchinZ] tools mark all read", e);
+      setToolsMsg("既読にできませんでした。", true);
+    } finally {
+      if (btn instanceof HTMLButtonElement) btn.disabled = false;
+    }
+  }
+
+  function wireTools() {
+    const filters = el("admin-ugc-tools-filters");
+    if (filters && !filters.dataset.wired) {
+      filters.dataset.wired = "1";
+      filters.addEventListener("click", (ev) => {
+        const btn =
+          ev.target instanceof HTMLElement ? ev.target.closest("[data-admin-ugc-tools-filter]") : null;
+        if (!btn) return;
+        const mode = String(btn.getAttribute("data-admin-ugc-tools-filter") || "");
+        if (mode !== "unread" && mode !== "read") return;
+        toolsFilterMode = mode;
+        filters.querySelectorAll("[data-admin-ugc-tools-filter]").forEach((b) => {
+          b.setAttribute("aria-pressed", b === btn ? "true" : "false");
+        });
+        void toolsRefresh();
+      });
+    }
+    const allread = el("admin-ugc-tools-allread");
+    if (allread && !allread.dataset.wired) {
+      allread.dataset.wired = "1";
+      allread.addEventListener("click", () => void markAllToolsRead());
+    }
+  }
+
+  window.MarchinZAdminUgcTools = {
+    refresh: toolsRefresh,
+    refreshBadge: refreshToolsBadge,
+  };
+
   window.MarchinZAdminUgc = {
     refresh,
     refreshBadges,
@@ -708,16 +936,21 @@
   document.addEventListener("DOMContentLoaded", () => {
     wireSubTabs();
     wireFilters();
+    wireTools();
   });
 
   document.addEventListener("mll-auth-changed", () => {
     void refreshBadges();
     void refreshNavSignupCount();
+    void refreshToolsBadge();
   });
 
   document.addEventListener("marchinz-admin-ugc-recorded", (e) => {
     const kind = e instanceof CustomEvent ? String(e.detail?.kind || "") : "";
-    if (kind === "tool_use") toolSummaryCache = null;
+    if (kind === "tool_use") {
+      toolSummaryCache = null;
+      void refreshToolsBadge();
+    }
     void refreshBadges();
   });
 })();

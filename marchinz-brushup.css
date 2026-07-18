@@ -4000,3 +4000,45 @@ body {
 }
 
 .mz-creators-apply i { font-size: 0.9em; }
+
+/* ---------- UGC(ツール) 独立ページ(v1.36.7) ---------- */
+
+/* 未描画(ログイン前など)は空の白枠を出さない */
+.admin-ugc-tool-summary:empty { display: none; }
+
+.admin-ugc-tools-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+.admin-ugc-tools-allread-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 44px;
+  padding: 0.45rem 0.95rem;
+  border: 1px solid var(--mz-admin-border, rgba(190, 24, 93, 0.38));
+  border-radius: 999px;
+  background: #fff;
+  color: var(--mz-admin-accent, #be123c);
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.admin-ugc-tools-allread-btn:hover:not(:disabled) {
+  background: var(--mz-admin-accent, #be123c);
+  color: #fff;
+}
+
+.admin-ugc-tools-allread-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.admin-ugc-tools-allread-btn i { font-size: 0.9em; }
