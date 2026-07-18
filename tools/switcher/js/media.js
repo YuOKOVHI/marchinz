@@ -33,6 +33,11 @@ MC.media.addFiles = async files => {
       URL.revokeObjectURL(clip.url);
       continue;
     }
+    if (v.duration > 600.5) {
+      MC.ui.toast(`⚠ ${f.name}: 動画は10分までです(約${Math.round(v.duration / 60)}分)`);
+      URL.revokeObjectURL(clip.url);
+      continue;
+    }
     clip.duration = v.duration;
     clip.width = v.videoWidth;
     clip.height = v.videoHeight;
