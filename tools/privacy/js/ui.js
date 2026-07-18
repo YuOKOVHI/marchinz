@@ -49,6 +49,41 @@ MZ.ui._enterEditor = (name, kind) => {
   $("clipName").textContent = name;
   $("exportBtn").textContent = kind === "image"
     ? "モザイクをかけて画像を保存" : "モザイクをかけて動画を保存";
+  MZ.ui.setStep(1);
+};
+
+/* ---- ステップウィザード(1:確認 / 2:調整 / 3:保存) ---- */
+MZ.ui.setStep = n => {
+  n = Math.max(1, Math.min(3, n | 0));
+  MZ.S.step = n;
+  document.querySelectorAll("#stepper [data-step]").forEach(b => {
+    const bn = parseInt(b.dataset.step, 10);
+    b.classList.toggle("on", bn === n);
+    b.classList.toggle("done", bn < n);
+  });
+  $("panelStep1").hidden = n !== 1;
+  $("panelStep2").hidden = n !== 2;
+  $("panelStep3").hidden = n !== 3;
+};
+
+/* ①ステップの検出状態カード(モデル準備 → 現在の検出人数をライブ表示) */
+MZ.ui.updateDetectStatus = () => {
+  const el = $("detectStatus");
+  if (!el || !MZ.S.clip) return;
+  el.classList.remove("ok", "ng", "busy");
+  if (!MZ.detect.detector) {
+    el.classList.add("busy");
+    el.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> 顔検出AIを準備しています…';
+    return;
+  }
+  const n = (MZ.preview.boxes || []).length;
+  if (n > 0) {
+    el.classList.add("ok");
+    el.innerHTML = `<i class="fa-solid fa-circle-check"></i> いまの画面で ${n} 人の顔にモザイクをかけています。`;
+  } else {
+    el.classList.add("ng");
+    el.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i> いまの画面では顔が見つかっていません。顔が映る位置に再生・シークして確認してください。';
+  }
 };
 
 /* ---- 読み込み: 拡張子/MIMEで写真・動画を振り分け ---- */
@@ -238,6 +273,16 @@ window.addEventListener("DOMContentLoaded", async () => {
   $("deepChk").onchange = e => { MZ.S.deep = e.target.checked; MZ.preview.imageDirty = true; };
   $("deepChk").checked = MZ.S.deep;
   $("resSel").onchange = e => { MZ.S.res = e.target.value; };
+
+  // ステップウィザード
+  document.querySelectorAll("#stepper [data-step]").forEach(b => {
+    b.onclick = () => MZ.ui.setStep(parseInt(b.dataset.step, 10));
+  });
+  $("toStep2Btn").onclick = () => MZ.ui.setStep(2);
+  $("toStep3Btn").onclick = () => MZ.ui.setStep(3);
+  $("backTo1Btn").onclick = () => MZ.ui.setStep(1);
+  $("backTo2Btn").onclick = () => MZ.ui.setStep(2);
+  setInterval(() => { if (MZ.S.clip && MZ.S.step === 1) MZ.ui.updateDetectStatus(); }, 400);
 
   $("exportBtn").onclick = MZ.ui.startExport;
   $("saveBtn").onclick = MZ.ui.saveResult;

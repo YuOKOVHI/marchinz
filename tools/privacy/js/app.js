@@ -10,6 +10,7 @@ window.MZ = {
     hold: 1.0,         // 前後の追従 0〜5秒
     deep: true,        // 小さな顔も探す(タイル検出)
     res: "1080",       // "1080" | "orig"
+    step: 1,           // ウィザード現在ステップ 1:確認 2:調整 3:保存
   },
   caps: { h264: null, aacEnc: null },
   testMode: /[?&]test/.test(location.search),

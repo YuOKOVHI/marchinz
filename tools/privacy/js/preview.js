@@ -37,10 +37,10 @@ MZ.preview = {
     if (clip.kind === "image") return this.drawImageOnce(clip);
     if (!clip.video || clip.video.readyState < 2) return;
     const v = clip.video, W = this.canvas.width, H = this.canvas.height;
-    // 検出は約130ms間隔+シーク時(書き出し中の実時間録画は毎フレーム)
+    // 検出は約80ms間隔+シーク時(書き出し中の実時間録画は毎フレーム)。速度予測トラッカーが間を埋める
     const t = v.currentTime;
     const due = MZ.exporter.running
-      || Math.abs(t - this.lastDetectAt) > 0.001 && (performance.now() - this.lastDetectTime > 130);
+      || Math.abs(t - this.lastDetectAt) > 0.001 && (performance.now() - this.lastDetectTime > 80);
     if (MZ.detect.detector && due) {
       // 再生中は軽量モード、一時停止中は書き出しと同じ精度で確認できる
       const mode = (MZ.S.deep && v.paused && !MZ.exporter.running) ? "deep" : "light";

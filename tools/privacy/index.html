@@ -62,7 +62,32 @@
       </div>
     </div>
 
-    <div class="card">
+    <nav id="stepper" class="stepper" aria-label="手順">
+      <button type="button" data-step="1" class="on">
+        <span class="step-num">1</span><span class="step-name">顔を確認</span>
+      </button>
+      <span class="step-arrow" aria-hidden="true"><i class="fa-solid fa-chevron-right"></i></span>
+      <button type="button" data-step="2">
+        <span class="step-num">2</span><span class="step-name">隠しかたを調整</span>
+      </button>
+      <span class="step-arrow" aria-hidden="true"><i class="fa-solid fa-chevron-right"></i></span>
+      <button type="button" data-step="3">
+        <span class="step-num">3</span><span class="step-name">保存</span>
+      </button>
+    </nav>
+
+    <div id="panelStep1" class="card step-card">
+      <h2 class="step-title">顔にかかっているか確認する</h2>
+      <p class="step-lead video-only">再生して、すべての顔にモザイクがかかっているか確認してください。</p>
+      <p class="step-lead image-only">顔に自動でモザイクがかかっています。掛かり漏れがないか確認してください。</p>
+      <p id="detectStatus" class="detect-status" aria-live="polite"></p>
+      <p class="hint">横向き・後ろ向き・小さな顔は漏れることがあります。漏れていたら次のステップで「広げ幅」や「小さな顔もていねいに探す」を調整できます。</p>
+      <button id="toStep2Btn" class="big-btn step-next">確認した、隠しかたの調整へ <i class="fa-solid fa-arrow-right"></i></button>
+    </div>
+
+    <div id="panelStep2" class="card step-card" hidden>
+      <h2 class="step-title">隠しかたを調整する</h2>
+      <p class="step-lead">プレビューを見ながら、隠しかたと強さを整えます。</p>
       <div class="setting">
         <label>隠しかた</label>
         <div id="typeSeg" class="seg">
@@ -70,6 +95,7 @@
           <button data-type="blur">ぼかし</button>
           <button data-type="fill">黒塗り</button>
         </div>
+        <p class="hint hint-tight">どれも顔のかたちに沿った円形で、ふちは自然になじみます。</p>
       </div>
       <div class="setting">
         <label>濃さ <b id="strengthVal"></b></label>
@@ -82,17 +108,27 @@
       <div class="setting video-only">
         <label>顔を見失っても追いかける <b id="holdVal"></b></label>
         <input id="holdRange" type="range" min="0" max="5" step="0.5">
+        <p class="hint hint-tight">検出が途切れても、行進の動きを予測してモザイクがついていきます。</p>
       </div>
-      <div class="setting row">
-        <label class="chk"><input id="deepChk" type="checkbox">小さな顔もていねいに探す</label>
-        <select id="resSel" class="video-only">
+      <div class="setting">
+        <label class="chk"><input id="deepChk" type="checkbox">小さな顔もていねいに探す（時間がかかります）</label>
+      </div>
+      <div class="step-nav">
+        <button id="backTo1Btn" class="mini-btn"><i class="fa-solid fa-arrow-left"></i> 確認へ戻る</button>
+        <button id="toStep3Btn" class="big-btn step-next">これでOK、保存へ <i class="fa-solid fa-arrow-right"></i></button>
+      </div>
+    </div>
+
+    <div id="panelStep3" class="card step-card" hidden>
+      <h2 class="step-title">書き出して保存する</h2>
+      <p class="step-lead">仕上がりを確認したら書き出します。</p>
+      <div class="setting row video-only">
+        <label class="inline-label">出力サイズ</label>
+        <select id="resSel">
           <option value="1080" selected>フルHDで保存(速い)</option>
           <option value="orig">元の解像度のまま</option>
         </select>
       </div>
-    </div>
-
-    <div class="card">
       <button id="exportBtn" class="big-btn accent">モザイクをかけて保存</button>
       <div id="progressWrap" hidden>
         <div class="bar"><div id="progressBar"></div></div>
@@ -104,6 +140,9 @@
         <p class="check-note"><i class="fa-solid fa-magnifying-glass"></i> 保存する前にプレビューを見直して、モザイクの<strong>掛かり漏れがないか</strong>ご確認ください。横向き・後ろ向きの顔は漏れやすいです。</p>
         <button id="saveBtn" class="big-btn accent"><i class="fa-solid fa-arrow-up-from-bracket"></i> 保存</button>
         <p id="doneNote" class="note"></p>
+      </div>
+      <div class="step-nav">
+        <button id="backTo2Btn" class="mini-btn"><i class="fa-solid fa-arrow-left"></i> 調整へ戻る</button>
       </div>
     </div>
   </section>

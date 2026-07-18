@@ -18,7 +18,7 @@ MZ.detect = {
     const make = delegate => FaceDetector.createFromOptions(fileset, {
       baseOptions: { modelAssetPath: "vendor/blaze_face_short_range.tflite", delegate },
       runningMode: "IMAGE",
-      minDetectionConfidence: 0.35,
+      minDetectionConfidence: 0.3,
     });
     try {
       this.detector = await make("GPU");
@@ -38,7 +38,7 @@ MZ.detect = {
 
   /* 解析キャンバスの領域(sx,sy,sw,sh)を≤512pxに縮小して検出。正規化座標で返す */
   _region(src, sx, sy, sw, sh) {
-    const scale = Math.min(1, 512 / Math.max(sw, sh));
+    const scale = Math.min(1, 640 / Math.max(sw, sh));
     const cw = Math.max(2, Math.round(sw * scale)), ch = Math.max(2, Math.round(sh * scale));
     const c = this._canvas("_work", cw, ch);
     const ctx = c.getContext("2d", { willReadFrequently: true });
@@ -79,7 +79,7 @@ MZ.detect = {
   },
 
   /* source: VideoFrame | <video> | canvas。rawW/rawH は回転前寸法、rotで表示向きに直して検出。
-     mode: "light"=全体+2×2(プレビュー/実時間用) "deep"=+4×4タイルで小さな顔も拾う
+     mode: "light"=全体+2×2(プレビュー/実時間用) "deep"=+4×4+6×6タイルで小さな顔も拾う
      (BlazeFaceはタイル幅の約8%未満の顔を見逃すため、段階的にズームして検出する) */
   onSource(source, rawW, rawH, rot, mode) {
     if (!this.detector) return [];
@@ -91,7 +91,11 @@ MZ.detect = {
     MZ.drawFrame(A.getContext("2d"), source, rawW, rawH, rot, aw, ah);
     let dets = this._region(A, 0, 0, aw, ah);
     dets = dets.concat(this._grid(A, 2, 0.6));
-    if (mode === "deep") dets = dets.concat(this._grid(A, 4, 0.3));
+    if (mode === "deep") {
+      // 時間より精度重視: 4×4に加えて6×6の細タイルで、さらに小さな顔まで拾う
+      dets = dets.concat(this._grid(A, 4, 0.3));
+      dets = dets.concat(this._grid(A, 6, 0.2));
+    }
     return this.nms(dets, 0.45);
   },
 };
