@@ -41,6 +41,7 @@
   <section id="dropSection" class="card drop step-card">
     <h2 class="step-title">動画・写真を取り込む</h2>
     <p class="step-lead">取り込むと、顔を自動で見つけてモザイクがかかります。動画は<strong>10分まで</strong>、写真は<strong>4枚まで</strong>取り込めます(動画のモザイク作業は選んだ最大60秒ぶん)。</p>
+    <p class="hint">小さい顔は認識ができません。また、画質が低い動画は精度がかなり落ちます。ご了承ください。</p>
     <button id="pickBtn" class="big-btn">動画・写真を選ぶ</button>
     <input id="fileInput" type="file" accept="video/*,image/*" multiple hidden>
     <p class="note">すべてスマホ/PCの中だけで処理します。動画・写真はどこにも送信されません。無料です。</p>
@@ -107,7 +108,7 @@
       <p class="step-lead video-only">再生して、すべての顔にモザイクがかかっているか確認してください。</p>
       <p class="step-lead image-only">顔に自動でモザイクがかかっています。掛かり漏れがないか確認してください。</p>
       <p id="detectStatus" class="detect-status" aria-live="polite"></p>
-      <p class="hint">赤い丸が、いまモザイクがかかっている場所です。<strong>かかっていない顔は、プレビューのその場所をタップ</strong>すると追加できます(タップで追加したマスクは、もう一度タップで外せます)。</p>
+      <p class="hint">赤い丸が、いまモザイクがかかっている場所です。<strong>かかっていない顔はその場所をタップ</strong>すると追加でき、<strong>かかっている顔はもう一度タップ</strong>すると外せます(外した場所をタップすると戻ります)。</p>
       <button id="reRangeBtn" class="mini-btn range-only" hidden><i class="fa-solid fa-scissors"></i> 使う範囲を選び直す</button>
       <button id="toStep2Btn" class="big-btn step-next">確認した、隠しかたの調整へ <i class="fa-solid fa-arrow-right"></i></button>
     </div>
@@ -136,9 +137,6 @@
         <label>顔を見失っても追いかける <b id="holdVal"></b></label>
         <input id="holdRange" type="range" min="0" max="5" step="0.5">
         <p class="hint hint-tight">検出が途切れても、行進の動きを予測してモザイクがついていきます。</p>
-      </div>
-      <div class="setting">
-        <label class="chk"><input id="deepChk" type="checkbox">小さな顔もていねいに探す（時間がかかります）</label>
       </div>
       <div class="step-nav">
         <button id="backTo1Btn" class="mini-btn"><i class="fa-solid fa-arrow-left"></i> 確認へ戻る</button>

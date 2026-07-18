@@ -48,6 +48,7 @@ MZ.ui.disposeClip = () => {
   }
   MZ.S.clip = null;
   MZ.S.manualBoxes = [];
+  MZ.S.suppressedBoxes = [];
 };
 
 MZ.ui._enterEditor = (name, kind) => {
@@ -262,6 +263,11 @@ MZ.ui.updateDetectStatus = () => {
     el.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> 顔検出AIを準備しています…';
     return;
   }
+  if (MZ.preview.initRunning) {
+    el.classList.add("busy");
+    el.innerHTML = `<i class="fa-solid fa-magnifying-glass"></i> 小さな顔までていねいに探しています… ${Math.round((MZ.preview.initProgress || 0) * 100)}%`;
+    return;
+  }
   const n = (MZ.preview.boxes || []).length;
   if (n > 0) {
     el.classList.add("ok");
@@ -273,7 +279,7 @@ MZ.ui.updateDetectStatus = () => {
 };
 
 /* ---- プレビューのタップでマスクを追加/削除 ----
-   ①手動マスクの上 → そのマスクを削除(トグル)
+   ①手動マスク・自動検出マスクの上 → そのマスクを外す(もう一度タップで戻せる)
    ②タップ周辺を高倍率で顔検出 → 見つかれば追跡マスクとして追加
    ③見つからなければ、その場所に固定マスクを追加(検出ボックスの平均サイズ) */
 MZ.ui.onCanvasTap = e => {
@@ -291,12 +297,27 @@ MZ.ui.onCanvasTap = e => {
   if (hit >= 0) {
     MZ.S.manualBoxes.splice(hit, 1);
     MZ.ui.toast("タップしたマスクを外しました");
-    MZ.preview.imageDirty = true;
     return;
   }
-  // 自動検出済みの顔の上は何もしない(既にかかっている)
-  if ((MZ.preview.boxes || []).some(b =>
-    nx > b.x && nx < b.x + b.w && ny > b.y && ny < b.y + b.h)) return;
+  // 自動検出のマスクもタップで外せる(誤検出をその場で取り除ける)。場所は抑制リストへ
+  const cands = (MZ.preview.boxes || []).filter(b =>
+    nx > b.x - b.w * 0.25 && nx < b.x + b.w * 1.25 &&
+    ny > b.y - b.h * 0.25 && ny < b.y + b.h * 1.25);
+  if (cands.length) {
+    const hitA = cands.sort((a, b) =>
+      Math.hypot(a.x + a.w / 2 - nx, a.y + a.h / 2 - ny)
+      - Math.hypot(b.x + b.w / 2 - nx, b.y + b.h / 2 - ny))[0];
+    MZ.S.suppressedBoxes.push({ x: hitA.x, y: hitA.y, w: hitA.w, h: hitA.h });
+    if (hitA.id != null) MZ.preview.tracker.tracks =
+      MZ.preview.tracker.tracks.filter(tr => tr.id !== hitA.id);
+    MZ.preview.boxes = MZ.preview.boxes.filter(b => b !== hitA);
+    MZ.ui.toast("このマスクを外しました(同じ場所をタップすると戻せます)");
+    return;
+  }
+  // 以前ここで外したマスクがあれば抑制を解除(もう一度タップ=戻す)
+  MZ.S.suppressedBoxes = MZ.S.suppressedBoxes.filter(s =>
+    !(nx > s.x - s.w * 0.3 && nx < s.x + s.w * 1.3 &&
+      ny > s.y - s.h * 0.3 && ny < s.y + s.h * 1.3));
 
   // ② 周辺を高倍率で検出
   const src = clip.kind === "image" ? clip.img : clip.video;
@@ -325,7 +346,6 @@ MZ.ui.onCanvasTap = e => {
   const h = ref ? ref.h : 0.05 * (cv.width / cv.height);
   MZ.S.manualBoxes.push({ x: nx - w / 2, y: ny - h / 2, w, h });
   MZ.ui.toast("この場所にマスクを追加しました(もう一度タップで外せます)");
-  MZ.preview.imageDirty = true;
 };
 
 /* ---- 読み込み: 拡張子/MIMEで写真・動画を振り分け ---- */
@@ -354,7 +374,7 @@ MZ.ui._decodeImage = async file => {
   const url = URL.createObjectURL(file);
   try {
     const img = await createImageBitmap(file, { imageOrientation: "from-image" });
-    return { file, url, img, kind: "image", name: file.name, width: img.width, height: img.height, boxes: [], manualBoxes: [] };
+    return { file, url, img, kind: "image", name: file.name, width: img.width, height: img.height, boxes: [], manualBoxes: [], suppressedBoxes: [] };
   } catch (e) {
     MZ.log("createImageBitmap失敗→<img>フォールバック:", e.message);
     const img = await new Promise((res, rej) => {
@@ -363,7 +383,7 @@ MZ.ui._decodeImage = async file => {
       el.onerror = () => rej(new Error("この画像を読み込めません"));
       el.src = url;
     }).catch(err => { URL.revokeObjectURL(url); throw err; });
-    return { file, url, img, kind: "image", name: file.name, width: img.naturalWidth, height: img.naturalHeight, boxes: [], manualBoxes: [] };
+    return { file, url, img, kind: "image", name: file.name, width: img.naturalWidth, height: img.naturalHeight, boxes: [], manualBoxes: [], suppressedBoxes: [] };
   }
 };
 
@@ -378,6 +398,7 @@ MZ.ui._loadImages = async files => {
   MZ.S.photoIdx = 0;
   MZ.S.clip = photos[0];
   MZ.S.manualBoxes = [];
+  MZ.S.suppressedBoxes = [];
   MZ.log(`loaded ${photos.length} image(s)`);
   MZ.ui._enterEditor(photos[0].name, "image");
   MZ.ui._buildPhotoTabs();
@@ -418,6 +439,7 @@ MZ.ui._syncCurrentPhoto = () => {
   if (!p) return;
   p.boxes = (MZ.preview.boxes || []).slice();
   p.manualBoxes = (MZ.S.manualBoxes || []).slice();
+  p.suppressedBoxes = (MZ.S.suppressedBoxes || []).slice();
 };
 
 /* 写真の切り替え(検出結果・手動マスクは写真ごとに保持) */
@@ -431,6 +453,7 @@ MZ.ui._selectPhoto = idx => {
   const p = photos[idx];
   MZ.S.clip = p;
   MZ.S.manualBoxes = (p.manualBoxes || []).slice();
+  MZ.S.suppressedBoxes = (p.suppressedBoxes || []).slice();
   $("clipName").textContent = p.name;
   MZ.preview.setClip(p);
   // 既に検出済みなら再検出せず復元、未検出なら setClip の imageDirty で検出が走る
@@ -642,8 +665,6 @@ window.addEventListener("DOMContentLoaded", async () => {
       document.querySelectorAll("#typeSeg button").forEach(x => x.classList.toggle("on", x === b));
     };
   });
-  $("deepChk").onchange = e => { MZ.S.deep = e.target.checked; MZ.preview.imageDirty = true; };
-  $("deepChk").checked = MZ.S.deep;
   $("resSel").onchange = e => { MZ.S.res = e.target.value; };
 
   // 範囲選択フェーズ(インスタ風トリム)

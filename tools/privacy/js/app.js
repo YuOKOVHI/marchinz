@@ -8,10 +8,10 @@ window.MZ = {
     strength: 6,       // 濃さ 1〜10
     expand: 30,        // 広げ幅 0〜100(%)
     hold: 1.0,         // 前後の追従 0〜5秒
-    deep: true,        // 小さな顔も探す(タイル検出)
     res: "1080",       // "1080" | "orig"
     step: 1,           // ウィザード現在ステップ 1:確認 2:調整 3:保存
     manualBoxes: [],   // タップで追加した固定マスク(正規化ボックス)。もう一度タップで削除
+    suppressedBoxes: [], // タップで外した自動検出の場所(正規化)。ここの検出は採用しない
     rangeStart: 0,     // 作業範囲の開始秒(60秒超の動画はインスタ風に範囲を選ぶ)
     rangeDur: 30,      // 作業範囲の長さ(10〜60秒、初期30)。短い動画はduration全部
     photos: [],        // 写真は最大4枚。各 {file,url,img,name,width,height,boxes,manualBoxes}
@@ -61,6 +61,18 @@ MZ.iou = (a, b) => {
   const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
   const uni = a.w * a.h + b.w * b.h - inter;
   return uni > 0 ? inter / uni : 0;
+};
+
+/* タップで外した場所と重なる検出を捨てる。supを省略すると現在のMZ.S.suppressedBoxes */
+MZ.dropSuppressed = (dets, sup) => {
+  if (sup == null) sup = MZ.S.suppressedBoxes || [];
+  if (!sup.length) return dets;
+  return dets.filter(d => !sup.some(s => {
+    const cx = d.x + d.w / 2, cy = d.y + d.h / 2;
+    const mx = s.w * 0.3, my = s.h * 0.3;
+    return (cx > s.x - mx && cx < s.x + s.w + mx && cy > s.y - my && cy < s.y + s.h + my)
+      || MZ.iou(d, s) > 0.3;
+  }));
 };
 
 /* ソース(VideoFrame/video/canvas)を回転込みでキャンバス全面に描画。

@@ -1,7 +1,7 @@
 "use strict";
 /* ============ 顔検出: MediaPipe FaceDetector(BlazeFace short-range) ============
-   スマホの遠い顔対策: 表示向きの解析キャンバス(長辺≤1280)を作り、
-   全体1回+「小さな顔も探す」ONなら2×2オーバーラップタイルでも検出してNMS統合 */
+   スマホの遠い顔対策: 表示向きの解析キャンバス(長辺≤1920)を作り、
+   全体+オーバーラップタイル(常時deep)で検出してNMS統合 */
 
 MZ.detect = {
   detector: null,
@@ -121,6 +121,36 @@ MZ.detect = {
     out = out.filter(d =>
       d.score >= 0.3 || (nearBoxes || []).some(nb => MZ.iou(nb, d) > 0.2));
     return out;
+  },
+
+  /* 読み込み直後の高精度スキャン: deepよりさらに細かいタイルまで時間をかけて検出する。
+     スナップショットに対して1タイルずつ実行し(合間にyieldしてUIを固めない)、進捗を返す */
+  async initialScan(source, rawW, rawH, rot, onProgress) {
+    if (!this.detector) return [];
+    const swapped = rot === 90 || rot === 270;
+    const dispW = swapped ? rawH : rawW, dispH = swapped ? rawW : rawH;
+    const s = Math.min(1, 1920 / Math.max(dispW, dispH));
+    const aw = Math.max(2, Math.round(dispW * s)), ah = Math.max(2, Math.round(dispH * s));
+    const A = this._canvas("_initSnap", aw, ah);   // 専用スナップショット(通常検出と干渉しない)
+    MZ.drawFrame(A.getContext("2d"), source, rawW, rawH, rot, aw, ah);
+    // 全体→2×2→…→10×10 と段階的にズームし、フレーム幅1%強の顔まで拾う(計221タイル)
+    const passes = [[1, 1], [2, 0.6], [4, 0.3], [6, 0.2], [8, 0.15], [10, 0.12]];
+    const total = passes.reduce((a, p) => a + p[0] * p[0], 0);
+    let dets = [], done = 0;
+    for (const [n, size] of passes) {
+      const tw = Math.round(aw * size), th = Math.round(ah * size);
+      const step = n > 1 ? (1 - size) / (n - 1) : 0;
+      for (let ix = 0; ix < n; ix++) {
+        for (let iy = 0; iy < n; iy++) {
+          dets = dets.concat(this._region(A,
+            Math.round(ix * step * aw), Math.round(iy * step * ah), tw, th));
+          done++;
+          if (onProgress) onProgress(done / total);
+          await MZ.yield();
+        }
+      }
+    }
+    return this.nms(dets, 0.45).filter(d => d.score >= 0.3);
   },
 
   /* タップ地点の周辺だけを高倍率で検出(手動追加の一次候補)。

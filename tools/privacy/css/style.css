@@ -86,6 +86,7 @@ main { flex: 1; width: 100%; max-width: 640px; margin: 0 auto; padding: 16px; }
 .big-btn:hover { background: var(--accent-dark); }
 .big-btn:disabled { opacity: 0.5; }
 .note { font-size: 12px; color: var(--sub); margin-top: 12px; line-height: 1.7; }
+.hint { font-size: 12px; color: var(--sub); line-height: 1.7; margin-bottom: 12px; }
 
 /* ② プレビュー */
 .clip-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 8px; }

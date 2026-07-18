@@ -268,7 +268,7 @@ MZ.exporter.exportMP4 = async (clip, onProgress) => {
       if (absSec > re + 1e-3) { f.close(); eof = true; flushed = true; frames.forEach(x => x.close()); frames.length = 0; break; }
       if (ts0 === null) ts0 = f.timestamp;
       const near = tracker.tracks.map(tr => tr.box);
-      const dets = MZ.detect.onSource(f, rawW, rawH, rotation, MZ.S.deep ? "deep" : "light", near);
+      const dets = MZ.dropSuppressed(MZ.detect.onSource(f, rawW, rawH, rotation, "deep", near));
       const tSec = (f.timestamp - ts0) / 1e6;
       const { active, born } = tracker.update(dets, tSec, MZ.S.hold);
       active.push(...MZ.S.manualBoxes);
@@ -324,8 +324,10 @@ MZ.exporter._renderPhoto = async photo => {
   // 写真はEXIF回転済みImageBitmapなので rot=0。
   // 再検出+プレビューで確定した検出(タップ追加含む)をNMS統合し、固定マスクを足す
   const boxes = MZ.detect.nms(
-    MZ.detect.onSource(photo.img, W, H, 0, MZ.S.deep ? "deep" : "light")
-      .concat((photo.boxes || []).map(b => ({ ...b, score: b.score || 0.5 }))),
+    MZ.dropSuppressed(
+      MZ.detect.onSource(photo.img, W, H, 0, "deep")
+        .concat((photo.boxes || []).map(b => ({ ...b, score: b.score || 0.5 }))),
+      photo.suppressedBoxes || []),
     0.45,
   ).concat(photo.manualBoxes || []);
   MZ.mosaic.apply(ctx, W, H, boxes, MZ.S);
