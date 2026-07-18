@@ -37,6 +37,11 @@ MZ.preview = {
     if (clip.kind === "image") return this.drawImageOnce(clip);
     if (!clip.video || clip.video.readyState < 2) return;
     const v = clip.video, W = this.canvas.width, H = this.canvas.height;
+    // 作業範囲の終わりで止める(実時間書き出し中はexporterが制御)
+    if (!MZ.exporter.running && clip.duration > 60) {
+      const end = MZ.rangeEnd();
+      if (v.currentTime > end + 0.05) { v.pause(); v.currentTime = end; }
+    }
     // 検出は約80ms間隔+シーク時(書き出し中の実時間録画は毎フレーム)。速度予測トラッカーが間を埋める
     const t = v.currentTime;
     const due = MZ.exporter.running

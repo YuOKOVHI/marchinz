@@ -55,8 +55,9 @@ MZ.exporter.planAudio = async src => {
 };
 
 /* AACサンプルをそのままコピー。エディットリスト(プライミング)分はタイムスタンプで相殺 */
-MZ.exporter.writeAudioCopy = async (muxer, src, plan) => {
+MZ.exporter.writeAudioCopy = async (muxer, src, plan, rangeStart, rangeEnd) => {
   const editOff = src.editOffsetSec(plan.track);
+  const rs = rangeStart || 0;
   let meta = {
     decoderConfig: {
       codec: plan.cfg.codec,
@@ -65,12 +66,14 @@ MZ.exporter.writeAudioCopy = async (muxer, src, plan) => {
       description: plan.cfg.description,
     },
   };
-  for await (const s of src.samples(plan.track.id, 0)) {
+  for await (const s of src.samples(plan.track.id, rs)) {
     if (MZ.exporter.cancelFlag) return false;
+    const secIn = s.cts / s.timescale - editOff;
+    if (rangeEnd != null && secIn > rangeEnd + 0.05) break;   // 範囲を過ぎたら終了
     const durUs = Math.max(1, Math.round(s.duration * 1e6 / s.timescale));
-    let tsUs = Math.round((s.cts / s.timescale - editOff) * 1e6);
+    let tsUs = Math.round((secIn - rs) * 1e6);
     if (tsUs < 0) {
-      if (tsUs + durUs <= 0) continue;  // 完全にプライミング領域→捨てる
+      if (tsUs + durUs <= 0) continue;  // プライミング/範囲前→捨てる
       tsUs = 0;
     }
     muxer.addAudioChunkRaw(s.data, "key", tsUs, durUs, meta);
@@ -80,8 +83,9 @@ MZ.exporter.writeAudioCopy = async (muxer, src, plan) => {
 };
 
 /* 非AAC音源(PCM等): デコード→48kHzステレオ→AAC再エンコード(対応環境のみ) */
-MZ.exporter.writeAudioEncode = async (muxer, src, plan, durSec) => {
+MZ.exporter.writeAudioEncode = async (muxer, src, plan, durSec, rangeStart) => {
   const OUT_SR = 48000;
+  const rs = rangeStart || 0;
   const need = Math.ceil(durSec * OUT_SR);
   const chL = new Float32Array(need), chR = new Float32Array(need);
   let error = null, written = 0;
@@ -94,7 +98,7 @@ MZ.exporter.writeAudioEncode = async (muxer, src, plan, durSec) => {
         const L = new Float32Array(frames), R = new Float32Array(frames);
         ad.copyTo(L, { planeIndex: 0, format: "f32-planar" });
         if (nch > 1) ad.copyTo(R, { planeIndex: 1, format: "f32-planar" }); else R.set(L);
-        const base = Math.round((ad.timestamp / 1e6) * OUT_SR);
+        const base = Math.round((ad.timestamp / 1e6 - rs) * OUT_SR);
         const outN = Math.round(frames / ratio);
         for (let i = 0; i < outN; i++) {
           const w = base + i;
@@ -108,8 +112,9 @@ MZ.exporter.writeAudioEncode = async (muxer, src, plan, durSec) => {
     error: e => { error = e; },
   });
   decoder.configure(plan.cfg);
-  for await (const s of src.samples(plan.track.id, 0)) {
+  for await (const s of src.samples(plan.track.id, rs)) {
     if (error || MZ.exporter.cancelFlag) break;
+    if (s.cts / s.timescale - rs > durSec + 0.5) break;   // 範囲を過ぎたら終了
     decoder.decode(new EncodedAudioChunk({
       type: s.is_sync ? "key" : "delta",
       timestamp: Math.round(s.cts * 1e6 / s.timescale),
@@ -169,6 +174,10 @@ MZ.exporter.exportMP4 = async (clip, onProgress) => {
     const nb = vt.nb_samples || 1;
     const fps = Math.min(60, Math.max(10, nb / Math.max(0.5, clip.duration)));
     const keyInt = Math.max(1, Math.round(fps * 2));
+    // 作業範囲(長い動画は選んだ最大60秒だけを書き出す)
+    const rs = clip.duration > 60 ? MZ.S.rangeStart : 0;
+    const re = clip.duration > 60 ? MZ.rangeEnd() : clip.duration;
+    const nbRange = Math.max(1, Math.round(nb * (re - rs) / Math.max(0.5, clip.duration)));
 
     const audioPlan = await MZ.exporter.planAudio(src);
     MZ.log(`export: ${W}x${H} rot=${rotation} fps≈${fps.toFixed(1)} frames=${nb} audio=${audioPlan.mode}`);
@@ -203,7 +212,7 @@ MZ.exporter.exportMP4 = async (clip, onProgress) => {
     let decErr = null, eof = false, flushed = false;
     decoder = new VideoDecoder({ output: f => frames.push(f), error: e => { decErr = e; } });
     decoder.configure(cfg);
-    const iter = src.samples(vt.id, 0);
+    const iter = src.samples(vt.id, rs);
     const pump = async () => {
       while (!eof && decoder.decodeQueueSize < 12 && frames.length < 6) {
         const { value: s, done } = await iter.next();
@@ -236,9 +245,9 @@ MZ.exporter.exportMP4 = async (clip, onProgress) => {
       while (venc.encodeQueueSize > 6) await MZ.waitDequeue(venc);
       if (k % 5 === 0) {
         const el = (performance.now() - t0) / 1000;
-        const eta = el / k * (nb - k);
-        onProgress(0.92 * Math.min(0.99, k / nb),
-          `顔を隠しながら書き出し中… ${k}/${nb}フレーム(残り約${Math.ceil(eta)}秒)`);
+        const eta = el / k * Math.max(0, nbRange - k);
+        onProgress(0.92 * Math.min(0.99, k / nbRange),
+          `顔を隠しながら書き出し中… ${k}/${nbRange}フレーム(残り約${Math.ceil(eta)}秒)`);
         await MZ.yield();
       }
     };
@@ -254,6 +263,9 @@ MZ.exporter.exportMP4 = async (clip, onProgress) => {
         continue;
       }
       const f = frames.shift();
+      const absSec = f.timestamp / 1e6;
+      if (absSec < rs - 1e-3) { f.close(); continue; }   // シークRAPから範囲までの先行分
+      if (absSec > re + 1e-3) { f.close(); eof = true; flushed = true; frames.forEach(x => x.close()); frames.length = 0; break; }
       if (ts0 === null) ts0 = f.timestamp;
       const near = tracker.tracks.map(tr => tr.box);
       const dets = MZ.detect.onSource(f, rawW, rawH, rotation, MZ.S.deep ? "deep" : "light", near);
@@ -279,10 +291,10 @@ MZ.exporter.exportMP4 = async (clip, onProgress) => {
 
     if (audioPlan.mode === "copy") {
       onProgress(0.94, "音声をコピー中…");
-      await MZ.exporter.writeAudioCopy(muxer, src, audioPlan);
+      await MZ.exporter.writeAudioCopy(muxer, src, audioPlan, rs, re);
     } else if (audioPlan.mode === "encode") {
       onProgress(0.94, "音声を変換中…");
-      const ok = await MZ.exporter.writeAudioEncode(muxer, src, audioPlan, clip.duration);
+      const ok = await MZ.exporter.writeAudioEncode(muxer, src, audioPlan, re - rs, rs);
       if (!ok && !MZ.exporter.cancelFlag) MZ.ui.toast("⚠ 音声を書き出せませんでした(映像のみ)");
     }
     if (MZ.exporter.cancelFlag) throw new Error("キャンセルしました");
@@ -347,8 +359,10 @@ MZ.exporter.exportRealtime = async (clip, onProgress) => {
   MZ.exporter.running = true;
   try {
     const video = clip.video;
+    const rs = clip.duration > 60 ? MZ.S.rangeStart : 0;
+    const re = clip.duration > 60 ? MZ.rangeEnd() : clip.duration;
     video.pause();
-    video.currentTime = 0;
+    video.currentTime = rs;
     await new Promise(r => { video.onseeked = r; });
     MZ.preview.tracker.reset();
 
@@ -379,9 +393,9 @@ MZ.exporter.exportRealtime = async (clip, onProgress) => {
     await video.play();
     await new Promise(res => {
       const iv = setInterval(() => {
-        onProgress(video.currentTime / clip.duration,
-          `実時間で録画中… ${Math.floor(video.currentTime)} / ${Math.floor(clip.duration)}秒`);
-        if (video.ended || MZ.exporter.cancelFlag) { clearInterval(iv); res(); }
+        onProgress(Math.min(1, (video.currentTime - rs) / Math.max(0.1, re - rs)),
+          `実時間で録画中… ${Math.max(0, Math.floor(video.currentTime - rs))} / ${Math.floor(re - rs)}秒`);
+        if (video.ended || video.currentTime >= re || MZ.exporter.cancelFlag) { clearInterval(iv); res(); }
       }, 200);
     });
     video.pause();

@@ -53,6 +53,66 @@ MZ.ui._enterEditor = (name, kind) => {
   MZ.ui.setStep(1);
 };
 
+/* ---- 範囲選択フェーズ(60秒超・インスタ風トリム) ---- */
+MZ.ui.enterRangePhase = () => {
+  const clip = MZ.S.clip;
+  document.body.dataset.kind = "video";
+  $("dropSection").hidden = true;
+  $("editorSection").hidden = true;
+  $("rangeSection").hidden = false;
+  MZ.S.rangeStart = 0;
+  MZ.S.rangeDur = Math.min(30, clip.duration);
+  const startSlider = $("rangeStartSlider");
+  const durSlider = $("rangeDurSlider");
+  durSlider.max = String(Math.min(60, Math.floor(clip.duration)));
+  durSlider.value = String(MZ.S.rangeDur);
+  startSlider.max = String(Math.max(0, clip.duration - MZ.S.rangeDur));
+  startSlider.value = "0";
+  // 範囲プレビューのキャンバスをクリップ比率に
+  const cv = $("rangeCanvas");
+  const s = Math.min(1, 640 / Math.max(clip.width, clip.height));
+  cv.width = Math.max(2, Math.round(clip.width * s));
+  cv.height = Math.max(2, Math.round(clip.height * s));
+  MZ.ui._updateRangeUi(true);
+};
+
+MZ.ui._updateRangeUi = seekVideo => {
+  const clip = MZ.S.clip;
+  if (!clip) return;
+  const startSlider = $("rangeStartSlider");
+  MZ.S.rangeDur = parseFloat($("rangeDurSlider").value);
+  startSlider.max = String(Math.max(0, clip.duration - MZ.S.rangeDur));
+  MZ.S.rangeStart = Math.min(parseFloat(startSlider.value), parseFloat(startSlider.max));
+  const end = MZ.rangeEnd();
+  $("rangeDurVal").textContent = `${Math.round(MZ.S.rangeDur)}秒`;
+  $("rangeLabel").textContent =
+    `${MZ.ui.fmtTime(MZ.S.rangeStart)} 〜 ${MZ.ui.fmtTime(end)}（${Math.round(end - MZ.S.rangeStart)}秒）`;
+  if (seekVideo) {
+    const v = clip.video;
+    v.currentTime = MZ.S.rangeStart;
+    v.onseeked = () => {
+      const cv = $("rangeCanvas");
+      MZ.drawFrame(cv.getContext("2d"), v, v.videoWidth, v.videoHeight, 0, cv.width, cv.height);
+      v.onseeked = null;
+    };
+  }
+};
+
+/* 範囲確定→エディタへ(シークバーを範囲にマッピング) */
+MZ.ui.enterEditorWithRange = () => {
+  const clip = MZ.S.clip;
+  $("rangeSection").hidden = true;
+  MZ.ui._enterEditor(clip.name, "video");
+  const end = MZ.rangeEnd();
+  $("seekBar").min = String(MZ.S.rangeStart);
+  $("seekBar").max = String(end);
+  $("seekBar").value = String(MZ.S.rangeStart);
+  clip.video.currentTime = MZ.S.rangeStart;
+  $("reRangeBtn").hidden = clip.duration <= 60;
+  MZ.preview.setClip(clip);
+  MZ.ui.updateTime();
+};
+
 /* ---- ステップウィザード(1:確認 / 2:調整 / 3:保存) ---- */
 MZ.ui.setStep = n => {
   n = Math.max(1, Math.min(3, n | 0));
@@ -184,10 +244,10 @@ MZ.ui._loadVideo = file => new Promise((resolve, reject) => {
   document.body.appendChild(video);
   video.onerror = () => reject(new Error("この動画を再生できません"));
   video.onloadedmetadata = () => {
-    if (video.duration > 60.5) {
+    if (video.duration > 600.5) {
       URL.revokeObjectURL(url);
       video.remove();
-      reject(new Error(`動画は60秒までです(この動画は${Math.round(video.duration)}秒)。短く切り出してからお試しください`));
+      reject(new Error(`動画は10分までです(この動画は${Math.round(video.duration / 60)}分)。短く切り出してからお試しください`));
       return;
     }
     MZ.S.clip = {
@@ -198,11 +258,13 @@ MZ.ui._loadVideo = file => new Promise((resolve, reject) => {
       height: video.videoHeight,
     };
     MZ.log(`loaded video: ${file.name} ${video.videoWidth}x${video.videoHeight} ${video.duration.toFixed(1)}s`);
-    MZ.ui._enterEditor(file.name, "video");
-    $("seekBar").max = video.duration;
-    $("seekBar").value = 0;
-    MZ.preview.setClip(MZ.S.clip);
-    MZ.ui.updateTime();
+    if (video.duration > 60) {
+      MZ.ui.enterRangePhase();
+    } else {
+      MZ.S.rangeStart = 0;
+      MZ.S.rangeDur = video.duration;
+      MZ.ui.enterEditorWithRange();
+    }
     resolve();
   };
   video.src = url;
@@ -211,7 +273,10 @@ MZ.ui._loadVideo = file => new Promise((resolve, reject) => {
 MZ.ui.updateTime = () => {
   const c = MZ.S.clip;
   if (!c || c.kind !== "video") return;
-  $("timeLabel").textContent = `${MZ.ui.fmtTime(c.video.currentTime)} / ${MZ.ui.fmtTime(c.duration)}`;
+  const rs = c.duration > 60 ? MZ.S.rangeStart : 0;
+  const re = c.duration > 60 ? MZ.rangeEnd() : c.duration;
+  $("timeLabel").textContent =
+    `${MZ.ui.fmtTime(Math.max(0, c.video.currentTime - rs))} / ${MZ.ui.fmtTime(re - rs)}`;
   if (!MZ.ui._seeking) $("seekBar").value = c.video.currentTime;
   $("playBtn").innerHTML = c.video.paused
     ? '<i class="fa-solid fa-play"></i> 再生'
@@ -337,6 +402,28 @@ window.addEventListener("DOMContentLoaded", async () => {
   $("deepChk").checked = MZ.S.deep;
   $("resSel").onchange = e => { MZ.S.res = e.target.value; };
 
+  // 範囲選択フェーズ
+  $("rangeStartSlider").addEventListener("input", () => MZ.ui._updateRangeUi(true));
+  $("rangeDurSlider").addEventListener("input", () => MZ.ui._updateRangeUi(true));
+  $("rangeOkBtn").onclick = () => MZ.ui.enterEditorWithRange();
+  $("rangeBackBtn").onclick = () => {
+    MZ.ui.disposeClip();
+    $("rangeSection").hidden = true;
+    $("dropSection").hidden = false;
+    $("fileInput").value = "";
+  };
+  $("reRangeBtn").onclick = () => {
+    if (MZ.exporter.running) return MZ.ui.toast("書き出し中です");
+    MZ.preview.stop();
+    if (MZ.S.clip.video) MZ.S.clip.video.pause();
+    $("editorSection").hidden = true;
+    // 現在の範囲値を保ったまま選び直し画面へ
+    $("rangeSection").hidden = false;
+    $("rangeStartSlider").value = String(MZ.S.rangeStart);
+    $("rangeDurSlider").value = String(Math.round(MZ.S.rangeDur));
+    MZ.ui._updateRangeUi(true);
+  };
+
   // ステップウィザード
   document.querySelectorAll("#stepper [data-step]").forEach(b => {
     b.onclick = () => MZ.ui.setStep(parseInt(b.dataset.step, 10));
@@ -354,6 +441,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (MZ.exporter.running) return MZ.ui.toast("書き出し中です");
     MZ.ui.disposeClip();
     $("editorSection").hidden = true;
+    $("rangeSection").hidden = true;
     $("doneCard").hidden = true;
     $("dropSection").hidden = false;
     $("fileInput").value = "";

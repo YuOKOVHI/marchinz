@@ -40,10 +40,32 @@
   <!-- ⓪ 取り込みフェーズ -->
   <section id="dropSection" class="card drop step-card">
     <h2 class="step-title">動画・写真を取り込む</h2>
-    <p class="step-lead">取り込むと、顔を自動で見つけてモザイクがかかります。動画は<strong>60秒まで</strong>です。</p>
+    <p class="step-lead">取り込むと、顔を自動で見つけてモザイクがかかります。動画は<strong>10分まで</strong>取り込めます(モザイク作業は選んだ<strong>最大60秒</strong>ぶん)。</p>
     <button id="pickBtn" class="big-btn">動画・写真を選ぶ</button>
     <input id="fileInput" type="file" accept="video/*,image/*" hidden>
     <p class="note">すべてスマホ/PCの中だけで処理します。動画・写真はどこにも送信されません。無料です。</p>
+  </section>
+
+  <!-- ⓪.5 範囲選択フェーズ(60秒超の動画のみ・インスタのストーリー風トリム) -->
+  <section id="rangeSection" class="card step-card" hidden>
+    <h2 class="step-title">使う範囲を選ぶ</h2>
+    <p class="step-lead">長い動画は、モザイクをかける範囲を選んで作業します(最大60秒)。</p>
+    <div class="preview-wrap range-preview">
+      <canvas id="rangeCanvas"></canvas>
+    </div>
+    <p id="rangeLabel" class="range-label">0:00 〜 0:30（30秒）</p>
+    <div class="setting">
+      <label>開始位置</label>
+      <input id="rangeStartSlider" type="range" min="0" max="100" step="0.5" value="0">
+    </div>
+    <div class="setting">
+      <label>長さ <b id="rangeDurVal">30秒</b></label>
+      <input id="rangeDurSlider" type="range" min="10" max="60" step="5" value="30">
+    </div>
+    <div class="step-nav">
+      <button id="rangeBackBtn" class="mini-btn"><i class="fa-solid fa-arrow-left"></i> 別の素材を選ぶ</button>
+      <button id="rangeOkBtn" class="big-btn step-next">この範囲で始める <i class="fa-solid fa-arrow-right"></i></button>
+    </div>
   </section>
 
   <!-- ② プレビュー+設定+書き出し -->
@@ -83,6 +105,7 @@
       <p class="step-lead image-only">顔に自動でモザイクがかかっています。掛かり漏れがないか確認してください。</p>
       <p id="detectStatus" class="detect-status" aria-live="polite"></p>
       <p class="hint">赤い丸が、いまモザイクがかかっている場所です。<strong>かかっていない顔は、プレビューのその場所をタップ</strong>すると追加できます(タップで追加したマスクは、もう一度タップで外せます)。</p>
+      <button id="reRangeBtn" class="mini-btn range-only" hidden><i class="fa-solid fa-scissors"></i> 使う範囲を選び直す</button>
       <button id="toStep2Btn" class="big-btn step-next">確認した、隠しかたの調整へ <i class="fa-solid fa-arrow-right"></i></button>
     </div>
 

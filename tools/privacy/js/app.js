@@ -12,6 +12,8 @@ window.MZ = {
     res: "1080",       // "1080" | "orig"
     step: 1,           // ウィザード現在ステップ 1:確認 2:調整 3:保存
     manualBoxes: [],   // タップで追加した固定マスク(正規化ボックス)。もう一度タップで削除
+    rangeStart: 0,     // 作業範囲の開始秒(60秒超の動画はインスタ風に範囲を選ぶ)
+    rangeDur: 30,      // 作業範囲の長さ(10〜60秒、初期30)。短い動画はduration全部
   },
   caps: { h264: null, aacEnc: null },
   testMode: /[?&]test/.test(location.search),
@@ -42,6 +44,13 @@ MZ.visionReady = () =>
   window.MZVision
     ? Promise.resolve(window.MZVision)
     : new Promise(r => window.addEventListener("mz-vision-ready", () => r(window.MZVision), { once: true }));
+
+/* 作業範囲の終了秒(動画の実尺でクランプ) */
+MZ.rangeEnd = () => {
+  const c = MZ.S.clip;
+  if (!c || c.kind !== "video") return 0;
+  return Math.min(c.duration, MZ.S.rangeStart + MZ.S.rangeDur);
+};
 
 /* 正規化ボックス {x,y,w,h} のIoU */
 MZ.iou = (a, b) => {

@@ -254,3 +254,16 @@ body:not([data-kind="image"]) .image-only { display: none !important; }
 
 .hint-tight { margin-top: 4px; margin-bottom: 0; }
 .inline-label { display: inline-block; margin-right: 8px; }
+
+/* 範囲選択フェーズ(60秒超の動画・インスタ風トリム) */
+.range-preview { margin-bottom: 10px; }
+#rangeCanvas { width: 100%; display: block; border-radius: 10px; background: #0d1117; }
+.range-label {
+  margin: 0 0 12px;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--navy);
+}
+#reRangeBtn { margin-bottom: 10px; }
