@@ -6738,6 +6738,124 @@ body.mz-photo-lightbox-open {
 .admin-ugc-kind-badge[hidden] {
   display: none !important;
 }
+
+/* ツール使用状況サマリー(UGC → ツール利用タブの上部) */
+.admin-ugc-tool-summary {
+  margin: 0 0 0.9rem;
+  padding: 0.9rem 1rem;
+  background: var(--panel, #fff);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(15, 33, 56, 0.05), 0 4px 16px rgba(15, 33, 56, 0.06);
+}
+.admin-ugc-tool-summary[hidden] {
+  display: none !important;
+}
+.admin-ugc-tsum-head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.75rem;
+  color: var(--navy);
+}
+.admin-ugc-tsum-head > i {
+  color: var(--blue);
+}
+.admin-ugc-tsum-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+.admin-ugc-tsum-total {
+  margin-left: auto;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+.admin-ugc-tsum-row {
+  display: grid;
+  grid-template-columns: 8.5rem 1fr auto;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0;
+}
+.admin-ugc-tsum-row + .admin-ugc-tsum-row {
+  border-top: 1px solid rgba(15, 33, 56, 0.06);
+}
+.admin-ugc-tsum-name {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--navy);
+}
+.admin-ugc-tsum-name > i {
+  width: 1rem;
+  text-align: center;
+  color: var(--blue);
+  flex-shrink: 0;
+}
+.admin-ugc-tsum-name > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.admin-ugc-tsum-barwrap {
+  height: 10px;
+  background: rgba(15, 33, 56, 0.07);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.admin-ugc-tsum-bar {
+  height: 100%;
+  min-width: 3px;
+  background: linear-gradient(90deg, var(--blue), #4d7ce8);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+.admin-ugc-tsum-bar--zero {
+  min-width: 0;
+  background: transparent;
+}
+.admin-ugc-tsum-count {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+  min-width: 0;
+}
+.admin-ugc-tsum-big {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--navy);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.admin-ugc-tsum-sub {
+  font-size: 0.66rem;
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.admin-ugc-tsum-note {
+  margin: 0.7rem 0 0;
+  font-size: 0.66rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+@media (max-width: 560px) {
+  .admin-ugc-tsum-row {
+    grid-template-columns: 6.5rem 1fr auto;
+    gap: 0.45rem;
+  }
+  .admin-ugc-tsum-name {
+    font-size: 0.76rem;
+  }
+  .admin-ugc-tsum-sub {
+    font-size: 0.6rem;
+  }
+}
 .site-mobile-drawer-nav-link.site-mobile-drawer-nav-link--ugc {
   font-weight: 700;
   color: #1d4ed8;

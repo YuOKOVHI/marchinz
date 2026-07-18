@@ -34,6 +34,17 @@
   /** @type {{ id: string; read: boolean }[]} */
   let feedState = [];
 
+  // ツール使用状況サマリー用: tool_id → 表示名・FAアイコン(モノクロ)。順序は表示順
+  const TOOL_META = /** @type {const} */ ([
+    ["metronome", "メトロノーム", "fa-stopwatch"],
+    ["tuner", "チューナー", "fa-wave-square"],
+    ["privacy", "Privacy", "fa-user-shield"],
+    ["switcher", "Switcher", "fa-clapperboard"],
+    ["reangle", "ReAngle", "fa-crop-simple"],
+  ]);
+  /** tool_use サマリーの全期間集計を1セッション内でキャッシュ(タブ往復での再取得を防ぐ) */
+  let toolSummaryCache = null;
+
   function el(id) {
     const n = document.getElementById(id);
     return n instanceof HTMLElement ? n : null;
@@ -459,6 +470,137 @@
     }
   }
 
+  /**
+   * ツール使用サマリー用に tool_use を多めに取得(集計は全期間・既読未読を問わない)。
+   * 1セッションはキャッシュし、tool_use の新規記録でのみ破棄する。
+   * @param {import("firebase").firestore.Firestore} db
+   */
+  async function loadToolUseSummaryRows(db) {
+    if (toolSummaryCache) return toolSummaryCache;
+    const snap = await db
+      .collection("mll_admin_ugc_feed")
+      .where("kind", "==", "tool_use")
+      .limit(2000)
+      .get();
+    /** @type {Record<string, unknown>[]} */
+    const rows = [];
+    snap.forEach((d) => rows.push({ id: d.id, ...(d.data() || {}) }));
+    toolSummaryCache = rows;
+    return rows;
+  }
+
+  /** @param {Record<string, unknown>[]} rows */
+  function aggregateToolRows(rows) {
+    const now = Date.now();
+    const todayStr = new Date().toLocaleDateString("sv-SE"); // ローカルの YYYY-MM-DD
+    /** @type {Record<string, { all: number; today: number; d7: number; d30: number; users: Set<string>; guest: number }>} */
+    const per = {};
+    TOOL_META.forEach(([id]) => {
+      per[id] = { all: 0, today: 0, d7: 0, d30: 0, users: new Set(), guest: 0 };
+    });
+    rows.forEach((r) => {
+      const id = String(r.tool_id || "").trim();
+      const p = per[id];
+      if (!p) return;
+      p.all += 1;
+      const t = Date.parse(String(r.created_at || "")) || 0;
+      if (t) {
+        if (new Date(t).toLocaleDateString("sv-SE") === todayStr) p.today += 1;
+        if (now - t < 7 * 86400000) p.d7 += 1;
+        if (now - t < 30 * 86400000) p.d30 += 1;
+      }
+      const uid = String(r.actor_uid || "").trim();
+      if (uid === GUEST_ACTOR_UID) p.guest += 1;
+      else if (uid) p.users.add(uid);
+    });
+    return per;
+  }
+
+  /** @param {Record<string, unknown>[]} rows */
+  function renderToolSummary(rows) {
+    const host = el("admin-ugc-tool-summary");
+    if (!host) return;
+    const per = aggregateToolRows(rows);
+    const items = TOOL_META.map(([id, name, icon]) => ({
+      id,
+      name,
+      icon,
+      all: per[id].all,
+      today: per[id].today,
+      d7: per[id].d7,
+      d30: per[id].d30,
+      users: per[id].users.size,
+      guest: per[id].guest,
+    }));
+    const totalAll = items.reduce((s, i) => s + i.all, 0);
+    const maxAll = Math.max(1, ...items.map((i) => i.all));
+    const sorted = items.slice().sort((a, b) => b.all - a.all);
+
+    host.replaceChildren();
+
+    const head = document.createElement("div");
+    head.className = "admin-ugc-tsum-head";
+    head.innerHTML = '<i class="fa-solid fa-chart-column" aria-hidden="true"></i>';
+    const title = document.createElement("span");
+    title.className = "admin-ugc-tsum-title";
+    title.textContent = "ツール使用状況";
+    head.appendChild(title);
+    const total = document.createElement("span");
+    total.className = "admin-ugc-tsum-total";
+    total.textContent = `のべ ${totalAll} 回`;
+    head.appendChild(total);
+    host.appendChild(head);
+
+    if (totalAll === 0) {
+      const empty = document.createElement("p");
+      empty.className = "admin-ugc-tsum-note";
+      empty.textContent = "まだツールの利用記録がありません。";
+      host.appendChild(empty);
+      return;
+    }
+
+    sorted.forEach((it) => {
+      const row = document.createElement("div");
+      row.className = "admin-ugc-tsum-row";
+
+      const name = document.createElement("div");
+      name.className = "admin-ugc-tsum-name";
+      name.innerHTML = `<i class="fa-solid ${it.icon}" aria-hidden="true"></i>`;
+      const nm = document.createElement("span");
+      nm.textContent = it.name;
+      name.appendChild(nm);
+      row.appendChild(name);
+
+      const barWrap = document.createElement("div");
+      barWrap.className = "admin-ugc-tsum-barwrap";
+      const bar = document.createElement("div");
+      bar.className = "admin-ugc-tsum-bar";
+      bar.style.width = `${Math.round((it.all / maxAll) * 100)}%`;
+      if (it.all === 0) bar.classList.add("admin-ugc-tsum-bar--zero");
+      barWrap.appendChild(bar);
+      row.appendChild(barWrap);
+
+      const count = document.createElement("div");
+      count.className = "admin-ugc-tsum-count";
+      const big = document.createElement("span");
+      big.className = "admin-ugc-tsum-big";
+      big.textContent = String(it.all);
+      count.appendChild(big);
+      const sub = document.createElement("span");
+      sub.className = "admin-ugc-tsum-sub";
+      sub.textContent = `今日 ${it.today}・7日 ${it.d7}・30日 ${it.d30}${it.users ? `・登録者 ${it.users}人` : ""}`;
+      count.appendChild(sub);
+      row.appendChild(count);
+
+      host.appendChild(row);
+    });
+
+    const note = document.createElement("p");
+    note.className = "admin-ugc-tsum-note";
+    note.textContent = "「回」はのべ利用回数（ゲスト含む・同じ人の複数回も加算）。直近2000件までを集計。";
+    host.appendChild(note);
+  }
+
   async function refresh() {
     const host = el("admin-ugc-list");
     if (!host) return;
@@ -478,6 +620,20 @@
     void refreshNavSignupCount();
     setMsg("読み込み中…");
     try {
+      const summaryHost = el("admin-ugc-tool-summary");
+      if (activeKind === "tool_use" && summaryHost) {
+        summaryHost.hidden = false;
+        try {
+          renderToolSummary(await loadToolUseSummaryRows(db));
+        } catch (e) {
+          console.warn("[MarchinZ] tool summary", e);
+          summaryHost.hidden = true;
+          summaryHost.replaceChildren();
+        }
+      } else if (summaryHost) {
+        summaryHost.hidden = true;
+        summaryHost.replaceChildren();
+      }
       const rows = await loadFeedRows(db, activeKind);
       const ids = rows.map((r) => String(r.id));
       const readMap = await loadReadMap(db, me.id, ids);
@@ -559,7 +715,9 @@
     void refreshNavSignupCount();
   });
 
-  document.addEventListener("marchinz-admin-ugc-recorded", () => {
+  document.addEventListener("marchinz-admin-ugc-recorded", (e) => {
+    const kind = e instanceof CustomEvent ? String(e.detail?.kind || "") : "";
+    if (kind === "tool_use") toolSummaryCache = null;
     void refreshBadges();
   });
 })();
