@@ -61,41 +61,152 @@ MZ.ui.enterRangePhase = () => {
   $("editorSection").hidden = true;
   $("rangeSection").hidden = false;
   MZ.S.rangeStart = 0;
-  MZ.S.rangeDur = Math.min(30, clip.duration);
-  const startSlider = $("rangeStartSlider");
-  const durSlider = $("rangeDurSlider");
-  durSlider.max = String(Math.min(60, Math.floor(clip.duration)));
-  durSlider.value = String(MZ.S.rangeDur);
-  startSlider.max = String(Math.max(0, clip.duration - MZ.S.rangeDur));
-  startSlider.value = "0";
+  MZ.S.rangeDur = Math.min(15, clip.duration);   // 初期は15秒ぶん
   // 範囲プレビューのキャンバスをクリップ比率に
   const cv = $("rangeCanvas");
   const s = Math.min(1, 640 / Math.max(clip.width, clip.height));
   cv.width = Math.max(2, Math.round(clip.width * s));
   cv.height = Math.max(2, Math.round(clip.height * s));
-  MZ.ui._updateRangeUi(true);
+  MZ.ui._updateRangeUi(false);
+  void MZ.ui._buildStrip();   // フィルムストリップ生成(完了後に選択フレーム表示)
 };
 
-MZ.ui._updateRangeUi = seekVideo => {
+/* ラベルと選択窓を現在の範囲に合わせて描き直す。seekVideo=大プレビューのフレームも更新 */
+MZ.ui._updateRangeUi = (seekVideo, whichEnd) => {
   const clip = MZ.S.clip;
   if (!clip) return;
-  const startSlider = $("rangeStartSlider");
-  MZ.S.rangeDur = parseFloat($("rangeDurSlider").value);
-  startSlider.max = String(Math.max(0, clip.duration - MZ.S.rangeDur));
-  MZ.S.rangeStart = Math.min(parseFloat(startSlider.value), parseFloat(startSlider.max));
   const end = MZ.rangeEnd();
-  $("rangeDurVal").textContent = `${Math.round(MZ.S.rangeDur)}秒`;
   $("rangeLabel").textContent =
     `${MZ.ui.fmtTime(MZ.S.rangeStart)} 〜 ${MZ.ui.fmtTime(end)}（${Math.round(end - MZ.S.rangeStart)}秒）`;
-  if (seekVideo) {
-    const v = clip.video;
-    v.currentTime = MZ.S.rangeStart;
+  // 選択窓とシェードの位置(%)
+  const l = (MZ.S.rangeStart / clip.duration) * 100;
+  const w = ((end - MZ.S.rangeStart) / clip.duration) * 100;
+  $("trimWindow").style.left = `${l}%`;
+  $("trimWindow").style.width = `${w}%`;
+  $("trimShadeL").style.left = "0";
+  $("trimShadeL").style.width = `${l}%`;
+  $("trimShadeR").style.left = `${l + w}%`;
+  $("trimShadeR").style.width = `${Math.max(0, 100 - l - w)}%`;
+  if (seekVideo) MZ.ui._requestFrame(whichEnd === "r" ? end : MZ.S.rangeStart);
+};
+
+/* 大プレビューへのフレーム表示要求(常に最新の要求だけを実行) */
+MZ.ui._requestFrame = t => {
+  MZ.ui._framePending = t;
+  if (MZ.ui._frameBusy || MZ.ui._stripBusy) return;
+  MZ.ui._frameBusy = true;
+  const v = MZ.S.clip.video;
+  const step = () => {
+    const want = MZ.ui._framePending;
+    MZ.ui._framePending = null;
     v.onseeked = () => {
       const cv = $("rangeCanvas");
       MZ.drawFrame(cv.getContext("2d"), v, v.videoWidth, v.videoHeight, 0, cv.width, cv.height);
-      v.onseeked = null;
+      if (MZ.ui._framePending != null) step();
+      else { v.onseeked = null; MZ.ui._frameBusy = false; }
     };
+    v.currentTime = want;
+  };
+  step();
+};
+
+/* フィルムストリップ: 動画から10コマを等間隔で抜き出して並べる(インスタ風) */
+MZ.ui._buildStrip = async () => {
+  const clip = MZ.S.clip;
+  const strip = $("stripCanvas");
+  const host = $("trimStrip");
+  const N = 10;
+  const gen = (MZ.ui._stripGen = (MZ.ui._stripGen || 0) + 1);
+  MZ.ui._stripBusy = true;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const cw = Math.max(2, Math.round(host.clientWidth * dpr));
+  const ch = Math.max(2, Math.round(host.clientHeight * dpr));
+  strip.width = cw; strip.height = ch;
+  const ctx = strip.getContext("2d");
+  ctx.fillStyle = "#1a2029";
+  ctx.fillRect(0, 0, cw, ch);
+  const v = clip.video;
+  const tileW = cw / N;
+  try {
+    for (let i = 0; i < N; i++) {
+      if (gen !== MZ.ui._stripGen || !MZ.S.clip) return;   // 中断(別素材へ)
+      const t = clip.duration * (i + 0.5) / N;
+      await new Promise(res => {
+        v.onseeked = () => { v.onseeked = null; res(); };
+        v.currentTime = t;
+        setTimeout(res, 1200);   // シークが返らない環境への保険
+      });
+      if (gen !== MZ.ui._stripGen || !MZ.S.clip) return;
+      // コマをカバー配置(縦を合わせて中央を切り出し)
+      const vw = v.videoWidth, vh = v.videoHeight;
+      const scale = ch / vh;
+      const sw = Math.min(vw, tileW / scale);
+      ctx.drawImage(v, (vw - sw) / 2, 0, sw, vh, i * tileW, 0, tileW, ch);
+    }
+  } finally {
+    if (gen === MZ.ui._stripGen) {
+      MZ.ui._stripBusy = false;
+      // 生成完了後、選択位置のフレームを大プレビューへ
+      if (MZ.S.clip) MZ.ui._requestFrame(MZ.ui._framePending != null ? MZ.ui._framePending : MZ.S.rangeStart);
+    }
   }
+};
+
+/* 選択窓のドラッグ(インスタ同様: 左右の取っ手で伸縮・枠の中で移動・外側タップでジャンプ) */
+MZ.ui._wireTrim = () => {
+  const host = $("trimStrip");
+  const MIN = 10, MAX = 60;
+  let mode = null, x0 = 0, s0 = 0, d0 = 0;
+  host.addEventListener("pointerdown", e => {
+    const clip = MZ.S.clip;
+    if (!clip) return;
+    const rect = host.getBoundingClientRect();
+    const frac = (e.clientX - rect.left) / rect.width;
+    const handle = e.target.closest("[data-trim]");
+    const end = MZ.rangeEnd();
+    if (handle) {
+      mode = handle.dataset.trim;   // "l" | "r"
+    } else {
+      const inWin = frac * clip.duration >= MZ.S.rangeStart && frac * clip.duration <= end;
+      if (!inWin) {
+        // 窓の外タップ: 窓の中心をそこへジャンプ(インスタと同じ)
+        MZ.S.rangeStart = Math.max(0, Math.min(clip.duration - MZ.S.rangeDur,
+          frac * clip.duration - MZ.S.rangeDur / 2));
+      }
+      mode = "move";
+    }
+    x0 = e.clientX; s0 = MZ.S.rangeStart; d0 = MZ.S.rangeDur;
+    host.setPointerCapture(e.pointerId);
+    MZ.ui._updateRangeUi(true, mode === "r" ? "r" : "l");
+    e.preventDefault();
+  });
+  host.addEventListener("pointermove", e => {
+    const clip = MZ.S.clip;
+    if (!mode || !clip) return;
+    const rect = host.getBoundingClientRect();
+    const dt = (e.clientX - x0) / rect.width * clip.duration;
+    if (mode === "move") {
+      MZ.S.rangeStart = Math.max(0, Math.min(clip.duration - d0, s0 + dt));
+    } else if (mode === "l") {
+      const end = s0 + d0;   // 右端は固定
+      const ns = Math.max(Math.max(0, end - MAX), Math.min(end - MIN, s0 + dt));
+      MZ.S.rangeStart = ns;
+      MZ.S.rangeDur = end - ns;
+    } else {   // "r": 左端は固定
+      const ne = Math.max(s0 + MIN, Math.min(Math.min(clip.duration, s0 + MAX), s0 + d0 + dt));
+      MZ.S.rangeDur = ne - s0;
+    }
+    MZ.ui._updateRangeUi(true, mode === "r" ? "r" : "l");
+    e.preventDefault();
+  });
+  const up = e => {
+    if (!mode) return;
+    mode = null;
+    try { host.releasePointerCapture(e.pointerId); } catch (err) {}
+    MZ.ui._updateRangeUi(true, "l");   // 離したら開始位置のフレームへ戻す
+  };
+  host.addEventListener("pointerup", up);
+  host.addEventListener("pointercancel", up);
 };
 
 /* 範囲確定→エディタへ(シークバーを範囲にマッピング) */
@@ -402,9 +513,8 @@ window.addEventListener("DOMContentLoaded", async () => {
   $("deepChk").checked = MZ.S.deep;
   $("resSel").onchange = e => { MZ.S.res = e.target.value; };
 
-  // 範囲選択フェーズ
-  $("rangeStartSlider").addEventListener("input", () => MZ.ui._updateRangeUi(true));
-  $("rangeDurSlider").addEventListener("input", () => MZ.ui._updateRangeUi(true));
+  // 範囲選択フェーズ(インスタ風トリム)
+  MZ.ui._wireTrim();
   $("rangeOkBtn").onclick = () => MZ.ui.enterEditorWithRange();
   $("rangeBackBtn").onclick = () => {
     MZ.ui.disposeClip();
@@ -419,9 +529,8 @@ window.addEventListener("DOMContentLoaded", async () => {
     $("editorSection").hidden = true;
     // 現在の範囲値を保ったまま選び直し画面へ
     $("rangeSection").hidden = false;
-    $("rangeStartSlider").value = String(MZ.S.rangeStart);
-    $("rangeDurSlider").value = String(Math.round(MZ.S.rangeDur));
-    MZ.ui._updateRangeUi(true);
+    MZ.ui._updateRangeUi(false);
+    void MZ.ui._buildStrip();
   };
 
   // ステップウィザード
