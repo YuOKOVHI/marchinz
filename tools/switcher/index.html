@@ -73,13 +73,9 @@
   <aside class="side">
 
     <section class="panel" id="dropSec">
-      <h2>1. 動画を読み込む <span class="hint" data-limit-note>(2〜3本・各10分まで)</span></h2>
-      <div id="dropZone" class="dropzone">
-        <div class="dz-icon"><i class="fa-solid fa-clapperboard"></i></div>
-        <div>ここにドラッグ&ドロップ<br>またはクリックして選択</div>
-        <input type="file" id="fileInput" accept="video/mp4,video/quicktime,video/*" multiple hidden>
-      </div>
-      <div id="clipCards" class="clip-cards"></div>
+      <h2>1. 動画を読み込む <span class="hint" data-limit-note data-limit-note-member="(3本まで・各20分)">(3本まで・各10分。無料登録すると各20分)</span></h2>
+      <div id="clipSlots" class="clip-slots"></div>
+      <input type="file" id="fileInput" accept="video/mp4,video/quicktime,video/*" multiple hidden>
     </section>
 
     <section class="panel" id="syncSec">

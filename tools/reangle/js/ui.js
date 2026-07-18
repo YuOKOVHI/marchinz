@@ -58,7 +58,7 @@ RA.ui.loadFile = file => {
       if (video.duration > MZ_LIMITS.maxVideoSec) {
         URL.revokeObjectURL(url);
         video.remove();
-        reject(new Error(`動画は10分までです(この動画は約${Math.round(video.duration / 60)}分)。短く切り出してからお試しください`));
+        reject(new Error(`動画は${MZ_LIMITS.videoLimitLabel}までです(この動画は約${Math.round(video.duration / 60)}分)。短く切り出してからお試しください`));
         return;
       }
       RA.S.clip = {

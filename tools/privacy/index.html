@@ -40,7 +40,7 @@
   <!-- ⓪ 取り込みフェーズ -->
   <section id="dropSection" class="card drop step-card">
     <h2 class="step-title">動画・写真を取り込む</h2>
-    <p class="step-lead">取り込むと、顔を自動で見つけてモザイクがかかります。<span data-limit-note>動画は<strong>10分まで</strong>、写真は<strong>4枚まで</strong>取り込めます(動画のモザイク作業は選んだ最大60秒ぶん)。</span></p>
+    <p class="step-lead">取り込むと、顔を自動で見つけてモザイクがかかります。<span data-limit-note data-limit-note-member="動画は10分まで、写真は5枚まで取り込めます(動画のモザイク作業は選んだ最大60秒ぶん)。">動画は<strong>10分まで</strong>、写真は<strong>1枚まで</strong>取り込めます。無料登録すると写真は5枚まで(動画のモザイク作業は選んだ最大60秒ぶん)。</span></p>
     <p class="hint">小さい顔は認識ができません。また、画質が低い動画は精度がかなり落ちます。ご了承ください。</p>
     <button id="pickBtn" class="big-btn">動画・写真を選ぶ</button>
     <input id="fileInput" type="file" accept="video/*,image/*" multiple hidden>
@@ -191,10 +191,5 @@
 <script src="js/preview.js"></script>
 <script src="js/exporter.js"></script>
 <script src="js/ui.js"></script>
-<script type="module">
-  import { FilesetResolver, FaceDetector } from "./vendor/tasks-vision.mjs";
-  window.MZVision = { FilesetResolver, FaceDetector };
-  window.dispatchEvent(new Event("mz-vision-ready"));
-</script>
 </body>
 </html>

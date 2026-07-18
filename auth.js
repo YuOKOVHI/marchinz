@@ -1270,6 +1270,17 @@
     } catch (e) { /* プライベートモード等でlocalStorage不可: 通常の上限で動く */ }
   }
 
+  // 登録ユーザー(ログイン中)の印。ツール側はこれを見て取り込み上限を緩める(動画20分・写真5枚)
+  function syncMemberToolFlag(isMember) {
+    try {
+      if (isMember) {
+        localStorage.setItem("mz_member_v1", JSON.stringify({ member: true, ts: Date.now() }));
+      } else {
+        localStorage.removeItem("mz_member_v1");
+      }
+    } catch (e) { /* localStorage不可: ゲスト扱いで動く */ }
+  }
+
   function applyAdminOnlyVisibility(isAdmin) {
     syncAdminToolUnlimited(isAdmin);
     document.querySelectorAll("[data-admin-only]").forEach((el) => {
@@ -1331,6 +1342,7 @@
   }
 
   function showLoggedOut() {
+    syncMemberToolFlag(false);
     closeLegalPolicyGate();
     window.MarchinZBTest?.closeBetaGate?.();
     currentProfileWithdrawn = false;
@@ -1398,6 +1410,7 @@
       mobileDrawerName.hidden = !showPublicLabel;
     }
     applyAdminOnlyVisibility(admin);
+    syncMemberToolFlag(true);
     syncSiteBrandAuthVisibility();
     syncInAppBrowserAuthGate();
   }

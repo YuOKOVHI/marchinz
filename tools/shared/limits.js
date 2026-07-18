@@ -1,7 +1,8 @@
 "use strict";
 /* ============ クリエイターツール共通: 取り込み制限 ============
-   通常ユーザーは端末の負荷を考えて上限を設けるが、管理者(auth-config.jsのadminEmails)
-   でログイン中は上限なしで扱えるようにする。
+   3段階: ゲスト(動画10分・写真1枚) < 登録ユーザー(動画20分・写真5枚)
+        < 管理者ログイン・手元環境(上限なし)。
+   Privacyの動画は作業範囲方式(最大60秒を選ぶ)のため、誰でも10分まで。
 
    本体サイト(auth.js)が管理者ログイン時に localStorage へ印を書き、
    ツール側(同一オリジン)はそれを読むだけ。ツールにFirebase SDKを読ませない
@@ -20,6 +21,13 @@ window.MZ_LIMITS = (() => {
     admin = Boolean(raw && raw.admin && Date.now() - (raw.ts || 0) < MAX_AGE_MS);
   } catch (e) { admin = false; }
 
+  // 登録ユーザー(ログイン中)の印。本体サイトのauth.jsがログイン時に書き、ログアウトで消す
+  let member = false;
+  try {
+    const raw = JSON.parse(localStorage.getItem("mz_member_v1") || "null");
+    member = Boolean(raw && raw.member && Date.now() - (raw.ts || 0) < MAX_AGE_MS);
+  } catch (e) { member = false; }
+
   // 手元で開いているとき(開発・動作確認用)。本番ドメインでは決してtrueにならない。
   // 私用IPは「10.example.com」のような外部ドメインを拾わないよう、IPv4の形を確かめてから判定する
   const host = location.hostname;
@@ -36,16 +44,28 @@ window.MZ_LIMITS = (() => {
 
   const unlimited = admin || local;
   const L = {
-    admin, local, unlimited,
-    maxVideoSec: unlimited ? Infinity : 600.5,   // 取り込める動画の長さ(通常10分)
-    maxPhotos: unlimited ? Infinity : 4,         // 一度に扱える写真の枚数
-    maxRangeSec: unlimited ? Infinity : 60,      // Privacyでモザイク作業できる範囲(通常60秒)
+    admin, local, member, unlimited,
+    // ReAngle/Switcher: ゲスト10分・登録20分
+    maxVideoSec: unlimited ? Infinity : member ? 1200.5 : 600.5,
+    videoLimitLabel: member ? "20分" : "10分",   // エラーメッセージ用
+    // Privacyの動画は誰でも10分(モザイク作業は選んだ範囲だけのため)
+    maxPrivacyVideoSec: unlimited ? Infinity : 600.5,
+    maxPhotos: unlimited ? Infinity : member ? 5 : 1,   // 一度に扱える写真の枚数
+    maxRangeSec: unlimited ? Infinity : 60,      // Privacyでモザイク作業できる範囲
     minRangeSec: 10,
   };
 
-  /* 上限なしのとき: 上限を書いた文言([data-limit-note])を隠し、代わりに帯を出す */
+  /* 上限なし: 上限の文言([data-limit-note])を隠して帯を出す。
+     登録ユーザー: 文言を data-limit-note-member の内容(静的テキスト)に差し替える */
   L.applyToDom = () => {
-    if (!L.unlimited) return;
+    if (!L.unlimited) {
+      if (L.member) {
+        document.querySelectorAll("[data-limit-note-member]").forEach(el => {
+          el.textContent = el.getAttribute("data-limit-note-member");
+        });
+      }
+      return;
+    }
     document.querySelectorAll("[data-limit-note]").forEach(el => { el.hidden = true; });
     if (document.getElementById("adminLimitBadge")) return;
     const p = document.createElement("p");

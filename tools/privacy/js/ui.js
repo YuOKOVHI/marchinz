@@ -367,21 +367,38 @@ MZ.ui.onCanvasTap = e => {
   MZ.ui.toast("この場所にマスクを追加しました(もう一度タップで外せます)");
 };
 
+/* 顔検出AIの読み込み開始(初回のみ)。失敗したら次の取り込みで再挑戦できるように戻す */
+MZ.ui.ensureDetector = () => {
+  if (MZ.ui._detStarted) return;
+  MZ.ui._detStarted = true;
+  MZ.detect.init().catch(e => {
+    MZ.ui._detStarted = false;
+    MZ.detect.initPromise = null;
+    MZ.ui.setStatus("顔検出を読み込めませんでした", false);
+    MZ.ui.toast(`⚠ 顔検出の初期化に失敗: ${e.message}`);
+  });
+};
+
 /* ---- 読み込み: 拡張子/MIMEで写真・動画を振り分け ---- */
 MZ.ui.loadFile = async file => {
   if (!file) throw new Error("ファイルがありません");
+  MZ.ui.ensureDetector();
   MZ.ui.disposeClip();
   return MZ.ui.isImageFile(file) ? MZ.ui._loadImages([file]) : MZ.ui._loadVideo(file);
 };
 
-/* 複数ファイルの取り込み: 写真は最大4枚、動画は先頭1本。混在は写真を優先 */
+/* 複数ファイルの取り込み: 写真は上限枚数まで(ゲスト1/登録5)、動画は先頭1本。混在は写真を優先 */
 MZ.ui.loadFiles = async fileList => {
+  MZ.ui.ensureDetector();
   const files = [...fileList];
   const imgs = files.filter(MZ.ui.isImageFile);
   const vid = files.find(MZ.ui.isVideoFile);
   MZ.ui.disposeClip();
   if (imgs.length) {
-    if (imgs.length > MZ_LIMITS.maxPhotos) MZ.ui.toast("写真は4枚までです。先頭の4枚を使います");
+    if (imgs.length > MZ_LIMITS.maxPhotos) {
+      const more = MZ_LIMITS.member || MZ_LIMITS.unlimited ? "" : "(無料登録すると5枚まで)";
+      MZ.ui.toast(`写真は${MZ_LIMITS.maxPhotos}枚まで${more}です。先頭の${MZ_LIMITS.maxPhotos}枚を使います`);
+    }
     return MZ.ui._loadImages(imgs.slice(0, MZ_LIMITS.maxPhotos));
   }
   if (vid) return MZ.ui._loadVideo(vid);
@@ -494,7 +511,7 @@ MZ.ui._loadVideo = file => new Promise((resolve, reject) => {
   document.body.appendChild(video);
   video.onerror = () => reject(new Error("この動画を再生できません"));
   video.onloadedmetadata = () => {
-    if (video.duration > MZ_LIMITS.maxVideoSec) {
+    if (video.duration > MZ_LIMITS.maxPrivacyVideoSec) {
       URL.revokeObjectURL(url);
       video.remove();
       reject(new Error(`動画は10分までです(この動画は${Math.round(video.duration / 60)}分)。短く切り出してからお試しください`));
@@ -729,15 +746,9 @@ window.addEventListener("DOMContentLoaded", async () => {
     $("fileInput").value = "";
   };
 
-  // 能力チェック+検出モデル準備
+  // 能力チェック。顔検出AI(約3MB)は素材を選んだ瞬間から読み込む(開いただけの人の通信量節約)
   await MZ.exporter.probeCaps().catch(() => {});
-  MZ.ui.setStatus("顔検出AIを準備中…", false);
-  MZ.detect.init().then(() => {
-    MZ.ui.setStatus(MZ.caps.h264 ? "準備OK(高速書き出し対応)" : "準備OK(実時間書き出し)", true);
-  }).catch(e => {
-    MZ.ui.setStatus("顔検出を読み込めませんでした", false);
-    MZ.ui.toast(`⚠ 顔検出の初期化に失敗: ${e.message}`);
-  });
+  MZ.ui.setStatus(MZ.caps.h264 ? "準備OK(高速書き出し対応)" : "準備OK(実時間書き出し)", true);
 
   if (MZ.testMode) MZ.ui.runTest();
 });

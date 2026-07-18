@@ -9,7 +9,7 @@ MC.media.addFiles = async files => {
     if (!/^video\//.test(f.type) && !/\.(mp4|mov|m4v)$/i.test(f.name)) continue;
     const key = `${f.name}|${f.size}|${f.lastModified}`;
     if (MC.S.clips.some(c => MC.clipKey(c) === key)) { MC.ui.toast(`${f.name} は読み込み済みです`); continue; }
-    if (MC.S.clips.length >= 4) { MC.ui.toast("クリップは最大4本までです"); break; }
+    if (MC.S.clips.length >= 3) { MC.ui.toast("動画は3本までです"); break; }
     const clip = {
       id: MC.media.nextId++, file: f,
       name: f.name, size: f.size, lastModified: f.lastModified,
@@ -34,7 +34,7 @@ MC.media.addFiles = async files => {
       continue;
     }
     if (v.duration > MZ_LIMITS.maxVideoSec) {
-      MC.ui.toast(`⚠ ${f.name}: 動画は10分までです(約${Math.round(v.duration / 60)}分)`);
+      MC.ui.toast(`⚠ ${f.name}: 動画は${MZ_LIMITS.videoLimitLabel}までです(約${Math.round(v.duration / 60)}分)`);
       URL.revokeObjectURL(clip.url);
       continue;
     }
