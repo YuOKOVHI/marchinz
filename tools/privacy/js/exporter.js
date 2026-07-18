@@ -255,9 +255,11 @@ MZ.exporter.exportMP4 = async (clip, onProgress) => {
       }
       const f = frames.shift();
       if (ts0 === null) ts0 = f.timestamp;
-      const dets = MZ.detect.onSource(f, rawW, rawH, rotation, MZ.S.deep ? "deep" : "light");
+      const near = tracker.tracks.map(tr => tr.box);
+      const dets = MZ.detect.onSource(f, rawW, rawH, rotation, MZ.S.deep ? "deep" : "light", near);
       const tSec = (f.timestamp - ts0) / 1e6;
       const { active, born } = tracker.update(dets, tSec, MZ.S.hold);
+      active.push(...MZ.S.manualBoxes);
       // 新しく現れた顔は、まだ書き出していない直前フレームにもさかのぼってマスク
       if (born.length) {
         for (const e of buffer) for (const tr of born) e.boxes.push({ ...tr.box });
@@ -313,7 +315,12 @@ MZ.exporter.exportImage = async (clip, onProgress) => {
     const ctx = canvas.getContext("2d");
     ctx.drawImage(clip.img, 0, 0, W, H);
     // 写真はEXIF回転済みImageBitmapなので rot=0
-    const boxes = MZ.detect.onSource(clip.img, W, H, 0, MZ.S.deep ? "deep" : "light");
+    // 再検出+プレビューでタップ追加した分をNMSで重複統合し、固定マスクを足す
+    const boxes = MZ.detect.nms(
+      MZ.detect.onSource(clip.img, W, H, 0, MZ.S.deep ? "deep" : "light")
+        .concat((MZ.preview.boxes || []).map(b => ({ ...b, score: b.score || 0.5 }))),
+      0.45,
+    ).concat(MZ.S.manualBoxes);
     onProgress(0.6, "モザイクをかけています…");
     await MZ.yield();
     MZ.mosaic.apply(ctx, W, H, boxes, MZ.S);

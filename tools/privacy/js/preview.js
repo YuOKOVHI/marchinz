@@ -42,15 +42,41 @@ MZ.preview = {
     const due = MZ.exporter.running
       || Math.abs(t - this.lastDetectAt) > 0.001 && (performance.now() - this.lastDetectTime > 80);
     if (MZ.detect.detector && due) {
-      // 再生中は軽量モード、一時停止中は書き出しと同じ精度で確認できる
-      const mode = (MZ.S.deep && v.paused && !MZ.exporter.running) ? "deep" : "light";
-      const dets = MZ.detect.onSource(v, v.videoWidth, v.videoHeight, 0, mode);
+      // 一時停止中=全タイルdeep / 再生中=巡回deep(4タイルずつ回して数回で全域)
+      const mode = !MZ.S.deep ? "light"
+        : (v.paused && !MZ.exporter.running) ? "deep" : "rotate";
+      const near = this.tracker.tracks.map(tr => tr.box);
+      const dets = MZ.detect.onSource(v, v.videoWidth, v.videoHeight, 0, mode, near);
       this.boxes = this.tracker.update(dets, t, MZ.S.hold).active;
       this.lastDetectAt = t;
       this.lastDetectTime = performance.now();
     }
     MZ.drawFrame(this.ctx, v, v.videoWidth, v.videoHeight, 0, W, H);
-    MZ.mosaic.apply(this.ctx, W, H, this.boxes, MZ.S);
+    const all = this.boxes.concat(MZ.S.manualBoxes);
+    MZ.mosaic.apply(this.ctx, W, H, all, MZ.S);
+    this.drawRings(all, W, H);
+  },
+
+  /* 認識・手動マスクの位置を赤い丸線で示す(①②ステップのみ。
+     実時間書き出しはこのcanvasを録画するため、書き出し中は描かない) */
+  drawRings(all, W, H) {
+    if (MZ.exporter.running || MZ.S.step === 3) return;
+    const ctx = this.ctx;
+    const feather = MZ.S.type === "mosaic" ? 0.12 : 0.22;
+    const grow = MZ.S.expand / 100 + feather;
+    ctx.save();
+    ctx.strokeStyle = "rgba(230, 40, 60, 0.95)";
+    ctx.lineWidth = Math.max(1.5, W / 480);
+    for (const b of all) {
+      const manual = MZ.S.manualBoxes.includes(b);
+      ctx.setLineDash(manual ? [6, 4] : []);   // 手動追加は破線で区別
+      const rx = (b.w * (1 + grow)) / 2 * W;
+      const ry = (b.h * (1 + grow)) / 2 * H;
+      ctx.beginPath();
+      ctx.ellipse((b.x + b.w / 2) * W, (b.y + b.h / 2) * H, rx, ry, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
   },
 
   /* 写真: 検出は初回とdeep切替時だけ。マスク描画は毎フレーム(濃さ/種類の変更を即反映) */
@@ -61,6 +87,8 @@ MZ.preview = {
       this.imageDirty = false;
     }
     MZ.drawFrame(this.ctx, clip.img, clip.width, clip.height, 0, W, H);
-    MZ.mosaic.apply(this.ctx, W, H, this.boxes, MZ.S);
+    const all = this.boxes.concat(MZ.S.manualBoxes);
+    MZ.mosaic.apply(this.ctx, W, H, all, MZ.S);
+    this.drawRings(all, W, H);
   },
 };

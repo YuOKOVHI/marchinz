@@ -11,6 +11,7 @@ window.MZ = {
     deep: true,        // 小さな顔も探す(タイル検出)
     res: "1080",       // "1080" | "orig"
     step: 1,           // ウィザード現在ステップ 1:確認 2:調整 3:保存
+    manualBoxes: [],   // タップで追加した固定マスク(正規化ボックス)。もう一度タップで削除
   },
   caps: { h264: null, aacEnc: null },
   testMode: /[?&]test/.test(location.search),

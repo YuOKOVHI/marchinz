@@ -40,7 +40,7 @@
   <!-- ⓪ 取り込みフェーズ -->
   <section id="dropSection" class="card drop step-card">
     <h2 class="step-title">動画・写真を取り込む</h2>
-    <p class="step-lead">取り込むと、顔を自動で見つけてモザイクがかかります。</p>
+    <p class="step-lead">取り込むと、顔を自動で見つけてモザイクがかかります。動画は<strong>60秒まで</strong>です。</p>
     <button id="pickBtn" class="big-btn">動画・写真を選ぶ</button>
     <input id="fileInput" type="file" accept="video/*,image/*" hidden>
     <p class="note">すべてスマホ/PCの中だけで処理します。動画・写真はどこにも送信されません。無料です。</p>
@@ -82,7 +82,7 @@
       <p class="step-lead video-only">再生して、すべての顔にモザイクがかかっているか確認してください。</p>
       <p class="step-lead image-only">顔に自動でモザイクがかかっています。掛かり漏れがないか確認してください。</p>
       <p id="detectStatus" class="detect-status" aria-live="polite"></p>
-      <p class="hint">横向き・後ろ向き・小さな顔は漏れることがあります。漏れていたら次のステップで「広げ幅」や「小さな顔もていねいに探す」を調整できます。</p>
+      <p class="hint">赤い丸が、いまモザイクがかかっている場所です。<strong>かかっていない顔は、プレビューのその場所をタップ</strong>すると追加できます(タップで追加したマスクは、もう一度タップで外せます)。</p>
       <button id="toStep2Btn" class="big-btn step-next">確認した、隠しかたの調整へ <i class="fa-solid fa-arrow-right"></i></button>
     </div>
 
@@ -126,7 +126,7 @@
       <div class="setting row video-only">
         <label class="inline-label">出力サイズ</label>
         <select id="resSel">
-          <option value="1080" selected>フルHDで保存(速い)</option>
+          <option value="1080" selected>フルHDで保存</option>
           <option value="orig">元の解像度のまま</option>
         </select>
       </div>

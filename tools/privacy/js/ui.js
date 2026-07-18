@@ -39,6 +39,7 @@ MZ.ui.disposeClip = () => {
   if (c.img && c.img.close) { try { c.img.close(); } catch (e) {} }
   URL.revokeObjectURL(c.url);
   MZ.S.clip = null;
+  MZ.S.manualBoxes = [];
 };
 
 MZ.ui._enterEditor = (name, kind) => {
@@ -86,6 +87,62 @@ MZ.ui.updateDetectStatus = () => {
   }
 };
 
+/* ---- プレビューのタップでマスクを追加/削除 ----
+   ①手動マスクの上 → そのマスクを削除(トグル)
+   ②タップ周辺を高倍率で顔検出 → 見つかれば追跡マスクとして追加
+   ③見つからなければ、その場所に固定マスクを追加(検出ボックスの平均サイズ) */
+MZ.ui.onCanvasTap = e => {
+  const clip = MZ.S.clip;
+  if (!clip || MZ.exporter.running) return;
+  const cv = $("previewCanvas");
+  const r = cv.getBoundingClientRect();
+  const nx = (e.clientX - r.left) / r.width;
+  const ny = (e.clientY - r.top) / r.height;
+  if (!isFinite(nx) || !isFinite(ny) || nx < 0 || nx > 1 || ny < 0 || ny > 1) return;
+
+  // ① 手動マスクのトグル削除
+  const hit = MZ.S.manualBoxes.findIndex(b =>
+    nx > b.x - b.w * 0.2 && nx < b.x + b.w * 1.2 && ny > b.y - b.h * 0.2 && ny < b.y + b.h * 1.2);
+  if (hit >= 0) {
+    MZ.S.manualBoxes.splice(hit, 1);
+    MZ.ui.toast("タップしたマスクを外しました");
+    MZ.preview.imageDirty = true;
+    return;
+  }
+  // 自動検出済みの顔の上は何もしない(既にかかっている)
+  if ((MZ.preview.boxes || []).some(b =>
+    nx > b.x && nx < b.x + b.w && ny > b.y && ny < b.y + b.h)) return;
+
+  // ② 周辺を高倍率で検出
+  const src = clip.kind === "image" ? clip.img : clip.video;
+  const rw = clip.kind === "image" ? clip.width : clip.video.videoWidth;
+  const rh = clip.kind === "image" ? clip.height : clip.video.videoHeight;
+  let found = null;
+  try { found = MZ.detect.probeAt(src, rw, rh, 0, nx, ny); } catch (err) { MZ.log("probeAt:", err.message); }
+  if (found) {
+    if (clip.kind === "image") {
+      MZ.preview.boxes.push(found);
+    } else {
+      // 追跡トラックとして追加(以後は行進の動きにも追従)
+      MZ.preview.tracker.tracks.push({
+        id: MZ.preview.tracker.nextId++,
+        box: { x: found.x, y: found.y, w: found.w, h: found.h },
+        vx: 0, vy: 0, lastT: clip.video.currentTime, lastSeen: clip.video.currentTime,
+        matched: true, matchedRecently: true,
+      });
+    }
+    MZ.ui.toast("顔を見つけてマスクを追加しました");
+    return;
+  }
+  // ③ 固定マスク(近くの検出サイズに合わせる。無ければ画面幅5%)
+  const ref = (MZ.preview.boxes || [])[0];
+  const w = ref ? ref.w : 0.05;
+  const h = ref ? ref.h : 0.05 * (cv.width / cv.height);
+  MZ.S.manualBoxes.push({ x: nx - w / 2, y: ny - h / 2, w, h });
+  MZ.ui.toast("この場所にマスクを追加しました(もう一度タップで外せます)");
+  MZ.preview.imageDirty = true;
+};
+
 /* ---- 読み込み: 拡張子/MIMEで写真・動画を振り分け ---- */
 MZ.ui.loadFile = async file => {
   if (!file) throw new Error("ファイルがありません");
@@ -127,6 +184,12 @@ MZ.ui._loadVideo = file => new Promise((resolve, reject) => {
   document.body.appendChild(video);
   video.onerror = () => reject(new Error("この動画を再生できません"));
   video.onloadedmetadata = () => {
+    if (video.duration > 60.5) {
+      URL.revokeObjectURL(url);
+      video.remove();
+      reject(new Error(`動画は60秒までです(この動画は${Math.round(video.duration)}秒)。短く切り出してからお試しください`));
+      return;
+    }
     MZ.S.clip = {
       file, url, video, kind: "video",
       name: file.name,
@@ -243,7 +306,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (v.paused) v.play(); else v.pause();
   };
   $("playBtn").onclick = togglePlay;
-  $("previewCanvas").onclick = togglePlay;
+  $("previewCanvas").addEventListener("click", e => MZ.ui.onCanvasTap(e));
   $("seekBar").addEventListener("input", e => {
     MZ.ui._seeking = true;
     if (MZ.S.clip) MZ.S.clip.video.currentTime = parseFloat(e.target.value);
