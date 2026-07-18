@@ -218,7 +218,9 @@ MZ.ui._wireTrim = () => {
   host.addEventListener("pointercancel", up);
 };
 
-/* 範囲確定→エディタへ(シークバーを範囲にマッピング) */
+/* 範囲確定→エディタへ(シークバーを範囲にマッピング)。
+   顔の高精度スキャンは「この範囲で始める」を押したあと、範囲の先頭フレームが
+   実際に表示されてから走らせる(シーク途中の古いフレームを解析しないように) */
 MZ.ui.enterEditorWithRange = () => {
   const clip = MZ.S.clip;
   // サムネ生成が走っていたら中断(プレビューとシーク位置を取り合わないように)
@@ -237,6 +239,23 @@ MZ.ui.enterEditorWithRange = () => {
   $("reRangeBtn").hidden = clip.duration <= MZ_LIMITS.maxRangeSec;
   MZ.preview.setClip(clip);
   MZ.ui.updateTime();
+  MZ.ui._scanAtRangeStart(clip);
+};
+
+/* 範囲の先頭へのシークが終わり、そのフレームが描ける状態になってから高精度スキャンを始める。
+   seekedイベントはシークが不要だったときに発火しないため、状態を見て判断する */
+MZ.ui._scanAtRangeStart = clip => {
+  const v = clip.video;
+  const t0 = performance.now();
+  const tick = () => {
+    if (MZ.S.clip !== clip) return;                       // 別の素材に切り替わった
+    if ((!v.seeking && v.readyState >= 2) || performance.now() - t0 > 3000) {
+      MZ.preview.startInitialScan();                      // 3秒待っても整わなければ諦めて開始
+      return;
+    }
+    setTimeout(tick, 50);
+  };
+  tick();
 };
 
 /* ---- ステップウィザード(1:確認 / 2:調整 / 3:保存) ---- */

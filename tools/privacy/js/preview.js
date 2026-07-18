@@ -23,7 +23,9 @@ MZ.preview = {
     this.tracker.reset();
     this.boxes = [];
     this.lastDetectAt = -1;
-    this.pendingInit = clip.kind === "video";   // 読み込み直後の高精度スキャン(1回だけ)
+    // 高精度スキャンはここでは始めない。範囲が決まり、その先頭フレームが
+    // 実際に表示されてから MZ.preview.startInitialScan() で開始する
+    this.pendingInit = false;
     this.initRunning = false;
     this.initProgress = 0;
     this.imageDirty = true;   // 写真は検出を一度だけ走らせるフラグ
@@ -33,6 +35,13 @@ MZ.preview = {
   },
 
   stop() { cancelAnimationFrame(this.raf); this.raf = 0; },
+
+  /* 高精度スキャンの予約。実行は描画ループ側(検出モデルの準備完了を待つため) */
+  startInitialScan() {
+    const clip = MZ.S.clip;
+    if (!clip || clip.kind !== "video") return;
+    this.pendingInit = true;
+  },
 
   drawOnce() {
     const clip = MZ.S.clip;
@@ -45,7 +54,7 @@ MZ.preview = {
       const end = MZ.rangeEnd();
       if (v.currentTime > end + 0.05) { v.pause(); v.currentTime = end; }
     }
-    // 読み込み直後は1回だけ、時間をかけた高精度スキャンで小さな顔まで拾う
+    // 範囲が決まった直後に1回だけ、時間をかけた高精度スキャンで小さな顔まで拾う
     if (this.pendingInit && MZ.detect.detector && !MZ.exporter.running) void this._runInitialScan(v);
     // 検出は約80ms間隔+シーク時(書き出し中の実時間録画は毎フレーム)。速度予測トラッカーが間を埋める
     const t = v.currentTime;
