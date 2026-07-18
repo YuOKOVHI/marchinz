@@ -100,7 +100,7 @@ MC.sync.run = async onStatus => {
     if (c.audio8k) continue;
     say(`音声を解析中: ${c.name}`);
     try { await MC.audio.extract8k(c); }
-    catch (e) { console.warn("[MC]", e.message); MC.ui.toast(`⚠️ ${e.message}`); }
+    catch (e) { console.warn("[MC]", e.message); MC.ui.toast(`⚠ ${e.message}`); }
     await new Promise(r => setTimeout(r, 0));
   }
 

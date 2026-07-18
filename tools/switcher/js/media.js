@@ -29,7 +29,7 @@ MC.media.addFiles = async files => {
         v.onerror = () => rej(new Error("動画として読み込めません(コーデック非対応の可能性)"));
       });
     } catch (e) {
-      MC.ui.toast(`⚠️ ${f.name}: ${e.message}`);
+      MC.ui.toast(`⚠ ${f.name}: ${e.message}`);
       URL.revokeObjectURL(clip.url);
       continue;
     }

@@ -12,6 +12,40 @@ MC.ui.toast = msg => {
   MC.ui._toastTm = setTimeout(() => el.classList.remove("show"), 3500);
 };
 
+/* 書き出し完了カード。iOS(共有可)は「動画を保存」タップで初めて保存する */
+MC.ui.showDone = res => {
+  const share = MC.exporter.shareMode();
+  const $ = MC.ui.$;
+  $("#doneCard").hidden = false;
+  if (share) {
+    $("#doneText").innerHTML = `<span class="ok">✓ 準備できました(${(res.blob.size / 1e6).toFixed(1)}MB)</span>`;
+    $("#doneNote").textContent = "「動画を保存」を押すと、共有シートから写真(カメラロール)やファイルに保存できます。";
+    MC.ui.toast("✔ 準備できました。保存を押してください");
+  } else {
+    $("#doneText").innerHTML = `<span class="ok">✓ 「${res.name}」を保存しました(${(res.blob.size / 1e6).toFixed(1)}MB)</span>`;
+    $("#doneNote").textContent = "ダウンロードに保存されています。";
+    MC.ui.toast("✔ 書き出しが完了しました");
+  }
+};
+
+/* 保存の実行。iOSはWeb Shareで写真/ファイルへ、それ以外はダウンロード */
+MC.ui.saveResult = async () => {
+  const r = MC.exporter.lastResult;
+  if (!r) return;
+  if (MC.exporter.shareMode()) {
+    try {
+      const file = new File([r.blob], r.name, { type: r.type || r.blob.type });
+      await navigator.share({ files: [file] });
+    } catch (e) {
+      if (e && e.name === "AbortError") return;         // ユーザーがキャンセル
+      MC.log("share失敗→ダウンロード:", e && e.message);
+      MC.exporter.triggerDownload(r.blob, r.name);        // 最後の手段
+    }
+  } else {
+    MC.exporter.triggerDownload(r.blob, r.name);
+  }
+};
+
 MC.ui.fmtTime = s => {
   if (!isFinite(s)) s = 0;
   const m = Math.floor(s / 60), sec = (s % 60).toFixed(1).padStart(4, "0");
@@ -82,7 +116,7 @@ MC.ui.renderAudio = () => {
     const label = document.createElement("label");
     label.className = "audio-choice" + (MC.S.audioClipId === c.id ? " selected" : "");
     const stat = c.stats
-      ? `音量${(20 * Math.log10(c.stats.rms || 1e-6)).toFixed(0)}dB${c.stats.clipRatio > 0.001 ? "・歪みあり⚠️" : ""}`
+      ? `音量${(20 * Math.log10(c.stats.rms || 1e-6)).toFixed(0)}dB${c.stats.clipRatio > 0.001 ? "・歪みあり⚠" : ""}`
       : (c.hasAudio === false ? "音声なし" : "未解析");
     label.innerHTML = `
       <input type="radio" name="audioClip" ${MC.S.audioClipId === c.id ? "checked" : ""} ${c.hasAudio === false ? "disabled" : ""}>
@@ -234,7 +268,7 @@ MC.ui.wire = () => {
   $("#syncBtn").onclick = async () => {
     $("#syncBtn").disabled = true;
     try { await MC.sync.run(s => { $("#syncStatus").textContent = s; }); }
-    catch (e) { MC.ui.toast("⚠️ 同期に失敗: " + e.message); console.error(e); }
+    catch (e) { MC.ui.toast("⚠ 同期に失敗: " + e.message); console.error(e); }
     finally { $("#syncBtn").disabled = MC.S.clips.length < 2; $("#syncStatus").textContent = ""; }
   };
 
@@ -252,6 +286,7 @@ MC.ui.wire = () => {
     MC.preview.pause();
     const prog = $("#exportProgress"), fill = $("#progressFill"), txt = $("#progressText");
     prog.style.display = "block";
+    $("#doneCard").hidden = true;
     $("#exportBtn").disabled = true;
     $("#cancelBtn").style.display = "inline-block";
     const onProgress = (r, s) => { fill.style.width = `${Math.round(r * 100)}%`; txt.textContent = s; };
@@ -262,9 +297,9 @@ MC.ui.wire = () => {
         ? await MC.exporter.exportRealtime(onProgress)
         : await MC.exporter.exportMP4(onProgress);
       onProgress(1, "完了");
-      MC.ui.toast(`書き出し完了 ✅ ${res.name}(${(res.blob.size / 1e6).toFixed(1)}MB)`);
+      MC.ui.showDone(res);
     } catch (e) {
-      MC.ui.toast(e.message.includes("キャンセル") ? "書き出しを中止しました" : "⚠️ 書き出し失敗: " + e.message);
+      MC.ui.toast(e.message.includes("キャンセル") ? "書き出しを中止しました" : "⚠ 書き出し失敗: " + e.message);
       console.error(e);
     } finally {
       $("#exportBtn").disabled = !MC.S.clips.length;
@@ -273,6 +308,7 @@ MC.ui.wire = () => {
     }
   };
   $("#cancelBtn").onclick = () => { MC.exporter.cancelFlag = true; };
+  $("#saveBtn").onclick = () => MC.ui.saveResult();
 
   // --- Phase 2: 自動カット割+ワイプ+タイムライン ---
   $("#bpbSelect").onchange = e => { MC.S.beatsPerBar = parseInt(e.target.value); MC.saveState(); };

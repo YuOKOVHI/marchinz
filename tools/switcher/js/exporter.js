@@ -336,7 +336,7 @@ MC.exporter.exportMP4 = async onProgress => {
       audioOk = await MC.exporter.encodeAudio(
         muxer, audioClip, tIn - audioClip.offset, tOut - tIn,
         s => onProgress(1, s));
-      if (!audioOk && !MC.exporter.cancelFlag) MC.ui.toast("⚠️ 音声を書き出せませんでした(映像のみ出力します)");
+      if (!audioOk && !MC.exporter.cancelFlag) MC.ui.toast("⚠ 音声を書き出せませんでした(映像のみ出力します)");
     }
     if (MC.exporter.cancelFlag) throw new Error("キャンセルしました");
 
@@ -396,15 +396,38 @@ MC.exporter.exportRealtime = async onProgress => {
   return { blob, name };
 };
 
-MC.exporter.download = (blob, name) => {
+/* iOS SafariはWeb Share(files)でカメラロール/ファイルへ保存できる。
+   共有はユーザー操作(タップ)内でしか呼べないため、iOSでは自動保存せず
+   完了カードの「動画を保存」タップから MC.ui.saveResult() が共有する。
+   (ReAngle/Privacyと同じ保存フロー) */
+MC.exporter.lastResult = null;
+MC.exporter._shareMode = null;
+MC.exporter.shareMode = () => {
+  if (MC.exporter._shareMode != null) return MC.exporter._shareMode;
+  let ok = false;
+  try {
+    const probe = new File([new Uint8Array(1)], "probe.mp4", { type: "video/mp4" });
+    ok = !!(navigator.canShare && navigator.share && navigator.canShare({ files: [probe] }));
+  } catch (e) { ok = false; }
+  return (MC.exporter._shareMode = ok);
+};
+
+/* <a download> による保存(デスクトップ/Android)。iOS Safariでは無視されるので使わない */
+MC.exporter.triggerDownload = (blob, name) => {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = name;
   a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+};
+
+MC.exporter.download = (blob, name) => {
+  MC.exporter.lastResult = { blob, name, type: blob.type };
   if (MC.testMode) {  // 自動検証用: ローカルサーバへも保存
     fetch(`/save?name=${encodeURIComponent(name)}`, { method: "PUT", body: blob })
       .then(() => MC.log("test upload ok:", name))
       .catch(e => MC.log("test upload failed:", e.message));
   }
+  if (MC.exporter.shareMode()) return;  // iOSは完了カードの「動画を保存」から共有
+  MC.exporter.triggerDownload(blob, name);
 };
