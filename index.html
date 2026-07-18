@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-version="1.36.7">
+<html lang="ja" data-mz-version="1.36.8">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -73,7 +73,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css" />
     <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css?v=1.25.64" />
     <link rel="stylesheet" href="styles.css?v=1.35.4" />
-    <link rel="stylesheet" href="marchinz-brushup.css?v=1.36.7" />
+    <link rel="stylesheet" href="marchinz-brushup.css?v=1.36.8" />
     <!-- Microsoft Clarity -->
     <script type="text/javascript">
       (function(c,l,a,r,i,t,y){
@@ -2744,6 +2744,7 @@
           </header>
           <div class="mz-admin-pane-card">
             <h3 id="admin-ugc-heading" class="mz-admin-pane-heading">UGC 活動</h3>
+            <section id="admin-ugc-dash" class="mz-dash" aria-label="UGC ダッシュボード"></section>
             <nav class="moderation-view-tabs admin-ugc-kind-tabs" role="tablist" aria-label="UGC の種別">
               <button type="button" class="moderation-view-tab" role="tab" data-admin-ugc-kind="signup" aria-selected="true">
                 ユーザー登録<span class="admin-ugc-kind-badge" data-admin-ugc-badge="signup" hidden aria-label="未読">0</span>
@@ -2796,12 +2797,12 @@
             <p class="mz-admin-kicker" lang="en">UGC TOOLS</p>
             <h2 id="mz-ugc-tools-main-heading" class="mz-admin-title">UGC（ツール）（管理者専用）</h2>
             <p class="mz-admin-lead">
-              ツール利用（メトロノーム・チューナー・Privacy・Switcher）の記録を運営向けに一覧します。使用状況のまとめは既読・未読を問わない全期間（直近2000件）の集計です。
+              ツール利用（メトロノーム・チューナー・Privacy・Switcher）の記録を運営向けに一覧します。ダッシュボードは既読・未読を問わない集計です（期間切替つき・対象は直近2000件）。
             </p>
           </header>
           <div class="mz-admin-pane-card">
             <h3 id="admin-ugc-tools-heading" class="mz-admin-pane-heading">ツール利用</h3>
-            <section id="admin-ugc-tool-summary" class="admin-ugc-tool-summary" aria-label="ツール使用状況のまとめ"></section>
+            <section id="admin-ugc-tools-dash" class="mz-dash" aria-label="ツール利用ダッシュボード"></section>
             <div class="admin-ugc-tools-toolbar">
               <div id="admin-ugc-tools-filters" class="user-prof-notif-filters admin-ugc-filters">
                 <button type="button" class="user-prof-notif-filter-btn" data-admin-ugc-tools-filter="unread" aria-pressed="true">未読</button>
@@ -4038,7 +4039,8 @@
     <script defer src="youtube-list/youtube-channel-mylist.js?v=1.26.62"></script>
     <script defer src="marchinz-analytics.js?v=1.25.64"></script>
     <script defer src="marchinz-admin-page.js?v=1.26.25"></script>
-    <script defer src="marchinz-admin-ugc.js?v=1.36.7"></script>
+    <script defer src="marchinz-admin-dash.js?v=1.36.8"></script>
+    <script defer src="marchinz-admin-ugc.js?v=1.36.8"></script>
     <script defer src="marchinz-admin-trash.js?v=1.25.105"></script>
     <script defer src="marchinz-admin-banned.js?v=1.25.64"></script>
     <script defer src="site-nav.js?v=1.36.7"></script>
