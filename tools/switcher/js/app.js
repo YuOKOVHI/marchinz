@@ -21,12 +21,6 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (saved.wipeSize) MC.S.wipeSize = saved.wipeSize;
   } catch (e) {}
 
-  // タッチ端末はD&D文言をタップ向けに
-  if (MC.isTouch) {
-    const dz = document.querySelector("#dropZone div:last-of-type");
-    if (dz) dz.innerHTML = "タップして動画を選択<br>(写真ライブラリから複数選択OK)";
-  }
-
   await MC.exporter.probeCaps();
   const badge = document.getElementById("capsBadge");
   badge.textContent = {

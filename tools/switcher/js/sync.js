@@ -21,14 +21,18 @@ MC.sync.decimate = (pcm, factor) => {
 };
 
 /* GCC-PHAT本体。a=基準, b=対象。戻り {offset(秒), conf} 。
-   corr[k]: a[t+k] ≈ b[t] → lag>0 = bが後から録り始め */
-MC.sync.gccPhat = (a, b, sr) => {
+   corr[k]: a[t+k] ≈ b[t] → lag>0 = bが後から録り始め。
+   長尺ではFFT1回が秒単位かかるため、合間にyieldしてメインスレッドを返す
+   (固まり続けるとiOS Safariがページを強制終了して「落ちる」) */
+MC.sync.gccPhat = async (a, b, sr) => {
   const n = MC.sync.nextPow2(a.length + b.length - 1);
   const fft = new FFT(n);
   const pa = new Float64Array(n); pa.set(a);
   const pb = new Float64Array(n); pb.set(b);
   const A = fft.createComplexArray(); fft.realTransform(A, pa); fft.completeSpectrum(A);
+  await MC.yield();
   const B = fft.createComplexArray(); fft.realTransform(B, pb); fft.completeSpectrum(B);
+  await MC.yield();
   const X = A;  // Aを上書きして R*conj(S) をPHAT正規化
   for (let i = 0; i < n; i++) {
     const re = A[2 * i] * B[2 * i] + A[2 * i + 1] * B[2 * i + 1];
@@ -37,8 +41,10 @@ MC.sync.gccPhat = (a, b, sr) => {
     X[2 * i] = re / mag;
     X[2 * i + 1] = im / mag;
   }
+  await MC.yield();
   const out = fft.createComplexArray();
   fft.inverseTransform(out, X);
+  await MC.yield();
   // |corr| の最大と中央値(2000ビンヒストグラム近似; ソート回避)
   let kMax = 0, peak = 0;
   for (let k = 0; k < n; k++) {
@@ -61,11 +67,12 @@ MC.sync.gccPhat = (a, b, sr) => {
 };
 
 /* 二段GCC-PHAT: ref8k/sig8k は8kHzモノ。戻り {offset, conf} */
-MC.sync.offsetBetween = (ref8k, sig8k) => {
+MC.sync.offsetBetween = async (ref8k, sig8k) => {
   const SR = MC.audio.SR;
-  // 一段目: 500Hz
-  const F = 16;
-  const coarse = MC.sync.gccPhat(MC.sync.decimate(ref8k, F), MC.sync.decimate(sig8k, F), SR / F);
+  // 一段目: 500Hz(長尺はさらに半分ずつ落とし、FFTサイズを約2^20以下に抑える)
+  let F = 16;
+  while ((ref8k.length + sig8k.length) / F > 1.2e6) F *= 2;
+  const coarse = await MC.sync.gccPhat(MC.sync.decimate(ref8k, F), MC.sync.decimate(sig8k, F), SR / F);
   const L = coarse.offset;
   const refDur = ref8k.length / SR, sigDur = sig8k.length / SR;
   const ovA = Math.max(0, L), ovB = Math.min(refDur, L + sigDur);
@@ -79,7 +86,7 @@ MC.sync.offsetBetween = (ref8k, sig8k) => {
   if (s0 < 0) return coarse;
   const refSeg = ref8k.subarray(Math.round(r0 * SR), Math.round((r0 + w) * SR));
   const sigSeg = sig8k.subarray(Math.round(s0 * SR), Math.round((s0 + w + 2 * M) * SR));
-  const fine = MC.sync.gccPhat(refSeg, sigSeg, SR);
+  const fine = await MC.sync.gccPhat(refSeg, sigSeg, SR);
   // sigSeg[t]の内容 = ref時刻 r0 + t + lag2 = s0 + t + L_true → L_true = r0 - s0 + lag2
   const Lfine = r0 - s0 + fine.offset;
   if (Math.abs(Lfine - L) > M + 1) return coarse;  // 精密化が窓の外→粗い値を採用
@@ -114,10 +121,15 @@ MC.sync.run = async onStatus => {
     if (ref && c.audio8k) {
       say(`波形を照合中: ${c.name}`);
       await new Promise(r => setTimeout(r, 0));  // UI更新の息継ぎ
-      const { offset, conf } = MC.sync.offsetBetween(ref.audio8k, c.audio8k);
-      MC.log(`sync ${c.name}: offset=${offset.toFixed(4)}s conf=${conf.toFixed(1)}`);
-      if (conf >= MC.sync.MIN_CONF) {
-        results.push({ clip: c, raw: offset, conf, method: "波形" });
+      let r = null;
+      try {
+        r = await MC.sync.offsetBetween(ref.audio8k, c.audio8k);
+        MC.log(`sync ${c.name}: offset=${r.offset.toFixed(4)}s conf=${r.conf.toFixed(1)}`);
+      } catch (e) {
+        MC.log(`sync ${c.name}: 波形照合に失敗→タイムスタンプへ:`, e.message);
+      }
+      if (r && r.conf >= MC.sync.MIN_CONF) {
+        results.push({ clip: c, raw: r.offset, conf: r.conf, method: "波形" });
         continue;
       }
     }

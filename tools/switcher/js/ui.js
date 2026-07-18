@@ -69,10 +69,28 @@ MC.ui.renderAll = () => {
 };
 
 /* --- クリップカード --- */
+/* 動画1/2/3の3スロット。空きは選択ボタン、読み込み済みはクリップカード */
 MC.ui.renderClips = () => {
-  const box = MC.ui.$("#clipCards");
+  const box = MC.ui.$("#clipSlots");
   box.innerHTML = "";
-  for (const c of MC.S.clips) {
+  for (let slotIdx = 0; slotIdx < 3; slotIdx++) {
+    const c = MC.S.clips[slotIdx];
+    const slot = document.createElement("div");
+    slot.className = "clip-slot" + (c ? " filled" : " empty");
+    const lb = document.createElement("div");
+    lb.className = "clip-slot-label";
+    lb.innerHTML = `<i class="fa-solid fa-video"></i> 動画${slotIdx + 1}${slotIdx === 2 ? "（なくてもOK）" : ""}`;
+    slot.appendChild(lb);
+    if (!c) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "clip-slot-add";
+      btn.innerHTML = 'タップして動画を選ぶ<br><span class="hint">またはここにドロップ</span>';
+      btn.onclick = () => MC.ui.$("#fileInput").click();
+      slot.appendChild(btn);
+      box.appendChild(slot);
+      continue;
+    }
     const card = document.createElement("div");
     card.className = "clip-card";
     const badgeCls = c.syncMethod === "基準" ? "ref" : c.syncMethod.startsWith("波形") ? "wave" : c.syncMethod.startsWith("タイムスタンプ") ? "ts" : "";
@@ -102,7 +120,8 @@ MC.ui.renderClips = () => {
     card.querySelector(".listen").onclick = () => MC.sync.listenCheck(c.id);
     card.querySelector(".pan").oninput = e => { c.pan = parseFloat(e.target.value); MC.saveState(); };
     card.querySelector(".clip-remove").onclick = () => MC.media.removeClip(c.id);
-    box.appendChild(card);
+    slot.appendChild(card);
+    box.appendChild(slot);
   }
 };
 
@@ -258,8 +277,7 @@ MC.ui.wire = () => {
     card.onclick = () => MC.ui.chooseMode(card.dataset.mode));
   $("#modeBackBtn").onclick = () => MC.ui.showModeSelect();
 
-  const dz = $("#dropZone"), fi = $("#fileInput");
-  dz.onclick = () => fi.click();
+  const dz = $("#clipSlots"), fi = $("#fileInput");
   fi.onchange = () => { MC.media.addFiles([...fi.files]); fi.value = ""; };
   ["dragover", "dragenter"].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add("over"); }));
   ["dragleave", "drop"].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove("over"); }));
