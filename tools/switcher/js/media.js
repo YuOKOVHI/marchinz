@@ -90,10 +90,12 @@ MC.media.afterChange = () => {
       if (empty >= 0) { MC.S.slots[empty] = c.id; assigned.add(c.id); }
     }
   });
-  // レイアウト既定: プリセット向きとクリップ数から(スイッチング/ワイプ選択中は触らない)
+  // レイアウト既定: プリセット向きとクリップ数から(スイッチング/ワイプ選択中は触らない)。
+  // 自動スイッチングモードは分割レイアウトを使わないので自動割当そのものを行わない
   const portrait = MC.S.preset === "9x16";
+  const allowSplit = MC.ui.modeConf().layouts.includes("single");
   const cutMode = ["switch", "wipe"].includes(MC.S.layoutId);
-  if (!cutMode) {
+  if (allowSplit && !cutMode) {
     if (n === 1) MC.S.layoutId = "single";
     else if (n === 2 && !["v2", "h2"].includes(MC.S.layoutId)) MC.S.layoutId = portrait ? "v2" : "h2";
     else if (n >= 3 && !["v3", "h3", "big2"].includes(MC.S.layoutId)) MC.S.layoutId = portrait ? "v3" : "h3";

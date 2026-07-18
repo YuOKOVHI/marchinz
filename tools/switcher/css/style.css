@@ -122,6 +122,9 @@ body::before {
 .preset-chip { padding: 5px 10px; border-radius: 16px; border: 1px solid var(--line); cursor: pointer;
   font-size: 11px; color: var(--tx2); background: #fff; }
 .preset-chip.selected { border-color: var(--acc); color: var(--acc-deep); background: #e8f1fe; font-weight: 700; }
+/* 比率が1つに固定のモード(縦型動画)では、選択肢ではなく現在のサイズ表示にする */
+.preset-fixed { padding: 5px 10px; border-radius: 16px; background: var(--panel2);
+  border: 1px solid var(--line); color: var(--tx2); font-size: 12px; }
 .select { width: 100%; background: #fff; color: var(--tx); border: 1px solid var(--line);
   border-radius: 8px; padding: 7px; font-family: inherit; font-size: 13px; margin: 6px 0; }
 .slot-rows { display: flex; flex-direction: column; gap: 5px; }

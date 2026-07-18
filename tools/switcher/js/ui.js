@@ -153,9 +153,20 @@ MC.ui.renderAudio = () => {
 
 /* --- プリセット/レイアウト/スロット --- */
 MC.ui.renderLayout = () => {
+  const conf = MC.ui.modeConf();
   const row = MC.ui.$("#presetRow");
   row.innerHTML = "";
-  for (const [id, p] of Object.entries(MC.PRESETS)) {
+  const presetIds = conf.presets.filter(id => MC.PRESETS[id]);
+  for (const id of presetIds) {
+    const p = MC.PRESETS[id];
+    if (presetIds.length === 1) {
+      // 選べる比率が1つだけなら、押せるボタンにせず現在のサイズを示すだけにする
+      const fixed = document.createElement("span");
+      fixed.className = "preset-fixed";
+      fixed.textContent = `${p.label} ${p.w}×${p.h}`;
+      row.appendChild(fixed);
+      break;
+    }
     const chip = document.createElement("button");
     chip.className = "preset-chip" + (MC.S.preset === id ? " selected" : "");
     chip.textContent = `${p.label} ${p.w}×${p.h}`;
@@ -164,9 +175,10 @@ MC.ui.renderLayout = () => {
   }
   const sel = MC.ui.$("#layoutSelect");
   sel.innerHTML = "";
-  for (const [id, L] of Object.entries(MC.LAYOUTS)) {
+  const layoutIds = conf.layouts.filter(id => MC.LAYOUTS[id]);
+  for (const id of layoutIds) {
     const o = document.createElement("option");
-    o.value = id; o.textContent = L.name;
+    o.value = id; o.textContent = MC.LAYOUTS[id].name;
     if (id === MC.S.layoutId) o.selected = true;
     sel.appendChild(o);
   }
@@ -245,16 +257,37 @@ MC.ui.updateTransport = () => {
   MC.timeline.updateHead();
 };
 
-/* --- 最初のモード選択(縦型作成 / 自動スイッチング) --- */
+/* --- 最初のモード選択(縦型作成 / 自動スイッチング) ---
+   presets/layouts = そのモードで選べるものだけ。ここに無い選択肢はUIに出さない */
 MC.ui.MODES = {
-  vertical: { preset: "9x16", layoutId: "v2",     label: "縦型動画" },
-  switch:   { preset: "16x9", layoutId: "switch", label: "自動スイッチング動画" },
+  vertical: {
+    preset: "9x16", layoutId: "v2", label: "縦型動画",
+    presets: ["9x16"],                                   // 縦型で固定(比率は選ばせない)
+    layouts: ["v2", "v3", "h2", "h3", "big2", "single"],  // スイッチング/ワイプは対象外
+  },
+  switch: {
+    preset: "16x9", layoutId: "switch", label: "自動スイッチング動画",
+    presets: ["16x9", "9x16"],                            // 正方形は対象外
+    layouts: ["switch", "wipe"],                          // スイッチングとワイプのみ
+  },
+};
+
+/* いま選ばれているモードの設定 */
+MC.ui.modeConf = () => MC.ui.MODES[MC.S.mode] || MC.ui.MODES.vertical;
+
+/* 保存状態の復元やモード切替で、そのモードに無い比率/レイアウトが残らないように寄せる */
+MC.ui.normalizeForMode = () => {
+  const m = MC.ui.modeConf();
+  if (!m.presets.includes(MC.S.preset)) MC.S.preset = m.preset;
+  if (!m.layouts.includes(MC.S.layoutId)) MC.S.layoutId = m.layoutId;
 };
 
 MC.ui.chooseMode = (mode, { silent = false } = {}) => {
   const m = MC.ui.MODES[mode] || MC.ui.MODES.vertical;
   MC.S.mode = mode;
-  if (!silent) { MC.S.preset = m.preset; MC.S.layoutId = m.layoutId; MC.saveState(); }
+  if (!silent) { MC.S.preset = m.preset; MC.S.layoutId = m.layoutId; }
+  MC.ui.normalizeForMode();
+  if (!silent) MC.saveState();
   MC.ui.$("#modeSelect").hidden = true;
   MC.ui.$("#workspace").hidden = false;
   const lbl = MC.ui.$("#modeLabel");
