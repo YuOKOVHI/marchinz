@@ -1,7 +1,8 @@
 .DS_Store
 __pycache__/
 *.py[cod]
-.venv/
+# venv 実体は ~/Movies/venvs/ 配下。ここはシンボリックリンクなので末尾スラッシュ無しで無視する
+.venv
 venv/
 
 # API 実行時のバックアップ（コミットしない）
