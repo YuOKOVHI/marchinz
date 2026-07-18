@@ -6,14 +6,19 @@
 
 - 必要環境変数: GEMINI_API_KEY(無い場合はスキップして正常終了)
 - 失敗時: 既存の digest.inline.js を変更せず exit 0(サイト側は非表示のまま)
+- 新着が前回と同じ顔ぶれなら Gemini を呼ばず、ファイルも書き換えない
+  (直近7日は「動く窓」なので、新着ゼロでも古い項目が窓に残り続ける。
+   指紋で比べないと、同じ内容を生成し直して毎回コミットが出てしまう)
 - 依存: 標準ライブラリのみ
 """
 
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import os
+import re
 import sys
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -89,6 +94,25 @@ def collect_recent_items() -> list[str]:
     return items[:MAX_ITEMS]
 
 
+def items_fingerprint(items: list[str]) -> str:
+    """新着の顔ぶれを表す短い指紋。中身が1つでも変われば変わる"""
+    return hashlib.sha256("\n".join(items).encode("utf-8")).hexdigest()[:16]
+
+
+def existing_fingerprint() -> str | None:
+    """前回書き出したダイジェストの指紋。無い/読めない場合は None"""
+    if not OUT_PATH.exists():
+        return None
+    try:
+        raw = OUT_PATH.read_text(encoding="utf-8").strip()
+        m = re.search(r"=\s*(\{.*\})\s*;?\s*$", raw, re.S)
+        if not m:
+            return None
+        return json.loads(m.group(1)).get("fingerprint")
+    except Exception:  # noqa: BLE001 - 壊れていれば作り直す
+        return None
+
+
 def call_gemini(api_key: str, prompt: str) -> str:
     last_err: Exception | None = None
     for model in GEMINI_MODELS:
@@ -126,6 +150,11 @@ def main() -> int:
         print("[digest] 直近7日間の新着なし。既存ダイジェストを維持")
         return 0
 
+    fp = items_fingerprint(items)
+    if fp == existing_fingerprint():
+        print(f"[digest] 新着の顔ぶれが前回と同じ({len(items)}件)。生成せず既存を維持")
+        return 0
+
     try:
         text = call_gemini(api_key, PROMPT_TEMPLATE.format(items="\n".join(items)))
     except Exception as err:  # noqa: BLE001
@@ -136,6 +165,7 @@ def main() -> int:
         "text": text,
         "generated_at": datetime.now(JST).strftime("%Y-%m-%d %H:%M"),
         "item_count": len(items),
+        "fingerprint": fp,
     }
     OUT_PATH.write_text(
         "window.__MARCHINZ_DIGEST = " + json.dumps(payload, ensure_ascii=False) + ";\n",

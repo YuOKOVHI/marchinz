@@ -1,6 +1,13 @@
 # 2日おき(奇数日) JST 05:00 頃に YouTube Data API でリストを、note 公式 RSS で新着記事を更新し、
 # 差分があれば main に push。Netlify が GitHub連携なら、この push で本番デプロイが走る。
 #
+# 新着が無いときは何もしない:
+#   - 各スクリプトは取得結果が同じならファイルを書き換えない
+#     (ダイジェストは「直近7日」が動く窓のため、新着の顔ぶれを指紋で比べて
+#      同じなら Gemini を呼ばずに既存を維持する)
+#   - 最後の commit ステップも差分ゼロなら何もせず終了
+#   → 新着ゼロの回は API 消費・コミット・push がいずれも発生しない
+#
 # 事前準備（リポジトリ Settings → Secrets and variables → Actions）:
 #   YOUTUBE_API_KEY … Google Cloud の YouTube Data API v3 用キー（リポジトリシークレット）
 #   （note は公式 RSS を使うためキー不要）
@@ -41,6 +48,7 @@ jobs:
       - name: Run note feed refresh
         run: python3 export_notes_feed.py || echo "note refresh skipped (fetch failed)"
 
+      # 新着の顔ぶれが前回と同じなら Gemini を呼ばずスキップ(APIとコミットの節約)
       - name: Generate weekly digest (Gemini)
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
