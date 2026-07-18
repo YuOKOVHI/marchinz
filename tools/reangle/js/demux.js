@@ -61,10 +61,25 @@ RA.MP4Source = class {
       const esds = this.sampleEntry(t.id).esds;
       if (esds) description = RA.MP4Source.findTag5(esds.esd);
     } catch (e) { /* esds無し(PCM等)はdescription無しで試す */ }
+    const sampleRate = t.audio.sample_rate || t.audio.samplerate;
+    const numberOfChannels = t.audio.channel_count;
+    let codec = t.codec;
+    // MOV(QuickTime)はesdsが深い階層にあり codec が "mp4a" としか分からないことがある。
+    // カメラ収録の実体はほぼAAC-LCなので補正し、無いASC(2バイト)も自前で組む
+    if (/^mp4a(?!\.)/.test(codec)) codec = "mp4a.40.2";
+    if (/^mp4a\.40/.test(codec) && !description) {
+      const FREQ = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350];
+      const fi = FREQ.indexOf(sampleRate);
+      if (fi >= 0 && numberOfChannels >= 1 && numberOfChannels <= 7) {
+        const bits = (2 << 11) | (fi << 7) | (numberOfChannels << 3);  // AAC-LC + freq + ch
+        description = new Uint8Array([bits >> 8, bits & 0xff]);
+      }
+    }
+    if (codec === "sowt") codec = "pcm-s16";   // QuickTimeの16bit LE PCM
     return {
-      codec: t.codec,
-      sampleRate: t.audio.sample_rate || t.audio.samplerate,
-      numberOfChannels: t.audio.channel_count,
+      codec,
+      sampleRate,
+      numberOfChannels,
       description: description || undefined,
     };
   }

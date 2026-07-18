@@ -43,7 +43,7 @@ RA.exporter.planAudio = async src => {
   const at = src.audioTrack();
   if (!at) return { mode: "none" };
   const cfg = src.audioDecoderConfig();
-  if (/^mp4a\.40/.test(at.codec) && cfg.description) {
+  if (/^mp4a\.40/.test(cfg.codec) && cfg.description) {   // cfg.codecは正規化済み(MOVの"mp4a"にも対応)
     return { mode: "copy", track: at, cfg, sampleRate: cfg.sampleRate, channels: cfg.numberOfChannels };
   }
   if (RA.caps.aacEnc && window.AudioDecoder) {
