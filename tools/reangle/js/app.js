@@ -5,7 +5,8 @@ window.RA = {
   S: {
     clip: null,        // {file, name, url, video, duration, width, height}
     corners: null,     // 床の4隅 [{x,y}×4] 正規化表示座標(0〜1)、TL,TR,BR,BL
-    strength: 0.6,     // 補正強度 0〜1(1=完全正面化)
+    sMain: 0.9,        // メイン補正「真正面へ」0〜1(横から→センター正面。遠近感は残す)
+    sPersp: 0,         // サブ補正「俯瞰に起こす」0〜1(1=床が完全な長方形=見下ろし図)
     zoom: 1.0,         // 出力ズーム 1〜2
     panY: 0,           // 縦位置 -0.3〜0.3(表示高さ比)
     res: "1080",       // "1080" | "orig"

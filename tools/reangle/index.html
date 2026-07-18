@@ -69,9 +69,14 @@
       </div>
 
       <div id="panelAdjust" class="panel" hidden>
+        <p class="hint">「真正面へ」が本命の補正です。横から撮った映像を、センター正面から撮ったような見え方に直します（自然な遠近感は残ります）。「俯瞰に起こす」を足すと、真上から見た図形寄りの絵になります（隊形チェック向け）。</p>
         <div class="setting">
-          <label>補正の強さ <b id="strengthVal"></b></label>
-          <input id="strengthRange" type="range" min="0" max="100" step="1" value="60">
+          <label>真正面へ（左右の視点補正） <b id="strengthVal"></b></label>
+          <input id="strengthRange" type="range" min="0" max="100" step="1" value="90">
+        </div>
+        <div class="setting">
+          <label>俯瞰に起こす（パース補正） <b id="perspVal"></b></label>
+          <input id="perspRange" type="range" min="0" max="100" step="1" value="0">
         </div>
         <div class="setting">
           <label>ズーム <b id="zoomVal"></b></label>

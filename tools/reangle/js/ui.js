@@ -239,7 +239,8 @@ window.addEventListener("DOMContentLoaded", async () => {
     });
     $(labelId).textContent = fmt(RA.S[key]);
   };
-  bindRange("strengthRange", "strength", "strengthVal", v => v / 100, v => `${Math.round(v * 100)}%`);
+  bindRange("strengthRange", "sMain", "strengthVal", v => v / 100, v => `${Math.round(v * 100)}%`);
+  bindRange("perspRange", "sPersp", "perspVal", v => v / 100, v => `${Math.round(v * 100)}%`);
   bindRange("zoomRange", "zoom", "zoomVal", v => v / 100, v => `×${v.toFixed(2)}`);
   bindRange("panRange", "panY", "panVal", v => v / 100, v => `${v > 0 ? "+" : ""}${Math.round(v * 100)}%`);
   $("resSel").onchange = e => { RA.S.res = e.target.value; };
@@ -289,8 +290,12 @@ RA.ui.runTest = async () => {
       RA.corners.draw();
     }
     if (params.get("s") != null) {
-      RA.S.strength = parseFloat(params.get("s")) / 100;
+      RA.S.sMain = parseFloat(params.get("s")) / 100;
       $("strengthRange").value = params.get("s");
+    }
+    if (params.get("p") != null) {
+      RA.S.sPersp = parseFloat(params.get("p")) / 100;
+      $("perspRange").value = params.get("p");
     }
     await new Promise(r2 => setTimeout(r2, 400));
     await RA.ui.startExport();

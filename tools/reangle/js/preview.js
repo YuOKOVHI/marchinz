@@ -39,7 +39,8 @@ RA.preview = {
     const off = RA.S.compare || RA.S.editCorners;
     const M = RA.H.buildMatrix({
       corners: RA.S.corners || RA.presetCorners(),
-      strength: off ? 0 : RA.S.strength,
+      sMain: off ? 0 : RA.S.sMain,
+      sPersp: off ? 0 : RA.S.sPersp,
       zoom: off ? 1 : RA.S.zoom,
       panY: off ? 0 : RA.S.panY,
       dispW: clip.width, dispH: clip.height,

@@ -68,7 +68,27 @@ RA.H.quadToQuad = (A, B) => {
   return HAi ? RA.H.mul(HB, HAi) : null;
 };
 
-/* 正面化の目標矩形: 幅=上下辺長平均、高さ=左右辺長平均、中心=重心
+/* メイン補正「真正面へ」の目標(等脚台形):
+   横から撮ったことによる左右の視点オフセットだけを取り除き、
+   俯角による自然な遠近(上辺が短い台形)は残す。
+   = 上辺・下辺の長さを保ったまま水平化し、中心軸に対して左右対称に置く。
+   これでセンター正面から撮った場合の見え方に近づく */
+RA.H.targetSym = p => {
+  const len = (a, b) => Math.hypot(b.x - a.x, b.y - a.y);
+  const wt = len(p[0], p[1]);
+  const wb = len(p[3], p[2]);
+  const yt = (p[0].y + p[1].y) / 2;
+  const yb = (p[3].y + p[2].y) / 2;
+  const cx = (p[0].x + p[1].x + p[2].x + p[3].x) / 4;
+  return [
+    { x: cx - wt / 2, y: yt },
+    { x: cx + wt / 2, y: yt },
+    { x: cx + wb / 2, y: yb },
+    { x: cx - wb / 2, y: yb },
+  ];
+};
+
+/* サブ補正「俯瞰に起こす」の目標矩形: 幅=上下辺長平均、高さ=左右辺長平均、中心=重心
    (強度を上げても見かけのスケール変化が最小になる) */
 RA.H.targetRect = p => {
   const len = (a, b) => Math.hypot(b.x - a.x, b.y - a.y);
@@ -100,18 +120,22 @@ RA.H.rotToRaw = (rot, rawW, rawH) => {
    入力: 出力キャンバスの正規化座標 (0,0)=左上
    出力: ソーステクスチャの正規化座標
    チェーン: 正規化→表示px → ズーム/パン逆 → 強度付きホモグラフィ逆 → (回転逆) → テクスチャ正規化
-   opts: { corners(正規化4点), strength, zoom, panY, dispW, dispH,
-           raw(書き出し時true), rot, rawW, rawH } */
+   opts: { corners(正規化4点), sMain(真正面へ0〜1), sPersp(俯瞰へ0〜1), zoom, panY,
+           dispW, dispH, raw(書き出し時true), rot, rawW, rawH } */
 RA.H.buildMatrix = opts => {
-  const { corners, strength, zoom, panY, dispW, dispH } = opts;
+  const { corners, zoom, panY, dispW, dispH } = opts;
   // 正規化コーナー → 表示px
   const p = corners.map(c => ({ x: c.x * dispW, y: c.y * dispH }));
-  const r = RA.H.targetRect(p);
-  const s = Math.max(0, Math.min(1, strength));
-  const q = p.map((pt, i) => ({
-    x: pt.x + (r[i].x - pt.x) * s,
-    y: pt.y + (r[i].y - pt.y) * s,
-  }));
+  // メイン: 元の台形 →(sMain)→ 等脚台形(真正面) →(sPersp)→ 矩形(俯瞰)
+  const sym = RA.H.targetSym(p);
+  const rect = RA.H.targetRect(p);
+  const sm = Math.max(0, Math.min(1, opts.sMain || 0));
+  const sp = Math.max(0, Math.min(1, opts.sPersp || 0));
+  const q = p.map((pt, i) => {
+    const x1 = pt.x + (sym[i].x - pt.x) * sm;
+    const y1 = pt.y + (sym[i].y - pt.y) * sm;
+    return { x: x1 + (rect[i].x - x1) * sp, y: y1 + (rect[i].y - y1) * sp };
+  });
 
   // ① 出力正規化 → 表示px
   let M = [dispW, 0, 0, 0, dispH, 0, 0, 0, 1];
@@ -159,19 +183,40 @@ RA.testHomography = () => {
   for (let i = 0; i < 9; i++) maxErr = Math.max(maxErr, Math.abs(I[i] - (i % 4 === 0 ? 1 : 0)));
   // 4) 強度0 = 恒等(出力正規化uvがソース正規化uvにそのまま写る)
   const M0 = RA.H.buildMatrix({
-    corners: RA.presetCorners(), strength: 0, zoom: 1, panY: 0, dispW: 1920, dispH: 1080,
+    corners: RA.presetCorners(), sMain: 0, sPersp: 0, zoom: 1, panY: 0, dispW: 1920, dispH: 1080,
   });
   [[0.1, 0.2], [0.9, 0.8], [0.5, 0.5]].forEach(([u, v]) => chk(RA.H.apply(M0, u, v), { x: u, y: v }));
-  // 5) 強度1 = コーナーが目標矩形の隅からソースの隅へ写る
-  const corners = RA.presetCorners();
+  // 5) 俯瞰100% = コーナーが目標矩形の隅からソースの隅へ写る(sMainに依らず)
+  const corners = [
+    { x: 0.30, y: 0.45 }, { x: 0.88, y: 0.52 },  // 右寄りから撮った非対称台形
+    { x: 0.99, y: 0.95 }, { x: 0.12, y: 0.88 },
+  ];
   const dispW = 1920, dispH = 1080;
   const p = corners.map(c => ({ x: c.x * dispW, y: c.y * dispH }));
   const r = RA.H.targetRect(p);
-  const M1 = RA.H.buildMatrix({ corners, strength: 1, zoom: 1, panY: 0, dispW, dispH });
+  const M1 = RA.H.buildMatrix({ corners, sMain: 0.5, sPersp: 1, zoom: 1, panY: 0, dispW, dispH });
   r.forEach((ri, i) => {
     const got = RA.H.apply(M1, ri.x / dispW, ri.y / dispH);
     chk({ x: got.x * dispW, y: got.y * dispH }, p[i]);
   });
+  // 6) 真正面100%(俯瞰0) = 等脚台形の隅からソースの隅へ写る
+  const sym = RA.H.targetSym(p);
+  const M2 = RA.H.buildMatrix({ corners, sMain: 1, sPersp: 0, zoom: 1, panY: 0, dispW, dispH });
+  sym.forEach((si, i) => {
+    const got = RA.H.apply(M2, si.x / dispW, si.y / dispH);
+    chk({ x: got.x * dispW, y: got.y * dispH }, p[i]);
+  });
+  // 7) targetSym は左右対称で、上下辺の長さと遠近感(上すぼまり)を保つ
+  {
+    const cxSym = (sym[0].x + sym[1].x + sym[2].x + sym[3].x) / 4;
+    const dl = Math.abs((cxSym - sym[0].x) - (sym[1].x - cxSym));           // 上辺の対称性
+    const db = Math.abs((cxSym - sym[3].x) - (sym[2].x - cxSym));           // 下辺の対称性
+    const wtKeep = Math.abs(Math.hypot(sym[1].x - sym[0].x, sym[1].y - sym[0].y) - Math.hypot(p[1].x - p[0].x, p[1].y - p[0].y));
+    const wbKeep = Math.abs(Math.hypot(sym[2].x - sym[3].x, sym[2].y - sym[3].y) - Math.hypot(p[2].x - p[3].x, p[2].y - p[3].y));
+    maxErr = Math.max(maxErr, dl, db, wtKeep, wbKeep);
+    if (!(Math.hypot(sym[1].x - sym[0].x, 0) < Math.hypot(sym[2].x - sym[3].x, 0)))
+      maxErr = Math.max(maxErr, 1); // 上辺<下辺(遠近感維持)が崩れたら失敗
+  }
 
   const ok = maxErr < 1e-6;
   RA.log(`homography self-test ${ok ? "OK" : "FAILED"} (maxErr=${maxErr.toExponential(2)})`);
