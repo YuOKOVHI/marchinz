@@ -239,8 +239,34 @@ window.addEventListener("DOMContentLoaded", async () => {
     });
     $(labelId).textContent = fmt(RA.S[key]);
   };
-  bindRange("strengthRange", "sMain", "strengthVal", v => v / 100, v => `${Math.round(v * 100)}%`);
-  bindRange("perspRange", "sPersp", "perspVal", v => v / 100, v => `${Math.round(v * 100)}%`);
+  // 補正強度スライダーはモードで書き込み先を変える(front→sMain / top→sTop)
+  const strengthEl = $("strengthRange");
+  const strengthKey = () => (RA.S.viewMode === "top" ? "sTop" : "sMain");
+  const paintStrength = () => {
+    strengthEl.value = String(Math.round(RA.S[strengthKey()] * 100));
+    $("strengthVal").textContent = `${Math.round(RA.S[strengthKey()] * 100)}%`;
+    $("strengthLabel").textContent =
+      RA.S.viewMode === "top" ? "俯瞰の起こし具合" : "真正面へ（左右の視点補正）";
+  };
+  strengthEl.addEventListener("input", () => {
+    RA.S[strengthKey()] = parseFloat(strengthEl.value) / 100;
+    $("strengthVal").textContent = `${Math.round(RA.S[strengthKey()] * 100)}%`;
+  });
+  paintStrength();
+
+  // モード切替(正面/俯瞰)
+  $("viewModeSeg").querySelectorAll("[data-mode]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const m = btn.getAttribute("data-mode") === "top" ? "top" : "front";
+      if (RA.S.viewMode === m) return;
+      RA.S.viewMode = m;
+      $("viewModeSeg").querySelectorAll("[data-mode]").forEach(b =>
+        b.classList.toggle("on", b === btn));
+      paintStrength();
+    });
+  });
+
+  bindRange("tiltRange", "tilt", "tiltVal", v => v, v => `${v > 0 ? "+" : ""}${v.toFixed(1)}°`);
   bindRange("zoomRange", "zoom", "zoomVal", v => v / 100, v => `×${v.toFixed(2)}`);
   bindRange("panRange", "panY", "panVal", v => v / 100, v => `${v > 0 ? "+" : ""}${Math.round(v * 100)}%`);
   $("resSel").onchange = e => { RA.S.res = e.target.value; };
@@ -294,8 +320,12 @@ RA.ui.runTest = async () => {
       $("strengthRange").value = params.get("s");
     }
     if (params.get("p") != null) {
-      RA.S.sPersp = parseFloat(params.get("p")) / 100;
-      $("perspRange").value = params.get("p");
+      // p= 指定は俯瞰モードでの起こし具合
+      RA.S.viewMode = "top";
+      RA.S.sTop = parseFloat(params.get("p")) / 100;
+    }
+    if (params.get("t") != null) {
+      RA.S.tilt = parseFloat(params.get("t"));
     }
     await new Promise(r2 => setTimeout(r2, 400));
     await RA.ui.startExport();

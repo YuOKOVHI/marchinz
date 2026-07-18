@@ -201,7 +201,9 @@ RA.exporter.exportMP4 = async (clip, onProgress) => {
       throw new Error(`映像が大きすぎます(${rawW}x${rawH} > GPU上限${renderer.maxTex})`);
     const M = RA.H.buildMatrix({
       corners: RA.S.corners || RA.presetCorners(),
-      sMain: RA.S.sMain, sPersp: RA.S.sPersp, zoom: RA.S.zoom, panY: RA.S.panY,
+      sMain: RA.S.viewMode === "top" ? 1 : RA.S.sMain,
+      sPersp: RA.S.viewMode === "top" ? RA.S.sTop : 0,
+      tilt: RA.S.tilt, zoom: RA.S.zoom, panY: RA.S.panY,
       dispW, dispH, raw: true, rot: rotation, rawW, rawH,
     });
 

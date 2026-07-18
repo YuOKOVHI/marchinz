@@ -120,7 +120,8 @@ RA.H.rotToRaw = (rot, rawW, rawH) => {
    入力: 出力キャンバスの正規化座標 (0,0)=左上
    出力: ソーステクスチャの正規化座標
    チェーン: 正規化→表示px → ズーム/パン逆 → 強度付きホモグラフィ逆 → (回転逆) → テクスチャ正規化
-   opts: { corners(正規化4点), sMain(真正面へ0〜1), sPersp(俯瞰へ0〜1), zoom, panY,
+   opts: { corners(正規化4点), sMain(真正面へ0〜1), sPersp(俯瞰へ0〜1),
+           tilt(傾き調整・度・出力の回転), zoom, panY,
            dispW, dispH, raw(書き出し時true), rot, rawW, rawH } */
 RA.H.buildMatrix = opts => {
   const { corners, zoom, panY, dispW, dispH } = opts;
@@ -140,9 +141,20 @@ RA.H.buildMatrix = opts => {
   // ① 出力正規化 → 表示px
   let M = [dispW, 0, 0, 0, dispH, 0, 0, 0, 1];
 
+  const cx = dispW / 2, cy = dispH / 2;
+
+  // ①' 傾き調整の逆: 出力を画面中心周りに tilt 度回して見せる → 逆は −tilt 回転
+  const th = ((opts.tilt || 0) * Math.PI) / 180;
+  if (th) {
+    const c = Math.cos(-th), s = Math.sin(-th);
+    const Rinv = [c, -s, cx - c * cx + s * cy,
+                  s,  c, cy - s * cx - c * cy,
+                  0, 0, 1];
+    M = RA.H.mul(Rinv, M);
+  }
+
   // ② ズーム/パンの逆: corr = c + (out - c - pan)/zoom
   const z = Math.max(0.2, zoom || 1);
-  const cx = dispW / 2, cy = dispH / 2;
   const panPx = (panY || 0) * dispH;
   const Vinv = [1 / z, 0, cx - cx / z,
                 0, 1 / z, cy - (cy + panPx) / z,
@@ -216,6 +228,17 @@ RA.testHomography = () => {
     maxErr = Math.max(maxErr, dl, db, wtKeep, wbKeep);
     if (!(Math.hypot(sym[1].x - sym[0].x, 0) < Math.hypot(sym[2].x - sym[3].x, 0)))
       maxErr = Math.max(maxErr, 1); // 上辺<下辺(遠近感維持)が崩れたら失敗
+  }
+
+  // 8) 傾き調整: 画面中心は不動、90°回転で中心からのオフセット軸が入れ替わる
+  {
+    const Mt = RA.H.buildMatrix({
+      corners: RA.presetCorners(), sMain: 0, sPersp: 0, tilt: 90,
+      zoom: 1, panY: 0, dispW: 1000, dispH: 1000,
+    });
+    chk(RA.H.apply(Mt, 0.5, 0.5), { x: 0.5, y: 0.5 });
+    // 出力(0.6,0.5)=中心の右10% → −90°逆回転でソースでは中心の上10%
+    chk(RA.H.apply(Mt, 0.6, 0.5), { x: 0.5, y: 0.4 });
   }
 
   const ok = maxErr < 1e-6;
