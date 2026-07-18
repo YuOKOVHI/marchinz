@@ -12,7 +12,7 @@
 <header class="topbar">
   <div class="head-left">
     <a href="/#top" class="mz-home" aria-label="MarchinZ ホームへ">
-      <img src="/logo/marchinz-logo.png" alt="MarchinZ / マーチンズ" class="mz-logo" width="150" decoding="async">
+      <img src="/logo/marchinz-logo.png" alt="MarchinZ / マーチンズ" class="mz-logo" width="150" decoding="async" onerror="this.style.display='none'">
     </a>
     <h1 class="tool-name">ReAngle<span class="beta-badge">ベータ版</span></h1>
   </div>
@@ -23,7 +23,7 @@
 </header>
 
 <p class="beta-disclaimer">
-  <i class="fa-solid fa-triangle-exclamation"></i> 本ツールは<strong>ベータ版</strong>です。動作は保証されません。ご利用は自己責任でお願いします（補正のズレ・不具合について当方は責任を負いません）。
+  <i class="fa-solid fa-shield-halved"></i> <strong>無料・すべて端末内で処理</strong>します（動画はどこにも送信されません）。ベータ版のため動作は保証されず、補正のズレ・不具合について当方は責任を負いません。
 </p>
 
 <main>
@@ -61,7 +61,7 @@
       </div>
 
       <div id="panelCorners" class="panel">
-        <p class="hint">床の四隅に青いハンドルをドラッグして合わせてください。演技者が少ないフレームにシークすると合わせやすいです。</p>
+        <p class="hint">床の四隅に青いハンドルをドラッグして合わせてください。演技者が少ないフレームにシークすると合わせやすいです。床の四隅が映っていないときは、コートのラインの交点など「床の上で長方形になる4点」でも代用できます。</p>
         <div class="btn-row">
           <button id="redetectBtn" class="mini-btn">自動検出をやり直す</button>
           <button id="resetBtn" class="mini-btn">リセット</button>
@@ -108,7 +108,8 @@
 </main>
 
 <footer>
-  <p>端末内で完結・無料 | MarchinZ ファミリー(サイトへ移行予定)</p>
+  <p>端末内で完結・無料 | MarchinZ クリエイターツール〈ベータ版〉 | <a href="/#creators" class="foot-link">MarchinZへ戻る</a></p>
+  <p class="foot-tools">つづけて使う: <a href="/tools/switcher/">Switcher（同期・カット割）</a> ／ <a href="/tools/privacy/">Privacy（顔モザイク）</a></p>
 </footer>
 
 <div id="toast"></div>

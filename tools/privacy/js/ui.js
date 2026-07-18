@@ -153,7 +153,7 @@ MZ.ui.showDone = res => {
   const kindWord = MZ.S.clip && MZ.S.clip.kind === "image" ? "写真" : "動画";
   const share = MZ.exporter.shareMode();
   $("doneCard").hidden = false;
-  $("saveBtn").textContent = share ? `📷 ${kindWord}を保存` : "もう一度保存";
+  $("saveBtn").innerHTML = share ? `<i class="fa-solid fa-arrow-up-from-bracket"></i> ${kindWord}を保存` : "もう一度保存";
   if (share) {
     $("doneText").textContent = `準備できました(${MZ.ui.fmtSize(res.blob.size)})`;
     $("doneNote").textContent = `「${kindWord}を保存」を押すと、共有シートから写真(カメラロール)やファイルに保存できます。`;

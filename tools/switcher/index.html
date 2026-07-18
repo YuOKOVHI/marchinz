@@ -21,7 +21,7 @@
 <header class="topbar">
   <div class="head-left">
     <a href="/#top" class="mz-home" aria-label="MarchinZ ホームへ">
-      <img src="/logo/marchinz-logo.png" alt="MarchinZ / マーチンズ" class="mz-logo" width="150" decoding="async">
+      <img src="/logo/marchinz-logo.png" alt="MarchinZ / マーチンズ" class="mz-logo" width="150" decoding="async" onerror="this.style.display='none'">
     </a>
     <h1 class="tool-name">Switcher<span class="beta-badge">ベータ版</span></h1>
   </div>
@@ -32,7 +32,7 @@
 </header>
 
 <p class="beta-disclaimer">
-  <i class="fa-solid fa-triangle-exclamation"></i> 本ツールは<strong>ベータ版</strong>です。動作は保証されません。ご利用は自己責任でお願いします（生成結果・不具合について当方は責任を負いません）。
+  <i class="fa-solid fa-shield-halved"></i> <strong>無料・すべて端末内で処理</strong>します（動画はどこにも送信されません）。ベータ版のため動作は保証されず、生成結果・不具合について当方は責任を負いません。
 </p>
 
 <section id="modeSelect" class="mode-select">
@@ -48,7 +48,7 @@
           </svg>
         </span>
         <span class="mode-card-name">縦型動画作成</span>
-        <span class="mode-card-desc">みんなで撮ったランスルー動画を、自動で同期！</span>
+        <span class="mode-card-desc">みんなで撮ったランスルー（通し練習）動画を、自動で同期！</span>
       </button>
       <button type="button" class="mode-card" data-mode="switch">
         <span class="mode-card-icon" aria-hidden="true">
@@ -75,7 +75,7 @@
     <section class="panel" id="dropSec">
       <h2>1. 動画を読み込む <span class="hint">(2〜3本)</span></h2>
       <div id="dropZone" class="dropzone">
-        <div class="dz-icon">🎬</div>
+        <div class="dz-icon"><i class="fa-solid fa-clapperboard"></i></div>
         <div>ここにドラッグ&ドロップ<br>またはクリックして選択</div>
         <input type="file" id="fileInput" accept="video/mp4,video/quicktime,video/*" multiple hidden>
       </div>
@@ -85,7 +85,7 @@
     <section class="panel" id="syncSec">
       <h2>2. 同期 <span class="hint">音の波形で自動合わせ</span></h2>
       <div class="row">
-        <button id="syncBtn" class="btn primary" disabled>🔊 波形で同期する</button>
+        <button id="syncBtn" class="btn primary" disabled><i class="fa-solid fa-wave-square"></i> 波形で同期する</button>
       </div>
       <div id="syncStatus" class="status"></div>
     </section>
@@ -106,7 +106,7 @@
           <select id="bpbSelect" class="select" style="width:auto; margin:0">
             <option value="4">4/4</option><option value="2">2/4</option><option value="3">3/4</option>
           </select>
-          <button id="autocutBtn" class="btn primary">🥁 自動カット割</button>
+          <button id="autocutBtn" class="btn primary"><i class="fa-solid fa-drum"></i> 自動カット割</button>
         </div>
         <div id="wipeOpts" class="row" style="display:none">
           <label class="hint">小窓</label>
@@ -124,7 +124,7 @@
     <section class="panel" id="finishSec">
       <h2>5. 仕上げ <span class="hint">色・水平・トリム提案</span></h2>
       <div class="row">
-        <button id="colorMatchBtn" class="btn">🎨 自動カラーマッチ</button>
+        <button id="colorMatchBtn" class="btn"><i class="fa-solid fa-palette"></i> 自動カラーマッチ</button>
         <button id="colorClearBtn" class="btn small ghost" style="display:none">解除</button>
       </div>
       <div class="row" id="colorStrengthRow" style="display:none">
@@ -158,7 +158,7 @@
       <h2>6. 書き出し</h2>
       <div id="exportMode" class="status"></div>
       <div class="row">
-        <button id="exportBtn" class="btn primary big" disabled>📤 MP4を書き出す</button>
+        <button id="exportBtn" class="btn primary big" disabled><i class="fa-solid fa-file-export"></i> MP4を書き出す</button>
         <button id="cancelBtn" class="btn danger" style="display:none">中止</button>
       </div>
       <div id="exportProgress" class="progress" style="display:none">
@@ -189,14 +189,19 @@
       <div id="timelineStrip" class="tl-strip"></div>
       <div id="timelineToolbar" class="tl-toolbar" style="display:none">
         <span class="tl-info hint"></span>
-        <button class="btn small" id="tlCamBtn">📷 カメラ変更</button>
-        <button class="btn small" id="tlTransBtn">◇ カット⇄ディゾルブ</button>
-        <button class="btn small" id="tlMergeBtn">🧹 前と結合</button>
+        <button class="btn small" id="tlCamBtn"><i class="fa-solid fa-camera"></i> カメラ変更</button>
+        <button class="btn small" id="tlTransBtn"><i class="fa-solid fa-right-left"></i> カット⇄ディゾルブ</button>
+        <button class="btn small" id="tlMergeBtn"><i class="fa-solid fa-object-group"></i> 前と結合</button>
       </div>
     </div>
   </section>
 </main>
 </div><!-- /#workspace -->
+
+<footer>
+  <p>端末内で完結・無料 | MarchinZ クリエイターツール〈ベータ版〉 | <a href="/#creators" class="foot-link">MarchinZへ戻る</a></p>
+  <p class="foot-tools">つづけて使う: <a href="/tools/reangle/">ReAngle（正面補正）</a> ／ <a href="/tools/privacy/">Privacy（顔モザイク）</a></p>
+</footer>
 
 <div id="toast" class="toast"></div>
 

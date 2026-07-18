@@ -22,7 +22,7 @@
 <header>
   <div class="head-left">
     <a href="/#top" class="mz-home" aria-label="MarchinZ ホームへ">
-      <img src="/logo/marchinz-logo.png" alt="MarchinZ / マーチンズ" class="mz-logo" width="150" decoding="async">
+      <img src="/logo/marchinz-logo.png" alt="MarchinZ / マーチンズ" class="mz-logo" width="150" decoding="async" onerror="this.style.display='none'">
     </a>
     <h1 class="tool-name">Privacy<span class="beta-badge">ベータ版</span></h1>
   </div>
@@ -33,7 +33,7 @@
 </header>
 
 <p class="beta-disclaimer">
-  <i class="fa-solid fa-triangle-exclamation"></i> 本ツールは<strong>ベータ版</strong>です。動作は保証されません。ご利用は自己責任でお願いします（モザイクの掛かり漏れ・不具合について当方は責任を負いません）。
+  <i class="fa-solid fa-shield-halved"></i> <strong>無料・すべて端末内で処理</strong>します（動画・写真はどこにも送信されません）。ベータ版のため動作は保証されず、モザイクの掛かり漏れ・不具合について当方は責任を負いません。
 </p>
 
 <main>
@@ -101,7 +101,8 @@
       </div>
       <div id="doneCard" hidden>
         <p id="doneText" class="done"></p>
-        <button id="saveBtn" class="big-btn accent">📷 保存</button>
+        <p class="check-note"><i class="fa-solid fa-magnifying-glass"></i> 保存する前にプレビューを見直して、モザイクの<strong>掛かり漏れがないか</strong>ご確認ください。横向き・後ろ向きの顔は漏れやすいです。</p>
+        <button id="saveBtn" class="big-btn accent"><i class="fa-solid fa-arrow-up-from-bracket"></i> 保存</button>
         <p id="doneNote" class="note"></p>
       </div>
     </div>
@@ -110,6 +111,7 @@
 
 <footer>
   <p>端末内で完結・無料 | MarchinZ クリエイターツール〈ベータ版〉 | <a href="/#creators" class="foot-link">MarchinZへ戻る</a></p>
+  <p class="foot-tools">つづけて使う: <a href="/tools/reangle/">ReAngle（正面補正）</a> ／ <a href="/tools/switcher/">Switcher（同期・カット割）</a></p>
 </footer>
 
 <div id="toast"></div>

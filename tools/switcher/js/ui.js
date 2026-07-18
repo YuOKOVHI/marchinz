@@ -165,14 +165,14 @@ MC.ui.renderExportMode = () => {
   const mode = MC.ui.exportMode();
   if (mode === "fast") {
     el.innerHTML = `<span class="ok">✓ MP4 (H.264+AAC) 高速書き出し — そのままSNSに投稿できます</span>`;
-    btn.textContent = "📤 MP4を書き出す";
+    btn.innerHTML = '<i class="fa-solid fa-file-export"></i> MP4を書き出す';
   } else if (mode === "realtime") {
     const mp4 = MC.caps.recMime.startsWith("video/mp4");
     el.innerHTML = `<span class="warn">⚠ この端末は実時間録画モード(${mp4 ? "MP4" : "WebM"})。書き出し中は画面を閉じないでください</span>`;
-    btn.textContent = `📤 ${mp4 ? "MP4" : "WebM"}を書き出す(実時間)`;
+    btn.innerHTML = `<i class="fa-solid fa-file-export"></i> ${mp4 ? "MP4" : "WebM"}を書き出す(実時間)`;
   } else if (mode === "mute") {
     el.innerHTML = `<span class="warn">⚠ 音声エンコード非対応 → 映像のみMP4</span>`;
-    btn.textContent = "📤 MP4を書き出す(音声なし)";
+    btn.innerHTML = '<i class="fa-solid fa-file-export"></i> MP4を書き出す(音声なし)';
   } else {
     el.innerHTML = `<span class="err">✗ この環境では書き出しできません(Safari/Chromeの最新版をお使いください)</span>`;
     btn.textContent = "書き出し不可";
