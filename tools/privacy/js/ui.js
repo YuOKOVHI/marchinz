@@ -32,12 +32,20 @@ MZ.ui.isVideoFile = f =>
   /video|quicktime/.test(f.type) || /\.(mp4|mov|m4v|webm)$/i.test(f.name);
 
 MZ.ui.disposeClip = () => {
-  const c = MZ.S.clip;
-  if (!c) return;
   MZ.preview.stop();
-  if (c.video) { try { c.video.pause(); } catch (e) {} c.video.remove(); }
-  if (c.img && c.img.close) { try { c.img.close(); } catch (e) {} }
-  URL.revokeObjectURL(c.url);
+  // 複数写真ぶんをまとめて破棄
+  for (const p of (MZ.S.photos || [])) {
+    if (p.img && p.img.close) { try { p.img.close(); } catch (e) {} }
+    if (p.url) URL.revokeObjectURL(p.url);
+  }
+  MZ.S.photos = [];
+  MZ.S.photoIdx = 0;
+  const c = MZ.S.clip;
+  if (c) {
+    if (c.video) { try { c.video.pause(); } catch (e) {} c.video.remove(); }
+    if (c.img && c.img.close && !(MZ.S.photos || []).includes(c)) { try { c.img.close(); } catch (e) {} }
+    if (c.url) URL.revokeObjectURL(c.url);
+  }
   MZ.S.clip = null;
   MZ.S.manualBoxes = [];
 };
@@ -318,32 +326,115 @@ MZ.ui.onCanvasTap = e => {
 MZ.ui.loadFile = async file => {
   if (!file) throw new Error("ファイルがありません");
   MZ.ui.disposeClip();
-  return MZ.ui.isImageFile(file) ? MZ.ui._loadImage(file) : MZ.ui._loadVideo(file);
+  return MZ.ui.isImageFile(file) ? MZ.ui._loadImages([file]) : MZ.ui._loadVideo(file);
 };
 
-MZ.ui._loadImage = async file => {
+/* 複数ファイルの取り込み: 写真は最大4枚、動画は先頭1本。混在は写真を優先 */
+MZ.ui.loadFiles = async fileList => {
+  const files = [...fileList];
+  const imgs = files.filter(MZ.ui.isImageFile);
+  const vid = files.find(MZ.ui.isVideoFile);
+  MZ.ui.disposeClip();
+  if (imgs.length) {
+    if (imgs.length > 4) MZ.ui.toast("写真は4枚までです。先頭の4枚を使います");
+    return MZ.ui._loadImages(imgs.slice(0, 4));
+  }
+  if (vid) return MZ.ui._loadVideo(vid);
+  throw new Error("動画または写真を入れてください");
+};
+
+/* 1ファイルを ImageBitmap(EXIF回転反映)へ。失敗時は<img>フォールバック */
+MZ.ui._decodeImage = async file => {
   const url = URL.createObjectURL(file);
-  let img, W, H;
   try {
-    // EXIF回転を反映(iPhone写真対策)。iOS17+はここで成功
-    img = await createImageBitmap(file, { imageOrientation: "from-image" });
-    W = img.width; H = img.height;
+    const img = await createImageBitmap(file, { imageOrientation: "from-image" });
+    return { file, url, img, kind: "image", name: file.name, width: img.width, height: img.height, boxes: [], manualBoxes: [] };
   } catch (e) {
-    // HEIC/古いSafari等: <img>で読み込む(Safariは描画時にEXIF回転を自動適用)
     MZ.log("createImageBitmap失敗→<img>フォールバック:", e.message);
-    img = await new Promise((res, rej) => {
+    const img = await new Promise((res, rej) => {
       const el = new Image();
       el.onload = () => res(el);
       el.onerror = () => rej(new Error("この画像を読み込めません"));
       el.src = url;
     }).catch(err => { URL.revokeObjectURL(url); throw err; });
-    W = img.naturalWidth; H = img.naturalHeight;
+    return { file, url, img, kind: "image", name: file.name, width: img.naturalWidth, height: img.naturalHeight, boxes: [], manualBoxes: [] };
   }
-  MZ.S.clip = { file, url, img, kind: "image", name: file.name, width: W, height: H };
-  MZ.log(`loaded image: ${file.name} ${W}x${H}`);
-  MZ.ui._enterEditor(file.name, "image");
+};
+
+MZ.ui._loadImages = async files => {
+  const photos = [];
+  for (const f of files) {
+    try { photos.push(await MZ.ui._decodeImage(f)); }
+    catch (e) { MZ.ui.toast(`⚠ ${f.name}: ${e.message}`); }
+  }
+  if (!photos.length) throw new Error("読み込める画像がありませんでした");
+  MZ.S.photos = photos;
+  MZ.S.photoIdx = 0;
+  MZ.S.clip = photos[0];
+  MZ.S.manualBoxes = [];
+  MZ.log(`loaded ${photos.length} image(s)`);
+  MZ.ui._enterEditor(photos[0].name, "image");
+  MZ.ui._buildPhotoTabs();
   MZ.preview.setClip(MZ.S.clip);
 };
+
+/* 写真タブ(2枚以上で表示)。各サムネをクリックで切り替え */
+MZ.ui._buildPhotoTabs = () => {
+  const host = $("photoTabs");
+  const photos = MZ.S.photos || [];
+  host.replaceChildren();
+  if (photos.length < 2) { host.hidden = true; return; }
+  host.hidden = false;
+  photos.forEach((p, i) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "photo-tab" + (i === MZ.S.photoIdx ? " on" : "");
+    const cv = document.createElement("canvas");
+    cv.width = 120; cv.height = 88;
+    const ctx = cv.getContext("2d");
+    const scale = Math.max(cv.width / p.width, cv.height / p.height);
+    const dw = p.width * scale, dh = p.height * scale;
+    try { ctx.drawImage(p.img, (cv.width - dw) / 2, (cv.height - dh) / 2, dw, dh); } catch (e) {}
+    btn.appendChild(cv);
+    const badge = document.createElement("span");
+    badge.className = "photo-tab-badge";
+    badge.textContent = `${i + 1}`;
+    btn.appendChild(badge);
+    btn.addEventListener("click", () => MZ.ui._selectPhoto(i));
+    host.appendChild(btn);
+  });
+};
+
+/* 現在表示中の写真へ、検出/手動マスクの最新を退避 */
+MZ.ui._syncCurrentPhoto = () => {
+  const photos = MZ.S.photos || [];
+  const p = photos[MZ.S.photoIdx];
+  if (!p) return;
+  p.boxes = (MZ.preview.boxes || []).slice();
+  p.manualBoxes = (MZ.S.manualBoxes || []).slice();
+};
+
+/* 写真の切り替え(検出結果・手動マスクは写真ごとに保持) */
+MZ.ui._selectPhoto = idx => {
+  const photos = MZ.S.photos || [];
+  if (idx < 0 || idx >= photos.length || idx === MZ.S.photoIdx) {
+    if (idx === MZ.S.photoIdx) return;
+  }
+  MZ.ui._syncCurrentPhoto();
+  MZ.S.photoIdx = idx;
+  const p = photos[idx];
+  MZ.S.clip = p;
+  MZ.S.manualBoxes = (p.manualBoxes || []).slice();
+  $("clipName").textContent = p.name;
+  MZ.preview.setClip(p);
+  // 既に検出済みなら再検出せず復元、未検出なら setClip の imageDirty で検出が走る
+  if (p.boxes && p.boxes.length) { MZ.preview.boxes = p.boxes.slice(); MZ.preview.imageDirty = false; }
+  MZ.ui._buildPhotoTabs();
+  MZ.ui.setStep(1);
+};
+
+/* 単体写真ロード(後方互換)。内部は複数版に委譲 */
+MZ.ui._loadImage = file => MZ.ui._loadImages([file]);
 
 MZ.ui._loadVideo = file => new Promise((resolve, reject) => {
   const url = URL.createObjectURL(file);
@@ -424,36 +515,50 @@ MZ.ui.startExport = async () => {
 
 /* 書き出し完了カードの表示。iOS(共有可)は「保存」ボタンのタップで初めて保存する */
 MZ.ui.showDone = res => {
-  const kindWord = MZ.S.clip && MZ.S.clip.kind === "image" ? "写真" : "動画";
+  const items = MZ.exporter.lastResults || (res ? [res] : []);
+  const isImage = MZ.S.clip && MZ.S.clip.kind === "image";
+  const kindWord = isImage ? "写真" : "動画";
+  const n = items.length;
+  const totalSize = items.reduce((a, it) => a + (it.blob ? it.blob.size : 0), 0);
+  const many = n > 1 ? `${n}枚の${kindWord}` : kindWord;
   const share = MZ.exporter.shareMode();
   $("doneCard").hidden = false;
-  $("saveBtn").innerHTML = share ? `<i class="fa-solid fa-arrow-up-from-bracket"></i> ${kindWord}を保存` : "もう一度保存";
+  $("saveBtn").innerHTML = share ? `<i class="fa-solid fa-arrow-up-from-bracket"></i> ${many}を保存` : "もう一度保存";
   if (share) {
-    $("doneText").textContent = `準備できました(${MZ.ui.fmtSize(res.blob.size)})`;
-    $("doneNote").textContent = `「${kindWord}を保存」を押すと、共有シートから写真(カメラロール)やファイルに保存できます。`;
+    $("doneText").textContent = `準備できました(${MZ.ui.fmtSize(totalSize)})`;
+    $("doneNote").textContent = `「${many}を保存」を押すと、共有シートから写真(カメラロール)やファイルに保存できます。`;
     MZ.ui.toast("✔ 準備できました。保存を押してください");
   } else {
-    $("doneText").textContent = `「${res.name}」を保存しました(${MZ.ui.fmtSize(res.blob.size)})`;
+    $("doneText").textContent = n > 1
+      ? `${n}枚を保存しました(${MZ.ui.fmtSize(totalSize)})`
+      : `「${items[0] ? items[0].name : ""}」を保存しました(${MZ.ui.fmtSize(totalSize)})`;
     $("doneNote").textContent = "ダウンロードに保存されています。";
     MZ.ui.toast("✔ 書き出しが完了しました");
   }
 };
 
-/* 保存の実行。iOSはWeb Shareで写真/ファイルへ、それ以外はダウンロード */
+/* 保存の実行。iOSはWeb Shareで写真/ファイルへ(複数はまとめて共有)、それ以外はダウンロード */
 MZ.ui.saveResult = async () => {
-  const r = MZ.exporter.lastResult;
-  if (!r) return;
+  const items = MZ.exporter.lastResults
+    || (MZ.exporter.lastResult ? [MZ.exporter.lastResult] : []);
+  if (!items.length) return;
   if (MZ.exporter.shareMode()) {
+    const files = items.map(r => new File([r.blob], r.name, { type: r.type || r.blob.type }));
+    // 複数ファイルの一括共有が許可されればまとめて、だめなら1枚ずつ共有
+    const canMulti = files.length > 1 && navigator.canShare && navigator.canShare({ files });
     try {
-      const file = new File([r.blob], r.name, { type: r.type || r.blob.type });
-      await navigator.share({ files: [file] });
+      if (files.length === 1 || canMulti) {
+        await navigator.share({ files });
+      } else {
+        for (const f of files) await navigator.share({ files: [f] });
+      }
     } catch (e) {
       if (e && e.name === "AbortError") return;         // ユーザーがキャンセル
       MZ.log("share失敗→ダウンロード:", e && e.message);
-      MZ.exporter.triggerDownload(r.blob, r.name);        // 最後の手段
+      items.forEach(r => MZ.exporter.triggerDownload(r.blob, r.name));  // 最後の手段
     }
   } else {
-    MZ.exporter.triggerDownload(r.blob, r.name);
+    items.forEach(r => MZ.exporter.triggerDownload(r.blob, r.name));
   }
 };
 
@@ -463,15 +568,15 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   // ファイル選択+ドラッグ&ドロップ
   $("pickBtn").onclick = () => $("fileInput").click();
-  $("fileInput").onchange = e => { if (e.target.files[0]) MZ.ui.loadFile(e.target.files[0]).catch(err => MZ.ui.toast(`⚠ ${err.message}`)); };
+  $("fileInput").onchange = e => { if (e.target.files.length) MZ.ui.loadFiles(e.target.files).catch(err => MZ.ui.toast(`⚠ ${err.message}`)); };
   const dz = $("dropSection");
   dz.addEventListener("dragover", e => { e.preventDefault(); dz.classList.add("drag"); });
   dz.addEventListener("dragleave", () => dz.classList.remove("drag"));
   dz.addEventListener("drop", e => {
     e.preventDefault();
     dz.classList.remove("drag");
-    const f = [...e.dataTransfer.files].find(f => MZ.ui.isImageFile(f) || MZ.ui.isVideoFile(f));
-    if (f) MZ.ui.loadFile(f).catch(err => MZ.ui.toast(`⚠ ${err.message}`));
+    const fs = [...e.dataTransfer.files].filter(f => MZ.ui.isImageFile(f) || MZ.ui.isVideoFile(f));
+    if (fs.length) MZ.ui.loadFiles(fs).catch(err => MZ.ui.toast(`⚠ ${err.message}`));
     else MZ.ui.toast("動画または写真を入れてください");
   });
 

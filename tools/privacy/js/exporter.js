@@ -314,40 +314,58 @@ MZ.exporter.exportMP4 = async (clip, onProgress) => {
   }
 };
 
-/* ---- 写真: 元解像度のまま顔検出→マスク→PNG/JPEG ---- */
+/* 1枚の写真をレンダリング(検出→円形マスク)→ {blob,name}。boxesは写真ごとに保持 */
+MZ.exporter._renderPhoto = async photo => {
+  const W = photo.width, H = photo.height;
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(photo.img, 0, 0, W, H);
+  // 写真はEXIF回転済みImageBitmapなので rot=0。
+  // 再検出+プレビューで確定した検出(タップ追加含む)をNMS統合し、固定マスクを足す
+  const boxes = MZ.detect.nms(
+    MZ.detect.onSource(photo.img, W, H, 0, MZ.S.deep ? "deep" : "light")
+      .concat((photo.boxes || []).map(b => ({ ...b, score: b.score || 0.5 }))),
+    0.45,
+  ).concat(photo.manualBoxes || []);
+  MZ.mosaic.apply(ctx, W, H, boxes, MZ.S);
+  const png = /png/i.test(photo.file.type) || /\.png$/i.test(photo.name);
+  const mime = png ? "image/png" : "image/jpeg";
+  const ext = png ? "png" : "jpg";
+  const blob = await new Promise((res, rej) =>
+    canvas.toBlob(b => (b ? res(b) : rej(new Error("画像を書き出せませんでした"))), mime, 0.92));
+  return { blob, name: MZ.exporter.outName(photo, ext), type: mime, faces: boxes.length };
+};
+
+/* ---- 写真: 全枚(最大4枚)を順に検出→マスク→PNG/JPEG ---- */
 MZ.exporter.exportImage = async (clip, onProgress) => {
   MZ.exporter.cancelFlag = false;
   MZ.exporter.running = true;
   try {
-    onProgress(0.15, "顔を検出しています…");
-    await MZ.yield();
-    const W = clip.width, H = clip.height;
-    const canvas = document.createElement("canvas");
-    canvas.width = W; canvas.height = H;
-    const ctx = canvas.getContext("2d");
-    ctx.drawImage(clip.img, 0, 0, W, H);
-    // 写真はEXIF回転済みImageBitmapなので rot=0
-    // 再検出+プレビューでタップ追加した分をNMSで重複統合し、固定マスクを足す
-    const boxes = MZ.detect.nms(
-      MZ.detect.onSource(clip.img, W, H, 0, MZ.S.deep ? "deep" : "light")
-        .concat((MZ.preview.boxes || []).map(b => ({ ...b, score: b.score || 0.5 }))),
-      0.45,
-    ).concat(MZ.S.manualBoxes);
-    onProgress(0.6, "モザイクをかけています…");
-    await MZ.yield();
-    MZ.mosaic.apply(ctx, W, H, boxes, MZ.S);
-
-    // 透過が要る形式(PNG)は保持、それ以外はJPEGで軽く
-    const png = /png/i.test(clip.file.type) || /\.png$/i.test(clip.name);
-    const mime = png ? "image/png" : "image/jpeg";
-    const ext = png ? "png" : "jpg";
-    onProgress(0.9, "画像を書き出し中…");
-    const blob = await new Promise((res, rej) =>
-      canvas.toBlob(b => (b ? res(b) : rej(new Error("画像を書き出せませんでした"))), mime, 0.92));
-    const name = MZ.exporter.outName(clip, ext);
-    MZ.exporter.download(blob, name);
-    MZ.log(`image export done: ${name} bytes=${blob.size} faces=${boxes.length}`);
-    return { blob, name, faces: boxes.length };
+    if (MZ.ui._syncCurrentPhoto) MZ.ui._syncCurrentPhoto();   // 表示中の検出/手動を退避
+    const photos = (MZ.S.photos && MZ.S.photos.length) ? MZ.S.photos : [clip];
+    const results = [];
+    for (let i = 0; i < photos.length; i++) {
+      if (MZ.exporter.cancelFlag) throw new Error("キャンセルしました");
+      const base = i / photos.length;
+      onProgress(base + 0.15 / photos.length,
+        photos.length > 1 ? `${i + 1}/${photos.length}枚目の顔を検出しています…` : "顔を検出しています…");
+      await MZ.yield();
+      results.push(await MZ.exporter._renderPhoto(photos[i]));
+      onProgress((i + 1) / photos.length, `${i + 1}/${photos.length}枚 完了`);
+    }
+    // 保存: 共有可なら結果を保持してタップ待ち、非共有は即ダウンロード
+    MZ.exporter.lastResults = results;
+    MZ.exporter.lastResult = results[0] || null;
+    if (MZ.testMode) {
+      for (const r of results) {
+        fetch(`/save?name=${encodeURIComponent(r.name)}`, { method: "PUT", body: r.blob })
+          .then(() => MZ.log("test upload ok:", r.name)).catch(e => MZ.log("test upload failed:", e.message));
+      }
+    }
+    if (!MZ.exporter.shareMode()) results.forEach(r => MZ.exporter.triggerDownload(r.blob, r.name));
+    MZ.log(`image export done: ${results.length} file(s)`);
+    return results[0] || { blob: new Blob(), name: "" };
   } finally {
     MZ.exporter.running = false;
   }
@@ -444,6 +462,7 @@ MZ.exporter.triggerDownload = (blob, name) => {
    それ以外は即ダウンロード。テスト時は常にローカルサーバへPUT。 */
 MZ.exporter.download = (blob, name) => {
   MZ.exporter.lastResult = { blob, name, type: blob.type };
+  MZ.exporter.lastResults = null;   // 動画は単一結果。写真の配列結果と混同しない
   if (MZ.testMode) {  // 自動検証用: ローカルサーバへも保存
     fetch(`/save?name=${encodeURIComponent(name)}`, { method: "PUT", body: blob })
       .then(() => MZ.log("test upload ok:", name))

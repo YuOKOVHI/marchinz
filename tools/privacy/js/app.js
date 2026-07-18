@@ -14,6 +14,8 @@ window.MZ = {
     manualBoxes: [],   // タップで追加した固定マスク(正規化ボックス)。もう一度タップで削除
     rangeStart: 0,     // 作業範囲の開始秒(60秒超の動画はインスタ風に範囲を選ぶ)
     rangeDur: 30,      // 作業範囲の長さ(10〜60秒、初期30)。短い動画はduration全部
+    photos: [],        // 写真は最大4枚。各 {file,url,img,name,width,height,boxes,manualBoxes}
+    photoIdx: 0,       // 表示中の写真index。MZ.S.clip は photos[photoIdx] を指す(既存互換)
   },
   caps: { h264: null, aacEnc: null },
   testMode: /[?&]test/.test(location.search),
