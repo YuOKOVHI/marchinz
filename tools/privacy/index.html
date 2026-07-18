@@ -37,9 +37,10 @@
 </p>
 
 <main>
-  <!-- ① 動画・写真を選ぶ -->
-  <section id="dropSection" class="card drop">
-    <p class="drop-title">動画や写真を選ぶと、顔に自動でモザイクがかかります</p>
+  <!-- ⓪ 取り込みフェーズ -->
+  <section id="dropSection" class="card drop step-card">
+    <h2 class="step-title">動画・写真を取り込む</h2>
+    <p class="step-lead">取り込むと、顔を自動で見つけてモザイクがかかります。</p>
     <button id="pickBtn" class="big-btn">動画・写真を選ぶ</button>
     <input id="fileInput" type="file" accept="video/*,image/*" hidden>
     <p class="note">すべてスマホ/PCの中だけで処理します。動画・写真はどこにも送信されません。無料です。</p>
@@ -50,7 +51,7 @@
     <div class="card">
       <div class="clip-row">
         <span id="clipName" class="clip-name"></span>
-        <button id="backBtn" class="text-btn">別の素材</button>
+        <button id="backBtn" class="text-btn">別の素材を選ぶ</button>
       </div>
       <div class="preview-wrap">
         <canvas id="previewCanvas"></canvas>
@@ -91,9 +92,9 @@
       <div class="setting">
         <label>隠しかた</label>
         <div id="typeSeg" class="seg">
-          <button data-type="mosaic" class="on">モザイク</button>
-          <button data-type="blur">ぼかし</button>
-          <button data-type="fill">黒塗り</button>
+          <button data-type="blur" class="on">ぼかし</button>
+          <button data-type="mosaic">モザイク</button>
+          <button data-type="fill">黒くする</button>
         </div>
         <p class="hint hint-tight">どれも顔のかたちに沿った円形で、ふちは自然になじみます。</p>
       </div>

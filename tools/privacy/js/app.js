@@ -4,7 +4,7 @@
 window.MZ = {
   S: {
     clip: null,        // {file, name, url, video, duration, width, height}
-    type: "mosaic",    // mosaic | blur | fill
+    type: "blur",      // blur | mosaic | fill(既定はぼかし=Premiere風の柔らかい隠し方)
     strength: 6,       // 濃さ 1〜10
     expand: 30,        // 広げ幅 0〜100(%)
     hold: 1.0,         // 前後の追従 0〜5秒
