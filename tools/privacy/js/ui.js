@@ -521,6 +521,7 @@ MZ.ui.startExport = async () => {
 
 /* 書き出し完了カードの表示。iOS(共有可)は「保存」ボタンのタップで初めて保存する */
 MZ.ui.showDone = res => {
+  MZ.ui._shareQueueIdx = 0;   // 写真の「1枚ずつ保存」の進み位置をリセット
   const items = MZ.exporter.lastResults || (res ? [res] : []);
   const isImage = MZ.S.clip && MZ.S.clip.kind === "image";
   const kindWord = isImage ? "写真" : "動画";
@@ -543,28 +544,49 @@ MZ.ui.showDone = res => {
   }
 };
 
-/* 保存の実行。iOSはWeb Shareで写真/ファイルへ(複数はまとめて共有)、それ以外はダウンロード */
+/* 保存の実行。iOSはWeb Shareで写真/ファイルへ(複数はまとめて共有)、それ以外はダウンロード。
+   一括共有が使えない環境では「保存ボタンを押すたびに次の1枚を共有」する
+   (navigator.shareはユーザー操作1回につき1回しか呼べないため、ループでの連続共有は不可) */
 MZ.ui.saveResult = async () => {
   const items = MZ.exporter.lastResults
     || (MZ.exporter.lastResult ? [MZ.exporter.lastResult] : []);
   if (!items.length) return;
-  if (MZ.exporter.shareMode()) {
-    const files = items.map(r => new File([r.blob], r.name, { type: r.type || r.blob.type }));
-    // 複数ファイルの一括共有が許可されればまとめて、だめなら1枚ずつ共有
-    const canMulti = files.length > 1 && navigator.canShare && navigator.canShare({ files });
+  if (!MZ.exporter.shareMode()) {
+    items.forEach(r => MZ.exporter.triggerDownload(r.blob, r.name));
+    return;
+  }
+  const files = items.map(r => new File([r.blob], r.name, { type: r.type || r.blob.type }));
+  const canMulti = files.length > 1 && navigator.canShare && navigator.canShare({ files });
+  if (files.length === 1 || canMulti) {
     try {
-      if (files.length === 1 || canMulti) {
-        await navigator.share({ files });
-      } else {
-        for (const f of files) await navigator.share({ files: [f] });
-      }
+      await navigator.share({ files });
+      return;
     } catch (e) {
       if (e && e.name === "AbortError") return;         // ユーザーがキャンセル
-      MZ.log("share失敗→ダウンロード:", e && e.message);
-      items.forEach(r => MZ.exporter.triggerDownload(r.blob, r.name));  // 最後の手段
+      MZ.log("一括share失敗→1枚ずつ方式へ:", e && e.message);
     }
+  }
+  // 1枚ずつ方式(押すたびに1枚進む)
+  const i = Math.min(MZ.ui._shareQueueIdx || 0, files.length - 1);
+  try {
+    await navigator.share({ files: [files[i]] });
+  } catch (e) {
+    if (e && e.name === "AbortError") return;
+    MZ.log("share失敗→ダウンロード:", e && e.message);
+    items.forEach(r => MZ.exporter.triggerDownload(r.blob, r.name));  // 最後の手段
+    return;
+  }
+  MZ.ui._shareQueueIdx = i + 1;
+  const remain = files.length - MZ.ui._shareQueueIdx;
+  if (remain > 0) {
+    $("saveBtn").innerHTML = `<i class="fa-solid fa-arrow-up-from-bracket"></i> 次の写真を保存（残り${remain}枚）`;
+    $("doneNote").textContent = `${MZ.ui._shareQueueIdx}枚目を保存しました。ボタンを押して残り${remain}枚も保存してください。`;
+    MZ.ui.toast(`✔ ${MZ.ui._shareQueueIdx} / ${files.length} 枚目を保存しました`);
   } else {
-    items.forEach(r => MZ.exporter.triggerDownload(r.blob, r.name));
+    MZ.ui._shareQueueIdx = 0;
+    $("saveBtn").innerHTML = "もう一度保存";
+    $("doneNote").textContent = `${files.length}枚すべて保存しました。`;
+    MZ.ui.toast("✔ すべての写真を保存しました");
   }
 };
 

@@ -414,7 +414,7 @@ MZ.exporter.exportRealtime = async (clip, onProgress) => {
         onProgress(Math.min(1, (video.currentTime - rs) / Math.max(0.1, re - rs)),
           `実時間で録画中… ${Math.max(0, Math.floor(video.currentTime - rs))} / ${Math.floor(re - rs)}秒`);
         if (video.ended || video.currentTime >= re || MZ.exporter.cancelFlag) { clearInterval(iv); res(); }
-      }, 200);
+      }, 80);
     });
     video.pause();
     mr.stop();
