@@ -34,20 +34,36 @@ RA.WarpRenderer = class {
       uniform vec4 uColor;   // x=明るさ y=コントラスト z=彩度 w=色温度(+暖/-寒)
       uniform float uSharp;  // 解像感(アンシャープ量 0〜1)
       uniform vec2 uTexel;   // 1/ソース解像度
+      uniform float uFillEdge; // 1=補正で切れた範囲外を自動で埋める / 0=黒
       void main() {
         vec3 p = uH * vec3(vUV, 1.0);
         vec2 uv = p.xy / p.z;
+        vec3 c;
         if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
-          gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
-          return;
-        }
-        vec3 c = texture2D(uTex, uv).rgb;
-        if (uSharp > 0.001) {
-          vec3 blur = ( texture2D(uTex, uv + vec2(uTexel.x, 0.0)).rgb
-                      + texture2D(uTex, uv - vec2(uTexel.x, 0.0)).rgb
-                      + texture2D(uTex, uv + vec2(0.0, uTexel.y)).rgb
-                      + texture2D(uTex, uv - vec2(0.0, uTexel.y)).rgb ) * 0.25;
-          c += (c - blur) * uSharp * 1.4;
+          if (uFillEdge < 0.5) {
+            gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+            return;
+          }
+          // ミラー折り返しで映像を連続させ、ぼかし+彩度落とし+減光で
+          // 「本編ではない」と分かる背景として馴染ませる
+          vec2 m = 1.0 - abs(1.0 - 2.0 * fract(uv * 0.5));
+          vec2 o = uTexel * 14.0;
+          c = ( texture2D(uTex, m).rgb * 2.0
+              + texture2D(uTex, m + vec2(o.x, 0.0)).rgb
+              + texture2D(uTex, m - vec2(o.x, 0.0)).rgb
+              + texture2D(uTex, m + vec2(0.0, o.y)).rgb
+              + texture2D(uTex, m - vec2(0.0, o.y)).rgb ) / 6.0;
+          float lm = dot(c, vec3(0.299, 0.587, 0.114));
+          c = mix(vec3(lm), c, 0.55) * 0.62;
+        } else {
+          c = texture2D(uTex, uv).rgb;
+          if (uSharp > 0.001) {
+            vec3 blur = ( texture2D(uTex, uv + vec2(uTexel.x, 0.0)).rgb
+                        + texture2D(uTex, uv - vec2(uTexel.x, 0.0)).rgb
+                        + texture2D(uTex, uv + vec2(0.0, uTexel.y)).rgb
+                        + texture2D(uTex, uv - vec2(0.0, uTexel.y)).rgb ) * 0.25;
+            c += (c - blur) * uSharp * 1.4;
+          }
         }
         c *= uColor.x;
         c = (c - 0.5) * uColor.y + 0.5;
@@ -84,10 +100,12 @@ RA.WarpRenderer = class {
     this.uColor = gl.getUniformLocation(prog, "uColor");
     this.uSharp = gl.getUniformLocation(prog, "uSharp");
     this.uTexel = gl.getUniformLocation(prog, "uTexel");
+    this.uFillEdge = gl.getUniformLocation(prog, "uFillEdge");
     gl.uniform1i(gl.getUniformLocation(prog, "uTex"), 0);
     gl.uniform4f(this.uColor, 1, 1, 1, 0);
     gl.uniform1f(this.uSharp, 0);
     gl.uniform2f(this.uTexel, 0, 0);
+    gl.uniform1f(this.uFillEdge, 1);
     this._srcW = 0;
     this._srcH = 0;
 
@@ -151,8 +169,9 @@ RA.WarpRenderer = class {
     const sharp = f.sharp || 0;
     gl.uniform1f(this.uSharp, sharp);
     gl.uniform2f(this.uTexel,
-      sharp && this._srcW ? 1 / this._srcW : 0,
-      sharp && this._srcH ? 1 / this._srcH : 0);
+      this._srcW ? 1 / this._srcW : 0,
+      this._srcH ? 1 / this._srcH : 0);
+    gl.uniform1f(this.uFillEdge, f.fillEdge === false ? 0 : 1);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   }
 

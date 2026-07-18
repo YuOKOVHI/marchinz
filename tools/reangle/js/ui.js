@@ -367,6 +367,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   bindRange("zoomRange", "zoom", "zoomVal", v => v / 100, v => `×${v.toFixed(2)}`);
   bindRange("panRange", "panY", "panVal", v => v / 100, v => `${v > 0 ? "+" : ""}${Math.round(v * 100)}%`);
   bindRange("sharpRange", "sharp", "sharpVal", v => v / 100, v => `${Math.round(v * 100)}%`);
+  $("fillEdgeChk").addEventListener("change", e => { RA.S.fillEdge = e.target.checked; });
   $("resSel").onchange = e => { RA.S.res = e.target.value; };
 
   // 元を見る(長押し比較)
@@ -430,6 +431,10 @@ RA.ui.runTest = async () => {
     }
     if (params.get("sh") != null) {
       RA.S.sharp = parseFloat(params.get("sh")) / 100;
+    }
+    if (params.get("fill") != null) {
+      RA.S.fillEdge = params.get("fill") !== "0";
+      $("fillEdgeChk").checked = RA.S.fillEdge;
     }
     await new Promise(r2 => setTimeout(r2, 400));
     await RA.ui.startExport();

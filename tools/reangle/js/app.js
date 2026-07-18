@@ -11,6 +11,7 @@ window.RA = {
     tilt: 0,           // 傾き調整(度、出力を画面中心周りに回転)
     preset: "none",    // カラープリセットid(RA.PRESETS)
     sharp: 0,          // 解像感(アンシャープ)0〜1。補正で甘くなった画をくっきりさせる
+    fillEdge: true,    // 補正で切れた範囲外(黒縁)をミラー+ぼかしで自動的に埋める
     zoom: 1.0,         // 出力ズーム 1〜2
     panY: 0,           // 縦位置 -0.3〜0.3(表示高さ比)
     res: "1080",       // "1080" | "orig"
@@ -57,7 +58,7 @@ RA.fx = (overridePreset) => {
   const id = overridePreset != null ? overridePreset : RA.S.preset;
   const found = RA.PRESETS.find(p => p[0] === id);
   const c = found ? found[2] : RA.PRESETS[0][2];
-  return { bright: c.bright, contrast: c.contrast, sat: c.sat, temp: c.temp, sharp: RA.S.sharp };
+  return { bright: c.bright, contrast: c.contrast, sat: c.sat, temp: c.temp, sharp: RA.S.sharp, fillEdge: RA.S.fillEdge };
 };
 
 /* 既定の台形プリセット(自動検出失敗時の初期配置) */
