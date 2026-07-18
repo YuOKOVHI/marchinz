@@ -206,6 +206,8 @@ MZ.exporter.exportMP4 = async (clip, onProgress) => {
     const canvas = new OffscreenCanvas(W, H);
     const ctx = canvas.getContext("2d");
     const tracker = new MZ.Tracker();
+    const scenecut = new MZ.SceneCut();
+    let lastKeySec = -9;   // 前回の高精度(YuNet)検出時刻
     const BUF = Math.max(2, Math.min(10, Math.round(0.3 * fps)));
 
     const frames = [];
@@ -268,8 +270,25 @@ MZ.exporter.exportMP4 = async (clip, onProgress) => {
       if (absSec > re + 1e-3) { f.close(); eof = true; flushed = true; frames.forEach(x => x.close()); frames.length = 0; break; }
       if (ts0 === null) ts0 = f.timestamp;
       const near = tracker.tracks.map(tr => tr.box);
-      const dets = MZ.dropSuppressed(MZ.detect.onSource(f, rawW, rawH, rotation, "deep", near));
       const tSec = (f.timestamp - ts0) / 1e6;
+      // シーン切替 or 0.4秒ごと: YuNet高精度(全体+タイル)。間はBlazeFace軽量+速度予測
+      const A = MZ.detect.analysisOf(f, rawW, rawH, rotation);
+      const isCut = scenecut.check(A);
+      if (isCut) {
+        // カット前のフレームを書き出し切ってから追跡を捨てる
+        // (切替後の顔が「さかのぼりマスク」で切替前のフレームに付かないように)
+        while (buffer.length) await renderOne(buffer.shift());
+        tracker.reset();
+        MZ.log(`export scene cut at ${tSec.toFixed(2)}s → re-detect`);
+      }
+      let dets;
+      if (isCut || tSec - lastKeySec >= 0.4) {
+        dets = await MZ.detect.yunetScan(A, "full", near);
+        lastKeySec = tSec;
+      } else {
+        dets = MZ.detect.blazeLight(A, near);
+      }
+      dets = MZ.dropSuppressed(dets);
       const { active, born } = tracker.update(dets, tSec, MZ.S.hold);
       active.push(...MZ.S.manualBoxes);
       // 新しく現れた顔は、まだ書き出していない直前フレームにもさかのぼってマスク
@@ -323,10 +342,11 @@ MZ.exporter._renderPhoto = async photo => {
   ctx.drawImage(photo.img, 0, 0, W, H);
   // 写真はEXIF回転済みImageBitmapなので rot=0。
   // 再検出+プレビューで確定した検出(タップ追加含む)をNMS統合し、固定マスクを足す
+  const A = MZ.detect.analysisOf(photo.img, W, H, 0);
+  const dets = await MZ.detect.yunetScan(A, "full", null);
   const boxes = MZ.detect.nms(
     MZ.dropSuppressed(
-      MZ.detect.onSource(photo.img, W, H, 0, "deep")
-        .concat((photo.boxes || []).map(b => ({ ...b, score: b.score || 0.5 }))),
+      dets.concat((photo.boxes || []).map(b => ({ ...b, score: b.score || 0.5 }))),
       photo.suppressedBoxes || []),
     0.45,
   ).concat(photo.manualBoxes || []);

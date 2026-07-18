@@ -301,7 +301,7 @@ MZ.ui.updateDetectStatus = () => {
    ①手動マスク・自動検出マスクの上 → そのマスクを外す(もう一度タップで戻せる)
    ②タップ周辺を高倍率で顔検出 → 見つかれば追跡マスクとして追加
    ③見つからなければ、その場所に固定マスクを追加(検出ボックスの平均サイズ) */
-MZ.ui.onCanvasTap = e => {
+MZ.ui.onCanvasTap = async e => {
   const clip = MZ.S.clip;
   if (!clip || MZ.exporter.running) return;
   const cv = $("previewCanvas");
@@ -343,7 +343,7 @@ MZ.ui.onCanvasTap = e => {
   const rw = clip.kind === "image" ? clip.width : clip.video.videoWidth;
   const rh = clip.kind === "image" ? clip.height : clip.video.videoHeight;
   let found = null;
-  try { found = MZ.detect.probeAt(src, rw, rh, 0, nx, ny); } catch (err) { MZ.log("probeAt:", err.message); }
+  try { found = await MZ.detect.probeAt(src, rw, rh, 0, nx, ny); } catch (err) { MZ.log("probeAt:", err.message); }
   if (found) {
     if (clip.kind === "image") {
       MZ.preview.boxes.push(found);

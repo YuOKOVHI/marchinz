@@ -1,7 +1,9 @@
 "use strict";
-/* ============ 顔検出: MediaPipe FaceDetector(BlazeFace short-range) ============
-   スマホの遠い顔対策: 表示向きの解析キャンバス(長辺≤1920)を作り、
-   全体+オーバーラップタイル(常時deep)で検出してNMS統合 */
+/* ============ 顔検出: YuNet(精度) + BlazeFace(速度)の2エンジン ============
+   YuNet(OpenCV Zoo)は約10px超の小さい顔まで拾える精度エンジン。
+   初期スキャン・一時停止・シーン切替・書き出しキーフレームで使う。
+   BlazeFace(MediaPipe)は軽いが約50px未満の顔を見逃すため、
+   再生中の「大きめの顔の追従」と横顔の補完に限って使う。 */
 
 MZ.detect = {
   detector: null,
@@ -13,6 +15,8 @@ MZ.detect = {
   },
 
   async _init() {
+    // YuNet(精度エンジン)は並行して読み込む。失敗してもBlazeFaceだけで動く(縮退)
+    const yunetP = MZ.yunet.init().catch(e => MZ.log("YuNet読み込み失敗(BlazeFaceのみで動作):", e.message));
     const { FilesetResolver, FaceDetector } = await MZ.visionReady();
     const fileset = await FilesetResolver.forVisionTasks("vendor/wasm");
     const make = delegate => FaceDetector.createFromOptions(fileset, {
@@ -26,7 +30,51 @@ MZ.detect = {
       MZ.log("GPUデリゲート失敗→CPUで再試行:", e.message);
       this.detector = await make("CPU");
     }
+    await yunetP;
     MZ.log("face detector ready");
+  },
+
+  /* 表示向きの解析キャンバス(長辺≤1920)を作る。YuNet/BlazeFace/シーンカット共用 */
+  analysisOf(source, rawW, rawH, rot) {
+    const swapped = rot === 90 || rot === 270;
+    const dispW = swapped ? rawH : rawW, dispH = swapped ? rawW : rawH;
+    const s = Math.min(1, 1920 / Math.max(dispW, dispH));
+    const aw = Math.max(2, Math.round(dispW * s)), ah = Math.max(2, Math.round(dispH * s));
+    const A = this._canvas("_analysis", aw, ah);
+    MZ.drawFrame(A.getContext("2d"), source, rawW, rawH, rot, aw, ah);
+    return A;
+  },
+
+  /* 解析キャンバスAに対するBlazeFace軽量検出(全体+2×2)。同期・約60ms */
+  blazeLight(A, nearBoxes) {
+    if (!this.detector) return [];
+    let dets = this._region(A, 0, 0, A.width, A.height);
+    dets = dets.concat(this._grid(A, 2, 0.6));
+    return this.nms(dets, 0.45).filter(d =>
+      d.score >= 0.3 || (nearBoxes || []).some(nb => MZ.iou(nb, d) > 0.2));
+  },
+
+  /* YuNet高精度検出(解析キャンバスAに対して非同期)。
+     level "full"=全体+960pxタイル(精度重視) "l0"=全体1発(再生中の混ぜ込み)
+     BlazeFaceの軽量結果も統合する(横顔・大きい顔の補完)。 */
+  async yunetScan(A, level, nearBoxes, onProgress) {
+    if (!MZ.yunet.session) {
+      // YuNetが無い環境: BlazeFaceの従来deepで代替
+      let dets = this.blazeLight(A, nearBoxes);
+      dets = dets.concat(this._grid(A, 4, 0.3));
+      return this.nms(dets, 0.45).filter(d =>
+        d.score >= 0.3 || (nearBoxes || []).some(nb => MZ.iou(nb, d) > 0.2));
+    }
+    const regions = MZ.yunet.regionsFor(A, level);
+    let all = [];
+    for (let i = 0; i < regions.length; i++) {
+      const part = await MZ.yunet.scan(A, [regions[i]], nearBoxes);
+      all = all.concat(part);
+      if (onProgress) onProgress((i + 1) / regions.length);
+      await MZ.yield();   // 推論の合間にUIへ制御を返す
+    }
+    if (level === "full") all = all.concat(this.blazeLight(A, nearBoxes));
+    return this.nms(all, 0.4);
   },
 
   _canvas(key, w, h) {
@@ -123,53 +171,37 @@ MZ.detect = {
     return out;
   },
 
-  /* 読み込み直後の高精度スキャン: deepよりさらに細かいタイルまで時間をかけて検出する。
-     スナップショットに対して1タイルずつ実行し(合間にyieldしてUIを固めない)、進捗を返す */
+  /* 読み込み直後の高精度スキャン: YuNetで全体+タイルをじっくり走査する。
+     専用スナップショットに対して行い、進捗コールバックを返す */
   async initialScan(source, rawW, rawH, rot, onProgress) {
-    if (!this.detector) return [];
+    if (!this.detector && !MZ.yunet.session) return [];
     const swapped = rot === 90 || rot === 270;
     const dispW = swapped ? rawH : rawW, dispH = swapped ? rawW : rawH;
     const s = Math.min(1, 1920 / Math.max(dispW, dispH));
     const aw = Math.max(2, Math.round(dispW * s)), ah = Math.max(2, Math.round(dispH * s));
     const A = this._canvas("_initSnap", aw, ah);   // 専用スナップショット(通常検出と干渉しない)
     MZ.drawFrame(A.getContext("2d"), source, rawW, rawH, rot, aw, ah);
-    // 全体→2×2→…→10×10 と段階的にズームし、フレーム幅1%強の顔まで拾う(計221タイル)
-    const passes = [[1, 1], [2, 0.6], [4, 0.3], [6, 0.2], [8, 0.15], [10, 0.12]];
-    const total = passes.reduce((a, p) => a + p[0] * p[0], 0);
-    let dets = [], done = 0;
-    for (const [n, size] of passes) {
-      const tw = Math.round(aw * size), th = Math.round(ah * size);
-      const step = n > 1 ? (1 - size) / (n - 1) : 0;
-      for (let ix = 0; ix < n; ix++) {
-        for (let iy = 0; iy < n; iy++) {
-          dets = dets.concat(this._region(A,
-            Math.round(ix * step * aw), Math.round(iy * step * ah), tw, th));
-          done++;
-          if (onProgress) onProgress(done / total);
-          await MZ.yield();
-        }
-      }
-    }
-    return this.nms(dets, 0.45).filter(d => d.score >= 0.3);
+    return this.yunetScan(A, "full", null, onProgress);
   },
 
   /* タップ地点の周辺だけを高倍率で検出(手動追加の一次候補)。
-     tapX/tapY は表示向きの正規化座標。見つからなければ null */
-  probeAt(source, rawW, rawH, rot, tapX, tapY) {
-    if (!this.detector) return null;
-    const swapped = rot === 90 || rot === 270;
-    const dispW = swapped ? rawH : rawW, dispH = swapped ? rawW : rawH;
-    const s = Math.min(1, 1920 / Math.max(dispW, dispH));
-    const aw = Math.max(2, Math.round(dispW * s)), ah = Math.max(2, Math.round(dispH * s));
-    const A = this._canvas("_analysis", aw, ah);
-    MZ.drawFrame(A.getContext("2d"), source, rawW, rawH, rot, aw, ah);
-    // 周辺28%を切り出して検出(タイル検出より高倍率=より小さな顔が写る)
+     YuNetを優先し、無ければBlazeFace。tapX/tapY は表示向きの正規化座標 */
+  async probeAt(source, rawW, rawH, rot, tapX, tapY) {
+    if (!this.detector && !MZ.yunet.session) return null;
+    const A = this.analysisOf(source, rawW, rawH, rot);
     const rw = 0.28;
     const sx = Math.max(0, Math.min(1 - rw, tapX - rw / 2));
     const sy = Math.max(0, Math.min(1 - rw, tapY - rw / 2));
-    const dets = this._region(A,
-      Math.round(sx * aw), Math.round(sy * ah),
-      Math.round(rw * aw), Math.round(rw * ah));
+    let dets;
+    if (MZ.yunet.session) {
+      const s = Math.round(rw * Math.max(A.width, A.height));
+      dets = await MZ.yunet.scan(A, [{
+        sx: Math.round(sx * A.width), sy: Math.round(sy * A.height), s }], null);
+    } else {
+      dets = this._region(A,
+        Math.round(sx * A.width), Math.round(sy * A.height),
+        Math.round(rw * A.width), Math.round(rw * A.height));
+    }
     let best = null, bestD = 0.1;  // タップから半径10%以内のみ
     for (const d of dets) {
       const dist = Math.hypot(d.x + d.w / 2 - tapX, d.y + d.h / 2 - tapY);

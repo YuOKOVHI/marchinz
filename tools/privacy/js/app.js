@@ -65,6 +65,46 @@ MZ.iou = (a, b) => {
   return uni > 0 ? inter / uni : 0;
 };
 
+/* ============ シーン/カメラ切替の検出 ============
+   64×36のグレースケール縮小で「画素差(MAD)」と「輝度ヒストグラム差」を見る合議制。
+   等速パン(マーチングで頻発)での誤検出を防ぐため、直近の動き(中央値)との比も使う。
+   カットを検出したら追跡を捨てて高精度再検出をやり直す(誤検出しても損は再検出1回分) */
+MZ.SceneCut = class {
+  constructor() { this.prev = null; this.mads = []; }
+  reset() { this.prev = null; this.mads.length = 0; }
+  /* A: 解析キャンバス。戻り true=カット(シーン切替) */
+  check(A) {
+    const c = this._cv || (this._cv = document.createElement("canvas"));
+    if (c.width !== 64) { c.width = 64; c.height = 36; }
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(A, 0, 0, 64, 36);
+    const px = ctx.getImageData(0, 0, 64, 36).data;
+    const n = 64 * 36;
+    const g = new Float32Array(n), hist = new Float32Array(32);
+    for (let i = 0; i < n; i++) {
+      const y = 0.299 * px[i * 4] + 0.587 * px[i * 4 + 1] + 0.114 * px[i * 4 + 2];
+      g[i] = y;
+      hist[Math.min(31, (y / 8) | 0)] += 1 / n;
+    }
+    let cut = false;
+    if (this.prev) {
+      let mad = 0;
+      for (let i = 0; i < n; i++) mad += Math.abs(g[i] - this.prev.g[i]);
+      mad /= n;
+      let inter = 0;
+      for (let i = 0; i < 32; i++) inter += Math.min(hist[i], this.prev.hist[i]);
+      const histD = 1 - inter;
+      const sorted = [...this.mads].sort((a, b) => a - b);
+      const med = sorted.length ? sorted[(sorted.length / 2) | 0] : 0;
+      cut = histD > 0.45 || (histD > 0.25 && mad > 28 && mad > 3.5 * Math.max(med, 2));
+      this.mads.push(mad);
+      if (this.mads.length > 15) this.mads.shift();
+    }
+    this.prev = { g, hist };
+    return cut;
+  }
+};
+
 /* タップで外した場所と重なる検出を捨てる。supを省略すると現在のMZ.S.suppressedBoxes */
 MZ.dropSuppressed = (dets, sup) => {
   if (sup == null) sup = MZ.S.suppressedBoxes || [];

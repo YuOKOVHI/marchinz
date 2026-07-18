@@ -21,6 +21,10 @@ MZ.preview = {
     this.canvas.width = Math.max(2, Math.round(clip.width * s));
     this.canvas.height = Math.max(2, Math.round(clip.height * s));
     this.tracker.reset();
+    this.scenecut = this.scenecut || new MZ.SceneCut();
+    this.scenecut.reset();
+    this.lastYunetTime = 0;
+    this.detectBusy = false;
     this.boxes = [];
     this.lastDetectAt = -1;
     // 高精度スキャンはここでは始めない。範囲が決まり、その先頭フレームが
@@ -56,24 +60,56 @@ MZ.preview = {
     }
     // 範囲が決まった直後に1回だけ、時間をかけた高精度スキャンで小さな顔まで拾う
     if (this.pendingInit && MZ.detect.detector && !MZ.exporter.running) void this._runInitialScan(v);
-    // 検出は約80ms間隔+シーク時(書き出し中の実時間録画は毎フレーム)。速度予測トラッカーが間を埋める
+    // 検出は約80ms間隔+シーク時。YuNet(非同期)が走っている間はトラッカーの予測が埋める
     const t = v.currentTime;
     const due = (MZ.exporter.running
       || Math.abs(t - this.lastDetectAt) > 0.001 && (performance.now() - this.lastDetectTime > 80))
+      && !this.detectBusy
       && !(this.initRunning && v.paused && !MZ.exporter.running);   // 停止中は高精度スキャンと重複させない
-    if (MZ.detect.detector && due) {
-      // 一時停止中=全タイルdeep / 再生中=巡回deep(4タイルずつ回して数回で全域)
-      const mode = (v.paused && !MZ.exporter.running) ? "deep" : "rotate";
-      const near = this.tracker.tracks.map(tr => tr.box);
-      const dets = MZ.dropSuppressed(MZ.detect.onSource(v, v.videoWidth, v.videoHeight, 0, mode, near));
-      this.boxes = this.tracker.update(dets, t, MZ.S.hold).active;
-      this.lastDetectAt = t;
-      this.lastDetectTime = performance.now();
-    }
+    if (MZ.detect.detector && due) void this._runDetect(v, t);
     MZ.drawFrame(this.ctx, v, v.videoWidth, v.videoHeight, 0, W, H);
     const all = this.boxes.concat(MZ.S.manualBoxes);
     MZ.mosaic.apply(this.ctx, W, H, all, MZ.S);
     this.drawRings(all, W, H);
+  },
+
+  /* 1回ぶんの検出(非同期)。シーン/カメラ切替を見つけたら追跡を捨てて高精度で再検出。
+     停止中=高精度(YuNet全体+タイル) 再生中=BlazeFace軽量+0.4秒ごとにYuNet全体を混ぜる */
+  async _runDetect(v, t) {
+    this.detectBusy = true;
+    try {
+      const A = MZ.detect.analysisOf(v, v.videoWidth, v.videoHeight, 0);
+      const isCut = this.scenecut && this.scenecut.check(A);
+      const paused = v.paused && !MZ.exporter.running;
+      if (isCut) {
+        this.tracker.reset();   // 切替後は古い追跡を信じない
+        MZ.log("scene cut → re-detect");
+      }
+      const near = this.tracker.tracks.map(tr => tr.box);
+      let dets;
+      const now = performance.now();
+      if (isCut || paused) {
+        dets = await MZ.detect.yunetScan(A, "full", near);
+        this.lastYunetTime = now;
+      } else if (now - this.lastYunetTime > 400) {
+        dets = MZ.detect.blazeLight(A, near)
+          .concat(await MZ.detect.yunetScan(A, "l0", near));
+        dets = MZ.detect.nms(dets, 0.4);
+        this.lastYunetTime = now;
+      } else {
+        dets = MZ.detect.blazeLight(A, near);
+      }
+      // 検出中に別の素材へ切り替わっていたら捨てる
+      if (!MZ.S.clip || MZ.S.clip.video !== v) return;
+      this.boxes = this.tracker.update(MZ.dropSuppressed(dets), t, MZ.S.hold).active;
+      this.lastDetectAt = t;
+      this.lastDetectTime = performance.now();
+    } catch (e) {
+      MZ.log("detect error:", e && e.message);
+      this.lastDetectTime = performance.now();   // エラー連打を防ぐ
+    } finally {
+      this.detectBusy = false;
+    }
   },
 
   /* 読み込み直後の1回だけ: 細かいタイルまで時間をかけて検出し、追跡の種にする */
@@ -121,13 +157,17 @@ MZ.preview = {
     ctx.restore();
   },
 
-  /* 写真: 検出は初回とdeep切替時だけ。マスク描画は毎フレーム(濃さ/種類の変更を即反映) */
+  /* 写真: 検出は初回だけ(YuNet高精度・非同期)。マスク描画は毎フレーム */
   drawImageOnce(clip) {
     const W = this.canvas.width, H = this.canvas.height;
-    if (MZ.detect.detector && this.imageDirty) {
-      this.boxes = MZ.dropSuppressed(
-        MZ.detect.onSource(clip.img, clip.width, clip.height, 0, "deep"));
+    if (MZ.detect.detector && this.imageDirty && !this.detectBusy) {
       this.imageDirty = false;
+      this.detectBusy = true;
+      const A = MZ.detect.analysisOf(clip.img, clip.width, clip.height, 0);
+      MZ.detect.yunetScan(A, "full", null).then(dets => {
+        if (MZ.S.clip === clip) this.boxes = MZ.dropSuppressed(dets);
+      }).catch(e => MZ.log("photo detect error:", e && e.message))
+        .finally(() => { this.detectBusy = false; });
     }
     MZ.drawFrame(this.ctx, clip.img, clip.width, clip.height, 0, W, H);
     const all = this.boxes.concat(MZ.S.manualBoxes);
