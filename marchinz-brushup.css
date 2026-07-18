@@ -1352,6 +1352,29 @@ body {
 
 .mz-ctool-card--visual:hover .mz-ctool-cta i { transform: translateX(3px); }
 
+/* 安心バッジ(無料・アップロードなし・ログイン不要): 撮影データを扱う不安を先に消す */
+.mz-ctool-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0.15rem 0 0.1rem;
+}
+
+.mz-ctool-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.16rem 0.5rem;
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: var(--blue);
+  background: #e9f0ff;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.mz-ctool-badge i { font-size: 0.9em; }
+
 /* ---------- TOP: あなたに合わせた3つの入口(v1.36.2) ---------- */
 
 .mz-gate-grid {
@@ -1391,9 +1414,10 @@ body {
   gap: 0.45rem;
 }
 
+/* ブランド3色(ネイビー/ブルー/アンバー)で3カテゴリを色分け */
 .mz-gate-card--fan .mz-gate-title i { color: #d97706; }
 .mz-gate-card--player .mz-gate-title i { color: var(--blue); }
-.mz-gate-card--creator .mz-gate-title i { color: #0f766e; }
+.mz-gate-card--creator .mz-gate-title i { color: var(--navy); }
 
 .mz-gate-links { display: flex; flex-direction: column; }
 
@@ -1408,6 +1432,10 @@ body {
   min-height: 44px;
   transition: background 0.13s ease;
 }
+
+/* display:flex が hidden属性(display:none)を詳細度で上書きしないよう明示。
+   未ログイン/ログインの出し分け(data-mll-top-*)で二重表示を防ぐ */
+.mz-gate-link[hidden] { display: none; }
 
 .mz-gate-link:hover {
   background: #f4f7ff;
@@ -1429,7 +1457,7 @@ body {
 
 .mz-gate-card--fan .mz-gate-link > i:first-child { color: #b45309; background: #fdf3d7; }
 .mz-gate-card--player .mz-gate-link > i:first-child { color: var(--blue); background: #e3edf8; }
-.mz-gate-card--creator .mz-gate-link > i:first-child { color: #0f766e; background: #dcf2ee; }
+.mz-gate-card--creator .mz-gate-link > i:first-child { color: var(--navy); background: rgba(15, 33, 56, 0.08); }
 
 .mz-gate-link-body { min-width: 0; display: flex; flex-direction: column; gap: 0.05rem; }
 

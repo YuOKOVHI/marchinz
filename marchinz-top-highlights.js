@@ -564,6 +564,17 @@
       loadUpcomingEvents();
       // 練習ツール(メトロノーム/チューナー)ブロック。ログイン不要(v1.34)
       window.MarchinZBase?.mountTools?.(document.getElementById("mz-top-tools"));
+
+      // 入口ブロックの「メトロノーム&チューナー」等、同ページ内アンカーへスムーズスクロール
+      // (SPAのハッシュ遷移を止めて、ログイン不要のTOPツールへその場で移動する)
+      document.querySelectorAll("[data-mz-scroll]").forEach(function (a) {
+        a.addEventListener("click", function (e) {
+          var target = document.getElementById(a.getAttribute("data-mz-scroll"));
+          if (!target) return;
+          e.preventDefault();
+          target.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+      });
       // Firebase 初期化が遅れて getDb() が null のときは、認証確定イベントで再試行
       window.addEventListener("mll-auth-changed", loadUpcomingEvents);
       var tries = 0;
