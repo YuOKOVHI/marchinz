@@ -245,7 +245,7 @@ RA.exporter.exportMP4 = async (clip, onProgress) => {
       const f = frames.shift();
       if (ts0 === null) ts0 = f.timestamp;
       renderer.upload(f);
-      renderer.render(M);
+      renderer.render(M, RA.fx());
       const vf = new VideoFrame(glCanvas, {
         timestamp: Math.max(0, f.timestamp - ts0),
         duration: f.duration || Math.round(1e6 / fps),

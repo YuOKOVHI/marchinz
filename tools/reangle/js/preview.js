@@ -47,7 +47,7 @@ RA.preview = {
       dispW: clip.width, dispH: clip.height,
     });
     this.renderer.upload(clip.video);
-    this.renderer.render(M);
+    this.renderer.render(M, off ? null : RA.fx());
     this._lastDraw = performance.now();
   },
 };

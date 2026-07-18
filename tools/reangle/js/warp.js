@@ -31,14 +31,30 @@ RA.WarpRenderer = class {
       varying vec2 vUV;
       uniform mat3 uH;
       uniform sampler2D uTex;
+      uniform vec4 uColor;   // x=明るさ y=コントラスト z=彩度 w=色温度(+暖/-寒)
+      uniform float uSharp;  // 解像感(アンシャープ量 0〜1)
+      uniform vec2 uTexel;   // 1/ソース解像度
       void main() {
         vec3 p = uH * vec3(vUV, 1.0);
         vec2 uv = p.xy / p.z;
         if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
           gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
-        } else {
-          gl_FragColor = texture2D(uTex, uv);
+          return;
         }
+        vec3 c = texture2D(uTex, uv).rgb;
+        if (uSharp > 0.001) {
+          vec3 blur = ( texture2D(uTex, uv + vec2(uTexel.x, 0.0)).rgb
+                      + texture2D(uTex, uv - vec2(uTexel.x, 0.0)).rgb
+                      + texture2D(uTex, uv + vec2(0.0, uTexel.y)).rgb
+                      + texture2D(uTex, uv - vec2(0.0, uTexel.y)).rgb ) * 0.25;
+          c += (c - blur) * uSharp * 1.4;
+        }
+        c *= uColor.x;
+        c = (c - 0.5) * uColor.y + 0.5;
+        float l = dot(c, vec3(0.299, 0.587, 0.114));
+        c = mix(vec3(l), c, uColor.z);
+        c += vec3(uColor.w, 0.0, -uColor.w);
+        gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
       }`;
     const compile = (type, src) => {
       const sh = gl.createShader(type);
@@ -65,7 +81,15 @@ RA.WarpRenderer = class {
     gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
 
     this.uH = gl.getUniformLocation(prog, "uH");
+    this.uColor = gl.getUniformLocation(prog, "uColor");
+    this.uSharp = gl.getUniformLocation(prog, "uSharp");
+    this.uTexel = gl.getUniformLocation(prog, "uTexel");
     gl.uniform1i(gl.getUniformLocation(prog, "uTex"), 0);
+    gl.uniform4f(this.uColor, 1, 1, 1, 0);
+    gl.uniform1f(this.uSharp, 0);
+    gl.uniform2f(this.uTexel, 0, 0);
+    this._srcW = 0;
+    this._srcH = 0;
 
     const tex = this.tex = gl.createTexture();
     gl.activeTexture(gl.TEXTURE0);
@@ -89,6 +113,8 @@ RA.WarpRenderer = class {
      失敗する環境は2D canvas経由へ自動フォールバック */
   upload(source) {
     const gl = this.gl;
+    this._srcW = source.displayWidth || source.videoWidth || source.width || 0;
+    this._srcH = source.displayHeight || source.videoHeight || source.height || 0;
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
     try {
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
@@ -106,8 +132,9 @@ RA.WarpRenderer = class {
     }
   }
 
-  /* M: 行優先mat3(RA.H形式)。列優先に転置して渡す */
-  render(M) {
+  /* M: 行優先mat3(RA.H形式)。列優先に転置して渡す。
+     fx: {bright, contrast, sat, temp, sharp} 省略時は無加工 */
+  render(M, fx) {
     const gl = this.gl;
     gl.useProgram(this.prog);
     gl.uniformMatrix3fv(this.uH, false, new Float32Array([
@@ -115,6 +142,17 @@ RA.WarpRenderer = class {
       M[1], M[4], M[7],
       M[2], M[5], M[8],
     ]));
+    const f = fx || {};
+    gl.uniform4f(this.uColor,
+      f.bright != null ? f.bright : 1,
+      f.contrast != null ? f.contrast : 1,
+      f.sat != null ? f.sat : 1,
+      f.temp || 0);
+    const sharp = f.sharp || 0;
+    gl.uniform1f(this.uSharp, sharp);
+    gl.uniform2f(this.uTexel,
+      sharp && this._srcW ? 1 / this._srcW : 0,
+      sharp && this._srcH ? 1 / this._srcH : 0);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   }
 

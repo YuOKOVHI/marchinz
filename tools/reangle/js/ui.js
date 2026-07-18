@@ -70,7 +70,7 @@ RA.ui.loadFile = file => {
       $("seekBar").max = video.duration;
       $("seekBar").value = 0;
       RA.preview.setClip(RA.S.clip);
-      RA.ui.setTab("corners");
+      RA.ui.setStep(1);
       RA.ui.updateTime();
       // rAFはバックグラウンドタブで発火しないためsetTimeoutで(レイアウト確定後に実行)
       setTimeout(() => {
@@ -86,6 +86,7 @@ RA.ui.loadFile = file => {
 RA.ui.autoDetect = async () => {
   const c = RA.S.clip;
   if (!c) return;
+  RA.ui.setDetectStatus("busy");
   const v = c.video;
   const t = Math.min(1.0, c.duration * 0.1);
   if (Math.abs(v.currentTime - t) > 0.05) {
@@ -100,9 +101,7 @@ RA.ui.autoDetect = async () => {
   try { q = RA.detect.floorQuad(v); } catch (e) { RA.log("detect error:", e.message); }
   RA.S.corners = q || RA.presetCorners();
   RA.corners.draw();
-  RA.ui.toast(q
-    ? "床を検出しました。四隅をドラッグして微調整してください"
-    : "床の四隅にハンドルをドラッグして合わせてください");
+  RA.ui.setDetectStatus(q ? "ok" : "ng");
 };
 
 RA.ui.updateTime = () => {
@@ -115,20 +114,105 @@ RA.ui.updateTime = () => {
     : '<i class="fa-solid fa-pause"></i> 一時停止';
 };
 
-/* ---- タブ(四隅 / 補正) ---- */
-RA.ui.setTab = name => {
-  RA.S.editCorners = name === "corners";
-  document.querySelectorAll("#tabSeg button").forEach(b =>
-    b.classList.toggle("on", b.dataset.tab === name));
-  $("panelCorners").hidden = name !== "corners";
-  $("panelAdjust").hidden = name !== "adjust";
+/* ---- ステップウィザード(1:四角 / 2:調整 / 3:保存) ---- */
+RA.ui.setStep = n => {
+  n = Math.max(1, Math.min(3, n | 0));
+  RA.S.step = n;
+  RA.S.editCorners = n === 1;   // 四角合わせ中だけ無補正ソース+ハンドル表示
+  document.querySelectorAll("#stepper [data-step]").forEach(b => {
+    const bn = parseInt(b.dataset.step, 10);
+    b.classList.toggle("on", bn === n);
+    b.classList.toggle("done", bn < n);
+  });
+  $("panelStep1").hidden = n !== 1;
+  $("panelStep2").hidden = n !== 2;
+  $("panelStep3").hidden = n !== 3;
   RA.corners.draw();
+  if (n === 2) setTimeout(() => RA.ui.buildPresetThumbs(), 60);  // 補正表示に切り替わってから
+};
+
+/* 自動検出の状態表示(①ステップ内) */
+RA.ui.setDetectStatus = state => {
+  const el = $("detectStatus");
+  if (!el) return;
+  el.classList.remove("ok", "ng", "busy");
+  if (state === "busy") {
+    el.classList.add("busy");
+    el.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> 床の四角を自動検出しています…';
+  } else if (state === "ok") {
+    el.classList.add("ok");
+    el.innerHTML = '<i class="fa-solid fa-circle-check"></i> 自動検出しました。ズレていたら青い点をドラッグして直せます。';
+  } else {
+    el.classList.add("ng");
+    el.innerHTML = '<i class="fa-solid fa-hand-pointer"></i> 自動では見つかりませんでした。青い点を床の四隅に合わせてください。';
+  }
+};
+
+/* カラープリセットのサムネイル生成。
+   メインのWebGLレンダラで各プリセットを実描画→小canvasへ縮小コピーするので、
+   サムネ=実際の適用結果と完全一致する。最後に現在の設定へ戻す */
+RA.ui.buildPresetThumbs = () => {
+  const clip = RA.S.clip;
+  const host = $("presetRow");
+  if (!clip || !host || !RA.preview.renderer) return;
+  const glCanvas = $("previewCanvas");
+  if (!glCanvas.width) return;
+  const off = RA.S.compare || RA.S.editCorners;
+  const M = RA.H.buildMatrix({
+    corners: RA.S.corners || RA.presetCorners(),
+    sMain: off ? 0 : (RA.S.viewMode === "top" ? 1 : RA.S.sMain),
+    sPersp: off ? 0 : (RA.S.viewMode === "top" ? RA.S.sTop : 0),
+    tilt: off ? 0 : RA.S.tilt,
+    zoom: off ? 1 : RA.S.zoom,
+    panY: off ? 0 : RA.S.panY,
+    dispW: clip.width, dispH: clip.height,
+  });
+  RA.preview.renderer.upload(clip.video);
+  host.querySelectorAll(".preset-item").forEach(item => {
+    const id = item.dataset.preset;
+    const thumb = item.querySelector("canvas");
+    if (!thumb) return;
+    // preserveDrawingBuffer:false でも「render直後の同期drawImage」なら確実に取れる
+    RA.preview.renderer.render(M, { ...RA.fx(id), sharp: 0 });
+    thumb.getContext("2d").drawImage(glCanvas, 0, 0, thumb.width, thumb.height);
+  });
+  RA.preview.renderer.render(M, RA.fx());  // 現在の設定へ戻す
+};
+
+/* プリセット行のDOM構築(初回のみ) */
+RA.ui.initPresetRow = () => {
+  const host = $("presetRow");
+  if (!host || host.childElementCount) return;
+  RA.PRESETS.forEach(([id, label]) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "preset-item" + (RA.S.preset === id ? " on" : "");
+    item.dataset.preset = id;
+    item.setAttribute("role", "radio");
+    item.setAttribute("aria-checked", RA.S.preset === id ? "true" : "false");
+    const cv = document.createElement("canvas");
+    cv.width = 120;
+    cv.height = 68;
+    item.appendChild(cv);
+    const nm = document.createElement("span");
+    nm.textContent = label;
+    item.appendChild(nm);
+    item.addEventListener("click", () => {
+      RA.S.preset = id;
+      host.querySelectorAll(".preset-item").forEach(b => {
+        const on = b === item;
+        b.classList.toggle("on", on);
+        b.setAttribute("aria-checked", on ? "true" : "false");
+      });
+    });
+    host.appendChild(item);
+  });
 };
 
 /* ---- 書き出し ---- */
 RA.ui.startExport = async () => {
   if (RA.exporter.running) return;
-  if (RA.S.editCorners) RA.ui.setTab("adjust");  // 実時間録画はプレビューを録るため補正表示に
+  if (RA.S.editCorners) RA.ui.setStep(3);  // 実時間録画はプレビューを録るため補正表示に
   RA.S.compare = false;
   const btn = $("exportBtn");
   btn.disabled = true;
@@ -218,13 +302,26 @@ window.addEventListener("DOMContentLoaded", async () => {
     RA.ui._seeking = true;
     if (RA.S.clip) RA.S.clip.video.currentTime = parseFloat(e.target.value);
   });
-  $("seekBar").addEventListener("change", () => { RA.ui._seeking = false; });
+  $("seekBar").addEventListener("change", () => {
+    RA.ui._seeking = false;
+    if (RA.S.step === 2) {
+      clearTimeout(RA.ui._thumbTm);
+      RA.ui._thumbTm = setTimeout(() => RA.ui.buildPresetThumbs(), 350);
+    }
+  });
   setInterval(RA.ui.updateTime, 250);
 
-  // タブ
-  document.querySelectorAll("#tabSeg button").forEach(b => {
-    b.onclick = () => RA.ui.setTab(b.dataset.tab);
+  // ステッパー(タップでも移動可)+ステップ遷移ボタン
+  document.querySelectorAll("#stepper [data-step]").forEach(b => {
+    b.onclick = () => RA.ui.setStep(parseInt(b.dataset.step, 10));
   });
+  $("toStep2Btn").onclick = () => RA.ui.setStep(2);
+  $("toStep3Btn").onclick = () => RA.ui.setStep(3);
+  $("backTo1Btn").onclick = () => RA.ui.setStep(1);
+  $("backTo2Btn").onclick = () => RA.ui.setStep(2);
+
+  // カラープリセット行
+  RA.ui.initPresetRow();
 
   // 四隅パネル
   $("redetectBtn").onclick = () => RA.ui.autoDetect();
@@ -269,6 +366,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   bindRange("tiltRange", "tilt", "tiltVal", v => v, v => `${v > 0 ? "+" : ""}${v.toFixed(1)}°`);
   bindRange("zoomRange", "zoom", "zoomVal", v => v / 100, v => `×${v.toFixed(2)}`);
   bindRange("panRange", "panY", "panVal", v => v / 100, v => `${v > 0 ? "+" : ""}${Math.round(v * 100)}%`);
+  bindRange("sharpRange", "sharp", "sharpVal", v => v / 100, v => `${Math.round(v * 100)}%`);
   $("resSel").onchange = e => { RA.S.res = e.target.value; };
 
   // 元を見る(長押し比較)
@@ -326,6 +424,12 @@ RA.ui.runTest = async () => {
     }
     if (params.get("t") != null) {
       RA.S.tilt = parseFloat(params.get("t"));
+    }
+    if (params.get("c") != null && RA.PRESETS.some(pr => pr[0] === params.get("c"))) {
+      RA.S.preset = params.get("c");
+    }
+    if (params.get("sh") != null) {
+      RA.S.sharp = parseFloat(params.get("sh")) / 100;
     }
     await new Promise(r2 => setTimeout(r2, 400));
     await RA.ui.startExport();
