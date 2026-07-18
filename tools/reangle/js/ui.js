@@ -55,7 +55,7 @@ RA.ui.loadFile = file => {
     document.body.appendChild(video);
     video.onerror = () => reject(new Error("この動画を再生できません"));
     video.onloadedmetadata = () => {
-      if (video.duration > 600.5) {
+      if (video.duration > MZ_LIMITS.maxVideoSec) {
         URL.revokeObjectURL(url);
         video.remove();
         reject(new Error(`動画は10分までです(この動画は約${Math.round(video.duration / 60)}分)。短く切り出してからお試しください`));

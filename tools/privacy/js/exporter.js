@@ -175,8 +175,8 @@ MZ.exporter.exportMP4 = async (clip, onProgress) => {
     const fps = Math.min(60, Math.max(10, nb / Math.max(0.5, clip.duration)));
     const keyInt = Math.max(1, Math.round(fps * 2));
     // 作業範囲(長い動画は選んだ最大60秒だけを書き出す)
-    const rs = clip.duration > 60 ? MZ.S.rangeStart : 0;
-    const re = clip.duration > 60 ? MZ.rangeEnd() : clip.duration;
+    const rs = clip.duration > MZ_LIMITS.maxRangeSec ? MZ.S.rangeStart : 0;
+    const re = clip.duration > MZ_LIMITS.maxRangeSec ? MZ.rangeEnd() : clip.duration;
     const nbRange = Math.max(1, Math.round(nb * (re - rs) / Math.max(0.5, clip.duration)));
 
     const audioPlan = await MZ.exporter.planAudio(src);
@@ -379,8 +379,8 @@ MZ.exporter.exportRealtime = async (clip, onProgress) => {
   MZ.exporter.running = true;
   try {
     const video = clip.video;
-    const rs = clip.duration > 60 ? MZ.S.rangeStart : 0;
-    const re = clip.duration > 60 ? MZ.rangeEnd() : clip.duration;
+    const rs = clip.duration > MZ_LIMITS.maxRangeSec ? MZ.S.rangeStart : 0;
+    const re = clip.duration > MZ_LIMITS.maxRangeSec ? MZ.rangeEnd() : clip.duration;
     video.pause();
     video.currentTime = rs;
     await new Promise(r => { video.onseeked = r; });

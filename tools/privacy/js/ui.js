@@ -164,7 +164,7 @@ MZ.ui._buildStrip = async () => {
 /* 選択窓のドラッグ(インスタ同様: 左右の取っ手で伸縮・枠の中で移動・外側タップでジャンプ) */
 MZ.ui._wireTrim = () => {
   const host = $("trimStrip");
-  const MIN = 10, MAX = 60;
+  const MIN = MZ_LIMITS.minRangeSec, MAX = MZ_LIMITS.maxRangeSec;
   let mode = null, x0 = 0, s0 = 0, d0 = 0;
   host.addEventListener("pointerdown", e => {
     const clip = MZ.S.clip;
@@ -234,7 +234,7 @@ MZ.ui.enterEditorWithRange = () => {
   $("seekBar").max = String(end);
   $("seekBar").value = String(MZ.S.rangeStart);
   clip.video.currentTime = MZ.S.rangeStart;
-  $("reRangeBtn").hidden = clip.duration <= 60;
+  $("reRangeBtn").hidden = clip.duration <= MZ_LIMITS.maxRangeSec;
   MZ.preview.setClip(clip);
   MZ.ui.updateTime();
 };
@@ -362,8 +362,8 @@ MZ.ui.loadFiles = async fileList => {
   const vid = files.find(MZ.ui.isVideoFile);
   MZ.ui.disposeClip();
   if (imgs.length) {
-    if (imgs.length > 4) MZ.ui.toast("写真は4枚までです。先頭の4枚を使います");
-    return MZ.ui._loadImages(imgs.slice(0, 4));
+    if (imgs.length > MZ_LIMITS.maxPhotos) MZ.ui.toast("写真は4枚までです。先頭の4枚を使います");
+    return MZ.ui._loadImages(imgs.slice(0, MZ_LIMITS.maxPhotos));
   }
   if (vid) return MZ.ui._loadVideo(vid);
   throw new Error("動画または写真を入れてください");
@@ -475,7 +475,7 @@ MZ.ui._loadVideo = file => new Promise((resolve, reject) => {
   document.body.appendChild(video);
   video.onerror = () => reject(new Error("この動画を再生できません"));
   video.onloadedmetadata = () => {
-    if (video.duration > 600.5) {
+    if (video.duration > MZ_LIMITS.maxVideoSec) {
       URL.revokeObjectURL(url);
       video.remove();
       reject(new Error(`動画は10分までです(この動画は${Math.round(video.duration / 60)}分)。短く切り出してからお試しください`));
@@ -489,7 +489,7 @@ MZ.ui._loadVideo = file => new Promise((resolve, reject) => {
       height: video.videoHeight,
     };
     MZ.log(`loaded video: ${file.name} ${video.videoWidth}x${video.videoHeight} ${video.duration.toFixed(1)}s`);
-    if (video.duration > 60) {
+    if (video.duration > MZ_LIMITS.maxRangeSec) {
       MZ.ui.enterRangePhase();
     } else {
       MZ.S.rangeStart = 0;
@@ -504,8 +504,8 @@ MZ.ui._loadVideo = file => new Promise((resolve, reject) => {
 MZ.ui.updateTime = () => {
   const c = MZ.S.clip;
   if (!c || c.kind !== "video") return;
-  const rs = c.duration > 60 ? MZ.S.rangeStart : 0;
-  const re = c.duration > 60 ? MZ.rangeEnd() : c.duration;
+  const rs = c.duration > MZ_LIMITS.maxRangeSec ? MZ.S.rangeStart : 0;
+  const re = c.duration > MZ_LIMITS.maxRangeSec ? MZ.rangeEnd() : c.duration;
   $("timeLabel").textContent =
     `${MZ.ui.fmtTime(Math.max(0, c.video.currentTime - rs))} / ${MZ.ui.fmtTime(re - rs)}`;
   if (!MZ.ui._seeking) $("seekBar").value = c.video.currentTime;

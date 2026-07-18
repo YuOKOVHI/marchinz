@@ -336,3 +336,10 @@ body:not([data-kind="image"]) .image-only { display: none !important; }
   background: rgba(15, 23, 42, 0.7); border-radius: 4px; padding: 0 4px;
   line-height: 1.4;
 }
+
+/* 管理者ログイン中の上限なし表示 */
+.admin-limit-badge {
+  margin: 0 0 12px; padding: 10px 14px; border-radius: 10px;
+  background: rgba(37, 99, 235, 0.08); border: 1px solid rgba(37, 99, 235, 0.25);
+  color: #1d4ed8; font-size: 12px; line-height: 1.6; font-weight: 700;
+}

@@ -1258,7 +1258,20 @@
     window.dispatchEvent(new HashChangeEvent("hashchange"));
   }
 
+  // クリエイターツール(/tools/*)は同一オリジンのlocalStorageからこの印を読み、
+  // 管理者ログイン中だけ取り込み上限(動画の長さ・写真の枚数)を外す。
+  function syncAdminToolUnlimited(isAdmin) {
+    try {
+      if (isAdmin) {
+        localStorage.setItem("mz_admin_unlimited_v1", JSON.stringify({ admin: true, ts: Date.now() }));
+      } else {
+        localStorage.removeItem("mz_admin_unlimited_v1");
+      }
+    } catch (e) { /* プライベートモード等でlocalStorage不可: 通常の上限で動く */ }
+  }
+
   function applyAdminOnlyVisibility(isAdmin) {
+    syncAdminToolUnlimited(isAdmin);
     document.querySelectorAll("[data-admin-only]").forEach((el) => {
       el.hidden = !isAdmin;
       el.style.display = isAdmin ? "" : "none";

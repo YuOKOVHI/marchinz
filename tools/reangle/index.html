@@ -33,7 +33,7 @@
     <p class="hint">キレイに補正できるのは軽〜中度の歪みまでです。元動画が大きく歪んでいる場合、補正が上手くいきません。ご了承ください。</p>
     <button id="pickBtn" class="big-btn">動画を選ぶ</button>
     <input id="fileInput" type="file" accept="video/*" hidden>
-    <p class="note">すべてスマホ/PCの中だけで処理します。動画はどこにも送信されません。無料です。動画は<strong>10分まで</strong>です。</p>
+    <p class="note">すべてスマホ/PCの中だけで処理します。動画はどこにも送信されません。無料です。<span data-limit-note>動画は<strong>10分まで</strong>です。</span></p>
   </section>
 
   <!-- ② プレビュー+調整+書き出し -->
@@ -178,6 +178,7 @@
 <div id="toast"></div>
 <div id="loupe" hidden><canvas width="240" height="240"></canvas></div>
 
+<script src="/tools/shared/limits.js"></script>
 <script src="vendor/mp4box.all.min.js"></script>
 <script src="vendor/mp4-muxer.min.js"></script>
 <script src="js/app.js"></script>

@@ -41,7 +41,7 @@ MZ.preview = {
     if (!clip.video || clip.video.readyState < 2) return;
     const v = clip.video, W = this.canvas.width, H = this.canvas.height;
     // 作業範囲の終わりで止める(実時間書き出し中はexporterが制御)
-    if (!MZ.exporter.running && clip.duration > 60) {
+    if (!MZ.exporter.running && clip.duration > MZ_LIMITS.maxRangeSec) {
       const end = MZ.rangeEnd();
       if (v.currentTime > end + 0.05) { v.pause(); v.currentTime = end; }
     }
