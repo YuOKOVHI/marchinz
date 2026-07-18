@@ -41,11 +41,13 @@ MZ.waitDequeue = (codec, ms = 100) => new Promise(r => {
   const tm = setTimeout(() => { codec.removeEventListener("dequeue", h); r(); }, ms);
 });
 
-/* tasks-vision(ESMバンドル)の読み込み完了待ち */
+/* tasks-vision(ESMバンドル)の遅延読み込み。呼ばれて初めてダウンロードする。
+   wasm(約3MB)とモデル本体はさらに MZ.detect.init() 内で取得されるため、
+   ページを開いただけの人は重いファイルを一切ダウンロードしない */
 MZ.visionReady = () =>
-  window.MZVision
-    ? Promise.resolve(window.MZVision)
-    : new Promise(r => window.addEventListener("mz-vision-ready", () => r(window.MZVision), { once: true }));
+  MZ._visionP || (MZ._visionP = import(new URL("vendor/tasks-vision.mjs", location.href).href)
+    .then(m => ({ FilesetResolver: m.FilesetResolver, FaceDetector: m.FaceDetector }))
+    .catch(e => { MZ._visionP = null; throw e; }));   // 失敗キャッシュを残さない(再挑戦可能に)
 
 /* 作業範囲の終了秒(動画の実尺でクランプ) */
 MZ.rangeEnd = () => {
