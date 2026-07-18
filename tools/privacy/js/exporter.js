@@ -157,6 +157,7 @@ MZ.exporter.exportMP4 = async (clip, onProgress) => {
   MZ.exporter.running = true;
   let venc = null, decoder = null;
   const buffer = [];  // {frame, ts, dur, boxes} — 新しい顔の「さかのぼりマスク」用の遅延バッファ
+  const frames = [];  // デコーダ出力の未処理フレーム(finallyで確実にcloseするためtryの外で宣言)
   try {
     const src = new MZ.MP4Source(clip.file);
     await src.init();
@@ -207,10 +208,13 @@ MZ.exporter.exportMP4 = async (clip, onProgress) => {
     const ctx = canvas.getContext("2d");
     const tracker = new MZ.Tracker();
     const scenecut = new MZ.SceneCut();
-    let lastKeySec = -9;   // 前回の高精度(YuNet)検出時刻
+    const cutTimes = [];   // シーン切替時刻(タップ抑制のシーン限定用)
+    let lastKeySec = -9;   // 前回のYuNet検出時刻
     const BUF = Math.max(2, Math.min(10, Math.round(0.3 * fps)));
+    // YuNet定期検出の間隔: さかのぼりバッファで必ず遡れる長さに連動させる
+    // (間隔>バッファだと、間に現れた小さい顔が数フレーム未マスクで確定してしまう)
+    const KEY_SEC = Math.max(0.2, (BUF - 1) / fps);
 
-    const frames = [];
     let decErr = null, eof = false, flushed = false;
     decoder = new VideoDecoder({ output: f => frames.push(f), error: e => { decErr = e; } });
     decoder.configure(cfg);
@@ -247,9 +251,10 @@ MZ.exporter.exportMP4 = async (clip, onProgress) => {
       while (venc.encodeQueueSize > 6) await MZ.waitDequeue(venc);
       if (k % 5 === 0) {
         const el = (performance.now() - t0) / 1000;
-        const eta = el / k * Math.max(0, nbRange - k);
+        const eta = k < 15 ? null : el / k * Math.max(0, nbRange - k);
         onProgress(0.92 * Math.min(0.99, k / nbRange),
-          `顔を隠しながら書き出し中… ${k}/${nbRange}フレーム(残り約${Math.ceil(eta)}秒)`);
+          `顔を隠しながら書き出し中… ${k}/${nbRange}フレーム`
+          + (eta == null ? "(残り時間を計測中…)" : `(残り約${Math.ceil(eta)}秒)`));
         await MZ.yield();
       }
     };
@@ -269,26 +274,30 @@ MZ.exporter.exportMP4 = async (clip, onProgress) => {
       if (absSec < rs - 1e-3) { f.close(); continue; }   // シークRAPから範囲までの先行分
       if (absSec > re + 1e-3) { f.close(); eof = true; flushed = true; frames.forEach(x => x.close()); frames.length = 0; break; }
       if (ts0 === null) ts0 = f.timestamp;
-      const near = tracker.tracks.map(tr => tr.box);
       const tSec = (f.timestamp - ts0) / 1e6;
-      // シーン切替 or 0.4秒ごと: YuNet高精度(全体+タイル)。間はBlazeFace軽量+速度予測
-      const A = MZ.detect.analysisOf(f, rawW, rawH, rotation);
+      // 専用の解析キャンバス(プレビュー側の検出と共有しない)
+      const A = MZ.detect.analysisOf(f, rawW, rawH, rotation, "_exportA");
       const isCut = scenecut.check(A);
       if (isCut) {
         // カット前のフレームを書き出し切ってから追跡を捨てる
         // (切替後の顔が「さかのぼりマスク」で切替前のフレームに付かないように)
         while (buffer.length) await renderOne(buffer.shift());
         tracker.reset();
+        cutTimes.push(tSec);
         MZ.log(`export scene cut at ${tSec.toFixed(2)}s → re-detect`);
       }
+      const near = tracker.tracks.map(tr => tr.box);   // リセット後に取る(切替前の位置を引きずらない)
       let dets;
-      if (isCut || tSec - lastKeySec >= 0.4) {
-        dets = await MZ.detect.yunetScan(A, "full", near);
+      if (isCut) {
+        dets = await MZ.detect.yunetScan(A, "full", near);   // 切替直後は全体+タイルで種を撒く
+        lastKeySec = tSec;
+      } else if (tSec - lastKeySec >= KEY_SEC) {
+        dets = await MZ.detect.yunetScan(A, "l0", near);     // 定期は全体1発(速度と精度の均衡)
         lastKeySec = tSec;
       } else {
         dets = MZ.detect.blazeLight(A, near);
       }
-      dets = MZ.dropSuppressed(dets);
+      dets = MZ.dropSuppressed(dets, null, tSec, cutTimes);
       const { active, born } = tracker.update(dets, tSec, MZ.S.hold);
       active.push(...MZ.S.manualBoxes);
       // 新しく現れた顔は、まだ書き出していない直前フレームにもさかのぼってマスク
@@ -326,6 +335,7 @@ MZ.exporter.exportMP4 = async (clip, onProgress) => {
     MZ.log(`export done: ${name} bytes=${blob.size} masked=${faceFrames}/${k}`);
     return { blob, name, frames: k, faceFrames };
   } finally {
+    frames.forEach(x => { try { x.close(); } catch (err) {} });   // 未処理のデコード済みフレームも解放
     buffer.forEach(e => { try { e.frame.close(); } catch (err) {} });
     if (decoder) { try { decoder.close(); } catch (e) {} }
     if (venc) { try { venc.close(); } catch (e) {} }
@@ -397,13 +407,19 @@ MZ.exporter.exportImage = async (clip, onProgress) => {
 MZ.exporter.exportRealtime = async (clip, onProgress) => {
   MZ.exporter.cancelFlag = false;
   MZ.exporter.running = true;
+  MZ.exporter.realtimeMode = true;   // プレビュー検出は続行(このcanvasが録画源のため)
   try {
     const video = clip.video;
     const rs = clip.duration > MZ_LIMITS.maxRangeSec ? MZ.S.rangeStart : 0;
     const re = clip.duration > MZ_LIMITS.maxRangeSec ? MZ.rangeEnd() : clip.duration;
     video.pause();
-    video.currentTime = rs;
-    await new Promise(r => { video.onseeked = r; });
+    if (Math.abs(video.currentTime - rs) > 0.05) {
+      video.currentTime = rs;
+      await new Promise(r => {
+        video.onseeked = () => { video.onseeked = null; r(); };
+        setTimeout(r, 2000);   // 既に位置が合っている等でseekedが来ない環境への保険
+      });
+    }
     MZ.preview.tracker.reset();
 
     const canvas = MZ.preview.canvas;
@@ -449,6 +465,7 @@ MZ.exporter.exportRealtime = async (clip, onProgress) => {
     return { blob, name };
   } finally {
     MZ.exporter.running = false;
+    MZ.exporter.realtimeMode = false;
   }
 };
 

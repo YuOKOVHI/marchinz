@@ -37,7 +37,10 @@ MZ.yunet = {
     ort.env.wasm.numThreads = 1;   // COOP/COEP不要のシングルスレッド
     // iOS/Safari 16.4: SIMDが結果を黙って壊すWebKitバグ → SIMDを無効化
     const m = navigator.userAgent.match(/(?:iPhone|iPad).*OS (\d+)_(\d+)/);
-    if (m && +m[1] === 16 && +m[2] === 4) ort.env.wasm.simd = false;
+    // iPadは既定でMac用UAを名乗りOSバージョンが取れないため、安全側でSIMDを切る
+    // (非SIMDでも結果は同じで速度が落ちるだけ。誤答バグを踏むよりよい)
+    const iPadDesktopUA = navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+    if ((m && +m[1] === 16 && +m[2] === 4) || iPadDesktopUA) ort.env.wasm.simd = false;
     this.session = await ort.InferenceSession.create(
       new URL("vendor/face_detection_yunet_2023mar.onnx", location.href).href,
       { executionProviders: ["wasm"], graphOptimizationLevel: "all" });
@@ -87,9 +90,16 @@ MZ.yunet = {
     return dets;
   },
 
+  /* 走査の直列化: 素材切替・書き出し・タップ検出が重なっても
+     同時に2つの走査が走らない(共有バッファ・キャンバスを取り合わない) */
+  scan(A, regions, nearBoxes) {
+    const job = () => this._scan(A, regions, nearBoxes);
+    return (this._q = (this._q || Promise.resolve()).then(job, job));
+  },
+
   /* 解析キャンバスAをリージョン群で走査して正規化ボックスを返す。
-     regions: [{sx,sy,s}](A座標系, 正方形)。thrLow>0なら2段階閾値(近傍は低め) */
-  async scan(A, regions, nearBoxes) {
+     regions: [{sx,sy,s}](A座標系, 正方形) */
+  async _scan(A, regions, nearBoxes) {
     if (!this.session) return [];
     let all = [];
     for (const r of regions) {

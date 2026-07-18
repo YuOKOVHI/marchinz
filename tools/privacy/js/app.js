@@ -105,10 +105,20 @@ MZ.SceneCut = class {
   }
 };
 
-/* タップで外した場所と重なる検出を捨てる。supを省略すると現在のMZ.S.suppressedBoxes */
-MZ.dropSuppressed = (dets, sup) => {
+/* タップで外した場所と重なる検出を捨てる。supを省略すると現在のMZ.S.suppressedBoxes。
+   tSec/cutTimes を渡すと「タップした時刻と同じシーンの間だけ」抑制する
+   (シーン/カメラが切り替わったあと、同じ場所に来た本物の顔を巻き込んでしまわないように) */
+MZ.dropSuppressed = (dets, sup, tSec, cutTimes) => {
   if (sup == null) sup = MZ.S.suppressedBoxes || [];
   if (!sup.length) return dets;
+  if (tSec != null && cutTimes && cutTimes.length) {
+    sup = sup.filter(s => {
+      if (s.t == null) return true;
+      const lo = Math.min(s.t, tSec), hi = Math.max(s.t, tSec);
+      return !cutTimes.some(c => c > lo && c <= hi);
+    });
+    if (!sup.length) return dets;
+  }
   return dets.filter(d => !sup.some(s => {
     const cx = d.x + d.w / 2, cy = d.y + d.h / 2;
     const mx = s.w * 0.3, my = s.h * 0.3;

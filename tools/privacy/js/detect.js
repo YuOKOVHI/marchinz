@@ -14,33 +14,55 @@ MZ.detect = {
     return this.initPromise;
   },
 
+  /* どちらかのエンジンが使えれば検出は動く */
+  ready() { return !!(this.detector || MZ.yunet.session); },
+
   async _init() {
-    // YuNet(精度エンジン)は並行して読み込む。失敗してもBlazeFaceだけで動く(縮退)
-    const yunetP = MZ.yunet.init().catch(e => MZ.log("YuNet読み込み失敗(BlazeFaceのみで動作):", e.message));
-    const { FilesetResolver, FaceDetector } = await MZ.visionReady();
-    const fileset = await FilesetResolver.forVisionTasks("vendor/wasm");
-    const make = delegate => FaceDetector.createFromOptions(fileset, {
-      baseOptions: { modelAssetPath: "vendor/blaze_face_short_range.tflite", delegate },
-      runningMode: "IMAGE",
-      minDetectionConfidence: 0.2,
-    });
+    // YuNet(精度)とBlazeFace(速度)を並行して読み込む。片方が失敗しても動く(両方失敗のみエラー)
+    const yunetP = MZ.yunet.init().then(() => true)
+      .catch(e => { MZ.log("YuNet読み込み失敗:", e.message); return false; });
+    let blazeOk = true;
     try {
-      this.detector = await make("GPU");
+      const { FilesetResolver, FaceDetector } = await MZ.visionReady();
+      const fileset = await FilesetResolver.forVisionTasks("vendor/wasm");
+      const make = delegate => FaceDetector.createFromOptions(fileset, {
+        baseOptions: { modelAssetPath: "vendor/blaze_face_short_range.tflite", delegate },
+        runningMode: "IMAGE",
+        minDetectionConfidence: 0.2,
+      });
+      try {
+        this.detector = await make("GPU");
+      } catch (e) {
+        MZ.log("GPUデリゲート失敗→CPUで再試行:", e.message);
+        this.detector = await make("CPU");
+      }
     } catch (e) {
-      MZ.log("GPUデリゲート失敗→CPUで再試行:", e.message);
-      this.detector = await make("CPU");
+      blazeOk = false;
+      MZ.log("BlazeFace読み込み失敗:", e.message);
     }
-    await yunetP;
+    const yunetOk = await yunetP;
+    if (!blazeOk && !yunetOk) throw new Error("顔検出エンジンを読み込めませんでした");
+    // 回線が遅くYuNetが後から届いた場合: YuNet無しで済ませた初期検出をやり直す
+    if (yunetOk) {
+      const c = MZ.S.clip;
+      if (c && c.kind === "video" && c.video && !MZ.exporter.running
+          && MZ.preview._initialScanHadYunet === false) {
+        MZ.preview.startInitialScan();
+      } else if (c && c.kind === "image" && MZ.preview._photoScanHadYunet === false) {
+        MZ.preview.imageDirty = true;
+      }
+    }
     MZ.log("face detector ready");
   },
 
-  /* 表示向きの解析キャンバス(長辺≤1920)を作る。YuNet/BlazeFace/シーンカット共用 */
-  analysisOf(source, rawW, rawH, rot) {
+  /* 表示向きの解析キャンバス(長辺≤1920)を作る。YuNet/BlazeFace/シーンカット共用。
+     key指定で専用キャンバスにできる(書き出しはプレビューの検出と取り合わないよう別を使う) */
+  analysisOf(source, rawW, rawH, rot, key) {
     const swapped = rot === 90 || rot === 270;
     const dispW = swapped ? rawH : rawW, dispH = swapped ? rawW : rawH;
     const s = Math.min(1, 1920 / Math.max(dispW, dispH));
     const aw = Math.max(2, Math.round(dispW * s)), ah = Math.max(2, Math.round(dispH * s));
-    const A = this._canvas("_analysis", aw, ah);
+    const A = this._canvas(key || "_analysis", aw, ah);
     MZ.drawFrame(A.getContext("2d"), source, rawW, rawH, rot, aw, ah);
     return A;
   },

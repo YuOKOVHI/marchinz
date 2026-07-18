@@ -275,17 +275,23 @@ MZ.ui.setStep = n => {
 /* ①ステップの検出状態カード(モデル準備 → 現在の検出人数をライブ表示) */
 MZ.ui.updateDetectStatus = () => {
   const el = $("detectStatus");
-  if (!el || !MZ.S.clip) return;
+  const clip = MZ.S.clip;
+  if (!el || !clip) return;
   el.classList.remove("ok", "ng", "busy");
-  if (!MZ.detect.detector) {
-    el.classList.add("busy");
-    el.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> 顔検出AIを準備しています…';
-    return;
+  const busy = html => { el.classList.add("busy"); el.innerHTML = html; };
+  if (!MZ.detect.ready()) {
+    return busy('<i class="fa-solid fa-circle-notch fa-spin"></i> 顔を見つけるAIを準備しています…(初回だけ・数秒〜十数秒)');
   }
   if (MZ.preview.initRunning) {
-    el.classList.add("busy");
-    el.innerHTML = `<i class="fa-solid fa-magnifying-glass"></i> 小さな顔までていねいに探しています… ${Math.round((MZ.preview.initProgress || 0) * 100)}%`;
-    return;
+    return busy(`<i class="fa-solid fa-magnifying-glass"></i> 小さな顔までていねいに探しています… ${Math.round((MZ.preview.initProgress || 0) * 100)}%`);
+  }
+  // スキャン開始前(シーク整定待ち等)に「見つかりません」を出して不安にさせない
+  if (clip.kind === "image") {
+    if (MZ.preview.imageDirty || MZ.preview.detectBusy) {
+      return busy('<i class="fa-solid fa-circle-notch fa-spin"></i> 顔を探しています…');
+    }
+  } else if (MZ.preview.pendingInit || MZ.preview.lastDetectAt < 0) {
+    return busy('<i class="fa-solid fa-circle-notch fa-spin"></i> 顔を探す準備をしています…');
   }
   const n = (MZ.preview.boxes || []).length;
   if (n > 0) {
@@ -293,7 +299,7 @@ MZ.ui.updateDetectStatus = () => {
     el.innerHTML = `<i class="fa-solid fa-circle-check"></i> いまの画面で ${n} 人の顔にモザイクをかけています。`;
   } else {
     el.classList.add("ng");
-    el.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i> いまの画面では顔が見つかっていません。顔が映る位置に再生・シークして確認してください。';
+    el.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i> いまの画面では顔が見つかっていません。顔が映る場面まで、下のバーを動かして確認してください。';
   }
 };
 
@@ -326,7 +332,8 @@ MZ.ui.onCanvasTap = async e => {
     const hitA = cands.sort((a, b) =>
       Math.hypot(a.x + a.w / 2 - nx, a.y + a.h / 2 - ny)
       - Math.hypot(b.x + b.w / 2 - nx, b.y + b.h / 2 - ny))[0];
-    MZ.S.suppressedBoxes.push({ x: hitA.x, y: hitA.y, w: hitA.w, h: hitA.h });
+    MZ.S.suppressedBoxes.push({ x: hitA.x, y: hitA.y, w: hitA.w, h: hitA.h,
+      t: clip.kind === "video" ? clip.video.currentTime : null });
     if (hitA.id != null) MZ.preview.tracker.tracks =
       MZ.preview.tracker.tracks.filter(tr => tr.id !== hitA.id);
     MZ.preview.boxes = MZ.preview.boxes.filter(b => b !== hitA);
