@@ -405,11 +405,14 @@
     },
   };
 
-  // Privacy/Switcher: TOP・クリエイターページのカード(a.mz-ctool-card)から開いた時に記録。
+  // Privacy/Switcher: TOP・クリエイターページのカード(a.mz-ctool-card)と
+  // TOPの3入口ブロックのツールリンク(a[data-mz-tool-link])から開いた時に記録。
   // ツールページは別ページ(SPA外)のため、通常クリックは書き込み完了(最大500ms)を待ってから遷移する。
   // cmd/ctrl+クリック等の新規タブ系は元ページが残る=書き込みが完走するので素通し。
   document.addEventListener("click", (ev) => {
-    const a = ev.target instanceof Element ? ev.target.closest("a.mz-ctool-card") : null;
+    const a = ev.target instanceof Element
+      ? ev.target.closest("a.mz-ctool-card, a[data-mz-tool-link]")
+      : null;
     if (!(a instanceof HTMLAnchorElement)) return;
     const href = a.getAttribute("href") || "";
     const toolId = href.includes("/tools/privacy/")
