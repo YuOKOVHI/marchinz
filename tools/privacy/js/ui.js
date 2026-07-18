@@ -220,6 +220,12 @@ MZ.ui._wireTrim = () => {
 /* 範囲確定→エディタへ(シークバーを範囲にマッピング) */
 MZ.ui.enterEditorWithRange = () => {
   const clip = MZ.S.clip;
+  // サムネ生成が走っていたら中断(プレビューとシーク位置を取り合わないように)
+  MZ.ui._stripGen = (MZ.ui._stripGen || 0) + 1;
+  MZ.ui._stripBusy = false;
+  MZ.ui._frameBusy = false;
+  MZ.ui._framePending = null;
+  clip.video.onseeked = null;
   $("rangeSection").hidden = true;
   MZ.ui._enterEditor(clip.name, "video");
   const end = MZ.rangeEnd();
