@@ -2184,6 +2184,46 @@ body {
 
 .mz-base-maint-quick:disabled { opacity: 0.55; cursor: default; }
 
+/* お手入れ時期の消耗品リンク(Amazonアフィリ・収益化Tier1)。PR表記を明示 */
+.mz-base-maint-shop-row { display: flex; }
+
+.mz-base-maint-shop {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  margin-top: 0.55rem;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--navy);
+  background: #fff8ec;
+  border: 1px solid #f0d9a8;
+  border-radius: 10px;
+  text-decoration: none;
+}
+
+.mz-base-maint-shop:hover { background: #fdf3d7; }
+
+.mz-base-maint-shop > i { color: #d97706; flex: none; }
+
+.mz-base-maint-shop > span:first-of-type {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mz-base-maint-shop-pr {
+  margin-left: auto;
+  flex: none;
+  padding: 0.05rem 0.35rem;
+  font-size: 0.58rem;
+  font-weight: 700;
+  color: var(--muted);
+  background: rgba(15, 33, 56, 0.06);
+  border-radius: 5px;
+}
+
 .mz-base-form {
   display: flex;
   flex-direction: column;

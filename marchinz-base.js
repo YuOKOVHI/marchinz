@@ -1158,7 +1158,7 @@
     panel.appendChild(form);
 
     if (!instruments.length) {
-      panel.appendChild(el("p", "mz-base-empty", "楽器を登録すると、メンテ記録と次回目安をここで管理できます。"));
+      panel.appendChild(el("p", "mz-base-empty", "楽器を登録すると、お手入れ時期を自動でお知らせし、必要な消耗品もすぐ探せます。メンテ履歴も楽器ごとに残せます。"));
       return;
     }
     const grid = el("div", "mz-base-instrument-grid");
@@ -1360,6 +1360,12 @@
     btnRow.appendChild(addMaintBtn);
     body.appendChild(btnRow);
 
+    // 期限が近い/過ぎた楽器には、前回メンテ種類の消耗品(Amazon)への導線を添える(収益化Tier1)
+    if (lastMaint && lastMaint.kind && due != null && due <= 7) {
+      const shopLink = buildMaintShopLink(lastMaint.kind);
+      if (shopLink) body.appendChild(shopLink);
+    }
+
     const del = el("button", "mz-base-del-btn mz-base-del-btn--card", "この楽器を削除");
     del.type = "button";
     del.addEventListener("click", () => removeDoc("base_instruments", inst.id, () => loadAll(mountedUid)));
@@ -1379,6 +1385,37 @@
     ["リペア・調整", 180],
     ["その他", 0],
   ];
+
+  // メンテ種類 → 消耗品のAmazon検索語。お手入れ時期に必要なものへ導線(収益化Tier1)
+  const MAINT_SHOP = /** @type {Record<string, string>} */ ({
+    "オイル差し": "管楽器 バルブオイル",
+    "グリス塗り": "管楽器 スライドグリス",
+    "スワブ・清掃": "管楽器 クリーニングスワブ",
+    "リード交換": "サックス クラリネット リード",
+    "弦・ヘッド交換": "ドラム ヘッド",
+    "リペア・調整": "管楽器 お手入れセット",
+  });
+
+  const AMAZON_AFFILIATE_TAG = "hamamasu-22";
+
+  function amazonSearchUrl(query) {
+    return `https://www.amazon.co.jp/s?k=${encodeURIComponent(query)}&tag=${AMAZON_AFFILIATE_TAG}`;
+  }
+
+  /** メンテ種類に対応する消耗品Amazonリンク(PR表記・rel=sponsored)。該当なしなら null */
+  function buildMaintShopLink(kind) {
+    const query = MAINT_SHOP[String(kind || "").trim()];
+    if (!query) return null;
+    const a = el("a", "mz-base-maint-shop");
+    a.href = amazonSearchUrl(query);
+    a.target = "_blank";
+    a.rel = "noopener noreferrer sponsored";
+    a.innerHTML =
+      '<i class="fa-solid fa-cart-shopping" aria-hidden="true"></i> ' +
+      `<span>「${kind}」に使うものを探す</span>` +
+      '<span class="mz-base-maint-shop-pr">Amazon PR</span>';
+    return a;
+  }
 
   function addDaysStr(baseDateStr, days) {
     const d = new Date(String(baseDateStr) + "T00:00:00");
@@ -1417,6 +1454,14 @@
     nextInput.type = "date";
     nextRow.appendChild(nextInput);
 
+    // 選んだ内容に必要な消耗品(Amazon)への導線。種類切替に追従する
+    const shopRow = el("div", "mz-base-maint-shop-row");
+    const updateShop = () => {
+      shopRow.replaceChildren();
+      const link = buildMaintShopLink(kindValue);
+      if (link) shopRow.appendChild(link);
+    };
+
     const suggestNext = () => {
       const days = (MAINT_KINDS.find(([k]) => k === kindValue) || [])[1] || 0;
       nextInput.value = days ? addDaysStr(dateInput.value || todayStr(), days) : "";
@@ -1433,6 +1478,7 @@
         kindChips.querySelectorAll(".mz-base-tag-chip--on").forEach((c) => c.classList.remove("mz-base-tag-chip--on"));
         chip.classList.add("mz-base-tag-chip--on");
         suggestNext();
+        updateShop();
       });
       kindChips.appendChild(chip);
     });
@@ -1441,7 +1487,9 @@
     surface.appendChild(dateRow);
     dateInput.addEventListener("change", suggestNext);
     surface.appendChild(nextRow);
+    surface.appendChild(shopRow);
     suggestNext();
+    updateShop();
 
     const memoRow = el("label", "mz-base-field");
     memoRow.appendChild(el("span", "mz-base-field-label", "メモ(任意)"));
