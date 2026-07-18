@@ -48,6 +48,7 @@ RA.corners = {
     const ctx = this.ctx;
     if (!ctx) return;
     ctx.clearRect(0, 0, this._cw || 0, this._ch || 0);
+    if (RA.S.grid && RA.S.clip) this._drawGrid();
     if (!RA.S.editCorners || !RA.S.clip || !RA.S.corners) return;
     const pts = RA.S.corners.map(c => ({ x: c.x * this._cw, y: c.y * this._ch }));
 
@@ -75,6 +76,32 @@ RA.corners = {
       ctx.fillStyle = "#4da3ff";
       ctx.fill();
     });
+  },
+
+  /* カメラの構図ガイド風の三分割グリッド。水平・垂直の確認用なので
+     プレビューにだけ重ね、書き出す映像には焼き込まない */
+  _drawGrid() {
+    const ctx = this.ctx;
+    const w = this._cw || 0, h = this._ch || 0;
+    if (!w || !h) return;
+    ctx.save();
+    ctx.lineWidth = 1;
+    for (let i = 1; i <= 2; i++) {
+      const x = Math.round((w * i) / 3) + 0.5;
+      const y = Math.round((h * i) / 3) + 0.5;
+      // 白の下地+黒の重ねで、明るい映像でも暗い映像でも視認できる
+      ctx.strokeStyle = "rgba(255,255,255,0.55)";
+      ctx.beginPath();
+      ctx.moveTo(x, 0); ctx.lineTo(x, h);
+      ctx.moveTo(0, y); ctx.lineTo(w, y);
+      ctx.stroke();
+      ctx.strokeStyle = "rgba(0,0,0,0.22)";
+      ctx.beginPath();
+      ctx.moveTo(x + 1, 0); ctx.lineTo(x + 1, h);
+      ctx.moveTo(0, y + 1); ctx.lineTo(w, y + 1);
+      ctx.stroke();
+    }
+    ctx.restore();
   },
 
   _pos(e) {

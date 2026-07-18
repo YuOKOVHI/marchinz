@@ -368,6 +368,10 @@ window.addEventListener("DOMContentLoaded", async () => {
   bindRange("panRange", "panY", "panVal", v => v / 100, v => `${v > 0 ? "+" : ""}${Math.round(v * 100)}%`);
   bindRange("sharpRange", "sharp", "sharpVal", v => v / 100, v => `${Math.round(v * 100)}%`);
   $("fillEdgeChk").addEventListener("change", e => { RA.S.fillEdge = e.target.checked; });
+  $("gridChk").addEventListener("change", e => {
+    RA.S.grid = e.target.checked;
+    RA.corners.draw();
+  });
   $("resSel").onchange = e => { RA.S.res = e.target.value; };
 
   // 元を見る(長押し比較)
@@ -435,6 +439,11 @@ RA.ui.runTest = async () => {
     if (params.get("fill") != null) {
       RA.S.fillEdge = params.get("fill") !== "0";
       $("fillEdgeChk").checked = RA.S.fillEdge;
+    }
+    if (params.get("grid") != null) {
+      RA.S.grid = params.get("grid") !== "0";
+      $("gridChk").checked = RA.S.grid;
+      RA.corners.draw();
     }
     await new Promise(r2 => setTimeout(r2, 400));
     await RA.ui.startExport();
