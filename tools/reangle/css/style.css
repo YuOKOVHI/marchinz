@@ -62,6 +62,9 @@ body::before {
 .back-link:hover { color: #163b9e; text-decoration: underline; }
 @media (max-width: 700px) { .head-right .caps-badge { display: none; } }
 
+/* display指定のあるクラスは [hidden] より詳細度で勝つため、hidden を常に優先させる */
+[hidden] { display: none !important; }
+
 main { flex: 1; width: 100%; max-width: 640px; margin: 0 auto; padding: 16px; }
 .card {
   background: var(--card); border: 1px solid var(--line); border-radius: 16px;

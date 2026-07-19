@@ -50,6 +50,11 @@ body::before {
 .back-link:hover { color: var(--acc-deep); text-decoration: underline; }
 @media (max-width: 700px) { .head-right .caps-badge { display: none; } }
 
+
+/* display指定のあるクラスは [hidden] より詳細度で勝つため、hidden を常に優先させる
+   (過去にPrivacyの管理者限定ボタンが誰にでも見えた事故と同じ罠) */
+[hidden] { display: none !important; }
+
 .wrap { display: flex; gap: 14px; padding: 14px; align-items: flex-start; }
 .side { width: 380px; flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px; box-shadow: var(--shadow-card); }
@@ -333,4 +338,43 @@ button, select, input, label, .btn { touch-action: manipulation; }
 @media (max-width: 900px) {
   .mz-actionbar.on { display: block; }
   .wrap { padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }
+}
+
+/* ---- おすすめ / こだわり タブ(2026-07-19) ---- */
+.setup-tabs { display: flex; flex-direction: column; gap: 10px; }
+.tabs {
+  display: flex; gap: 4px; padding: 4px;
+  background: var(--panel2); border: 1px solid var(--line); border-radius: 12px;
+}
+.tabs .tab {
+  flex: 1; padding: 10px 12px; font-size: 14px; font-weight: 700;
+  color: var(--tx2); background: transparent; border: 0; border-radius: 9px; cursor: pointer;
+}
+.tabs .tab.on { color: #fff; background: var(--acc); }
+.easy-pane {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  padding: 16px; display: flex; flex-direction: column; gap: 10px;
+}
+.easy-lead { margin: 0; font-size: 13.5px; line-height: 1.7; color: var(--tx); }
+.btn.big { padding: 15px; font-size: 16px; }
+.pro-pane { display: flex; flex-direction: column; gap: 12px; }
+
+/* ---- エラーログ(利用者がコピーして知らせられるように) ---- */
+.error-log { margin-bottom: 10px; }
+.error-log summary { cursor: pointer; font-size: 13px; font-weight: 700; color: #b4441f; }
+.error-log pre {
+  max-height: 220px; overflow: auto; margin: 8px 0;
+  padding: 10px; font-size: 11px; line-height: 1.6;
+  background: var(--panel2); border: 1px solid var(--line); border-radius: 8px;
+  white-space: pre-wrap; word-break: break-word; user-select: text;
+}
+
+/* ---- 下へスクロールしてもプレビューは上に残す(2026-07-19) ---- */
+@media (min-width: 861px) {
+  .stage { position: sticky; top: 8px; align-self: flex-start; }
+}
+@media (max-width: 860px) {
+  /* スマホ: プレビュー(canvas+操作)だけを画面上部へ貼り付ける */
+  .stage { position: sticky; top: 0; z-index: 30; background: var(--bg); padding-top: 6px; }
+  .stage .timeline-wrap { position: static; }
 }

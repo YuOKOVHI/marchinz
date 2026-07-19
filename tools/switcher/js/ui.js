@@ -68,6 +68,7 @@ MC.ui.renderAll = () => {
   MC.ui.renderExportMode();
   MC.ui.updateTransport();
   MC.timeline.render();
+  MC.ui.refreshSetupTabs();
   MC.ui.$("#syncBtn").disabled = MC.S.clips.filter(c => !c.isImage).length < 2;
   MC.ui.$("#exportBtn").disabled = !MC.S.clips.length;
   MC.ui.refreshJourney();
@@ -383,6 +384,105 @@ MC.ui.renderExportMode = () => {
   }
 };
 
+/* 「おすすめ / こだわり」タブ。素材が入ったら出す(それまでは邪魔なので隠す) */
+MC.ui.setSetupTab = tab => {
+  MC.ui._setupTab = tab;
+  const easy = tab !== "pro";
+  MC.ui.$("#easyPane").hidden = !easy;
+  MC.ui.$("#proPane").hidden = easy;
+  document.querySelectorAll("#setupTabs .tab").forEach(b => {
+    const on = b.dataset.tab === tab;
+    b.classList.toggle("on", on);
+    b.setAttribute("aria-selected", on ? "true" : "false");
+  });
+};
+
+MC.ui.refreshSetupTabs = () => {
+  const has = MC.S.clips.length > 0;
+  const tabs = MC.ui.$("#setupTabs");
+  if (!tabs) return;
+  tabs.hidden = !has;
+  if (!has) { MC.ui.$("#proPane").hidden = true; return; }
+  MC.ui.setSetupTab(MC.ui._setupTab || "easy");
+};
+
+/* おすすめで開始: 同期 → (カット割モードなら)自動カット割 → カラーマッチ を続けて実行 */
+MC.ui.runEasy = async () => {
+  const btn = MC.ui.$("#easyStartBtn");
+  if (btn.disabled) return;
+  btn.disabled = true;
+  MC.preview.pause();
+  const cutMode = ["switch", "wipe"].includes(MC.S.layoutId);
+  // sync/director/color はいずれも MZP の Handle をそのまま受け取る(legacy()は別物なので渡さない)
+  const p = MZP.start({ mount: "#easyStatus", chapter: "おすすめ", delay: 0,
+                        label: "音を合わせています…" });
+  try {
+    if (MC.S.clips.filter(c => !c.isImage).length >= 2) {
+      p.pulse("音を合わせています…");
+      await MC.sync.run(p);
+    }
+    if (cutMode) {
+      p.pulse("カットを割っています…");
+      await MC.director.run(p);
+      MC.timeline.selected = -1;
+      MC.timeline.render();
+    }
+    if (MC.S.colorOn) {
+      p.pulse("色をそろえています…");
+      await MC.color.run(p).catch(() => {});
+    }
+    MC.ui.renderAll();
+    MC.preview.seek(MC.trimRange()[0]);
+    p.done("できました", { sub: "プレビューを見て、よければ書き出してください" });
+  } catch (e) {
+    console.error(e);
+    p.fail("うまくできませんでした", { detail: e.message });
+    MC.ui.showErrorLog(e);
+  } finally { btn.disabled = false; }
+};
+
+/* 失敗したときのログ表示。原因を優さん/利用者が自分で確認でき、
+   そのまま連絡にも貼れるように「コピー」も付ける */
+MC.ui.showErrorLog = err => {
+  const host = MC.ui.$("#errorLog");
+  if (!host) return;
+  const env = [
+    `MarchinZ Switcher ${document.documentElement.getAttribute("data-mz-version") || ""}`,
+    `${navigator.userAgent}`,
+    `書き出し方式: ${MC.ui.exportMode()} / H264:${MC.caps.h264} AAC:${MC.caps.aac}`,
+    `素材: ${MC.S.clips.map(c => `${c.name} ${c.width}x${c.height} ${c.duration.toFixed(1)}s`).join(" / ") || "なし"}`,
+    `レイアウト: ${MC.S.layoutId} / 比率: ${MC.S.preset} / カット: ${MC.S.cutList.length}`,
+    `エラー: ${(err && err.stack) || (err && err.message) || err}`,
+  ].join("\n");
+  const text = `${env}\n---- ログ ----\n${MC.debug.slice(-120).join("\n")}`;
+  host.hidden = false;
+  host.innerHTML = `
+    <details open>
+      <summary><i class="fa-solid fa-triangle-exclamation"></i> 詳しいログ（うまくいかないときは、これをコピーしてお知らせください）</summary>
+      <pre id="errorLogText"></pre>
+      <div class="row">
+        <button type="button" id="errorLogCopy" class="btn small"><i class="fa-regular fa-copy"></i> コピー</button>
+        <button type="button" id="errorLogClose" class="btn small ghost">閉じる</button>
+      </div>
+    </details>`;
+  host.querySelector("#errorLogText").textContent = text;
+  host.querySelector("#errorLogCopy").onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      MC.ui.toast("ログをコピーしました");
+    } catch (e) {
+      // クリップボードが使えない環境では選択状態にして手動コピーを促す
+      const r = document.createRange();
+      r.selectNodeContents(host.querySelector("#errorLogText"));
+      const sel = window.getSelection();
+      sel.removeAllRanges(); sel.addRange(r);
+      MC.ui.toast("選択しました。長押し/右クリックでコピーしてください");
+    }
+  };
+  host.querySelector("#errorLogClose").onclick = () => { host.hidden = true; };
+  host.scrollIntoView({ behavior: "smooth", block: "nearest" });
+};
+
 /* 書き出し失敗の原因別ヒント。原文も残して、問い合わせ時に伝えられるようにする */
 MC.ui.exportFailHint = e => {
   const m = String((e && e.message) || e);
@@ -439,7 +539,7 @@ MC.ui.MODES = {
   },
   switch: {
     preset: "16x9", layoutId: "switch", label: "自動スイッチング動画",
-    presets: ["16x9", "9x16"],                            // 正方形は対象外
+    presets: ["16x9"],                                    // 横型のみ(2026-07-19 優さん指定)
     layouts: ["switch", "wipe"],                          // スイッチングとワイプのみ
   },
 };
@@ -486,6 +586,9 @@ MC.ui.wire = () => {
 
   document.querySelectorAll(".mode-card").forEach(card =>
     card.onclick = () => MC.ui.chooseMode(card.dataset.mode));
+  document.querySelectorAll("#setupTabs .tab").forEach(b =>
+    b.onclick = () => MC.ui.setSetupTab(b.dataset.tab));
+  $("#easyStartBtn").onclick = () => MC.ui.runEasy();
   $("#modeBackBtn").onclick = () => MC.ui.showModeSelect();
 
   const dz = $("#clipSlots"), fi = $("#fileInput"), fiv = $("#fileInputV");
@@ -575,6 +678,7 @@ MC.ui.wire = () => {
         MC.ui.toast("書き出しを中止しました");
       } else {
         p.fail("書き出せませんでした", { detail: MC.ui.exportFailHint(e) });
+        MC.ui.showErrorLog(e);
       }
     } finally {
       $("#exportBtn").disabled = !MC.S.clips.length;
@@ -609,6 +713,7 @@ MC.ui.wire = () => {
     } catch (e) {
       console.error(e);
       p.fail("カット割を作れませんでした", { detail: e.message });
+      MC.ui.showErrorLog(e);
     } finally { $("#autocutBtn").disabled = false; }
   };
   $("#wipeCamSelect").onchange = e => { MC.S.wipeClipId = parseInt(e.target.value); MC.saveState(); MC.preview.draw(); };

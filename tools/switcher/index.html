@@ -59,7 +59,7 @@
           </svg>
         </span>
         <span class="mode-card-name">自動スイッチング動画</span>
-        <span class="mode-card-desc">複数カメラを自動でスイッチング、またはワイプ表示！横型・縦型が選べます</span>
+        <span class="mode-card-desc">複数カメラを自動でスイッチング、またはワイプ表示！（横型）</span>
       </button>
     </div>
   </div>
@@ -74,7 +74,7 @@
   <aside class="side">
 
     <section class="panel" id="dropSec">
-      <h2>動画を読み込む <span class="hint" data-limit-note data-limit-note-member="(3本まで・各12分)">(3本まで・各5分。無料登録すると各12分)</span></h2>
+      <h2>動画を読み込む <span class="hint">(3本まで)</span></h2>
       <div data-mz-plan="video"></div>
       <div id="clipSlots" class="clip-slots"></div>
       <input type="file" id="fileInput" accept="video/mp4,video/quicktime,video/*" multiple hidden>
@@ -82,6 +82,20 @@
       <input type="file" id="audioInput" accept="audio/*,.mp3,.wav,.m4a,.aac" hidden>
     </section>
 
+    <div id="setupTabs" class="setup-tabs" hidden>
+      <div class="tabs" role="tablist" aria-label="設定の詳しさ">
+        <button type="button" class="tab on" data-tab="easy" role="tab" aria-selected="true">おすすめ</button>
+        <button type="button" class="tab" data-tab="pro" role="tab" aria-selected="false">こだわり</button>
+      </div>
+      <div id="easyPane" class="easy-pane">
+        <p class="easy-lead">同期・カット割・色みまで、おまかせで仕上げます。</p>
+        <button id="easyStartBtn" class="btn primary big"><i class="fa-solid fa-wand-magic-sparkles"></i> おすすめで開始</button>
+        <div id="easyStatus" class="status"></div>
+        <p class="hint">細かく決めたいときは「こだわり」タブへ。</p>
+      </div>
+    </div>
+
+    <div id="proPane" class="pro-pane" hidden>
     <section class="panel" id="syncSec">
       <h2>同期 <span class="hint">音の波形で自動合わせ</span></h2>
       <div class="row">
@@ -190,8 +204,11 @@
       <div id="finishStatus" class="status"></div>
     </section>
 
+    </div>
+
     <section class="panel" id="exportSec">
       <h2>書き出し</h2>
+      <div id="errorLog" class="error-log" hidden></div>
       <div id="exportMode" class="status"></div>
       <div class="row">
         <button id="exportBtn" class="btn primary big" disabled><i class="fa-solid fa-file-export"></i> MP4を書き出す</button>
