@@ -8,8 +8,14 @@ MC.preview = {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d");
     this.applyPreset();
-    const loop = ts => { this.tick(ts); requestAnimationFrame(loop); };
+    const loop = ts => { this._lastTick = performance.now(); this.tick(ts); requestAnimationFrame(loop); };
     requestAnimationFrame(loop);
+    // rAFが発火しない環境(バックグラウンドタブ・一部の埋め込みブラウザ)の保険。
+    // これが無いと時刻が進まず、プレビューが止まって「スイッチングされない」ように見える
+    clearInterval(this._fallbackIv);
+    this._fallbackIv = setInterval(() => {
+      if (performance.now() - (this._lastTick || 0) > 250) this.tick(performance.now());
+    }, 150);
   },
 
   applyPreset() {
@@ -87,9 +93,28 @@ MC.preview = {
         this._lastDrift = ts;
         this.driftFix();
       }
+      // カットが切り替わった瞬間、その素材がまだ再生されていなければ即開始する
+      // (driftFix待ちだと切替直後の最大0.5秒が静止画に見える)
+      const curId = MC.cutAt(MC.S.t).cur;
+      if (curId !== this._lastCurId) {
+        this._lastCurId = curId;
+        this.ensurePlaying(curId);
+      }
       MC.ui.updateTransport();
     }
     this.draw();
+  },
+
+  /* 指定クリップが範囲内なのに止まっていたら、その場で再生を始める */
+  ensurePlaying(id) {
+    const c = MC.getClip(id);
+    if (!c || !c.video || !MC.S.playing) return;
+    const want = MC.S.t - c.offset;
+    if (want < 0 || want > c.duration) return;
+    if (c.video.paused) {
+      c.video.currentTime = want;
+      c.video.play().catch(() => {});
+    }
   },
 
   /* マスター(音声担当)基準のドリフト補正 */
@@ -122,6 +147,43 @@ MC.preview = {
     ctx.font = `500 ${Math.round(base * 0.042)}px -apple-system, sans-serif`;
     ctx.fillText("素材を入れると", W / 2, H / 2 + base * 0.03);
     ctx.fillText("ここにプレビューが出ます", W / 2, H / 2 + base * 0.095);
+  },
+
+  /* いまどの素材が映っているかをプレビュー左下に出す(カット割モードのみ)。
+     切り替わっているかが一目で分かるようにするためのプレビュー専用表示で、
+     書き出す映像には入らない */
+  drawCamBadge() {
+    const L = MC.LAYOUTS[MC.S.layoutId];
+    if (!L || (L.type !== "switch" && L.type !== "wipe")) return;
+    const cut = MC.cutAt(MC.S.t);
+    const clips = MC.media.slotClips();
+    const idx = clips.findIndex(c => c.id === cut.cur);
+    if (idx < 0) return;
+    const W = this.canvas.width, H = this.canvas.height, ctx = this.ctx;
+    const base = Math.min(W, H);
+    const fs = Math.round(base * 0.05);   // 小さいプレビューでも読める大きさ
+    const label = `カメラ${idx + 1}`;
+    ctx.save();
+    ctx.font = `700 ${fs}px -apple-system, sans-serif`;
+    const padX = fs * 0.62, padY = fs * 0.42;
+    const tw = ctx.measureText(label).width;
+    const bw = tw + padX * 2, bh = fs + padY * 2;
+    const bx = base * 0.03, by = H - bh - base * 0.03;
+    const r = bh / 2;
+    ctx.beginPath();
+    ctx.moveTo(bx + r, by);
+    ctx.arcTo(bx + bw, by, bx + bw, by + bh, r);
+    ctx.arcTo(bx + bw, by + bh, bx, by + bh, r);
+    ctx.arcTo(bx, by + bh, bx, by, r);
+    ctx.arcTo(bx, by, bx + bw, by, r);
+    ctx.closePath();
+    ctx.fillStyle = "rgba(8, 12, 18, 0.62)";
+    ctx.fill();
+    ctx.fillStyle = "#fff";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText(label, bx + padX, by + bh / 2 + fs * 0.04);
+    ctx.restore();
   },
 
   /* 現在位置が書き出し範囲(IN〜OUT)の外なら、その旨をプレビューへ重ねる。
@@ -159,6 +221,7 @@ MC.preview = {
       // <video>はブラウザが回転を適用済みなので rotation=0
       return { source: c.video, w: c.video.videoWidth, h: c.video.videoHeight, rotation: 0 };
     });
+    this.drawCamBadge();
     this.drawRangeNotice();
   },
 };
