@@ -277,13 +277,11 @@ MZ.ui.updateDetectStatus = () => {
   const el = $("detectStatus");
   const clip = MZ.S.clip;
   if (!el || !clip) return;
+  if (MZP.current || el.querySelector(".mzp")) return;   // 進捗表示が出ている間はそちらに任せる
   el.classList.remove("ok", "ng", "busy");
   const busy = html => { el.classList.add("busy"); el.innerHTML = html; };
   if (!MZ.detect.ready()) {
     return busy('<i class="fa-solid fa-circle-notch fa-spin"></i> 顔を見つけるAIを準備しています…(初回だけ・数秒〜十数秒)');
-  }
-  if (MZ.preview.initRunning) {
-    return busy(`<i class="fa-solid fa-magnifying-glass"></i> 小さな顔までていねいに探しています… ${Math.round((MZ.preview.initProgress || 0) * 100)}%`);
   }
   // スキャン開始前(シーク整定待ち等)に「見つかりません」を出して不安にさせない
   if (clip.kind === "image") {
@@ -378,11 +376,22 @@ MZ.ui.onCanvasTap = async e => {
 MZ.ui.ensureDetector = () => {
   if (MZ.ui._detStarted) return;
   MZ.ui._detStarted = true;
-  MZ.detect.init().catch(e => {
+  const p = MZ.ui._prog = MZP.start({
+    mount: "#detectStatus", chapter: "1. 顔を確認",
+    label: "顔を見つけるAIを読み込んでいます…",
+    sub: "初回だけ・数秒〜十数秒かかります",
+  });
+  p.pulse();
+  MZ.detect.init().then(() => {
+    p.done("顔を見つける準備ができました", { chip: false });
+  }).catch(e => {
     MZ.ui._detStarted = false;
     MZ.detect.initPromise = null;
     MZ.ui.setStatus("顔検出を読み込めませんでした", false);
-    MZ.ui.toast(`⚠ 顔検出の初期化に失敗: ${e.message}`);
+    p.fail("顔を見つけるAIを読み込めませんでした", {
+      detail: e.message,
+      retry: () => { MZ.ui.ensureDetector(); },
+    });
   });
 };
 
@@ -565,23 +574,30 @@ MZ.ui.startExport = async () => {
   $("progressWrap").hidden = false;
   $("doneCard").hidden = true;
   if (MZ.S.clip.video) MZ.S.clip.video.pause();
+  const isImage = MZ.S.clip.kind === "image";
+  const p = MZP.start({
+    mount: "#progressWrap", chapter: "3. 保存", delay: 0,
+    label: isImage ? "写真にモザイクをかけています…" : "顔を隠しながら書き出しています…",
+    cancel: () => { MZ.exporter.cancelFlag = true; },
+  });
   try {
-    if (!MZ.detect.detector) {
-      $("progressText").textContent = "顔検出モデルを準備中…";
+    if (!MZ.detect.ready()) {
+      p.pulse("顔を見つけるAIを準備しています…");
       await MZ.detect.init();
     }
-    const res = await MZ.exporter.run((p, txt) => {
-      $("progressBar").style.width = `${Math.round(p * 100)}%`;
-      $("progressText").textContent = txt;
-    });
+    const res = await MZ.exporter.run(p.legacy());
+    p.done("書き出しました", { chip: false });
     MZ.ui.showDone(res);
   } catch (e) {
     MZ.log("export error:", e.message);
-    MZ.ui.toast(e.message === "キャンセルしました" ? "書き出しを中止しました" : `⚠ ${e.message}`);
+    if (e.message === "キャンセルしました") {
+      p.close();
+      MZ.ui.toast("書き出しを中止しました");
+    } else {
+      p.fail("書き出せませんでした", { detail: e.message, retry: MZ.ui.startExport });
+    }
   } finally {
     btn.disabled = false;
-    $("progressWrap").hidden = true;
-    $("progressBar").style.width = "0%";
   }
 };
 

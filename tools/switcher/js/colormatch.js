@@ -63,13 +63,16 @@ MC.color.sampleStats = async clip => {
 };
 
 /* 全カメラの統計→基準(音声カメラ)へのLab変換を計算 */
-MC.color.run = async onStatus => {
+/* p: MZPの進捗ハンドル(省略可) */
+MC.color.run = async p => {
   const clips = MC.S.clips;
   if (clips.length < 2) throw new Error("2本以上のクリップが必要です");
   const ref = MC.getClip(MC.S.audioClipId) || clips[0];
   const stats = new Map();
+  let i = 0;
   for (const c of clips) {
-    if (onStatus) onStatus(`色を解析中: ${c.name}`);
+    i++;
+    if (p) p.count(i, clips.length, { unit: "台目", name: c.name });
     stats.set(c.id, await MC.color.sampleStats(c));
   }
   const refS = stats.get(ref.id);

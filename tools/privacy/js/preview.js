@@ -109,6 +109,14 @@ MZ.preview = {
           this.cutTimes.push(t);
           this.cutVeil = true;          // 再検出が終わるまで全面を粗く(顔の露出を断つ)
           MZ.log("scene cut → re-detect");
+          // 画面が急にぼやける理由を出す(350ms以内に終われば表示されない)
+          if (!MZ.exporter.running) {
+            this._cutProg = MZP.start({
+              mount: "#detectStatus", chapter: "1. 顔を確認",
+              label: "画面が変わりました。顔を見つけ直しています…",
+            });
+            this._cutProg.pulse();
+          }
         }
       }
       const near = this.tracker.tracks.map(tr => tr.box);
@@ -138,10 +146,12 @@ MZ.preview = {
       this.lastDetectAt = t;
       this.lastDetectTime = performance.now();
       this.cutVeil = false;
+      if (this._cutProg) { this._cutProg.close(); this._cutProg = null; }
     } catch (e) {
       MZ.log("detect error:", e && e.message);
       this.lastDetectTime = performance.now();   // エラー連打を防ぐ
       this.cutVeil = false;
+      if (this._cutProg) { this._cutProg.close(); this._cutProg = null; }
     } finally {
       this.detectBusy = false;
     }
@@ -155,9 +165,14 @@ MZ.preview = {
     this._initialScanHadYunet = !!MZ.yunet.session;   // YuNetが間に合わなければ後でやり直す
     const ep = this.epoch;
     const t = v.currentTime;
+    const prog = MZP.start({
+      mount: "#detectStatus", chapter: "1. 顔を確認",
+      label: "小さな顔まで探しています…",
+    });
     try {
       const dets = MZ.dropSuppressed(await MZ.detect.initialScan(
-        v, v.videoWidth, v.videoHeight, 0, p => { this.initProgress = p; }),
+        v, v.videoWidth, v.videoHeight, 0,
+        p => { this.initProgress = p; prog.set(p); }),
         null, t, this.cutTimes);
       // スキャン中に素材が替わった/大きく再生が進んでいたら捨てる(通常の検出に任せる)
       if (this.epoch === ep && MZ.S.clip && MZ.S.clip.video === v && Math.abs(v.currentTime - t) < 1) {
@@ -166,8 +181,12 @@ MZ.preview = {
         this.lastDetectTime = performance.now();
       }
       MZ.log(`initial scan: ${dets.length} face(s)`);
+      prog.done(dets.length
+        ? `${dets.length}人の顔を見つけました`
+        : "この場面では顔が見つかりませんでした");
     } catch (e) {
       MZ.log("initial scan failed:", e && e.message);
+      prog.fail("顔を探せませんでした", { detail: e && e.message });
     } finally {
       this.initRunning = false;
     }
@@ -210,10 +229,22 @@ MZ.preview = {
       this._photoScanHadYunet = !!MZ.yunet.session;   // YuNetが間に合わなければ後でやり直す
       const ep = this.epoch;
       const A = MZ.detect.analysisOf(clip.img, clip.width, clip.height, 0);
-      MZ.detect.yunetScan(A, "full", null).then(dets => {
-        if (this.epoch === ep && MZ.S.clip === clip) this.boxes = MZ.dropSuppressed(dets);
-      }).catch(e => MZ.log("photo detect error:", e && e.message))
-        .finally(() => { this.detectBusy = false; });
+      const prog = MZP.start({
+        mount: "#detectStatus", chapter: "1. 顔を確認", label: "顔を探しています…",
+      });
+      MZ.detect.yunetScan(A, "full", null, p => prog.set(p)).then(dets => {
+        if (this.epoch === ep && MZ.S.clip === clip) {
+          this.boxes = MZ.dropSuppressed(dets);
+          prog.done(this.boxes.length
+            ? `${this.boxes.length}人の顔を見つけました`
+            : "顔が見つかりませんでした");
+        } else {
+          prog.close();
+        }
+      }).catch(e => {
+        MZ.log("photo detect error:", e && e.message);
+        prog.fail("顔を探せませんでした", { detail: e && e.message });
+      }).finally(() => { this.detectBusy = false; });
     }
     MZ.drawFrame(this.ctx, clip.img, clip.width, clip.height, 0, W, H);
     const all = this.boxes.concat(MZ.S.manualBoxes);

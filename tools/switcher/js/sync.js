@@ -97,15 +97,17 @@ MC.sync.offsetBetween = async (ref8k, sig8k) => {
 MC.sync.tsRecordStart = clip => clip.lastModified / 1000 - clip.duration;
 
 /* 全クリップの同期を実行 */
-MC.sync.run = async onStatus => {
+/* p: MZPの進捗ハンドル(省略可) */
+MC.sync.run = async p => {
   const clips = MC.S.clips;
   if (clips.length < 2) { MC.ui.toast("2本以上のクリップが必要です"); return; }
-  const say = s => { if (onStatus) onStatus(s); };
 
   // 音声抽出
+  let i = 0;
   for (const c of clips) {
+    i++;
     if (c.audio8k) continue;
-    say(`音声を解析中: ${c.name}`);
+    if (p) p.step(1, "音を取り出しています…").count(i, clips.length, { unit: "本目", name: c.name });
     try { await MC.audio.extract8k(c); }
     catch (e) { console.warn("[MC]", e.message); MC.ui.toast(`⚠ ${e.message}`); }
     await new Promise(r => setTimeout(r, 0));
@@ -113,13 +115,15 @@ MC.sync.run = async onStatus => {
 
   const ref = clips.find(c => c.id === MC.S.refClipId && c.audio8k) || clips.find(c => c.audio8k);
   const results = [];
+  let j = 0;
   for (const c of clips) {
+    j++;
     if (ref && c === ref) {
       results.push({ clip: c, raw: 0, conf: Infinity, method: "基準" });
       continue;
     }
     if (ref && c.audio8k) {
-      say(`波形を照合中: ${c.name}`);
+      if (p) p.step(2, "ズレを合わせています…").count(j, clips.length, { unit: "本目", name: c.name });
       await new Promise(r => setTimeout(r, 0));  // UI更新の息継ぎ
       let r = null;
       try {
@@ -148,10 +152,10 @@ MC.sync.run = async onStatus => {
   }
   MC.S.trimIn = 0; MC.S.trimOut = null;
   MC.saveState();
-  say("");
   MC.ui.renderAll();
   const low = results.filter(r => r.method === "タイムスタンプ").length;
   MC.ui.toast(low ? `同期完了(${low}本は時刻推定・精度±数秒 → 手動微調整してください)` : "波形同期が完了しました 🎯");
+  return { low, total: clips.length };
 };
 
 /* 手動ナッジ: delta秒ずらして最小0に再正規化 */

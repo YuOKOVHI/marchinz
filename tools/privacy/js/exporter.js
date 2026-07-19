@@ -253,8 +253,8 @@ MZ.exporter.exportMP4 = async (clip, onProgress) => {
         const el = (performance.now() - t0) / 1000;
         const eta = k < 15 ? null : el / k * Math.max(0, nbRange - k);
         onProgress(0.92 * Math.min(0.99, k / nbRange),
-          `顔を隠しながら書き出し中… ${k}/${nbRange}フレーム`
-          + (eta == null ? "(残り時間を計測中…)" : `(残り約${Math.ceil(eta)}秒)`));
+          "顔を隠しながら書き出しています…",
+          { sub: `${k} / ${nbRange} コマ`, eta: eta == null ? undefined : eta });
         await MZ.yield();
       }
     };
@@ -318,16 +318,16 @@ MZ.exporter.exportMP4 = async (clip, onProgress) => {
     MZ.log(`video done: ${k} frames, ${faceFrames} frames masked`);
 
     if (audioPlan.mode === "copy") {
-      onProgress(0.94, "音声をコピー中…");
+      onProgress(0.94, "音を入れています…");
       await MZ.exporter.writeAudioCopy(muxer, src, audioPlan, rs, re);
     } else if (audioPlan.mode === "encode") {
-      onProgress(0.94, "音声を変換中…");
+      onProgress(0.94, "音を入れています…");
       const ok = await MZ.exporter.writeAudioEncode(muxer, src, audioPlan, re - rs, rs);
       if (!ok && !MZ.exporter.cancelFlag) MZ.ui.toast("⚠ 音声を書き出せませんでした(映像のみ)");
     }
     if (MZ.exporter.cancelFlag) throw new Error("キャンセルしました");
 
-    onProgress(0.98, "MP4を組み立て中…");
+    onProgress(0.98, "ファイルにまとめています…");
     muxer.finalize();
     const blob = new Blob([muxer.target.buffer], { type: "video/mp4" });
     const name = MZ.exporter.outName(clip, "mp4");
@@ -380,11 +380,12 @@ MZ.exporter.exportImage = async (clip, onProgress) => {
     for (let i = 0; i < photos.length; i++) {
       if (MZ.exporter.cancelFlag) throw new Error("キャンセルしました");
       const base = i / photos.length;
-      onProgress(base + 0.15 / photos.length,
-        photos.length > 1 ? `${i + 1}/${photos.length}枚目の顔を検出しています…` : "顔を検出しています…");
+      onProgress(base + 0.15 / photos.length, "写真にモザイクをかけています…",
+        { sub: photos.length > 1 ? `${i + 1} / ${photos.length} 枚目` : "" });
       await MZ.yield();
       results.push(await MZ.exporter._renderPhoto(photos[i]));
-      onProgress((i + 1) / photos.length, `${i + 1}/${photos.length}枚 完了`);
+      onProgress((i + 1) / photos.length, "写真にモザイクをかけています…",
+        { sub: photos.length > 1 ? `${i + 1} / ${photos.length} 枚目` : "" });
     }
     // 保存: 共有可なら結果を保持してタップ待ち、非共有は即ダウンロード
     MZ.exporter.lastResults = results;
@@ -450,7 +451,8 @@ MZ.exporter.exportRealtime = async (clip, onProgress) => {
     await new Promise(res => {
       const iv = setInterval(() => {
         onProgress(Math.min(1, (video.currentTime - rs) / Math.max(0.1, re - rs)),
-          `実時間で録画中… ${Math.max(0, Math.floor(video.currentTime - rs))} / ${Math.floor(re - rs)}秒`);
+          "再生しながら録画しています…",
+          { sub: `${Math.max(0, Math.floor(video.currentTime - rs))} / ${Math.floor(re - rs)} 秒・画面を閉じずにお待ちください` });
         if (video.ended || video.currentTime >= re || MZ.exporter.cancelFlag) { clearInterval(iv); res(); }
       }, 80);
     });

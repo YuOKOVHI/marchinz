@@ -1,0 +1,205 @@
+/* ============ MarchinZ 共通 進捗コンポーネント ============
+   Privacy / Switcher 共用。2ツールでトークン名が違うため var() の連鎖で吸収する。
+   iOS Safari 16 対応: :has() / backdrop-filter は使わない。 */
+
+.mzp, .mzp-dock {
+  --mzp-acc:  var(--acc,  var(--accent, #1e4fd6));
+  --mzp-acc2: var(--acc2, #d97706);
+  --mzp-sub:  var(--tx2,  var(--sub, rgba(12, 15, 20, .55)));
+  --mzp-line: var(--line, rgba(15, 33, 56, .12));
+  --mzp-ok:   var(--ok,   #1e7a43);
+  --mzp-navy: var(--navy, #0f2138);
+  --mzp-card: var(--panel, var(--card, #fff));
+}
+
+/* ---- インライン本体 ---- */
+.mzp {
+  margin: 10px 0 2px;
+  padding: 11px 12px 10px;
+  border: 1px solid var(--mzp-line);
+  border-radius: 12px;
+  background: var(--mzp-card);
+  font-size: 12.5px;
+  line-height: 1.5;
+  text-align: left;
+}
+.mzp[hidden] { display: none; }
+
+.mzp-head { display: flex; align-items: baseline; gap: 7px; }
+.mzp-step {
+  flex: none;
+  font-size: 10.5px; font-weight: 700;
+  color: var(--mzp-acc);
+  background: rgba(30, 79, 214, .10);
+  border-radius: 999px; padding: 2px 7px;
+  font-variant-numeric: tabular-nums;
+}
+.mzp-step:empty { display: none; }
+.mzp-label {
+  flex: 1 1 auto; min-width: 0;
+  font-weight: 700; color: var(--mzp-navy);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.mzp-pct {
+  flex: none; font-weight: 700; color: var(--mzp-acc);
+  font-variant-numeric: tabular-nums;
+}
+.mzp-pct:empty { display: none; }
+
+/* ---- バー ---- */
+.mzp-track {
+  position: relative; height: 6px; margin-top: 8px;
+  border-radius: 999px; background: rgba(15, 33, 56, .08); overflow: hidden;
+}
+.mzp-fill {
+  height: 100%; width: 2%; border-radius: 999px;
+  background: var(--mzp-acc);
+  transition: width .28s cubic-bezier(.22, .61, .36, 1);
+}
+
+/* ---- 副文言 / 残り時間 ---- */
+.mzp-meta {
+  display: flex; align-items: baseline; gap: 8px; margin-top: 6px;
+  color: var(--mzp-sub); font-size: 11.5px;
+}
+.mzp-sub {
+  flex: 1 1 auto; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+.mzp-eta { flex: none; font-variant-numeric: tabular-nums; }
+
+/* ---- 中止ボタン(一定時間たってから出す) ---- */
+.mzp-cancel {
+  display: none;
+  margin: 9px auto 0; padding: 9px 16px; min-height: 44px;
+  border: 1px solid var(--mzp-line); border-radius: 9px;
+  background: #fff; color: var(--mzp-sub); font-size: 12px; cursor: pointer;
+}
+.mzp.is-cancelable .mzp-cancel { display: block; }
+
+/* ============ 状態 ============ */
+
+/* 不確定: 往復する帯。UIが生きているときだけ使う */
+.mzp[data-state="pulse"] .mzp-fill {
+  width: 34%; transition: none;
+  animation: mzp-slide 1.5s cubic-bezier(.45, .05, .55, .95) infinite;
+}
+@keyframes mzp-slide {
+  0%   { transform: translateX(-115%); }
+  100% { transform: translateX(315%); }
+}
+
+/* 凍結: 画面が止まる処理。動かない前提の静的パターン(止まっても不自然に見えない) */
+.mzp[data-state="frozen"] .mzp-fill {
+  width: 100%; transition: none; animation: none;
+  background: repeating-linear-gradient(-45deg,
+    rgba(30, 79, 214, .30) 0 7px, rgba(30, 79, 214, .13) 7px 14px);
+}
+.mzp[data-state="frozen"] .mzp-sub { color: var(--mzp-acc2); font-weight: 700; }
+
+/* 完了 */
+.mzp[data-state="done"] .mzp-fill { width: 100%; background: var(--mzp-ok); animation: none; }
+.mzp[data-state="done"] .mzp-label { color: var(--mzp-ok); }
+.mzp[data-state="done"] .mzp-pct,
+.mzp[data-state="done"] .mzp-cancel { display: none; }
+
+/* 完了チップ(畳んだ姿・次の実行まで残す) */
+.mzp[data-state="chip"] {
+  padding: 8px 12px;
+  border-color: rgba(30, 122, 67, .28);
+  background: #f2faf5;
+}
+.mzp[data-state="chip"] .mzp-track,
+.mzp[data-state="chip"] .mzp-meta,
+.mzp[data-state="chip"] .mzp-cancel,
+.mzp[data-state="chip"] .mzp-step,
+.mzp[data-state="chip"] .mzp-pct { display: none; }
+.mzp[data-state="chip"] .mzp-label { color: var(--mzp-ok); font-weight: 700; }
+
+/* 失敗: 自動では消さない */
+.mzp[data-state="fail"] { border-color: #eadfbf; background: #fbf6e6; }
+.mzp[data-state="fail"] .mzp-track,
+.mzp[data-state="fail"] .mzp-pct,
+.mzp[data-state="fail"] .mzp-cancel { display: none; }
+.mzp[data-state="fail"] .mzp-label { color: #8a6d3b; }
+.mzp-retry {
+  display: block; margin: 9px auto 0; padding: 10px 18px; min-height: 44px;
+  border: none; border-radius: 9px;
+  background: var(--mzp-acc); color: #fff; font-size: 13px; font-weight: 700; cursor: pointer;
+}
+.mzp-detail summary {
+  font-size: 11px; color: var(--mzp-sub); cursor: pointer; padding: 8px 0;
+}
+.mzp-detail p { font-size: 11px; color: var(--mzp-sub); word-break: break-all; margin: 0; }
+
+/* ============ 下部固定ミニバー(インラインが画面外のとき) ============ */
+.mzp-dock {
+  position: fixed;
+  left: 10px; right: 10px;
+  bottom: calc(8px + env(safe-area-inset-bottom));
+  z-index: 90;
+  padding: 9px 13px 10px;
+  border: 1px solid var(--mzp-line); border-radius: 13px;
+  background: rgba(255, 255, 255, .97);
+  box-shadow: 0 6px 26px rgba(15, 33, 56, .16);
+  font-size: 12.5px;
+  opacity: 0; transform: translateY(14px); pointer-events: none;
+  transition: opacity .22s ease, transform .22s ease;
+}
+.mzp-dock.show { opacity: 1; transform: translateY(0); }
+.mzp-dock-row { display: flex; align-items: baseline; gap: 7px; }
+.mzp-dock-chapter {
+  flex: none; font-size: 10.5px; font-weight: 700;
+  color: var(--mzp-acc); background: rgba(30, 79, 214, .10);
+  border-radius: 999px; padding: 2px 7px;
+}
+.mzp-dock-chapter:empty { display: none; }
+.mzp-dock-label {
+  flex: 1 1 auto; min-width: 0; font-weight: 700; color: var(--mzp-navy);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mzp-dock-pct {
+  flex: none; font-weight: 700; color: var(--mzp-acc);
+  font-variant-numeric: tabular-nums;
+}
+.mzp-dock-pct:empty { display: none; }
+.mzp-dock-track {
+  height: 5px; margin-top: 7px; border-radius: 999px;
+  background: rgba(15, 33, 56, .08); overflow: hidden;
+}
+.mzp-dock-fill {
+  height: 100%; width: 2%; border-radius: 999px;
+  background: var(--mzp-acc);
+  transition: width .28s cubic-bezier(.22, .61, .36, 1);
+}
+.mzp-dock[data-state="pulse"] .mzp-dock-fill {
+  width: 34%; transition: none;
+  animation: mzp-slide 1.5s cubic-bezier(.45, .05, .55, .95) infinite;
+}
+.mzp-dock[data-state="frozen"] .mzp-dock-fill {
+  width: 100%; transition: none; animation: none;
+  background: repeating-linear-gradient(-45deg,
+    rgba(30, 79, 214, .30) 0 7px, rgba(30, 79, 214, .13) 7px 14px);
+}
+/* ミニバーが出ている間はトーストを上へ逃がす */
+body.mzp-docked #toast { bottom: calc(86px + env(safe-area-inset-bottom)); }
+
+@media (min-width: 901px) {
+  .mzp-dock { left: auto; right: 18px; width: 330px; bottom: 18px; }
+}
+
+/* 動きを減らす設定を尊重(アニメを止めても情報は失われない) */
+@media (prefers-reduced-motion: reduce) {
+  .mzp-fill, .mzp-dock-fill { transition: none; animation: none !important; }
+  .mzp[data-state="pulse"] .mzp-fill,
+  .mzp-dock[data-state="pulse"] .mzp-dock-fill {
+    width: 100%;
+    background: repeating-linear-gradient(-45deg,
+      rgba(30, 79, 214, .28) 0 7px, rgba(30, 79, 214, .12) 7px 14px);
+  }
+  .mzp-dock { transition: none; }
+}

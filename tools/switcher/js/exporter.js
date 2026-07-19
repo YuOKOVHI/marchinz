@@ -230,7 +230,7 @@ MC.exporter.encodeAudio = async (muxer, clip, fromLocalSec, durSec, onStatus) =>
   if (error || MC.exporter.cancelFlag) return false;
 
   // AACエンコード(1024フレームずつ)
-  onStatus("音声をエンコード中…");
+  onStatus("音を入れています…");
   let encErr = null;
   const encoder = new AudioEncoder({
     output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
@@ -324,7 +324,7 @@ MC.exporter.exportMP4 = async onProgress => {
       if (k % 10 === 0) {
         const el = (performance.now() - t0) / 1000;
         const eta = el / (k + 1) * (totalFrames - k - 1);
-        onProgress((k + 1) / totalFrames, `映像 ${k + 1}/${totalFrames} フレーム(残り約${Math.ceil(eta)}秒)`);
+        onProgress((k + 1) / totalFrames * 0.90, `映像 ${k + 1}/${totalFrames} コマ`, { eta });
         await MC.yield();  // UI息継ぎ(非表示タブでも節流されない)
       }
     }
@@ -335,12 +335,12 @@ MC.exporter.exportMP4 = async onProgress => {
     if (withAudio) {
       audioOk = await MC.exporter.encodeAudio(
         muxer, audioClip, tIn - audioClip.offset, tOut - tIn,
-        s => onProgress(1, s));
+        s => onProgress(0.93, s));
       if (!audioOk && !MC.exporter.cancelFlag) MC.ui.toast("⚠ 音声を書き出せませんでした(映像のみ出力します)");
     }
     if (MC.exporter.cancelFlag) throw new Error("キャンセルしました");
 
-    onProgress(1, "MP4を組み立て中…");
+    onProgress(0.97, "ファイルにまとめています…");
     muxer.finalize();
     const blob = new Blob([muxer.target.buffer], { type: "video/mp4" });
     const name = `MarchinZ_Switcher_${MC.S.preset}_${new Date().toISOString().slice(0, 10)}.mp4`;

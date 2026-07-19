@@ -318,9 +318,17 @@ MC.ui.wire = () => {
 
   $("#syncBtn").onclick = async () => {
     $("#syncBtn").disabled = true;
-    try { await MC.sync.run(s => { $("#syncStatus").textContent = s; }); }
-    catch (e) { MC.ui.toast("⚠ 同期に失敗: " + e.message); console.error(e); }
-    finally { $("#syncBtn").disabled = MC.S.clips.length < 2; $("#syncStatus").textContent = ""; }
+    const p = MZP.start({ mount: "#syncStatus", chapter: "2. 同期", steps: 2,
+                          label: "音を取り出しています…" });
+    try {
+      const r = await MC.sync.run(p);
+      p.done(r && r.low ? `ズレを合わせました(${r.low}本は手動調整をおすすめします)`
+                        : "ズレを合わせました");
+    } catch (e) {
+      MC.ui.toast("⚠ 同期に失敗: " + e.message); console.error(e);
+      p.fail("ズレを合わせられませんでした", { detail: e.message,
+        retry: () => $("#syncBtn").click() });
+    } finally { $("#syncBtn").disabled = MC.S.clips.length < 2; }
   };
 
   $("#playBtn").onclick = () => MC.preview.toggle();
@@ -335,27 +343,37 @@ MC.ui.wire = () => {
   $("#exportBtn").onclick = async () => {
     if (MC.exporter.running) return;
     MC.preview.pause();
-    const prog = $("#exportProgress"), fill = $("#progressFill"), txt = $("#progressText");
+    const prog = $("#exportProgress");
     prog.style.display = "block";
     $("#doneCard").hidden = true;
     $("#exportBtn").disabled = true;
     $("#cancelBtn").style.display = "inline-block";
-    const onProgress = (r, s) => { fill.style.width = `${Math.round(r * 100)}%`; txt.textContent = s; };
+    const mode = MC.ui.exportMode();
+    const p = MZP.start({
+      mount: "#exportProgress", chapter: "6. 書き出し", delay: 0,
+      label: mode === "realtime" ? "再生しながら録画しています…" : "映像を作っています…",
+      sub: mode === "realtime" ? "画面を閉じずにお待ちください" : "",
+      // 中止は枠の外の #cancelBtn が既に担っているので、ここでは出さない(二重表示の回避)
+    });
     try {
-      const mode = MC.ui.exportMode();
       if (mode === "none") throw new Error("この環境では書き出しできません");
       const res = mode === "realtime"
-        ? await MC.exporter.exportRealtime(onProgress)
-        : await MC.exporter.exportMP4(onProgress);
-      onProgress(1, "完了");
+        ? await MC.exporter.exportRealtime(p.legacy())
+        : await MC.exporter.exportMP4(p.legacy());
+      p.done("書き出しました", { chip: false });
       MC.ui.showDone(res);
     } catch (e) {
-      MC.ui.toast(e.message.includes("キャンセル") ? "書き出しを中止しました" : "⚠ 書き出し失敗: " + e.message);
       console.error(e);
+      if (e.message.includes("キャンセル")) {
+        p.close();
+        MC.ui.toast("書き出しを中止しました");
+      } else {
+        p.fail("書き出せませんでした", { detail: e.message });
+      }
     } finally {
       $("#exportBtn").disabled = !MC.S.clips.length;
       $("#cancelBtn").style.display = "none";
-      setTimeout(() => { prog.style.display = "none"; fill.style.width = "0%"; }, 2500);
+      setTimeout(() => { prog.style.display = "none"; }, 2500);
     }
   };
   $("#cancelBtn").onclick = () => { MC.exporter.cancelFlag = true; };
@@ -364,19 +382,20 @@ MC.ui.wire = () => {
   // --- Phase 2: 自動カット割+ワイプ+タイムライン ---
   $("#bpbSelect").onchange = e => { MC.S.beatsPerBar = parseInt(e.target.value); MC.saveState(); };
   $("#autocutBtn").onclick = async () => {
-    const st = $("#autocutStatus");
     $("#autocutBtn").disabled = true;
-    st.textContent = "拍を解析中…";
+    const p = MZP.start({ mount: "#autocutStatus", chapter: "4. レイアウト", delay: 0 });
+    p.frozen("拍を数えています…");
+    await MZP.paint();   // 画面が止まる前に、必ず表示を描いてから解析へ入る
     try {
-      await MC.yield();
       const r = await MC.beats.autocut();
-      st.innerHTML = `<span class="ok">✓ ${r.bpm.toFixed(0)} BPM・${r.segments}カットを生成しました(タップで編集できます)</span>`;
+      p.done(`${r.bpm.toFixed(0)} BPM・${r.segments}カットを作りました`,
+             { sub: "タップで編集できます" });
       MC.timeline.selected = -1;
       MC.timeline.render();
       MC.preview.seek(MC.trimRange()[0]);
     } catch (e) {
-      st.innerHTML = `<span class="err">⚠ ${e.message}</span>`;
       console.error(e);
+      p.fail("拍を数えられませんでした", { detail: e.message });
     } finally { $("#autocutBtn").disabled = false; }
   };
   $("#wipeCamSelect").onchange = e => { MC.S.wipeClipId = parseInt(e.target.value); MC.saveState(); MC.preview.draw(); };
@@ -392,14 +411,17 @@ MC.ui.wire = () => {
   $("#filterSelect").onchange = e => { MC.S.filterId = e.target.value; MC.saveState(); MC.preview.draw(); };
   $("#colorStrength").oninput = e => { MC.S.colorStrength = parseFloat(e.target.value); MC.saveState(); MC.preview.draw(); };
   $("#colorMatchBtn").onclick = async () => {
-    const st = $("#finishStatus");
     $("#colorMatchBtn").disabled = true;
+    const p = MZP.start({ mount: "#finishStatus", chapter: "5. 仕上げ",
+                          label: "色を見比べています…" });
     try {
-      await MC.color.run(s => { st.textContent = s; });
-      st.innerHTML = `<span class="ok">✓ 基準(音声カメラ)に合わせて色を補正しました</span>`;
+      await MC.color.run(p);
+      p.done("色をそろえました", { sub: "音声に使うカメラに合わせています" });
       MC.ui.renderFinish(); MC.preview.draw();
-    } catch (e) { st.innerHTML = `<span class="err">⚠ ${e.message}</span>`; console.error(e); }
-    finally { $("#colorMatchBtn").disabled = false; }
+    } catch (e) {
+      console.error(e);
+      p.fail("色をそろえられませんでした", { detail: e.message });
+    } finally { $("#colorMatchBtn").disabled = false; }
   };
   $("#colorClearBtn").onclick = () => {
     MC.S.colorOn = false;
@@ -408,19 +430,21 @@ MC.ui.wire = () => {
     $("#finishStatus").textContent = "";
   };
   $("#saluteBtn").onclick = async () => {
-    const st = $("#finishStatus");
     $("#saluteBtn").disabled = true;
-    st.textContent = "音の流れを解析中…";
+    const p = MZP.start({ mount: "#finishStatus", chapter: "5. 仕上げ", delay: 0 });
+    p.frozen("演奏のはじまりを探しています…");
+    await MZP.paint();   // 画面が止まる前に、必ず表示を描いてから解析へ入る
     try {
       MC.ui._salute = await MC.salute.detect();
       const s = MC.ui._salute;
       $("#saluteRow").style.display = "flex";
       $("#saluteInfo").textContent =
         `演奏 ${MC.ui.fmtTime(s.musicStart)} 〜 ${s.musicEnd ? MC.ui.fmtTime(s.musicEnd) : "?"}`;
-      st.textContent = "";
+      p.done(`演奏のはじまりは ${MC.ui.fmtTime(s.musicStart)} でした`);
       MC.ui.renderScrubTicks();
-    } catch (e) { st.innerHTML = `<span class="err">⚠ ${e.message}</span>`; }
-    finally { $("#saluteBtn").disabled = false; }
+    } catch (e) {
+      p.fail("演奏のはじまりを見つけられませんでした", { detail: e.message });
+    } finally { $("#saluteBtn").disabled = false; }
   };
   $("#saluteInBtn").onclick = () => {
     const s = MC.ui._salute; if (!s) return;
