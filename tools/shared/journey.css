@@ -12,7 +12,7 @@
   top: 0;
   z-index: 60;
   margin: 0 0 14px;
-  padding: 10px 14px 9px;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 14px 9px;   /* ノッチ下に潜らない */
   background: rgba(255, 255, 255, 0.82);
   -webkit-backdrop-filter: saturate(1.6) blur(14px);
   backdrop-filter: saturate(1.6) blur(14px);

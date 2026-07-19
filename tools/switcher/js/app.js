@@ -5,6 +5,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   MC.preview.init(document.getElementById("cv"));
   MC.ui.wire();
   MC.ui.initJourney();
+  MC.ui.initActionBar();
   MC.ui.renderAll();
 
   // 保存済みのプリセット/レイアウト等を復元

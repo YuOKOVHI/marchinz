@@ -371,3 +371,6 @@ body:not([data-kind="image"]) .image-only { display: none !important; }
 
 /* 管理者テスト用の動画ボタン(一般には出さない。動画の精度が実用に達したら開放する) */
 .admin-video-btn { display: block; margin: 10px auto 0; color: var(--sub); }
+
+/* iPhone: ダブルタップズームの誤発火を防ぐ(スクロール/ピンチは妨げない) */
+button, select, input, label, .btn { touch-action: manipulation; }

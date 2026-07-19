@@ -316,3 +316,6 @@ footer { text-align: center; padding: 16px calc(16px + env(safe-area-inset-right
   display: inline; cursor: pointer; color: inherit;
   text-decoration: underline; font-weight: 600; padding: 8px 2px;   /* タップしやすく */
 }
+
+/* iPhone: ダブルタップズームの誤発火を防ぐ(スクロール/ピンチは妨げない) */
+button, select, input, label, .btn { touch-action: manipulation; }

@@ -10,6 +10,7 @@
   --shadow-card: 0 1px 2px rgba(15, 33, 56, 0.05), 0 4px 16px rgba(15, 33, 56, 0.06);
 }
 html { background: #eef1f5; }
+* { -webkit-tap-highlight-color: transparent; }
 body { background: transparent; color: var(--tx); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", Meiryo, sans-serif; font-size: 14px; }
 
 /* 3ツール共通: キービジュアルの上に白い透明を重ねた背景(iOS配慮でposition:fixed) */
@@ -290,3 +291,31 @@ footer .foot-link { color: #1e4fd6; }
 /* タップ目標の底上げ(iOS) */
 .nudge button { min-height: 34px; }
 .select-mini { min-height: 32px; }
+
+/* iPhone: ダブルタップズームの誤発火を防ぐ(スクロール/ピンチは妨げない) */
+button, select, input, label, .btn { touch-action: manipulation; }
+
+/* ============ ボトムアクションバー(モバイル): 親指ゾーンに「次の一手」 ============ */
+.mz-actionbar {
+  display: none;
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 80;   /* MZPドック(90)の下: 進捗表示中はドックに譲る */
+  padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px));
+  background: rgba(255, 255, 255, 0.86);
+  -webkit-backdrop-filter: saturate(1.6) blur(14px);
+  backdrop-filter: saturate(1.6) blur(14px);
+  border-top: 1px solid var(--line);
+}
+.mz-actionbar button {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;   /* 親指目標 */
+}
+@media (max-width: 900px) {
+  .mz-actionbar.on { display: block; }
+  .wrap { padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }
+}

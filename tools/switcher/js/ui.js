@@ -95,6 +95,59 @@ MC.ui.initJourney = () => {
   MC.ui.refreshJourney();
 };
 
+/* ---- ボトムアクションバー(モバイル): 現在フェーズの主アクションを親指ゾーンへ ---- */
+MC.ui.initActionBar = () => {
+  const bar = document.createElement("div");
+  bar.className = "mz-actionbar";
+  bar.innerHTML = '<button id="abPrimary" class="btn primary" type="button"></button>';
+  document.getElementById("workspace").appendChild(bar);
+  bar.querySelector("#abPrimary").onclick = () => { if (MC.ui._abAction) MC.ui._abAction(); };
+  setInterval(MC.ui.updateActionBar, 500);   // MZP稼働状態の反映(ジャーニーバーと同じ流儀)
+};
+
+MC.ui.updateActionBar = () => {
+  const bar = document.querySelector(".mz-actionbar");
+  if (!bar) return;
+  const btn = bar.querySelector("#abPrimary");
+  const ws = document.getElementById("workspace");
+  // 進捗ドック表示中はドックに場所を譲る(操作もさせない)
+  const busy = window.MZP && MZP.current && !MZP.current.closed &&
+    ["run", "pulse", "frozen"].includes(MZP.current.state);
+  let conf = null;
+  if (!ws.hidden && !busy) {
+    const cur = MZJourney.current;
+    if (cur === "mat") {
+      conf = { label: MC.S.mode === "vertical" ? "動画・写真を選ぶ" : "動画を選ぶ",
+        icon: "fa-folder-open",
+        act: () => MC.ui.$(MC.S.mode === "vertical" ? "#fileInputV" : "#fileInput").click() };
+    } else if (cur === "sync") {
+      conf = { label: "波形で同期する", icon: "fa-wave-square",
+        disabled: MC.ui.$("#syncBtn").disabled, act: () => MC.ui.$("#syncBtn").click() };
+    } else if (cur === "polish") {
+      const cutMode = ["switch", "wipe"].includes(MC.S.layoutId);
+      if (cutMode && !MC.S.cutList.length) {
+        conf = { label: "自動カット割", icon: "fa-clapperboard",
+          act: () => MC.ui.$("#autocutBtn").click() };
+      } else {
+        conf = { label: "MP4を書き出す", icon: "fa-file-export",
+          disabled: MC.ui.$("#exportBtn").disabled, act: () => MC.ui.$("#exportBtn").click() };
+      }
+    } else if (cur === "export" && MC.exporter.lastResult) {
+      const r = MC.exporter.lastResult;
+      conf = MC.exporter.shareMode()
+        ? { label: "動画を保存", icon: "fa-arrow-up-from-bracket", act: () => MC.ui.saveResult() }
+        : { label: "ダウンロード", icon: "fa-download",
+            act: () => MC.exporter.triggerDownload(r.blob, r.name) };
+    }
+  }
+  if (!conf) { bar.classList.remove("on"); return; }
+  bar.classList.add("on");
+  const html = `<i class="fa-solid ${conf.icon}"></i> ${conf.label}`;
+  if (btn.dataset.h !== html) { btn.innerHTML = html; btn.dataset.h = html; }
+  btn.disabled = !!conf.disabled;
+  MC.ui._abAction = conf.act;
+};
+
 /* stateからフェーズを導出してバーと現在セクションの強調を更新 */
 MC.ui.refreshJourney = () => {
   if (!document.querySelector(".mzj")) return;   // 未初期化なら何もしない
@@ -116,6 +169,7 @@ MC.ui.refreshJourney = () => {
   document.querySelectorAll(".side .panel").forEach(p => p.classList.remove("phase-current"));
   const target = document.querySelector(MC.ui.JOURNEY_SECTIONS[current]);
   if (target) target.classList.add("phase-current");
+  MC.ui.updateActionBar();
 };
 
 /* --- クリップカード --- */
