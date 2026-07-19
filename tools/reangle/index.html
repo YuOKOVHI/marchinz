@@ -41,7 +41,7 @@
 
   <!-- ② プレビュー+調整+書き出し -->
   <section id="editorSection" hidden>
-    <div class="card">
+    <div class="card preview-card">
       <div class="clip-row">
         <span id="clipName" class="clip-name"></span>
         <button id="backBtn" class="text-btn">別の動画</button>
@@ -82,8 +82,8 @@
       </div>
       <div class="setting">
         <label>見る位置（左右） <b id="viewVal"></b></label>
-        <input id="viewRange" type="range" min="-40" max="40" step="1" value="0">
-        <p class="hint hint-tight">見る位置を左右に動かします。右へ動かすと、より右側（中央寄り）から撮ったような見え方になります。</p>
+        <input id="viewRange" type="range" min="-25" max="25" step="1" value="0">
+        <p class="hint hint-tight">見る位置を左右に動かします。右へ動かすと、より右側（中央寄り）から撮ったような見え方になります。大きく動かすと映像の外側はぼかし背景で埋まります。</p>
       </div>
       <div class="setting">
         <label>傾き <b id="tiltVal"></b></label>

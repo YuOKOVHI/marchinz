@@ -136,6 +136,16 @@ RA.ui.setStep = n => {
 };
 
 /* ---- ジャーニーバー(動画→四角→見え方→保存 の現在地表示) ---- */
+/* stickyプレビューがジャーニーバーの下に潜らないよう、実高さをCSS変数へ */
+RA.ui.trackJourneyHeight = () => {
+  const bar = document.querySelector(".mzj");
+  if (!bar) return;
+  const apply = () => document.documentElement.style.setProperty("--mzj-h", `${Math.ceil(bar.getBoundingClientRect().height) + 6}px`);
+  apply();
+  if (typeof ResizeObserver !== "undefined") new ResizeObserver(apply).observe(bar);
+  window.addEventListener("orientationchange", () => setTimeout(apply, 300));
+};
+
 RA.ui.initJourney = () => {
   MZJourney.init({
     container: document.querySelector("main"),
@@ -173,7 +183,7 @@ RA.ui.setDetectStatus = state => {
     el.innerHTML = '<i class="fa-solid fa-circle-check"></i> 自動検出しました。ズレていたら青い点をドラッグして直せます。';
   } else {
     el.classList.add("ng");
-    el.innerHTML = '<i class="fa-solid fa-hand-pointer"></i> 自動では見つかりませんでした。青い点を床の四隅に合わせてください。';
+    el.innerHTML = '<i class="fa-solid fa-hand-pointer"></i> 自動では見つかりませんでした。青い点を床の四隅に合わせてください。明るい場面にシークして「自動検出をやり直す」と見つかることもあります。';
   }
 };
 
@@ -304,6 +314,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   RA.preview.init();
   RA.corners.init();
   RA.ui.initJourney();
+  RA.ui.trackJourneyHeight();
   RA.testHomography();
 
   // ファイル選択+ドラッグ&ドロップ

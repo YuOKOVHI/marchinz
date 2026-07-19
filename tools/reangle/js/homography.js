@@ -143,6 +143,19 @@ RA.H.buildMatrix = opts => {
 
   const cx = dispW / 2, cy = dispH / 2;
 
+  // ①'' 見る位置(左右)の逆: 出力を水平シアー x' = x + k*(cy - y) で見せる
+  //  (床面に対する視点の横移動の一次近似。k>0 = より右から見たように)
+  //  tiltより先に適用=順方向では最外殻となり、傾き併用時もシアー軸は画面水平のまま。
+  //  縦動画はアスペクト比で実効量を弱め、横動画と「見え方の強さ」を揃える
+  let k = Math.max(-0.5, Math.min(0.5, opts.viewX || 0));
+  k *= Math.min(1, dispW / dispH);
+  if (k) {
+    const Sinv = [1, k, -k * cy,
+                  0, 1, 0,
+                  0, 0, 1];
+    M = RA.H.mul(Sinv, M);
+  }
+
   // ①' 傾き調整の逆: 出力を画面中心周りに tilt 度回して見せる → 逆は −tilt 回転
   const th = ((opts.tilt || 0) * Math.PI) / 180;
   if (th) {
@@ -151,16 +164,6 @@ RA.H.buildMatrix = opts => {
                   s,  c, cy - s * cx - c * cy,
                   0, 0, 1];
     M = RA.H.mul(Rinv, M);
-  }
-
-  // ①'' 見る位置(左右)の逆: 出力を水平シアー x' = x + k*(cy - y) で見せる
-  //  (床面に対する視点の横移動の一次近似。k>0 = より右から見たように)
-  const k = opts.viewX || 0;
-  if (k) {
-    const Sinv = [1, k, -k * cy,
-                  0, 1, 0,
-                  0, 0, 1];
-    M = RA.H.mul(Sinv, M);
   }
 
   // ② ズーム/パンの逆: corr = c + (out - c - pan)/zoom

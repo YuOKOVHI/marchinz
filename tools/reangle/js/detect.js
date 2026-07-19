@@ -15,6 +15,7 @@ RA.detect = {};
 
 /* video の現在フレームから床の四角形を推定。正規化座標4点(TL,TR,BR,BL) or null */
 RA.detect.floorQuad = video => {
+  if (!video || !video.videoWidth || !video.videoHeight) return null;
   const t0 = performance.now();
   const W = 320;
   const H = Math.max(40, Math.round(W * video.videoHeight / video.videoWidth));
@@ -51,7 +52,8 @@ RA.detect._tryBand = (px, W, H, yc) => {
     }
   }
   if (rs.length < 20) return null;
-  const med = a => { a.sort((p, q) => p - q); return a[a.length >> 1]; };
+  // コピーしてソート(in-placeだと後段のdists計算でrs/gs/bsのピクセル対応が壊れる)
+  const med = a => { const s = [...a].sort((p, q) => p - q); return s[s.length >> 1]; };
   const mr = med(rs), mg = med(gs), mb = med(bs);
   const lum = 0.299 * mr + 0.587 * mg + 0.114 * mb;
   if (lum < 60) return null;                 // 暗い=観客席・暗幕・スタンド
@@ -159,6 +161,10 @@ RA.detect._tryBand = (px, W, H, yc) => {
     q[3] = { x: q[3].x + (cc - cb), y: q[3].y };
   }
 
+  // ⑧ 後処理後の再検証: 均しで万一崩れた形(辺交差・上辺≥下辺)をそのまま出さない
+  if (!RA.detect._isConvex(q)) return null;
+  if (len(q[0], q[1]) >= len(q[3], q[2]) * 1.02) return null;
+
   const avgSup = (sup[0] * 2 + sup[1] + sup[2] + sup[3]) / 5;   // 奥の縁を重視
   const score = avgSup * 0.7 + Math.min(0.5, areaQ / (W * H)) * 0.6;
   return { quad: q, score, yc, sup };
@@ -181,7 +187,7 @@ RA.detect._edgeSupport = (region, W, H, q) => {
   };
   // 外側プローブ点からさらに外へ辿り、領域がフレーム端まで連続しているか(=切り取り辺)
   const runsToBorder = (x, y, nx, ny) => {
-    for (let s = 0; s < Math.max(W, H); s += 2) {
+    for (let s = 0; s < Math.max(W, H); s += 1) {
       const xi = Math.round(x - nx * s), yi = Math.round(y - ny * s);
       if (xi < 4 || xi >= W - 4 || yi < 4 || yi >= H - 4) return true;   // 端に到達(モルフォロジーの縁欠け分の余裕)
       if (!region[yi * W + xi]) return false;                            // 途切れた=実境界がある

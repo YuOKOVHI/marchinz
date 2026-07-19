@@ -86,6 +86,14 @@ main { flex: 1; width: 100%; max-width: 640px; margin: 0 auto; padding: 16px; }
 .clip-name { font-size: 13px; color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .text-btn { background: none; border: none; color: var(--accent); font-size: 13px; cursor: pointer; flex-shrink: 0; }
 .preview-wrap { position: relative; border-radius: 10px; overflow: hidden; background: #000; }
+/* スマホ: スライダー調整中もプレビューが見えるよう、ジャーニーバーの下へ貼り付く */
+@media (max-width: 640px) {
+  #editorSection .preview-card {
+    position: sticky;
+    top: var(--mzj-h, calc(48px + env(safe-area-inset-top, 0px)));
+    z-index: 30;
+  }
+}
 #previewCanvas { display: block; width: 100%; height: auto; }
 #cornerOverlay { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
 .hidden-video { position: fixed; width: 2px; height: 2px; opacity: 0; pointer-events: none; left: -10px; top: -10px; }
