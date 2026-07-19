@@ -4225,3 +4225,58 @@ body {
   .mz-dash-cat-name { font-size: 0.66rem; }
   .mz-dash-cat-row { grid-template-columns: minmax(6em, auto) 1fr auto; gap: 0.4rem; }
 }
+
+/* ---------- 練習ツール iPhone最適化(2026-07-19) ----------
+   楽器を持ったままの片手操作・譜面台に置いた遠目の視認を基準に、
+   主要操作(スタート/マイク)を全幅52px、拍ドットと音名を拡大。 */
+
+.mz-base-tool-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  width: 100%;
+  min-height: 52px;
+  font-size: 1.02rem;
+  touch-action: manipulation;
+}
+
+/* mini-btn/tag-chip は部室の記録UIとも共用のため、ツールセクション内だけ拡大 */
+.mz-base-tool-sec .mz-base-mini-btn,
+.mz-base-tool-sec .mz-base-tag-chip,
+.mz-base-preset-apply {
+  min-height: 44px;
+  touch-action: manipulation;
+}
+
+.mz-base-preset-del { min-width: 40px; min-height: 44px; touch-action: manipulation; }
+
+/* 拍ドット: 視覚20px・当たり44px。再生中はさらに大きく光って遠目でも追える */
+.mz-base-beat-dots { gap: 0.45rem; min-height: 44px; }
+.mz-base-dot { width: 44px; height: 44px; touch-action: manipulation; }
+.mz-base-dot::before { width: 20px; height: 20px; }
+.mz-base-dot--hit::before { transform: scale(1.45); box-shadow: 0 0 0 4px rgba(30, 79, 214, 0.18); }
+
+/* BPMスライダー: タッチ領域44px+大きなつまみ */
+.mz-base-bpm-slider { min-height: 44px; }
+.mz-base-bpm-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--blue);
+  border: 3px solid #fff;
+  box-shadow: 0 1px 6px rgba(15, 33, 56, 0.35);
+  margin-top: -12px;
+}
+.mz-base-bpm-slider::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(15, 33, 56, 0.14);
+}
+
+/* チューナー: 楽器を構えた距離から読める音名とバー */
+.mz-base-tuner-note { font-size: 3rem; min-height: 3.5rem; }
+.mz-base-cents-bar { height: 44px; }
+.mz-base-needle { width: 8px; margin-left: -4px; border-radius: 4px; }
+.mz-base-cent-txt { font-size: 0.95rem; }

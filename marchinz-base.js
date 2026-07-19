@@ -1714,8 +1714,46 @@
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     // iOS はユーザージェスチャ内での resume が必須(スタートボタンの click 内から呼ばれる)
     audioCtx.resume().catch(() => { /* noop */ });
+    unlockIosSilentSwitch();
     return audioCtx;
   }
+
+  /* iPhoneの消音スイッチON時、Web Audioはそのままだと鳴らない。
+     無音の<audio>ループを再生してメディア再生セッションへ昇格させる定番の回避策
+     (メトロノームが「鳴らない=壊れてる」に見えるのを防ぐ)。iOS系のみ。 */
+  let iosSilentAudio = null;
+  function unlockIosSilentSwitch() {
+    const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent)
+      || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    if (!isIOS) return;
+    if (!iosSilentAudio) {
+      iosSilentAudio = document.createElement("audio");
+      // 極小の無音WAV(44バイトヘッダ+無音1サンプル)
+      iosSilentAudio.src = "data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQIAAAAAAA==";
+      iosSilentAudio.loop = true;
+      iosSilentAudio.setAttribute("playsinline", "");
+    }
+    iosSilentAudio.play().catch(() => { /* 拒否されても本体機能は動く */ });
+  }
+
+  /* 練習中の画面スリープ防止(iOS Safari 16.4+/Chrome)。動作中だけ取得し、停止で解放 */
+  let wakeLock = null;
+  async function updateWakeLock() {
+    const want = metroOn || tunerOn;
+    try {
+      if (want && !wakeLock && navigator.wakeLock) {
+        wakeLock = await navigator.wakeLock.request("screen");
+        wakeLock.addEventListener("release", () => { wakeLock = null; });
+      } else if (!want && wakeLock) {
+        await wakeLock.release();
+        wakeLock = null;
+      }
+    } catch { wakeLock = null; /* 非対応・省電力モード等は静かに諦める */ }
+  }
+  document.addEventListener("visibilitychange", () => {
+    // バックグラウンド復帰でWake Lockは自動解放されるため取り直す
+    if (document.visibilityState === "visible" && (metroOn || tunerOn)) void updateWakeLock();
+  });
 
   /**
    * 鳴っている音・マイクを全部止める。呼び出し箇所:
@@ -1735,6 +1773,8 @@
     }
     tunerAnalyser = null;
     if (audioCtx && audioCtx.state === "running") audioCtx.suspend().catch(() => { /* noop */ });
+    if (iosSilentAudio) iosSilentAudio.pause();
+    void updateWakeLock();
   }
 
   function metroClick(time, accent) {
@@ -1977,6 +2017,8 @@
         metroBtn.textContent = "▶ スタート";
         metroBtn.classList.remove("mz-base-tool-toggle--on");
         if (!tunerOn && audioCtx) audioCtx.suspend().catch(() => { /* noop */ });
+        if (!tunerOn && iosSilentAudio) iosSilentAudio.pause();
+        void updateWakeLock();
         return;
       }
       ensureAudioCtx();
@@ -1987,9 +2029,11 @@
       metroBtn.textContent = "⏸ ストップ";
       metroBtn.classList.add("mz-base-tool-toggle--on");
       metroRafId = requestAnimationFrame(metroDraw);
+      void updateWakeLock();
       void window.MarchinZAdminUgcLog?.recordToolUse?.({ toolId: "metronome", toolName: "メトロノーム", targetHref: "#top" });
     });
-    metroSec.appendChild(metroBtn);
+    // スタートは主要操作(BPM調整の直下)へ。拍子・プリセットは「設定」なのでその下
+    metroSec.insertBefore(metroBtn, beatRow);
     return metroSec;
   }
 
@@ -2078,6 +2122,7 @@
         noteName.textContent = "--";
         centTxt.textContent = "マイクをオフにしました";
         if (!metroOn && audioCtx) audioCtx.suspend().catch(() => { /* noop */ });
+        void updateWakeLock();
         return;
       }
       try {
@@ -2098,6 +2143,7 @@
       tunerBtn.innerHTML = '<i class="fa-solid fa-stop" aria-hidden="true"></i> マイクをオフにする';
       tunerBtn.classList.add("mz-base-tool-toggle--on");
       tunerLoop();
+      void updateWakeLock();
       void window.MarchinZAdminUgcLog?.recordToolUse?.({ toolId: "tuner", toolName: "チューナー", targetHref: "#top" });
     });
     tunerSec.appendChild(tunerBtn);
