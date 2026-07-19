@@ -78,10 +78,43 @@ window.MZ_LIMITS = (() => {
     host.insertBefore(p, host.firstChild);
   };
 
+  /* 「ゲスト/登録でどこまで使えるか」の一覧。[data-mz-plan] の要素へ差し込む。
+     いまの自分がどちらなのかも印で分かるようにする(初見の人が迷わないため) */
+  L.renderPlanNote = () => {
+    const hosts = document.querySelectorAll("[data-mz-plan]");
+    if (!hosts.length) return;
+    const kind = hosts[0].getAttribute("data-mz-plan");   // "video" | "photo" | "both"
+    const rows = [];
+    if (kind !== "photo") rows.push(["動画の長さ", "5分まで", "12分まで"]);
+    if (kind !== "video") rows.push(["写真の枚数", "1枚まで", "5枚まで"]);
+    const now = L.unlimited ? "admin" : L.member ? "member" : "guest";
+    const html = `
+      <div class="mz-plan">
+        <p class="mz-plan-head"><i class="fa-solid fa-circle-info"></i> 使える条件</p>
+        <table class="mz-plan-table">
+          <thead><tr><th></th>
+            <th${now === "guest" ? ' class="on"' : ""}>ゲスト${now === "guest" ? "（いま）" : ""}</th>
+            <th${now === "member" ? ' class="on"' : ""}>無料登録${now === "member" ? "（いま）" : ""}</th>
+          </tr></thead>
+          <tbody>${rows.map(r =>
+            `<tr><th>${r[0]}</th><td${now === "guest" ? ' class="on"' : ""}>${r[1]}</td><td${now === "member" ? ' class="on"' : ""}>${r[2]}</td></tr>`).join("")}
+          </tbody>
+        </table>
+        <p class="mz-plan-note">${L.unlimited
+          ? "いまは上限なしで使えます。"
+          : L.member
+            ? "登録ありの上限で使えます。もっと長い動画は、短く切り出してからお試しください。"
+            : '無料登録すると上限が広がります。<a href="/#signup">無料登録はこちら</a>'}</p>
+        <p class="mz-plan-note">機能はどちらも同じです（すべて端末内で処理・無料）。長い動画は端末の負荷が大きいため、この上限を設けています。</p>
+      </div>`;
+    hosts.forEach(el => { el.innerHTML = html; });
+  };
+
+  const boot = () => { L.applyToDom(); L.renderPlanNote(); };
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", L.applyToDom, { once: true });
+    document.addEventListener("DOMContentLoaded", boot, { once: true });
   } else {
-    L.applyToDom();
+    boot();
   }
   return L;
 })();

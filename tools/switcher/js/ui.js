@@ -383,6 +383,23 @@ MC.ui.renderExportMode = () => {
   }
 };
 
+/* 書き出し失敗の原因別ヒント。原文も残して、問い合わせ時に伝えられるようにする */
+MC.ui.exportFailHint = e => {
+  const m = String((e && e.message) || e);
+  const dur = (() => { const [a, b] = MC.trimRange(); return Math.max(0, b - a); })();
+  let hint = "";
+  if (/メモリ|memory|allocat|OOM/i.test(m)) {
+    hint = "端末のメモリが足りなくなった可能性があります。IN/OUT で書き出す範囲を短くするか、素材の本数を減らしてお試しください。";
+  } else if (/大きすぎ|maxTex|too large/i.test(m)) {
+    hint = "映像の解像度がこの端末の上限を超えています。書き出しサイズを下げるか、小さい素材でお試しください。";
+  } else if (/対応|support|codec|decoder|decode/i.test(m)) {
+    hint = "この形式の映像/音声をブラウザが扱えないようです。別のブラウザ(Chrome/Safariの最新版)か、書き出し直した素材でお試しください。";
+  } else if (dur > 300) {
+    hint = `書き出す範囲が長い(${Math.round(dur / 60)}分)ため、途中で力尽きた可能性があります。IN/OUT で範囲を区切ってお試しください。`;
+  }
+  return hint ? `${hint}（詳細: ${m}）` : m;
+};
+
 /* --- トランスポート --- */
 MC.ui.updateTransport = () => {
   const dur = MC.timelineDuration();
@@ -557,7 +574,7 @@ MC.ui.wire = () => {
         p.close();
         MC.ui.toast("書き出しを中止しました");
       } else {
-        p.fail("書き出せませんでした", { detail: e.message });
+        p.fail("書き出せませんでした", { detail: MC.ui.exportFailHint(e) });
       }
     } finally {
       $("#exportBtn").disabled = !MC.S.clips.length;

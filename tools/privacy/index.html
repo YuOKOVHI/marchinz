@@ -18,14 +18,12 @@
 <link rel="stylesheet" href="/tools/shared/progress.css">
 <link rel="stylesheet" href="/tools/shared/journey.css">
 <link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="/tools/shared/sitechrome.css">
 </head>
-<body>
+<body data-mz-tool="privacy">
 
 <header>
   <div class="head-left">
-    <a href="/#top" class="mz-home" aria-label="MarchinZ ホームへ">
-      <img src="/logo/marchinz-logo.png" alt="MarchinZ / マーチンズ" class="mz-logo" width="150" decoding="async" onerror="this.style.display='none'">
-    </a>
     <h1 class="tool-name">Privacy<span class="beta-badge">ベータ版</span></h1>
   </div>
   <div class="head-right">
@@ -44,6 +42,7 @@
   <section id="dropSection" class="card drop step-card">
     <h2 class="step-title">写真を取り込む</h2>
     <p class="step-lead">取り込むと、顔を自動で見つけてモザイクがかかります。<span data-limit-note data-limit-note-member="写真は5枚まで取り込めます。">写真は<strong>1枚</strong>まで取り込めます(無料登録すると5枚)。</span></p>
+    <div data-mz-plan="photo"></div>
     <p class="hint">遠くの小さな顔や後ろ向きの顔は、まれに自動で見つからないことがあります。その場合も、あとから<strong>顔をタップするだけ</strong>で追加できます。</p>
     <button id="pickBtn" class="big-btn">写真を選ぶ</button>
     <button id="pickVideoBtn" class="mini-btn admin-video-btn" hidden><i class="fa-solid fa-video"></i> 動画を選ぶ〈管理者テスト用〉</button>
@@ -176,6 +175,7 @@
 <div id="toast"></div>
 
 <script src="/tools/shared/limits.js"></script>
+<script src="/tools/shared/sitechrome.js"></script>
 <script src="/tools/shared/progress.js"></script>
 <script src="/tools/shared/journey.js"></script>
 <script src="vendor/mp4box.all.min.js"></script>

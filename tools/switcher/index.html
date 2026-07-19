@@ -18,13 +18,11 @@
 <link rel="stylesheet" href="/tools/shared/progress.css">
 <link rel="stylesheet" href="/tools/shared/journey.css">
 <link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="/tools/shared/sitechrome.css">
 </head>
-<body>
+<body data-mz-tool="switcher">
 <header class="topbar">
   <div class="head-left">
-    <a href="/#top" class="mz-home" aria-label="MarchinZ ホームへ">
-      <img src="/logo/marchinz-logo.png" alt="MarchinZ / マーチンズ" class="mz-logo" width="150" decoding="async" onerror="this.style.display='none'">
-    </a>
     <h1 class="tool-name">Switcher<span class="beta-badge">ベータ版</span></h1>
   </div>
   <div class="head-right">
@@ -77,6 +75,7 @@
 
     <section class="panel" id="dropSec">
       <h2>動画を読み込む <span class="hint" data-limit-note data-limit-note-member="(3本まで・各12分)">(3本まで・各5分。無料登録すると各12分)</span></h2>
+      <div data-mz-plan="video"></div>
       <div id="clipSlots" class="clip-slots"></div>
       <input type="file" id="fileInput" accept="video/mp4,video/quicktime,video/*" multiple hidden>
       <input type="file" id="fileInputV" accept="video/mp4,video/quicktime,video/*,image/*" multiple hidden>
@@ -252,6 +251,7 @@
 <div id="toast" class="toast"></div>
 
 <script src="/tools/shared/limits.js"></script>
+<script src="/tools/shared/sitechrome.js"></script>
 <script src="/tools/shared/progress.js"></script>
 <script src="/tools/shared/journey.js"></script>
 <script src="/tools/shared/watermark.js"></script>

@@ -7,14 +7,12 @@
 <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
 <link rel="stylesheet" href="/tools/shared/journey.css">
 <link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="/tools/shared/sitechrome.css">
 </head>
-<body>
+<body data-mz-tool="reangle">
 
 <header class="topbar">
   <div class="head-left">
-    <a href="/#top" class="mz-home" aria-label="MarchinZ ホームへ">
-      <img src="/logo/marchinz-logo.png" alt="MarchinZ / マーチンズ" class="mz-logo" width="150" decoding="async" onerror="this.style.display='none'">
-    </a>
     <h1 class="tool-name">ReAngle<span class="beta-badge">ベータ版</span></h1>
   </div>
   <div class="head-right">
@@ -37,6 +35,7 @@
     <button id="pickBtn" class="big-btn">動画を選ぶ</button>
     <input id="fileInput" type="file" accept="video/*" hidden>
     <p class="note">すべてスマホ/PCの中だけで処理します。動画はどこにも送信されません。無料です。<span data-limit-note data-limit-note-member="動画は12分までです。">動画は<strong>5分まで</strong>です(無料登録すると12分まで)。</span></p>
+    <div data-mz-plan="video"></div>
   </section>
 
   <!-- ② プレビュー+調整+書き出し -->
@@ -167,6 +166,7 @@
 <div id="loupe" hidden><canvas width="240" height="240"></canvas></div>
 
 <script src="/tools/shared/limits.js"></script>
+<script src="/tools/shared/sitechrome.js"></script>
 <script src="/tools/shared/journey.js"></script>
 <script src="/tools/shared/watermark.js"></script>
 <script src="vendor/mp4box.all.min.js"></script>
