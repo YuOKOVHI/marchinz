@@ -424,7 +424,13 @@ MC.ui.normalizeForMode = () => {
 MC.ui.chooseMode = (mode, { silent = false } = {}) => {
   const m = MC.ui.MODES[mode] || MC.ui.MODES.vertical;
   MC.S.mode = mode;
-  if (!silent) { MC.S.preset = m.preset; MC.S.layoutId = m.layoutId; }
+  if (!silent) {
+    MC.S.preset = m.preset;
+    MC.S.layoutId = m.layoutId;
+    // 境界線の初期値はモードで変える: 自動スイッチングはオフ(全画面カットに枠は不要)、
+    // 縦型(分割)はオン(2026-07-19 優さん指定)
+    MC.S.borderOn = mode !== "switch";
+  }
   MC.ui.normalizeForMode();
   if (!silent) MC.saveState();
   MC.ui.$("#modeSelect").hidden = true;

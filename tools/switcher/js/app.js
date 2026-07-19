@@ -17,7 +17,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (saved.horizonOn != null) MC.S.horizonOn = saved.horizonOn;
     else if (Array.isArray(saved.clips) && saved.clips.some(c => c.rot)) MC.S.horizonOn = true; // 旧プロジェクト移行: rot設定済みなら水平補正ONを維持
     if (saved.colorStrength != null) MC.S.colorStrength = saved.colorStrength;
-    if (saved.filterId && MC.color.FILTERS[saved.filterId]) MC.S.filterId = saved.filterId;
+    // フィルターは復元しない: 初期値は常に「MarchinZ」(2026-07-19 優さん指定)
     if (saved.beatsPerBar) MC.S.beatsPerBar = saved.beatsPerBar;
     // 切替頻度: 旧5段階の保存値は3段階(少なめ/おすすめ/多め)へ寄せる
     if (saved.cutLevel >= 1 && saved.cutLevel <= 5) {
