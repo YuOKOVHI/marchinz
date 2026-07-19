@@ -160,6 +160,7 @@ MC.exporter.measureAacDelay = async () => {
 MC.exporter.encodeAudio = async (muxer, clip, fromLocalSec, durSec, onStatus) => {
   const src = new MC.MP4Source(clip.file);
   await src.init();
+  if (src.pcm) return MC.exporter.encodeAudioPcm(muxer, src, fromLocalSec, durSec, onStatus);
   const at = src.audioTrack();
   if (!at) return false;
   const cfg = src.audioDecoderConfig();
@@ -230,6 +231,64 @@ MC.exporter.encodeAudio = async (muxer, clip, fromLocalSec, durSec, onStatus) =>
   if (error || MC.exporter.cancelFlag) return false;
 
   // AACエンコード(1024フレームずつ)
+  onStatus("音を入れています…");
+  let encErr = null;
+  const encoder = new AudioEncoder({
+    output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
+    error: e => { encErr = e; },
+  });
+  encoder.configure({ codec: "mp4a.40.2", sampleRate: OUT_SR, numberOfChannels: 2, bitrate: 192000 });
+  const FR = 1024;
+  for (let o = 0; o < need; o += FR) {
+    if (encErr || MC.exporter.cancelFlag) break;
+    const n = Math.min(FR, need - o);
+    const data = new Float32Array(n * 2);
+    data.set(chL.subarray(o, o + n), 0);
+    data.set(chR.subarray(o, o + n), n);
+    encoder.encode(new AudioData({
+      format: "f32-planar", sampleRate: OUT_SR, numberOfFrames: n, numberOfChannels: 2,
+      timestamp: Math.round(o * 1e6 / OUT_SR), data,
+    }));
+    if (encoder.encodeQueueSize > 16) await MC.waitDequeue(encoder);
+  }
+  if (!encErr) await encoder.flush().catch(() => {});
+  try { encoder.close(); } catch (e) {}
+  return !encErr && !MC.exporter.cancelFlag;
+};
+
+/* リニアPCM音声(Resolve等のMOV): デコーダを通さず範囲を生読みして48kHzステレオ→AAC */
+MC.exporter.encodeAudioPcm = async (muxer, src, fromLocalSec, durSec, onStatus) => {
+  const OUT_SR = 48000;
+  const need = Math.ceil(durSec * OUT_SR);
+  const chL = new Float32Array(need), chR = new Float32Array(need);
+  const rsL = new MC.audio.LinearResampler(src.pcm.rate, OUT_SR);
+  const rsR = new MC.audio.LinearResampler(src.pcm.rate, OUT_SR);
+  const primingSec = (await MC.exporter.measureAacDelay()) / 48000;
+  const from = Math.max(0, fromLocalSec + primingSec);
+  let skipOut = null, outCount = 0, written = 0;
+  for await (const c of src.pcmChunks(Math.max(0, from - 0.5))) {
+    if (MC.exporter.cancelFlag) return false;
+    if (skipOut === null) {
+      const firstSec = c.startFrame / src.pcm.rate;
+      skipOut = Math.max(0, Math.round((from - firstSec) * OUT_SR));
+    }
+    const chans = src.pcmToFloat(c.data, c.frames);
+    const L = chans[0];
+    const R = chans.length > 1 ? chans[1] : chans[0];
+    const oL = rsL.push(L), oR = rsR.push(R);
+    for (let i = 0; i < oL.length; i++) {
+      const pos = outCount + i;
+      if (pos < skipOut) continue;
+      const w = pos - skipOut;
+      if (w >= need) break;
+      chL[w] = oL[i]; chR[w] = oR[i];
+      if (w >= written) written = w + 1;
+    }
+    outCount += oL.length;
+    if (outCount - (skipOut || 0) >= need) break;
+    await MC.yield();
+  }
+
   onStatus("音を入れています…");
   let encErr = null;
   const encoder = new AudioEncoder({

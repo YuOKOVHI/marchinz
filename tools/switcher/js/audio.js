@@ -36,7 +36,8 @@ MC.audio.extract8k = async (clip, maxSec = MC.audio.MAX_SEC) => {
   if (clip.audio8k) return clip.audio8k;
   let pcm = null, err1 = null;
   try {
-    pcm = await MC.audio.viaWebCodecs(clip, maxSec);
+    pcm = await MC.audio.viaRawPcm(clip, maxSec);   // リニアPCM(Resolve等のMOV)は生読みが最速・最軽量
+    if (!pcm) pcm = await MC.audio.viaWebCodecs(clip, maxSec);
   } catch (e) {
     err1 = e;
     console.warn("[MC] WebCodecs音声抽出失敗→decodeAudioDataへ:", e.message);
@@ -50,6 +51,39 @@ MC.audio.extract8k = async (clip, maxSec = MC.audio.MAX_SEC) => {
   clip.hasAudio = true;
   clip.audio8k = pcm;
   clip.stats = MC.audio.stats(pcm);
+  return pcm;
+};
+
+/* リニアPCM(lpcm/sowt等)の生読み: デコーダ不要。チャンクを順に読み
+   モノラル化→8kHzへ。PCMトラックが無いファイルでは null を返す */
+MC.audio.viaRawPcm = async (clip, maxSec) => {
+  const src = new MC.MP4Source(clip.file);
+  await src.init();
+  if (!src.pcm) return null;
+  const resampler = new MC.audio.LinearResampler(src.pcm.rate, MC.audio.SR);
+  const outChunks = [];
+  let total = 0;
+  const maxFrames = maxSec * MC.audio.SR;
+  for await (const c of src.pcmChunks(0)) {
+    const chans = src.pcmToFloat(c.data, c.frames);
+    const mono = chans[0];
+    for (let ch = 1; ch < chans.length; ch++) {
+      const a = chans[ch];
+      for (let i = 0; i < mono.length; i++) mono[i] += a[i];
+    }
+    if (chans.length > 1) for (let i = 0; i < mono.length; i++) mono[i] /= chans.length;
+    const out = resampler.push(mono);
+    if (out.length) { outChunks.push(out); total += out.length; }
+    if (total >= maxFrames) break;
+    await MC.yield();   // 20分素材でもUIを固めない
+  }
+  const pcm = new Float32Array(Math.min(total, maxFrames));
+  let o = 0;
+  for (const a of outChunks) {
+    const n = Math.min(a.length, pcm.length - o);
+    if (n <= 0) break;
+    pcm.set(a.subarray(0, n), o); o += n;
+  }
   return pcm;
 };
 
