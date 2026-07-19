@@ -295,6 +295,9 @@ MZ.ui.updateDetectStatus = () => {
   if (n > 0) {
     el.classList.add("ok");
     el.innerHTML = `<i class="fa-solid fa-circle-check"></i> いまの画面で ${n} 人の顔にモザイクをかけています。`;
+  } else if (clip.kind === "image") {
+    el.classList.add("ng");
+    el.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i> この写真では顔が見つかりませんでした。顔の場所をタップすると手動でモザイクを追加できます。';
   } else {
     el.classList.add("ng");
     el.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i> いまの画面では顔が見つかっていません。顔が映る場面まで、下のバーを動かして確認してください。';
@@ -403,22 +406,32 @@ MZ.ui.loadFile = async file => {
   return MZ.ui.isImageFile(file) ? MZ.ui._loadImages([file]) : MZ.ui._loadVideo(file);
 };
 
-/* 複数ファイルの取り込み: 写真は上限枚数まで(ゲスト1/登録5)、動画は先頭1本。混在は写真を優先 */
+/* 動画を扱えるのは管理者ログイン中か手元環境のみ。
+   動画の顔検出はまだ写真ほどの精度が出ないため、一般には写真だけを開放している。
+   (動画のコード一式は残してあり、精度が実用に達したらこの関門を外すだけで戻る) */
+MZ.ui.videoAllowed = () => MZ_LIMITS.unlimited;
+
+/* 複数ファイルの取り込み: 写真は上限枚数まで(ゲスト1/登録5)。
+   動画は管理者テスト用の隠し機能(一般はお断りする) */
 MZ.ui.loadFiles = async fileList => {
   MZ.ui.ensureDetector();
   const files = [...fileList];
   const imgs = files.filter(MZ.ui.isImageFile);
   const vid = files.find(MZ.ui.isVideoFile);
-  MZ.ui.disposeClip();
   if (imgs.length) {
+    MZ.ui.disposeClip();
     if (imgs.length > MZ_LIMITS.maxPhotos) {
       const more = MZ_LIMITS.member || MZ_LIMITS.unlimited ? "" : "(無料登録すると5枚まで)";
       MZ.ui.toast(`写真は${MZ_LIMITS.maxPhotos}枚まで${more}です。先頭の${MZ_LIMITS.maxPhotos}枚を使います`);
     }
     return MZ.ui._loadImages(imgs.slice(0, MZ_LIMITS.maxPhotos));
   }
-  if (vid) return MZ.ui._loadVideo(vid);
-  throw new Error("動画または写真を入れてください");
+  if (vid) {
+    if (!MZ.ui.videoAllowed()) throw new Error("いまは写真のみ対応しています(動画は準備中です)");
+    MZ.ui.disposeClip();
+    return MZ.ui._loadVideo(vid);
+  }
+  throw new Error("写真を入れてください");
 };
 
 /* 1ファイルを ImageBitmap(EXIF回転反映)へ。失敗時は<img>フォールバック */
@@ -679,15 +692,20 @@ window.addEventListener("DOMContentLoaded", async () => {
   // ファイル選択+ドラッグ&ドロップ
   $("pickBtn").onclick = () => $("fileInput").click();
   $("fileInput").onchange = e => { if (e.target.files.length) MZ.ui.loadFiles(e.target.files).catch(err => MZ.ui.toast(`⚠ ${err.message}`)); };
+  // 動画は管理者テスト用の隠し機能(精度が実用に達したら一般開放する)
+  if (MZ.ui.videoAllowed()) $("pickVideoBtn").hidden = false;
+  $("pickVideoBtn").onclick = () => $("videoInput").click();
+  $("videoInput").onchange = e => { if (e.target.files.length) MZ.ui.loadFiles(e.target.files).catch(err => MZ.ui.toast(`⚠ ${err.message}`)); };
   const dz = $("dropSection");
   dz.addEventListener("dragover", e => { e.preventDefault(); dz.classList.add("drag"); });
   dz.addEventListener("dragleave", () => dz.classList.remove("drag"));
   dz.addEventListener("drop", e => {
     e.preventDefault();
     dz.classList.remove("drag");
-    const fs = [...e.dataTransfer.files].filter(f => MZ.ui.isImageFile(f) || MZ.ui.isVideoFile(f));
+    const fs = [...e.dataTransfer.files].filter(f =>
+      MZ.ui.isImageFile(f) || (MZ.ui.videoAllowed() && MZ.ui.isVideoFile(f)));
     if (fs.length) MZ.ui.loadFiles(fs).catch(err => MZ.ui.toast(`⚠ ${err.message}`));
-    else MZ.ui.toast("動画または写真を入れてください");
+    else MZ.ui.toast(MZ.ui.videoAllowed() ? "動画または写真を入れてください" : "写真を入れてください");
   });
 
   // 再生コントロール

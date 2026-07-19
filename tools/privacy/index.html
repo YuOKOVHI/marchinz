@@ -4,12 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>MarchinZ Privacy — 顔自動モザイク〈ベータ版〉</title>
-<meta name="description" content="顔に自動でモザイク。動画・写真は端末の外に出ません。MarchinZの無料クリエイターツール。">
+<meta name="description" content="顔に自動でモザイク。写真は端末の外に出ません。MarchinZの無料クリエイターツール。">
 <meta name="theme-color" content="#fefcef">
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
 <link rel="icon" type="image/png" href="/favicon.png">
 <meta property="og:title" content="MarchinZ Privacy — 顔自動モザイク">
-<meta property="og:description" content="顔に自動でモザイク。動画・写真は端末の外に出ません。MarchinZの無料クリエイターツール。">
+<meta property="og:description" content="顔に自動でモザイク。写真は端末の外に出ません。MarchinZの無料クリエイターツール。">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://marchinz.netlify.app/tools/privacy/">
 <meta property="og:image" content="https://marchinz.netlify.app/ogp-card.png">
@@ -34,19 +34,21 @@
 </header>
 
 <div class="beta-disclaimer">
-  <i class="fa-solid fa-shield-halved"></i> <strong>無料・すべて端末内で処理</strong>します（動画・写真はどこにも送信されません）。
+  <i class="fa-solid fa-shield-halved"></i> <strong>無料・すべて端末内で処理</strong>します（写真はどこにも送信されません）。
   <details class="disc-more"><summary>ベータ版の注意</summary>ベータ版のため動作は保証されず、モザイクの掛かり漏れ・不具合について当方は責任を負いません。</details>
 </div>
 
 <main>
   <!-- ⓪ 取り込みフェーズ -->
   <section id="dropSection" class="card drop step-card">
-    <h2 class="step-title">動画・写真を取り込む</h2>
-    <p class="step-lead">取り込むと、顔を自動で見つけてモザイクがかかります。<span data-limit-note data-limit-note-member="動画は10分・写真は5枚まで取り込めます。">動画は<strong>10分</strong>・写真は<strong>1枚</strong>まで取り込めます(無料登録すると写真5枚)。</span></p>
+    <h2 class="step-title">写真を取り込む</h2>
+    <p class="step-lead">取り込むと、顔を自動で見つけてモザイクがかかります。<span data-limit-note data-limit-note-member="写真は5枚まで取り込めます。">写真は<strong>1枚</strong>まで取り込めます(無料登録すると5枚)。</span></p>
     <p class="hint">遠くの小さな顔や後ろ向きの顔は、まれに自動で見つからないことがあります。その場合も、あとから<strong>顔をタップするだけ</strong>で追加できます。</p>
-    <button id="pickBtn" class="big-btn">動画・写真を選ぶ</button>
-    <input id="fileInput" type="file" accept="video/*,image/*" multiple hidden>
-    <p class="note">すべてスマホ/PCの中だけで処理します。動画・写真はどこにも送信されません。無料です。</p>
+    <button id="pickBtn" class="big-btn">写真を選ぶ</button>
+    <button id="pickVideoBtn" class="mini-btn admin-video-btn" hidden><i class="fa-solid fa-video"></i> 動画を選ぶ〈管理者テスト用〉</button>
+    <input id="videoInput" type="file" accept="video/*" hidden>
+    <input id="fileInput" type="file" accept="image/*" multiple hidden>
+    <p class="note">すべてスマホ/PCの中だけで処理します。写真はどこにも送信されません。無料です。</p>
   </section>
 
   <!-- ⓪.5 範囲選択フェーズ(60秒超の動画のみ・インスタのストーリー風トリム) -->

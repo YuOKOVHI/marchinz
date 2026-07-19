@@ -363,3 +363,6 @@ body:not([data-kind="image"]) .image-only { display: none !important; }
 }
 .tap-guide i { width: 20px; text-align: center; color: var(--accent); margin-right: 2px; }
 .tap-guide strong { color: var(--navy); }
+
+/* 管理者テスト用の動画ボタン(一般には出さない。動画の精度が実用に達したら開放する) */
+.admin-video-btn { display: block; margin: 10px auto 0; color: var(--sub); }
