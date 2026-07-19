@@ -108,7 +108,24 @@ MC.preview = {
     }
   },
 
+  /* 素材ゼロのときの空状態(黒い矩形だけを見せない) */
+  drawEmpty() {
+    const W = this.canvas.width, H = this.canvas.height, ctx = this.ctx;
+    ctx.fillStyle = "#101418";
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "rgba(255,255,255,0.28)";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    const base = Math.min(W, H);
+    ctx.font = `${Math.round(base * 0.10)}px sans-serif`;
+    ctx.fillText("🎬", W / 2, H / 2 - base * 0.09);
+    ctx.font = `500 ${Math.round(base * 0.042)}px -apple-system, sans-serif`;
+    ctx.fillText("素材を入れると", W / 2, H / 2 + base * 0.03);
+    ctx.fillText("ここにプレビューが出ます", W / 2, H / 2 + base * 0.095);
+  },
+
   draw() {
+    if (!MC.S.clips.length) { this.drawEmpty(); return; }
     MC.drawComposite(this.ctx, this.canvas.width, this.canvas.height, MC.S.t, id => {
       const c = MC.getClip(id);
       if (!c) return null;

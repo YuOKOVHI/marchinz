@@ -410,7 +410,7 @@ MC.ui.wire = () => {
 
   $("#syncBtn").onclick = async () => {
     $("#syncBtn").disabled = true;
-    const p = MZP.start({ mount: "#syncStatus", chapter: "2. 同期", steps: 4,
+    const p = MZP.start({ mount: "#syncStatus", chapter: "同期", steps: 4,
                           label: "音を取り出しています…" });
     try {
       const r = await MC.sync.run(p);
@@ -432,6 +432,11 @@ MC.ui.wire = () => {
       p.done(r && r.low ? `ズレを合わせました(${r.low}本は手動調整をおすすめします)`
                         : "ズレを合わせました",
              { sub: MC.S.trimOut != null ? `書き出し範囲 ${MC.ui.fmtTime(ti)}〜${MC.ui.fmtTime(to)} を自動設定` : "" });
+      // 次のフェーズ(整える)へそっと誘導
+      setTimeout(() => {
+        const el = $("#layoutSec");
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 900);
     } catch (e) {
       MC.ui.toast("⚠ 同期に失敗: " + e.message); console.error(e);
       p.fail("ズレを合わせられませんでした", { detail: e.message,
@@ -458,7 +463,7 @@ MC.ui.wire = () => {
     $("#cancelBtn").style.display = "inline-block";
     const mode = MC.ui.exportMode();
     const p = MZP.start({
-      mount: "#exportProgress", chapter: "6. 書き出し", delay: 0,
+      mount: "#exportProgress", chapter: "書き出し", delay: 0,
       label: mode === "realtime" ? "再生しながら録画しています…" : "映像を作っています…",
       sub: mode === "realtime" ? "画面を閉じずにお待ちください" : "",
       // 中止は枠の外の #cancelBtn が既に担っているので、ここでは出さない(二重表示の回避)
@@ -497,7 +502,7 @@ MC.ui.wire = () => {
   $("#autocutBtn").onclick = async () => {
     $("#autocutBtn").disabled = true;
     MC.preview.pause();   // 解析中はvideo要素をシークで専有する
-    const p = MZP.start({ mount: "#autocutStatus", chapter: "4. レイアウト",
+    const p = MZP.start({ mount: "#autocutStatus", chapter: "レイアウト",
                           delay: 0, steps: 3 });
     p.pulse("音楽を解析しています…");
     await MZP.paint();
@@ -537,7 +542,7 @@ MC.ui.wire = () => {
   $("#colorStrength").oninput = e => { MC.S.colorStrength = parseFloat(e.target.value); MC.saveState(); MC.preview.draw(); };
   $("#colorMatchBtn").onclick = async () => {
     $("#colorMatchBtn").disabled = true;
-    const p = MZP.start({ mount: "#finishStatus", chapter: "5. 仕上げ",
+    const p = MZP.start({ mount: "#finishStatus", chapter: "仕上げ",
                           label: "色を見比べています…" });
     try {
       await MC.color.run(p);
@@ -559,7 +564,7 @@ MC.ui.wire = () => {
   att.onchange = e => { MC.S.autoTrim = e.target.checked; MC.saveState(); };
   $("#saluteBtn").onclick = async () => {
     $("#saluteBtn").disabled = true;
-    const p = MZP.start({ mount: "#finishStatus", chapter: "5. 仕上げ", delay: 0 });
+    const p = MZP.start({ mount: "#finishStatus", chapter: "仕上げ", delay: 0 });
     p.frozen("演奏のはじまりを探しています…");
     await MZP.paint();   // 画面が止まる前に、必ず表示を描いてから解析へ入る
     try {

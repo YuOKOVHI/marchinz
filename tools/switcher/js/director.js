@@ -53,8 +53,10 @@ MC.director.run = async p => {
     p.step(2, `映像を見ています…(${ci + 1}/${vclips.length}本目)`);
     const l0 = Math.max(0, tIn - c.offset);
     const l1 = Math.max(l0 + 1, Math.min(c.duration, tOut - c.offset));
+    // 進捗は全クリップ通算(クリップごとに0%へ巻き戻さない)
     await MC.visual.analyzeClip(c, l0, l1, (i, n) =>
-      p.count(i, n, { unit: "コマ", name: c.name }));
+      p.set((ci + i / n) / vclips.length, null,
+            { sub: `${ci + 1} / ${vclips.length} 本目・${MZP.shortName(c.name)}` }));
   }
 
   // ③ カット割
@@ -130,7 +132,15 @@ MC.director._rank = (g0, g1, cls, ctx) => {
   const pool = MC.S.clips.filter(c => !c.isAudio && !c.isImage);
   let cands = pool.filter(c => g0 >= c.offset - 0.2 && g1 <= c.offset + c.duration + 0.2);
   if (!cands.length) cands = pool.filter(c => mid >= c.offset && mid <= c.offset + c.duration);
-  if (!cands.length) cands = pool;
+  if (!cands.length) {
+    // どのカメラも区間をカバーしない(録画長の差など)。
+    // 盲目にスコアで選ぶと素材の無いカメラ=黒画面が混入するため、
+    // 区間との重なりが最大(同率なら距離が最小)のカメラだけを候補にする
+    const overlap = c => Math.max(0,
+      Math.min(g1, c.offset + c.duration) - Math.max(g0, c.offset));
+    const dist = c => Math.max(0, Math.max(g0 - (c.offset + c.duration), c.offset - g1));
+    cands = [...pool].sort((a, b) => (overlap(b) - overlap(a)) || (dist(a) - dist(b))).slice(0, 1);
+  }
 
   const ranked = [];
   for (const c of cands) {

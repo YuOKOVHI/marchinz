@@ -197,6 +197,9 @@ RA.exporter.exportMP4 = async (clip, onProgress) => {
     const glCanvas = new OffscreenCanvas(W0, H0);
     renderer = new RA.WarpRenderer(glCanvas, { preserve: true });
     renderer.setSize(W0, H0);
+    // ウォーターマーク焼き込み用の2D合成キャンバス(WebGL出力+ロゴ)
+    const wmCanvas = new OffscreenCanvas(W0, H0);
+    const wmCtx = wmCanvas.getContext("2d");
     if (Math.max(rawW, rawH) > renderer.maxTex)
       throw new Error(`映像が大きすぎます(${rawW}x${rawH} > GPU上限${renderer.maxTex})`);
     const M = RA.H.buildMatrix({
@@ -246,7 +249,9 @@ RA.exporter.exportMP4 = async (clip, onProgress) => {
       if (ts0 === null) ts0 = f.timestamp;
       renderer.upload(f);
       renderer.render(M, RA.fx());
-      const vf = new VideoFrame(glCanvas, {
+      wmCtx.drawImage(glCanvas, 0, 0);
+      if (window.MZWM) MZWM.draw(wmCtx, W0, H0);   // ウォーターマーク焼き込み
+      const vf = new VideoFrame(wmCanvas, {
         timestamp: Math.max(0, f.timestamp - ts0),
         duration: f.duration || Math.round(1e6 / fps),
       });
@@ -303,7 +308,17 @@ RA.exporter.exportRealtime = async (clip, onProgress) => {
     video.currentTime = 0;
     await new Promise(r => { video.onseeked = r; });
 
-    const canvas = RA.preview.canvas;
+    // ウォーターマーク焼き込み: WebGLプレビューを2Dへ写してロゴを載せ、その合成を録画する
+    const glCanvas = RA.preview.canvas;
+    const canvas = document.createElement("canvas");
+    canvas.width = glCanvas.width; canvas.height = glCanvas.height;
+    const cctx = canvas.getContext("2d");
+    const paintWm = () => {
+      cctx.drawImage(glCanvas, 0, 0);
+      if (window.MZWM) MZWM.draw(cctx, canvas.width, canvas.height);
+    };
+    paintWm();   // 録画開始前に必ず1フレーム描いておく(最初のフレーム待ちで固まらない)
+    const wmIv = RA.exporter._wmIv = setInterval(paintWm, 33);
     const tracks = [...canvas.captureStream(30).getVideoTracks()];
     const actx = RA.exporter._actx || (RA.exporter._actx = new AudioContext());
     if (actx.state === "suspended") await actx.resume().catch(() => {});
@@ -337,6 +352,7 @@ RA.exporter.exportRealtime = async (clip, onProgress) => {
     });
     video.pause();
     mr.stop();
+    clearInterval(wmIv);
     await stopped;
     if (RA.exporter.cancelFlag) throw new Error("キャンセルしました");
     const blob = new Blob(chunks, { type: mime || "video/webm" });
@@ -345,6 +361,7 @@ RA.exporter.exportRealtime = async (clip, onProgress) => {
     RA.log(`realtime export done: ${name} bytes=${blob.size}`);
     return { blob, name };
   } finally {
+    clearInterval(RA.exporter._wmIv);   // 例外時もウォーターマーク合成ループを止める
     RA.exporter.running = false;
   }
 };

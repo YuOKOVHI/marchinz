@@ -76,7 +76,7 @@
   <aside class="side">
 
     <section class="panel" id="dropSec">
-      <h2>1. 動画を読み込む <span class="hint" data-limit-note data-limit-note-member="(3本まで・各12分)">(3本まで・各5分。無料登録すると各12分)</span></h2>
+      <h2>動画を読み込む <span class="hint" data-limit-note data-limit-note-member="(3本まで・各12分)">(3本まで・各5分。無料登録すると各12分)</span></h2>
       <div id="clipSlots" class="clip-slots"></div>
       <input type="file" id="fileInput" accept="video/mp4,video/quicktime,video/*" multiple hidden>
       <input type="file" id="fileInputV" accept="video/mp4,video/quicktime,video/*,image/*" multiple hidden>
@@ -84,7 +84,7 @@
     </section>
 
     <section class="panel" id="syncSec">
-      <h2>2. 同期 <span class="hint">音の波形で自動合わせ</span></h2>
+      <h2>同期 <span class="hint">音の波形で自動合わせ</span></h2>
       <div class="row">
         <button id="syncBtn" class="btn primary" disabled><i class="fa-solid fa-wave-square"></i> 波形で同期する</button>
       </div>
@@ -92,7 +92,7 @@
     </section>
 
     <section class="panel" id="audioSec">
-      <h2>3. 使う音声 <span class="hint">いちばん良い音におすすめ印</span></h2>
+      <h2>使う音声 <span class="hint">いちばん良い音におすすめ印</span></h2>
       <div id="audioChoices" class="audio-choices"><span class="hint">クリップを読み込むと表示されます</span></div>
       <div class="row" style="margin-top:8px">
         <button id="audioImportBtn" class="btn small"><i class="fa-solid fa-file-audio"></i> 音声ファイルを取り込む</button>
@@ -101,7 +101,7 @@
     </section>
 
     <section class="panel" id="layoutSec">
-      <h2>4. レイアウト</h2>
+      <h2>レイアウト</h2>
       <div class="row preset-row" id="presetRow"></div>
       <select id="layoutSelect" class="select"></select>
       <div id="slotRows" class="slot-rows"></div>
@@ -154,7 +154,7 @@
     </section>
 
     <section class="panel" id="finishSec">
-      <h2>5. 仕上げ <span class="hint">色・水平・トリム提案</span></h2>
+      <h2>仕上げ <span class="hint">色・水平・トリム提案</span></h2>
       <div class="row">
         <button id="colorMatchBtn" class="btn"><i class="fa-solid fa-palette"></i> 自動カラーマッチ</button>
         <button id="colorClearBtn" class="btn small ghost" style="display:none">解除</button>
@@ -192,7 +192,7 @@
     </section>
 
     <section class="panel" id="exportSec">
-      <h2>6. 書き出し</h2>
+      <h2>書き出し</h2>
       <div id="exportMode" class="status"></div>
       <div class="row">
         <button id="exportBtn" class="btn primary big" disabled><i class="fa-solid fa-file-export"></i> MP4を書き出す</button>
@@ -253,6 +253,7 @@
 <script src="/tools/shared/limits.js"></script>
 <script src="/tools/shared/progress.js"></script>
 <script src="/tools/shared/journey.js"></script>
+<script src="/tools/shared/watermark.js"></script>
 <script src="vendor/mp4box.all.min.js"></script>
 <script src="vendor/mp4-muxer.min.js"></script>
 <script src="vendor/fft.js"></script>

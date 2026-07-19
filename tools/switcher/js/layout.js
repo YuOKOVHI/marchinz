@@ -126,6 +126,7 @@ MC.drawComposite = (ctx, W, H, t, resolveSrc) => {
         MC.drawPip(ctx, W, H, MC.S.wipeClipId2, MC.S.wipePos2, resolveSrc);
       }
     }
+    if (window.MZWM) MZWM.draw(ctx, W, H);   // ウォーターマーク(プレビュー/書き出し共通)
     return;
   }
 
@@ -154,4 +155,5 @@ MC.drawComposite = (ctx, W, H, t, resolveSrc) => {
     for (const r of L.rects) ctx.strokeRect(r.x * W, r.y * H, r.w * W, r.h * H);
     ctx.restore();
   }
+  if (window.MZWM) MZWM.draw(ctx, W, H);   // ウォーターマーク(プレビュー/書き出し共通)
 };

@@ -3,7 +3,7 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
   --bg: #f4f6f8; --panel: #ffffff; --panel2: #f0f2f6; --line: rgba(15, 33, 56, 0.12);
-  --tx: #0c0f14; --tx2: rgba(12, 15, 20, 0.55);
+  --tx: #0c0f14; --tx2: rgba(12, 15, 20, 0.65);
   --navy: #0f2138; --acc: #1e4fd6; --acc-deep: #163b9e; --acc2: #d97706;
   --ok: #1e7a43; --warn: #9a6a00; --err: #c0392b;
   --cream: #fefcef;
@@ -282,3 +282,11 @@ footer .foot-link { color: #1e4fd6; }
   border-color: rgba(30, 79, 214, 0.45);
   box-shadow: 0 0 0 1px rgba(30, 79, 214, 0.18), var(--shadow-card);
 }
+
+
+/* ジャーニーバー(sticky)に見出しが隠れないスクロール余白 */
+.side .panel { scroll-margin-top: 96px; }
+
+/* タップ目標の底上げ(iOS) */
+.nudge button { min-height: 34px; }
+.select-mini { min-height: 32px; }

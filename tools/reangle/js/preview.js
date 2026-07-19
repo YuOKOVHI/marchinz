@@ -15,6 +15,8 @@ RA.preview = {
     const W = Math.max(2, Math.round(clip.width * s));
     const H = Math.max(2, Math.round(clip.height * s));
     this.renderer.setSize(W, H);
+    // ウォーターマーク: プレビューはWebGL直描きのためDOMオーバーレイで載せる
+    if (window.MZWM) MZWM.overlay(this.canvas.parentElement, W, H);
     cancelAnimationFrame(this.raf);
     clearInterval(this.iv);
     const loop = () => { this.drawOnce(); this.raf = requestAnimationFrame(loop); };
