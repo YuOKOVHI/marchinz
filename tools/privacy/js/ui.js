@@ -262,14 +262,37 @@ MZ.ui._scanAtRangeStart = clip => {
 MZ.ui.setStep = n => {
   n = Math.max(1, Math.min(3, n | 0));
   MZ.S.step = n;
-  document.querySelectorAll("#stepper [data-step]").forEach(b => {
-    const bn = parseInt(b.dataset.step, 10);
-    b.classList.toggle("on", bn === n);
-    b.classList.toggle("done", bn < n);
-  });
   $("panelStep1").hidden = n !== 1;
   $("panelStep2").hidden = n !== 2;
   $("panelStep3").hidden = n !== 3;
+  if (window.MZJourney) MZJourney.refresh();   // ジャーニーバーへ即時反映
+};
+
+/* ---- ジャーニーバー(取り込み→確認→調整→保存 の現在地表示) ---- */
+MZ.ui.initJourney = () => {
+  MZJourney.init({
+    container: document.querySelector("main"),
+    phases: [
+      { id: "pick",  label: "取り込む", hint: "写真を選ぶと、顔に自動でモザイクがかかります" },
+      { id: "check", label: "顔を確認", hint: "かかっていない顔はタップで追加できます" },
+      { id: "tune",  label: "調整",     hint: "隠しかた・濃さ・広げ幅を整えます" },
+      { id: "save",  label: "保存",     hint: "「モザイクをかけて保存」を押してください" },
+    ],
+    doneHint: "保存できました。続けて別の写真もどうぞ",
+    /* 画面の表示状態から現在フェーズを導出(遷移箇所ごとの呼び忘れが起きない) */
+    autoState: () => {
+      if ($("editorSection").hidden) return { current: "pick", done: [] };
+      const map = { 1: "check", 2: "tune", 3: "save" };
+      const done = ["pick"];
+      if (MZ.S.step >= 2) done.push("check");
+      if (MZ.S.step >= 3) done.push("tune");
+      if (!$("doneCard").hidden) done.push("save");
+      return { current: map[MZ.S.step] || "check", done };
+    },
+    /* 「取り込む」へは誤タップで素材を破棄しないよう戻さない(「別の素材を選ぶ」から) */
+    canSelect: id => id !== "pick" && $("editorSection").hidden === false,
+    onSelect: id => MZ.ui.setStep({ check: 1, tune: 2, save: 3 }[id]),
+  });
 };
 
 /* ①ステップの検出状態カード(モデル準備 → 現在の検出人数をライブ表示) */
@@ -691,6 +714,7 @@ MZ.ui.saveResult = async () => {
 /* ---- 起動 ---- */
 window.addEventListener("DOMContentLoaded", async () => {
   MZ.preview.init();
+  MZ.ui.initJourney();
 
   // ファイル選択+ドラッグ&ドロップ
   $("pickBtn").onclick = () => $("fileInput").click();

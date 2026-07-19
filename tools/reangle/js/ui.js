@@ -125,16 +125,37 @@ RA.ui.setStep = n => {
   n = Math.max(1, Math.min(3, n | 0));
   RA.S.step = n;
   RA.S.editCorners = n === 1;   // 四角合わせ中だけ無補正ソース+ハンドル表示
-  document.querySelectorAll("#stepper [data-step]").forEach(b => {
-    const bn = parseInt(b.dataset.step, 10);
-    b.classList.toggle("on", bn === n);
-    b.classList.toggle("done", bn < n);
-  });
   $("panelStep1").hidden = n !== 1;
   $("panelStep2").hidden = n !== 2;
   $("panelStep3").hidden = n !== 3;
   RA.corners.draw();
   if (n === 2) setTimeout(() => RA.ui.buildPresetThumbs(), 60);  // 補正表示に切り替わってから
+  if (window.MZJourney) MZJourney.refresh();   // ジャーニーバーへ即時反映
+};
+
+/* ---- ジャーニーバー(動画→四角→見え方→保存 の現在地表示) ---- */
+RA.ui.initJourney = () => {
+  MZJourney.init({
+    container: document.querySelector("main"),
+    phases: [
+      { id: "pick",    label: "動画",         hint: "斜めから撮った動画を選んでください" },
+      { id: "corners", label: "四角を合わせる", hint: "床の四角を合わせるほど仕上がりがきれいです" },
+      { id: "tune",    label: "見え方",       hint: "補正の強さ・見せ方を整えます" },
+      { id: "save",    label: "保存",         hint: "「書き出して保存」を押してください" },
+    ],
+    doneHint: "保存できました。続けて別の動画もどうぞ",
+    autoState: () => {
+      if ($("editorSection").hidden) return { current: "pick", done: [] };
+      const map = { 1: "corners", 2: "tune", 3: "save" };
+      const done = ["pick"];
+      if (RA.S.step >= 2) done.push("corners");
+      if (RA.S.step >= 3) done.push("tune");
+      if (!$("doneCard").hidden) done.push("save");
+      return { current: map[RA.S.step] || "corners", done };
+    },
+    canSelect: id => id !== "pick" && $("editorSection").hidden === false,
+    onSelect: id => RA.ui.setStep({ corners: 1, tune: 2, save: 3 }[id]),
+  });
 };
 
 /* 自動検出の状態表示(①ステップ内) */
@@ -279,6 +300,7 @@ RA.ui.saveResult = async () => {
 window.addEventListener("DOMContentLoaded", async () => {
   RA.preview.init();
   RA.corners.init();
+  RA.ui.initJourney();
   RA.testHomography();
 
   // ファイル選択+ドラッグ&ドロップ

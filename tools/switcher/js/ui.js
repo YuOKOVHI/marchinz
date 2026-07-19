@@ -70,6 +70,52 @@ MC.ui.renderAll = () => {
   MC.timeline.render();
   MC.ui.$("#syncBtn").disabled = MC.S.clips.filter(c => !c.isImage).length < 2;
   MC.ui.$("#exportBtn").disabled = !MC.S.clips.length;
+  MC.ui.refreshJourney();
+};
+
+/* ---- ジャーニーバー(どのフェーズにいるかの常時表示) ---- */
+MC.ui.JOURNEY_SECTIONS = { mat: "#dropSec", sync: "#syncSec", polish: "#layoutSec", export: "#exportSec" };
+
+MC.ui.initJourney = () => {
+  MZJourney.init({
+    container: MC.ui.$("#workspace"),
+    phases: [
+      { id: "mat",    label: "素材",     hint: "動画を入れてください（3つまで）" },
+      { id: "sync",   label: "同期",     hint: "「波形で同期する」でズレを合わせます" },
+      { id: "polish", label: "整える",   hint: "音声・レイアウト・仕上げを整えます" },
+      { id: "export", label: "書き出す", hint: "「MP4を書き出す」で完成です" },
+    ],
+    doneHint: "書き出し完了。調整して書き出し直すこともできます",
+    canSelect: () => true,   // タップ=そのセクションへ移動(状態は変えないので常に安全)
+    onSelect: id => {
+      const el = document.querySelector(MC.ui.JOURNEY_SECTIONS[id]);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    },
+  });
+  MC.ui.refreshJourney();
+};
+
+/* stateからフェーズを導出してバーと現在セクションの強調を更新 */
+MC.ui.refreshJourney = () => {
+  if (!document.querySelector(".mzj")) return;   // 未初期化なら何もしない
+  const slot = MC.media.slotClips();
+  const vids = MC.S.clips.filter(c => !c.isAudio && !c.isImage);
+  const synced = vids.length >= 2
+    ? vids.every(c => c.syncMethod !== "未同期")
+    : slot.length > 0;   // 素材1つ(写真のみ含む)なら同期は不要=済み扱い
+  const exported = !!MC.exporter.lastResult;
+  const done = [];
+  if (slot.length) done.push("mat");
+  if (slot.length && synced) done.push("sync");
+  if (exported) done.push("polish", "export");
+  const current = !slot.length ? "mat"
+    : (vids.length >= 2 && !synced) ? "sync"
+    : exported ? "export" : "polish";
+  MZJourney.set(current, done);
+  // 現在フェーズのセクションをそっと強調
+  document.querySelectorAll(".side .panel").forEach(p => p.classList.remove("phase-current"));
+  const target = document.querySelector(MC.ui.JOURNEY_SECTIONS[current]);
+  if (target) target.classList.add("phase-current");
 };
 
 /* --- クリップカード --- */

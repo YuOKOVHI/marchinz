@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>ReAngle — 斜め撮り動画を正面に</title>
 <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
+<link rel="stylesheet" href="/tools/shared/journey.css">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -56,19 +57,6 @@
       </div>
     </div>
 
-    <nav id="stepper" class="stepper" aria-label="手順">
-      <button type="button" data-step="1" class="on">
-        <span class="step-num">1</span><span class="step-name">四角を合わせる</span>
-      </button>
-      <span class="step-arrow" aria-hidden="true"><i class="fa-solid fa-chevron-right"></i></span>
-      <button type="button" data-step="2">
-        <span class="step-num">2</span><span class="step-name">見え方を調整</span>
-      </button>
-      <span class="step-arrow" aria-hidden="true"><i class="fa-solid fa-chevron-right"></i></span>
-      <button type="button" data-step="3">
-        <span class="step-num">3</span><span class="step-name">保存</span>
-      </button>
-    </nav>
 
     <div id="panelStep1" class="card step-card">
       <h2 class="step-title">基準の四角を合わせる</h2>
@@ -180,6 +168,7 @@
 <div id="loupe" hidden><canvas width="240" height="240"></canvas></div>
 
 <script src="/tools/shared/limits.js"></script>
+<script src="/tools/shared/journey.js"></script>
 <script src="vendor/mp4box.all.min.js"></script>
 <script src="vendor/mp4-muxer.min.js"></script>
 <script src="js/app.js"></script>

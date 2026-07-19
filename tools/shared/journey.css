@@ -1,0 +1,138 @@
+/* ============ ジャーニーバー(3ツール共通) ============
+   すりガラスのstickyバー。フェーズはドット+ラベル、完了=チェック、現在=青ピル。
+   下段に「今何の作業中か」(MZP連動)/ アイドル時は次の一手ヒント。
+   トークンはツール側CSS変数(--accent/--acc/--line)を吸収して使う。 */
+
+.mzj {
+  --mzj-acc: var(--accent, var(--acc, #1e4fd6));
+  --mzj-line: var(--line, rgba(15, 33, 56, 0.12));
+  --mzj-fg: var(--fg, var(--tx, #0c0f14));
+  --mzj-sub: var(--sub, var(--tx2, rgba(12, 15, 20, 0.55)));
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  margin: 0 0 14px;
+  padding: 10px 14px 9px;
+  background: rgba(255, 255, 255, 0.82);
+  -webkit-backdrop-filter: saturate(1.6) blur(14px);
+  backdrop-filter: saturate(1.6) blur(14px);
+  border-bottom: 1px solid var(--mzj-line);
+  border-radius: 0 0 14px 14px;
+}
+
+.mzj-track {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+/* フェーズ間の細い接続線 */
+.mzj-link {
+  flex: 1 1 10px;
+  max-width: 42px;
+  height: 1.5px;
+  background: var(--mzj-line);
+  border-radius: 1px;
+}
+
+.mzj-phase {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: none;
+  background: transparent;
+  padding: 5px 8px;
+  border-radius: 999px;
+  color: var(--mzj-sub);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.22s ease, color 0.22s ease, opacity 0.22s ease;
+  white-space: nowrap;
+}
+.mzj-phase:disabled { cursor: default; opacity: 0.75; }
+
+.mzj-dot {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 50%;
+  background: rgba(15, 33, 56, 0.07);
+  color: var(--mzj-sub);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11.5px;
+  font-weight: 700;
+  transition: background 0.22s ease, color 0.22s ease, transform 0.22s ease;
+}
+.mzj-check { display: none; font-size: 10px; }
+
+/* 完了フェーズ: チェックに置き換え */
+.mzj-phase.done { color: var(--mzj-fg); }
+.mzj-phase.done .mzj-dot { background: rgba(30, 122, 67, 0.14); color: var(--ok, #1e7a43); }
+.mzj-phase.done .mzj-num { display: none; }
+.mzj-phase.done .mzj-check { display: inline; }
+
+/* 現在フェーズ: 青のピル */
+.mzj-phase.current {
+  background: var(--mzj-acc);
+  color: #fff;
+  font-weight: 700;
+  box-shadow: 0 2px 10px rgba(30, 79, 214, 0.28);
+}
+.mzj-phase.current .mzj-dot {
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+  transform: scale(1.02);
+}
+
+/* すべて完了: 現在ピルも緑がかったトーンに寄せる */
+.mzj.alldone .mzj-phase.current { background: var(--ok, #1e7a43); box-shadow: 0 2px 10px rgba(30, 122, 67, 0.28); }
+
+/* 下段: いま何をしているか */
+.mzj-activity {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 7px;
+  min-height: 18px;
+  font-size: 12.5px;
+  color: var(--mzj-sub);
+}
+.mzj.busy .mzj-activity { color: var(--mzj-acc); font-weight: 600; }
+.mzj.alldone .mzj-activity { color: var(--ok, #1e7a43); font-weight: 600; }
+
+/* 作業中だけ脈打つドット(意味のある動きだけ) */
+.mzj-pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0;
+  flex: none;
+  transition: opacity 0.2s ease;
+}
+.mzj.busy .mzj-pulse { opacity: 1; animation: mzjPulse 1.2s ease-in-out infinite; }
+.mzj.alldone .mzj-pulse { opacity: 1; }
+@keyframes mzjPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(0.55); opacity: 0.45; }
+}
+
+/* 狭い画面: ラベルは現在フェーズだけ(他はドットのみ) */
+@media (max-width: 560px) {
+  .mzj { padding: 8px 10px 7px; }
+  .mzj-phase:not(.current) .mzj-label { display: none; }
+  .mzj-phase { padding: 4px 6px; }
+  .mzj-phase.current { padding: 4px 12px 4px 6px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mzj, .mzj * { transition: none !important; animation: none !important; }
+}

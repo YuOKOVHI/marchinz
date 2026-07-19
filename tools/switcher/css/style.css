@@ -275,3 +275,10 @@ footer .foot-link { color: #1e4fd6; }
   background: var(--panel2); color: var(--tx); border: 1px solid var(--line);
   border-radius: 6px; padding: 3px 6px; font-size: 12px; max-width: 150px;
 }
+
+/* ジャーニーバーの現在フェーズに対応するセクションの控えめな強調 */
+.side .panel { transition: border-color 0.25s ease, box-shadow 0.25s ease; }
+.side .panel.phase-current {
+  border-color: rgba(30, 79, 214, 0.45);
+  box-shadow: 0 0 0 1px rgba(30, 79, 214, 0.18), var(--shadow-card);
+}
