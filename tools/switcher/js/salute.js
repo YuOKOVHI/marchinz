@@ -5,7 +5,23 @@
    「5秒以上の静けさ(T_low未満)の後、3秒以上持続する高エネルギー(T_high超)」を演奏開始とする。
    トリムIN提案 = 開始 − 前振り秒(サリュートが映るように)。自動適用はしない。 */
 
-MC.salute = {};
+MC.salute = { OUT_AFTER: 10 };  // OUT = 演奏終了の10秒後(基本)
+
+/* 自動トリム: サリュート考慮のIN(演奏開始-前振り)と、音が終わって10秒後のOUTを適用。
+   検出失敗は静かに諦める(トリムなしで続行)。戻り値: 適用したか */
+MC.salute.autoTrim = async () => {
+  let s;
+  try { s = await MC.salute.detect(); } catch (e) { MC.log("autoTrim: 検出できず →", e.message); return false; }
+  MC.ui._salute = s;
+  const pre = parseFloat(document.getElementById("preRoll").value) || 8;
+  MC.S.trimIn = Math.max(0, s.musicStart - pre);
+  MC.S.trimOut = s.musicEnd != null
+    ? Math.min(MC.timelineDuration(), s.musicEnd + MC.salute.OUT_AFTER) : null;
+  MC.saveState();
+  MC.ui.updateTransport();
+  MC.ui.renderScrubTicks();
+  return true;
+};
 
 MC.salute.detect = async () => {
   const clip = MC.getClip(MC.S.audioClipId);
@@ -44,12 +60,14 @@ MC.salute.detect = async () => {
     for (let j = i - 50; j < i; j++) if (sm[j] < tLow) quiet++;
     if (quiet >= 40) { startH = i; break; }
   }
-  // 演奏終了: 末尾から見て最後に3秒持続でT_high超だった位置の終端
+  // 演奏終了: 「最後に音が大きかった位置」。
+  // T_high(60%点)は演奏がファイルの大半を占めると演奏レベル内に食い込み、
+  // 持続条件が満たせず取り逃がすため、静寂〜ピークの間に置いた閾値の最終超えを使う
+  const tPeak = sorted[Math.floor(nH * 0.95)];
+  const tEnd = tLow + 0.3 * Math.max(0, tPeak - tLow);
   let endH = -1;
-  for (let i = nH - 31; i >= Math.max(0, startH); i--) {
-    let sus = true;
-    for (let j = i; j < i + 30; j++) if (sm[j] <= tHigh) { sus = false; break; }
-    if (sus) { endH = i + 30; break; }
+  for (let i = nH - 1; i >= Math.max(0, startH); i--) {
+    if (sm[i] > tEnd) { endH = i; break; }
   }
   if (startH < 0) {
     // 静寂前提が満たされない(既に曲中から始まる素材など)→開始のみ緩く検出

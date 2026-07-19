@@ -18,12 +18,16 @@ MC.ui.showDone = res => {
   const $ = MC.ui.$;
   $("#doneCard").hidden = false;
   if (share) {
+    // iOS等: 共有シート保存が主導線、ダウンロードも選べる
+    $("#saveBtn").style.display = "inline-flex";
     $("#doneText").innerHTML = `<span class="ok">✓ 準備できました(${(res.blob.size / 1e6).toFixed(1)}MB)</span>`;
-    $("#doneNote").textContent = "「動画を保存」を押すと、共有シートから写真(カメラロール)やファイルに保存できます。";
+    $("#doneNote").textContent = "「動画を保存」で写真(カメラロール)やファイルへ。「ダウンロード」でファイル保存もできます。";
     MC.ui.toast("✔ 準備できました。保存を押してください");
   } else {
+    // PC/Mac: 自動ダウンロード済み。再ダウンロードだけ出す
+    $("#saveBtn").style.display = "none";
     $("#doneText").innerHTML = `<span class="ok">✓ 「${res.name}」を保存しました(${(res.blob.size / 1e6).toFixed(1)}MB)</span>`;
-    $("#doneNote").textContent = "ダウンロードに保存されています。";
+    $("#doneNote").textContent = "ダウンロードに保存されています(もう一度保存するには「ダウンロード」)。";
     MC.ui.toast("✔ 書き出しが完了しました");
   }
 };
@@ -64,7 +68,7 @@ MC.ui.renderAll = () => {
   MC.ui.renderExportMode();
   MC.ui.updateTransport();
   MC.timeline.render();
-  MC.ui.$("#syncBtn").disabled = MC.S.clips.length < 2;
+  MC.ui.$("#syncBtn").disabled = MC.S.clips.filter(c => !c.isImage).length < 2;
   MC.ui.$("#exportBtn").disabled = !MC.S.clips.length;
 };
 
@@ -73,33 +77,39 @@ MC.ui.renderAll = () => {
 MC.ui.renderClips = () => {
   const box = MC.ui.$("#clipSlots");
   box.innerHTML = "";
+  const vertical = MC.S.mode === "vertical";
+  const slotClips = MC.media.slotClips();   // 音声のみを除く(動画+画像)
   for (let slotIdx = 0; slotIdx < 3; slotIdx++) {
-    const c = MC.S.clips[slotIdx];
+    const c = slotClips[slotIdx];
     const slot = document.createElement("div");
     slot.className = "clip-slot" + (c ? " filled" : " empty");
     const lb = document.createElement("div");
     lb.className = "clip-slot-label";
-    lb.innerHTML = `<i class="fa-solid fa-video"></i> 動画${slotIdx + 1}${slotIdx === 2 ? "（なくてもOK）" : ""}`;
+    const noun = vertical ? "素材" : "動画";
+    lb.innerHTML = `<i class="fa-solid fa-video"></i> ${noun}${slotIdx + 1}${slotIdx === 2 ? "（なくてもOK）" : ""}`;
     slot.appendChild(lb);
     if (!c) {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "clip-slot-add";
-      btn.innerHTML = 'タップして動画を選ぶ<br><span class="hint">またはここにドロップ</span>';
-      btn.onclick = () => MC.ui.$("#fileInput").click();
+      btn.innerHTML = vertical
+        ? 'タップして動画・写真を選ぶ<br><span class="hint">またはここにドロップ</span>'
+        : 'タップして動画を選ぶ<br><span class="hint">またはここにドロップ</span>';
+      btn.onclick = () => MC.ui.$(vertical ? "#fileInputV" : "#fileInput").click();
       slot.appendChild(btn);
       box.appendChild(slot);
       continue;
     }
     const card = document.createElement("div");
     card.className = "clip-card";
-    const badgeCls = c.syncMethod === "基準" ? "ref" : c.syncMethod.startsWith("波形") ? "wave" : c.syncMethod.startsWith("タイムスタンプ") ? "ts" : "";
+    const badgeCls = c.isImage ? "" : c.syncMethod === "基準" ? "ref" : c.syncMethod.startsWith("波形") ? "wave" : c.syncMethod.startsWith("タイムスタンプ") ? "ts" : "";
     const conf = c.confidence != null && isFinite(c.confidence) ? `信頼度${c.confidence.toFixed(1)}` : "";
     card.innerHTML = `
       ${c.thumb ? `<img class="clip-thumb" src="${c.thumb}">` : `<div class="clip-thumb"></div>`}
       <div class="clip-info">
         <div class="clip-name" title="${MC.ui.esc(c.name)}">${MC.ui.esc(c.name)}</div>
-        <div class="clip-meta">${c.width}×${c.height}・${MC.ui.fmtTime(c.duration)}</div>
+        <div class="clip-meta">${c.width}×${c.height}${c.isImage ? "・写真" : "・" + MC.ui.fmtTime(c.duration)}</div>
+        ${c.isImage ? "" : `
         <div class="clip-sync">
           <span class="sync-badge ${badgeCls}">${c.syncMethod}</span>
           <span>${c.offset ? "+" + c.offset.toFixed(3) + "s" : "0s"}</span>
@@ -111,7 +121,7 @@ MC.ui.renderClips = () => {
             <button data-n="0.033">+1f</button><button data-n="0.1">+0.1</button><button data-n="1">+1s</button>
           </span>
           <button class="btn small ghost listen" title="基準と重ねて試聴">🎧</button>
-        </div>
+        </div>`}
         <div class="pan-row">横位置 <input type="range" class="pan" min="0" max="1" step="0.01" value="${c.pan}"></div>
         ${MC.S.mode === "switch" ? `
         <div class="pan-row">役割 <select class="role-sel select-mini" title="自動カット割でこのカメラをどう扱うか">
@@ -124,7 +134,8 @@ MC.ui.renderClips = () => {
       <button class="clip-remove" title="削除">✕</button>`;
     card.querySelectorAll(".nudge button").forEach(b =>
       b.onclick = () => MC.sync.nudge(c.id, parseFloat(b.dataset.n)));
-    card.querySelector(".listen").onclick = () => MC.sync.listenCheck(c.id);
+    const listen = card.querySelector(".listen");
+    if (listen) listen.onclick = () => MC.sync.listenCheck(c.id);
     card.querySelector(".pan").oninput = e => { c.pan = parseFloat(e.target.value); MC.saveState(); };
     const roleSel = card.querySelector(".role-sel");
     if (roleSel) roleSel.onchange = e => { c.role = e.target.value; MC.saveState(); };
@@ -137,10 +148,11 @@ MC.ui.renderClips = () => {
 /* --- 音声選択 --- */
 MC.ui.renderAudio = () => {
   const box = MC.ui.$("#audioChoices");
-  if (!MC.S.clips.length) { box.innerHTML = `<span class="hint">クリップを読み込むと表示されます</span>`; return; }
+  const cands = MC.S.clips.filter(c => !c.isImage);   // 静止画に音は無い
+  if (!cands.length) { box.innerHTML = `<span class="hint">クリップを読み込むと表示されます</span>`; return; }
   const reco = MC.audio.recommend();
   box.innerHTML = "";
-  for (const c of MC.S.clips) {
+  for (const c of cands) {
     const label = document.createElement("label");
     label.className = "audio-choice" + (MC.S.audioClipId === c.id ? " selected" : "");
     const stat = c.stats
@@ -148,7 +160,7 @@ MC.ui.renderAudio = () => {
       : (c.hasAudio === false ? "音声なし" : "未解析");
     label.innerHTML = `
       <input type="radio" name="audioClip" ${MC.S.audioClipId === c.id ? "checked" : ""} ${c.hasAudio === false ? "disabled" : ""}>
-      <span>${MC.ui.esc(c.name.length > 18 ? c.name.slice(0, 17) + "…" : c.name)}</span>
+      ${c.isAudio ? '<i class="fa-solid fa-file-audio" title="取り込んだ音声ファイル"></i> ' : ""}<span>${MC.ui.esc(c.name.length > 18 ? c.name.slice(0, 17) + "…" : c.name)}</span>
       ${reco && reco.id === c.id ? `<span class="reco-badge">おすすめ</span>` : ""}
       <span class="audio-stat">${stat}</span>`;
     label.querySelector("input").onchange = () => {
@@ -198,12 +210,23 @@ MC.ui.renderLayout = () => {
   MC.ui.$("#autocutPanel").style.display = isCutMode ? "block" : "none";
   MC.ui.$("#wipeOpts").style.display = L.type === "wipe" ? "flex" : "none";
   if (L.type === "wipe") {
+    const pipCands = MC.media.slotClips();
     const ws = MC.ui.$("#wipeCamSelect");
-    ws.innerHTML = MC.S.clips.map(c =>
+    ws.innerHTML = pipCands.map(c =>
       `<option value="${c.id}" ${MC.S.wipeClipId === c.id ? "selected" : ""}>${MC.ui.esc(c.name.slice(0, 12))}</option>`).join("");
+    const ws2 = MC.ui.$("#wipeCamSelect2");
+    ws2.innerHTML = `<option value="">（なし）</option>` + pipCands.map(c =>
+      `<option value="${c.id}" ${MC.S.wipeClipId2 === c.id ? "selected" : ""}>${MC.ui.esc(c.name.slice(0, 12))}</option>`).join("");
     MC.ui.$("#wipePosSelect").value = MC.S.wipePos;
+    MC.ui.$("#wipePosSelect2").value = MC.S.wipePos2;
     MC.ui.$("#wipeSizeRange").value = MC.S.wipeSize;
   }
+  // 境界線(分割セルとワイプ小窓の枠)
+  MC.ui.$("#borderRow").style.display = MC.S.layoutId === "single" ? "none" : "flex";
+  MC.ui.$("#borderToggle").checked = MC.S.borderOn;
+  MC.ui.$("#borderColor").value = MC.S.borderColor;
+  MC.ui.$("#borderWRange").value = MC.S.borderW;
+  MC.ui.$("#borderWVal").textContent = MC.S.borderW + "px";
   MC.ui.$("#bpbSelect").value = String(MC.S.beatsPerBar);
   // スロット割当
   const rows = MC.ui.$("#slotRows");
@@ -270,9 +293,9 @@ MC.ui.updateTransport = () => {
    presets/layouts = そのモードで選べるものだけ。ここに無い選択肢はUIに出さない */
 MC.ui.MODES = {
   vertical: {
-    preset: "9x16", layoutId: "v2", label: "縦型動画",
+    preset: "9x16", layoutId: "v3", label: "縦型動画",   // 3分割縦積みが初期
     presets: ["9x16"],                                   // 縦型で固定(比率は選ばせない)
-    layouts: ["v2", "v3", "h2", "h3", "big2", "single"],  // スイッチング/ワイプは対象外
+    layouts: ["v3", "v2", "big2", "single"],             // 横並べは廃止
   },
   switch: {
     preset: "16x9", layoutId: "switch", label: "自動スイッチング動画",
@@ -319,20 +342,43 @@ MC.ui.wire = () => {
     card.onclick = () => MC.ui.chooseMode(card.dataset.mode));
   $("#modeBackBtn").onclick = () => MC.ui.showModeSelect();
 
-  const dz = $("#clipSlots"), fi = $("#fileInput");
+  const dz = $("#clipSlots"), fi = $("#fileInput"), fiv = $("#fileInputV");
   fi.onchange = () => { MC.media.addFiles([...fi.files]); fi.value = ""; };
+  fiv.onchange = () => { MC.media.addFiles([...fiv.files]); fiv.value = ""; };
+  const ai = $("#audioInput");
+  $("#audioImportBtn").onclick = () => ai.click();
+  ai.onchange = async () => {
+    if (ai.files.length) await MC.media.addAudioFile(ai.files[0]);
+    ai.value = "";
+  };
   ["dragover", "dragenter"].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add("over"); }));
   ["dragleave", "drop"].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove("over"); }));
   dz.addEventListener("drop", e => MC.media.addFiles([...e.dataTransfer.files]));
 
   $("#syncBtn").onclick = async () => {
     $("#syncBtn").disabled = true;
-    const p = MZP.start({ mount: "#syncStatus", chapter: "2. 同期", steps: 2,
+    const p = MZP.start({ mount: "#syncStatus", chapter: "2. 同期", steps: 4,
                           label: "音を取り出しています…" });
     try {
       const r = await MC.sync.run(p);
+      // カラー自動マッチ(初期ON)。失敗しても同期は成功扱い
+      const vclips = MC.S.clips.filter(c => !c.isAudio && !c.isImage);
+      if (MC.S.colorOn && vclips.length >= 2 && !vclips.some(c => c.colorT)) {
+        p.step(3, "色をそろえています…");
+        try { await MC.color.run(p); MC.ui.renderFinish(); }
+        catch (e) { MC.log("自動カラーマッチ失敗:", e.message); }
+      }
+      // 最初と最後の自動カット(初期ON)。ユーザーがトリム済みなら触らない
+      if (MC.S.autoTrim && MC.S.trimIn === 0 && MC.S.trimOut == null) {
+        p.step(4, "最初と最後を探しています…");
+        await MZP.paint();
+        await MC.salute.autoTrim();
+        MC.preview.seek(MC.trimRange()[0]);
+      }
+      const [ti, to] = MC.trimRange();
       p.done(r && r.low ? `ズレを合わせました(${r.low}本は手動調整をおすすめします)`
-                        : "ズレを合わせました");
+                        : "ズレを合わせました",
+             { sub: MC.S.trimOut != null ? `書き出し範囲 ${MC.ui.fmtTime(ti)}〜${MC.ui.fmtTime(to)} を自動設定` : "" });
     } catch (e) {
       MC.ui.toast("⚠ 同期に失敗: " + e.message); console.error(e);
       p.fail("ズレを合わせられませんでした", { detail: e.message,
@@ -387,6 +433,10 @@ MC.ui.wire = () => {
   };
   $("#cancelBtn").onclick = () => { MC.exporter.cancelFlag = true; };
   $("#saveBtn").onclick = () => MC.ui.saveResult();
+  $("#downloadBtn").onclick = () => {
+    const r = MC.exporter.lastResult;
+    if (r) MC.exporter.triggerDownload(r.blob, r.name);
+  };
 
   // --- Phase 2: 自動カット割+ワイプ+タイムライン ---
   $("#bpbSelect").onchange = e => { MC.S.beatsPerBar = parseInt(e.target.value); MC.saveState(); };
@@ -412,7 +462,17 @@ MC.ui.wire = () => {
   };
   $("#wipeCamSelect").onchange = e => { MC.S.wipeClipId = parseInt(e.target.value); MC.saveState(); MC.preview.draw(); };
   $("#wipePosSelect").onchange = e => { MC.S.wipePos = e.target.value; MC.saveState(); MC.preview.draw(); };
+  $("#wipeCamSelect2").onchange = e => { MC.S.wipeClipId2 = e.target.value ? parseInt(e.target.value) : null; MC.saveState(); MC.preview.draw(); };
+  $("#wipePosSelect2").onchange = e => { MC.S.wipePos2 = e.target.value; MC.saveState(); MC.preview.draw(); };
   $("#wipeSizeRange").oninput = e => { MC.S.wipeSize = parseFloat(e.target.value); MC.saveState(); MC.preview.draw(); };
+  // 境界線
+  $("#borderToggle").onchange = e => { MC.S.borderOn = e.target.checked; MC.saveState(); MC.preview.draw(); };
+  $("#borderColor").oninput = e => { MC.S.borderColor = e.target.value; MC.saveState(); MC.preview.draw(); };
+  $("#borderWRange").oninput = e => {
+    MC.S.borderW = parseInt(e.target.value);
+    $("#borderWVal").textContent = MC.S.borderW + "px";
+    MC.saveState(); MC.preview.draw();
+  };
   $("#tlCamBtn").onclick = () => MC.timeline.cycleCamera();
   $("#tlTransBtn").onclick = () => MC.timeline.toggleTrans();
   $("#tlMergeBtn").onclick = () => MC.timeline.mergePrev();
@@ -441,6 +501,9 @@ MC.ui.wire = () => {
     MC.saveState(); MC.ui.renderFinish(); MC.preview.draw();
     $("#finishStatus").textContent = "";
   };
+  const att = $("#autoTrimToggle");
+  att.checked = MC.S.autoTrim;
+  att.onchange = e => { MC.S.autoTrim = e.target.checked; MC.saveState(); };
   $("#saluteBtn").onclick = async () => {
     $("#saluteBtn").disabled = true;
     const p = MZP.start({ mount: "#finishStatus", chapter: "5. 仕上げ", delay: 0 });
@@ -468,9 +531,9 @@ MC.ui.wire = () => {
   };
   $("#saluteOutBtn").onclick = () => {
     const s = MC.ui._salute; if (!s || s.musicEnd == null) { MC.ui.toast("終了位置は検出できていません"); return; }
-    MC.S.trimOut = Math.min(MC.timelineDuration(), s.musicEnd + 3);
+    MC.S.trimOut = Math.min(MC.timelineDuration(), s.musicEnd + MC.salute.OUT_AFTER);
     MC.saveState(); MC.ui.updateTransport();
-    MC.ui.toast(`OUTを ${MC.ui.fmtTime(MC.S.trimOut)} に設定しました(演奏終了+3秒)`);
+    MC.ui.toast(`OUTを ${MC.ui.fmtTime(MC.S.trimOut)} に設定しました(演奏終了+${MC.salute.OUT_AFTER}秒)`);
   };
 };
 
@@ -533,7 +596,7 @@ MC.ui.renderFinish = () => {
   }
 
   rows.innerHTML = "";
-  for (const c of MC.S.clips) {
+  for (const c of MC.S.clips.filter(x => !x.isAudio && !x.isImage)) {
     const div = document.createElement("div");
     div.className = "slot-row";
     div.innerHTML = `

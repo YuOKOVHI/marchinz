@@ -9,7 +9,11 @@
 
 MC.color = { STD_CLIP: [0.6, 1.8], STATS_FRAMES: 8, _procs: new Map(), _uploadFallback: false };
 
+/* split=ティール&オレンジ強度 / rolloff=ハイライトの緩やかな肩 /
+   black=黒レベルの締め / key=金管ゴールド等キー色域の彩度ブースト(いずれも0で無効) */
 MC.color.FILTERS = {
+  marchinz: { name: "MarchinZ", contrast: 1.06, sat: 0.94, warm: 0.008,
+              split: 1.0, rolloff: 0.7, black: 0.035, key: 0.35 },
   none:   { name: "なし",     contrast: 1.0,  sat: 1.0,  warm: 0 },
   cinema: { name: "シネマ",   contrast: 1.12, sat: 0.9,  warm: 0.015 },
   vivid:  { name: "ビビッド", contrast: 1.06, sat: 1.28, warm: 0 },
@@ -65,9 +69,10 @@ MC.color.sampleStats = async clip => {
 /* 全カメラの統計→基準(音声カメラ)へのLab変換を計算 */
 /* p: MZPの進捗ハンドル(省略可) */
 MC.color.run = async p => {
-  const clips = MC.S.clips;
+  const clips = MC.S.clips.filter(c => !c.isAudio && !c.isImage);  // 色合わせは動画のみ
   if (clips.length < 2) throw new Error("2本以上のクリップが必要です");
-  const ref = MC.getClip(MC.S.audioClipId) || clips[0];
+  // 基準は動画の中から(音声のみクリップが選ばれていたら先頭の動画)
+  const ref = clips.find(c => c.id === MC.S.audioClipId) || clips[0];
   const stats = new Map();
   let i = 0;
   for (const c of clips) {
@@ -99,6 +104,7 @@ const CM_FS = `precision mediump float;
 varying vec2 uv; uniform sampler2D tex;
 uniform vec3 uSrcMean, uScale, uTgtMean;
 uniform float uMatch, uContrast, uSat, uWarm;
+uniform float uSplit, uRolloff, uBlack, uKey;
 vec3 s2l(vec3 c){ return mix(c/12.92, pow((c+0.055)/1.055, vec3(2.4)), step(0.04045, c)); }
 vec3 l2s(vec3 c){ return mix(c*12.92, 1.055*pow(c, vec3(1.0/2.4))-0.055, step(0.0031308, c)); }
 float fl(float t){ return t > 0.008856 ? pow(t, 1.0/3.0) : (7.787*t + 16.0/116.0); }
@@ -135,6 +141,25 @@ void main(){
   rgb = mix(vec3(lum), rgb, uSat);
   rgb = (rgb - 0.5) * uContrast + 0.5;
   rgb += vec3(uWarm, 0.0, -uWarm);
+  rgb = clamp(rgb, 0.0, 1.0);
+  // --- MarchinZルック(各uniform=0で完全に素通し) ---
+  // 黒レベルの締め: グレー浮きを防ぎ、しっかりした黒を出す
+  rgb = clamp((rgb - vec3(uBlack)) / (1.0 - uBlack), 0.0, 1.0);
+  // ハイライトの緩やかな肩: 白飛びさせず階調を残して「抜けよく」
+  //(tanh非搭載のGLSL ES 1.0向けに u/(1+u) の有理ソフトクリップ)
+  float knee = 0.72;
+  vec3 over = max(rgb - vec3(knee), vec3(0.0)) / (1.0 - knee);
+  vec3 soft = vec3(knee) + (1.0 - knee) * (over / (1.0 + over));
+  rgb = mix(rgb, min(soft, vec3(1.0)), uRolloff * step(vec3(knee), rgb));  // knee超のみ
+  // ティール&オレンジ: 暗部に青緑、明部・肌に暖色を微かに乗せる
+  float lum2 = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
+  float sw = 1.0 - smoothstep(0.05, 0.5, lum2);
+  float hw = smoothstep(0.45, 0.92, lum2);
+  rgb += uSplit * (sw * vec3(-0.035, 0.018, 0.04) + hw * vec3(0.045, 0.012, -0.038));
+  // キー色域(金管ゴールド・オレンジ系 r>g>b)の彩度を際立たせる
+  float goldW = clamp((rgb.r - rgb.b) * 2.0, 0.0, 1.0) * clamp((rgb.g - rgb.b) * 1.5, 0.0, 1.0);
+  float lum3 = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
+  rgb = mix(vec3(lum3), rgb, 1.0 + uKey * goldW);
   gl_FragColor = vec4(clamp(rgb, 0.0, 1.0), 1.0);
 }`;
 
@@ -173,7 +198,8 @@ MC.color.getProc = (w, h) => {
   const u = n => gl.getUniformLocation(prog, n);
   p = { canvas, gl, w, h,
     uSrcMean: u("uSrcMean"), uScale: u("uScale"), uTgtMean: u("uTgtMean"),
-    uMatch: u("uMatch"), uContrast: u("uContrast"), uSat: u("uSat"), uWarm: u("uWarm") };
+    uMatch: u("uMatch"), uContrast: u("uContrast"), uSat: u("uSat"), uWarm: u("uWarm"),
+    uSplit: u("uSplit"), uRolloff: u("uRolloff"), uBlack: u("uBlack"), uKey: u("uKey") };
   MC.color._procs.set(key, p);
   return p;
 };
@@ -216,6 +242,10 @@ MC.color.process = (clip, src) => {
   gl.uniform1f(p.uContrast, f.contrast);
   gl.uniform1f(p.uSat, f.sat);
   gl.uniform1f(p.uWarm, f.warm);
+  gl.uniform1f(p.uSplit, f.split || 0);
+  gl.uniform1f(p.uRolloff, f.rolloff || 0);
+  gl.uniform1f(p.uBlack, f.black || 0);
+  gl.uniform1f(p.uKey, f.key || 0);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   return { source: p.canvas, w, h, rotation: src.rotation };
 };

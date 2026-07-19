@@ -45,9 +45,9 @@ window.MZ_LIMITS = (() => {
   const unlimited = admin || local;
   const L = {
     admin, local, member, unlimited,
-    // ReAngle/Switcher: ゲスト10分・登録20分
-    maxVideoSec: unlimited ? Infinity : member ? 1200.5 : 600.5,
-    videoLimitLabel: member ? "20分" : "10分",   // エラーメッセージ用
+    // ReAngle/Switcher: ゲスト5分・登録12分(2026-07-19改定)
+    maxVideoSec: unlimited ? Infinity : member ? 720.5 : 300.5,
+    videoLimitLabel: member ? "12分" : "5分",   // エラーメッセージ用
     // Privacyの動画は誰でも10分(モザイク作業は選んだ範囲だけのため)
     maxPrivacyVideoSec: unlimited ? Infinity : 600.5,
     maxPhotos: unlimited ? Infinity : member ? 5 : 1,   // 一度に扱える写真の枚数

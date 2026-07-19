@@ -79,6 +79,30 @@ MC.drawFull = (ctx, W, H, clipId, resolveSrc, alpha = 1) => {
   ctx.restore();
 };
 
+/* 境界線の実効太さ(1080px基準の指定pxを出力解像度に比例) */
+MC.borderPx = (W, H) => MC.S.borderW * Math.max(1, Math.min(W, H) / 1080);
+
+/* ワイプ小窓を1つ描く(角にぴったり+枠線) */
+MC.drawPip = (ctx, W, H, clipId, pos, resolveSrc) => {
+  const pipClip = MC.getClip(clipId);
+  if (!pipClip) return;
+  const src = MC.prepSrc(pipClip, resolveSrc(pipClip.id));
+  if (!src) return;
+  const s = MC.S.wipeSize;
+  const pw = W * s, ph = pw * 9 / 16;
+  const px = pos.includes("l") ? 0 : W - pw;   // 角にぴったり
+  const py = pos.includes("t") ? 0 : H - ph;
+  MC.drawSource(ctx, src, px, py, pw, ph, pipClip.pan);
+  if (MC.S.borderOn && MC.S.borderW > 0) {
+    const lw = MC.borderPx(W, H);
+    ctx.save();
+    ctx.strokeStyle = MC.S.borderColor;
+    ctx.lineWidth = lw;
+    ctx.strokeRect(px + lw / 2, py + lw / 2, pw - lw, ph - lw);  // 枠線は窓の内側に
+    ctx.restore();
+  }
+};
+
 /* 全体を合成。t=グローバル秒(スイッチング/ワイプで使用)。
    resolveSrc(clipId) → src|null(nullなら黒+ラベル) */
 MC.drawComposite = (ctx, W, H, t, resolveSrc) => {
@@ -95,21 +119,11 @@ MC.drawComposite = (ctx, W, H, t, resolveSrc) => {
       MC.drawFull(ctx, W, H, cut.cur, resolveSrc, 1);
     }
     if (L.type === "wipe") {
-      const pipClip = MC.getClip(MC.S.wipeClipId) || MC.S.clips.find(c => c.id !== cut.cur);
-      if (pipClip) {
-        const src = MC.prepSrc(pipClip, resolveSrc(pipClip.id));
-        if (src) {
-          const s = MC.S.wipeSize;
-          const pw = W * s, ph = pw * 9 / 16, m = W * 0.03;
-          const px = MC.S.wipePos.includes("l") ? m : W - pw - m;
-          const py = MC.S.wipePos.includes("t") ? m : H - ph - m;
-          ctx.save();
-          ctx.shadowColor = "rgba(0,0,0,.5)"; ctx.shadowBlur = 12;
-          ctx.fillStyle = "#000";
-          ctx.fillRect(px - 2, py - 2, pw + 4, ph + 4);
-          ctx.restore();
-          MC.drawSource(ctx, src, px, py, pw, ph, pipClip.pan);
-        }
+      const id1 = MC.S.wipeClipId != null ? MC.S.wipeClipId
+        : (MC.S.clips.find(c => c.id !== cut.cur) || {}).id;
+      if (id1 != null) MC.drawPip(ctx, W, H, id1, MC.S.wipePos, resolveSrc);
+      if (MC.S.wipeClipId2 != null && MC.S.wipeClipId2 !== id1) {
+        MC.drawPip(ctx, W, H, MC.S.wipeClipId2, MC.S.wipePos2, resolveSrc);
       }
     }
     return;
@@ -132,4 +146,12 @@ MC.drawComposite = (ctx, W, H, t, resolveSrc) => {
       ctx.fillStyle = "#000";
     }
   });
+  // 境界線: 分割セルの区切り(1画面では引かない)
+  if (MC.S.borderOn && MC.S.borderW > 0 && L.rects.length > 1) {
+    ctx.save();
+    ctx.strokeStyle = MC.S.borderColor;
+    ctx.lineWidth = MC.borderPx(W, H);
+    for (const r of L.rects) ctx.strokeRect(r.x * W, r.y * H, r.w * W, r.h * H);
+    ctx.restore();
+  }
 };

@@ -99,7 +99,7 @@ MC.sync.tsRecordStart = clip => clip.lastModified / 1000 - clip.duration;
 /* 全クリップの同期を実行 */
 /* p: MZPの進捗ハンドル(省略可) */
 MC.sync.run = async p => {
-  const clips = MC.S.clips;
+  const clips = MC.S.clips.filter(c => !c.isImage);   // 静止画は同期対象外
   if (clips.length < 2) { MC.ui.toast("2本以上のクリップが必要です"); return; }
 
   // 音声抽出
@@ -164,8 +164,9 @@ MC.sync.nudge = (clipId, delta) => {
   if (!c) return;
   c.offset += delta;
   c.syncMethod = c.syncMethod.includes("手動") ? c.syncMethod : c.syncMethod + "+手動";
-  const min = Math.min(...MC.S.clips.map(x => x.offset));
-  if (min !== 0) MC.S.clips.forEach(x => { x.offset -= min; });
+  const syncable = MC.S.clips.filter(x => !x.isImage);
+  const min = Math.min(...syncable.map(x => x.offset));
+  if (min !== 0) syncable.forEach(x => { x.offset -= min; });
   MC.saveState();
   MC.ui.renderClips();
   MC.preview.seek(MC.S.t);  // 画で確認できるよう再シーク

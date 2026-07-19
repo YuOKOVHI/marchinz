@@ -75,9 +75,11 @@
   <aside class="side">
 
     <section class="panel" id="dropSec">
-      <h2>1. 動画を読み込む <span class="hint" data-limit-note data-limit-note-member="(3本まで・各20分)">(3本まで・各10分。無料登録すると各20分)</span></h2>
+      <h2>1. 動画を読み込む <span class="hint" data-limit-note data-limit-note-member="(3本まで・各12分)">(3本まで・各5分。無料登録すると各12分)</span></h2>
       <div id="clipSlots" class="clip-slots"></div>
       <input type="file" id="fileInput" accept="video/mp4,video/quicktime,video/*" multiple hidden>
+      <input type="file" id="fileInputV" accept="video/mp4,video/quicktime,video/*,image/*" multiple hidden>
+      <input type="file" id="audioInput" accept="audio/*,.mp3,.wav,.m4a,.aac" hidden>
     </section>
 
     <section class="panel" id="syncSec">
@@ -91,6 +93,10 @@
     <section class="panel" id="audioSec">
       <h2>3. 使う音声 <span class="hint">いちばん良い音におすすめ印</span></h2>
       <div id="audioChoices" class="audio-choices"><span class="hint">クリップを読み込むと表示されます</span></div>
+      <div class="row" style="margin-top:8px">
+        <button id="audioImportBtn" class="btn small"><i class="fa-solid fa-file-audio"></i> 音声ファイルを取り込む</button>
+        <span class="hint">別録りの音源(mp3/wav等)。取り込むとこの音を使用します</span>
+      </div>
     </section>
 
     <section class="panel" id="layoutSec">
@@ -98,6 +104,14 @@
       <div class="row preset-row" id="presetRow"></div>
       <select id="layoutSelect" class="select"></select>
       <div id="slotRows" class="slot-rows"></div>
+      <div class="row" id="borderRow" style="align-items:center">
+        <label style="display:flex; gap:6px; align-items:center; cursor:pointer">
+          <input type="checkbox" id="borderToggle"><span>境界線</span>
+        </label>
+        <input type="color" id="borderColor" title="境界線の色" style="width:34px; height:26px; border:1px solid var(--line); border-radius:6px; background:var(--panel2); padding:1px">
+        <input type="range" id="borderWRange" min="1" max="6" step="1" style="flex:1" title="境界線の太さ">
+        <span id="borderWVal" class="hint" style="width:28px; text-align:right"></span>
+      </div>
       <div id="autocutPanel" style="display:none">
         <div class="row level-row">
           <label class="hint">切替頻度</label>
@@ -118,14 +132,24 @@
           <button id="autocutBtn" class="btn primary"><i class="fa-solid fa-clapperboard"></i> 自動カット割</button>
         </div>
         <p class="hint" style="margin:4px 0 0">音楽と映像を解析して、ブレの少ないカメラ・見せ場に合う画角を自動で選びます。</p>
-        <div id="wipeOpts" class="row" style="display:none">
-          <label class="hint">小窓</label>
-          <select id="wipeCamSelect" class="select" style="width:auto; margin:0"></select>
-          <select id="wipePosSelect" class="select" style="width:auto; margin:0">
-            <option value="br">右下</option><option value="bl">左下</option>
-            <option value="tr">右上</option><option value="tl">左上</option>
-          </select>
-          <input type="range" id="wipeSizeRange" min="0.2" max="0.45" step="0.01" style="flex:1">
+        <div id="wipeOpts" style="display:none">
+          <div class="row">
+            <label class="hint">小窓1</label>
+            <select id="wipeCamSelect" class="select" style="width:auto; margin:0"></select>
+            <select id="wipePosSelect" class="select" style="width:auto; margin:0">
+              <option value="br">右下</option><option value="bl">左下</option>
+              <option value="tr">右上</option><option value="tl">左上</option>
+            </select>
+            <input type="range" id="wipeSizeRange" min="0.2" max="0.45" step="0.01" style="flex:1">
+          </div>
+          <div class="row">
+            <label class="hint">小窓2</label>
+            <select id="wipeCamSelect2" class="select" style="width:auto; margin:0"></select>
+            <select id="wipePosSelect2" class="select" style="width:auto; margin:0">
+              <option value="bl">左下</option><option value="br">右下</option>
+              <option value="tr">右上</option><option value="tl">左上</option>
+            </select>
+          </div>
         </div>
         <div id="autocutStatus" class="status"></div>
       </div>
@@ -151,7 +175,12 @@
         <span class="hint">ONで傾きを自動検出して水平に。OFFで無効</span>
       </label>
       <div id="horizonRows" class="slot-rows"></div>
-      <div class="row" style="margin-top:10px">
+      <label class="row" style="gap:8px; cursor:pointer; align-items:center; margin-top:10px">
+        <input type="checkbox" id="autoTrimToggle">
+        <span>最初と最後を自動カット</span>
+        <span class="hint">同期後に演奏開始(サリュート考慮)〜終了+10秒を書き出し範囲に</span>
+      </label>
+      <div class="row">
         <button id="saluteBtn" class="btn"><i class="fa-solid fa-music"></i> 演奏区間を検出 <span class="hint">サリュート考慮</span></button>
       </div>
       <div class="row" id="saluteRow" style="display:none">
@@ -179,6 +208,7 @@
         <div id="doneText" class="status"></div>
         <div class="row">
           <button id="saveBtn" class="btn primary big"><i class="fa-solid fa-arrow-up-from-bracket"></i> 動画を保存</button>
+          <button id="downloadBtn" class="btn big"><i class="fa-solid fa-download"></i> ダウンロード</button>
         </div>
         <div id="doneNote" class="status"></div>
       </div>

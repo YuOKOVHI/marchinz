@@ -314,13 +314,55 @@ MC.exporter.encodeAudioPcm = async (muxer, src, fromLocalSec, durSec, onStatus) 
   return !encErr && !MC.exporter.cancelFlag;
 };
 
+/* 音声ファイル(mp3/wav/m4a等の「音声のみ取り込み」): decodeAudioDataで48kHzへ→範囲を切ってAAC */
+MC.exporter.encodeAudioFile = async (muxer, clip, fromLocalSec, durSec, onStatus) => {
+  const OUT_SR = 48000;
+  const ab = await clip.file.arrayBuffer();
+  const dctx = new OfflineAudioContext(2, 2, OUT_SR);   // 48kHzへ自動リサンプル
+  const buf = await dctx.decodeAudioData(ab);
+  const primingSec = (await MC.exporter.measureAacDelay()) / 48000;
+  const need = Math.ceil(durSec * OUT_SR);
+  const off = Math.max(0, Math.round((fromLocalSec + primingSec) * OUT_SR));
+  const chL = new Float32Array(need), chR = new Float32Array(need);
+  const L = buf.getChannelData(0);
+  const R = buf.numberOfChannels > 1 ? buf.getChannelData(1) : L;
+  for (let i = 0; i < need; i++) {
+    const p = off + i;
+    if (p >= L.length) break;
+    chL[i] = L[p]; chR[i] = R[p];
+  }
+  onStatus("音を入れています…");
+  let encErr = null;
+  const encoder = new AudioEncoder({
+    output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
+    error: e => { encErr = e; },
+  });
+  encoder.configure({ codec: "mp4a.40.2", sampleRate: OUT_SR, numberOfChannels: 2, bitrate: 192000 });
+  const FR = 1024;
+  for (let o = 0; o < need; o += FR) {
+    if (encErr || MC.exporter.cancelFlag) break;
+    const n = Math.min(FR, need - o);
+    const data = new Float32Array(n * 2);
+    data.set(chL.subarray(o, o + n), 0);
+    data.set(chR.subarray(o, o + n), n);
+    encoder.encode(new AudioData({
+      format: "f32-planar", sampleRate: OUT_SR, numberOfFrames: n, numberOfChannels: 2,
+      timestamp: Math.round(o * 1e6 / OUT_SR), data,
+    }));
+    if (encoder.encodeQueueSize > 16) await MC.waitDequeue(encoder);
+  }
+  if (!encErr) await encoder.flush().catch(() => {});
+  try { encoder.close(); } catch (e) {}
+  return !encErr && !MC.exporter.cancelFlag;
+};
+
 /* ---- MP4書き出し本体 ---- */
 MC.exporter.exportMP4 = async onProgress => {
   const { w, h } = MC.PRESETS[MC.S.preset];
   const fps = 30;
   const [tIn, tOut] = MC.trimRange();
   const totalFrames = Math.max(1, Math.round((tOut - tIn) * fps));
-  const used = MC.activeClips();
+  const used = MC.activeClips().filter(c => !c.isAudio);   // 音声のみは映像に出さない
   if (!used.length) throw new Error("表示するクリップがありません");
   const audioClip = MC.getClip(MC.S.audioClipId);
   const withAudio = MC.caps.aac && !!audioClip;
@@ -347,6 +389,7 @@ MC.exporter.exportMP4 = async onProgress => {
     });
 
     for (const c of used) {
+      if (c.isImage) continue;   // 静止画はデコード不要(そのまま描く)
       const pipe = new MC.exporter.VideoPipe(c);
       await pipe.init(tIn - c.offset);
       pipes.set(c.id, pipe);
@@ -369,6 +412,8 @@ MC.exporter.exportMP4 = async onProgress => {
         srcMap.set(id, f);
       }
       MC.drawComposite(ctx, w, h, t, id => {
+        const clip = MC.getClip(id);
+        if (clip && clip.isImage) return { source: clip.img, w: clip.width, h: clip.height, rotation: 0 };
         const f = srcMap.get(id);
         if (!f) return null;
         const pipe = pipes.get(id);
@@ -392,7 +437,8 @@ MC.exporter.exportMP4 = async onProgress => {
 
     let audioOk = false;
     if (withAudio) {
-      audioOk = await MC.exporter.encodeAudio(
+      const enc = audioClip.isAudio ? MC.exporter.encodeAudioFile : MC.exporter.encodeAudio;
+      audioOk = await enc(
         muxer, audioClip, tIn - audioClip.offset, tOut - tIn,
         s => onProgress(0.93, s));
       if (!audioOk && !MC.exporter.cancelFlag) MC.ui.toast("⚠ 音声を書き出せませんでした(映像のみ出力します)");

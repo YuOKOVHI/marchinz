@@ -29,7 +29,7 @@ MC.director = {
 MC.director.run = async p => {
   const audioClip = MC.getClip(MC.S.audioClipId);
   if (!audioClip) throw new Error("音声クリップがありません");
-  if (MC.S.clips.length < 2) throw new Error("2本以上のクリップが必要です");
+  if (MC.S.clips.filter(c => !c.isAudio && !c.isImage).length < 2) throw new Error("2本以上の動画が必要です");
 
   // ① 音声: 拍+セクション
   p.step(1, "音楽を解析しています…");
@@ -43,11 +43,12 @@ MC.director.run = async p => {
     try { MC.director._salute = await MC.salute.detect(); } catch (e) { /* 任意 */ }
   }
 
-  // ② 映像: 各クリップの解析(重い。件数進捗)
+  // ② 映像: 各クリップの解析(重い。件数進捗)。音声のみ・静止画は対象外
   const [tIn, tOut] = MC.trimRange();
-  for (let ci = 0; ci < MC.S.clips.length; ci++) {
-    const c = MC.S.clips[ci];
-    p.step(2, `映像を見ています…(${ci + 1}/${MC.S.clips.length}本目)`);
+  const vclips = MC.S.clips.filter(c => !c.isAudio && !c.isImage);
+  for (let ci = 0; ci < vclips.length; ci++) {
+    const c = vclips[ci];
+    p.step(2, `映像を見ています…(${ci + 1}/${vclips.length}本目)`);
     const l0 = Math.max(0, tIn - c.offset);
     const l1 = Math.max(l0 + 1, Math.min(c.duration, tOut - c.offset));
     await MC.visual.analyzeClip(c, l0, l1, (i, n) =>
@@ -124,9 +125,10 @@ MC.director._rank = (g0, g1, cls, ctx) => {
   // 素材範囲: 全区間カバー→中点カバー→全クリップ の順で候補を確保
   //(録画開始のズレで区間を全カバーするカメラが無くても、カット割を止めない)
   const mid = (g0 + g1) / 2;
-  let cands = MC.S.clips.filter(c => g0 >= c.offset - 0.2 && g1 <= c.offset + c.duration + 0.2);
-  if (!cands.length) cands = MC.S.clips.filter(c => mid >= c.offset && mid <= c.offset + c.duration);
-  if (!cands.length) cands = MC.S.clips;
+  const pool = MC.S.clips.filter(c => !c.isAudio && !c.isImage);
+  let cands = pool.filter(c => g0 >= c.offset - 0.2 && g1 <= c.offset + c.duration + 0.2);
+  if (!cands.length) cands = pool.filter(c => mid >= c.offset && mid <= c.offset + c.duration);
+  if (!cands.length) cands = pool;
 
   const ranked = [];
   for (const c of cands) {

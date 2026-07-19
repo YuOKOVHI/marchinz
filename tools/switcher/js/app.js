@@ -19,7 +19,12 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (saved.beatsPerBar) MC.S.beatsPerBar = saved.beatsPerBar;
     if (saved.cutLevel >= 1 && saved.cutLevel <= 5) MC.S.cutLevel = saved.cutLevel;
     if (saved.wipePos) MC.S.wipePos = saved.wipePos;
+    if (saved.wipePos2) MC.S.wipePos2 = saved.wipePos2;
     if (saved.wipeSize) MC.S.wipeSize = saved.wipeSize;
+    if (saved.autoTrim != null) MC.S.autoTrim = saved.autoTrim;
+    if (saved.borderOn != null) MC.S.borderOn = saved.borderOn;
+    if (saved.borderColor) MC.S.borderColor = saved.borderColor;
+    if (saved.borderW != null) MC.S.borderW = saved.borderW;
   } catch (e) {}
 
   await MC.exporter.probeCaps();

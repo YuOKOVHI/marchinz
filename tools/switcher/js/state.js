@@ -5,7 +5,7 @@ window.MC = {
   S: {
     clips: [],            // Clipオブジェクト(media.js参照)
     mode: null,           // 最初の選択(vertical=縦型 / switch=自動スイッチング)
-    layoutId: "v2",
+    layoutId: "v3",       // 縦型の初期は3分割縦積み
     preset: "9x16",
     audioClipId: null,    // 書き出し/再生に使う音声のクリップ
     refClipId: null,      // 同期の基準クリップ
@@ -16,12 +16,16 @@ window.MC = {
     cutList: [],                // [{t, clipId, trans:'cut'|'dissolve', dur}] 昇順・セグメント開始
     beatsPerBar: 4,
     cutLevel: 3,                // 切替頻度 1(ゆったり)〜5(細かい)
-    wipeClipId: null,           // ワイプの小窓カメラ
-    wipePos: "br", wipeSize: 0.32,
+    wipeClipId: null,           // ワイプの小窓カメラ(1つ目)
+    wipeClipId2: null,          // ワイプの小窓カメラ(2つ目、null=なし)
+    wipePos: "br", wipePos2: "bl", wipeSize: 0.32,
     /* Phase 3: 仕上げ */
-    colorOn: false, colorStrength: 0.8,
+    colorOn: true, colorStrength: 0.8,   // カラー自動マッチは初期ON(同期後に自動実行)
     horizonOn: false,     // 自動水平補正のマスターON/OFF(仕上げ)
-    filterId: "none",
+    filterId: "marchinz",  // MarchinZルックが初期フィルター
+    autoTrim: true,        // 最初と最後の自動カット(サリュートIN+音終了10秒後OUT)
+    /* 境界線(分割レイアウトのセル間+ワイプ小窓の枠) */
+    borderOn: true, borderColor: "#ffffff", borderW: 2,
   },
   caps: { h264: false, aac: false },
   testMode: false,
@@ -56,9 +60,11 @@ MC.clipKey = c => `${c.name}|${c.size}|${c.lastModified}`;
 MC.getClip = id => MC.S.clips.find(c => c.id === id) || null;
 MC.log = (...a) => console.log("[MC]", ...a);
 
-/* タイムライン全長(全クリップ終端の最大) */
-MC.timelineDuration = () =>
-  MC.S.clips.length ? Math.max(...MC.S.clips.map(c => c.offset + c.duration)) : 0;
+/* タイムライン全長(全クリップ終端の最大)。静止画(duration=0)は数えない */
+MC.timelineDuration = () => {
+  const cs = MC.S.clips.filter(c => !c.isImage);
+  return cs.length ? Math.max(...cs.map(c => c.offset + c.duration)) : 0;
+};
 
 MC.trimRange = () => {
   const dur = MC.timelineDuration();
@@ -82,7 +88,9 @@ MC.saveState = () => {
       layoutId: MC.S.layoutId, preset: MC.S.preset,
       trimIn: MC.S.trimIn, trimOut: MC.S.trimOut,
       beatsPerBar: MC.S.beatsPerBar, cutLevel: MC.S.cutLevel,
-      wipePos: MC.S.wipePos, wipeSize: MC.S.wipeSize,
+      wipePos: MC.S.wipePos, wipePos2: MC.S.wipePos2, wipeSize: MC.S.wipeSize,
+      autoTrim: MC.S.autoTrim,
+      borderOn: MC.S.borderOn, borderColor: MC.S.borderColor, borderW: MC.S.borderW,
       colorOn: MC.S.colorOn, colorStrength: MC.S.colorStrength, filterId: MC.S.filterId,
       horizonOn: MC.S.horizonOn,
       clips: MC.S.clips.map(c => ({
