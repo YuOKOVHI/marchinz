@@ -406,10 +406,13 @@ MZ.ui.loadFile = async file => {
   return MZ.ui.isImageFile(file) ? MZ.ui._loadImages([file]) : MZ.ui._loadVideo(file);
 };
 
-/* 動画を扱えるのは管理者ログイン中か手元環境のみ。
+/* 動画を扱えるのは管理者ログイン中のみ(UGCと同じ基準)。
    動画の顔検出はまだ写真ほどの精度が出ないため、一般には写真だけを開放している。
+   手元環境(localhost/file:)でも管理者ログインしていなければ出さない
+   ——「上限なし」の判定(MZ_LIMITS.unlimited)には手元環境が含まれるため、
+     それを使うと管理者でない人にも動画が見えてしまう。
    (動画のコード一式は残してあり、精度が実用に達したらこの関門を外すだけで戻る) */
-MZ.ui.videoAllowed = () => MZ_LIMITS.unlimited;
+MZ.ui.videoAllowed = () => MZ_LIMITS.admin;
 
 /* 複数ファイルの取り込み: 写真は上限枚数まで(ゲスト1/登録5)。
    動画は管理者テスト用の隠し機能(一般はお断りする) */

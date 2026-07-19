@@ -14,6 +14,11 @@
   --shadow-card: 0 1px 2px rgba(15, 33, 56, 0.05), 0 4px 16px rgba(15, 33, 56, 0.06);
 }
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+/* hidden属性は常に効かせる。
+   display を指定したクラス(.admin-video-btn / .photo-tabs 等)が付いた要素では
+   ブラウザ既定の [hidden]{display:none} が負けて、hidden でも見えてしまうため。
+   ——管理者専用の「動画を選ぶ」が誰にでも見えていた原因。 */
+[hidden] { display: none !important; }
 html { background: #eef1f5; }
 html, body { color: var(--fg); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", Meiryo, sans-serif; }
 body { min-height: 100dvh; display: flex; flex-direction: column; background: transparent; }

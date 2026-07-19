@@ -6,7 +6,7 @@ window.MZ = {
     clip: null,        // {file, name, url, video, duration, width, height}
     type: "blur",      // blur | mosaic | fill(既定はぼかし=Premiere風の柔らかい隠し方)
     strength: 6,       // 濃さ 1〜10
-    expand: 30,        // 広げ幅 0〜100(%)
+    expand: 45,        // 広げ幅 0〜100(%)。顔の周りに余裕を持たせて隠し漏れを防ぐ
     hold: 1.0,         // 前後の追従 0〜5秒
     res: "1080",       // "1080" | "orig"
     step: 1,           // ウィザード現在ステップ 1:確認 2:調整 3:保存
