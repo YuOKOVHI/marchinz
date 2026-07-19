@@ -12,7 +12,7 @@ MC.color = { STD_CLIP: [0.6, 1.8], STATS_FRAMES: 8, _procs: new Map(), _uploadFa
 /* split=ティール&オレンジ強度 / rolloff=ハイライトの緩やかな肩 /
    black=黒レベルの締め / key=金管ゴールド等キー色域の彩度ブースト(いずれも0で無効) */
 MC.color.FILTERS = {
-  marchinz: { name: "MarchinZ", contrast: 1.06, sat: 0.94, warm: 0.008,
+  marchinz: { name: "MarchinZカラー", contrast: 1.06, sat: 0.94, warm: 0.008,
               split: 1.0, rolloff: 0.7, black: 0.035, key: 0.35 },
   none:   { name: "なし",     contrast: 1.0,  sat: 1.0,  warm: 0 },
   cinema: { name: "シネマ",   contrast: 1.12, sat: 0.9,  warm: 0.015 },

@@ -124,6 +124,29 @@ MC.preview = {
     ctx.fillText("ここにプレビューが出ます", W / 2, H / 2 + base * 0.095);
   },
 
+  /* 現在位置が書き出し範囲(IN〜OUT)の外なら、その旨をプレビューへ重ねる。
+     プレビュー専用(書き出しはexporterが範囲内だけを描くため焼き込まれない) */
+  drawRangeNotice() {
+    const dur = MC.timelineDuration();
+    if (!dur) return;
+    const [tIn, tOut] = MC.trimRange();
+    if (MC.S.t >= tIn - 0.01 && MC.S.t <= tOut + 0.01) return;
+    const W = this.canvas.width, H = this.canvas.height, ctx = this.ctx;
+    ctx.save();
+    ctx.fillStyle = "rgba(6, 10, 16, 0.55)";
+    ctx.fillRect(0, 0, W, H);
+    const base = Math.min(W, H);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#fff";
+    ctx.font = `700 ${Math.round(base * 0.05)}px -apple-system, sans-serif`;
+    ctx.fillText("ここは書き出されません", W / 2, H / 2 - base * 0.035);
+    ctx.fillStyle = "rgba(255,255,255,0.75)";
+    ctx.font = `500 ${Math.round(base * 0.034)}px -apple-system, sans-serif`;
+    ctx.fillText(MC.S.t < tIn ? "書き出しは IN の位置から始まります" : "書き出しは OUT の位置で終わります", W / 2, H / 2 + base * 0.03);
+    ctx.restore();
+  },
+
   draw() {
     if (!MC.S.clips.length) { this.drawEmpty(); return; }
     MC.drawComposite(this.ctx, this.canvas.width, this.canvas.height, MC.S.t, id => {
@@ -136,5 +159,6 @@ MC.preview = {
       // <video>はブラウザが回転を適用済みなので rotation=0
       return { source: c.video, w: c.video.videoWidth, h: c.video.videoHeight, rotation: 0 };
     });
+    this.drawRangeNotice();
   },
 };

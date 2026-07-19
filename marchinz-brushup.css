@@ -2872,11 +2872,13 @@ body {
 }
 
 /* TOPのCREATOR TOOLSカード(クリエイターページの mz-ctool-card を再利用し、
-   TODAY/練習ツールと同じウィジェット幅に揃える) */
+   TODAY/練習ツールと同じウィジェット幅に揃える)。
+   カードは1枚(Switcher)なので2カラムをやめ、上下の要素と同じ幅いっぱいに広げる */
 .mz-top-ctools {
   width: min(var(--mz-widget-w), 100%);
   margin: 0 auto;
 }
+.mz-ctools-grid.mz-top-ctools { grid-template-columns: 1fr; }
 
 .mz-top-tools-guide {
   margin-top: 0.9rem;

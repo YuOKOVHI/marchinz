@@ -392,7 +392,23 @@ MC.ui.updateTransport = () => {
   MC.ui.$("#timeLabel").textContent = `${MC.ui.fmtTime(MC.S.t)} / ${MC.ui.fmtTime(dur)}`;
   MC.ui.$("#playBtn").innerHTML = MC.S.playing ? '<i class="fa-solid fa-pause"></i>' : '<i class="fa-solid fa-play"></i>';
   const [tIn, tOut] = MC.trimRange();
-  MC.ui.$("#trimLabel").textContent = dur ? `書き出し範囲: ${MC.ui.fmtTime(tIn)} 〜 ${MC.ui.fmtTime(tOut)}` : "";
+  // INかOUTをユーザーが動かしているか(初期値=全体)
+  const custom = MC.S.trimIn > 0.05 || MC.S.trimOut != null;
+  MC.ui.$("#trimLabel").textContent = !dur ? ""
+    : custom ? `書き出し範囲 IN ${MC.ui.fmtTime(tIn)} → OUT ${MC.ui.fmtTime(tOut)}`
+             : "いまは全体を書き出します(INとOUTで範囲を絞れます)";
+  // スライダー下の範囲バンド(どこからどこまで書き出すかをいつでも見せる)
+  const band = MC.ui.$("#trimBand");
+  if (band) {
+    if (dur > 0) {
+      band.hidden = false;
+      band.classList.toggle("full", !custom);
+      band.style.left = `${(tIn / dur) * 100}%`;
+      band.style.width = `${(Math.max(0, tOut - tIn) / dur) * 100}%`;
+    } else {
+      band.hidden = true;
+    }
+  }
   MC.timeline.updateHead();
 };
 

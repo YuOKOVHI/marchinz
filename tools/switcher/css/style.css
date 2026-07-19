@@ -146,7 +146,22 @@ body::before {
 .scrub-tick.start { background: var(--ok); }
 .scrub-tick.end { background: var(--err); }
 .time-label { font-variant-numeric: tabular-nums; font-size: 12px; color: var(--tx2); white-space: nowrap; }
-.trim-row { display: flex; align-items: center; gap: 8px; }
+.trim-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.trim-row .btn b { font-weight: 800; margin-left: 4px; letter-spacing: 0.04em; }
+/* 書き出し範囲(IN〜OUT)をスライダー下に帯で見せる */
+#trimBand {
+  position: absolute; bottom: -7px; height: 5px; border-radius: 3px;
+  background: var(--acc); opacity: 0.9; pointer-events: none;
+}
+#trimBand.full { opacity: 0.28; }
+#trimBand .tb-flag {
+  position: absolute; top: -3px; font-size: 8px; font-weight: 800;
+  line-height: 1; color: #fff; background: var(--acc);
+  padding: 2px 3px; border-radius: 3px; letter-spacing: 0.05em;
+}
+#trimBand.full .tb-flag { display: none; }
+#trimBand .tb-in { left: 0; transform: translate(-2px, 8px); }
+#trimBand .tb-out { right: 0; transform: translate(2px, 8px); }
 
 .progress { margin-top: 8px; }
 .progress-bar { height: 10px; background: rgba(15, 33, 56, 0.08); border-radius: 6px; overflow: hidden; }

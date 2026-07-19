@@ -220,13 +220,14 @@
       <button id="playBtn" class="btn round" title="再生/停止"><i class="fa-solid fa-play"></i></button>
       <div class="scrub-wrap">
         <div id="scrubTicks"></div>
+        <div id="trimBand" hidden><span class="tb-flag tb-in">IN</span><span class="tb-flag tb-out">OUT</span></div>
         <input type="range" id="scrub" min="0" max="0" step="0.01" value="0">
       </div>
       <span id="timeLabel" class="time-label">0:00.0 / 0:00.0</span>
     </div>
     <div class="trim-row">
-      <button id="trimInBtn" class="btn small">現在位置を IN に</button>
-      <button id="trimOutBtn" class="btn small">現在位置を OUT に</button>
+      <button id="trimInBtn" class="btn small" title="いま見ている位置から書き出します"><i class="fa-solid fa-flag"></i> ここから書き出す<b>IN</b></button>
+      <button id="trimOutBtn" class="btn small" title="いま見ている位置まで書き出します"><i class="fa-solid fa-flag-checkered"></i> ここまで<b>OUT</b></button>
       <span id="trimLabel" class="hint"></span>
       <button id="trimResetBtn" class="btn small ghost">リセット</button>
     </div>
