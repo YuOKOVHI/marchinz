@@ -17,6 +17,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (saved.colorStrength != null) MC.S.colorStrength = saved.colorStrength;
     if (saved.filterId && MC.color.FILTERS[saved.filterId]) MC.S.filterId = saved.filterId;
     if (saved.beatsPerBar) MC.S.beatsPerBar = saved.beatsPerBar;
+    if (saved.cutLevel >= 1 && saved.cutLevel <= 5) MC.S.cutLevel = saved.cutLevel;
     if (saved.wipePos) MC.S.wipePos = saved.wipePos;
     if (saved.wipeSize) MC.S.wipeSize = saved.wipeSize;
   } catch (e) {}

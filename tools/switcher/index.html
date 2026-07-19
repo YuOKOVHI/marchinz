@@ -99,13 +99,25 @@
       <select id="layoutSelect" class="select"></select>
       <div id="slotRows" class="slot-rows"></div>
       <div id="autocutPanel" style="display:none">
+        <div class="row level-row">
+          <label class="hint">切替頻度</label>
+          <div id="levelSeg" class="level-seg" role="radiogroup" aria-label="切替頻度">
+            <button type="button" data-lv="1" title="ゆったり・長尺">1</button>
+            <button type="button" data-lv="2">2</button>
+            <button type="button" data-lv="3">3</button>
+            <button type="button" data-lv="4">4</button>
+            <button type="button" data-lv="5" title="細かい・激しい">5</button>
+          </div>
+          <span id="levelHint" class="hint"></span>
+        </div>
         <div class="row">
           <label class="hint">拍子</label>
           <select id="bpbSelect" class="select" style="width:auto; margin:0">
             <option value="4">4/4</option><option value="2">2/4</option><option value="3">3/4</option>
           </select>
-          <button id="autocutBtn" class="btn primary"><i class="fa-solid fa-drum"></i> 自動カット割</button>
+          <button id="autocutBtn" class="btn primary"><i class="fa-solid fa-clapperboard"></i> 自動カット割</button>
         </div>
+        <p class="hint" style="margin:4px 0 0">音楽と映像を解析して、ブレの少ないカメラ・見せ場に合う画角を自動で選びます。</p>
         <div id="wipeOpts" class="row" style="display:none">
           <label class="hint">小窓</label>
           <select id="wipeCamSelect" class="select" style="width:auto; margin:0"></select>
@@ -222,6 +234,9 @@
 <script src="js/audio.js"></script>
 <script src="js/sync.js"></script>
 <script src="js/beats.js"></script>
+<script src="js/sections.js"></script>
+<script src="js/visual.js"></script>
+<script src="js/director.js"></script>
 <script src="js/colormatch.js"></script>
 <script src="js/horizon.js"></script>
 <script src="js/salute.js"></script>

@@ -113,12 +113,21 @@ MC.ui.renderClips = () => {
           <button class="btn small ghost listen" title="基準と重ねて試聴">🎧</button>
         </div>
         <div class="pan-row">横位置 <input type="range" class="pan" min="0" max="1" step="0.01" value="${c.pan}"></div>
+        ${MC.S.mode === "switch" ? `
+        <div class="pan-row">役割 <select class="role-sel select-mini" title="自動カット割でこのカメラをどう扱うか">
+          <option value="auto" ${c.role === "auto" ? "selected" : ""}>自動判定</option>
+          <option value="wide" ${c.role === "wide" ? "selected" : ""}>引き（全体）</option>
+          <option value="close" ${c.role === "close" ? "selected" : ""}>寄り（アップ）</option>
+          <option value="pit" ${c.role === "pit" ? "selected" : ""}>フロントピット</option>
+        </select></div>` : ""}
       </div>
       <button class="clip-remove" title="削除">✕</button>`;
     card.querySelectorAll(".nudge button").forEach(b =>
       b.onclick = () => MC.sync.nudge(c.id, parseFloat(b.dataset.n)));
     card.querySelector(".listen").onclick = () => MC.sync.listenCheck(c.id);
     card.querySelector(".pan").oninput = e => { c.pan = parseFloat(e.target.value); MC.saveState(); };
+    const roleSel = card.querySelector(".role-sel");
+    if (roleSel) roleSel.onchange = e => { c.role = e.target.value; MC.saveState(); };
     card.querySelector(".clip-remove").onclick = () => MC.media.removeClip(c.id);
     slot.appendChild(card);
     box.appendChild(slot);
@@ -381,21 +390,24 @@ MC.ui.wire = () => {
 
   // --- Phase 2: 自動カット割+ワイプ+タイムライン ---
   $("#bpbSelect").onchange = e => { MC.S.beatsPerBar = parseInt(e.target.value); MC.saveState(); };
+  MC.ui.renderLevel();
   $("#autocutBtn").onclick = async () => {
     $("#autocutBtn").disabled = true;
-    const p = MZP.start({ mount: "#autocutStatus", chapter: "4. レイアウト", delay: 0 });
-    p.frozen("拍を数えています…");
-    await MZP.paint();   // 画面が止まる前に、必ず表示を描いてから解析へ入る
+    MC.preview.pause();   // 解析中はvideo要素をシークで専有する
+    const p = MZP.start({ mount: "#autocutStatus", chapter: "4. レイアウト",
+                          delay: 0, steps: 3 });
+    p.pulse("音楽を解析しています…");
+    await MZP.paint();
     try {
-      const r = await MC.beats.autocut();
+      const r = await MC.director.run(p);
       p.done(`${r.bpm.toFixed(0)} BPM・${r.segments}カットを作りました`,
-             { sub: "タップで編集できます" });
+             { sub: `ディゾルブ${r.dissolves}回・タップで編集できます` });
       MC.timeline.selected = -1;
       MC.timeline.render();
       MC.preview.seek(MC.trimRange()[0]);
     } catch (e) {
       console.error(e);
-      p.fail("拍を数えられませんでした", { detail: e.message });
+      p.fail("カット割を作れませんでした", { detail: e.message });
     } finally { $("#autocutBtn").disabled = false; }
   };
   $("#wipeCamSelect").onchange = e => { MC.S.wipeClipId = parseInt(e.target.value); MC.saveState(); MC.preview.draw(); };
@@ -460,6 +472,27 @@ MC.ui.wire = () => {
     MC.saveState(); MC.ui.updateTransport();
     MC.ui.toast(`OUTを ${MC.ui.fmtTime(MC.S.trimOut)} に設定しました(演奏終了+3秒)`);
   };
+};
+
+/* 切替頻度(1〜5)のセグメントコントロール */
+MC.ui.LEVEL_HINTS = {
+  1: "ゆったり・長尺", 2: "落ち着いた", 3: "標準",
+  4: "テンポよく", 5: "細かい・激しい",
+};
+MC.ui.renderLevel = () => {
+  const seg = MC.ui.$("#levelSeg");
+  if (!seg) return;
+  seg.querySelectorAll("button").forEach(b => {
+    const lv = parseInt(b.dataset.lv);
+    b.classList.toggle("selected", lv === MC.S.cutLevel);
+    b.setAttribute("aria-checked", lv === MC.S.cutLevel ? "true" : "false");
+    b.onclick = () => {
+      MC.S.cutLevel = lv;
+      MC.saveState();
+      MC.ui.renderLevel();
+    };
+  });
+  MC.ui.$("#levelHint").textContent = MC.ui.LEVEL_HINTS[MC.S.cutLevel] || "";
 };
 
 /* 仕上げパネルの状態反映(カラーマッチON表示+水平スライダー) */

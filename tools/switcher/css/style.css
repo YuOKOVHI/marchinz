@@ -258,3 +258,20 @@ footer .foot-link { color: #1e4fd6; }
   display: inline; cursor: pointer; color: inherit;
   text-decoration: underline; font-weight: 600; padding: 8px 2px;   /* タップしやすく */
 }
+
+/* 切替頻度(1〜5)のセグメントコントロール */
+.level-row { align-items: center; }
+.level-seg { display: inline-flex; background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 2px; gap: 2px; }
+.level-seg button {
+  min-width: 34px; padding: 6px 0; border: none; border-radius: 8px;
+  background: transparent; color: var(--tx2); font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: background .15s, color .15s;
+}
+.level-seg button.selected { background: var(--acc); color: #fff; }
+.level-seg button:not(.selected):hover { background: rgba(15, 33, 56, 0.06); }
+
+/* クリップカードの役割タグ */
+.select-mini {
+  background: var(--panel2); color: var(--tx); border: 1px solid var(--line);
+  border-radius: 6px; padding: 3px 6px; font-size: 12px; max-width: 150px;
+}

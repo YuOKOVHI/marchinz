@@ -15,6 +15,7 @@ window.MC = {
     /* Phase 2: スイッチング/ワイプ */
     cutList: [],                // [{t, clipId, trans:'cut'|'dissolve', dur}] 昇順・セグメント開始
     beatsPerBar: 4,
+    cutLevel: 3,                // 切替頻度 1(ゆったり)〜5(細かい)
     wipeClipId: null,           // ワイプの小窓カメラ
     wipePos: "br", wipeSize: 0.32,
     /* Phase 3: 仕上げ */
@@ -80,12 +81,13 @@ MC.saveState = () => {
     localStorage.setItem("marchcut_project", JSON.stringify({
       layoutId: MC.S.layoutId, preset: MC.S.preset,
       trimIn: MC.S.trimIn, trimOut: MC.S.trimOut,
-      beatsPerBar: MC.S.beatsPerBar, wipePos: MC.S.wipePos, wipeSize: MC.S.wipeSize,
+      beatsPerBar: MC.S.beatsPerBar, cutLevel: MC.S.cutLevel,
+      wipePos: MC.S.wipePos, wipeSize: MC.S.wipeSize,
       colorOn: MC.S.colorOn, colorStrength: MC.S.colorStrength, filterId: MC.S.filterId,
       horizonOn: MC.S.horizonOn,
       clips: MC.S.clips.map(c => ({
         key: MC.clipKey(c), offset: c.offset, confidence: c.confidence,
-        syncMethod: c.syncMethod, pan: c.pan,
+        syncMethod: c.syncMethod, pan: c.pan, role: c.role || "auto",
         colorT: c.colorT || null, rot: c.rot || 0,
       })),
       // クリップidは読込順で変わるためkeyで保存
@@ -107,6 +109,7 @@ MC.restoreClipState = clip => {
       clip.confidence = hit.confidence;
       clip.syncMethod = hit.syncMethod || "未同期";
       clip.pan = hit.pan == null ? 0.5 : hit.pan;
+      clip.role = hit.role || "auto";
       clip.colorT = hit.colorT || null;
       clip.rot = hit.rot || 0;
     }

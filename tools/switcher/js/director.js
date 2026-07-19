@@ -1,0 +1,223 @@
+"use strict";
+/* ============ ディレクター(スコアリング型 自動カット割) ============
+   拍・小節グリッド(beats.js)+音声セクション(sections.js)+映像解析(visual.js)を
+   組み合わせて cutList を生成する。優先ルール:
+   ① ブレ・急パン・フォーカス外れのカメラは失格(絶対条件)
+   ② オープニング(演奏開始前)は単独の大きい人物(DM・サリュート)を最優先
+   ③ ソロっぽい区間 → 単独アップ / バッテリー鳴り → グループショット
+   ④ フラッグ等の同期した大きな動き → 引きの画角
+   ⑤ ピット的な区間 → 役割タグ「ピット」のカメラへ意図的に切替
+   ⑥ 一定間隔で引き(フォーメーション)を織り込む
+   ⑦ 切替頻度はレベル1〜5×局所BPM/音圧で動的に。静か/低BPMはディゾルブ
+   cutList形式は既存互換 [{t, clipId, trans, dur}]。 */
+
+MC.director = {
+  /* レベル別: 基準ショット長(秒)と引き画の織り込み間隔(何ショットに1回) */
+  LEVELS: {
+    1: { base: 9.0, min: 5.0, max: 16, interleave: 2 },
+    2: { base: 6.5, min: 4.0, max: 12, interleave: 3 },
+    3: { base: 5.0, min: 3.0, max: 9,  interleave: 3 },
+    4: { base: 3.8, min: 2.2, max: 7,  interleave: 4 },
+    5: { base: 2.8, min: 1.6, max: 5,  interleave: 5 },
+  },
+  DISSOLVE_BPM: 92,    // これ未満の局所BPMはディゾルブ候補
+  _salute: null,
+};
+
+/* ---------- パイプライン(UIのボタンから呼ぶ) ---------- */
+/* p = MZP進捗(steps:3)。①音声解析 ②映像解析 ③カット割 */
+MC.director.run = async p => {
+  const audioClip = MC.getClip(MC.S.audioClipId);
+  if (!audioClip) throw new Error("音声クリップがありません");
+  if (MC.S.clips.length < 2) throw new Error("2本以上のクリップが必要です");
+
+  // ① 音声: 拍+セクション
+  p.step(1, "音楽を解析しています…");
+  p.pulse("音楽を解析しています…");
+  await MZP.paint();
+  if (!audioClip.audio8k) await MC.audio.extract8k(audioClip);
+  if (!audioClip.beatsData) audioClip.beatsData = MC.beats.analyze(audioClip.audio8k);
+  await MC.sections.analyze(audioClip);
+  // サリュート(演奏開始)は取れれば使う(失敗しても続行)
+  if (!MC.director._salute) {
+    try { MC.director._salute = await MC.salute.detect(); } catch (e) { /* 任意 */ }
+  }
+
+  // ② 映像: 各クリップの解析(重い。件数進捗)
+  const [tIn, tOut] = MC.trimRange();
+  for (let ci = 0; ci < MC.S.clips.length; ci++) {
+    const c = MC.S.clips[ci];
+    p.step(2, `映像を見ています…(${ci + 1}/${MC.S.clips.length}本目)`);
+    const l0 = Math.max(0, tIn - c.offset);
+    const l1 = Math.max(l0 + 1, Math.min(c.duration, tOut - c.offset));
+    await MC.visual.analyzeClip(c, l0, l1, (i, n) =>
+      p.count(i, n, { unit: "コマ", name: c.name }));
+  }
+
+  // ③ カット割
+  p.step(3, "カットを割っています…");
+  p.pulse("カットを割っています…");
+  await MZP.paint();
+  return MC.director.generate();
+};
+
+/* ---------- 拍・小節グリッド(グローバル秒) ---------- */
+MC.director._grid = (audioClip, tIn, tOut) => {
+  const B = audioClip.beatsData;
+  const beats = B.beats.map(b => b + audioClip.offset).filter(b => b > tIn + 0.5 && b < tOut - 0.5);
+  if (beats.length < 4) throw new Error("範囲内に拍が足りません(トリム範囲を広げてください)");
+  const bpb = MC.S.beatsPerBar;
+  let downIdx = 0, bestS = -1;
+  for (let ph = 0; ph < bpb; ph++) {
+    let s = 0;
+    for (let i = ph; i < beats.length; i += bpb) {
+      const li = Math.round((beats[i] - audioClip.offset - 0.032) / B.hopSec);
+      s += B.env[Math.max(0, Math.min(B.env.length - 1, li))] || 0;
+    }
+    if (s > bestS) { bestS = s; downIdx = ph; }
+  }
+  const bars = [];
+  for (let i = downIdx; i < beats.length; i += bpb) bars.push(beats[i]);
+  return { beats, bars: bars.length >= 3 ? bars : beats, period: B.period };
+};
+
+/* tTarget 以降で最寄りのカット点(minT より後)を拍/小節から選ぶ */
+MC.director._snap = (grid, tTarget, minT) => {
+  let best = null, bd = Infinity;
+  for (const b of grid.bars) {
+    if (b < minT) continue;
+    const d = Math.abs(b - tTarget);
+    if (d < bd) { bd = d; best = b; }
+  }
+  // 小節が遠すぎる(1.5拍超ズレ)なら拍で
+  if (best == null || bd > grid.period * 1.5) {
+    for (const b of grid.beats) {
+      if (b < minT) continue;
+      const d = Math.abs(b - tTarget);
+      if (d < bd) { bd = d; best = b; }
+    }
+  }
+  return best != null ? best : Math.max(minT, tTarget);
+};
+
+/* ---------- セグメントのカメラ採点 ---------- */
+/* 戻り値: {id, score, wideChosen} のリスト(スコア降順) */
+MC.director._rank = (g0, g1, cls, ctx) => {
+  const opening = MC.director._salute &&
+    g0 < MC.director._salute.musicStart - 0.5;
+  // 望むショット種の重み(セクション分類から)
+  let wClose, wGroup, wWide;
+  if (opening) {
+    wClose = 1.0; wGroup = 0.1; wWide = 0.4;   // DM・サリュートのアップ最優先
+  } else if (cls) {
+    wClose = 0.30 + 0.55 * cls.solo;
+    wGroup = 0.25 + 0.60 * cls.percussion;
+    wWide = 0.25 + 0.45 * cls.tutti;
+  } else {
+    wClose = 0.35; wGroup = 0.3; wWide = 0.35;
+  }
+  // 引き画の織り込み圧力(interleaveショットごとに1回は引きへ)
+  const pw = ctx.segsSinceWide / ctx.interleave;
+  wWide += pw >= 1 ? 1.0 : 0.5 * pw;
+  const pitSeg = !opening && cls && cls.pit > 0.45 && ctx.hasPitCam;
+
+  // 素材範囲: 全区間カバー→中点カバー→全クリップ の順で候補を確保
+  //(録画開始のズレで区間を全カバーするカメラが無くても、カット割を止めない)
+  const mid = (g0 + g1) / 2;
+  let cands = MC.S.clips.filter(c => g0 >= c.offset - 0.2 && g1 <= c.offset + c.duration + 0.2);
+  if (!cands.length) cands = MC.S.clips.filter(c => mid >= c.offset && mid <= c.offset + c.duration);
+  if (!cands.length) cands = MC.S.clips;
+
+  const ranked = [];
+  for (const c of cands) {
+    const m = MC.visual.seg(c, g0, g1);
+    const sh = MC.visual.shotScores(m);
+    // 役割タグで底上げ(自動判定の誤りを人の指定が上書き)
+    if (c.role === "wide") sh.wide = Math.max(sh.wide, 0.8);
+    if (c.role === "close") sh.close = Math.max(sh.close, 0.7);
+    let score = 0;
+    if (MC.visual.disqualified(m)) score -= 1000;      // 絶対条件: 採用不可(全滅時の比較用に相対値は残す)
+    score += wClose * sh.close + wGroup * sh.group + wWide * sh.wide;
+    // フラッグ等の同期した大きな動きは「引きで見せる」を後押し
+    score += sh.ensemble * 0.3 * sh.wide;
+    // ピット区間はピットタグのカメラを意図的に採用。それ以外の区間では専用機を少し引っ込める
+    if (c.role === "pit") score += pitSeg ? 1.2 : -0.35;
+    // 画質(セグメント内シャープネスがクリップ中央値に対して高いか)
+    if (m && m.sharpMed > 1e-6) score += 0.1 * Math.min(1.2, m.sharpMean / m.sharpMed);
+    // 連続・直近使用のペナルティ、しばらく出ていないカメラのボーナス
+    if (c.id === ctx.prevId) score -= 0.9;
+    if (c.id === ctx.prev2Id) score -= 0.25;
+    score += 0.05 * Math.min(6, ctx.sinceUse.get(c.id) || 0);
+    ranked.push({ id: c.id, score, wideChosen: sh.wide >= 0.5, dq: MC.visual.disqualified(m) });
+  }
+  ranked.sort((a, b) => b.score - a.score);
+  return ranked;
+};
+
+/* ---------- cutList 生成 ---------- */
+MC.director.generate = () => {
+  const audioClip = MC.getClip(MC.S.audioClipId);
+  const S = audioClip.sections;
+  const [tIn, tOut] = MC.trimRange();
+  const grid = MC.director._grid(audioClip, tIn, tOut);
+  const L = MC.director.LEVELS[MC.S.cutLevel] || MC.director.LEVELS[3];
+  const bpmAll = audioClip.beatsData.bpm;
+
+  const ctx = {
+    prevId: null, prev2Id: null,
+    segsSinceWide: 0,
+    interleave: L.interleave,
+    sinceUse: new Map(MC.S.clips.map(c => [c.id, 99])),
+    hasPitCam: MC.S.clips.some(c => c.role === "pit"),
+  };
+  const cuts = [];
+  let t = tIn;
+  let guard = 0;
+  while (t < tOut - L.min && guard++ < 2000) {
+    // ショット長: レベル基準 × 局所テンポ/音圧(速い・大きい→短く)
+    const probe = MC.sections.classify(audioClip, t, Math.min(tOut, t + L.base));
+    let mod = 1;
+    if (probe) {
+      const tempoN = probe.bpm ? Math.max(0, Math.min(1, (probe.bpm - 90) / 60)) : 0.5;
+      mod = Math.max(0.6, Math.min(1.5, 1.3 - 0.5 * probe.dyn - 0.3 * tempoN));
+    }
+    const target = Math.max(L.min, Math.min(L.max, L.base * mod));
+    let tNext = MC.director._snap(grid, t + target, t + L.min);
+    tNext = Math.min(tNext, tOut);
+    if (tNext <= t + 0.5) tNext = Math.min(tOut, t + L.min);
+
+    // このセグメントのカメラを選ぶ
+    const cls = MC.sections.classify(audioClip, t, tNext);
+    const ranked = MC.director._rank(t, tNext, cls, ctx);
+    if (!ranked.length) break;
+    const top = ranked[0];
+
+    // トランジション: 静か or 局所BPM低 → ディゾルブ(冒頭カットはそのまま)
+    let trans = "cut", dur = 0;
+    if (cuts.length) {
+      const slow = cls && cls.bpm && cls.bpm < MC.director.DISSOLVE_BPM;
+      const quiet = cls && cls.quiet > 0.55;
+      if (slow || quiet) {
+        trans = "dissolve";
+        dur = Math.min(0.9, Math.max(0.5, (tNext - t) / 4));
+      }
+    }
+    cuts.push({ t, clipId: top.id, trans, dur });
+
+    // 文脈更新
+    for (const [id, v] of ctx.sinceUse) ctx.sinceUse.set(id, v + 1);
+    ctx.sinceUse.set(top.id, 0);
+    ctx.prev2Id = ctx.prevId;
+    ctx.prevId = top.id;
+    ctx.segsSinceWide = top.wideChosen ? 0 : ctx.segsSinceWide + 1;
+    t = tNext;
+  }
+  if (!cuts.length) throw new Error("カットを作れませんでした(範囲を確認してください)");
+  // 末尾の短すぎるセグメントは1つ前と統合
+  if (cuts.length > 1 && tOut - cuts[cuts.length - 1].t < 1.5) cuts.pop();
+  MC.S.cutList = cuts;
+  MC.saveState();
+  const nDissolve = cuts.filter(c => c.trans === "dissolve").length;
+  MC.log(`director: level=${MC.S.cutLevel} ${cuts.length}カット(ディゾルブ${nDissolve}) bpm=${bpmAll.toFixed(1)}`);
+  return { segments: cuts.length, bpm: bpmAll, dissolves: nDissolve };
+};
