@@ -88,13 +88,15 @@ RA.ui.loadFile = file => {
   });
 };
 
-/* 床の自動検出(初期配置)。床が見やすい位置へ少しシークしてから走らせる */
+/* 床の自動検出(初期配置)。冒頭のままなら床が見やすい位置へ少しシークしてから走らせる。
+   ユーザーが自分でシークしていた場合はそのフレームで検出する(「演技者が少ない
+   フレームにシークすると合わせやすい」のヒントどおりに使えるように) */
 RA.ui.autoDetect = async () => {
   const c = RA.S.clip;
   if (!c) return;
   RA.ui.setDetectStatus("busy");
   const v = c.video;
-  const t = Math.min(1.0, c.duration * 0.1);
+  const t = v.currentTime > 0.2 ? v.currentTime : Math.min(1.0, c.duration * 0.1);
   if (Math.abs(v.currentTime - t) > 0.05) {
     v.currentTime = t;
     await new Promise(r => {

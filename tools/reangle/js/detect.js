@@ -1,8 +1,14 @@
 "use strict";
 /* ============ 床4隅の軽量自動検出(OpenCV不使用・純JS) ============
-   体育館フロアは「画面下部の大面積を占める明るい単色領域」という前提で、
-   ① 下部中央の色を床色とみなす → ② 色距離で二値化 → ③ ノイズ整形 →
-   ④ 下部中央から連結成分を取る → ⑤ 凸包 → ⑥ 面積最大の内接四角形。
+   v2: 旧版の前提「床=画面下部の大面積」はアリーナ撮影(画面下部が観客席、
+   床は画面中段)で破綻して大きく歪んだ四角を返し、デフォルト補正が映像全体を
+   回転・シアーさせる事故になっていた。v2は:
+   ① 複数の水平バンドから「一様な床色」を探索(床が画面のどの高さでも拾える)
+   ② バンドごとに 二値化→クロージング→flood→凸包→面積最大の内接四角形
+   ③ エッジ実在性検証: 四角形の各辺が実際の領域境界に直線的に沿っているかを
+      内外プローブで測る。奥の縁(上辺)が実在しない候補は捨てる
+   ④ 信頼度後処理: 実在しない辺(観客席のシルエット等)は「補正が働かない形」へ
+      均し、誤った回転・横ずれ補正が入らないようにする
    あくまで初期配置。失敗したら null(呼び出し側がプリセット台形を使う)。 */
 
 RA.detect = {};
@@ -20,9 +26,25 @@ RA.detect.floorQuad = video => {
   let px;
   try { px = ctx.getImageData(0, 0, W, H).data; } catch (e) { return null; }
 
-  // ① 床色: 下部中央(y 72〜94%、x 30〜70%)の中央値
+  /* 候補バンド(中心y)。下から上へ。旧版相当の下部(0.83)も含む */
+  const bands = [0.83, 0.76, 0.69, 0.62, 0.55, 0.48];
+  let best = null;
+  for (const yc of bands) {
+    const r = RA.detect._tryBand(px, W, H, yc);
+    if (r && (!best || r.score > best.score)) best = r;
+  }
+  if (!best) return null;
+  RA.log(`floor detect: ${Math.round(performance.now() - t0)}ms band=${best.yc} score=${best.score.toFixed(2)} sup=[${best.sup.map(s => s.toFixed(2))}]`);
+  return best.quad.map(p => ({ x: p.x / W, y: p.y / H }));
+};
+
+/* 1つの候補バンドで検出を試す。成功なら {quad(縮小px), score, yc, sup} */
+RA.detect._tryBand = (px, W, H, yc) => {
+  // ① バンド内の色を採取(y: yc±4%、x: 30〜70%)
+  const y0 = Math.max(0, Math.floor(H * (yc - 0.04)));
+  const y1 = Math.min(H, Math.ceil(H * (yc + 0.04)));
   const rs = [], gs = [], bs = [];
-  for (let y = Math.floor(H * 0.72); y < H * 0.94; y += 2) {
+  for (let y = y0; y < y1; y += 1) {
     for (let x = Math.floor(W * 0.30); x < W * 0.70; x += 2) {
       const i = (y * W + x) * 4;
       rs.push(px[i]); gs.push(px[i + 1]); bs.push(px[i + 2]);
@@ -31,35 +53,55 @@ RA.detect.floorQuad = video => {
   if (rs.length < 20) return null;
   const med = a => { a.sort((p, q) => p - q); return a[a.length >> 1]; };
   const mr = med(rs), mg = med(gs), mb = med(bs);
+  const lum = 0.299 * mr + 0.587 * mg + 0.114 * mb;
+  if (lum < 60) return null;                 // 暗い=観客席・暗幕・スタンド
 
-  // しきい値はサンプル群の散らばりから自動決定
+  // 人・ライン・楽器が乗っていても床画素が多数派なら拾えるよう、散らばりはp60で測る
   const dists = [];
   for (let k = 0; k < rs.length; k++)
     dists.push(Math.abs(rs[k] - mr) + Math.abs(gs[k] - mg) + Math.abs(bs[k] - mb));
-  const p90 = dists.sort((p, q) => p - q)[Math.floor(dists.length * 0.9)];
-  const thr = Math.max(45, Math.min(140, p90 * 2.2));
+  dists.sort((p, q) => p - q);
+  const p60 = dists[Math.floor(dists.length * 0.6)];
+  if (p60 > 50) return null;                 // 多数派すら一様でない=床ではない
+  const thr = Math.max(30, Math.min(95, p60 * 3.5));
 
-  // ② 二値化
+  // ② 二値化 → クロージング(コートライン・マットの継ぎ目でマスクが分断されるのを防ぐ)
   let mask = new Uint8Array(W * H);
-  for (let i = 0, j = 0; i < px.length; i += 4, j++) {
+  for (let i = 0, j = 0; j < W * H; i += 4, j++) {
     const d = Math.abs(px[i] - mr) + Math.abs(px[i + 1] - mg) + Math.abs(px[i + 2] - mb);
     mask[j] = d < thr ? 1 : 0;
   }
-
-  // ③ クロージング(dilate→erode): コートライン等の細い線でマスクが
-  //    分断されるのを防ぐ(体育館の床はラインだらけなのでここが重要)
   mask = RA.detect._morph(mask, W, H, "dilate");
   mask = RA.detect._morph(mask, W, H, "dilate");
   mask = RA.detect._morph(mask, W, H, "erode");
   mask = RA.detect._morph(mask, W, H, "erode");
 
-  // ④ 下部中央のシードから連結成分(床は必ず画面下部につながっている前提)
-  const comp = RA.detect._floodFromBottom(mask, W, H);
-  if (!comp) return null;
-  const { region, area } = comp;
-  if (area < W * H * 0.12) return null;
+  // ③ バンド内シードから連結成分
+  const region = new Uint8Array(W * H);
+  const stack = [];
+  const sy = Math.max(1, Math.min(H - 2, Math.round(H * yc)));
+  for (const yy of [y0, sy, y1 - 1]) {
+    for (let x = Math.floor(W * 0.25); x < W * 0.75; x += 4) {
+      if (mask[yy * W + x]) stack.push(yy * W + x);
+    }
+  }
+  if (!stack.length) return null;
+  let area = 0;
+  while (stack.length) {
+    const i = stack.pop();
+    if (region[i] || !mask[i]) continue;
+    region[i] = 1;
+    area++;
+    const x = i % W;
+    if (x > 0) stack.push(i - 1);
+    if (x < W - 1) stack.push(i + 1);
+    if (i >= W) stack.push(i - W);
+    if (i < W * (H - 1)) stack.push(i + W);
+  }
+  const areaR = area / (W * H);
+  if (areaR < 0.10 || areaR > 0.85) return null;
 
-  // ⑤ 境界点 → 凸包 → 点数を絞る
+  // ④ 境界点 → 凸包 → 面積最大の内接四角形
   const boundary = [];
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
@@ -75,8 +117,6 @@ RA.detect.floorQuad = video => {
   let hull = RA.detect._hull(boundary);
   hull = RA.detect._reduce(hull, 20);
   if (hull.length < 4) return null;
-
-  // ⑥ 凸包上の4点で面積最大の四角形(n≤20 → 総当たり数千通り、数ms)
   const quad = RA.detect._maxQuad(hull);
   if (!quad) return null;
 
@@ -84,16 +124,93 @@ RA.detect.floorQuad = video => {
   const byY = [...quad].sort((a, b) => a.y - b.y);
   const top = byY.slice(0, 2).sort((a, b) => a.x - b.x);
   const bot = byY.slice(2).sort((a, b) => a.x - b.x);
-  const ordered = [top[0], top[1], bot[1], bot[0]];
+  const q = [top[0], top[1], bot[1], bot[0]];   // TL,TR,BR,BL
 
-  // 妥当性: 凸・面積15%以上・上辺<下辺(斜め上から見た台形)
-  const areaQ = RA.detect._area(ordered);
-  const topW = Math.hypot(top[1].x - top[0].x, top[1].y - top[0].y);
-  const botW = Math.hypot(bot[1].x - bot[0].x, bot[1].y - bot[0].y);
-  if (areaQ < W * H * 0.15 || topW >= botW * 0.98 || !RA.detect._isConvex(ordered)) return null;
+  // ⑤ 妥当性(形): 凸・面積・上辺<下辺(斜め上から見た台形)・上辺が上端に張り付かない
+  const areaQ = RA.detect._area(q);
+  const len = (a, b) => Math.hypot(b.x - a.x, b.y - a.y);
+  const topW = len(q[0], q[1]);
+  const botW = len(q[3], q[2]);
+  if (areaQ < W * H * 0.10 || topW < W * 0.25 || !RA.detect._isConvex(q)) return null;
+  if (topW >= botW * 1.02) return null;
+  if (q[0].y <= 1 && q[1].y <= 1) return null;
 
-  RA.log(`floor detect: ${Math.round(performance.now() - t0)}ms area=${Math.round(areaQ / (W * H) * 100)}% thr=${Math.round(thr)}`);
-  return ordered.map(p => ({ x: p.x / W, y: p.y / H }));
+  // ⑥ エッジ実在性: 各辺が領域の実境界に直線的に沿っているか
+  const { sup, neutral } = RA.detect._edgeSupport(region, W, H, q);
+  const REAL = 0.75;
+  // 奥の縁(上辺)だけは実在必須。ここが偽物だと補正が映像全体を回してしまう
+  if (sup[0] < REAL) return null;
+
+  // ⑦ 信頼度後処理: 実在しない辺には補正が働かないよう「既に補正済みの形」へ均す
+  //  - 下辺が偽物(観客席のシルエット等) → 水平化(targetSymの水平化が無効になる)
+  //  - 左右辺が偽物/切り取り → 上下辺の中心を揃える(横ずれ補正が無効になる)
+  if (sup[1] < REAL && !neutral[1]) {
+    const yb = (q[2].y + q[3].y) / 2;
+    q[2] = { x: q[2].x, y: yb };
+    q[3] = { x: q[3].x, y: yb };
+  }
+  if (sup[2] < REAL || sup[3] < REAL) {
+    const ct = (q[0].x + q[1].x) / 2;
+    const cb = (q[2].x + q[3].x) / 2;
+    const cc = (ct + cb) / 2;
+    q[0] = { x: q[0].x + (cc - ct), y: q[0].y };
+    q[1] = { x: q[1].x + (cc - ct), y: q[1].y };
+    q[2] = { x: q[2].x + (cc - cb), y: q[2].y };
+    q[3] = { x: q[3].x + (cc - cb), y: q[3].y };
+  }
+
+  const avgSup = (sup[0] * 2 + sup[1] + sup[2] + sup[3]) / 5;   // 奥の縁を重視
+  const score = avgSup * 0.7 + Math.min(0.5, areaQ / (W * H)) * 0.6;
+  return { quad: q, score, yc, sup };
+};
+
+/* 各辺のサポート率(内外プローブ方式):
+   辺に沿って標本し、「辺の内側(重心側)3pxに領域があり、外側6pxに領域がない」割合。
+   外側6pxはレンズ歪みで床の縁が数px湾曲してもフォールスにならないための余裕。
+   「床の真ん中を横切る辺」(内外とも領域)は確実に0近くになる。
+   床がフレーム外へ続いて辺が切り取りになっている場合(外側の領域がそのまま
+   フレーム端まで達している)は判定不能として中立値0.6を返す。
+   返り値 { sup:[top,bottom,left,right], neutral:[…] }。フレーム外は「領域なし」扱い */
+RA.detect._edgeSupport = (region, W, H, q) => {
+  const cx = (q[0].x + q[1].x + q[2].x + q[3].x) / 4;
+  const cy = (q[0].y + q[1].y + q[2].y + q[3].y) / 4;
+  const at = (x, y) => {
+    const xi = Math.round(x), yi = Math.round(y);
+    if (xi < 0 || xi >= W || yi < 0 || yi >= H) return 0;   // フレーム外=領域なし
+    return region[yi * W + xi];
+  };
+  // 外側プローブ点からさらに外へ辿り、領域がフレーム端まで連続しているか(=切り取り辺)
+  const runsToBorder = (x, y, nx, ny) => {
+    for (let s = 0; s < Math.max(W, H); s += 2) {
+      const xi = Math.round(x - nx * s), yi = Math.round(y - ny * s);
+      if (xi < 4 || xi >= W - 4 || yi < 4 || yi >= H - 4) return true;   // 端に到達(モルフォロジーの縁欠け分の余裕)
+      if (!region[yi * W + xi]) return false;                            // 途切れた=実境界がある
+    }
+    return true;
+  };
+  const edge = (a, b) => {
+    const ex = b.x - a.x, ey = b.y - a.y;
+    const L = Math.hypot(ex, ey) || 1;
+    let nx = -ey / L, ny = ex / L;                 // 法線(重心側へ向ける)
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    if (nx * (cx - mx) + ny * (cy - my) < 0) { nx = -nx; ny = -ny; }
+    const n = Math.max(8, Math.round(L / 2));
+    let ok = 0, cnt = 0, truncated = 0;
+    for (let k = 1; k < n; k++) {                  // 端点(コーナー)は避ける
+      const t = k / n;
+      const sx = a.x + ex * t, sy = a.y + ey * t;
+      cnt++;
+      const inside = at(sx + nx * 3, sy + ny * 3);
+      const outside = at(sx - nx * 6, sy - ny * 6);
+      if (inside && !outside) ok++;
+      else if (inside && outside && runsToBorder(sx - nx * 6, sy - ny * 6, nx, ny)) truncated++;
+    }
+    if (!cnt) return { v: 0, neutral: false };
+    if (truncated / cnt > 0.5) return { v: 0.6, neutral: true };  // 切り取り辺(床が画面外へ続く)
+    return { v: ok / cnt, neutral: false };
+  };
+  const es = [edge(q[0], q[1]), edge(q[3], q[2]), edge(q[0], q[3]), edge(q[1], q[2])];
+  return { sup: es.map(e => e.v), neutral: es.map(e => e.neutral) };
 };
 
 /* 3x3 erode / dilate */
@@ -114,30 +231,6 @@ RA.detect._morph = (src, W, H, mode) => {
     }
   }
   return out;
-};
-
-/* 下部中央のシードからflood fill。{region, area} or null */
-RA.detect._floodFromBottom = (mask, W, H) => {
-  const region = new Uint8Array(W * H);
-  const stack = [];
-  const sy = Math.floor(H * 0.88);
-  for (let x = Math.floor(W * 0.3); x < W * 0.7; x += 4) {
-    if (mask[sy * W + x]) stack.push(sy * W + x);
-  }
-  if (!stack.length) return null;
-  let area = 0;
-  while (stack.length) {
-    const i = stack.pop();
-    if (region[i] || !mask[i]) continue;
-    region[i] = 1;
-    area++;
-    const x = i % W;
-    if (x > 0) stack.push(i - 1);
-    if (x < W - 1) stack.push(i + 1);
-    if (i >= W) stack.push(i - W);
-    if (i < W * (H - 1)) stack.push(i + W);
-  }
-  return { region, area };
 };
 
 /* Andrewのmonotone chainで凸包 */
