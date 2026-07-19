@@ -379,17 +379,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
   paintStrength();
 
-  // モード切替(正面/俯瞰)
-  $("viewModeSeg").querySelectorAll("[data-mode]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const m = btn.getAttribute("data-mode") === "top" ? "top" : "front";
-      if (RA.S.viewMode === m) return;
-      RA.S.viewMode = m;
-      $("viewModeSeg").querySelectorAll("[data-mode]").forEach(b =>
-        b.classList.toggle("on", b === btn));
-      paintStrength();
-    });
-  });
+  // 俯瞰モードはUIから撤去(2026-07-19)。ロジックとURLパラメータ p= は隠し機能として残す
 
   bindRange("tiltRange", "tilt", "tiltVal", v => v, v => `${v > 0 ? "+" : ""}${v.toFixed(1)}°`);
   bindRange("zoomRange", "zoom", "zoomVal", v => v / 100, v => `×${v.toFixed(2)}`);
