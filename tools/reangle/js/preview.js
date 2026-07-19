@@ -44,6 +44,7 @@ RA.preview = {
       sMain: off ? 0 : (RA.S.viewMode === "top" ? 1 : RA.S.sMain),
       sPersp: off ? 0 : (RA.S.viewMode === "top" ? RA.S.sTop : 0),
       tilt: off ? 0 : RA.S.tilt,
+      viewX: off ? 0 : RA.S.viewX,
       zoom: off ? 1 : RA.S.zoom,
       panY: off ? 0 : RA.S.panY,
       dispW: clip.width, dispH: clip.height,

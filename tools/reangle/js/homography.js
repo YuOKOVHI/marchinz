@@ -121,7 +121,7 @@ RA.H.rotToRaw = (rot, rawW, rawH) => {
    出力: ソーステクスチャの正規化座標
    チェーン: 正規化→表示px → ズーム/パン逆 → 強度付きホモグラフィ逆 → (回転逆) → テクスチャ正規化
    opts: { corners(正規化4点), sMain(真正面へ0〜1), sPersp(俯瞰へ0〜1),
-           tilt(傾き調整・度・出力の回転), zoom, panY,
+           tilt(傾き調整・度・出力の回転), viewX(見る位置・水平シアー), zoom, panY,
            dispW, dispH, raw(書き出し時true), rot, rawW, rawH } */
 RA.H.buildMatrix = opts => {
   const { corners, zoom, panY, dispW, dispH } = opts;
@@ -151,6 +151,16 @@ RA.H.buildMatrix = opts => {
                   s,  c, cy - s * cx - c * cy,
                   0, 0, 1];
     M = RA.H.mul(Rinv, M);
+  }
+
+  // ①'' 見る位置(左右)の逆: 出力を水平シアー x' = x + k*(cy - y) で見せる
+  //  (床面に対する視点の横移動の一次近似。k>0 = より右から見たように)
+  const k = opts.viewX || 0;
+  if (k) {
+    const Sinv = [1, k, -k * cy,
+                  0, 1, 0,
+                  0, 0, 1];
+    M = RA.H.mul(Sinv, M);
   }
 
   // ② ズーム/パンの逆: corr = c + (out - c - pan)/zoom
@@ -239,6 +249,17 @@ RA.testHomography = () => {
     chk(RA.H.apply(Mt, 0.5, 0.5), { x: 0.5, y: 0.5 });
     // 出力(0.6,0.5)=中心の右10% → −90°逆回転でソースでは中心の上10%
     chk(RA.H.apply(Mt, 0.6, 0.5), { x: 0.5, y: 0.4 });
+  }
+
+  // 9) 見る位置(左右): 画面中央の行は不動、上半分は k*(cy-y) だけ水平に動く
+  {
+    const Mv = RA.H.buildMatrix({
+      corners: RA.presetCorners(), sMain: 0, sPersp: 0, viewX: 0.2,
+      zoom: 1, panY: 0, dispW: 1000, dispH: 1000,
+    });
+    chk(RA.H.apply(Mv, 0.5, 0.5), { x: 0.5, y: 0.5 });
+    // 出力(0.5,0.25) → ソースでは x=0.5-0.2*(0.5-0.25)=0.45(上の内容が右へ動いて見える)
+    chk(RA.H.apply(Mv, 0.5, 0.25), { x: 0.45, y: 0.25 });
   }
 
   const ok = maxErr < 1e-6;

@@ -192,6 +192,7 @@ RA.ui.buildPresetThumbs = () => {
     sMain: off ? 0 : (RA.S.viewMode === "top" ? 1 : RA.S.sMain),
     sPersp: off ? 0 : (RA.S.viewMode === "top" ? RA.S.sTop : 0),
     tilt: off ? 0 : RA.S.tilt,
+    viewX: off ? 0 : RA.S.viewX,
     zoom: off ? 1 : RA.S.zoom,
     panY: off ? 0 : RA.S.panY,
     dispW: clip.width, dispH: clip.height,
@@ -383,6 +384,8 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   // 俯瞰モードはUIから撤去(2026-07-19)。ロジックとURLパラメータ p= は隠し機能として残す
 
+  bindRange("viewRange", "viewX", "viewVal", v => v / 100,
+    v => (v === 0 ? "中央" : `${v > 0 ? "右" : "左"}へ ${Math.round(Math.abs(v) * 100)}`));
   bindRange("tiltRange", "tilt", "tiltVal", v => v, v => `${v > 0 ? "+" : ""}${v.toFixed(1)}°`);
   bindRange("zoomRange", "zoom", "zoomVal", v => v / 100, v => `×${v.toFixed(2)}`);
   bindRange("panRange", "panY", "panVal", v => v / 100, v => `${v > 0 ? "+" : ""}${Math.round(v * 100)}%`);
@@ -449,6 +452,9 @@ RA.ui.runTest = async () => {
     }
     if (params.get("t") != null) {
       RA.S.tilt = parseFloat(params.get("t"));
+    }
+    if (params.get("vx") != null) {
+      RA.S.viewX = parseFloat(params.get("vx")) / 100;
     }
     if (params.get("c") != null && RA.PRESETS.some(pr => pr[0] === params.get("c"))) {
       RA.S.preset = params.get("c");

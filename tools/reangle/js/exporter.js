@@ -206,7 +206,7 @@ RA.exporter.exportMP4 = async (clip, onProgress) => {
       corners: RA.S.corners || RA.presetCorners(),
       sMain: RA.S.viewMode === "top" ? 1 : RA.S.sMain,
       sPersp: RA.S.viewMode === "top" ? RA.S.sTop : 0,
-      tilt: RA.S.tilt, zoom: RA.S.zoom, panY: RA.S.panY,
+      tilt: RA.S.tilt, viewX: RA.S.viewX, zoom: RA.S.zoom, panY: RA.S.panY,
       dispW, dispH, raw: true, rot: rotation, rawW, rawH,
     });
 
