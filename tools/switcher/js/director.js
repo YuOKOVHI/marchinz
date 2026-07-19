@@ -12,14 +12,16 @@
    cutList形式は既存互換 [{t, clipId, trans, dur}]。 */
 
 MC.director = {
-  /* レベル別: 基準ショット長(秒)と引き画の織り込み間隔(何ショットに1回) */
+  /* 切替頻度3段階: 基準ショット長(秒)と引き画の織り込み間隔(何ショットに1回) */
   LEVELS: {
-    1: { base: 9.0, min: 5.0, max: 16, interleave: 2 },
-    2: { base: 6.5, min: 4.0, max: 12, interleave: 3 },
-    3: { base: 5.0, min: 3.0, max: 9,  interleave: 3 },
-    4: { base: 3.8, min: 2.2, max: 7,  interleave: 4 },
-    5: { base: 2.8, min: 1.6, max: 5,  interleave: 5 },
+    1: { base: 8.0, min: 4.5, max: 14, interleave: 2 },  // 少なめ(ゆったり)
+    2: { base: 5.0, min: 3.0, max: 9,  interleave: 3 },  // おすすめ
+    3: { base: 3.2, min: 1.8, max: 6,  interleave: 4 },  // 多め(細かい)
   },
+  /* 素材ごとの出番の希望(clip.freq)をスコアへ足す量。
+     「少なめ」は下の登場間隔ボーナス(最大0.48)より小さくして、
+     出番ゼロにはならず「たまに出る」に落ち着かせる */
+  FREQ_BIAS: { less: -0.35, auto: 0, more: 0.45 },
   DISSOLVE_BPM: 92,    // これ未満の局所BPMはディゾルブ候補
   _salute: null,
 };
@@ -144,12 +146,14 @@ MC.director._rank = (g0, g1, cls, ctx) => {
     score += sh.ensemble * 0.3 * sh.wide;
     // ピット区間はピットタグのカメラを意図的に採用。それ以外の区間では専用機を少し引っ込める
     if (c.role === "pit") score += pitSeg ? 1.2 : -0.35;
+    // 素材ごとの出番の希望(少なめ/おまかせ/多め)
+    score += MC.director.FREQ_BIAS[c.freq] || 0;
     // 画質(セグメント内シャープネスがクリップ中央値に対して高いか)
     if (m && m.sharpMed > 1e-6) score += 0.1 * Math.min(1.2, m.sharpMean / m.sharpMed);
     // 連続・直近使用のペナルティ、しばらく出ていないカメラのボーナス
     if (c.id === ctx.prevId) score -= 0.9;
     if (c.id === ctx.prev2Id) score -= 0.25;
-    score += 0.05 * Math.min(6, ctx.sinceUse.get(c.id) || 0);
+    score += 0.06 * Math.min(8, ctx.sinceUse.get(c.id) || 0);   // 出番が空くほど戻りやすく(最大0.48)
     ranked.push({ id: c.id, score, wideChosen: sh.wide >= 0.5, dq: MC.visual.disqualified(m) });
   }
   ranked.sort((a, b) => b.score - a.score);

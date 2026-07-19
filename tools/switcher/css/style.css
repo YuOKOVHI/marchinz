@@ -263,7 +263,7 @@ footer .foot-link { color: #1e4fd6; }
 .level-row { align-items: center; }
 .level-seg { display: inline-flex; background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 2px; gap: 2px; }
 .level-seg button {
-  min-width: 34px; padding: 6px 0; border: none; border-radius: 8px;
+  min-width: 34px; padding: 6px 14px; border: none; border-radius: 8px;
   background: transparent; color: var(--tx2); font-size: 13px; font-weight: 600;
   cursor: pointer; transition: background .15s, color .15s;
 }

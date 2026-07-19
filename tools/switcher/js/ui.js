@@ -175,6 +175,11 @@ MC.ui.renderClips = () => {
           <option value="wide" ${c.role === "wide" ? "selected" : ""}>引き（全体）</option>
           <option value="close" ${c.role === "close" ? "selected" : ""}>寄り（アップ）</option>
           <option value="pit" ${c.role === "pit" ? "selected" : ""}>フロントピット</option>
+        </select></div>
+        <div class="pan-row">出番 <select class="freq-sel select-mini" title="自動カット割でこのカメラをどのくらい使うか">
+          <option value="less" ${c.freq === "less" ? "selected" : ""}>少なめ</option>
+          <option value="auto" ${!c.freq || c.freq === "auto" ? "selected" : ""}>おまかせ</option>
+          <option value="more" ${c.freq === "more" ? "selected" : ""}>多め</option>
         </select></div>` : ""}
       </div>
       <button class="clip-remove" title="削除">✕</button>`;
@@ -185,6 +190,8 @@ MC.ui.renderClips = () => {
     card.querySelector(".pan").oninput = e => { c.pan = parseFloat(e.target.value); MC.saveState(); };
     const roleSel = card.querySelector(".role-sel");
     if (roleSel) roleSel.onchange = e => { c.role = e.target.value; MC.saveState(); };
+    const freqSel = card.querySelector(".freq-sel");
+    if (freqSel) freqSel.onchange = e => { c.freq = e.target.value; MC.saveState(); };
     card.querySelector(".clip-remove").onclick = () => MC.media.removeClip(c.id);
     slot.appendChild(card);
     box.appendChild(slot);
@@ -583,11 +590,7 @@ MC.ui.wire = () => {
   };
 };
 
-/* 切替頻度(1〜5)のセグメントコントロール */
-MC.ui.LEVEL_HINTS = {
-  1: "ゆったり・長尺", 2: "落ち着いた", 3: "標準",
-  4: "テンポよく", 5: "細かい・激しい",
-};
+/* 切替頻度(少なめ/おすすめ/多め)のセグメントコントロール */
 MC.ui.renderLevel = () => {
   const seg = MC.ui.$("#levelSeg");
   if (!seg) return;
@@ -601,7 +604,6 @@ MC.ui.renderLevel = () => {
       MC.ui.renderLevel();
     };
   });
-  MC.ui.$("#levelHint").textContent = MC.ui.LEVEL_HINTS[MC.S.cutLevel] || "";
 };
 
 /* 仕上げパネルの状態反映(カラーマッチON表示+水平スライダー) */

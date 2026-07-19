@@ -15,7 +15,7 @@ window.MC = {
     /* Phase 2: スイッチング/ワイプ */
     cutList: [],                // [{t, clipId, trans:'cut'|'dissolve', dur}] 昇順・セグメント開始
     beatsPerBar: 4,
-    cutLevel: 3,                // 切替頻度 1(ゆったり)〜5(細かい)
+    cutLevel: 2,                // 切替頻度 1:少なめ 2:おすすめ 3:多め
     wipeClipId: null,           // ワイプの小窓カメラ(1つ目)
     wipeClipId2: null,          // ワイプの小窓カメラ(2つ目、null=なし)
     wipePos: "br", wipePos2: "bl", wipeSize: 0.32,
@@ -95,7 +95,8 @@ MC.saveState = () => {
       horizonOn: MC.S.horizonOn,
       clips: MC.S.clips.map(c => ({
         key: MC.clipKey(c), offset: c.offset, confidence: c.confidence,
-        syncMethod: c.syncMethod, pan: c.pan, role: c.role || "auto",
+        syncMethod: c.syncMethod, pan: c.pan,
+        role: c.role || "auto", freq: c.freq || "auto",
         colorT: c.colorT || null, rot: c.rot || 0,
       })),
       // クリップidは読込順で変わるためkeyで保存
@@ -118,6 +119,7 @@ MC.restoreClipState = clip => {
       clip.syncMethod = hit.syncMethod || "未同期";
       clip.pan = hit.pan == null ? 0.5 : hit.pan;
       clip.role = hit.role || "auto";
+      clip.freq = hit.freq || "auto";
       clip.colorT = hit.colorT || null;
       clip.rot = hit.rot || 0;
     }

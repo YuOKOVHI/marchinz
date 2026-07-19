@@ -18,7 +18,10 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (saved.colorStrength != null) MC.S.colorStrength = saved.colorStrength;
     if (saved.filterId && MC.color.FILTERS[saved.filterId]) MC.S.filterId = saved.filterId;
     if (saved.beatsPerBar) MC.S.beatsPerBar = saved.beatsPerBar;
-    if (saved.cutLevel >= 1 && saved.cutLevel <= 5) MC.S.cutLevel = saved.cutLevel;
+    // 切替頻度: 旧5段階の保存値は3段階(少なめ/おすすめ/多め)へ寄せる
+    if (saved.cutLevel >= 1 && saved.cutLevel <= 5) {
+      MC.S.cutLevel = saved.cutLevel <= 2 ? 1 : saved.cutLevel >= 4 ? 3 : 2;
+    }
     if (saved.wipePos) MC.S.wipePos = saved.wipePos;
     if (saved.wipePos2) MC.S.wipePos2 = saved.wipePos2;
     if (saved.wipeSize) MC.S.wipeSize = saved.wipeSize;
