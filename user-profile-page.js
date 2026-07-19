@@ -1470,7 +1470,24 @@
    * @param {FirebaseFirestore.Firestore} db
    * @returns {Promise<{ matchMap: Map<string, string>; byId: Map<string, { created_by: string; status: string }> }>}
    */
+  /** カレンダー照合表のキャッシュ(5分)。読み込みごとの500件クエリを抑える */
+  let calLookupCache = null;
+  let calLookupCacheAt = 0;
+  let calLookupInflight = null;
+
   async function loadCalendarLookup(db) {
+    if (calLookupCache && Date.now() - calLookupCacheAt < 5 * 60 * 1000) return calLookupCache;
+    if (calLookupInflight) return calLookupInflight;
+    calLookupInflight = loadCalendarLookupFresh(db).then((r) => {
+      calLookupCache = r;
+      calLookupCacheAt = Date.now();
+      calLookupInflight = null;
+      return r;
+    });
+    return calLookupInflight;
+  }
+
+  async function loadCalendarLookupFresh(db) {
     /** @type {Map<string, string>} */
     const matchMap = new Map();
     /** @type {Map<string, { created_by: string; status: string }>} */
@@ -3889,6 +3906,26 @@
       return;
     }
 
+    // ---- 先行ペイント: プロフィール文書だけで描けるものは一覧クエリを待たずに出す ----
+    // (体感速度の要。ヘッダー/カバー/タブ、そして練習記録(Days)はここで即開始する)
+    {
+      const profileEarly = {
+        display_name: pdata.display_name || "ユーザー",
+        avatar_url: pdata.avatar_url || "",
+        profile_bio: pdata.profile_bio || "",
+        profile_address_prefecture: resolveProfileAddressPrefecture(pdata),
+        profile_address_prefecture_public: isProfileAddressPrefecturePublic(pdata),
+        profile_attributes: Array.isArray(pdata.profile_attributes) ? pdata.profile_attributes : [],
+        marchinz_public_id: String(pdata.marchinz_public_id || "").replace(/\D/g, ""),
+        updated_at: String(pdata.updated_at || "").trim(),
+      };
+      renderHeader(profileEarly, targetUid);
+      mountCoverSingle(resolveCoverUrlFromPdata(pdata), profileEarly.updated_at);
+      setText("#prof-load-msg", "一覧を読み込み中…");
+      root?.querySelector(".user-profile-layout")?.classList.remove("user-profile-layout--loading");
+      if (showOwnerChrome) window.MarchinZBase?.mount(targetUid);   // 練習記録は一覧と並行して読み込む
+    }
+
     const mllSectionVis = parseMllSectionVisibility(pdata);
     const logDiarySectionVis = parseLogDiarySectionVisibility(pdata);
     const videosSectionVis = parseVideosSectionVisibility(pdata);
@@ -3900,9 +3937,9 @@
     const loadLogDiary = !isProfileBanned(pdata) && (realIsOwner || logDiarySectionVis === "public");
 
     if (realIsOwner && db) {
-      await cleanupLegacyDefaultMylistLists(db, targetUid);
+      // 旧「マイリスト」既定リストの掃除(一度きりの移行処理)。表示を待たせない
+      void cleanupLegacyDefaultMylistLists(db, targetUid).catch(() => {});
     }
-    if (isProfileLoadStale(gen, targetUid)) return;
 
     const safeQuery = async (task, fallback, warnTag) => {
       try {
@@ -3992,9 +4029,7 @@
       updated_at: String(pdata.updated_at || "").trim(),
     };
 
-    renderHeader(profile, targetUid);
-
-    mountCoverSingle(resolveCoverUrlFromPdata(pdata), profile.updated_at);
+    // ヘッダー/カバーは先行ペイント済み(pdataのみ依存のため内容は同一)
 
     if (viewAsVisitor) {
       root?.querySelectorAll("[data-prof-tab]").forEach((btn) => {
@@ -4240,7 +4275,6 @@
       await renderNotificationsPane(db, targetUid, notifsSnap);
       if (isProfileLoadStale(gen, targetUid)) return;
       renderOpsPane();
-      window.MarchinZBase?.mount(targetUid);
     } else {
       const nh = el("#prof-notifs-list");
       if (nh) nh.replaceChildren();
