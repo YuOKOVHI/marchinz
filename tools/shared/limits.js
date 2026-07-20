@@ -113,7 +113,7 @@ window.MZ_LIMITS = (() => {
     if (kind === "vlog") {
       // Vlogは上限が複数種あるため専用の文言にする
       const html = L.unlimited
-        ? '<p class="mz-plan">上限なしで使えます（完成は3分01秒〜5分）。</p>'
+        ? '<p class="mz-plan">上限なしで使えます（〜5分）。</p>'
         : L.member
           ? '<p class="mz-plan">1本10分まで・インタビュー3人・インサート映像8本・ロゴ1枚・写真8枚。'
             + '完成は3分01秒〜5分まで使えます。</p>'

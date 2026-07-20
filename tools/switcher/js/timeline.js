@@ -113,7 +113,8 @@ MC.timeline.renderToolbar = () => {
   const end = i + 1 < cl.length ? cl[i + 1].t : MC.trimRange()[1];
   bar.querySelector(".tl-info").innerHTML =
     `<strong>いま映っているカット</strong>`
-    + `<span class="tl-info-sub">${MC.ui.fmtTime(start)} 〜 ${MC.ui.fmtTime(end)}</span>`;
+    + `<span class="tl-info-sub">${MC.ui.fmtTime(start)} 〜 ${MC.ui.fmtTime(end)}</span>`
+    + `<span class="tl-info-help">タップでそのカメラを表示、もう一度タップでそのカメラに変更確定</span>`;
 
   /* カメラは順送りではなく直接選ばせる。どれが今出ているかも一目で分かる */
   const box = MC.ui.$("#tlCamPicker");
@@ -143,11 +144,13 @@ MC.timeline.renderToolbar = () => {
       } else {
         MC.timeline.armedCam = c.id;
         MC.timeline.renderToolbar();
+        MC.preview.draw();                                // そのカメラの画を仮に出す(未確定)
         clearTimeout(MC.timeline._armTimer);
         MC.timeline._armTimer = setTimeout(() => {
           if (MC.timeline.armedCam === c.id) {
             MC.timeline.armedCam = null;
             MC.timeline.renderToolbar();
+            MC.preview.draw();                            // 時間切れ: 元のカメラに戻す
           }
         }, 4000);
       }

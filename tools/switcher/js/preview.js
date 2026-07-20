@@ -164,18 +164,29 @@ MC.preview = {
   /* いまどの素材が映っているかをプレビュー左下に出す(カット割モードのみ)。
      切り替わっているかが一目で分かるようにするためのプレビュー専用表示で、
      書き出す映像には入らない */
+  /* 「もう一度タップ」待ちのカメラID。待ちが無ければ null。
+     カット割/ワイプのときだけ効かせる(他のレイアウトはカットの概念が無い) */
+  armedPreviewId() {
+    const id = MC.timeline && MC.timeline.armedCam;
+    if (id == null) return null;
+    const L = MC.LAYOUTS[MC.S.layoutId];
+    if (!L || (L.type !== "switch" && L.type !== "wipe")) return null;
+    return MC.getClip(id) ? id : null;
+  },
+
   drawCamBadge() {
     if (!this.overlayOn) return;
     const L = MC.LAYOUTS[MC.S.layoutId];
     if (!L || (L.type !== "switch" && L.type !== "wipe")) return;
     const cut = MC.cutAt(MC.S.t);
+    const armedId = this.armedPreviewId();
     const clips = MC.media.slotClips();
-    const idx = clips.findIndex(c => c.id === cut.cur);
+    const idx = clips.findIndex(c => c.id === (armedId != null ? armedId : cut.cur));
     if (idx < 0) return;
     const W = this.canvas.width, H = this.canvas.height, ctx = this.ctx;
     const base = Math.min(W, H);
     const fs = Math.round(base * 0.05);   // 小さいプレビューでも読める大きさ
-    const label = `カメラ${idx + 1}`;
+    const label = armedId != null ? `カメラ${idx + 1}（まだ確定していません）` : `カメラ${idx + 1}`;
     ctx.save();
     ctx.font = `700 ${fs}px -apple-system, sans-serif`;
     const padX = fs * 0.62, padY = fs * 0.42;
@@ -284,7 +295,12 @@ MC.preview = {
 
   draw() {
     if (!MC.S.clips.length) { this.drawEmpty(); return; }
+    /* 「もう一度タップ」待ちの間だけ、そのカメラの画をプレビューに出す(まだ確定ではない)。
+       cutList / MC.cutAt は書き出しも通る道なので触らず、ここでソースだけ差し替える。
+       差し替えるのは「いま映っているカット」の絵だけ。ワイプの子画面は対象外 */
+    const armedId = this.armedPreviewId();
     MC.drawComposite(this.ctx, this.canvas.width, this.canvas.height, MC.S.t, id => {
+      if (armedId != null && id === MC.cutAt(MC.S.t).cur) id = armedId;
       const c = MC.getClip(id);
       if (!c) return null;
       if (c.isImage) return { source: c.img, w: c.width, h: c.height, rotation: 0 };  // 静止画は常に表示
