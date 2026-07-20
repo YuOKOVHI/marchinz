@@ -20,7 +20,7 @@ MC.visual = {
   GRID_X: 6, GRID_Y: 4,
   // ブレ判定しきい値(画面幅比/秒)
   TH_RAPID: 0.28,    // これ以上のグローバル動き=急パン・激しいブレ
-  TH_SHAKE: 0.11,    // これ以上+向きが暴れる=手ブレ
+  TH_SHAKE: 0.11,    // これ以上=手ブレ(単独で失格。向きの暴れは条件にしない)
   // カメラを振っている(パン)の判定。向きが一定のまま動いている状態。
   // 手ブレ(向きが暴れる)と区別するため flipRatio が低いことを条件にする。
   // ディレクター指示: 振っている最中の絵は絶対に使わない
@@ -398,17 +398,26 @@ MC.visual.noSubject = (m, role) => {
   return m.act < MC.visual.TH_EMPTY;
 };
 
-/* 採用してはいけない画の判定(絶対条件)。
-   role を渡すと、その役割に応じた判定(ピットの空舞台など)も行う */
-MC.visual.disqualified = (m, role) => {
-  if (!m) return false;
-  if (m.shakeP75 > MC.visual.TH_RAPID) return true;                       // 急パン・激ブレ
-  if (m.shakeP75 > MC.visual.TH_SHAKE && m.flipRatio > 0.45) return true; // 向きの暴れる手ブレ
-  if (m.sharpMed > 40 && m.sharpMean < m.sharpMed * 0.30) return true;    // フォーカス外れ
-  if (MC.visual.isPanning(m)) return true;                                // カメラを振っている
-  if (MC.visual.noSubject(m, role)) return true;                          // 人が写っていない
-  return false;
+/* 採用してはいけない画の理由を返す(null=問題なし)。
+   role を渡すと、その役割に応じた判定(ピットの空舞台など)も行う。
+   理由を文字列で持つのは、実素材でしきい値を詰めるときに
+   「どの理由で何区間落ちたか」をログで確かめられるようにするため */
+MC.visual.dqReason = (m, role) => {
+  if (!m) return null;
+  if (m.shakeP75 > MC.visual.TH_RAPID) return "急パン・激ブレ";
+  /* 手ブレは単独条件で失格にする(ディレクター指示: 手ブレの多い画は絶対に使わない)。
+     以前は flipRatio > 0.45 との AND だったが、flipRatio は |dx|<2px のサンプルを
+     除外して数えるため、ゆっくり同じ方向へ揺れる手ブレでは 0 に近くなる。
+     その結果しっかりブレていても失格を免れていた */
+  if (m.shakeP75 > MC.visual.TH_SHAKE) return "手ブレ";
+  if (m.sharpMed > 40 && m.sharpMean < m.sharpMed * 0.30) return "フォーカス外れ";
+  if (MC.visual.isPanning(m)) return "カメラを振っている";
+  if (MC.visual.noSubject(m, role)) return "人が写っていない";
+  return null;
 };
+
+/* 採用してはいけない画の判定(絶対条件) */
+MC.visual.disqualified = (m, role) => MC.visual.dqReason(m, role) != null;
 
 /* ショット種スコア(0..1): 顔情報が無い点はモーション分布で控えめに推定 */
 MC.visual.shotScores = m => {

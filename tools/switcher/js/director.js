@@ -153,7 +153,8 @@ MC.director._rank = (g0, g1, cls, ctx) => {
     if (c.role === "wide") sh.wide = Math.max(sh.wide, 0.8);
     if (c.role === "close") sh.close = Math.max(sh.close, 0.7);
     let score = 0;
-    const dq = MC.visual.disqualified(m, c.role);
+    const dqWhy = MC.visual.dqReason(m, c.role);
+    const dq = dqWhy != null;
     if (dq) score -= 1000;      // 絶対条件: 採用不可(全滅時の比較用に相対値は残す)
     score += wClose * sh.close + wGroup * sh.group + wWide * sh.wide;
     // フラッグ等の同期した大きな動きは「引きで見せる」を後押し
@@ -181,7 +182,7 @@ MC.director._rank = (g0, g1, cls, ctx) => {
     if (c.id === ctx.prevId) score -= 0.9;
     if (c.id === ctx.prev2Id) score -= 0.25;
     score += 0.06 * Math.min(8, ctx.sinceUse.get(c.id) || 0);   // 出番が空くほど戻りやすく(最大0.48)
-    ranked.push({ id: c.id, score, wideChosen: sh.wide >= 0.5, dq });
+    ranked.push({ id: c.id, score, wideChosen: sh.wide >= 0.5, dq, dqWhy: dqWhy });
   }
   ranked.sort((a, b) => b.score - a.score);
 
@@ -217,6 +218,8 @@ MC.director.generate = () => {
     hasPitCam: MC.S.clips.some(c => c.role === "pit"),
   };
   const cuts = [];
+  /* 失格で見送った区間の集計。実素材でしきい値を詰めるための根拠を残す */
+  const dqTally = { total: 0, by: {} };
   let t = tIn;
   let guard = 0;
   while (t < tOut - L.min && guard++ < 2000) {
@@ -244,7 +247,13 @@ MC.director.generate = () => {
        延ばせない(冒頭)ときだけ、やむを得ず最良の1本を使う */
     if (top.dq) {
       if (cuts.length) {
-        MC.log(`director: ${t.toFixed(1)}s〜 は使える画が無いため直前のカットを延長`);
+        const why = ranked.map(r => r.dqWhy).filter(Boolean);
+        const tally = {};
+        why.forEach(w => { tally[w] = (tally[w] || 0) + 1; });
+        dqTally.total++;
+        why.forEach(w => { dqTally.by[w] = (dqTally.by[w] || 0) + 1; });
+        const detail = Object.entries(tally).map(([k, v]) => `${k}×${v}`).join(" / ");
+        MC.log(`director: ${t.toFixed(1)}s〜 は使える画が無いため直前のカットを延長（${detail}）`);
         // 文脈は進めずに時刻だけ進める(このセグメントは前のカットが占める)
         t = tNext;
         continue;
