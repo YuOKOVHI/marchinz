@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MarchinZ Vlog — 団体Vlogを枠に入れるだけで〈ベータ版〉</title>
+<meta name="description" content="インタビューと映像を枠に入れるだけ。プロの構成で3分の団体Vlogが完成。MarchinZの無料クリエイターツール。">
+<meta name="theme-color" content="#fefcef">
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
+<link rel="icon" type="image/png" href="/favicon.png">
+<meta property="og:title" content="MarchinZ Vlog — 団体Vlogを枠に入れるだけで">
+<meta property="og:description" content="インタビューと映像を枠に入れるだけ。プロの構成で3分の団体Vlogが完成。MarchinZの無料クリエイターツール。">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://marchinz.netlify.app/tools/vlog/">
+<meta property="og:image" content="https://marchinz.netlify.app/ogp-card.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
+<link rel="stylesheet" href="/tools/shared/progress.css">
+<link rel="stylesheet" href="/tools/shared/journey.css">
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="/tools/shared/sitechrome.css">
+</head>
+<body data-mz-tool="vlog">
+<header class="topbar">
+  <div class="head-left">
+    <h1 class="tool-name">Vlog<span class="beta-badge">ベータ版</span></h1>
+  </div>
+  <div class="head-right">
+    <div id="capsBadge" class="caps-badge">対応確認中…</div>
+    <a href="/#creators" class="back-link">← 戻る</a>
+  </div>
+</header>
+
+<div class="beta-disclaimer">
+  <i class="fa-solid fa-shield-halved"></i> <strong>無料・すべて端末内で処理</strong>します（動画はどこにも送信されません）。
+  <details class="disc-more"><summary>ベータ版の注意</summary>ベータ版のため動作は保証されず、生成結果・不具合について当方は責任を負いません。</details>
+</div>
+
+<!-- ============ モード選択 ============ -->
+<section id="modeSelect" class="mode-select">
+  <div class="mode-inner">
+    <h2 class="mode-title">Vlogの雰囲気を選ぶ</h2>
+    <p class="mode-lead">あとから切り替えられます</p>
+    <div class="mode-cards">
+
+      <button type="button" class="mode-card" data-mode="recommend">
+        <span class="mode-card-icon" aria-hidden="true"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
+        <span class="mode-card-name">おすすめ</span>
+        <span class="mode-card-desc">見やすさとテンポのバランス型。はじめてならこれ</span>
+        <span class="mode-card-meta">練習の記録・団体紹介に</span>
+      </button>
+
+      <button type="button" class="mode-card" data-mode="emotional">
+        <span class="mode-card-icon" aria-hidden="true"><i class="fa-solid fa-heart"></i></span>
+        <span class="mode-card-name">エモーショナル</span>
+        <span class="mode-card-desc">ゆっくり見せて余韻を残す。語りが主役</span>
+        <span class="mode-card-meta">引退・卒業・ドキュメント風に</span>
+      </button>
+
+      <button type="button" class="mode-card" data-mode="active">
+        <span class="mode-card-icon" aria-hidden="true"><i class="fa-solid fa-bolt"></i></span>
+        <span class="mode-card-name">アクティブ</span>
+        <span class="mode-card-desc">テンポよく畳みかける。海外コーのエピソード風</span>
+        <span class="mode-card-meta">大会・遠征・日常の裏側に</span>
+      </button>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============ 作業領域 ============ -->
+<div id="workspace" hidden>
+<div class="mode-back-bar">
+  <button type="button" id="modeBackBtn" class="mode-back">← 雰囲気を選び直す</button>
+  <span id="modeLabel" class="mode-current"></span>
+</div>
+
+<main class="wrap">
+  <div class="col">
+
+    <!-- 使える条件 -->
+    <div data-mz-plan="vlog"></div>
+
+    <!-- インタビュー -->
+    <section class="panel" id="itvSec">
+      <h2><i class="fa-solid fa-comment-dots" aria-hidden="true"></i> インタビュー
+        <span class="hint" data-limit-note data-limit-note-member="(3人まで)">(ゲストは1人・無料登録で3人)</span></h2>
+      <p class="sec-lead" id="itvLead">語りがVlogの背骨になります。</p>
+      <div id="itvSlots" class="slots"></div>
+      <input type="file" id="itvInput" accept="video/mp4,video/quicktime,video/*" hidden>
+    </section>
+
+    <!-- インサート -->
+    <section class="panel" id="insSec">
+      <h2><i class="fa-solid fa-photo-film" aria-hidden="true"></i> 映像（インサート）
+        <span class="hint" data-limit-note data-limit-note-member="(10本まで)">(ゲストは5本・無料登録で10本)</span></h2>
+      <p class="sec-lead" id="insLead">練習・本番・表情。短くて構いません。</p>
+      <div id="insSlots" class="slots slots-grid"></div>
+      <input type="file" id="insInput" accept="video/mp4,video/quicktime,video/*" multiple hidden>
+    </section>
+
+    <!-- ロゴ -->
+    <section class="panel" id="logoSec">
+      <h2><i class="fa-solid fa-certificate" aria-hidden="true"></i> ロゴ <span class="hint">(1つ・PNG推奨)</span></h2>
+      <p class="sec-lead">右上に小さく出して、最後に大きく出します。背景つきの画像は自動で透過します。</p>
+      <div id="logoSlot" class="slots"></div>
+      <input type="file" id="logoInput" accept="image/png,image/jpeg,image/webp,image/*" hidden>
+      <div class="field">
+        <label for="orgNameInput">団体名</label>
+        <input type="text" id="orgNameInput" placeholder="例: マーチンズ吹奏楽団" maxlength="40">
+        <p class="hint">ロゴが無いときはこの名前を表示します。</p>
+      </div>
+    </section>
+
+    <!-- BGM -->
+    <section class="panel" id="bgmSec">
+      <h2><i class="fa-solid fa-music" aria-hidden="true"></i> BGM <span class="hint">(3曲まで)</span></h2>
+      <p class="sec-lead">インタビュー中は自動で音量を下げます。</p>
+      <div id="bgmSlots" class="slots"></div>
+      <input type="file" id="bgmInput" accept="audio/*,.mp3,.wav,.m4a,.aac" multiple hidden>
+      <div id="artlistBox" class="artlist-box"></div>
+    </section>
+
+    <!-- 仕上げ -->
+    <section class="panel" id="finishSec">
+      <h2><i class="fa-solid fa-flag-checkered" aria-hidden="true"></i> 仕上げ</h2>
+      <div id="planSummary" class="plan-summary"></div>
+      <button id="buildBtn" class="btn primary big" type="button" disabled>
+        <i class="fa-solid fa-wand-magic-sparkles"></i> 組み立てる
+      </button>
+      <div id="buildProgress"></div>
+      <div id="exportBox" hidden>
+        <button id="exportBtn" class="btn primary big" type="button">
+          <i class="fa-solid fa-file-export"></i> MP4を書き出す
+        </button>
+        <div id="exportProgress"></div>
+        <button id="xmlBtn" class="btn" type="button" hidden>
+          <i class="fa-solid fa-file-code"></i> 編集用データ（Resolve / Premiere）
+        </button>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- プレビュー -->
+  <section class="stage" id="stageSec" hidden>
+    <div class="stage-inner">
+      <canvas id="previewCanvas" width="1920" height="1080"></canvas>
+      <div id="previewOverlay" class="preview-overlay"></div>
+    </div>
+    <div class="transport">
+      <button type="button" id="playBtn" class="btn" aria-label="再生"><i class="fa-solid fa-play"></i></button>
+      <input type="range" id="scrub" min="0" max="1000" value="0" aria-label="再生位置">
+      <span id="timeLabel" class="time-label">0:00 / 0:00</span>
+    </div>
+    <div id="blockStrip" class="block-strip"></div>
+  </section>
+</main>
+</div><!-- /#workspace -->
+
+<footer>
+  <p>端末内で完結・無料 | MarchinZ クリエイターツール〈ベータ版〉 | <a href="/#creators" class="foot-link">MarchinZへ戻る</a></p>
+  <p class="foot-tools">つづけて使う: <a href="/tools/switcher/">Switcher（自動スイッチング）</a> ／ <a href="/tools/reangle/">ReAngle（正面補正）</a> ／ <a href="/tools/privacy/">Privacy（顔モザイク）</a></p>
+</footer>
+
+<div id="toast" class="toast"></div>
+
+<script src="/tools/shared/limits.js"></script>
+<script src="/tools/shared/sitechrome.js"></script>
+<script src="/tools/shared/progress.js"></script>
+<script src="/tools/shared/journey.js"></script>
+<script src="/tools/shared/watermark.js"></script>
+<script src="vendor/mp4box.all.min.js"></script>
+<script src="vendor/mp4-muxer.min.js"></script>
+<script src="vendor/fft.js"></script>
+<script src="js/state.js"></script>
+<script src="js/demux.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/templates-data.js"></script>
+<script src="js/logo.js"></script>
+<script src="js/media.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
