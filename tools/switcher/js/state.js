@@ -118,7 +118,7 @@ MC.saveState = () => {
       clips: MC.S.clips.map(c => ({
         key: MC.clipKey(c), offset: c.offset, confidence: c.confidence,
         syncMethod: c.syncMethod, pan: c.pan,
-        role: c.role || "auto", freq: c.freq || "auto",
+        role: c.role || "auto", freq: c.freq || "auto", rig: c.rig || "auto",
         colorT: c.colorT || null, rot: c.rot || 0,
       })),
       // クリップidは読込順で変わるためkeyで保存
@@ -142,6 +142,7 @@ MC.restoreClipState = clip => {
       clip.pan = hit.pan == null ? 0.5 : hit.pan;
       clip.role = hit.role || "auto";
       clip.freq = hit.freq || "auto";
+      clip.rig = hit.rig || "auto";
       clip.colorT = hit.colorT || null;
       clip.rot = hit.rot || 0;
     }

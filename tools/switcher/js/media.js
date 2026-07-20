@@ -24,7 +24,7 @@ MC.media.addFiles = async files => {
       video: document.createElement("video"),
       duration: 0, width: 0, height: 0,
       offset: 0, confidence: null, syncMethod: "未同期",
-      pan: 0.5, role: "auto", freq: "auto",
+      pan: 0.5, role: "auto", freq: "auto", rig: "auto",
       audio8k: null, stats: null, thumb: null, hasAudio: null,
     };
     const v = clip.video;

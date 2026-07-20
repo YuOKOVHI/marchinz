@@ -26,6 +26,9 @@ MC.visual = {
   // ディレクター指示: 振っている最中の絵は絶対に使わない
   TH_PAN: 0.05,       // これ以上動いていて
   TH_PAN_RATIO: 0.50, // 方向のそろった動きがこの割合を超えたら「振っている」
+  // カメラ自身が動いたと言えるのは、その動き分で補正したときに画面が揃うとき。
+  // 補正後もこれ以上の領域が動いていたら、動いていたのは被写体であってカメラではない
+  TH_CAM_RESID: 0.55,
   // 被写体がいない画(誰もいないピット等)の判定
   TH_EMPTY: 0.12,    // 顔が取れず、動いている領域もこれ未満なら人がいない
 };
@@ -265,14 +268,26 @@ MC.visual.analyzeClip = async (clip, l0, l1, prog) => {
   V.sharpMed = ss.length ? ss[ss.length >> 1] : 0;
 
   /* 撮り方の自動判定。
-     三脚に置きっぱなしのカメラは全編ほとんど動かない。手持ち・ジンバル・
-     カメラマン付きの三脚は「被写体を変えるために振る → 据わる」を繰り返すので、
-     はっきり動いているサンプルが一定割合ある。
+     判別の原理は「背景ごと動いたか、被写体だけが動いたか」:
+       ・カメラマン付き(手持ち・ジンバル・操作する三脚)
+           → 画面全体が動く。その動き分ずらせば画面がピタリと揃う = 残差が小さい
+       ・定点固定カメラ
+           → 動くのは被写体だけ。カメラは動いていない
+
+     ここで残差(補正後の act)を条件に入れているのが肝。globalMotion は
+     中央のブロックマッチングなので、大きな被写体が画面を占めると
+     マッチングが被写体に食いついて dx≠0 になる。その動きで補正すると
+     背景がずれて残差が大きくなるため、それをカメラの動きから除外できる。
+     この条件が無いと「定点カメラで奏者が大きく動いただけ」を
+     カメラマン付きと誤判定する。
+
      操作カメラは移動中の絵が使えない代わりに、据わっている絵は狙って撮られた
      良い画(ソロ・ソリを抜いている等)なので、director 側で扱いを変える */
-  let movingN = 0;
-  for (const dx of V.dxs) if (Math.abs(dx) >= 2) movingN++;
-  V.movingFrac = V.dxs.length ? movingN / V.dxs.length : 0;
+  let camMoveN = 0;
+  for (let i = 0; i < V.dxs.length; i++) {
+    if (Math.abs(V.dxs[i]) >= 2 && V.act[i] < MC.visual.TH_CAM_RESID) camMoveN++;
+  }
+  V.movingFrac = V.dxs.length ? camMoveN / V.dxs.length : 0;
   V.operated = V.movingFrac > 0.15;
   await MC.visual.seek(v, keep);
   clip.visual = V;
@@ -310,19 +325,29 @@ MC.visual.seg = (clip, g0, g1) => {
     if (Math.sign(a) !== Math.sign(b)) flips++;
   }
   /* パン(カメラを振っている)の度合い。
-     「はっきり動いているサンプルの割合」×「その向きがそろっている割合」。
-     固定カメラのノイズ由来の微小な揺れ(1px程度)は |dx|<2 で除外されるため、
-     panRatio が 0 になり、パンとは判定されない。
-     shakeP75 と flipRatio だけで判定すると、動きの小さい固定カメラが
-     flipRatio=0(=向きが一定)と評価されて誤って失格になる */
-  let posN = 0, negN = 0, movingN = 0;
-  for (const v of dxs) {
+     「カメラが動いたと言えるサンプルの割合」×「その向きがそろっている割合」。
+
+     カメラが動いたと数えるのは、はっきり動いていて(|dx|>=2)、かつ
+     その動きで補正したときに画面が揃う(残差 act が小さい)ときだけ。
+     定点カメラの前で奏者が大きく動くと、中央のブロックマッチングが被写体に
+     食いついて dx≠0 になるが、その動きで補正すると背景がずれて残差が大きくなる。
+     この条件が無いと「被写体が動いただけ」をパン扱いで失格にしてしまう。
+
+     また、固定カメラのノイズ由来の微小な揺れ(1px程度)は |dx|<2 で除外されるため
+     panRatio が 0 になる。shakeP75 と flipRatio だけで判定すると、
+     flipRatio は |dx|<2 のサンプルを数えないので 0(=向きが一定)と評価され、
+     固定カメラが誤ってパン扱いになる */
+  const acts = pick(V.act);
+  let posN = 0, negN = 0, camMoveN = 0;
+  for (let k = 0; k < dxs.length; k++) {
+    const v = dxs[k];
     if (Math.abs(v) < 2) continue;
-    movingN++;
+    if (acts[k] >= MC.visual.TH_CAM_RESID) continue;   // 動いたのは被写体でカメラではない
+    camMoveN++;
     if (v > 0) posN++; else negN++;
   }
-  const panRatio = movingN
-    ? (Math.max(posN, negN) / movingN) * (movingN / dxs.length)
+  const panRatio = camMoveN
+    ? (Math.max(posN, negN) / camMoveN) * (camMoveN / dxs.length)
     : 0;
   const faces = [];
   const sizes = [];
@@ -334,7 +359,10 @@ MC.visual.seg = (clip, g0, g1) => {
     shakeP75: p(shakes, 0.75),
     flipRatio: moves ? flips / moves : 0,
     panRatio,
-    operated: !!V.operated,
+    // 撮り方は自動判定だが、外していたら手で上書きできる(clip.rig)
+    operated: clip.rig === "operated" ? true
+            : clip.rig === "fixed" ? false
+            : !!V.operated,
     /* 据わっている(振り終わって止まっている)か。操作カメラでは、ここが
        狙って撮られた良い画になる */
     settled: panRatio < 0.25 && p(shakes, 0.75) <= MC.visual.TH_PAN,

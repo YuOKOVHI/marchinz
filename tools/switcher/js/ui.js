@@ -173,6 +173,23 @@ MC.ui.refreshJourney = () => {
   MC.ui.updateActionBar();
 };
 
+/* 撮り方の判定バッジ。自動判定の結果と、手で上書きしているかが分かるようにする。
+   映像解析(自動カット割)を通す前は判定できないので「解析前」と出す */
+MC.ui.rigBadge = c => {
+  const rig = c.rig || "auto";
+  if (rig !== "auto") {
+    return `<span class="rig-badge manual" title="手動で指定しています">手動</span>`;
+  }
+  const v = c.visual;
+  if (!v || typeof v.operated !== "boolean") {
+    return `<span class="rig-badge none" title="自動カット割を実行すると判定されます">解析前</span>`;
+  }
+  const pct = Math.round((v.movingFrac || 0) * 100);
+  return v.operated
+    ? `<span class="rig-badge op" title="画面全体が動いている区間が${pct}%。人が操作していると判定">カメラマン付き</span>`
+    : `<span class="rig-badge fx" title="画面全体が動いている区間が${pct}%。動いているのは被写体だけと判定">定点固定</span>`;
+};
+
 /* --- クリップカード --- */
 /* 動画1/2/3の3スロット。空きは選択ボタン、読み込み済みはクリップカード */
 MC.ui.renderClips = () => {
@@ -235,7 +252,12 @@ MC.ui.renderClips = () => {
           <option value="less" ${c.freq === "less" ? "selected" : ""}>少なめ</option>
           <option value="auto" ${!c.freq || c.freq === "auto" ? "selected" : ""}>おまかせ</option>
           <option value="more" ${c.freq === "more" ? "selected" : ""}>多め</option>
-        </select></div>` : ""}
+        </select></div>
+        <div class="pan-row">撮り方 <select class="rig-sel select-mini" title="定点固定か、人が操作しているか。カット割の扱いが変わります">
+          <option value="auto" ${!c.rig || c.rig === "auto" ? "selected" : ""}>自動判定</option>
+          <option value="fixed" ${c.rig === "fixed" ? "selected" : ""}>定点固定</option>
+          <option value="operated" ${c.rig === "operated" ? "selected" : ""}>カメラマン付き</option>
+        </select>${MC.ui.rigBadge(c)}</div>` : ""}
       </div>
       <button class="clip-remove" title="削除">✕</button>`;
     card.querySelectorAll(".nudge button").forEach(b =>
@@ -247,6 +269,14 @@ MC.ui.renderClips = () => {
     if (roleSel) roleSel.onchange = e => { c.role = e.target.value; MC.saveState(); };
     const freqSel = card.querySelector(".freq-sel");
     if (freqSel) freqSel.onchange = e => { c.freq = e.target.value; MC.saveState(); };
+    const rigSel = card.querySelector(".rig-sel");
+    // 撮り方を変えたらカット割の前提が変わるので、割り直しを促す
+    if (rigSel) rigSel.onchange = e => {
+      c.rig = e.target.value;
+      MC.saveState();
+      MC.ui.renderClips();
+      if (MC.S.cutList.length) MC.ui.toast("撮り方を変えました。「自動カット割」で割り直せます");
+    };
     card.querySelector(".clip-remove").onclick = () => MC.media.removeClip(c.id);
     slot.appendChild(card);
     box.appendChild(slot);

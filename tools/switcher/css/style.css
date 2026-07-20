@@ -115,7 +115,20 @@ body::before {
 .clip-remove { position: absolute; top: 6px; right: 8px; background: none; border: none; color: var(--tx2);
   cursor: pointer; font-size: 14px; }
 .clip-remove:hover { color: var(--err); }
-.pan-row { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--tx2); margin-top: 4px; }
+.pan-row { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--tx2);
+  margin-top: 4px; flex-wrap: wrap; }
+/* ラベル(横位置/役割/出番/撮り方)は縦に折り返させない。
+   幅を揃えるとセレクトの左端が縦に並んで読みやすい */
+.pan-row > :first-child { white-space: nowrap; flex-shrink: 0; min-width: 34px; }
+.pan-row .select-mini { flex: 1; min-width: 0; }
+
+/* 撮り方の自動判定バッジ(定点固定 / カメラマン付き / 手動 / 解析前) */
+.rig-badge { font-size: 9.5px; font-weight: 700; padding: 2px 7px; border-radius: 999px;
+  white-space: nowrap; border: 1px solid transparent; }
+.rig-badge.fx { background: #e3edf8; color: var(--acc-deep); border-color: #c3d6ec; }
+.rig-badge.op { background: #fdf3d7; color: #8a6d1a; border-color: #ecd9a0; }
+.rig-badge.manual { background: #e0f5e9; color: var(--ok); border-color: #b7e0c8; }
+.rig-badge.none { background: var(--panel2); color: var(--tx2); border-color: var(--line); }
 .pan-row input { flex: 1; accent-color: var(--acc); }
 
 .btn { background: #fff; color: var(--navy); border: 1px solid var(--line); border-radius: 8px;
