@@ -144,10 +144,10 @@
 
     <!-- ロゴ・団体名(任意。ロゴ画像は無料登録が必要) -->
     <details class="panel" id="logoSec">
-      <summary><i class="fa-solid fa-certificate" aria-hidden="true"></i> ロゴと団体名
+      <summary><i class="fa-solid fa-certificate" aria-hidden="true"></i> ロゴ
         <span class="hint">（任意）</span></summary>
       <p class="sec-lead">無くても大丈夫です。あれば右上と最後に表示します。</p>
-      <p class="hint" id="logoGuestNote" data-limit-note hidden>ロゴ画像の追加は無料登録が必要です。団体名だけなら今すぐ使えます。 <a href="/#signup">無料登録</a></p>
+      <p class="hint" id="logoGuestNote" data-limit-note hidden>ロゴ画像の追加は無料登録が必要です。 <a href="/#signup">無料登録</a></p>
       <div id="logoSlot" class="slots"></div>
       <input type="file" id="logoInput" accept="image/png,image/jpeg,image/webp,image/*" hidden>
       <div id="logoTune" hidden>
@@ -156,9 +156,15 @@
         <p class="hint">ロゴが欠けるときは左へ、背景が残るときは右へ。</p>
       </div>
       <div class="field">
-        <label for="orgNameInput">団体名</label>
-        <input type="text" id="orgNameInput" placeholder="例: マーチンズ吹奏楽団"
-          maxlength="40" enterkeyhint="done" autocomplete="organization">
+        <span class="field-label">最後の背景色</span>
+        <div class="choice choice-row" role="radiogroup" aria-label="最後の背景色">
+          <button type="button" class="choice-item" data-endcolor="black" role="radio" aria-checked="false">
+            <span class="choice-name">黒</span>
+          </button>
+          <button type="button" class="choice-item" data-endcolor="white" role="radio" aria-checked="false">
+            <span class="choice-name">白</span>
+          </button>
+        </div>
       </div>
     </details>
 

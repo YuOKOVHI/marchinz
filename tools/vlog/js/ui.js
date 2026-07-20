@@ -223,6 +223,18 @@ MV.ui.renderAudioChoice = () => {
   if (MV.S.audioMode !== "ambient") MV.ui.renderArtlist();
 };
 
+/* 有効な色(未選択ならモード既定)を選択中として表示する。
+   何も選んでいない時に全ボタン非選択に見えると迷うため */
+MV.ui.renderEndColor = () => {
+  const m = MV.DATA.MODES[MV.S.mode];
+  const effective = MV.S.endColor || (m && m.endColor) || "black";
+  document.querySelectorAll("[data-endcolor]").forEach(b => {
+    const on = b.getAttribute("data-endcolor") === effective;
+    b.classList.toggle("on", on);
+    b.setAttribute("aria-checked", on ? "true" : "false");
+  });
+};
+
 MV.ui.renderAspect = () => {
   document.querySelectorAll("[data-aspect]").forEach(b => {
     const on = b.getAttribute("data-aspect") === MV.S.aspect;
@@ -322,6 +334,7 @@ MV.ui.renderAll = () => {
   MV.ui.renderLogoSlot();
   MV.ui.renderAudioChoice();
   MV.ui.renderAspect();
+  MV.ui.renderEndColor();
   MV.ui.renderPlanSummary();
   MV.ui.updateActionBar();
   MV.ui.syncJourney();
@@ -626,9 +639,14 @@ MV.ui.initInputs = () => {
   MV.ui.$("#logoInput").onchange = e => MV.media.add("logo", e.target.files).finally(() => { e.target.value = ""; });
   MV.ui.$("#bgmInput").onchange = e => MV.media.add("bgm", e.target.files).finally(() => { e.target.value = ""; });
 
-  const org = MV.ui.$("#orgNameInput");
-  org.value = MV.S.orgName || "";
-  org.oninput = () => { MV.S.orgName = org.value.trim(); MV.saveState(); };
+  // 背景色(白/黒)。エンドカードの色。無選択(null)はモード既定に従う
+  document.querySelectorAll("[data-endcolor]").forEach(b => {
+    b.onclick = () => {
+      MV.S.endColor = b.getAttribute("data-endcolor");
+      MV.saveState();
+      MV.ui.renderEndColor();
+    };
+  });
 
   /* 「いちばん見てほしい人」は5択のプルダウン(2026-07-20: 自由入力を廃止) */
   MV.ui.initForWhom();
