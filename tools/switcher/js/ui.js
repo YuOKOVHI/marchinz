@@ -289,6 +289,13 @@ MC.ui.renderAudio = () => {
   const cands = MC.S.clips.filter(c => !c.isImage);   // 静止画に音は無い
   if (!cands.length) { box.innerHTML = `<span class="hint">クリップを読み込むと表示されます</span>`; return; }
   const reco = MC.audio.recommend();
+  /* 初期選択は「おすすめ」。recommend() は clip.stats が要るので、
+     読み込み直後は null → 解析が終わって初めて確定する。
+     ユーザーが手で選ぶまでは、確定したおすすめに追従させる。 */
+  if (reco && !MC.S.audioPickedByUser && MC.S.audioClipId !== reco.id) {
+    MC.S.audioClipId = reco.id;
+    if (MC.preview && typeof MC.preview.applyMute === "function") MC.preview.applyMute();
+  }
   box.innerHTML = "";
   for (const c of cands) {
     const label = document.createElement("label");
@@ -303,6 +310,7 @@ MC.ui.renderAudio = () => {
       <span class="audio-stat">${stat}</span>`;
     label.querySelector("input").onchange = () => {
       MC.S.audioClipId = c.id;
+      MC.S.audioPickedByUser = true;   // 以後おすすめには追従しない
       MC.preview.applyMute();
       MC.ui.renderAudio();
     };

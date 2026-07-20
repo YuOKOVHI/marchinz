@@ -138,6 +138,7 @@ MC.media.addAudioFile = async f => {
   clip.restored = MC.restoreClipState(clip);
   MC.S.clips.push(clip);
   MC.S.audioClipId = clip.id;   // 取り込んだらこの音を使用する
+  MC.S.audioPickedByUser = true;  // 明確な意思なので「おすすめ」に上書きさせない
   // 音質統計(おすすめ表示用)は裏で
   MC.audio.extract8k(clip).then(() => MC.ui.renderAudio()).catch(() => {});
   MC.media.afterChange();
@@ -204,6 +205,7 @@ MC.media.afterChange = () => {
     } else if (n >= 3 && !["v3", "big2"].includes(MC.S.layoutId)) MC.S.layoutId = "v3";
   }
   const firstVideo = MC.S.clips.find(c => !c.isImage);   // 音声既定は音の出る素材から
+  // stats が揃うまでの暫定。解析後は renderAudio が「おすすめ」に差し替える
   if (MC.S.audioClipId == null && firstVideo) MC.S.audioClipId = firstVideo.id;
   if (MC.S.refClipId == null && firstVideo) MC.S.refClipId = firstVideo.id;
   if (MC.S.wipeClipId == null && n) MC.S.wipeClipId = slotClips[0].id;

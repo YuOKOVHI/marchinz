@@ -8,6 +8,7 @@ window.MC = {
     layoutId: "v3",       // 縦型の初期は3分割縦積み
     preset: "9x16",
     audioClipId: null,    // 書き出し/再生に使う音声のクリップ
+    audioPickedByUser: false,  // 手で選んだか。false の間は「おすすめ」に追従する
     refClipId: null,      // 同期の基準クリップ
     slots: [null, null, null],  // スロットi に表示するクリップid
     trimIn: 0, trimOut: null,   // 書き出し範囲(グローバル秒)。null=末尾まで
