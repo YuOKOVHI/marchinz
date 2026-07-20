@@ -12796,7 +12796,11 @@ html[data-mz-prof-visitor="1"] .user-profile-notif-row,
 html[data-mz-prof-visitor="1"] #prof-tab-notifs,
 html[data-mz-prof-visitor="1"] #prof-tab-ops,
 html[data-mz-prof-visitor="1"] #prof-pane-notifs,
-html[data-mz-prof-visitor="1"] #prof-pane-ops {
+html[data-mz-prof-visitor="1"] #prof-pane-ops,
+html[data-mz-prof-guest-preview="1"] #prof-tab-base,
+html[data-mz-prof-guest-preview="1"] #prof-pane-base,
+html[data-mz-prof-visitor="1"] #prof-tab-base,
+html[data-mz-prof-visitor="1"] #prof-pane-base {
   display: none !important;
 }
 
@@ -13215,6 +13219,11 @@ html[data-mz-prof-guest-preview="1"] .user-profile-layout {
 .user-profile-tabs::-webkit-scrollbar {
   display: none;
 }
+
+/* display指定のあるクラスは [hidden] より詳細度で勝ってしまうため、
+   hidden 属性を常に最優先する。これが無いと el.hidden=true が効かず、
+   本人限定タブ(#prof-tab-base 等)が他人にも見えてしまう(2026-07-19 レビュー指摘) */
+[hidden] { display: none !important; }
 
 .user-profile-tab {
   border: none;

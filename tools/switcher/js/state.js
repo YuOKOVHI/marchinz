@@ -59,21 +59,27 @@ MC.waitDequeue = (codec, ms = 100) => new Promise(r => {
 MC.clipKey = c => `${c.name}|${c.size}|${c.lastModified}`;
 MC.getClip = id => MC.S.clips.find(c => c.id === id) || null;
 MC.debug = [];
+/* 不具合のご連絡用にログを残す(端末内のみ)。
+   全経路をここへ通し、必ず400件で打ち切る(エラーが連続しても膨らませない) */
+MC.pushDebug = line => {
+  MC.debug.push(`${new Date().toLocaleTimeString("ja-JP")} ${line}`);
+  if (MC.debug.length > 400) MC.debug.splice(0, MC.debug.length - 400);
+};
 MC.log = (...a) => {
   console.log("[MC]", ...a);
-  // 不具合のご連絡用にログを残す(端末内のみ・最大400件)
-  try {
-    const line = a.map(x => (typeof x === "string" ? x : JSON.stringify(x))).join(" ");
-    MC.debug.push(`${new Date().toLocaleTimeString("ja-JP")} ${line}`);
-    if (MC.debug.length > 400) MC.debug.shift();
-  } catch (e) {}
+  const line = a.map(x => {
+    if (typeof x === "string") return x;
+    // 循環参照(VideoFrame等)でも行ごと失わないようにする
+    try { return JSON.stringify(x); } catch (e) { return String(x); }
+  }).join(" ");
+  MC.pushDebug(line);
 };
 /* 未捕捉のエラーもログへ(画面から見えるようにする) */
 window.addEventListener("error", e => {
-  MC.debug.push(`${new Date().toLocaleTimeString("ja-JP")} [error] ${e.message} @${(e.filename || "").split("/").pop()}:${e.lineno}`);
+  MC.pushDebug(`[error] ${e.message} @${(e.filename || "").split("/").pop()}:${e.lineno}`);
 });
 window.addEventListener("unhandledrejection", e => {
-  MC.debug.push(`${new Date().toLocaleTimeString("ja-JP")} [error] ${(e.reason && e.reason.message) || e.reason}`);
+  MC.pushDebug(`[error] ${(e.reason && e.reason.message) || e.reason}`);
 });
 
 /* タイムライン全長(全クリップ終端の最大)。静止画(duration=0)は数えない */

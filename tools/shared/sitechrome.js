@@ -47,13 +47,36 @@ window.MZSiteChrome = (() => {
       <a href="/#signup" class="mzsc-brand-btn mzsc-brand-btn--primary">はじめての方</a>
       <a href="/#login" class="mzsc-brand-btn">ログイン</a>
     </div>
+    <button type="button" class="mzsc-burger" id="mzscBurger" aria-label="メニューを開く" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
   </div>
 </header>
-<nav class="mzsc-nav" aria-label="サイト内ページ"><div class="mzsc-nav-inner">${nav}</div></nav>`;
+<nav class="mzsc-nav" aria-label="サイト内ページ"><div class="mzsc-nav-inner">${nav}</div></nav>
+<div class="mzsc-drawer" id="mzscDrawer" hidden>
+  <button type="button" class="mzsc-drawer-bd" data-mzsc-close aria-label="メニューを閉じる"></button>
+  <div class="mzsc-drawer-panel" role="dialog" aria-modal="true" aria-label="サイトメニュー">
+    <button type="button" class="mzsc-drawer-close" data-mzsc-close aria-label="閉じる">×</button>
+    <div class="mzsc-drawer-cta">
+      <a href="/#signup" class="mzsc-brand-btn mzsc-brand-btn--primary">はじめての方</a>
+      <a href="/#login" class="mzsc-brand-btn">ログイン</a>
+    </div>
+    <p class="mzsc-drawer-label">映像ツール</p>
+    <nav class="mzsc-drawer-nav">
+      <a href="/tools/switcher/"><i class="fa-solid fa-clapperboard" aria-hidden="true"></i> MarchinZ Switcher</a>
+      <a href="/tools/reangle/"><i class="fa-solid fa-vector-square" aria-hidden="true"></i> MarchinZ ReAngle</a>
+      <a href="/tools/privacy/"><i class="fa-solid fa-user-shield" aria-hidden="true"></i> MarchinZ Privacy</a>
+    </nav>
+    <p class="mzsc-drawer-label">ページ一覧</p>
+    <nav class="mzsc-drawer-nav">${NAV.map(([h, l]) => `<a href="${h}">${esc(l)}</a>`).join("")}
+      <a href="/#profile">マイページ</a>
+    </nav>
+  </div>
+</div>`;
   }
 
   /* フッター: サイト標準(YouTubeページ等と同じ)= バナー + リンク集 + コピーライト */
-  function footerHtml(toolId) {
+  function footerHtml() {
     const cols = FOOT_COLS.map(col =>
       `<div class="mzsc-foot-col">${col.map(([h, l]) => `<a href="${h}">${esc(l)}</a>`).join("")}</div>`).join("");
     const ver = document.documentElement.getAttribute("data-mz-version");
@@ -84,11 +107,36 @@ window.MZSiteChrome = (() => {
     // フッターは既存の <footer> を置き換える(無ければ末尾へ)
     const old = document.querySelector("body > footer");
     const foot = document.createElement("div");
-    foot.innerHTML = footerHtml(toolId);
+    foot.innerHTML = footerHtml();
     if (old) old.replaceWith(foot); else body.appendChild(foot);
     // 「無料・すべて端末内で処理」はページの下(フッター直前)へ(2026-07-19 優さん指定)
     const disc = document.querySelector(".beta-disclaimer");
     if (disc) body.insertBefore(disc, foot);
+    wireDrawer();
+  }
+
+  /* モバイルのメニュー開閉(本体サイトのドロワーと同じ役割) */
+  function wireDrawer() {
+    const burger = document.getElementById("mzscBurger");
+    const drawer = document.getElementById("mzscDrawer");
+    if (!burger || !drawer) return;
+    let prevOverflow = null;
+    const setOpen = open => {
+      drawer.hidden = !open;
+      burger.setAttribute("aria-expanded", open ? "true" : "false");
+      // 開く前の値を覚えて戻す(他の箇所が指定していても巻き添えで消さない)
+      if (open) {
+        if (prevOverflow === null) prevOverflow = document.documentElement.style.overflow;
+        document.documentElement.style.overflow = "hidden";
+      } else if (prevOverflow !== null) {
+        document.documentElement.style.overflow = prevOverflow;
+        prevOverflow = null;
+      }
+    };
+    burger.addEventListener("click", () => setOpen(drawer.hidden));
+    drawer.querySelectorAll("[data-mzsc-close]").forEach(b => b.addEventListener("click", () => setOpen(false)));
+    drawer.querySelectorAll("a").forEach(a => a.addEventListener("click", () => setOpen(false)));
+    document.addEventListener("keydown", e => { if (e.key === "Escape" && !drawer.hidden) setOpen(false); });
   }
 
   return { mount };

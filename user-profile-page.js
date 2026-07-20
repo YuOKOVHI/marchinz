@@ -1478,12 +1478,19 @@
   async function loadCalendarLookup(db) {
     if (calLookupCache && Date.now() - calLookupCacheAt < 5 * 60 * 1000) return calLookupCache;
     if (calLookupInflight) return calLookupInflight;
-    calLookupInflight = loadCalendarLookupFresh(db).then((r) => {
-      calLookupCache = r;
-      calLookupCacheAt = Date.now();
-      calLookupInflight = null;
-      return r;
-    });
+    calLookupInflight = loadCalendarLookupFresh(db)
+      .then((r) => {
+        // 取得に失敗した空の表はキャッシュしない(削除ダイアログの注記が消える等、
+        // 静かに壊れるため。次回の呼び出しで取り直す)
+        if (r && r.ok) {
+          calLookupCache = { matchMap: r.matchMap, byId: r.byId };
+          calLookupCacheAt = Date.now();
+        }
+        return { matchMap: r.matchMap, byId: r.byId };
+      })
+      .finally(() => {
+        calLookupInflight = null;   // 拒否経路でも必ず解放する
+      });
     return calLookupInflight;
   }
 
@@ -1505,10 +1512,10 @@
         if (!date || !title) return;
         matchMap.set(`${date}__${normTitle(title)}`, doc.id);
       });
+      return { ok: true, matchMap, byId };
     } catch {
-      //
+      return { ok: false, matchMap, byId };   // 失敗は呼び出し側でキャッシュ対象外にする
     }
-    return { matchMap, byId };
   }
 
   /** @param {any} log @param {Map<string, string>} matchMap */
@@ -4017,17 +4024,6 @@
         : Promise.resolve(EMPTY_QUERY_SNAP),
     ]);
     if (isProfileLoadStale(gen, targetUid)) return;
-
-    const profile = {
-      display_name: pdata.display_name || "ユーザー",
-      avatar_url: pdata.avatar_url || "",
-      profile_bio: pdata.profile_bio || "",
-      profile_address_prefecture: resolveProfileAddressPrefecture(pdata),
-      profile_address_prefecture_public: isProfileAddressPrefecturePublic(pdata),
-      profile_attributes: Array.isArray(pdata.profile_attributes) ? pdata.profile_attributes : [],
-      marchinz_public_id: String(pdata.marchinz_public_id || "").replace(/\D/g, ""),
-      updated_at: String(pdata.updated_at || "").trim(),
-    };
 
     // ヘッダー/カバーは先行ペイント済み(pdataのみ依存のため内容は同一)
 

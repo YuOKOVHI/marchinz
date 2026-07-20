@@ -407,10 +407,22 @@ MC.ui.refreshSetupTabs = () => {
 };
 
 /* おすすめで開始: 同期 → (カット割モードなら)自動カット割 → カラーマッチ を続けて実行 */
+/* 長い処理の間、競合する操作をまとめて止める(二重実行でcutList/offsetが壊れるのを防ぐ) */
+MC.ui.setBusy = busy => {
+  MC.ui._busy = !!busy;
+  const ids = ["#easyStartBtn", "#syncBtn", "#autocutBtn", "#colorMatchBtn", "#exportBtn"];
+  ids.forEach(id => {
+    const el = MC.ui.$(id);
+    if (el) el.disabled = busy ? true : el.dataset.mzWasDisabled === "1";
+  });
+  const dz = MC.ui.$("#clipSlots");
+  if (dz) dz.classList.toggle("mz-busy", !!busy);
+};
+
 MC.ui.runEasy = async () => {
   const btn = MC.ui.$("#easyStartBtn");
-  if (btn.disabled) return;
-  btn.disabled = true;
+  if (btn.disabled || MC.ui._busy) return;
+  MC.ui.setBusy(true);
   MC.preview.pause();
   const cutMode = ["switch", "wipe"].includes(MC.S.layoutId);
   // sync/director/color はいずれも MZP の Handle をそのまま受け取る(legacy()は別物なので渡さない)
@@ -427,30 +439,48 @@ MC.ui.runEasy = async () => {
       MC.timeline.selected = -1;
       MC.timeline.render();
     }
+    let colorFailed = false;
     if (MC.S.colorOn) {
       p.pulse("色をそろえています…");
-      await MC.color.run(p).catch(() => {});
+      await MC.color.run(p).catch(() => { colorFailed = true; });
     }
     MC.ui.renderAll();
     MC.preview.seek(MC.trimRange()[0]);
-    p.done("できました", { sub: "プレビューを見て、よければ書き出してください" });
+    p.done("できました", {
+      sub: colorFailed
+        ? "色そろえだけできませんでした。プレビューを見て、よければ書き出してください"
+        : "プレビューを見て、よければ書き出してください",
+    });
   } catch (e) {
     console.error(e);
     p.fail("うまくできませんでした", { detail: e.message });
     MC.ui.showErrorLog(e);
-  } finally { btn.disabled = false; }
+  } finally {
+    MC.ui.setBusy(false);
+    MC.ui.renderAll();   // 途中で止まってもタイムライン等の表示を状態に合わせ直す
+  }
 };
 
 /* 失敗したときのログ表示。原因を優さん/利用者が自分で確認でき、
    そのまま連絡にも貼れるように「コピー」も付ける */
 MC.ui.showErrorLog = err => {
+  try {
+    MC.ui._showErrorLog(err);
+  } catch (e) {
+    // 報告機構自体が落ちても、元のエラーを見失わないようにする
+    console.error("[MC] showErrorLog failed", e, "original:", err);
+  }
+};
+
+MC.ui._showErrorLog = err => {
   const host = MC.ui.$("#errorLog");
   if (!host) return;
   const env = [
     `MarchinZ Switcher ${document.documentElement.getAttribute("data-mz-version") || ""}`,
     `${navigator.userAgent}`,
     `書き出し方式: ${MC.ui.exportMode()} / H264:${MC.caps.h264} AAC:${MC.caps.aac}`,
-    `素材: ${MC.S.clips.map(c => `${c.name} ${c.width}x${c.height} ${c.duration.toFixed(1)}s`).join(" / ") || "なし"}`,
+    // メタデータ未確定のクリップでも落ちないよう、数値は必ず正規化する
+    `素材: ${MC.S.clips.map(c => `${c.name} ${c.width | 0}x${c.height | 0} ${Number(c.duration || 0).toFixed(1)}s`).join(" / ") || "なし"}`,
     `レイアウト: ${MC.S.layoutId} / 比率: ${MC.S.preset} / カット: ${MC.S.cutList.length}`,
     `エラー: ${(err && err.stack) || (err && err.message) || err}`,
   ].join("\n");

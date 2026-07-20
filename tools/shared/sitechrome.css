@@ -3,6 +3,10 @@
    (本体の styles.css / marchinz-brushup.css は読み込まない)。
    クラスは mzsc- 接頭辞でツール側CSSと衝突しないようにする。 */
 
+/* この共有パーツ自身の hidden を保証する(利用側CSSのガードに依存しない)。
+   .mzsc-drawer は position:fixed のため、効かないと全画面を覆ってしまう */
+[hidden] { display: none !important; }
+
 .mzsc-brand {
   background: #fefcef;
   border-bottom: 1px solid rgba(15, 33, 56, 0.12);
@@ -174,3 +178,63 @@
 .mz-plan-table thead th.on { color: #1e4fd6; }
 .mz-plan-note { margin: 8px 0 0; font-size: 11.5px; line-height: 1.75; color: rgba(12, 15, 20, 0.66); }
 .mz-plan-note a { color: #1e4fd6; font-weight: 700; }
+
+/* ---- モバイル(719px以下): 本体サイトと同じくハンバーガーへ集約 ----
+   本体は .site-brand-tagline / .site-brand-actions / .site-nav を隠して
+   トグルだけ出すため、ツール側も同じ見え方に揃える */
+.mzsc-burger {
+  display: none;
+  width: 42px;
+  height: 42px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid rgba(15, 33, 56, 0.16);
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.mzsc-burger span { display: block; width: 18px; height: 2px; border-radius: 2px; background: #12213a; }
+
+.mzsc-drawer { position: fixed; inset: 0; z-index: 90; }
+.mzsc-drawer-bd { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: rgba(8, 12, 18, 0.45); }
+.mzsc-drawer-panel {
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  width: min(84vw, 320px);
+  background: #fff;
+  padding: calc(14px + env(safe-area-inset-top, 0px)) 16px calc(20px + env(safe-area-inset-bottom, 0px));
+  overflow-y: auto;
+  box-shadow: -8px 0 24px rgba(8, 12, 18, 0.18);
+  text-align: left;
+}
+.mzsc-drawer-close {
+  border: 0; background: transparent; font-size: 26px; line-height: 1;
+  color: #12213a; cursor: pointer; padding: 4px 6px; margin: -4px -6px 6px auto; display: block;
+}
+.mzsc-drawer-cta { display: flex; gap: 8px; margin-bottom: 14px; }
+.mzsc-drawer-cta .mzsc-brand-btn { flex: 1; text-align: center; }
+.mzsc-drawer-label {
+  margin: 14px 0 6px;
+  font-size: 10.5px; font-weight: 800; letter-spacing: 0.14em;
+  color: rgba(12, 15, 20, 0.5);
+}
+.mzsc-drawer-nav { display: flex; flex-direction: column; }
+.mzsc-drawer-nav a {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 46px; padding: 6px 4px;
+  font-size: 14px; font-weight: 600; color: #12213a; text-decoration: none;
+  border-bottom: 1px solid rgba(15, 33, 56, 0.08);
+}
+.mzsc-drawer-nav a i { width: 18px; text-align: center; color: rgba(12, 15, 20, 0.5); }
+
+@media (max-width: 719px) {
+  .mzsc-brand-tagline { display: none; }
+  .mzsc-brand-right { display: none; }
+  .mzsc-nav { display: none; }
+  .mzsc-burger { display: inline-flex; }
+  .mzsc-brand { padding: 8px 14px; padding-top: calc(8px + env(safe-area-inset-top, 0px)); }
+  .mzsc-brand-logo img { height: 32px; }
+}

@@ -603,12 +603,14 @@ body {
   overscroll-behavior-x: contain;
 }
 
-/* マイページのタブ帯: 横スクロール中に指の縦ブレでページが上下に揺れて
-   気持ち悪い(iPhone実機報告 2026-07-19)ため、この帯から始まるタッチは
-   横パンだけに固定する(縦スクロールしたいときはタブの外を触れば良い) */
-.user-profile-tabs {
-  touch-action: pan-x;
-  overscroll-behavior: contain;
+/* マイページのタブ帯(720px以上): 横スクロール中の縦ブレでページが揺れないよう
+   横パンに固定する。719px以下は横スクロール自体を廃してグリッド化したため、
+   下のメディアクエリで touch-action を既定へ戻している */
+@media (min-width: 720px) {
+  .user-profile-tabs {
+    touch-action: pan-x;
+    overscroll-behavior: contain;
+  }
 }
 
 /* フッターのスタイルは「4) フッター」セクション(後方)に統合済み */
@@ -4297,11 +4299,11 @@ body {
    アイコン+ラベルのグリッドチップへ。タップ領域は44px以上。
    ============================================================ */
 
-/* タブ内のアイコンは全幅共通で少し添える(デスクトップは従来の下線タブのまま) */
-.user-profile-tab i { font-size: 0.85em; opacity: 0.75; }
-.user-profile-tab[aria-selected="true"] i { opacity: 1; }
-
 @media (max-width: 719px) {
+  /* タブ内のアイコン(モバイルのみ。デスクトップは従来の下線タブのまま) */
+  .user-profile-tab i { font-size: 0.85em; opacity: 0.75; }
+  .user-profile-tab[aria-selected="true"] i { opacity: 1; }
+
   /* 通知・運営より: 2列の大きなチップ */
   .user-profile-notif-row {
     display: grid;
@@ -4328,7 +4330,8 @@ body {
      上下揺れの原因だったスクロール自体を無くす */
   .user-profile-tabs {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    /* タブは訪問者2枚〜本人5枚で変わる。1枚あたり最低96pxで自動的に列を決める */
+    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
     gap: 8px;
     overflow: visible;
     border-bottom: none;

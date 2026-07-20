@@ -3,18 +3,26 @@
 
 MC.preview = {
   canvas: null, ctx: null, _lastDrift: 0,
+  /* プレビュー専用の重ね描き(カメラ名バッジ・範囲外の案内)を出すか。
+     実時間録画(exportRealtime)はこのcanvasをそのまま録るため、録画中はfalseにする */
+  overlayOn: true,
 
   init(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d");
     this.applyPreset();
-    const loop = ts => { this._lastTick = performance.now(); this.tick(ts); requestAnimationFrame(loop); };
+    const loop = ts => { this.tick(ts); this._lastTick = performance.now(); requestAnimationFrame(loop); };
     requestAnimationFrame(loop);
     // rAFが発火しない環境(バックグラウンドタブ・一部の埋め込みブラウザ)の保険。
-    // これが無いと時刻が進まず、プレビューが止まって「スイッチングされない」ように見える
+    // これが無いと時刻が進まず、プレビューが止まって「スイッチングされない」ように見える。
+    // 再生中だけに限定する(止まっているときまで描き続けると電池と熱を無駄に使う)
     clearInterval(this._fallbackIv);
     this._fallbackIv = setInterval(() => {
-      if (performance.now() - (this._lastTick || 0) > 250) this.tick(performance.now());
+      if (!MC.S.playing) return;
+      if (performance.now() - (this._lastTick || 0) > 250) {
+        this.tick(performance.now());
+        this._lastTick = performance.now();
+      }
     }, 150);
   },
 
@@ -44,6 +52,7 @@ MC.preview = {
 
   seek(t) {
     const dur = MC.timelineDuration();
+    this._lastCurId = null;   // 飛んだ先のカメラを次のtickで確実に再生し直す
     MC.S.t = Math.max(0, Math.min(t, dur));
     for (const c of this.playClips()) {
       const local = MC.S.t - c.offset;
@@ -153,6 +162,7 @@ MC.preview = {
      切り替わっているかが一目で分かるようにするためのプレビュー専用表示で、
      書き出す映像には入らない */
   drawCamBadge() {
+    if (!this.overlayOn) return;
     const L = MC.LAYOUTS[MC.S.layoutId];
     if (!L || (L.type !== "switch" && L.type !== "wipe")) return;
     const cut = MC.cutAt(MC.S.t);
@@ -189,6 +199,7 @@ MC.preview = {
   /* 現在位置が書き出し範囲(IN〜OUT)の外なら、その旨をプレビューへ重ねる。
      プレビュー専用(書き出しはexporterが範囲内だけを描くため焼き込まれない) */
   drawRangeNotice() {
+    if (!this.overlayOn) return;
     const dur = MC.timelineDuration();
     if (!dur) return;
     const [tIn, tOut] = MC.trimRange();

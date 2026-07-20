@@ -43,7 +43,9 @@ MC.media.addFiles = async files => {
     }
     if (v.duration > MZ_LIMITS.maxVideoSec) {
       MC.ui.toast(`⚠ ${f.name} は約${Math.round(v.duration / 60)}分です。`
-        + (MZ_LIMITS.member ? "動画は12分までです。" : "ゲストは5分・無料登録で12分まで使えます。")
+        + (MZ_LIMITS.member
+            ? `動画は${MZ_LIMITS.videoLimitLabel}までです。`
+            : `ゲストは${MZ_LIMITS.videoLimitLabel}・無料登録で12分まで使えます。`)
         + "見せたい場面だけ短く切り出してからお試しください");
       URL.revokeObjectURL(clip.url);
       continue;

@@ -461,6 +461,18 @@ MC.exporter.exportMP4 = async onProgress => {
 
 /* ---- リアルタイム録画fallback(Safariはmp4、Chromeはwebm) ---- */
 MC.exporter.exportRealtime = async onProgress => {
+  // プレビュー専用の重ね描き(カメラ名バッジ・範囲外の案内)は録画へ焼き込まない。
+  // このcanvasをそのまま録るため、必ず finally で戻す
+  MC.preview.overlayOn = false;
+  try {
+    return await MC.exporter._exportRealtimeInner(onProgress);
+  } finally {
+    MC.preview.overlayOn = true;
+    MC.preview.draw();
+  }
+};
+
+MC.exporter._exportRealtimeInner = async onProgress => {
   const canvas = MC.preview.canvas;
   const [tIn, tOut] = MC.trimRange();
   MC.preview.seek(tIn);
