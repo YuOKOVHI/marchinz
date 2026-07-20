@@ -480,10 +480,37 @@ MV.ui.initExport = () => {
     const mode = MV.exporter.mode();
     if (mode === "none") { MV.ui.toast("この端末では書き出しできません"); return; }
 
-    /* iOSは完成MP4がメモリに載るかを先に確かめる(超えると無警告でタブが落ちる) */
-    const est = MV.exporter.estimateBytes();
-    if (est > MV.exporter.MEM_HARD_LIMIT && !window.showSaveFilePicker) {
-      MV.ui.toast(`この長さ(約${Math.round(est / 1e6)}MB)はこの端末では書き出せません。素材を減らして短くしてください`);
+    /* iOSの再生解錠と音声グラフの用意は、タップの同期スタック内で済ませる。
+       実時間経路はプレビュー再生に依存するため、ここでやらないと
+       await(ロック取得等)の後では手遅れになる */
+    MV.preview.audio();
+    MV.preview.unlockMedia();
+
+    /* 大きい見込みのときだけ保存先を選ばせ、ディスクへ直接書く(Switcherと同じ)。
+       showSaveFilePicker はユーザー操作の直後でないと拒否されるため先に呼ぶ */
+    let saveHandle = null;
+    if (mode === "fast"
+        && MV.exporter.estimateBytes() > MV.exporter.MEM_LIMIT_BYTES
+        && window.showSaveFilePicker) {
+      try {
+        saveHandle = await window.showSaveFilePicker({
+          suggestedName: `MarchinZ_Vlog_${MV.S.plan.aspect === "portrait" ? "縦" : "横"}_${new Date().toISOString().slice(0, 10)}.mp4`,
+          types: [{ description: "MP4 動画", accept: { "video/mp4": [".mp4"] } }],
+        });
+      } catch (err) {
+        if (err && err.name === "AbortError") return;   // 保存先選択をやめた
+        MV.log(`保存先の選択に失敗(${err && err.name})。メモリ経由で続けます`);
+      }
+    }
+
+    /* メモリに載るかを先に確かめる(超えると無警告でタブが落ちる)。
+       高速経路は完成MP4だけでなく、音声ミックスバスとBGMデコードの
+       作業メモリも同時に確保する。ディスク直書きなら完成MP4分は除く */
+    const workEst = mode === "fast"
+      ? MV.exporter.estimateWorkBytes() - (saveHandle ? MV.exporter.estimateBytes() : 0)
+      : MV.exporter.estimateBytes();
+    if (workEst > MV.exporter.MEM_HARD_LIMIT && !saveHandle) {
+      MV.ui.toast(`この長さ(作業領域を含め約${Math.round(workEst / 1e6)}MB)はこの端末では書き出せません。素材を減らして短くしてください`);
       return;
     }
 
@@ -515,7 +542,7 @@ MV.ui.initExport = () => {
     try {
       const res = mode === "realtime"
         ? await MV.exporter.exportRealtime(p.legacy())
-        : await MV.exporter.exportMP4(p.legacy());
+        : await MV.exporter.exportMP4(p.legacy(), saveHandle);
       p.done("書き出しました", { chip: false });
       MV.ui.showDone(res);
     } catch (e) {
@@ -546,6 +573,17 @@ MV.ui.initExport = () => {
 MV.ui.showDone = res => {
   const share = MV.exporter.shareMode();
   MV.ui.$("#doneCard").hidden = false;
+  /* ディスクへ直接書いた場合は blob を持たない(メモリに溜めないため)。
+     その場では既に保存が終わっているので、再保存の導線は出さない */
+  if (res && res.saved) {
+    MV.ui.$("#saveBtn").style.display = "none";
+    const dl = MV.ui.$("#downloadBtn"); if (dl) dl.style.display = "none";
+    MV.ui.$("#doneText").innerHTML = `<span class="ok">✓ 「${MV.ui.esc(res.name)}」を保存しました</span>`;
+    MV.ui.$("#doneNote").textContent = "選んだ場所に書き出し済みです。";
+    MV.ui.toast("✔ 書き出しが完了しました");
+    return;
+  }
+  const dl2 = MV.ui.$("#downloadBtn"); if (dl2) dl2.style.display = "";
   const mb = (res.blob.size / 1e6).toFixed(1);
   if (share) {
     MV.ui.$("#saveBtn").style.display = "inline-flex";

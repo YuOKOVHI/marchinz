@@ -34,6 +34,40 @@ MV.exporter.estimateBytes = () => {
 /* iOSは完成MP4を丸ごとメモリに載せるしかない。超えると無警告でタブごと落ちる */
 MV.exporter.MEM_HARD_LIMIT = MV.isIOS ? 260e6 : 1.6e9;
 
+/* これを超える見込みなら保存先を選ばせてディスクへ直接書く(Switcherと同じ) */
+MV.exporter.MEM_LIMIT_BYTES = 700e6;
+
+/* 高速経路が同時に確保する作業メモリ込みの見積り。完成MP4だけで判定すると、
+   音声ミックスバスとBGMデコードの分を見落として「上限内のはずが落ちる」になる
+   (encodeAudioPcmの196MB保持と同じ型の見落とし。2026-07-20レビューの指摘) */
+MV.exporter.estimateWorkBytes = () => {
+  const plan = MV.S.plan;
+  if (!plan) return 0;
+  const busBytes = plan.totalSec * MV.exporter.OUT_SR * 4 * 2;   // Float32 L/R
+  let bgmBytes = 0;   // BGMは1曲ずつデコードするのでピークは最長1曲分
+  if (plan.bgm.length && MV.S.bgms.length) {
+    const longest = Math.max(...MV.S.bgms.map(b => b.duration || 0), 0);
+    bgmBytes = Math.min(longest, 600) * MV.exporter.OUT_SR * 4 * 2;
+  }
+  return MV.exporter.estimateBytes() + busBytes + bgmBytes;
+};
+
+/* 書き出し中の画面ロック対策。ロックすると rAF / MediaRecorder が止まり、
+   壊れた短いMP4が無言で保存される。marchinz-base.js のメトロノームと同じ実装 */
+MV.exporter._wake = null;
+MV.exporter.holdWake = async want => {
+  try {
+    if (want && !MV.exporter._wake && navigator.wakeLock) {
+      MV.exporter._wake = await navigator.wakeLock.request("screen");
+      MV.exporter._wake.addEventListener("release", () => { MV.exporter._wake = null; });
+    } else if (!want && MV.exporter._wake) {
+      const w = MV.exporter._wake;
+      MV.exporter._wake = null;
+      await w.release();
+    }
+  } catch (_) { MV.exporter._wake = null; }
+};
+
 MV.exporter.makeCanvas = (w, h) => {
   if (typeof OffscreenCanvas !== "undefined") return new OffscreenCanvas(w, h);
   const cv = document.createElement("canvas");
@@ -316,40 +350,45 @@ MV.exporter.buildAudioBus = async onStatus => {
     await MV.yield();
   }
 
-  /* 2) BGM(ダッキングを掛けながら足し込む) */
+  /* 2) BGM(ダッキングを掛けながら足し込む)。
+        decodeAudioData は曲全体を48kHz Float32で展開する(5分の曲で約110MB)。
+        3曲を同時に持つとそれだけで330MBになり、iPhoneでは完成MP4と合わせて
+        上限を超える。曲ごとにデコード→書き込み→解放し、ピークを1曲分に抑える */
   if (plan.bgm.length) {
     onStatus("BGMを重ねています…");
-    const decoded = new Map();   // bgmId -> {L,R}
-    for (const entry of plan.bgm) {
+    const byId = new Map();   // bgmId -> [entry...]
+    for (const e of plan.bgm) {
+      if (!byId.has(e.bgmId)) byId.set(e.bgmId, []);
+      byId.get(e.bgmId).push(e);
+    }
+    for (const [bgmId, entries] of byId) {
       if (MV.exporter.cancelFlag) return bus;
-      const bgm = MV.S.bgms.find(b => b.id === entry.bgmId);
+      const bgm = MV.S.bgms.find(b => b.id === bgmId);
       if (!bgm) continue;
-      if (!decoded.has(bgm.id)) {
-        const ab = await bgm.file.arrayBuffer();
-        const dctx = new OfflineAudioContext(2, 2, SR);   // decodeAudioDataの48kHzリサンプルに使う
-        const buf = await dctx.decodeAudioData(ab);
-        const bl = buf.getChannelData(0);
-        const br = buf.numberOfChannels > 1 ? buf.getChannelData(1) : bl;
-        decoded.set(bgm.id, { L: bl, R: br });
+      const ab = await bgm.file.arrayBuffer();
+      const dctx = new OfflineAudioContext(2, 2, SR);   // decodeAudioDataの48kHzリサンプルに使う
+      const buf = await dctx.decodeAudioData(ab);
+      const dL = buf.getChannelData(0);
+      const dR = buf.numberOfChannels > 1 ? buf.getChannelData(1) : dL;
+      for (const entry of entries) {
+        const t0s = Math.round(entry.t0 * SR);
+        const n = Math.min(Math.round((entry.t1 - entry.t0) * SR), dL.length - Math.round(entry.srcIn * SR));
+        const off = Math.round(entry.srcIn * SR);
+        const fi = Math.max(1, Math.round(entry.fadeIn * SR));
+        const fo = Math.max(1, Math.round(entry.fadeOut * SR));
+        for (let i = 0; i < n; i++) {
+          const w = t0s + i;
+          if (w < 0 || w >= total) continue;
+          const t = w / SR;
+          let env = entry.gain * MV.preview.duckGain(plan, t);
+          if (i < fi) env *= i / fi;
+          if (n - 1 - i < fo) env *= (n - 1 - i) / fo;
+          bus.L[w] += dL[off + i] * env;
+          bus.R[w] += dR[off + i] * env;
+        }
+        await MV.yield();
       }
-      const d = decoded.get(bgm.id);
-      const SRf = SR;
-      const t0s = Math.round(entry.t0 * SRf);
-      const n = Math.min(Math.round((entry.t1 - entry.t0) * SRf), d.L.length - Math.round(entry.srcIn * SRf));
-      const off = Math.round(entry.srcIn * SRf);
-      const fi = Math.max(1, Math.round(entry.fadeIn * SRf));
-      const fo = Math.max(1, Math.round(entry.fadeOut * SRf));
-      for (let i = 0; i < n; i++) {
-        const w = t0s + i;
-        if (w < 0 || w >= total) continue;
-        const t = w / SRf;
-        let env = entry.gain * MV.preview.duckGain(plan, t);
-        if (i < fi) env *= i / fi;
-        if (n - 1 - i < fo) env *= (n - 1 - i) / fo;
-        bus.L[w] += d.L[off + i] * env;
-        bus.R[w] += d.R[off + i] * env;
-      }
-      await MV.yield();
+      // ループを次へ進めた時点で buf への参照が切れ、この曲のメモリが返る
     }
   }
 
@@ -386,7 +425,7 @@ MV.exporter.preflight = async () => {
 };
 
 /* ---- 高速経路 ---- */
-MV.exporter.exportMP4 = async onProgress => {
+MV.exporter.exportMP4 = async (onProgress, saveHandle) => {
   const plan = MV.S.plan;
   if (!plan) throw new Error("先に「Vlog自動編集」で組み立ててください");
   const { W, H } = { W: plan.W, H: plan.H };
@@ -397,11 +436,31 @@ MV.exporter.exportMP4 = async onProgress => {
   MV.exporter.running = true;
   const pipes = new Map();      // key(s0/b0...) -> {pipe, clipId, expect}
   let venc = null;
+  /* 失敗・中断時は abort で破棄する。FS Access API は swap ファイル方式で、
+     close() は部分データの「コミット」=壊れた書きかけMP4を実ファイルにして
+     しまう。abort() なら何も書かれず、上書き対象だった既存ファイルも無傷 */
+  let writable = null;
+  const abortWritable = () => {
+    if (!writable) return;
+    const w = writable;
+    writable = null;
+    try { w.abort().catch(() => {}); } catch (_) {}
+  };
   try {
+    await MV.exporter.holdWake(true);   // 画面ロックでrAF/デコーダが止まるのを防ぐ
     await MV.exporter.preflight();
 
+    /* 保存先が選ばれていればディスクへ直接書く(完成MP4をメモリに溜めない) */
+    let target;
+    if (saveHandle) {
+      writable = await saveHandle.createWritable();
+      target = new Mp4Muxer.FileSystemWritableFileStreamTarget(writable);
+      MV.log("export: ファイルへ直接書き込みます(メモリに溜めません)");
+    } else {
+      target = new Mp4Muxer.ArrayBufferTarget();
+    }
     const muxer = new Mp4Muxer.Muxer({
-      target: new Mp4Muxer.ArrayBufferTarget(),
+      target,
       video: { codec: "avc", width: W, height: H },
       audio: { codec: "aac", sampleRate: MV.exporter.OUT_SR, numberOfChannels: 2 },
       fastStart: false,   // in-memoryは全チャンク保持で長尺が死ぬ(2026-07-20の教訓)
@@ -563,6 +622,14 @@ MV.exporter.exportMP4 = async onProgress => {
 
     onProgress(0.97, "ファイルにまとめています…");
     muxer.finalize();
+    if (writable) {
+      await writable.close();   // ここで初めてディスク上のファイルが完成する
+      writable = null;
+      const name = saveHandle.name;
+      MV.exporter.lastResult = { blob: null, name, saved: true };
+      MV.log(`export done: ${name} frames=${totalFrames} (直接書き込み)`);
+      return { name, saved: true, blob: null };
+    }
     const blob = new Blob([muxer.target.buffer], { type: "video/mp4" });
     const name = `MarchinZ_Vlog_${plan.aspect === "portrait" ? "縦" : "横"}_${new Date().toISOString().slice(0, 10)}.mp4`;
     MV.exporter.download(blob, name);
@@ -571,6 +638,8 @@ MV.exporter.exportMP4 = async onProgress => {
   } finally {
     pipes.forEach(rec => rec.pipe.dispose());
     if (venc) { try { venc.close(); } catch (e) {} }
+    abortWritable();   // 成功時は既にnull。失敗時だけ書きかけを破棄する
+    MV.exporter.holdWake(false);
     MV.exporter.running = false;
   }
 };
@@ -581,7 +650,19 @@ MV.exporter.exportRealtime = async onProgress => {
   if (!plan) throw new Error("先に「Vlog自動編集」で組み立ててください");
   MV.exporter.cancelFlag = false;
   MV.exporter.running = true;
+  /* 実時間録画中に画面ロック・アプリ切替でタブが隠れると、rAFもMediaRecorderも
+     止まり、壊れた短いMP4が「成功」として保存されてしまう。隠れた時点で
+     中止し、理由を告げる(無言の壊れ物より、やり直せる失敗のほうがよい) */
+  let hiddenAbort = false;
+  const onVis = () => {
+    if (document.hidden && MV.exporter.running) {
+      hiddenAbort = true;
+      MV.exporter.cancelFlag = true;
+    }
+  };
+  document.addEventListener("visibilitychange", onVis);
   try {
+    await MV.exporter.holdWake(true);   // そもそもロックさせないのが第一の防御
     const canvas = MV.preview.canvas;
     MV.preview.pause();
     MV.preview.seek(0);
@@ -606,13 +687,19 @@ MV.exporter.exportRealtime = async onProgress => {
     MV.preview.pause();
     mr.stop();
     await stopped;
-    if (MV.exporter.cancelFlag) throw new Error("キャンセルしました");
+    if (MV.exporter.cancelFlag) {
+      throw new Error(hiddenAbort
+        ? "画面が切り替わったため中止しました。実時間の書き出し中は、画面を点けたままこのタブを開いておいてください"
+        : "キャンセルしました");
+    }
     const isMp4 = mime.startsWith("video/mp4");
     const blob = new Blob(chunks, { type: isMp4 ? "video/mp4" : "video/webm" });
     const name = `MarchinZ_Vlog_${plan.aspect === "portrait" ? "縦" : "横"}_${new Date().toISOString().slice(0, 10)}.${isMp4 ? "mp4" : "webm"}`;
     MV.exporter.download(blob, name);
     return { blob, name };
   } finally {
+    document.removeEventListener("visibilitychange", onVis);
+    MV.exporter.holdWake(false);
     MV.exporter.running = false;
   }
 };

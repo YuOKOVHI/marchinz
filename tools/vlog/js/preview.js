@@ -100,14 +100,49 @@ MV.preview.bgmEl = bgm => {
 };
 
 /* ---------- 再生制御 ---------- */
+
+/* iOS Safariは「ユーザー操作の中で一度 play() された要素」しか、後から
+   スクリプトで再生できない。Vlogは rAF ループ(syncMedia)が再生を仕切る
+   構造のため、▶タップの同期スタック内で全素材を一瞬だけ muted 再生→
+   即停止して解錠しておく(Switcherは操作内で直接 play() する構造なので
+   不要だったが、Vlogでは必須。2026-07-20 iPhoneレビューの最重要指摘)。
+   素材はあとから追加されることもあるので、要素単位のフラグで毎回呼ぶ */
+MV.preview.unlockMedia = () => {
+  const els = MV.allClips().map(c => c.video)
+    .concat(MV.S.bgms.map(b => MV.preview.bgmEl(b)));
+  els.forEach(el => {
+    if (el._mvUnlocked) return;
+    el._mvUnlocked = true;
+    try {
+      const wasMuted = el.muted;
+      el.muted = true;
+      const p = el.play();
+      if (p && p.then) {
+        p.then(() => { el.pause(); el.muted = wasMuted; })
+         .catch(() => { el.muted = wasMuted; });
+      } else { el.pause(); el.muted = wasMuted; }
+    } catch (_) {}
+  });
+};
+
+/* 再生がブロックされたら1回だけ知らせる(黙って静止画のままにしない) */
+MV.preview.warnBlocked = () => {
+  if (MV.preview._playWarned) return;
+  MV.preview._playWarned = true;
+  MV.ui.toast("再生がブラウザにブロックされました。もう一度 ▶ を押してください");
+};
+
 MV.preview.play = async () => {
   if (!MV.S.plan) return;
   const actx = MV.preview.audio();
+  MV.preview.unlockMedia();   // await より前=ユーザー操作の同期スタック内で解錠
   try { await actx.resume(); } catch (_) {}
   if (MV.S.t >= MV.S.plan.totalSec - 0.05) MV.S.t = 0;
   MV.preview.playing = true;
   MV.S.playing = true;
   MV.preview._lastNow = performance.now();
+  MV.preview._playWarned = false;
+  MV.preview.syncMedia();     // 最初の再生開始を rAF まで待たせない
   MV.ui.$("#playBtn").innerHTML = '<i class="fa-solid fa-pause"></i>';
 };
 
@@ -190,7 +225,7 @@ MV.preview.syncMedia = () => {
     MV.preview.tap(v);
     v._mvGain.gain.value = a.gain;
     if (Math.abs(v.currentTime - a.want) > 0.35) v.currentTime = a.want;
-    if (v.paused) v.play().catch(() => {});
+    if (v.paused) v.play().catch(() => MV.preview.warnBlocked());
   });
 
   /* BGM */
@@ -213,7 +248,7 @@ MV.preview.syncMedia = () => {
     el._mvGain.gain.value = entry.gain * duck * Math.min(fadeIn, fadeOut);
     const want = entry.srcIn + rel;
     if (Math.abs(el.currentTime - want) > 0.4) el.currentTime = want;
-    if (el.paused) el.play().catch(() => {});
+    if (el.paused) el.play().catch(() => MV.preview.warnBlocked());
   });
 };
 

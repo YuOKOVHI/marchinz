@@ -22,24 +22,59 @@ MV.segIndexAt = (plan, t) => {
   return lo;
 };
 
-/* cover-crop 描画(Switcher layout.js の drawSource と同じ作法・回転対応) */
-MV.drawFrame = (ctx, src, W, H, alpha = 1) => {
-  if (!src || !src.w || !src.h) return;
+/* 変形描画の共通部(Switcher layout.js の drawSource と同じ作法・回転対応)。
+   fit="cover"=画面を埋める(はみ出しは切る) / "contain"=全体を収める */
+MV._drawTransformed = (ctx, src, W, H, fit) => {
   const rot = (((src.rotation || 0) % 360) + 360) % 360;
   const swapped = rot === 90 || rot === 270;
   const sw = swapped ? src.h : src.w;
   const sh = swapped ? src.w : src.h;
-  const scale = Math.max(W / sw, H / sh);
+  const scale = fit === "contain" ? Math.min(W / sw, H / sh) : Math.max(W / sw, H / sh);
   const vw = W / scale, vh = H / scale;
   const sx = (sw - vw) * 0.5, sy = (sh - vh) * 0.5;
   ctx.save();
-  ctx.globalAlpha = alpha;
   ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip();
   ctx.translate(-sx * scale, -sy * scale);
   ctx.scale(scale, scale);
   ctx.translate(sw / 2, sh / 2);
   if (rot) ctx.rotate(rot * Math.PI / 180);
   ctx.drawImage(src.source, -src.w / 2, -src.h / 2, src.w, src.h);
+  ctx.restore();
+};
+
+/* 1フレーム描画。縦横が食い違う素材(スマホの縦動画を横で使う・その逆)は、
+   cover で切り抜くと顔や頭が切れる(中学広報の実体験指摘 2026-07-20)。
+   アスペクト比の食い違いが1.5倍を超えたら「ぼかし背景+全体表示」に自動で
+   切り替える。ぼかしは ctx.filter に頼らず縮小→拡大で作る
+   (iOS Safari の filter 対応差を踏まない・どの環境でも同じ見た目) */
+MV.FIT_BLUR_RATIO = 1.5;
+MV.drawFrame = (ctx, src, W, H, alpha = 1) => {
+  if (!src || !src.w || !src.h) return;
+  const rot = (((src.rotation || 0) % 360) + 360) % 360;
+  const swapped = rot === 90 || rot === 270;
+  const sw = swapped ? src.h : src.w;
+  const sh = swapped ? src.w : src.h;
+  const srcAspect = sw / sh, outAspect = W / H;
+  const ratio = Math.max(srcAspect / outAspect, outAspect / srcAspect);
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  if (ratio > MV.FIT_BLUR_RATIO) {
+    // 背景: 1/24に縮小して描き、全面へ引き伸ばす(強いぼかしと同等)
+    const b = MV._blurCv || (MV._blurCv = document.createElement("canvas"));
+    const bw = Math.max(2, Math.round(W / 24)), bh = Math.max(2, Math.round(H / 24));
+    if (b.width !== bw) b.width = bw;
+    if (b.height !== bh) b.height = bh;
+    const bctx = b.getContext("2d");
+    MV._drawTransformed(bctx, src, bw, bh, "cover");
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(b, 0, 0, W, H);
+    ctx.fillStyle = "rgba(0, 0, 0, 0.35)";   // 背景を沈めて前景を立てる
+    ctx.fillRect(0, 0, W, H);
+    MV._drawTransformed(ctx, src, W, H, "contain");
+  } else {
+    MV._drawTransformed(ctx, src, W, H, "cover");
+  }
   ctx.restore();
 };
 
