@@ -385,7 +385,15 @@ MC.exporter.preflightFiles = async clips => {
 
 MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
   let writable = null;
-  const writableRef = () => { if (writable) { try { writable.close(); } catch (err) {} writable = null; } };
+  /* 失敗・中断時は abort で破棄する。FS Access API は swap ファイル方式で、
+     close() は部分データの「コミット」= 壊れた書きかけMP4を実ファイルにして
+     しまう。abort() なら何も書かれず、上書き対象だった既存ファイルも無傷 */
+  const writableRef = () => {
+    if (!writable) return;
+    const w = writable;
+    writable = null;
+    try { w.abort().catch(() => {}); } catch (err) {}
+  };
   const { w, h } = MC.PRESETS[MC.S.preset];
   const fps = 30;
   const [tIn, tOut] = MC.trimRange();
@@ -416,7 +424,12 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
       target,
       video: { codec: "avc", width: w, height: h },
       audio: withAudio ? { codec: "aac", sampleRate: 48000, numberOfChannels: 2 } : undefined,
-      fastStart: "in-memory",
+      /* 'in-memory' は全チャンクをメモリに溜めて finalize で一括書き出しする
+         指定で、977秒×12Mbps では約1.5GB を保持し続ける(RangeError の真因)。
+         false なら mdat を先に書いて moov を末尾に置くため、ストリーム先へは
+         チャンク到着のたびに流れ、メモリに残らない。moov が末尾でも
+         ローカル再生・SNSアップロードには支障ない */
+      fastStart: false,
     });
     let vencErr = null;
     venc = new VideoEncoder({
