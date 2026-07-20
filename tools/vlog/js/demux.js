@@ -159,7 +159,7 @@ MV.MP4Source = class {
     let readyResolve;
     const ready = new Promise(r => { readyResolve = r; });
     mp4.onReady = info => { this.info = info; readyResolve(); };
-    mp4.onError = e => console.warn("[MC] mp4box:", e);
+    mp4.onError = e => console.warn("[vlog] mp4box:", e);
 
     const layout = await this._scanTopBoxes();
     const moovBox = layout.find(b => b.type === "moov");
@@ -184,7 +184,7 @@ MV.MP4Source = class {
           chunks: table.chunks,
         };
         cut.push(b);
-        if (window.MC && MV.log) MV.log(
+        if (MV.log) MV.log(
           `PCM音声を自前リーダーで扱います: ${fmt.fourcc} ${fmt.rate}Hz ${fmt.ch}ch ${fmt.bits}bit frames=${table.totalFrames}`);
       }
       if (cut.length) {

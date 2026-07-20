@@ -16,23 +16,15 @@ MV.media.kindOf = f => {
   return "";
 };
 
-/* 画面のどこにドロップされても、種類から行き先を決めて振り分ける */
+/* 画面のどこにドロップされても、種類から行き先を決めて振り分ける。
+   動画は必ず映像(インサート)へ。インタビューは枠を明示してもらう
+   ——推測で振り分けると、最初の1本がインタビュー扱いになるなど意図とズレるため */
 MV.media.addAuto = async files => {
   const arr = [...files];
   const vids = arr.filter(f => MV.media.kindOf(f) === "video");
   const auds = arr.filter(f => MV.media.kindOf(f) === "audio");
   const imgs = arr.filter(f => MV.media.kindOf(f) === "image");
-  // 動画は、インタビュー枠が空いていれば1本目だけそちらへ。残りは映像枠へ
-  if (vids.length) {
-    const maxI = (window.MZ_LIMITS || {}).maxVlogInterviews || 1;
-    if (!MV.S.interviews.length && MV.S.inserts.length && vids.length === 1) {
-      await MV.media.add("itv", vids);
-    } else if (MV.S.interviews.length < maxI && !MV.S.inserts.length && vids.length === 1) {
-      await MV.media.add("itv", vids);
-    } else {
-      await MV.media.add("ins", vids);
-    }
-  }
+  if (vids.length) await MV.media.add("ins", vids);
   if (auds.length) await MV.media.add("bgm", auds);
   if (imgs.length) await MV.media.add("logo", imgs);
 };
@@ -70,8 +62,9 @@ MV.media.addVideos = async (slot, files) => {
         : `ゲストは${labelJa}${max}${slot === "itv" ? "人" : "本"}まで。無料登録で増やせます`);
       break;
     }
+    // 重複判定は同じ枠の中だけ。インタビュー動画の別部分を映像として使うのは正当
     const key = `${f.name}|${f.size}|${f.lastModified}`;
-    if (MV.allClips().some(c => MV.clipKey(c) === key)) {
+    if (list.some(c => MV.clipKey(c) === key)) {
       MV.ui.toast(`${f.name} は読み込み済みです`);
       continue;
     }
@@ -93,9 +86,12 @@ MV.media.addVideos = async (slot, files) => {
     v.preload = MV.isIOS ? "metadata" : "auto";
 
     try {
+      // タイムアウトが無いと、1本詰まっただけで残りの取り込みが全部止まる
       await new Promise((res, rej) => {
-        v.onloadedmetadata = res;
-        v.onerror = () => rej(new Error("動画として読み込めません（コーデック非対応の可能性）"));
+        const tm = setTimeout(() => rej(new Error("読み込みに時間がかかりすぎました")), 15000);
+        v.onloadedmetadata = () => { clearTimeout(tm); res(); };
+        v.onerror = () => { clearTimeout(tm); rej(new Error("動画として読み込めません（コーデック非対応の可能性）")); };
+        v.load();   // iOS Safari は preload="metadata" でも load() が要ることがある
       });
     } catch (e) {
       MV.ui.toast(`⚠ ${f.name}: ${e.message}`);
@@ -120,7 +116,10 @@ MV.media.addVideos = async (slot, files) => {
     if (slot === "ins" && v.duration >= 180) clip.isShow = true;
 
     list.push(clip);
-    MV.media.makeThumb(clip);       // 非同期・完了後に再描画
+    // 直列に並べる。10本同時にseekするとデコーダが10個起動してiPhoneが落ちる
+    MV.media._thumbQ = (MV.media._thumbQ || Promise.resolve())
+      .then(() => MV.media.makeThumb(clip))
+      .catch(() => {});
   }
 };
 
@@ -141,7 +140,8 @@ MV.media.makeThumb = async clip => {
     cv.getContext("2d").drawImage(v, (cv.width - v.videoWidth * s) / 2,
       (cv.height - v.videoHeight * s) / 2, v.videoWidth * s, v.videoHeight * s);
     clip.thumb = cv.toDataURL("image/jpeg", 0.72);
-    MV.ui.renderAll();
+    if (MV.isIOS) v.preload = "none";     // 取り終えたらメモリを返す
+    MV.ui.updateThumb(clip);              // DOM全体は作り直さない
   } catch (_) { /* サムネなしで続行 */ }
 };
 
@@ -163,8 +163,10 @@ MV.media.addAudios = async files => {
     let dur = 0;
     try {
       await new Promise((res, rej) => {
-        a.onloadedmetadata = res;
-        a.onerror = () => rej(new Error("音声として読み込めません"));
+        const tm = setTimeout(() => rej(new Error("読み込みに時間がかかりすぎました")), 15000);
+        a.onloadedmetadata = () => { clearTimeout(tm); res(); };
+        a.onerror = () => { clearTimeout(tm); rej(new Error("音声として読み込めません")); };
+        a.load();
       });
       dur = a.duration;
     } catch (e) {
@@ -190,7 +192,7 @@ MV.media.addLogo = async f => {
 /* ---------- 取り外し ---------- */
 MV.media.remove = (kind, id) => {
   if (kind === "logo") {
-    if (MV.S.logo && MV.S.logo.url) URL.revokeObjectURL(MV.S.logo.url);
+    if (MV.S.logo && MV.S.logo.srcUrl) URL.revokeObjectURL(MV.S.logo.srcUrl);
     MV.S.logo = null;
   } else if (kind === "bgm") {
     const i = MV.S.bgms.findIndex(b => String(b.id) === String(id));

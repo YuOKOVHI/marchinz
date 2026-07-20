@@ -78,52 +78,105 @@
 <main class="wrap">
   <div class="col">
 
-    <!-- 使える条件 -->
-    <div data-mz-plan="vlog"></div>
-
-    <!-- インタビュー -->
-    <section class="panel" id="itvSec">
-      <h2><i class="fa-solid fa-comment-dots" aria-hidden="true"></i> インタビュー
-        <span class="hint" data-limit-note data-limit-note-member="(3人まで)">(ゲストは1人・無料登録で3人)</span></h2>
-      <p class="sec-lead" id="itvLead">語りがVlogの背骨になります。</p>
-      <div id="itvSlots" class="slots"></div>
-      <input type="file" id="itvInput" accept="video/mp4,video/quicktime,video/*" hidden>
-    </section>
-
-    <!-- インサート -->
-    <section class="panel" id="insSec">
-      <h2><i class="fa-solid fa-photo-film" aria-hidden="true"></i> 映像（インサート）
-        <span class="hint" data-limit-note data-limit-note-member="(10本まで)">(ゲストは5本・無料登録で10本)</span></h2>
-      <p class="sec-lead" id="insLead">練習・本番・表情。短くて構いません。</p>
-      <div id="insSlots" class="slots slots-grid"></div>
-      <input type="file" id="insInput" accept="video/mp4,video/quicktime,video/*" multiple hidden>
-    </section>
-
-    <!-- ロゴ -->
-    <section class="panel" id="logoSec">
-      <h2><i class="fa-solid fa-certificate" aria-hidden="true"></i> ロゴ <span class="hint">(1つ・PNG推奨)</span></h2>
-      <p class="sec-lead">右上に小さく出して、最後に大きく出します。背景つきの画像は自動で透過します。</p>
-      <div id="logoSlot" class="slots"></div>
-      <input type="file" id="logoInput" accept="image/png,image/jpeg,image/webp,image/*" hidden>
+    <!-- 誰に見てほしいか(大石さんレビュー: これを決めると選ぶ素材が変わる) -->
+    <section class="panel" id="whomSec">
       <div class="field">
-        <label for="orgNameInput">団体名</label>
-        <input type="text" id="orgNameInput" placeholder="例: マーチンズ吹奏楽団" maxlength="40">
-        <p class="hint">ロゴが無いときはこの名前を表示します。</p>
+        <label for="forWhomInput">この動画、いちばん見てほしい人は？</label>
+        <input type="text" id="forWhomInput" placeholder="例: 引退する3年生 / 入部を迷っている小6"
+          maxlength="30" enterkeyhint="done">
+        <p class="hint">ひとりだけ決めてください。選ぶ素材が変わります。</p>
       </div>
     </section>
 
-    <!-- BGM -->
-    <section class="panel" id="bgmSec">
-      <h2><i class="fa-solid fa-music" aria-hidden="true"></i> BGM <span class="hint">(3曲まで)</span></h2>
-      <p class="sec-lead">インタビュー中は自動で音量を下げます。</p>
-      <div id="bgmSlots" class="slots"></div>
-      <input type="file" id="bgmInput" accept="audio/*,.mp3,.wav,.m4a,.aac" multiple hidden>
-      <div id="artlistBox" class="artlist-box"></div>
+    <!-- 映像(必須) -->
+    <section class="panel" id="insSec">
+      <h2><i class="fa-solid fa-photo-film" aria-hidden="true"></i> 映像
+        <span class="hint" data-limit-note data-limit-note-member="(10本まで)">(ゲストは5本・無料登録で10本)</span></h2>
+      <p class="sec-lead">5本あれば形になります。順番は自動で決めるので、並べ替えは不要です。</p>
+      <div id="insCheck" class="checklist"></div>
+      <div id="insSlots" class="slots slots-grid"></div>
+      <button type="button" class="add-btn" data-mv-add="ins">
+        <i class="fa-solid fa-plus"></i> <span id="insAddLabel">映像を追加</span>
+      </button>
+      <input type="file" id="insInput" accept="video/mp4,video/quicktime,video/*" multiple hidden>
     </section>
+
+    <!-- インタビュー(任意) -->
+    <section class="panel" id="itvSec">
+      <h2><i class="fa-solid fa-comment-dots" aria-hidden="true"></i> インタビュー
+        <span class="hint" data-limit-note data-limit-note-member="(3人まで)">(ゲストは1人・無料登録で3人)</span></h2>
+      <p class="sec-lead">無くても作れます。1人いるだけで、ぐっと見られる動画になります。</p>
+      <div id="itvSlots" class="slots"></div>
+      <button type="button" class="add-btn" data-mv-add="itv">
+        <i class="fa-solid fa-plus"></i> <span id="itvAddLabel">インタビューを追加</span>
+      </button>
+      <input type="file" id="itvInput" accept="video/mp4,video/quicktime,video/*" hidden>
+    </section>
+
+    <!-- 音 -->
+    <section class="panel" id="audioSec">
+      <h2><i class="fa-solid fa-volume-high" aria-hidden="true"></i> 音</h2>
+      <div class="choice" role="radiogroup" aria-label="音の作り方">
+        <button type="button" class="choice-item on" data-audio="ambient" role="radio" aria-checked="true">
+          <span class="choice-name">演奏をそのまま聴かせる</span>
+          <span class="choice-desc">現場の音だけで作ります。BGMは要りません</span>
+        </button>
+        <button type="button" class="choice-item" data-audio="bgm" role="radio" aria-checked="false">
+          <span class="choice-name">BGMを入れる</span>
+          <span class="choice-desc">曲を選びます。人が話すところは自動で音を下げます</span>
+        </button>
+        <button type="button" class="choice-item" data-audio="both" role="radio" aria-checked="false">
+          <span class="choice-name">両方</span>
+          <span class="choice-desc">演奏を活かしつつ、BGMを薄く敷きます</span>
+        </button>
+      </div>
+      <div id="bgmBox" hidden>
+        <div id="bgmSlots" class="slots"></div>
+        <button type="button" class="add-btn" data-mv-add="bgm">
+          <i class="fa-solid fa-plus"></i> <span id="bgmAddLabel">曲を追加</span>
+        </button>
+        <input type="file" id="bgmInput" accept="audio/*,.mp3,.wav,.m4a,.aac" multiple hidden>
+        <div id="artlistBox" class="artlist-box"></div>
+      </div>
+    </section>
+
+    <!-- ロゴ・団体名(任意) -->
+    <details class="panel" id="logoSec">
+      <summary><i class="fa-solid fa-certificate" aria-hidden="true"></i> ロゴと団体名
+        <span class="hint">（任意）</span></summary>
+      <p class="sec-lead">無くても大丈夫です。あれば右上と最後に表示します。</p>
+      <div id="logoSlot" class="slots"></div>
+      <input type="file" id="logoInput" accept="image/png,image/jpeg,image/webp,image/*" hidden>
+      <div id="logoTune" hidden>
+        <label class="field-inline" for="logoThreshold">背景の抜き具合</label>
+        <input type="range" id="logoThreshold" min="10" max="120" step="5" value="40">
+        <p class="hint">ロゴが欠けるときは左へ、背景が残るときは右へ。</p>
+      </div>
+      <div class="field">
+        <label for="orgNameInput">団体名</label>
+        <input type="text" id="orgNameInput" placeholder="例: マーチンズ吹奏楽団"
+          maxlength="40" enterkeyhint="done" autocomplete="organization">
+      </div>
+    </details>
 
     <!-- 仕上げ -->
     <section class="panel" id="finishSec">
       <h2><i class="fa-solid fa-flag-checkered" aria-hidden="true"></i> 仕上げ</h2>
+
+      <div class="field">
+        <span class="field-label">どこに出しますか</span>
+        <div class="choice choice-row" role="radiogroup" aria-label="出し先">
+          <button type="button" class="choice-item on" data-aspect="landscape" role="radio" aria-checked="true">
+            <span class="choice-name">横</span>
+            <span class="choice-desc">YouTube・MarchinZ</span>
+          </button>
+          <button type="button" class="choice-item" data-aspect="portrait" role="radio" aria-checked="false">
+            <span class="choice-name">縦</span>
+            <span class="choice-desc">TikTok・リール</span>
+          </button>
+        </div>
+      </div>
+
       <div id="planSummary" class="plan-summary"></div>
       <button id="buildBtn" class="btn primary big" type="button" disabled>
         <i class="fa-solid fa-wand-magic-sparkles"></i> 組み立てる
@@ -134,11 +187,30 @@
           <i class="fa-solid fa-file-export"></i> MP4を書き出す
         </button>
         <div id="exportProgress"></div>
+        <button id="rebuildBtn" class="btn" type="button">
+          <i class="fa-solid fa-rotate"></i> 別の雰囲気で組み直す
+        </button>
         <button id="xmlBtn" class="btn" type="button" hidden>
           <i class="fa-solid fa-file-code"></i> 編集用データ（Resolve / Premiere）
         </button>
       </div>
+
+      <!-- 使える条件は「増やしたくなった時」に読む情報なのでここに置く -->
+      <div data-mz-plan="vlog"></div>
     </section>
+
+    <!-- 権利・責任について -->
+    <details class="panel notice-panel" id="noticeSec">
+      <summary><i class="fa-solid fa-circle-info" aria-hidden="true"></i> 公開する前に確認してください</summary>
+      <ul class="notice-list">
+        <li><strong>写る人の同意</strong> — 掲載してよいか分からない方が写っていないか、書き出したあと必ず通してご確認ください。顔を隠したいときは
+          <a href="/tools/privacy/">MarchinZ Privacy</a> で先に処理できます。</li>
+        <li><strong>演奏している楽曲の権利</strong> — 本番映像には演奏中の楽曲が入ります。編曲物や市販曲の権利処理は団体様のご責任になります。</li>
+        <li><strong>大会・会場の規約</strong> — 撮影やSNS公開が禁じられている場合があります。主催者の規約をご確認ください。</li>
+        <li><strong>BGMの利用条件</strong> — お使いになる音源のライセンスをご確認ください。</li>
+        <li>本ツールは制作を補助するものです。<strong>できあがった映像の内容・公開について、MarchinZは責任を負いません。</strong></li>
+      </ul>
+    </details>
 
   </div>
 

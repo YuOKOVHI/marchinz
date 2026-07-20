@@ -44,7 +44,8 @@ button, select, input, label, .btn { touch-action: manipulation; }
 .head-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 .caps-badge { font-size: 12px; color: var(--tx2); background: #fff; border: 1px solid var(--line);
   padding: 4px 10px; border-radius: 20px; }
-.back-link { font-size: 12px; color: var(--acc); text-decoration: none; white-space: nowrap; }
+.back-link { font-size: 12px; color: var(--acc); text-decoration: none; white-space: nowrap;
+  display: inline-flex; align-items: center; min-height: 44px; padding: 0 6px; }
 @media (max-width: 700px) { .head-right .caps-badge { display: none; } }
 
 .beta-disclaimer { font-size: 12.5px; color: var(--tx2); line-height: 1.7;
@@ -119,19 +120,87 @@ button, select, input, label, .btn { touch-action: manipulation; }
 .slot-name { font-size: 12px; font-weight: 700; color: var(--tx);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .slot-meta { font-size: 11px; color: var(--tx2); }
-.slot-del { position: absolute; top: 6px; right: 6px; width: 30px; height: 30px;
+.slot-del { position: absolute; top: 2px; right: 2px; width: 44px; height: 44px;
   display: grid; place-items: center; border-radius: 50%; border: 0;
-  background: rgba(12, 15, 20, .55); color: #fff; font-size: 12px; cursor: pointer; }
+  background: transparent; color: #fff; font-size: 13px; cursor: pointer; }
+/* 見た目の丸は小さく、当たり判定は44px(親指で押せる大きさ) */
+.slot-del::before { content: ""; position: absolute; width: 30px; height: 30px;
+  border-radius: 50%; background: rgba(12, 15, 20, .55); }
+.slot-del i { position: relative; }
 .slot-badge { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start;
   font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 999px;
   background: #fdf3d7; color: #8a6d1a; border: 1px solid #ecd9a0; }
-.slot-showtoggle { display: flex; align-items: center; gap: 6px; font-size: 11.5px;
-  color: var(--tx2); padding: 4px 0; min-height: 32px; }
+.slot-showtoggle { display: flex; align-items: center; gap: 8px; font-size: 11.5px;
+  color: var(--tx2); padding: 4px 0; min-height: 44px; }
+.slot-showtoggle input { width: 22px; height: 22px; accent-color: var(--acc); }
+
+/* ---------- 撮ってほしいもののチェックリスト ---------- */
+.checklist { margin-top: 10px; }
+.cl-lead { font-size: 12px; font-weight: 700; color: var(--navy); }
+.cl-list { list-style: none; margin-top: 8px; display: grid; gap: 8px; }
+.cl-list li { display: grid; grid-template-columns: 18px 1fr; gap: 2px 8px;
+  align-items: start; font-size: 12px; color: var(--tx2); }
+.cl-list li i { grid-row: 1 / 3; margin-top: 2px; color: #c3cad8; font-size: 13px; }
+.cl-list li.on i { color: var(--ok); }
+.cl-what { font-size: 12.5px; font-weight: 700; color: var(--tx); }
+.cl-list li.on .cl-what { color: var(--tx2); text-decoration: line-through;
+  text-decoration-color: rgba(12, 15, 20, .25); }
+.cl-how { font-size: 11.5px; line-height: 1.65; }
+
+/* ---------- 追加ボタン(枠を先出ししない代わりの入口) ---------- */
+.add-btn { margin-top: 10px; width: 100%; min-height: 52px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  font-size: 14px; font-weight: 700; color: var(--acc);
+  background: var(--panel2); border: 1.5px dashed var(--line); border-radius: 14px;
+  cursor: pointer; }
+.add-btn:disabled { color: var(--tx2); border-style: solid; cursor: not-allowed; }
+
+/* ---------- 選択肢(音・出し先) ---------- */
+.choice { margin-top: 10px; display: grid; gap: 8px; }
+.choice-row { grid-template-columns: 1fr 1fr; }
+.choice-item { display: flex; flex-direction: column; gap: 3px; align-items: flex-start;
+  text-align: left; padding: 13px 14px; min-height: 52px;
+  background: var(--panel2); border: 1.5px solid transparent; border-radius: 13px;
+  cursor: pointer; }
+.choice-item.on { background: #eaf0ff; border-color: var(--acc); }
+.choice-name { font-size: 13.5px; font-weight: 700; color: var(--navy); }
+.choice-item.on .choice-name { color: var(--acc-deep); }
+.choice-desc { font-size: 11.5px; color: var(--tx2); line-height: 1.55; }
+
+/* ---------- 折りたたみ(任意項目) ---------- */
+details.panel > summary { font-size: 14.5px; font-weight: 800; color: var(--navy);
+  display: flex; align-items: center; gap: 7px; min-height: 44px; cursor: pointer;
+  list-style: none; }
+details.panel > summary::-webkit-details-marker { display: none; }
+details.panel > summary::after { content: "\f078"; font-family: "Font Awesome 6 Free";
+  font-weight: 900; margin-left: auto; font-size: 11px; color: var(--tx2);
+  transition: transform .18s ease; }
+details.panel[open] > summary::after { transform: rotate(180deg); }
+.logo-thumb { object-fit: contain; background: var(--panel2); }
+#logoTune { margin-top: 12px; }
+#logoThreshold { width: 100%; height: 44px; }
+
+/* ---------- 注意書き ---------- */
+.notice-panel { background: #fffdf5; border-color: #ecd9a0; }
+.notice-list { list-style: none; margin-top: 10px; display: grid; gap: 9px; }
+.notice-list li { font-size: 12px; line-height: 1.75; color: var(--tx2);
+  padding-left: 16px; position: relative; }
+.notice-list li::before { content: "・"; position: absolute; left: 0; color: var(--acc2); }
+.notice-list strong { color: var(--tx); }
+
+/* ボトムバーの促し先を光らせる(1タップ目=ここです、2タップ目=実行) */
+.ab-target { animation: abpulse .9s ease 1; }
+@keyframes abpulse {
+  0%   { box-shadow: 0 0 0 0 rgba(30, 79, 214, .35), var(--shadow-card); }
+  100% { box-shadow: 0 0 0 12px rgba(30, 79, 214, 0), var(--shadow-card); }
+}
+/* ジャーニーバーに見出しが隠れないように */
+.panel, details.panel { scroll-margin-top: 96px; }
 
 /* 入力欄 */
 .field { margin-top: 12px; display: flex; flex-direction: column; gap: 5px; }
 .field label { font-size: 12px; font-weight: 700; color: var(--navy); }
-.field input[type="text"] { padding: 12px; min-height: 44px; font-size: 15px;
+.field input[type="text"] { padding: 12px; min-height: 44px; font-size: 16px;   /* 16px未満はiOSが自動ズームして戻らない */
   border: 1px solid var(--line); border-radius: 11px; background: #fff; color: var(--tx); }
 .field input[type="text"]:focus { outline: 2px solid var(--acc); outline-offset: -1px; }
 
@@ -157,9 +226,17 @@ button, select, input, label, .btn { touch-action: manipulation; }
 .artlist-actions .btn { flex: 1; min-width: 130px; font-size: 13px; }
 
 /* プラン要約 */
-.plan-summary { margin-top: 10px; font-size: 12.5px; color: var(--tx2); line-height: 1.8; }
-.plan-summary .ps-len { font-size: 15px; font-weight: 800; color: var(--navy); }
+.plan-summary { margin-top: 14px; font-size: 12.5px; color: var(--tx2); line-height: 1.8; }
+.plan-summary .ps-mat { font-size: 12px; }
+.plan-summary .ps-len { font-size: 15px; color: var(--tx2); }
+.plan-summary .ps-len b { font-size: 19px; font-weight: 800; color: var(--navy); }
 .plan-summary .ps-warn { color: var(--warn); }
+.plan-summary .ps-note { margin-top: 4px; font-size: 11.5px; color: var(--tx2); line-height: 1.7; }
+.field-label { font-size: 12px; font-weight: 700; color: var(--navy); }
+.field-inline { font-size: 12px; font-weight: 700; color: var(--navy); }
+
+/* ボトムバーの補足(あと何をすればいいか) */
+.ab-note { font-size: 11.5px; color: var(--tx2); text-align: center; margin-bottom: 6px; }
 
 /* ---------- プレビュー ---------- */
 .stage { display: flex; flex-direction: column; gap: 10px; min-width: 0; }

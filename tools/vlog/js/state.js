@@ -7,21 +7,34 @@
    素材はスロット型で持つ: インタビュー3・インサート10・ロゴ1・BGM3。 */
 
 window.MV = {
-  /* 出力仕様。YouTube向け横型(本体のYouTube掲載条件=181秒以上に合わせた尺設計) */
-  W: 1920, H: 1080, FPS: 30,
+  FPS: 30,
+
+  /* 出し先(アスペクト)。モード=表現 とは独立した設定にする。
+     SNSは縦、YouTube・MarchinZ掲載は横、と用途で分かれるため */
+  ASPECTS: {
+    landscape: { id: "landscape", label: "横（YouTube・MarchinZ）", W: 1920, H: 1080 },
+    portrait:  { id: "portrait",  label: "縦（TikTok・リール・ストーリー）", W: 1080, H: 1920 },
+  },
 
   S: {
     mode: null,            // "recommend" | "emotional" | "active"
+    aspect: "landscape",   // "landscape" | "portrait"
+    audioMode: "ambient",  // "ambient"(演奏をそのまま) | "bgm" | "both"
     orgName: "",           // 団体名(ロゴが無いときのタイトル/エンドに使う)
+    forWhom: "",           // この動画をいちばん見てほしい人(1人)
     interviews: [],        // [{id,file,name,url,video,duration,thumb,trimIn,trimOut}]
     inserts: [],           // [{... , isShow:bool(ショウ動画), quality:解析結果, show:解析結果}]
-    logo: null,            // {file,name,srcCanvas,outCanvas,isPng,threshold,useOriginal}
+    logo: null,            // {file,name,src,out,isPng,threshold,useOriginal,srcUrl}
     bgms: [],              // [{id,file,name,buffer,duration}]
     endColor: null,        // "white" | "black"(未設定ならモード既定)
     showMix: 0.3,          // ショウ動画区間の現場音ミックス比(BGM 70 : 現場 30)
     plan: null,            // planner.js の生成結果
     t: 0, playing: false,
   },
+
+  /* 現在のアスペクトの解像度 */
+  get W() { return MV.ASPECTS[MV.S.aspect].W; },
+  get H() { return MV.ASPECTS[MV.S.aspect].H; },
 
   /* localStorage(素材そのものは保存しない。設定だけ) */
   SKEY: "mz_vlog_state_v1",
@@ -51,34 +64,57 @@ window.MV = {
     });
   },
 
+  /* WebCodecsのデコード待ち。キューが詰まったとき dequeue を待つ。
+     Switcher state.js から取りこぼしていた(audio.js が呼んでいる) */
+  waitDequeue(codec, ms = 100) {
+    return new Promise(r => {
+      const h = () => { clearTimeout(tm); r(); };
+      codec.addEventListener("dequeue", h, { once: true });
+      const tm = setTimeout(() => { codec.removeEventListener("dequeue", h); r(); }, ms);
+    });
+  },
+
   /* ---- 素材の取り回し ---- */
   allClips() { return MV.S.interviews.concat(MV.S.inserts); },
   getClip(id) { return MV.allClips().find(c => c.id === id) || null; },
   clipKey(c) { return `${c.name}|${c.size}|${c.lastModified}`; },
 
-  /* ---- ロール別の完成尺レンジ ----
-     下限181秒(3分01秒)は全ロール共通。本体のYouTube掲載条件
-     (export_youtube_list_via_api.py の MIN_VIDEO_DURATION_SEC = 181)に揃えてあり、
-     作ったVlogがそのままMarchinZに載せられる長さになる。 */
+  /* ---- 完成尺 ----
+     目標は3分前後。ただし尺は素材に合わせてアルゴリズムが決め、短くなってもよい
+     (優さん決定 2026-07-20)。3分より短いと本体のYouTube一覧には載せられない
+     (MIN_VIDEO_DURATION_SEC = 181)ので、そのときだけ画面で知らせる。
+     上限だけはロール別に効かせる(ゲスト3分30秒 / 登録5分)。 */
+  TARGET_SEC: 190,          // 目標(3分10秒あたり)。素材が足りなければ下回ってよい
+  MARCHINZ_MIN_SEC: 181,    // これ未満はMarchinZのYouTube一覧に載せられない
+
   lenRange() {
     const L = window.MZ_LIMITS || {};
-    return [L.vlogMinSec || 181, L.vlogMaxSec || 210];
+    return [30, L.vlogMaxSec || 210];   // 下限は「動画として成立する最低限」だけ
   },
+
+  /* MarchinZに載せられる長さか(下回っても書き出しは止めない) */
+  fitsMarchinZ(sec) { return sec >= MV.MARCHINZ_MIN_SEC; },
 
   saveState() {
     try {
       localStorage.setItem(MV.SKEY, JSON.stringify({
-        mode: MV.S.mode, orgName: MV.S.orgName,
+        orgName: MV.S.orgName, forWhom: MV.S.forWhom,
+        aspect: MV.S.aspect, audioMode: MV.S.audioMode,
         endColor: MV.S.endColor, showMix: MV.S.showMix,
       }));
     } catch (_) {}
   },
 
+  /* モードは保存しない(素材が消えている再訪で、いきなり作業画面に入ると迷うため
+     必ずモード選択から始める) */
   restoreState() {
     try {
       const r = JSON.parse(localStorage.getItem(MV.SKEY) || "null");
       if (!r) return;
       if (r.orgName) MV.S.orgName = r.orgName;
+      if (r.forWhom) MV.S.forWhom = r.forWhom;
+      if (MV.ASPECTS[r.aspect]) MV.S.aspect = r.aspect;
+      if (["ambient", "bgm", "both"].includes(r.audioMode)) MV.S.audioMode = r.audioMode;
       if (r.endColor) MV.S.endColor = r.endColor;
       if (typeof r.showMix === "number") MV.S.showMix = r.showMix;
     } catch (_) {}

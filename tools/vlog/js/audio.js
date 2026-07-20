@@ -40,7 +40,7 @@ MV.audio.extract8k = async (clip, maxSec = MV.audio.MAX_SEC) => {
     if (!pcm) pcm = await MV.audio.viaWebCodecs(clip, maxSec);
   } catch (e) {
     err1 = e;
-    console.warn("[MC] WebCodecs音声抽出失敗→decodeAudioDataへ:", e.message);
+    console.warn("[vlog] WebCodecs音声抽出失敗→decodeAudioDataへ:", e.message);
     try { pcm = await MV.audio.viaDecodeAudioData(clip, maxSec); }
     catch (e2) {
       clip.hasAudio = false;

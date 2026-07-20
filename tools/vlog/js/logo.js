@@ -19,9 +19,11 @@ MV.logo.decode = async file => {
   } catch (_) {
     return await new Promise((res, rej) => {
       const img = new Image();
+      const url = URL.createObjectURL(file);
+      MV.logo._fallbackUrl = url;   // 外すときに解放できるよう控えておく
       img.onload = () => res(img);
-      img.onerror = () => rej(new Error("画像を読み込めません（PNG か JPEG でお試しください）"));
-      img.src = URL.createObjectURL(file);
+      img.onerror = () => { URL.revokeObjectURL(url); rej(new Error("画像を読み込めません（PNG か JPEG でお試しください）")); };
+      img.src = url;
     });
   }
 };
@@ -41,6 +43,7 @@ MV.logo.load = async file => {
 
   MV.S.logo = {
     file, name: file.name, src, w, h,
+    srcUrl: MV.logo._fallbackUrl || "",   // fallback経路のときだけ入る
     isPng: isPng && hasAlpha,
     threshold: MV.logo.THRESHOLD,
     useOriginal: isPng && hasAlpha,
@@ -155,12 +158,14 @@ MV.logo.process = () => {
 };
 
 /* しきい値を変えてやり直す */
+/* しきい値を変えてやり直す。src は process() で書き換えていない
+   (getImageData はコピーを返し、結果は別canvasへ書いている)ので再デコード不要 */
 MV.logo.retry = th => {
   if (!MV.S.logo) return;
   MV.S.logo.threshold = th;
   MV.S.logo.useOriginal = false;
-  // getImageDataを破壊的に書き換えているので、元canvasから作り直す必要がある
-  MV.logo.reload();
+  MV.logo.process();
+  MV.ui.renderAll();
 };
 
 MV.logo.reload = async () => {
