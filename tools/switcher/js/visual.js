@@ -330,8 +330,15 @@ MC.visual.shotScores = m => {
     return { close, group: 0.3, wide, ensemble };
   }
   const close = m.maxF <= 0 ? 0 : Math.max(0, Math.min(1, (m.maxF - 0.09) / 0.14));
-  const group = Math.max(0, Math.min(1, (m.nF - 1.5) / 2.5)) *
+  // グループ = 3〜10人規模。人数に上限を設けないと、客席からの引き(顔が20人以上
+  // 写る)がグループ満点になり、引きが一度も選ばれなくなる
+  const group = Math.max(0, Math.min(1, (m.nF - 2) / 3)) *
+                Math.max(0, Math.min(1, (14 - m.nF) / 7)) *
                 (m.maxF > 0.035 && m.maxF < 0.20 ? 1 : 0.5);
-  const wide = m.nF === 0 ? 0.85 : Math.max(0, Math.min(1, (0.05 - m.maxF) / 0.05)) * 0.9;
+  // 引き = 顔が小さい。客席から撮った全景でも前サイドラインの顔は画面高8〜15%で
+  // 写るため、旧式(0.05で頭打ち)では実素材の引きが常に0点になり、
+  // director側の引き織り込み圧力(wWide×sh.wide)が乗算で死んでいた
+  const wide = m.nF === 0 ? 0.8
+    : Math.max(0, Math.min(1, (0.16 - m.maxF) / 0.11)) * (m.nF >= 6 ? 1 : 0.7);
   return { close, group, wide, ensemble };
 };

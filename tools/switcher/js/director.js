@@ -167,6 +167,16 @@ MC.director._rank = (g0, g1, cls, ctx) => {
     ranked.push({ id: c.id, score, wideChosen: sh.wide >= 0.5, dq: MC.visual.disqualified(m) });
   }
   ranked.sort((a, b) => b.score - a.score);
+
+  /* 引きの織り込みはハード制約で担保する。
+     重み(wWide)への加算は score = wWide × sh.wide の乗算経路を通るため、
+     引きスコアが0のカメラしか無い状況では何度足しても0のままで発火しない。
+     間隔を過ぎたら「引きに見えるカメラ」だけに候補を絞る。
+     ただし該当が無い(全滅・全部失格)ときは通常の順位に戻し、カット割自体は止めない */
+  if (!opening && ctx.segsSinceWide >= ctx.interleave) {
+    const wides = ranked.filter(r => r.wideChosen && !r.dq);
+    if (wides.length) return wides;
+  }
   return ranked;
 };
 
