@@ -243,7 +243,9 @@ MC.exporter.encodeAudio = async (muxer, clip, fromLocalSec, durSec, onStatus) =>
   onStatus("音を入れています…");
   let encErr = null;
   const encoder = new AudioEncoder({
-    output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
+    output: (chunk, meta) => {
+      try { muxer.addAudioChunk(chunk, meta); } catch (err) { encErr = encErr || err; }
+    },
     error: e => { encErr = e; },
   });
   encoder.configure({ codec: "mp4a.40.2", sampleRate: OUT_SR, numberOfChannels: 2, bitrate: 192000 });
@@ -301,7 +303,9 @@ MC.exporter.encodeAudioPcm = async (muxer, src, fromLocalSec, durSec, onStatus) 
   onStatus("音を入れています…");
   let encErr = null;
   const encoder = new AudioEncoder({
-    output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
+    output: (chunk, meta) => {
+      try { muxer.addAudioChunk(chunk, meta); } catch (err) { encErr = encErr || err; }
+    },
     error: e => { encErr = e; },
   });
   encoder.configure({ codec: "mp4a.40.2", sampleRate: OUT_SR, numberOfChannels: 2, bitrate: 192000 });
@@ -343,7 +347,9 @@ MC.exporter.encodeAudioFile = async (muxer, clip, fromLocalSec, durSec, onStatus
   onStatus("音を入れています…");
   let encErr = null;
   const encoder = new AudioEncoder({
-    output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
+    output: (chunk, meta) => {
+      try { muxer.addAudioChunk(chunk, meta); } catch (err) { encErr = encErr || err; }
+    },
     error: e => { encErr = e; },
   });
   encoder.configure({ codec: "mp4a.40.2", sampleRate: OUT_SR, numberOfChannels: 2, bitrate: 192000 });
@@ -447,7 +453,12 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
     });
     let vencErr = null;
     venc = new VideoEncoder({
-      output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+      /* addVideoChunk はコールバック内で走るため、投げると Uncaught になり
+         muxer の内部状態が壊れて null.slice の連鎖になる(2026-07-20 に実測)。
+         捕まえて vencErr に落とし、ループ側できれいに失敗させる */
+      output: (chunk, meta) => {
+        try { muxer.addVideoChunk(chunk, meta); } catch (err) { vencErr = vencErr || err; }
+      },
       error: e => { vencErr = e; },
     });
     venc.configure({
@@ -521,6 +532,12 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
         + `エンコード${(prof.encode / 1000).toFixed(0)}秒(${pc(prof.encode)}%) `
         + `/ ${totalFrames}コマ ${w}x${h} ${(MC.exporter.videoBitrate() / 1e6).toFixed(0)}Mbps`);
     }
+
+    /* 映像が終わったらデコーダを即解放する。音声エンコードは977秒分の
+       Float32(数百MB)を確保するため、3本分のデコーダとフレームキューを
+       抱えたままだとメモリの取り合いになる */
+    pipes.forEach(pp => pp.dispose());
+    pipes.clear();
 
     let audioOk = false;
     if (withAudio) {

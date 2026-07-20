@@ -788,6 +788,29 @@ MC.ui.wire = () => {
     } else if (mode !== "realtime") {
       MC.log(`推定 ${(estBytes / 1e6).toFixed(0)}MB。メモリ経由で書き出します（保存先の確認は出しません）`);
     }
+
+    /* 書き出しはサイト全体(全タブ)で同時に1本だけ。
+       2026-07-20、縦型とスイッチングを別タブで同時に書き出した結果、
+       同一プロセスのメモリを取り合って 20:38:26 に両方が同時死した
+       (muxer の RangeError と NotReadableError は同じメモリ枯渇の別の顔)。
+       Web Locks は同一オリジンの全タブで共有される */
+    let releaseExportLock = null;
+    if (navigator.locks) {
+      const got = await new Promise(resolve => {
+        navigator.locks.request("mz-export", { ifAvailable: true }, lock => {
+          if (!lock) { resolve(false); return; }
+          resolve(true);
+          return new Promise(r => { releaseExportLock = r; });  // 書き出し中は保持
+        }).catch(() => resolve(true));   // Locks自体の失敗は素通し(単独タブ想定)
+      });
+      if (!got) {
+        MC.ui.toast("別のタブで書き出し中です。終わってからもう一度お試しください");
+        $("#exportBtn").disabled = !MC.S.clips.length;
+        $("#cancelBtn").style.display = "none";
+        prog.style.display = "none";
+        return;
+      }
+    }
     const p = MZP.start({
       mount: "#exportProgress", chapter: "書き出し", delay: 0,
       label: mode === "realtime" ? "再生しながら録画しています…" : "映像を作っています…",
@@ -811,6 +834,7 @@ MC.ui.wire = () => {
         MC.ui.showErrorLog(e);
       }
     } finally {
+      if (releaseExportLock) releaseExportLock();
       $("#exportBtn").disabled = !MC.S.clips.length;
       $("#cancelBtn").style.display = "none";
       setTimeout(() => { prog.style.display = "none"; }, 2500);
