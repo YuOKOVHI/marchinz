@@ -381,10 +381,13 @@ MC.exporter.encodeAudioFile = async (muxer, clip, fromLocalSec, durSec, onStatus
 MC.exporter.videoBitrate = () => {
   const base = MC.S.preset === "1x1" ? 8e6 : 12e6;
   /* iPhone・iPad は完成MP4を丸ごとメモリに載せるしかない(showSaveFilePicker が
-     無くディスクへ直接書けない)。12Mbps だと2分ほどで上限に達して実用にならない。
-     SNS 投稿では 7Mbps でも見分けがつかない(YouTube の 1080p30 推奨が8Mbps、
-     Instagram は実質5Mbps程度へ再圧縮される)ので、尺を優先して落とす */
-  return MC.isIOS ? Math.round(base * 0.58) : base;
+     無くディスクへ直接書けない)。12Mbps だと2.8分ほどで上限に達して実用にならないため、
+     投稿先の実効レートに合わせて 5Mbps とし、書き出せる尺を優先する
+     (Instagram は実質5Mbps程度へ再圧縮。260MB で 2.8分 → 6.7分)。
+     マーチングは動きが細かく圧縮に厳しい素材なので、書き出しが荒いと感じたら
+     この値を上げる(そのぶん書き出せる尺は短くなる)。
+     Mac は据え置き。ディスクへ直接書けるので尺の制限を受けない */
+  return MC.isIOS ? 5e6 : base;
 };
 MC.exporter.estimateBytes = () => {
   const [tIn, tOut] = MC.trimRange();
