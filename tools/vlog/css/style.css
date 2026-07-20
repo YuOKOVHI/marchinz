@@ -6,6 +6,8 @@
   --bg: #f4f6f8; --panel: #ffffff; --panel2: #f0f2f6; --line: rgba(15, 33, 56, 0.12);
   --tx: #0c0f14; --tx2: rgba(12, 15, 20, 0.65);
   --navy: #0f2138; --acc: #1e4fd6; --acc-deep: #163b9e; --acc2: #d97706;
+  /* 小さい文字に載せる用の濃いアンバー(--acc2 は白地で3.19しか出ない) */
+  --acc2-text: #b45309;
   --ok: #1e7a43; --warn: #9a6a00; --err: #c0392b;
   --cream: #fefcef;
   --shadow-card: 0 1px 2px rgba(15, 33, 56, 0.05), 0 4px 16px rgba(15, 33, 56, 0.06);
@@ -38,7 +40,7 @@ button, select, input, label, .btn { touch-action: manipulation; }
 .head-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .tool-name { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 700;
   color: var(--navy); white-space: nowrap; }
-.beta-badge { font-size: 10px; font-weight: 700; color: #8a6d1a; background: #fdf3d7;
+.beta-badge { font-size: 10px; font-weight: 700; color: #866a19; background: #fdf3d7;
   border: 1px solid #ecd9a0; border-radius: 999px; padding: 2px 8px;
   white-space: nowrap; vertical-align: 2px; }
 .head-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
@@ -73,7 +75,7 @@ button, select, input, label, .btn { touch-action: manipulation; }
   background: var(--panel2); color: var(--acc); font-size: 19px; }
 .mode-card-name { font-size: 16px; font-weight: 800; color: var(--navy); }
 .mode-card-desc { font-size: 13px; color: var(--tx2); line-height: 1.6; }
-.mode-card-meta { font-size: 11.5px; color: var(--acc2); font-weight: 700; }
+.mode-card-meta { font-size: 11.5px; color: var(--acc2-text); font-weight: 700; }
 @media (hover: hover) {
   .mode-card:hover { border-color: var(--acc); box-shadow: 0 6px 22px rgba(30, 79, 214, .14); }
 }
@@ -129,7 +131,7 @@ button, select, input, label, .btn { touch-action: manipulation; }
 .slot-del i { position: relative; }
 .slot-badge { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start;
   font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 999px;
-  background: #fdf3d7; color: #8a6d1a; border: 1px solid #ecd9a0; }
+  background: #fdf3d7; color: #866a19; border: 1px solid #ecd9a0; }
 .slot-showtoggle { display: flex; align-items: center; gap: 8px; font-size: 11.5px;
   color: var(--tx2); padding: 4px 0; min-height: 44px; }
 .slot-showtoggle input { width: 22px; height: 22px; accent-color: var(--acc); }
@@ -217,7 +219,7 @@ details.panel[open] > summary::after { transform: rotate(180deg); }
 .artlist-box { margin-top: 12px; display: grid; gap: 10px; }
 .artlist-card { padding: 12px; background: var(--panel2); border: 1px solid var(--line);
   border-radius: 12px; display: grid; gap: 7px; }
-.artlist-card .al-slot { font-size: 11px; font-weight: 800; color: var(--acc2); }
+.artlist-card .al-slot { font-size: 11px; font-weight: 800; color: var(--acc2-text); }
 .artlist-card .al-text { font-size: 12.5px; line-height: 1.7; color: var(--tx); }
 .artlist-card .al-terms { font-size: 12px; font-family: ui-monospace, monospace;
   background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px;

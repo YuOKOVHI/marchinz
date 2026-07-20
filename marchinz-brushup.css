@@ -698,7 +698,7 @@ body {
   position: absolute;
   top: 8px;
   left: 8px;
-  background: var(--amber-bright);
+  background: var(--amber);
   color: #fff;
   font-size: 0.64rem;
   font-weight: 700;
@@ -937,7 +937,7 @@ body {
     min-height: var(--mz-tabbar-h);
     font-size: 0.66rem;
     font-weight: 700;
-    color: #8a94a6;
+    color: #6b7684; /* AA 4.5確保。旧 #8a94a6 は白地で3.05 */
     text-decoration: none;
     -webkit-tap-highlight-color: transparent;
   }
@@ -1605,7 +1605,7 @@ body {
   font-size: 0.66rem;
   font-weight: 700;
   letter-spacing: 0.22em;
-  color: var(--amber-bright);
+  color: var(--amber);
 }
 
 .mz-journey-title {
@@ -2766,7 +2766,7 @@ body {
   font-size: 0.6rem;
   font-weight: 700;
   letter-spacing: 0.16em;
-  color: var(--amber-bright);
+  color: var(--amber);
   margin-bottom: 0.15rem;
 }
 
@@ -2786,7 +2786,7 @@ body {
   font-size: 0.66rem;
   font-weight: 700;
   letter-spacing: 0.2em;
-  color: var(--amber-bright);
+  color: var(--amber);
 }
 
 .mz-top-tools-lead {
@@ -3001,7 +3001,7 @@ body {
   font-size: 0.66rem;
   font-weight: 700;
   letter-spacing: 0.2em;
-  color: var(--amber-bright);
+  color: var(--amber);
 }
 
 .mz-hero-dash-date {
@@ -3118,7 +3118,7 @@ body {
 
 .mz-dash-video-body { min-width: 0; display: flex; flex-direction: column; gap: 0.18rem; }
 
-.mz-dash-video-eyebrow { font-size: 0.58rem; font-weight: 700; letter-spacing: 0.16em; color: var(--amber-bright); }
+.mz-dash-video-eyebrow { font-size: 0.58rem; font-weight: 700; letter-spacing: 0.16em; color: var(--amber); }
 
 .mz-dash-video-title {
   font-size: 0.78rem;

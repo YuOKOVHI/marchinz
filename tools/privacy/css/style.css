@@ -58,7 +58,7 @@ header {
 
 /* MarchinZ 統合(ベータ版バッジ+戻るリンク)。バッジは本体 .mz-ctools-beta と同配色 */
 .beta-badge {
-  flex-shrink: 0; font-size: 10px; font-weight: 700; color: #8a6d1a; background: #fdf3d7;
+  flex-shrink: 0; font-size: 10px; font-weight: 700; color: #866a19; background: #fdf3d7;
   border: 1px solid #ecd9a0; border-radius: 999px; padding: 2px 8px; white-space: nowrap;
 }
 .head-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
@@ -160,7 +160,7 @@ footer { text-align: center; padding: 16px; padding-bottom: calc(16px + env(safe
 /* ベータ免責バナー(Reangle/Switcher と共通のトーン) */
 .beta-disclaimer {
   margin: 0; padding: 8px 16px; font-size: 12px; line-height: 1.5;
-  color: #8a6d3b; background: #fbf6e6; border-bottom: 1px solid #eadfbf; text-align: center;
+  color: #876b3a; background: #fbf6e6; border-bottom: 1px solid #eadfbf; text-align: center;
 }
 .beta-disclaimer i { margin-right: 2px; }
 
@@ -172,7 +172,7 @@ footer { text-align: center; padding: 16px; padding-bottom: calc(16px + env(safe
 /* 保存前の掛かり漏れ最終確認の促し(v2026-07-18レビュー反映) */
 .check-note {
   margin: 10px 0; padding: 9px 12px; font-size: 12px; line-height: 1.6; text-align: left;
-  color: #8a6d3b; background: #fbf6e6; border: 1px solid #eadfbf; border-radius: 10px;
+  color: #876b3a; background: #fbf6e6; border: 1px solid #eadfbf; border-radius: 10px;
 }
 .check-note i { margin-right: 3px; }
 
@@ -247,7 +247,7 @@ body:not([data-kind="image"]) .image-only { display: none !important; }
 }
 .detect-status.busy { background: rgba(15, 33, 56, 0.06); color: var(--sub); }
 .detect-status.ok { background: #e8f6ee; color: var(--ok); border: 1px solid #bfe6cd; }
-.detect-status.ng { background: #fbf6e6; color: #8a6d3b; border: 1px solid #eadfbf; }
+.detect-status.ng { background: #fbf6e6; color: #876b3a; border: 1px solid #eadfbf; }
 .detect-status i { margin-right: 4px; }
 
 .step-next { width: 100%; margin-top: 12px; }

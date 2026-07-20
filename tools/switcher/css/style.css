@@ -41,7 +41,7 @@ body::before {
 
 /* MarchinZ 統合(ベータ版バッジ+戻るリンク)。バッジは本体 .mz-ctools-beta と同配色 */
 .beta-badge {
-  font-size: 10px; font-weight: 700; color: #8a6d1a; background: #fdf3d7;
+  font-size: 10px; font-weight: 700; color: #866a19; background: #fdf3d7;
   border: 1px solid #ecd9a0; border-radius: 999px; padding: 2px 8px;
   white-space: nowrap; vertical-align: 2px;
 }
@@ -126,7 +126,7 @@ body::before {
 .rig-badge { font-size: 9.5px; font-weight: 700; padding: 2px 7px; border-radius: 999px;
   white-space: nowrap; border: 1px solid transparent; }
 .rig-badge.fx { background: #e3edf8; color: var(--acc-deep); border-color: #c3d6ec; }
-.rig-badge.op { background: #fdf3d7; color: #8a6d1a; border-color: #ecd9a0; }
+.rig-badge.op { background: #fdf3d7; color: #866a19; border-color: #ecd9a0; }
 .rig-badge.manual { background: #e0f5e9; color: var(--ok); border-color: #b7e0c8; }
 .rig-badge.none { background: var(--panel2); color: var(--tx2); border-color: var(--line); }
 .pan-row input { flex: 1; accent-color: var(--acc); }
@@ -286,7 +286,7 @@ body::before {
 /* ベータ免責バナー(Reangle/Privacy と共通のトーン) */
 .beta-disclaimer {
   margin: 0; padding: 8px 16px; font-size: 12px; line-height: 1.5;
-  color: #8a6d3b; background: #fbf6e6; border-bottom: 1px solid #eadfbf; text-align: center;
+  color: #876b3a; background: #fbf6e6; border-bottom: 1px solid #eadfbf; text-align: center;
 }
 .beta-disclaimer i { margin-right: 2px; }
 

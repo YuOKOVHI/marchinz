@@ -18,7 +18,7 @@
   --panel: var(--white);
   --panel-tint: rgba(15, 33, 56, 0.04);
   --text: var(--black);
-  --muted: rgba(12, 15, 20, 0.55);
+  --muted: rgba(12, 15, 20, 0.6);
   --text-strong: var(--black);
 
   --accent: var(--blue);
@@ -4907,7 +4907,8 @@ main {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   font-weight: 600;
-  color: rgba(15, 33, 56, 0.55);
+  /* 0.55 は薄灰地で3.66しか出ない(2026-07-20 UI/UXレビュー) */
+  color: rgba(15, 33, 56, 0.72);
 }
 
 .mll-lp-hero-hook {
@@ -4954,6 +4955,8 @@ main {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  /* アイコン+ラベルの間隔。未指定だと接触する(2026-07-20 UI/UXレビュー) */
+  gap: 0.5em;
   box-sizing: border-box;
   min-height: 2.68rem;
   padding: 0 1.2rem;
