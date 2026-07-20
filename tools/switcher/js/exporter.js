@@ -41,7 +41,6 @@ MC.exporter.VideoPipe = class {
     this.current = null;   // いま保持しているフレーム
     this.eof = false;
     this.flushed = false;
-    this.firstTs = null;
     this.error = null;
   }
 
@@ -80,15 +79,23 @@ MC.exporter.VideoPipe = class {
     }
   }
 
-  /* tLocalSec時点のVideoFrame(hold-last-frame)。クリップ末尾以降は最後のフレームを保持 */
+  /* tLocalSec時点のVideoFrame(hold-last-frame)。クリップ末尾以降は最後のフレームを保持
+     tLocalSec は「クリップ先頭からの秒数」。frames[].timestamp は demux が
+     s.cts から作るトラック内の絶対時刻なので、そのまま突き合わせる。
+     以前は最初に届いたフレームの timestamp(=firstTs)を引いて相対化していたが、
+     init(fromLocalSec) で途中から始めると firstTs がその地点になり、
+     要求位置からさらに同じだけ先へ進もうとして破綻していた
+     (トリム開始が 0 のときだけ偶然動く。自動トリム導入で表面化。2026-07-20) */
   async frameAt(tLocalSec) {
     if (this.error) throw this.error;
     const tUs = tLocalSec * 1e6;
-    for (let guard = 0; guard < 4000; guard++) {
-      if (this.firstTs === null && this.frames.length) this.firstTs = this.frames[0].timestamp;
-      while (this.frames.length && (this.frames[0].timestamp - this.firstTs) <= tUs) {
+    let guard = 0;
+    while (guard < 4000) {
+      let advanced = false;
+      while (this.frames.length && this.frames[0].timestamp <= tUs) {
         if (this.current) this.current.close();
         this.current = this.frames.shift();
+        advanced = true;
       }
       if (this.frames.length) return this.current;                    // 次フレームはtより先=確定
       if (this.eof && this.flushed) return this.current;              // もう来ない=最後を保持
@@ -97,6 +104,8 @@ MC.exporter.VideoPipe = class {
       if (!this.frames.length && !this.eof) {
         await MC.waitDequeue(this.decoder, 50);
       }
+      // 前に進めている限りは打ち切らない(seekが効かず先頭から流す時に効く)
+      guard = advanced ? 0 : guard + 1;
     }
     throw new Error("デコードが進みません: " + this.clip.name);
   }
