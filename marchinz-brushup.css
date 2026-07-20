@@ -4501,3 +4501,21 @@ body {
    ツール側(switcher / reangle)には既に同じ 1 行が入っている。
    ※ 2026-07-20 時点の実測では漏れ 0 件。これは再発防止のための保険。 */
 [hidden] { display: none !important; }
+
+/* ===== 管理者のみに見えるツールカード(2026-07-20) ===== */
+/* 画像がまだ無いツール用のプレースホルダ。既存カードと同じ縦横比を保つ */
+.mz-ctool-visual--wip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 400 / 250;
+  background: linear-gradient(135deg, rgba(30, 79, 214, 0.08), rgba(180, 83, 9, 0.08));
+  color: var(--blue);
+  font-size: 2.2rem;
+}
+
+.mz-ctool-badge--admin {
+  background: rgba(180, 83, 9, 0.1);
+  color: var(--amber);
+  font-weight: 700;
+}
