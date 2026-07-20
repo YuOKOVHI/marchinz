@@ -470,11 +470,14 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
     const ctx = canvas.getContext("2d");
     const t0 = performance.now();
 
+    /* どこが重いかを測る。推測で最適化しないための材料 */
+    const prof = { decode: 0, draw: 0, encode: 0 };
     for (let k = 0; k < totalFrames; k++) {
       if (MC.exporter.cancelFlag) throw new Error("キャンセルしました");
       if (vencErr) throw vencErr;
       const t = tIn + k / fps;
       const srcMap = new Map();
+      const _tDec = performance.now();
       for (const [id, pipe] of pipes) {
         const clip = pipe.clip;
         const local = t - clip.offset;
@@ -482,6 +485,8 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
         const f = await pipe.frameAt(Math.max(0, local));
         srcMap.set(id, f);
       }
+      prof.decode += performance.now() - _tDec;
+      const _tDraw = performance.now();
       MC.drawComposite(ctx, w, h, t, id => {
         const clip = MC.getClip(id);
         if (clip && clip.isImage) return { source: clip.img, w: clip.width, h: clip.height, rotation: 0 };
@@ -490,12 +495,15 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
         const pipe = pipes.get(id);
         return { source: f, w: f.displayWidth || f.codedWidth, h: f.displayHeight || f.codedHeight, rotation: pipe.rotation };
       });
+      prof.draw += performance.now() - _tDraw;
+      const _tEnc = performance.now();
       const vf = new VideoFrame(canvas, {
         timestamp: Math.round(k * 1e6 / fps), duration: Math.round(1e6 / fps),
       });
       venc.encode(vf, { keyFrame: k % (fps * 2) === 0 });
       vf.close();
       while (venc.encodeQueueSize > 6) await MC.waitDequeue(venc);
+      prof.encode += performance.now() - _tEnc;
       if (k % 10 === 0) {
         const el = (performance.now() - t0) / 1000;
         const eta = el / (k + 1) * (totalFrames - k - 1);
@@ -505,6 +513,14 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
     }
     await venc.flush();
     if (vencErr) throw vencErr;
+    {
+      const tot = (prof.decode + prof.draw + prof.encode) / 1000;
+      const pc = v => tot > 0 ? Math.round(v / 10 / tot) : 0;   // v[ms] / tot[s] → %
+      MC.log(`映像の内訳: 合計${tot.toFixed(0)}秒 / デコード${(prof.decode / 1000).toFixed(0)}秒(${pc(prof.decode)}%) `
+        + `合成${(prof.draw / 1000).toFixed(0)}秒(${pc(prof.draw)}%) `
+        + `エンコード${(prof.encode / 1000).toFixed(0)}秒(${pc(prof.encode)}%) `
+        + `/ ${totalFrames}コマ ${w}x${h} ${(MC.exporter.videoBitrate() / 1e6).toFixed(0)}Mbps`);
+    }
 
     let audioOk = false;
     if (withAudio) {
