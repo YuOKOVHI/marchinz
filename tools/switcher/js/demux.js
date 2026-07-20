@@ -406,13 +406,21 @@ MC.MP4Source = class {
       }
     };
     mp4.setExtractionOptions(trackId, null, { nbSamples: 64 });
+    /* fromSec=0 でも必ず seek する。init() の moov 読み(mdatをヘッダだけ渡して
+       スキップさせる方式)を経た同一 mp4box インスタンスは、その時点で内部の
+       読み取り位置が既にファイル末尾(moov の直後)まで進んでいる。ここで
+       fileStart=0 から appendBuffer し直しても、mp4box は「もう見た範囲」と
+       判断して先頭のわずかな部分しか受け付けず、以降は黙って無視する
+       (onSamplesが一切発火しない=サンプル0件)。mp4.seek() を呼ぶと内部位置が
+       正しく巻き戻り、以降のappendBufferが効くようになる。
+       2026-07-20判明: fromSec>0の時だけseekしていたため、seg先頭(t=0)から
+       読む区間でこの罠を踏むと、エラーも出ないままそのセグメントが黒く
+       抜け落ちる(guardタイムアウトにも掛からない静かな破損)。 */
     let pos = 0;
-    if (fromSec > 0) {
-      try {
-        const sk = mp4.seek(fromSec, true);
-        pos = sk && sk.offset ? sk.offset : 0;
-      } catch (e) { pos = 0; }
-    }
+    try {
+      const sk = mp4.seek(Math.max(0, fromSec), true);
+      pos = sk && sk.offset ? sk.offset : 0;
+    } catch (e) { pos = 0; }
     mp4.start();
     const CH = 4 << 20;
     let eof = false;
