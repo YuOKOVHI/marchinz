@@ -149,10 +149,19 @@ MC.sections.classify = (audioClip, g0, g1) => {
   const dens = norm(onset, S.onLo, S.onHi);         // オンセット密度 0..1
   const bright = norm(cen, S.cenMed, S.cenHi);      // 音色の明るさ 0..1
   const bpm = MC.sections.bpmAt(audioClip, (g0 + g1) / 2);
+  /* ソリ(数人のセクションが抜ける聴かせどころ)。
+     ソロほど薄くはないが全奏でもない、調波的で中庸な音量の区間。
+     dyn が 0.5 付近で最大になる山形の重みで表す */
+  const soli = harm * Math.max(0, 1 - Math.abs(dyn - 0.5) * 1.6) * (1 - dens * 0.4);
+  const solo = (1 - dyn) * harm * (1 - dens * 0.5);
+
   return {
     dyn, dens, bright, harm, bpm,
     quiet: 1 - dyn,
-    solo: (1 - dyn) * harm * (1 - dens * 0.5),
+    solo, soli,
+    /* 「誰かが抜かれている」場面。ソロでもソリでも、抜いているカメラを
+       優先して使いたいので、両者をまとめた指標を持たせる */
+    feature: Math.max(solo, soli),
     percussion: dens * (1 - harm) * Math.min(1, dyn + 0.3),
     pit: bright * harm * dens,
     tutti: dyn,

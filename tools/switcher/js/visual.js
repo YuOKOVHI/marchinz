@@ -24,8 +24,8 @@ MC.visual = {
   // カメラを振っている(パン)の判定。向きが一定のまま動いている状態。
   // 手ブレ(向きが暴れる)と区別するため flipRatio が低いことを条件にする。
   // ディレクター指示: 振っている最中の絵は絶対に使わない
-  TH_PAN: 0.05,      // これ以上動いていて
-  TH_PAN_FLIP: 0.30, // 向きの反転がこれ未満なら「振っている」
+  TH_PAN: 0.05,       // これ以上動いていて
+  TH_PAN_RATIO: 0.50, // 方向のそろった動きがこの割合を超えたら「振っている」
   // 被写体がいない画(誰もいないピット等)の判定
   TH_EMPTY: 0.12,    // 顔が取れず、動いている領域もこれ未満なら人がいない
 };
@@ -263,6 +263,17 @@ MC.visual.analyzeClip = async (clip, l0, l1, prog) => {
   // シャープネスのクリップ内中央値(フォーカス外れ判定の基準)
   const ss = [...V.sharp].sort((a, b) => a - b);
   V.sharpMed = ss.length ? ss[ss.length >> 1] : 0;
+
+  /* 撮り方の自動判定。
+     三脚に置きっぱなしのカメラは全編ほとんど動かない。手持ち・ジンバル・
+     カメラマン付きの三脚は「被写体を変えるために振る → 据わる」を繰り返すので、
+     はっきり動いているサンプルが一定割合ある。
+     操作カメラは移動中の絵が使えない代わりに、据わっている絵は狙って撮られた
+     良い画(ソロ・ソリを抜いている等)なので、director 側で扱いを変える */
+  let movingN = 0;
+  for (const dx of V.dxs) if (Math.abs(dx) >= 2) movingN++;
+  V.movingFrac = V.dxs.length ? movingN / V.dxs.length : 0;
+  V.operated = V.movingFrac > 0.15;
   await MC.visual.seek(v, keep);
   clip.visual = V;
   return V;
@@ -322,6 +333,11 @@ MC.visual.seg = (clip, g0, g1) => {
     n: idx.length,
     shakeP75: p(shakes, 0.75),
     flipRatio: moves ? flips / moves : 0,
+    panRatio,
+    operated: !!V.operated,
+    /* 据わっている(振り終わって止まっている)か。操作カメラでは、ここが
+       狙って撮られた良い画になる */
+    settled: panRatio < 0.25 && p(shakes, 0.75) <= MC.visual.TH_PAN,
     sharpMean: pick(V.sharp).reduce((s, x) => s + x, 0) / idx.length,
     sharpMed: V.sharpMed,
     moE: pick(V.moE).reduce((s, x) => s + x, 0) / idx.length,
@@ -336,7 +352,10 @@ MC.visual.seg = (clip, g0, g1) => {
    手ブレは向きが暴れる(flipRatioが高い)ので、それとは別物として扱う */
 MC.visual.isPanning = m => {
   if (!m) return false;
-  return m.shakeP75 > MC.visual.TH_PAN && m.flipRatio < MC.visual.TH_PAN_FLIP;
+  // panRatio で判定する。shakeP75 と flipRatio だけで見ると、ノイズで1px揺れる
+  // 固定カメラが flipRatio=0(=向きが一定)と評価されてパン扱いになってしまう
+  //(flipRatio は |dx|<2px のサンプルを除外して数えるため)
+  return m.panRatio > MC.visual.TH_PAN_RATIO && m.shakeP75 > MC.visual.TH_PAN;
 };
 
 /* 人が写っていないか(誰もいないピット、空の舞台など)。

@@ -115,9 +115,12 @@ MC.director._rank = (g0, g1, cls, ctx) => {
   if (opening) {
     wClose = 1.0; wGroup = 0.1; wWide = 0.4;   // DM・サリュートのアップ最優先
   } else if (cls) {
-    wClose = 0.30 + 0.55 * cls.solo;
+    // ソロ・ソリ(誰かが抜かれている場面)は、抜いているカメラをかなり強く優先する
+    wClose = 0.30 + 0.95 * cls.feature;
     wGroup = 0.25 + 0.60 * cls.percussion;
     wWide = 0.25 + 0.45 * cls.tutti;
+    // 聴かせどころでは引きに逃げない(引きの織り込み圧力もここでは弱める)
+    if (cls.feature > 0.45) wWide *= 0.5;
   } else {
     wClose = 0.35; wGroup = 0.3; wWide = 0.35;
   }
@@ -161,6 +164,19 @@ MC.director._rank = (g0, g1, cls, ctx) => {
     score += MC.director.FREQ_BIAS[c.freq] || 0;
     // 画質(セグメント内シャープネスがクリップ中央値に対して高いか)
     if (m && m.sharpMed > 1e-6) score += 0.1 * Math.min(1.2, m.sharpMean / m.sharpMed);
+
+    /* 操作カメラ(手持ち・ジンバル・カメラマン付き三脚)の扱い。
+       被写体を変えるために振っている最中の絵は使えない(既に失格にしている)が、
+       振り終わって据わっている絵は「狙って撮った画」なので価値が高い。
+       とくにソロ・ソリの最中は、そのカメラが奏者を抜いている可能性が高いので
+       強く後押しする。据わっている絵をしっかり使うことで、
+       移動中を捨てたぶんの帳尻を合わせる */
+    if (m && m.operated && m.settled) {
+      score += 0.12;                                    // 狙って撮られた画(控えめ)
+      // 加点はソロ・ソリに集中させる。ここを厚くすることで、移動中を捨てたぶんの
+      // 帳尻を合わせる。常時加点にすると全奏でも寄りが勝ってしまう
+      if (cls && cls.feature > 0.35) score += 0.9 * cls.feature * sh.close;
+    }
     // 連続・直近使用のペナルティ、しばらく出ていないカメラのボーナス
     if (c.id === ctx.prevId) score -= 0.9;
     if (c.id === ctx.prev2Id) score -= 0.25;
@@ -174,7 +190,10 @@ MC.director._rank = (g0, g1, cls, ctx) => {
      引きスコアが0のカメラしか無い状況では何度足しても0のままで発火しない。
      間隔を過ぎたら「引きに見えるカメラ」だけに候補を絞る。
      ただし該当が無い(全滅・全部失格)ときは通常の順位に戻し、カット割自体は止めない */
-  if (!opening && ctx.segsSinceWide >= ctx.interleave) {
+  // ただしソロ・ソリの最中は引きへ戻さない(抜いている画を見せ切る)。
+  // segsSinceWide は増え続けるので、聴かせどころが終わった直後に引きへ戻る
+  const featuring = cls && cls.feature > 0.45;
+  if (!opening && !featuring && ctx.segsSinceWide >= ctx.interleave) {
     const wides = ranked.filter(r => r.wideChosen && !r.dq);
     if (wides.length) return wides;
   }
