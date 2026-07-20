@@ -1358,39 +1358,11 @@ body {
   margin-right: 0.15rem;
 }
 
-.mz-ctool-cta {
-  margin-top: 0.25rem;
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: var(--blue);
-}
 
-.mz-ctool-cta i { font-size: 0.8em; transition: transform 0.15s ease; }
 
-.mz-ctool-card--visual:hover .mz-ctool-cta i { transform: translateX(3px); }
 
-/* 安心バッジ(無料・アップロードなし・ログイン不要): 撮影データを扱う不安を先に消す */
-.mz-ctool-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  margin: 0.15rem 0 0.1rem;
-}
 
-.mz-ctool-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.16rem 0.5rem;
-  font-size: 0.66rem;
-  font-weight: 700;
-  color: var(--blue);
-  background: #e9f0ff;
-  border-radius: 999px;
-  white-space: nowrap;
-}
 
-.mz-ctool-badge i { font-size: 0.9em; }
 
 /* ---------- TOP: あなたに合わせた3つの入口(v1.36.2) ---------- */
 
@@ -4515,8 +4487,3 @@ body {
   font-size: 2.2rem;
 }
 
-.mz-ctool-badge--admin {
-  background: rgba(180, 83, 9, 0.1);
-  color: var(--amber);
-  font-weight: 700;
-}

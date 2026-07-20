@@ -338,35 +338,24 @@ MV.ui.updateThumb = clip => {
   el.replaceWith(img);
 };
 
-/* ---------- 「いちばん見てほしい人」(プルダウン+その他) ---------- */
+/* ---------- 「いちばん見てほしい人」(プルダウン・自由入力なし) ---------- */
 MV.ui.initForWhom = () => {
   const sel = MV.ui.$("#forWhomSelect");
-  const other = MV.ui.$("#forWhomOtherInput");
-  if (!sel || !other) return;
+  if (!sel) return;
 
-  // 保存済みの値が選択肢のどれかに一致すればそれを選び、一致しなければ「その他」
+  // 保存済みの値が選択肢に無いとき(旧バージョンで自由入力した値など)は未選択に戻す
   const saved = MV.S.forWhom || "";
-  const known = [...sel.options].some(o => o.value === saved && o.value !== "__other__" && o.value !== "");
-  if (saved && known) {
-    sel.value = saved;
-  } else if (saved) {
-    sel.value = "__other__";
-    other.hidden = false;
-    other.value = saved;
+  if (saved) {
+    if ([...sel.options].some(o => o.value === saved && o.value !== "")) {
+      sel.value = saved;
+    } else {
+      sel.value = "";
+      MV.S.forWhom = "";
+      MV.saveState();
+    }
   }
 
-  sel.onchange = () => {
-    if (sel.value === "__other__") {
-      other.hidden = false;
-      other.focus();
-      MV.S.forWhom = other.value.trim();
-    } else {
-      other.hidden = true;
-      MV.S.forWhom = sel.value;
-    }
-    MV.saveState();
-  };
-  other.oninput = () => { MV.S.forWhom = other.value.trim(); MV.saveState(); };
+  sel.onchange = () => { MV.S.forWhom = sel.value; MV.saveState(); };
 };
 
 /* ---------- ボトムアクションバー(親指ゾーン) ---------- */
@@ -517,8 +506,7 @@ MV.ui.initInputs = () => {
   org.value = MV.S.orgName || "";
   org.oninput = () => { MV.S.orgName = org.value.trim(); MV.saveState(); };
 
-  /* 「いちばん見てほしい人」はプルダウン。選択肢の候補で足りないときだけ
-     「その他」を選ぶと自由入力欄が出る(2026-07-20: テキスト入力→選択式に) */
+  /* 「いちばん見てほしい人」は5択のプルダウン(2026-07-20: 自由入力を廃止) */
   MV.ui.initForWhom();
 
   const th = MV.ui.$("#logoThreshold");
