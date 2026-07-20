@@ -1,7 +1,8 @@
 "use strict";
-/* ============ クリエイターツール共通: サイトの上下(TOPと同じ導線) ============
-   3ツール(Switcher/ReAngle/Privacy)のヘッダー(ブランド+グローバルナビ)と
-   フッター(「MarchinZで、できること。」+サイトフッター)を同じ内容で差し込む。
+/* ============ クリエイターツール共通: サイトの上下(YouTubeページと同じ) ============
+   3ツール(Switcher/ReAngle/Privacy)へ、ブランドヘッダー+グローバルナビと
+   サイト標準フッター(バナー+リンク集+コピーライト)を差し込む。
+   「無料・すべて端末内」の帯はページ下部(フッター直前)へ移す。
    ツールはSPAではないため、リンクはすべて絶対パス(/#...)にする。 */
 
 window.MZSiteChrome = (() => {
@@ -15,38 +16,12 @@ window.MZSiteChrome = (() => {
     ["/#ops", "運営"],
   ];
 
-  /* TOPの「マーチンズ/MarchinZで、できること。」と同じ3項目 */
-  const CAN = [
-    {
-      title: "参加/観戦の記録を、すぐに残せる。",
-      links: [["/#community/events", "MarchinZ Log"], ["/#community/notes", "MarchinZ Note"]],
-      desc: "マーチングイベントの記録を、観戦・出演・チームスタッフ・運営、自分の形で残せる「MarchinZ Log」。写真付きの「MarchinZ Note」も作成できます。",
-    },
-    {
-      title: "動画を見つけて、シェア。",
-      links: [["/#videos", "大会動画"], ["/#youtube", "YouTube"]],
-      desc: "大会動画やYouTube チャンネルの検索。団体/チームごとに、気に入った動画をまとめて友人・仲間・家族にURLでシェアできます。",
-    },
-    {
-      title: "コミュニティで、熱気を広げられる。",
-      links: [["/#community/board", "MarchinZ Board"]],
-      desc: "募集・告知・質問などテーマ別の掲示板。ショウの余韻を次の楽しみへつなぐ場です。",
-    },
-  ];
-
   const FOOT_COLS = [
     [["/#top", "TOP"], ["/#videos", "大会動画"], ["/#youtube", "YouTube"],
      ["/#webmagazine", "メディア"], ["/#creators", "クリエイター"]],
     [["/#community/events", "イベント"], ["/#community/moments", "モーメント"],
      ["/#community/board", "掲示板"], ["/#community/notes", "ノート"], ["/#profile", "マイページ"]],
     [["/#ops", "運営について"], ["/#terms", "利用規約"], ["/#privacy", "プライバシーポリシー"]],
-  ];
-
-  /* 3ツールの相互リンク(自分は出さない) */
-  const TOOLS = [
-    ["switcher", "/tools/switcher/", "Switcher（同期・カット割）"],
-    ["reangle", "/tools/reangle/", "ReAngle（正面補正）"],
-    ["privacy", "/tools/privacy/", "Privacy（顔モザイク）"],
   ];
 
   const esc = s => String(s).replace(/[&<>"']/g,
@@ -77,28 +52,13 @@ window.MZSiteChrome = (() => {
 <nav class="mzsc-nav" aria-label="サイト内ページ"><div class="mzsc-nav-inner">${nav}</div></nav>`;
   }
 
-  /* フッター: 「できること」+ バナー + リンク集 + コピーライト */
+  /* フッター: サイト標準(YouTubeページ等と同じ)= バナー + リンク集 + コピーライト */
   function footerHtml(toolId) {
-    const cans = CAN.map(c => `
-      <li class="mzsc-can-item">
-        <h3>${esc(c.title)}</h3>
-        <div class="mzsc-can-links">${c.links.map(([h, l]) => `<a href="${h}">${esc(l)}</a>`).join("")}</div>
-        <p>${esc(c.desc)}</p>
-      </li>`).join("");
     const cols = FOOT_COLS.map(col =>
       `<div class="mzsc-foot-col">${col.map(([h, l]) => `<a href="${h}">${esc(l)}</a>`).join("")}</div>`).join("");
-    const others = TOOLS.filter(t => t[0] !== toolId)
-      .map(([, href, label]) => `<a href="${href}">${esc(label)}</a>`).join(" ／ ");
     const ver = document.documentElement.getAttribute("data-mz-version");
     return `
 <footer class="mzsc-foot">
-  <section class="mzsc-can">
-    <div class="mzsc-can-inner">
-      <h2>マーチンズ/MarchinZで、できること。</h2>
-      <p class="mzsc-can-sub">プレイヤーもファンもチームスタッフも運営も。役割を問わず「マーチングの熱量」を形に残していきます。</p>
-      <ul class="mzsc-can-grid">${cans}</ul>
-    </div>
-  </section>
   <div class="mzsc-foot-banners">
     <a href="https://www.amazon.co.jp/kindle-dbs/hz/signup?tag=hamamasu-22" target="_blank" rel="noopener noreferrer">
       <img src="/images/manga/kindle-unlimited-banner.png" alt="Kindle Unlimited 30日間無料体験バナー" loading="lazy" onerror="this.style.display='none'">
@@ -109,7 +69,6 @@ window.MZSiteChrome = (() => {
     <a href="https://x.com/marchinz2026" target="_blank" rel="noopener noreferrer" class="mzsc-x-link" aria-label="MarchinZ公式Xを開く" title="MarchinZ公式Xを開く">${X_SVG}</a>
   </div>
   <nav class="mzsc-foot-grid" aria-label="サイト内ページとポリシー">${cols}</nav>
-  <p class="mzsc-foot-tools">つづけて使う: ${others}</p>
   <p class="mzsc-foot-copy">©️ MarchinZ 2026${ver ? ` <span lang="en">ver. ${esc(ver)}</span>` : ""}</p>
 </footer>`;
   }
@@ -127,6 +86,9 @@ window.MZSiteChrome = (() => {
     const foot = document.createElement("div");
     foot.innerHTML = footerHtml(toolId);
     if (old) old.replaceWith(foot); else body.appendChild(foot);
+    // 「無料・すべて端末内で処理」はページの下(フッター直前)へ(2026-07-19 優さん指定)
+    const disc = document.querySelector(".beta-disclaimer");
+    if (disc) body.insertBefore(disc, foot);
   }
 
   return { mount };

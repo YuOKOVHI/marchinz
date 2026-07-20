@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-version="1.38.2">
+<html lang="ja" data-mz-version="1.38.3">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -73,7 +73,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css" />
     <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css?v=1.25.64" />
     <link rel="stylesheet" href="styles.css?v=1.38.2" />
-    <link rel="stylesheet" href="marchinz-brushup.css?v=1.38.2" />
+    <link rel="stylesheet" href="marchinz-brushup.css?v=1.38.3" />
     <!-- Microsoft Clarity -->
     <script type="text/javascript">
       (function(c,l,a,r,i,t,y){
@@ -279,6 +279,9 @@
           </div>
           <div class="site-mobile-drawer-user-actions">
             <a href="#profile" class="site-mobile-drawer-menu-item" id="menu-mobile-open-user-profile-page">プロフィールを見る</a>
+            <a href="/tools/switcher/" class="site-mobile-drawer-menu-item" id="menu-mobile-open-switcher"
+              ><i class="fa-solid fa-clapperboard" aria-hidden="true"></i> MarchinZ Switcher(映像制作)</a
+            >
             <a href="#profile?tab=base" class="site-mobile-drawer-menu-item" id="menu-mobile-open-days"
               ><i class="fa-solid fa-drum" aria-hidden="true"></i> MarchinZ Days(練習記録)</a
             >
@@ -1729,6 +1732,7 @@
                 aria-controls="prof-pane-notifs"
                 tabindex="-1"
               >
+                <i class="fa-solid fa-bell" aria-hidden="true"></i>
                 <span class="user-profile-tab-label">通知</span>
                 <span id="prof-notif-badge" class="user-profile-notif-badge" hidden>0</span>
               </button>
@@ -1742,25 +1746,35 @@
                 aria-controls="prof-pane-ops"
                 tabindex="-1"
               >
+                <i class="fa-solid fa-bullhorn" aria-hidden="true"></i>
                 <span class="user-profile-tab-label">運営より</span>
                 <span id="prof-ops-badge" class="user-profile-ops-badge" hidden>0</span>
               </button>
             </div>
             <nav class="user-profile-tabs" role="tablist" aria-label="プロフィールの区分">
               <button type="button" class="user-profile-tab" id="prof-tab-mll" role="tab" data-prof-tab="mll" aria-selected="true" aria-controls="prof-pane-mll" tabindex="0">
-                MarchinZ Log <span id="prof-count-mll" class="user-profile-tab-count">0</span>
+                <i class="fa-solid fa-list-check" aria-hidden="true"></i>
+                <span class="user-profile-tab-text">MarchinZ Log</span>
+                <span id="prof-count-mll" class="user-profile-tab-count">0</span>
               </button>
               <button type="button" class="user-profile-tab" id="prof-tab-logdiary" role="tab" data-prof-tab="logdiary" aria-selected="false" aria-controls="prof-pane-logdiary" tabindex="-1">
-                MarchinZ Note <span id="prof-count-logdiary" class="user-profile-tab-count">0</span>
+                <i class="fa-solid fa-book-open" aria-hidden="true"></i>
+                <span class="user-profile-tab-text">MarchinZ Note</span>
+                <span id="prof-count-logdiary" class="user-profile-tab-count">0</span>
               </button>
               <button type="button" class="user-profile-tab" id="prof-tab-videos" role="tab" data-prof-tab="videos" aria-selected="false" aria-controls="prof-pane-videos" tabindex="-1">
-                大会動画マイリスト <span id="prof-count-videos" class="user-profile-tab-count">0</span>
+                <i class="fa-solid fa-video" aria-hidden="true"></i>
+                <span class="user-profile-tab-text">大会動画</span>
+                <span id="prof-count-videos" class="user-profile-tab-count">0</span>
               </button>
               <button type="button" class="user-profile-tab" id="prof-tab-yt" role="tab" data-prof-tab="yt" aria-selected="false" aria-controls="prof-pane-yt" tabindex="-1">
-                YouTube マイリスト <span id="prof-count-yt" class="user-profile-tab-count">0</span>
+                <i class="fa-solid fa-tv" aria-hidden="true"></i>
+                <span class="user-profile-tab-text">YouTube</span>
+                <span id="prof-count-yt" class="user-profile-tab-count">0</span>
               </button>
               <button type="button" class="user-profile-tab user-profile-tab--base" id="prof-tab-base" role="tab" data-prof-tab="base" aria-selected="false" aria-controls="prof-pane-base" tabindex="-1" hidden>
-                <i class="fa-solid fa-drum" aria-hidden="true"></i> MarchinZ Days
+                <i class="fa-solid fa-drum" aria-hidden="true"></i>
+                <span class="user-profile-tab-text">MarchinZ Days</span>
               </button>
             </nav>
             <div

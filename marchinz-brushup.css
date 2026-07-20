@@ -4290,3 +4290,98 @@ body {
 .mz-base-cents-bar { height: 44px; }
 .mz-base-needle { width: 8px; margin-left: -4px; border-radius: 4px; }
 .mz-base-cent-txt { font-size: 0.95rem; }
+
+/* ============================================================
+   マイページのスマホ最適化(2026-07-19 優さん指示・大幅改善)
+   タブ帯: 横スクロール(小さい文字が7個並ぶ)をやめて
+   アイコン+ラベルのグリッドチップへ。タップ領域は44px以上。
+   ============================================================ */
+
+/* タブ内のアイコンは全幅共通で少し添える(デスクトップは従来の下線タブのまま) */
+.user-profile-tab i { font-size: 0.85em; opacity: 0.75; }
+.user-profile-tab[aria-selected="true"] i { opacity: 1; }
+
+@media (max-width: 719px) {
+  /* 通知・運営より: 2列の大きなチップ */
+  .user-profile-notif-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    border-bottom: none;
+    margin: 2px 0 8px;
+  }
+  .user-profile-notif-row .user-profile-tab {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 44px;
+    padding: 10px 8px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #fff;
+    font-size: 0.8rem;
+    font-weight: 700;
+  }
+
+  /* メインタブ: 横スクロール廃止 → 3列グリッド(折返し)。
+     上下揺れの原因だったスクロール自体を無くす */
+  .user-profile-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    overflow: visible;
+    border-bottom: none;
+    padding: 0 0 4px;
+    touch-action: auto;
+  }
+  .user-profile-tabs .user-profile-tab {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-height: 60px;
+    padding: 10px 4px 8px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: #fff;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1.2;
+    white-space: normal;
+    text-align: center;
+  }
+  .user-profile-tabs .user-profile-tab i { font-size: 1.05rem; opacity: 0.8; }
+  .user-profile-tabs .user-profile-tab[aria-selected="true"],
+  .user-profile-notif-row .user-profile-tab[aria-selected="true"] {
+    background: var(--navy, #1e3a5f);
+    border-color: var(--navy, #1e3a5f);
+    color: #fff;
+  }
+  .user-profile-tabs .user-profile-tab[aria-selected="true"] i { opacity: 1; color: #ffd479; }
+  /* 件数はチップ右上のバッジに */
+  .user-profile-tabs .user-profile-tab-count {
+    position: absolute;
+    top: -6px;
+    right: -4px;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: #f5a524;
+    color: #2a1a00;
+    font-size: 0.66rem;
+    font-weight: 800;
+    border: 2px solid #fff;
+  }
+
+  /* ペインの読みやすさ: リード文・主要ボタン・余白 */
+  .user-profile-pane-lead { font-size: 0.8rem; line-height: 1.8; }
+  .user-profile-tab-pane .site-brand-action-btn { min-height: 44px; }
+  .user-profile-panel { padding: 0.9rem; }
+}
