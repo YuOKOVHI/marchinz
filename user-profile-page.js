@@ -384,7 +384,7 @@
       renderMllSectionVisControls(next, true);
       void loadAndRender().catch(() => {});
     } catch (e) {
-      alert("更新に失敗しました: " + (e?.message || ""));
+      MZToast.err("更新に失敗しました: " + (e?.message || ""));
     }
   }
 
@@ -3741,10 +3741,10 @@
           updated_at: now,
         });
       }
-      alert(banned ? "凍結しました。Log・Note・マイリストは非公開になりました。" : "凍結を解除しました。");
+      MZToast.ok(banned ? "凍結しました。Log・Note・マイリストは非公開になりました。" : "凍結を解除しました。");
       void loadAndRender().catch(() => {});
     } catch (e) {
-      alert(String(e?.message || e || "更新に失敗しました。"));
+      MZToast.err(String(e?.message || e || "更新に失敗しました。"));
     }
   }
 

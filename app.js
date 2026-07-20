@@ -769,15 +769,15 @@
   function shareInstagramLinkOnly(url, analyticsTarget) {
     const link = String(url || "").trim();
     if (!link) {
-      alert("リンクがありません。");
+      MZToast.err("リンクがありません。");
       return;
     }
     trackEvent("share_click", { kind: "instagram", target: analyticsTarget });
     const notifyCopyOk = () => {
-      alert("リンクをコピーしました。\nInstagramで新規投稿を開き、キャプションに貼り付けてください。");
+      MZToast.ok("リンクをコピーしました。\nInstagramで新規投稿を開き、キャプションに貼り付けてください。");
     };
     const notifyCopyFail = () => {
-      alert("クリップボードにコピーできませんでした。リンクを手動でコピーしてください。");
+      MZToast.err("クリップボードにコピーできませんでした。リンクを手動でコピーしてください。");
     };
     const runCopy = () => copyText(link).then(notifyCopyOk).catch(notifyCopyFail);
 
@@ -876,8 +876,8 @@
       case "copy":
         trackEvent("share_click", { kind, target: "card" });
         copyText(text)
-          .then(() => alert("コピーしました"))
-          .catch(() => alert("コピーに失敗しました。"));
+          .then(() => MZToast.ok("コピーしました"))
+          .catch(() => MZToast.err("コピーに失敗しました。"));
         break;
       case "x": {
         trackEvent("share_click", { kind, target: "card" });
@@ -1296,8 +1296,8 @@
       case "copy":
         trackEvent("share_click", { kind, target });
         copyText(text)
-          .then(() => alert("コピーしました"))
-          .catch(() => alert("コピーに失敗しました。"));
+          .then(() => MZToast.ok("コピーしました"))
+          .catch(() => MZToast.err("コピーに失敗しました。"));
         break;
       case "x": {
         trackEvent("share_click", { kind, target });

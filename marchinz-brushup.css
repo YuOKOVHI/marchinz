@@ -1198,6 +1198,11 @@ body {
   font-size: 0.85rem;
   text-decoration: none;
   width: fit-content;
+  /* タップ標的 44px。文字サイズは変えず押せる範囲だけ広げる
+     (2026-07-20 UI/UXレビュー。実測 16px しかなかった) */
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
 }
 
 .mz-footer-grid .footer-nav-link:hover {
@@ -1216,7 +1221,8 @@ body {
 
   .mz-footer-col {
     align-items: center;
-    gap: 0.55rem;
+    /* リンク自体が min-height:44px を持つので gap は最小に */
+    gap: 0.1rem;
   }
 
   .mz-footer-grid .footer-nav-link {
@@ -4388,3 +4394,110 @@ body {
   .user-profile-tab-pane .site-brand-action-btn { min-height: 44px; }
   .user-profile-panel { padding: 0.9rem; }
 }
+
+/* ===== トースト(alert の置き換え / 2026-07-20 UI/UXレビュー) ===== */
+.mz-toast-host {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  /* タブバーとホームインジケータを避ける。タブバーが無い画面でも破綻しない */
+  bottom: calc(var(--mz-tabbar-h, 0px) + env(safe-area-inset-bottom, 0px) + 12px);
+  z-index: 2147483646;      /* auth-loading-overlay(2147483640)より上 */
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(calc(100vw - 24px), 420px);
+  pointer-events: none;     /* 下の操作を邪魔しない。個々のトーストだけ受ける */
+}
+
+.mz-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 12px 11px 13px;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.92);
+  -webkit-backdrop-filter: saturate(180%) blur(14px);
+  backdrop-filter: saturate(180%) blur(14px);
+  border: 1px solid rgba(15, 33, 56, 0.1);
+  box-shadow: 0 8px 28px rgba(15, 33, 56, 0.16);
+  color: var(--text, #0c0f14);
+  font-size: 0.85rem;
+  line-height: 1.55;
+  cursor: pointer;
+  opacity: 1;
+  /* 入場は animation で行う。JS の rAF は document.hidden で発火せず、
+     トーストが透明のまま残る(2026-07-20 に実際に踏んだ) */
+  animation: mz-toast-in 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
+  transition: opacity 0.26s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes mz-toast-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.99); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.mz-toast.is-leaving {
+  opacity: 0;
+  transform: translateY(6px) scale(0.99);
+  animation: none;   /* 退場中に入場アニメが再生されないよう打ち消す */
+}
+
+.mz-toast-icon { flex: none; margin-top: 1px; font-size: 0.95rem; }
+.mz-toast--ok .mz-toast-icon { color: #1a7f4b; }
+.mz-toast--err .mz-toast-icon { color: #c02626; }
+.mz-toast--warn .mz-toast-icon { color: var(--amber, #b45309); }
+.mz-toast--info .mz-toast-icon { color: var(--blue, #1e4fd6); }
+
+.mz-toast-text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; white-space: pre-line; }
+
+.mz-toast-close {
+  flex: none;
+  /* 44px のタップ標的を、見た目を太らせずに確保する */
+  width: 30px;
+  height: 30px;
+  margin: -6px -4px -6px 0;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 0;
+  border-radius: 50%;
+  color: var(--muted, rgba(12, 15, 20, 0.6));
+  font-size: 0.8rem;
+  cursor: pointer;
+  position: relative;
+}
+.mz-toast-close::after {
+  content: "";
+  position: absolute;
+  inset: -7px;             /* 実タップ域 44x44 */
+}
+.mz-toast-close:hover { background: rgba(15, 33, 56, 0.07); color: var(--text, #0c0f14); }
+
+@media (prefers-reduced-motion: reduce) {
+  .mz-toast { animation: none; transition: opacity 0.01s linear; transform: none; }
+  .mz-toast.is-leaving { transform: none; }
+}
+
+/* ===== タップ標的 44px(2026-07-20 UI/UXレビュー) =====
+   iPhone 前提(CLAUDE.md 必須ルール8)。見た目は変えず押せる範囲を広げる。 */
+.mz-top-more-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+.x-logo-link {
+  min-height: 44px;
+  min-width: 44px;
+  justify-content: center;
+}
+
+/* ===== [hidden] の保険(2026-07-20 UI/UXレビュー) =====
+   display 指定のあるクラスは [hidden] の UA スタイルより詳細度で勝つため、
+   hidden を付けても消えないことがある。過去に権限UIが全員に露出した事故
+   (css-hidden-attribute-trap)と同型なので、本体にも明示的に置く。
+   ツール側(switcher / reangle)には既に同じ 1 行が入っている。
+   ※ 2026-07-20 時点の実測では漏れ 0 件。これは再発防止のための保険。 */
+[hidden] { display: none !important; }

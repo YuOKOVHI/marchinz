@@ -1431,7 +1431,7 @@
       isRedirectPending: () => false,
       isWithdrawn: () => false,
       signInWithGoogle: async () => {
-        alert(AUTH_MESSAGE.firebaseMissingSimple);
+        MZToast.err(AUTH_MESSAGE.firebaseMissingSimple);
       },
     };
     const noFirebaseMsg =
@@ -1441,17 +1441,17 @@
     if (btnAuthLoginGoogle) {
       btnAuthLoginGoogle.disabled = false;
       btnAuthLoginGoogle.addEventListener("click", () => {
-        alert(noFirebaseMsg);
+        MZToast.err(noFirebaseMsg);
       });
     }
     if (btnAuthSignupGoogle) {
       btnAuthSignupGoogle.disabled = false;
       btnAuthSignupGoogle.addEventListener("click", () => {
         if (!authSignupAgreeTerms?.checked || !authSignupAgreePrivacy?.checked) {
-          alert(AUTH_MESSAGE.agreeRequired);
+          MZToast.warn(AUTH_MESSAGE.agreeRequired);
           return;
         }
-        alert(noFirebaseMsg);
+        MZToast.err(noFirebaseMsg);
       });
     }
     if (siteBrandActions) siteBrandActions.hidden = false;
@@ -1810,7 +1810,7 @@
       const fallback = "Googleログインを開始できませんでした。設定を確認してください。";
       const msg = authFriendlyErrorMessage(err, fallback);
       setAuthEntryMessage(entry, msg, true);
-      alert(msg);
+      MZToast.err(msg);
       throw err;
     } finally {
       setAuthEntryBusy(false);
@@ -2224,7 +2224,7 @@
           }
         } catch (reRegErr) {
           console.error("[MarchinZ] 退会アカウントの再登録に失敗しました", reRegErr);
-          alert(
+          MZToast.err(
             "退会済みアカウントの再登録処理に失敗しました。\n" +
             "しばらく時間をおいて再度お試しいただくか、運営までお問い合わせください。",
           );
@@ -2574,7 +2574,7 @@
   if (btnProfileCancel) {
     btnProfileCancel.addEventListener("click", () => {
       if (profileSetupRequired) {
-        alert("プロフィール設定を完了してください。");
+        MZToast.warn("プロフィール設定を完了してください。");
         return;
       }
       closeProfileDialog();
@@ -2720,7 +2720,7 @@
       if (!currentUser?.id) return;
       const firebaseUser = auth.currentUser;
       if (!firebaseUser || firebaseUser.uid !== currentUser.id) {
-        alert(AUTH_MESSAGE.withdrawNeedsFirebaseAuth);
+        MZToast.err(AUTH_MESSAGE.withdrawNeedsFirebaseAuth);
         return;
       }
       if (
@@ -2744,7 +2744,7 @@
         provider.setCustomParameters({ prompt: "select_account" });
         await firebaseUser.reauthenticateWithPopup(provider);
       } catch {
-        alert(AUTH_MESSAGE.withdrawNeedReauth);
+        MZToast.warn(AUTH_MESSAGE.withdrawNeedReauth);
         return;
       }
       showProcessingOverlay("退会処理中…");
@@ -2815,9 +2815,9 @@
         const code = String(e?.code || "");
         const msg = String(e?.message || e || "");
         if (code === "auth/requires-recent-login") {
-          alert(AUTH_MESSAGE.withdrawRetryAfterRelogin);
+          MZToast.err(AUTH_MESSAGE.withdrawRetryAfterRelogin);
         } else {
-          alert(`${AUTH_MESSAGE.withdrawPartialFailure}${msg ? `（${msg}）` : ""}`);
+          MZToast.err(`${AUTH_MESSAGE.withdrawPartialFailure}${msg ? `（${msg}）` : ""}`);
         }
         try {
           await auth.signOut();
@@ -2945,7 +2945,7 @@
         const needAvatar = Boolean(croppedAvatarBlob);
         const needCover = Boolean(croppedCoverBlob);
         if ((needAvatar || needCover) && !st) {
-          alert(AUTH_MESSAGE.storageUnavailable);
+          MZToast.err(AUTH_MESSAGE.storageUnavailable);
           return;
         }
 
