@@ -81,7 +81,7 @@ MC.ui.initJourney = () => {
   MZJourney.init({
     container: MC.ui.$("#workspace"),
     phases: [
-      { id: "mat",    label: "素材",     hint: "動画を入れてください（3つまで）" },
+      { id: "mat",    label: "素材",     hint: "3つまでまとめて選べます" },
       { id: "sync",   label: "同期",     hint: "「波形で同期する」でズレを合わせます" },
       { id: "polish", label: "整える",   hint: "音声・レイアウト・仕上げを整えます" },
       { id: "export", label: "書き出す", hint: "「MP4を書き出す」で完成です" },
@@ -197,6 +197,7 @@ MC.ui.renderClips = () => {
   box.innerHTML = "";
   const vertical = MC.S.mode === "vertical";
   const slotClips = MC.media.slotClips();   // 音声のみを除く(動画+画像)
+
   for (let slotIdx = 0; slotIdx < 3; slotIdx++) {
     const c = slotClips[slotIdx];
     const slot = document.createElement("div");
@@ -211,8 +212,8 @@ MC.ui.renderClips = () => {
       btn.type = "button";
       btn.className = "clip-slot-add";
       btn.innerHTML = vertical
-        ? 'タップして動画・写真を選ぶ<br><span class="hint">またはここにドロップ</span>'
-        : 'タップして動画を選ぶ<br><span class="hint">またはここにドロップ</span>';
+        ? 'タップして動画・写真を選ぶ<br><span class="hint">まとめて選べます／ここにドロップでもOK</span>'
+        : 'タップして動画を選ぶ<br><span class="hint">まとめて選べます／ここにドロップでもOK</span>';
       btn.onclick = () => MC.ui.$(vertical ? "#fileInputV" : "#fileInput").click();
       slot.appendChild(btn);
       box.appendChild(slot);
