@@ -58,6 +58,7 @@ MC.preview = {
       const local = MC.S.t - c.offset;
       c.video.currentTime = Math.max(0, Math.min(local, Math.max(0, c.duration - 0.05)));
     }
+    MC.timeline.syncToPlayhead();
   },
 
   async play() {
@@ -110,6 +111,7 @@ MC.preview = {
         this.ensurePlaying(curId);
       }
       MC.ui.updateTransport();
+      MC.timeline.syncToPlayhead();   // 「いま映っているカット」の表示を追従させる
     }
     this.draw();
   },

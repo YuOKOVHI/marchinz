@@ -383,7 +383,9 @@ MC.exporter.preflightFiles = async clips => {
   MC.log(`preflight OK: ${clips.length}本すべて読めます`);
 };
 
-MC.exporter.exportMP4 = async onProgress => {
+MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
+  let writable = null;
+  const writableRef = () => { if (writable) { try { writable.close(); } catch (err) {} writable = null; } };
   const { w, h } = MC.PRESETS[MC.S.preset];
   const fps = 30;
   const [tIn, tOut] = MC.trimRange();
@@ -398,8 +400,20 @@ MC.exporter.exportMP4 = async onProgress => {
   const pipes = new Map();
   let venc = null;
   try {
+    /* 完成MP4をメモリに溜めない。16分半×12Mbpsで約1.5GBになり、
+       ArrayBufferTarget では確保に失敗する(実素材テストで発生)。
+       保存先が選ばれていればディスクへ直接書く */
+    let target;
+    if (saveHandle) {
+      writable = await saveHandle.createWritable();
+      target = new Mp4Muxer.FileSystemWritableFileStreamTarget(writable);
+      MC.log("export: ファイルへ直接書き込みます(メモリに溜めません)");
+    } else {
+      target = new Mp4Muxer.ArrayBufferTarget();
+      MC.log("export: メモリ上で組み立てます(長尺では失敗することがあります)");
+    }
     const muxer = new Mp4Muxer.Muxer({
-      target: new Mp4Muxer.ArrayBufferTarget(),
+      target,
       video: { codec: "avc", width: w, height: h },
       audio: withAudio ? { codec: "aac", sampleRate: 48000, numberOfChannels: 2 } : undefined,
       fastStart: "in-memory",
@@ -477,14 +491,25 @@ MC.exporter.exportMP4 = async onProgress => {
 
     onProgress(0.97, "ファイルにまとめています…");
     muxer.finalize();
+    const name = saveHandle
+      ? saveHandle.name
+      : `MarchinZ_Switcher_${MC.S.preset}_${new Date().toISOString().slice(0, 10)}.mp4`;
+
+    if (writable) {
+      await writable.close();     // ここで初めてディスク上のファイルが完成する
+      writable = null;
+      MC.log(`export done: ${name} frames=${totalFrames} audio=${audioOk} (直接書き込み)`);
+      return { name, saved: true, blob: null, size: null };
+    }
     const blob = new Blob([muxer.target.buffer], { type: "video/mp4" });
-    const name = `MarchinZ_Switcher_${MC.S.preset}_${new Date().toISOString().slice(0, 10)}.mp4`;
     MC.exporter.download(blob, name);
     MC.log(`export done: ${name} bytes=${blob.size} frames=${totalFrames} audio=${audioOk}`);
     return { blob, name };
   } finally {
     pipes.forEach(p => p.dispose());
     if (venc) { try { venc.close(); } catch (e) {} }
+    // 途中で失敗したときも書きかけのハンドルは閉じる(閉じないとファイルが壊れたまま残る)
+    if (typeof writableRef === "function") writableRef();
     MC.exporter.running = false;
   }
 };

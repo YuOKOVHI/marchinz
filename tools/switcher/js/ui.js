@@ -17,6 +17,16 @@ MC.ui.showDone = res => {
   const share = MC.exporter.shareMode();
   const $ = MC.ui.$;
   $("#doneCard").hidden = false;
+  /* ディスクへ直接書き出した場合は blob を持たない(メモリに溜めないため)。
+     その場では既に保存が終わっているので、再保存の導線は出さない */
+  if (res && res.saved) {
+    $("#saveBtn").style.display = "none";
+    const dl = $("#downloadBtn"); if (dl) dl.style.display = "none";
+    $("#doneText").innerHTML = `<span class="ok">✓ 「${MC.ui.esc(res.name)}」を保存しました</span>`;
+    $("#doneNote").textContent = "選んだ場所に書き出し済みです。";
+    MC.ui.toast("✔ 書き出しが完了しました");
+    return;
+  }
   if (share) {
     // iOS等: 共有シート保存が主導線、ダウンロードも選べる
     $("#saveBtn").style.display = "inline-flex";
@@ -747,6 +757,29 @@ MC.ui.wire = () => {
     $("#exportBtn").disabled = true;
     $("#cancelBtn").style.display = "inline-block";
     const mode = MC.ui.exportMode();
+
+    /* 保存先を先に決める。ここで得たハンドルへ muxer が直接書くので、
+       完成MP4をメモリに溜めずに済む(長尺の Array buffer allocation failed 対策)。
+       showSaveFilePicker はユーザー操作の直後でないと拒否されるため、
+       進捗表示やデコードを始める前に呼ぶ */
+    let saveHandle = null;
+    if (mode !== "realtime" && window.showSaveFilePicker) {
+      const suggested = `MarchinZ_Switcher_${MC.S.preset}_${new Date().toISOString().slice(0, 10)}.mp4`;
+      try {
+        saveHandle = await window.showSaveFilePicker({
+          suggestedName: suggested,
+          types: [{ description: "MP4 動画", accept: { "video/mp4": [".mp4"] } }],
+        });
+      } catch (err) {
+        if (err && err.name === "AbortError") {   // 保存先選択をやめた
+          $("#exportBtn").disabled = !MC.S.clips.length;
+          $("#cancelBtn").style.display = "none";
+          return;
+        }
+        // ピッカーが使えないときは従来どおりメモリ経由で書き出す
+        MC.log(`保存先の選択に失敗（${err && err.name}）。メモリ経由で続けます`);
+      }
+    }
     const p = MZP.start({
       mount: "#exportProgress", chapter: "書き出し", delay: 0,
       label: mode === "realtime" ? "再生しながら録画しています…" : "映像を作っています…",
@@ -757,7 +790,7 @@ MC.ui.wire = () => {
       if (mode === "none") throw new Error("この環境では書き出しできません");
       const res = mode === "realtime"
         ? await MC.exporter.exportRealtime(p.legacy())
-        : await MC.exporter.exportMP4(p.legacy());
+        : await MC.exporter.exportMP4(p.legacy(), saveHandle);
       p.done("書き出しました", { chip: false });
       MC.ui.showDone(res);
     } catch (e) {

@@ -447,3 +447,9 @@ button, select, input, label, .btn { touch-action: manipulation; }
   box-shadow: inset 0 0 0 1px var(--acc, #1e4fd6);
 }
 .tl-cam.on .tl-cam-name { color: var(--acc, #1e4fd6); }
+.tl-cam.armed {
+  border-color: var(--acc2-text, #b45309);
+  background: rgba(180, 83, 9, 0.1);
+  color: var(--acc2-text, #b45309);
+}
+.tl-cam.armed .tl-cam-name { color: var(--acc2-text, #b45309); font-weight: 800; }

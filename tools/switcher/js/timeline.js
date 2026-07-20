@@ -82,10 +82,30 @@ MC.timeline.render = () => {
   MC.timeline.renderToolbar();
 };
 
+/* 再生ヘッドに合わせて表示だけ追従させる。
+   帯を作り直すと重いので、ハイライトの付け替えとツールバーの更新に留める。
+   再生中は preview.tick から毎フレーム呼ばれるため、
+   カットが変わっていないときは何もしないこと */
+MC.timeline.syncToPlayhead = () => {
+  if (!MC.timeline.visible()) return;
+  const strip = MC.ui.$("#timelineStrip");
+  if (!strip) return;
+  const head = MC.ui.$("#tlHead");
+  if (head) head.style.left = MC.timeline.pct(MC.S.t) + "%";
+  const ci = MC.timeline.currentIndex();
+  if (ci === MC.timeline._shownIndex) return;
+  MC.timeline._shownIndex = ci;
+  const blocks = strip.querySelectorAll(".tl-block");
+  blocks.forEach((b, i) => b.classList.toggle("selected", i === ci));
+  MC.timeline.armedCam = null;      // カットが変われば「もう一度タップ」は解除
+  MC.timeline.renderToolbar();
+};
+
 MC.timeline.renderToolbar = () => {
   const bar = MC.ui.$("#timelineToolbar");
   const cl = MC.S.cutList;
   const i = MC.timeline.currentIndex();
+  MC.timeline._shownIndex = i;
   if (i < 0 || i >= cl.length) { bar.style.display = "none"; return; }
   bar.style.display = "flex";
 
@@ -108,7 +128,30 @@ MC.timeline.renderToolbar = () => {
     b.title = c.name;
     b.innerHTML = `<span class="tl-cam-no">C${ci + 1}</span>`
       + `<span class="tl-cam-name">${MC.ui.esc(MC.timeline.shortName(c.name))}</span>`;
-    b.onclick = () => MC.timeline.setCamera(c.id);
+    /* 1回目は「もう一度タップで変更」の状態にし、2回目で確定する。
+       触っただけで画が変わるのを防ぎ、次に何が起きるかを画面に出す */
+    if (MC.timeline.armedCam === c.id && !on) {
+      b.classList.add("armed");
+      b.innerHTML = `<span class="tl-cam-no">C${ci + 1}</span>`
+        + `<span class="tl-cam-name">もう一度タップ</span>`;
+    }
+    b.onclick = () => {
+      if (on) return;                                   // 既にこのカメラ
+      if (MC.timeline.armedCam === c.id) {
+        MC.timeline.armedCam = null;
+        MC.timeline.setCamera(c.id);
+      } else {
+        MC.timeline.armedCam = c.id;
+        MC.timeline.renderToolbar();
+        clearTimeout(MC.timeline._armTimer);
+        MC.timeline._armTimer = setTimeout(() => {
+          if (MC.timeline.armedCam === c.id) {
+            MC.timeline.armedCam = null;
+            MC.timeline.renderToolbar();
+          }
+        }, 4000);
+      }
+    };
     box.appendChild(b);
   });
 };
@@ -128,7 +171,9 @@ MC.timeline.setCamera = clipId => {
   const e = MC.S.cutList[i];
   if (!e || e.clipId === clipId) return;
   e.clipId = clipId;
+  MC.timeline.armedCam = null;
   MC.saveState(); MC.timeline.render(); MC.preview.draw();
+  MC.ui.toast(`このカットを ${MC.timeline.shortName(MC.getClip(clipId).name)} に変えました`);
 };
 
 /* 境界ドラッグ(拍スナップ) */
