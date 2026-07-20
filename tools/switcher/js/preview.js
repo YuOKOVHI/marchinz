@@ -202,8 +202,20 @@ MC.preview = {
     if (!this.overlayOn) return;
     const dur = MC.timelineDuration();
     if (!dur) return;
+    /* 解析中は書き出し範囲の話をしても仕方がないので「映像分析中」に統一する。
+       分析が終わるまで、範囲外かどうかの案内は出さない */
+    const analyzing = !!(window.MZP && MZP.current && !MZP.current.closed
+      && ["run", "pulse", "frozen"].includes(MZP.current.state));
+    if (analyzing) { this.drawOverlayMessage("映像分析中", ""); return; }
     const [tIn, tOut] = MC.trimRange();
     if (MC.S.t >= tIn - 0.01 && MC.S.t <= tOut + 0.01) return;
+    this.drawOverlayMessage(
+      "ここは書き出されません",
+      MC.S.t < tIn ? "書き出しは IN の位置から始まります" : "書き出しは OUT の位置で終わります");
+  },
+
+  /* プレビュー上に重ねる案内。主文と補足の2行 */
+  drawOverlayMessage(title, sub) {
     const W = this.canvas.width, H = this.canvas.height, ctx = this.ctx;
     ctx.save();
     ctx.fillStyle = "rgba(6, 10, 16, 0.55)";
@@ -213,10 +225,12 @@ MC.preview = {
     ctx.textBaseline = "middle";
     ctx.fillStyle = "#fff";
     ctx.font = `700 ${Math.round(base * 0.05)}px -apple-system, sans-serif`;
-    ctx.fillText("ここは書き出されません", W / 2, H / 2 - base * 0.035);
-    ctx.fillStyle = "rgba(255,255,255,0.75)";
-    ctx.font = `500 ${Math.round(base * 0.034)}px -apple-system, sans-serif`;
-    ctx.fillText(MC.S.t < tIn ? "書き出しは IN の位置から始まります" : "書き出しは OUT の位置で終わります", W / 2, H / 2 + base * 0.03);
+    ctx.fillText(title, W / 2, sub ? H / 2 - base * 0.035 : H / 2);
+    if (sub) {
+      ctx.fillStyle = "rgba(255,255,255,0.75)";
+      ctx.font = `500 ${Math.round(base * 0.034)}px -apple-system, sans-serif`;
+      ctx.fillText(sub, W / 2, H / 2 + base * 0.03);
+    }
     ctx.restore();
   },
 

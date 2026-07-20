@@ -1,7 +1,7 @@
 "use strict";
 /* ============ タイムライン編集UI (Phase 2) ============
    スイッチング/ワイプ時にカットのブロック帯を表示。
-   タップ=ブロック選択→ツールバーで カメラ変更/カット⇄ディゾルブ/前と結合。
+   操作対象は「いま再生ヘッドがある(=プレビューに出ている)カット」。
    境界はドラッグで移動(拍にスナップ)。タッチ(Pointer Events)対応。 */
 
 MC.timeline = { selected: -1 };
@@ -16,6 +16,19 @@ MC.timeline.color = clipId => {
 MC.timeline.visible = () => {
   const L = MC.LAYOUTS[MC.S.layoutId];
   return (L.type === "switch" || L.type === "wipe") && MC.S.cutList.length > 0;
+};
+
+/* いま再生ヘッドがあるカットの index。プレビューに出ている画そのもの。
+   ツールバーの操作対象はこれに統一する(タップ選択に頼らない) */
+MC.timeline.currentIndex = () => {
+  const cl = MC.S.cutList;
+  if (!cl.length) return -1;
+  const t = MC.S.t;
+  let idx = -1;
+  for (let i = 0; i < cl.length; i++) {
+    if (cl[i].t <= t + 1e-6) idx = i; else break;
+  }
+  return idx < 0 ? 0 : idx;   // IN より前を指していても先頭カットを対象にする
 };
 
 /* グローバル秒→タイムライン帯の% */
@@ -38,7 +51,7 @@ MC.timeline.render = () => {
     const clip = MC.getClip(cl[i].clipId);
     const camIdx = MC.S.clips.findIndex(c => c.id === cl[i].clipId);
     const b = document.createElement("div");
-    b.className = "tl-block" + (MC.timeline.selected === i ? " selected" : "");
+    b.className = "tl-block" + (MC.timeline.currentIndex() === i ? " selected" : "");
     b.style.left = MC.timeline.pct(start) + "%";
     b.style.width = Math.max(0.5, MC.timeline.pct(end) - MC.timeline.pct(start)) + "%";
     b.style.background = MC.timeline.color(cl[i].clipId);
@@ -46,9 +59,10 @@ MC.timeline.render = () => {
     b.title = clip ? clip.name : "";
     b.onclick = e => {
       e.stopPropagation();
-      MC.timeline.selected = MC.timeline.selected === i ? -1 : i;
-      MC.timeline.render();
+      // タップ=そこへ移動。操作対象は常に「プレビューに出ているカット」なので、
+      // 移動した結果このカットが対象になる
       MC.preview.seek(start + 0.01);
+      MC.timeline.render();
     };
     // 境界ドラッグハンドル(先頭セグメント以外)
     if (i > 0) {
@@ -70,37 +84,50 @@ MC.timeline.render = () => {
 
 MC.timeline.renderToolbar = () => {
   const bar = MC.ui.$("#timelineToolbar");
-  const i = MC.timeline.selected;
   const cl = MC.S.cutList;
+  const i = MC.timeline.currentIndex();
   if (i < 0 || i >= cl.length) { bar.style.display = "none"; return; }
   bar.style.display = "flex";
-  const clip = MC.getClip(cl[i].clipId);
-  bar.querySelector(".tl-info").textContent =
-    `${clip ? clip.name.slice(0, 14) : "?"} / ${cl[i].trans === "dissolve" ? "ディゾルブ" : "カット"}`;
+
+  const start = cl[i].t;
+  const end = i + 1 < cl.length ? cl[i + 1].t : MC.trimRange()[1];
+  bar.querySelector(".tl-info").innerHTML =
+    `<strong>いま映っているカット</strong>`
+    + `<span class="tl-info-sub">${MC.ui.fmtTime(start)} 〜 ${MC.ui.fmtTime(end)}</span>`;
+
+  /* カメラは順送りではなく直接選ばせる。どれが今出ているかも一目で分かる */
+  const box = MC.ui.$("#tlCamPicker");
+  box.innerHTML = "";
+  MC.S.clips.filter(c => !c.isAudio && !c.isImage).forEach((c, ci) => {
+    const b = document.createElement("button");
+    const on = c.id === cl[i].clipId;
+    b.type = "button";
+    b.className = "tl-cam" + (on ? " on" : "");
+    b.style.setProperty("--cam", MC.timeline.color(c.id));
+    b.setAttribute("aria-pressed", on ? "true" : "false");
+    b.title = c.name;
+    b.innerHTML = `<span class="tl-cam-no">C${ci + 1}</span>`
+      + `<span class="tl-cam-name">${MC.ui.esc(MC.timeline.shortName(c.name))}</span>`;
+    b.onclick = () => MC.timeline.setCamera(c.id);
+    box.appendChild(b);
+  });
 };
 
-/* 選択セグメントの操作 */
-MC.timeline.cycleCamera = () => {
-  const e = MC.S.cutList[MC.timeline.selected];
-  if (!e) return;
-  const cams = MC.S.clips.map(c => c.id);
-  e.clipId = cams[(cams.indexOf(e.clipId) + 1) % cams.length];
-  MC.saveState(); MC.timeline.render(); MC.preview.draw();
+/* ボタンに載せる短い名前。拡張子を落とし、長い場合は中間を省く。
+   実素材は「Timeline 1.mov / Timeline 2.mov」のように末尾で見分けるため、
+   先頭だけ残す切り方(Timeline …)では区別できなくなる */
+MC.timeline.shortName = name => {
+  const base = String(name || "").replace(/\.[^.]+$/, "");
+  if (base.length <= 12) return base;
+  return base.slice(0, 5) + "…" + base.slice(-5);
 };
 
-MC.timeline.toggleTrans = () => {
-  const e = MC.S.cutList[MC.timeline.selected];
-  if (!e || MC.timeline.selected === 0) return;
-  e.trans = e.trans === "dissolve" ? "cut" : "dissolve";
-  e.dur = e.trans === "dissolve" ? MC.beats.DISSOLVE_DUR : 0;
-  MC.saveState(); MC.timeline.render();
-};
-
-MC.timeline.mergePrev = () => {
-  const i = MC.timeline.selected;
-  if (i <= 0) return;
-  MC.S.cutList.splice(i, 1);
-  MC.timeline.selected = -1;
+/* いま映っているカットのカメラを差し替える */
+MC.timeline.setCamera = clipId => {
+  const i = MC.timeline.currentIndex();
+  const e = MC.S.cutList[i];
+  if (!e || e.clipId === clipId) return;
+  e.clipId = clipId;
   MC.saveState(); MC.timeline.render(); MC.preview.draw();
 };
 

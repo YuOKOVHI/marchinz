@@ -409,3 +409,41 @@ button, select, input, label, .btn { touch-action: manipulation; }
   .stage { position: sticky; top: 0; z-index: 30; background: var(--bg); padding-top: 6px; }
   .stage .timeline-wrap { position: static; }
 }
+
+/* タイムラインのカメラ切替(2026-07-20: 順送りボタンから直接選択へ) */
+.tl-toolbar .tl-info { display: flex; flex-direction: column; gap: 1px; font-size: 12px; }
+.tl-toolbar .tl-info strong { font-size: 12.5px; }
+.tl-info-sub { color: var(--tx2, rgba(12, 15, 20, 0.65)); font-variant-numeric: tabular-nums; }
+
+.tl-cam-picker { display: flex; flex-wrap: wrap; gap: 6px; }
+.tl-cam {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;            /* iPhone のタップ標的 */
+  padding: 6px 10px;
+  border: 1px solid rgba(15, 33, 56, 0.16);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--tx, #0c0f14);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tl-cam .tl-cam-no {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px; height: 20px;
+  border-radius: 6px;
+  background: var(--cam, #999);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+}
+.tl-cam.on {
+  border-color: var(--acc, #1e4fd6);
+  background: rgba(30, 79, 214, 0.08);
+  box-shadow: inset 0 0 0 1px var(--acc, #1e4fd6);
+}
+.tl-cam.on .tl-cam-name { color: var(--acc, #1e4fd6); }

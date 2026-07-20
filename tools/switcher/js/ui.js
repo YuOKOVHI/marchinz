@@ -63,6 +63,7 @@ MC.ui.esc = s => String(s).replace(/[&<>"']/g,
 MC.ui.renderAll = () => {
   MC.ui.renderClips();
   MC.ui.renderAudio();
+  MC.ui.renderEasyLead();
   MC.ui.renderLayout();
   MC.ui.renderFinish();
   MC.ui.renderExportMode();
@@ -423,6 +424,17 @@ MC.ui.renderExportMode = () => {
   }
 };
 
+/* おまかせの説明。カット割をするのはスイッチング/ワイプのときだけなので、
+   縦型では文言から外す(やらないことを書かない) */
+MC.ui.renderEasyLead = () => {
+  const el = document.querySelector(".easy-lead");
+  if (!el) return;
+  const cutMode = ["switch", "wipe"].includes(MC.S.layoutId);
+  el.textContent = cutMode
+    ? "同期・カット割・色みまで、おまかせで仕上げます。"
+    : "同期・色みまで、おまかせで仕上げます。";
+};
+
 /* 「おまかせ / こだわり」タブ。素材が入ったら出す(それまでは邪魔なので隠す) */
 MC.ui.setSetupTab = tab => {
   MC.ui._setupTab = tab;
@@ -482,7 +494,6 @@ MC.ui.runEasy = async () => {
     if (cutMode) {
       p.pulse("カットを割っています…");
       await MC.director.run(p);
-      MC.timeline.selected = -1;
       MC.timeline.render();
     }
     let colorFailed = false;
@@ -784,8 +795,7 @@ MC.ui.wire = () => {
     try {
       const r = await MC.director.run(p);
       p.done(`${r.bpm.toFixed(0)} BPM・${r.segments}カットを作りました`,
-             { sub: `ディゾルブ${r.dissolves}回・タップで編集できます` });
-      MC.timeline.selected = -1;
+             { sub: `ディゾルブ${r.dissolves}回・帯をタップするとそこへ移動します` });
       MC.timeline.render();
       MC.preview.seek(MC.trimRange()[0]);
     } catch (e) {
@@ -807,9 +817,6 @@ MC.ui.wire = () => {
     $("#borderWVal").textContent = MC.S.borderW + "px";
     MC.saveState(); MC.preview.draw();
   };
-  $("#tlCamBtn").onclick = () => MC.timeline.cycleCamera();
-  $("#tlTransBtn").onclick = () => MC.timeline.toggleTrans();
-  $("#tlMergeBtn").onclick = () => MC.timeline.mergePrev();
 
   // --- Phase 3: 仕上げ ---
   $("#filterSelect").innerHTML = Object.entries(MC.color.FILTERS)
