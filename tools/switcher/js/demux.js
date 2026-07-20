@@ -1,4 +1,33 @@
 "use strict";
+
+/* File.slice().arrayBuffer() の共通入口。
+   2〜3GB の素材を3本同時に開くと、macOS Chrome では読み取りが一時的に
+   失敗して NotReadableError になることがある(実素材テストで発生)。
+   多くは再試行で通るので、間隔を空けて数回まで読み直す。
+   それでも駄目なときは、何が起きたか分かる日本語にして投げ直す。 */
+MC.readSlice = async (file, start, end) => {
+  const TRIES = 4;
+  let last = null;
+  for (let i = 0; i < TRIES; i++) {
+    try {
+      return await file.slice(start, end).arrayBuffer();
+    } catch (e) {
+      last = e;
+      MC.log(`読み直し ${i + 1}/${TRIES}: ${file.name} @${start}〜${end} (${e.name || "?"}: ${e.message || e})`);
+      if (i === TRIES - 1) break;
+      // 並行読みのぶつかりが原因のことが多いため、待ってから開け直す
+      await new Promise(r => setTimeout(r, 150 * (i + 1)));
+    }
+  }
+  const err = new Error(
+    `ファイルを読み込めませんでした（${file.name}）。\n` +
+    `書き出し中はファイルを移動・削除したり、別のアプリで開いたりしないでください。\n` +
+    `外付けドライブやクラウド同期フォルダの素材は、いったんMacの内蔵ディスクへ` +
+    `コピーしてからお試しください。`);
+  err.cause = last;
+  throw err;
+};
+
 /* ============ mp4box.js ラッパ: MP4/MOVのデマックス ============
    1インスタンス=1回の抽出用途で使う(状態を単純に保つ)。
 
@@ -19,7 +48,7 @@ MC.MP4Source = class {
 
   /* ---- 低レベル: バイト読み ---- */
   async _read(start, end) {
-    return new DataView(await this.file.slice(start, Math.min(end, this.file.size)).arrayBuffer());
+    return new DataView(await MC.readSlice(this.file, start, Math.min(end, this.file.size)));
   }
 
   /* トップレベルのボックス一覧(ヘッダだけを飛び石で読む。mdatの中身は読まない) */
@@ -212,9 +241,9 @@ MC.MP4Source = class {
         if (b.type === "moov") {
           ab = feed;
         } else if (b.type === "mdat" || b.size > (8 << 20)) {
-          ab = await this.file.slice(b.start, b.start + 16).arrayBuffer();
+          ab = await MC.readSlice(this.file, b.start, b.start + 16);
         } else {
-          ab = await this.file.slice(b.start, b.start + b.size).arrayBuffer();
+          ab = await MC.readSlice(this.file, b.start, b.start + b.size);
         }
         ab.fileStart = b.start;
         mp4.appendBuffer(ab);
@@ -226,7 +255,7 @@ MC.MP4Source = class {
       const CH = 4 << 20;
       let pos = 0;
       while (!this.info && pos < this.file.size) {
-        const ab = await this.file.slice(pos, Math.min(pos + CH, this.file.size)).arrayBuffer();
+        const ab = await MC.readSlice(this.file, pos, Math.min(pos + CH, this.file.size));
         ab.fileStart = pos;
         const next = mp4.appendBuffer(ab);
         pos = (typeof next === "number" && next > pos) ? next : pos + ab.byteLength;
@@ -250,7 +279,7 @@ MC.MP4Source = class {
     for (const c of this.pcm.chunks) {
       if (c.startFrame + c.frames <= startFrame) continue;
       const bytes = c.frames * this.pcm.bytesPerFrame;
-      const ab = await this.file.slice(c.offset, c.offset + bytes).arrayBuffer();
+      const ab = await MC.readSlice(this.file, c.offset, c.offset + bytes);
       yield { data: new Uint8Array(ab), startFrame: c.startFrame, frames: c.frames };
     }
   }
@@ -395,7 +424,7 @@ MC.MP4Source = class {
         eof = true;
         continue;
       }
-      const ab = await this.file.slice(pos, Math.min(pos + CH, this.file.size)).arrayBuffer();
+      const ab = await MC.readSlice(this.file, pos, Math.min(pos + CH, this.file.size));
       ab.fileStart = pos;
       mp4.appendBuffer(ab);
       pos += ab.byteLength;

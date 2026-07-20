@@ -366,6 +366,23 @@ MC.exporter.encodeAudioFile = async (muxer, clip, fromLocalSec, durSec, onStatus
 };
 
 /* ---- MP4書き出し本体 ---- */
+/* 書き出し前に、使う素材が今も読めるか確かめる。
+   実素材テストで、解析は通ったのに書き出しの途中で
+   NotReadableError になる事例が出た(2026-07-20)。
+   30秒かけてから落ちるより、最初に分かった方がよい。 */
+MC.exporter.preflightFiles = async clips => {
+  for (const c of clips) {
+    if (!c.file) continue;
+    try {
+      await MC.readSlice(c.file, 0, Math.min(16, c.file.size));
+    } catch (err) {
+      MC.log(`preflight NG: ${c.name}`);
+      throw err;   // readSlice が日本語のメッセージに変換済み
+    }
+  }
+  MC.log(`preflight OK: ${clips.length}本すべて読めます`);
+};
+
 MC.exporter.exportMP4 = async onProgress => {
   const { w, h } = MC.PRESETS[MC.S.preset];
   const fps = 30;
@@ -396,6 +413,10 @@ MC.exporter.exportMP4 = async onProgress => {
       codec: "avc1.640028", width: w, height: h,
       bitrate: MC.S.preset === "1x1" ? 8e6 : 12e6, framerate: fps,
     });
+
+    // 素材が今も読めるかを先に確かめる(途中で落ちるより早く知らせる)
+
+    await MC.exporter.preflightFiles(used.filter(c => !c.isImage));
 
     for (const c of used) {
       if (c.isImage) continue;   // 静止画はデコード不要(そのまま描く)
