@@ -370,6 +370,20 @@ MC.exporter.encodeAudioFile = async (muxer, clip, fromLocalSec, durSec, onStatus
    実素材テストで、解析は通ったのに書き出しの途中で
    NotReadableError になる事例が出た(2026-07-20)。
    30秒かけてから落ちるより、最初に分かった方がよい。 */
+/* 書き出しの推定バイト数。保存方法の判断に使う。
+   映像ビットレートは exportMP4 の venc.configure と揃えること */
+MC.exporter.videoBitrate = () => (MC.S.preset === "1x1" ? 8e6 : 12e6);
+MC.exporter.estimateBytes = () => {
+  const [tIn, tOut] = MC.trimRange();
+  const sec = Math.max(0, tOut - tIn);
+  const audio = 192e3;                       // AAC 192kbps
+  return sec * (MC.exporter.videoBitrate() + audio) / 8;
+};
+
+/* メモリ上で組み立てられる上限の目安。これを超える見込みなら
+   保存先を選ばせてディスクへ直接書く(ダイアログは大きいときだけ) */
+MC.exporter.MEM_LIMIT_BYTES = 700e6;
+
 MC.exporter.preflightFiles = async clips => {
   for (const c of clips) {
     if (!c.file) continue;
@@ -438,7 +452,7 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
     });
     venc.configure({
       codec: "avc1.640028", width: w, height: h,
-      bitrate: MC.S.preset === "1x1" ? 8e6 : 12e6, framerate: fps,
+      bitrate: MC.exporter.videoBitrate(), framerate: fps,
     });
 
     // 素材が今も読めるかを先に確かめる(途中で落ちるより早く知らせる)

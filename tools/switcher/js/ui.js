@@ -761,9 +761,15 @@ MC.ui.wire = () => {
     /* 保存先を先に決める。ここで得たハンドルへ muxer が直接書くので、
        完成MP4をメモリに溜めずに済む(長尺の Array buffer allocation failed 対策)。
        showSaveFilePicker はユーザー操作の直後でないと拒否されるため、
-       進捗表示やデコードを始める前に呼ぶ */
+       進捗表示やデコードを始める前に呼ぶ。
+
+       ただしダイアログには macOS/Chrome の警告文が付き、こちらでは変えられない。
+       短い書き出しはメモリに載るので従来どおり自動ダウンロードにして、
+       ダイアログは容量が大きい見込みのときだけ出す */
     let saveHandle = null;
-    if (mode !== "realtime" && window.showSaveFilePicker) {
+    const estBytes = MC.exporter.estimateBytes();
+    const needsStream = estBytes > MC.exporter.MEM_LIMIT_BYTES;
+    if (mode !== "realtime" && needsStream && window.showSaveFilePicker) {
       const suggested = `MarchinZ_Switcher_${MC.S.preset}_${new Date().toISOString().slice(0, 10)}.mp4`;
       try {
         saveHandle = await window.showSaveFilePicker({
@@ -779,6 +785,8 @@ MC.ui.wire = () => {
         // ピッカーが使えないときは従来どおりメモリ経由で書き出す
         MC.log(`保存先の選択に失敗（${err && err.name}）。メモリ経由で続けます`);
       }
+    } else if (mode !== "realtime") {
+      MC.log(`推定 ${(estBytes / 1e6).toFixed(0)}MB。メモリ経由で書き出します（保存先の確認は出しません）`);
     }
     const p = MZP.start({
       mount: "#exportProgress", chapter: "書き出し", delay: 0,
