@@ -1,7 +1,11 @@
 "use strict";
-/* ============ クリエイターツール共通: 取り込み制限 ============
-   3段階: ゲスト(動画5分・写真1枚) < 登録ユーザー(動画12分・写真5枚)
+/* ============ クリエイターツール共通: 取り込み・書き出し制限 ============
+   3段階: ゲスト(動画5分・写真1枚) < 登録ユーザー(動画13分・写真5枚)
         < 管理者ログイン・手元環境(上限なし)。
+   書き出しは別枠: ゲスト5分 / 登録8分30秒 / 上限なし。
+   マーチングのショウが8分なので、登録ユーザーは余裕をみて8分30秒。
+   取り込みが13分あるのは、複数カメラの回し始めのズレ(実測で最大5分超)を
+   吸収したうえでショウ全体が入るようにするため。
    Privacyの動画は作業範囲方式(最大60秒を選ぶ)のため、誰でも10分まで。
 
    本体サイト(auth.js)が管理者ログイン時に localStorage へ印を書き、
@@ -45,9 +49,16 @@ window.MZ_LIMITS = (() => {
   const unlimited = admin || local;
   const L = {
     admin, local, member, unlimited,
-    // ReAngle/Switcher: ゲスト5分・登録12分(2026-07-19改定)
-    maxVideoSec: unlimited ? Infinity : member ? 720.5 : 300.5,
-    videoLimitLabel: member ? "12分" : "5分",   // エラーメッセージ用
+    // ReAngle/Switcher: ゲスト5分・登録13分(2026-07-20改定)
+    maxVideoSec: unlimited ? Infinity : member ? 780.5 : 300.5,
+    videoLimitLabel: member ? "13分" : "5分",   // エラーメッセージ用
+
+    /* 書き出せる長さ(IN〜OUTの範囲)。取り込みとは別枠。
+       ショウ8分 + 前後の余白で 8分30秒。ゲストは取り込みと同じ5分。
+       ※端末のメモリ上限(MC.exporter.MEM_HARD_LIMIT)とは別で、
+         実際にはどちらか厳しい方が効く */
+    maxExportSec: unlimited ? Infinity : member ? 510 : 300,
+    exportLimitLabel: member ? "8分30秒" : "5分",
     // Privacyの動画は誰でも10分(モザイク作業は選んだ範囲だけのため)
     maxPrivacyVideoSec: unlimited ? Infinity : 600.5,
     maxPhotos: unlimited ? Infinity : member ? 5 : 1,   // 一度に扱える写真の枚数
@@ -106,7 +117,7 @@ window.MZ_LIMITS = (() => {
       return;
     }
     const g = kind === "photo" ? "1枚" : "5分";
-    const m = kind === "photo" ? "5枚" : "12分";
+    const m = kind === "photo" ? "5枚" : "13分";
     let html;
     if (L.unlimited) {
       html = '<p class="mz-plan">上限なしで使えます。</p>';

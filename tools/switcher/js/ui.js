@@ -13,7 +13,27 @@ MC.ui.toast = msg => {
 };
 
 /* 書き出し完了カード。iOS(共有可)は「動画を保存」タップで初めて保存する */
-/* 端末のメモリでは収まらない長さのときの案内。
+/* プラン上の書き出し上限に当たったときの案内。
+   ゲストには登録でどう変わるかまで見せる(ただ断らない) */
+MC.ui.showExportLimitHelp = (wantSec, lim) => {
+  const $ = MC.ui.$;
+  $("#doneCard").hidden = false;
+  $("#saveBtn").style.display = "none";
+  const dl = $("#downloadBtn"); if (dl) dl.style.display = "none";
+  $("#doneText").innerHTML =
+    `<span class="warn">書き出せるのは${MC.ui.esc(lim.exportLimitLabel)}までです`
+    + `（いまの範囲は${MC.ui.fmtTime(wantSec)}）</span>`;
+  const note = $("#doneNote");
+  if (lim.member) {
+    note.textContent = "「ここから書き出す IN」「ここまで OUT」で範囲を狭めてください。";
+  } else {
+    note.innerHTML = "「ここから書き出す IN」「ここまで OUT」で範囲を狭めてください。"
+      + '無料登録すると8分30秒まで書き出せます（ショウ全体が入ります）。 '
+      + '<a href="/#signup">無料登録</a>';
+  }
+};
+
+/* 端末のメモリでは収まらない長さのときの案内。/* 端末のメモリでは収まらない長さのときの案内。
    ただ断るのではなく、次の一手(範囲を狭める/パソコンで開く)まで書く */
 MC.ui.showLongExportHelp = (okMin, mb) => {
   const $ = MC.ui.$;
@@ -772,6 +792,21 @@ MC.ui.wire = () => {
     $("#exportBtn").disabled = true;
     $("#cancelBtn").style.display = "inline-block";
     const mode = MC.ui.exportMode();
+
+    /* プラン上の書き出し上限(登録8分30秒 / ゲスト5分)。
+       端末のメモリ上限とは理由が違うので、案内も分ける */
+    {
+      const lim = window.MZ_LIMITS;
+      const [tI, tO] = MC.trimRange();
+      const wantSec = Math.max(0, tO - tI);
+      if (lim && wantSec > lim.maxExportSec) {
+        MC.ui.showExportLimitHelp(wantSec, lim);
+        $("#exportBtn").disabled = !MC.S.clips.length;
+        $("#cancelBtn").style.display = "none";
+        prog.style.display = "none";
+        return;
+      }
+    }
 
     /* 保存先を先に決める。ここで得たハンドルへ muxer が直接書くので、
        完成MP4をメモリに溜めずに済む(長尺の Array buffer allocation failed 対策)。
