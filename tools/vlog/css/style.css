@@ -55,19 +55,15 @@ button, select, input, label, .btn { touch-action: manipulation; }
 .beta-disclaimer strong { color: var(--tx); }
 .disc-more summary { cursor: pointer; color: var(--acc); }
 
-/* ---------- モード選択(縦積み1カラムが既定) ---------- */
-.mode-select { padding: 22px 16px 40px; }
-.mode-inner { max-width: 760px; margin: 0 auto; }
-.mode-title { font-size: 19px; font-weight: 800; color: var(--navy); text-align: center; }
-.mode-lead { margin-top: 6px; font-size: 13px; color: var(--tx2); text-align: center; }
-.mode-cards { margin-top: 18px; display: grid; gap: 12px; }
+/* ---------- 雰囲気(作業領域内の1セクション。2026-07-20: 着地ページから変更) ---------- */
+.mode-cards { margin-top: 12px; display: grid; gap: 10px; }
 .mode-card {
   display: grid; grid-template-columns: 46px 1fr; grid-template-rows: auto auto auto;
   gap: 2px 14px; align-items: center; text-align: left;
   padding: 16px; min-height: 92px;               /* 親指で押しやすい大きさ */
-  background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+  background: var(--panel); border: 1.5px solid var(--line); border-radius: 16px;
   box-shadow: var(--shadow-card); cursor: pointer;
-  transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+  transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease, background .16s ease;
 }
 .mode-card:active { transform: scale(.985); }
 .mode-card-icon { grid-row: 1 / 4; display: grid; place-items: center;
@@ -76,17 +72,19 @@ button, select, input, label, .btn { touch-action: manipulation; }
 .mode-card-name { font-size: 16px; font-weight: 800; color: var(--navy); }
 .mode-card-desc { font-size: 13px; color: var(--tx2); line-height: 1.6; }
 .mode-card-meta { font-size: 11.5px; color: var(--acc2-text); font-weight: 700; }
+/* 選択中(常設セクションになったため、選ばれている状態を明示する) */
+.mode-card.on { border-color: var(--acc); background: #eaf0ff; box-shadow: 0 4px 16px rgba(30, 79, 214, .16); }
+.mode-card.on .mode-card-icon { background: var(--acc); color: #fff; }
 @media (hover: hover) {
   .mode-card:hover { border-color: var(--acc); box-shadow: 0 6px 22px rgba(30, 79, 214, .14); }
 }
+/* コンパクト版(セクション内表示。着地ページ版より一回り小さく) */
+.mode-cards--compact .mode-card { padding: 12px; min-height: 72px; border-radius: 14px; }
+.mode-cards--compact .mode-card-icon { width: 38px; height: 38px; border-radius: 11px; font-size: 16px; }
+.mode-cards--compact .mode-card-name { font-size: 14.5px; }
+.mode-cards--compact .mode-card-desc { font-size: 12px; }
 
 /* ---------- 作業領域 ---------- */
-.mode-back-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  padding: 10px 16px; background: #fff; border-bottom: 1px solid var(--line); }
-.mode-back { font-size: 12.5px; color: var(--acc); background: none; border: 0;
-  padding: 6px 2px; cursor: pointer; }
-.mode-current { font-size: 12.5px; font-weight: 700; color: var(--navy); }
-
 /* 既定は1カラム。2カラム化は 980px 以上でのみ */
 .wrap { display: flex; flex-direction: column; gap: 14px; padding: 14px;
   padding-bottom: calc(92px + env(safe-area-inset-bottom, 0px)); }
@@ -136,18 +134,32 @@ button, select, input, label, .btn { touch-action: manipulation; }
   color: var(--tx2); padding: 4px 0; min-height: 44px; }
 .slot-showtoggle input { width: 22px; height: 22px; accent-color: var(--acc); }
 
-/* ---------- 撮ってほしいもののチェックリスト ---------- */
-.checklist { margin-top: 10px; }
+/* ---------- 撮ってほしいもののチェックリスト ----------
+   「どんなインサート映像がいいの？」の中身。折りたたみ(details)なので
+   summary は details.panel と別クラスで軽めに(パネルの中の入れ子のため) */
+.checklist-details { margin-top: 10px; }
+.checklist-details > summary { font-size: 12.5px; font-weight: 700; color: var(--acc);
+  display: flex; align-items: center; gap: 6px; min-height: 40px; cursor: pointer;
+  list-style: none; }
+.checklist-details > summary::-webkit-details-marker { display: none; }
+.checklist-details > summary::before { content: "\f059"; font-family: "Font Awesome 6 Free";
+  font-weight: 900; font-size: 12px; }
+.checklist { margin-top: 8px; }
 .cl-lead { font-size: 12px; font-weight: 700; color: var(--navy); }
-.cl-list { list-style: none; margin-top: 8px; display: grid; gap: 8px; }
-.cl-list li { display: grid; grid-template-columns: 18px 1fr; gap: 2px 8px;
-  align-items: start; font-size: 12px; color: var(--tx2); }
-.cl-list li i { grid-row: 1 / 3; margin-top: 2px; color: #c3cad8; font-size: 13px; }
-.cl-list li.on i { color: var(--ok); }
-.cl-what { font-size: 12.5px; font-weight: 700; color: var(--tx); }
+.cl-list { list-style: none; margin-top: 8px; display: grid; gap: 10px; }
+.cl-list li { display: flex; align-items: flex-start; gap: 10px;
+  font-size: 12px; color: var(--tx2); }
+/* 内容アイコン(トンマナは mode-card-icon と揃える: 丸バッジ+ネイビー系の色) */
+.cl-icon { flex: none; display: grid; place-items: center; width: 30px; height: 30px;
+  border-radius: 10px; background: var(--panel2); color: var(--acc); font-size: 13px; }
+.cl-list li.on .cl-icon { background: var(--acc); color: #fff; }
+.cl-body { min-width: 0; }
+.cl-what { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; color: var(--tx); }
+.cl-status { color: #c3cad8; font-size: 12px; }
+.cl-list li.on .cl-status { color: var(--ok); }
 .cl-list li.on .cl-what { color: var(--tx2); text-decoration: line-through;
   text-decoration-color: rgba(12, 15, 20, .25); }
-.cl-how { font-size: 11.5px; line-height: 1.65; }
+.cl-how { margin-top: 2px; font-size: 11.5px; line-height: 1.65; }
 
 /* ---------- 追加ボタン(枠を先出ししない代わりの入口) ---------- */
 .add-btn { margin-top: 10px; width: 100%; min-height: 52px;
@@ -182,13 +194,11 @@ details.panel[open] > summary::after { transform: rotate(180deg); }
 #logoTune { margin-top: 12px; }
 #logoThreshold { width: 100%; height: 44px; }
 
-/* ---------- 注意書き ---------- */
-.notice-panel { background: #fffdf5; border-color: #ecd9a0; }
-.notice-list { list-style: none; margin-top: 10px; display: grid; gap: 9px; }
-.notice-list li { font-size: 12px; line-height: 1.75; color: var(--tx2);
-  padding-left: 16px; position: relative; }
-.notice-list li::before { content: "・"; position: absolute; left: 0; color: var(--acc2); }
-.notice-list strong { color: var(--tx); }
+/* ---------- 責任についての一言(2026-07-20: 折りたたみの注意事項一覧から変更) ---------- */
+.notice-line { display: flex; align-items: flex-start; gap: 8px;
+  font-size: 11.5px; line-height: 1.7; color: var(--tx2);
+  background: #fffdf5; border-color: #ecd9a0; }
+.notice-line i { flex: none; margin-top: 2px; color: var(--acc2-text); }
 
 /* ボトムバーの促し先を光らせる(1タップ目=ここです、2タップ目=実行) */
 .ab-target { animation: abpulse .9s ease 1; }
@@ -205,6 +215,23 @@ details.panel[open] > summary::after { transform: rotate(180deg); }
 .field input[type="text"] { padding: 12px; min-height: 44px; font-size: 16px;   /* 16px未満はiOSが自動ズームして戻らない */
   border: 1px solid var(--line); border-radius: 11px; background: #fff; color: var(--tx); }
 .field input[type="text"]:focus { outline: 2px solid var(--acc); outline-offset: -1px; }
+.field select { padding: 12px; min-height: 44px; font-size: 16px;   /* 16px未満はiOSが自動ズームして戻らない */
+  border: 1px solid var(--line); border-radius: 11px; background: #fff; color: var(--tx);
+  -webkit-appearance: none; appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23768096'%3E%3Cpath fill-rule='evenodd' d='M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z' clip-rule='evenodd'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center; background-size: 16px; }
+.field select:focus { outline: 2px solid var(--acc); outline-offset: -1px; }
+.field input[type="text"]#forWhomOtherInput { margin-top: 6px; }
+
+/* ロックされた枠(無料登録が必要) */
+.slot-locked { cursor: pointer; opacity: .82; }
+.slot-locked .slot-what { color: var(--tx2); }
+.slot-locked .slot-what i { color: var(--acc2-text); }
+
+/* Vlog自動編集の未実装案内(開発中である旨を正直に出す) */
+.build-wip-note { margin-top: 10px; padding: 10px 12px; font-size: 12px; line-height: 1.7;
+  color: var(--acc2-text); background: #fdf3d7; border: 1px solid #ecd9a0; border-radius: 11px;
+  display: flex; align-items: center; gap: 8px; }
 
 /* ボタン */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px;

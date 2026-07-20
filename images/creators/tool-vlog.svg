@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 250" role="img" aria-label="Vlog: インタビューと映像が1本の団体Vlogに組み上がる">
+  <defs>
+    <linearGradient id="vbg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#eef3ff"/>
+      <stop offset="1" stop-color="#f7f9ff"/>
+    </linearGradient>
+    <linearGradient id="vmain" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4d7ce8"/>
+      <stop offset="1" stop-color="#1e4fd6"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="250" fill="url(#vbg)"/>
+
+  <!-- 素材カード(左): インタビュー・演奏・オフショット -->
+  <g font-family="-apple-system,'Hiragino Sans',sans-serif" font-weight="700">
+    <g>
+      <rect x="36" y="30" width="92" height="56" rx="8" fill="#dfe8fb" stroke="#1e4fd6" stroke-width="2.5"/>
+      <circle cx="66" cy="58" r="9" fill="#1e4fd6"/>
+      <path d="M48 78 Q66 62 84 78" stroke="#1e4fd6" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+      <path d="M92 50 h18 a5 5 0 0 1 5 5 v8 a5 5 0 0 1 -5 5 h-8 l-6 7 v-7 h-4 a5 5 0 0 1 -5 -5 v-8 a5 5 0 0 1 5 -5 z" fill="#ffffff" stroke="#1e4fd6" stroke-width="2"/>
+      <text x="44" y="45" font-size="10" fill="#1e4fd6">INTERVIEW</text>
+    </g>
+    <g>
+      <rect x="36" y="96" width="92" height="56" rx="8" fill="#ffffff" stroke="#c9d6ee" stroke-width="2"/>
+      <rect x="52" y="120" width="10" height="22" rx="3" fill="#aabde0"/>
+      <rect x="70" y="112" width="10" height="30" rx="3" fill="#aabde0"/>
+      <rect x="88" y="124" width="10" height="18" rx="3" fill="#aabde0"/>
+      <path d="M106 116 v18 a5 5 0 1 1 -3 -4.6 V116 l8 -3 v6 z" fill="#aabde0"/>
+      <text x="44" y="111" font-size="10" fill="#68738a">SHOW</text>
+    </g>
+    <g>
+      <rect x="36" y="162" width="92" height="56" rx="8" fill="#ffffff" stroke="#c9d6ee" stroke-width="2"/>
+      <circle cx="62" cy="188" r="7" fill="#aabde0"/>
+      <circle cx="84" cy="186" r="7" fill="#aabde0"/>
+      <path d="M50 208 Q62 196 74 208 M72 208 Q84 198 96 208" stroke="#aabde0" stroke-width="3" fill="none" stroke-linecap="round"/>
+      <path d="M104 180 a6 6 0 0 1 12 0 q0 7 -12 13 q-12 -6 -12 -13 a6 6 0 0 1 12 0" fill="#e0245e" opacity="0.85"/>
+      <text x="44" y="177" font-size="10" fill="#68738a">OFF SHOT</text>
+    </g>
+  </g>
+
+  <!-- 矢印 -->
+  <g stroke="#1e4fd6" stroke-width="4" fill="none" stroke-linecap="round">
+    <path d="M146 125 L176 125"/>
+    <path d="M168 116 L178 125 L168 134"/>
+  </g>
+
+  <!-- できあがるVlog(右・横長フレーム) -->
+  <g>
+    <rect x="196" y="52" width="172" height="122" rx="14" fill="#0f2138"/>
+    <rect x="203" y="59" width="158" height="108" rx="9" fill="url(#vmain)"/>
+    <!-- 演者(引きの隊列) -->
+    <circle cx="245" cy="102" r="9" fill="#ffffff"/>
+    <circle cx="281" cy="98" r="11" fill="#ffffff"/>
+    <circle cx="318" cy="102" r="9" fill="#ffffff"/>
+    <path d="M228 132 Q245 114 262 132 M262 128 Q281 108 300 128 M300 132 Q318 114 335 132"
+      stroke="#ffffff" stroke-width="5" fill="none" stroke-linecap="round"/>
+    <!-- インタビュー小窓(Bロールに声が重なる) -->
+    <rect x="322" y="130" width="34" height="32" rx="6" fill="#ffffff"/>
+    <circle cx="339" cy="142" r="5.5" fill="#1e4fd6"/>
+    <path d="M330 156 Q339 148 348 156" stroke="#1e4fd6" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <!-- 字幕 -->
+    <rect x="214" y="146" width="72" height="7" rx="3.5" fill="#ffffff" opacity="0.9"/>
+    <rect x="214" y="157" width="46" height="7" rx="3.5" fill="#ffffff" opacity="0.6"/>
+    <!-- VLOGバッジ -->
+    <rect x="210" y="66" width="42" height="16" rx="8" fill="#e0245e"/>
+    <text x="231" y="78" text-anchor="middle" font-family="-apple-system,sans-serif" font-size="10" font-weight="700" fill="#ffffff">VLOG</text>
+  </g>
+
+  <!-- 再生バー(右下) -->
+  <g>
+    <rect x="196" y="186" width="172" height="26" rx="13" fill="#ffffff" stroke="#c9d6ee" stroke-width="2"/>
+    <path d="M212 193 v12 l10 -6 z" fill="#1e4fd6"/>
+    <rect x="230" y="197" width="124" height="4" rx="2" fill="#dfe8fb"/>
+    <rect x="230" y="197" width="78" height="4" rx="2" fill="#1e4fd6"/>
+    <circle cx="308" cy="199" r="5" fill="#1e4fd6"/>
+  </g>
+</svg>

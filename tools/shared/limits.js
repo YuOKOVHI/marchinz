@@ -65,15 +65,20 @@ window.MZ_LIMITS = (() => {
     maxRangeSec: unlimited ? Infinity : 60,      // Privacyでモザイク作業できる範囲
     minRangeSec: 10,
 
-    /* Vlog: 枠の数と完成尺。枠の数は管理者も登録ユーザーと同じ(構成が変わるため)。
-       完成尺の下限181秒(3分01秒)は全ロール共通で、本体のYouTube掲載条件
-       (export_youtube_list_via_api.py の MIN_VIDEO_DURATION_SEC = 181)に揃えてある。
-       作ったVlogをそのままMarchinZに載せられる長さにするための線。 */
+    /* Vlog(2026-07-20改定): 枠の数・素材尺・完成尺。
+       Switcher/ReAngleの maxVideoSec とは別枠で持つ(用途が違うので decouple)。
+       写真(maxVlogPhotos)・ロゴ(maxVlogLogos)は現時点でUIが無い先行定義。
+       挿入型の写真素材はVlogにまだ実装されていないため、値だけ用意してある。 */
+    maxVlogClipSec: unlimited ? Infinity : member ? 600 : 300,     // 1本の尺: 登録10分/ゲスト5分
+    vlogClipLimitLabel: member ? "10分" : "5分",
     maxVlogInterviews: member || unlimited ? 3 : 1,
-    maxVlogInserts: member || unlimited ? 10 : 5,
+    maxVlogInserts: unlimited ? Infinity : member ? 8 : 4,          // Bロール: 登録8/ゲスト4
+    maxVlogLogos: unlimited ? Infinity : member ? 1 : 0,            // ロゴ: 登録1/ゲスト不可
+    maxVlogPhotos: unlimited ? Infinity : member ? 8 : 0,           // 写真: 登録8枚/ゲスト不可(未実装枠)
     maxVlogBgm: 3,
-    vlogMinSec: 181,                                   // 3分01秒
-    vlogMaxSec: member || unlimited ? 300 : 210,       // 登録5分 / ゲスト3分30秒
+    vlogMinSec: 181,                                   // MarchinZのYouTube一覧に載せられる下限(3分01秒)
+    vlogMaxSec: unlimited ? Infinity : member ? 300 : 180,          // 完成: 登録5分/ゲスト3分
+    vlogBitrate: 8e6,                                  // 書き出しビットレート(将来のexporter用)
   };
 
   /* 上限なし: 上限の文言([data-limit-note])を隠して帯を出す。
@@ -106,13 +111,15 @@ window.MZ_LIMITS = (() => {
     if (!hosts.length) return;
     const kind = hosts[0].getAttribute("data-mz-plan");   // "video" | "photo" | "vlog"
     if (kind === "vlog") {
-      // Vlogは上限が3種(インタビュー/映像/完成尺)あるため専用の文言にする
+      // Vlogは上限が複数種あるため専用の文言にする
       const html = L.unlimited
         ? '<p class="mz-plan">上限なしで使えます（完成は3分01秒〜5分）。</p>'
         : L.member
-          ? '<p class="mz-plan">インタビュー3人・映像10本・完成は3分01秒〜5分まで使えます。</p>'
-          : '<p class="mz-plan">ゲストはインタビュー1人・映像5本・完成3分30秒まで。'
-            + '登録すると3人・10本・5分に。 <a href="/#signup">無料登録</a></p>';
+          ? '<p class="mz-plan">1本10分まで・インタビュー3人・インサート映像8本・ロゴ1枚・写真8枚。'
+            + '完成は3分01秒〜5分まで使えます。</p>'
+          : '<p class="mz-plan">ゲストは1本5分まで・インタビュー1人・インサート映像4本まで'
+            + '（ロゴ・写真は使えません）。完成は3分まで。'
+            + '登録すると10分・3人・8本・ロゴ1枚・写真8枚・5分に。 <a href="/#signup">無料登録</a></p>';
       hosts.forEach(el => { el.innerHTML = html; });
       return;
     }

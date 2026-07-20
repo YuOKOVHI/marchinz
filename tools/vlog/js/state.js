@@ -98,6 +98,7 @@ window.MV = {
   saveState() {
     try {
       localStorage.setItem(MV.SKEY, JSON.stringify({
+        mode: MV.S.mode,
         orgName: MV.S.orgName, forWhom: MV.S.forWhom,
         aspect: MV.S.aspect, audioMode: MV.S.audioMode,
         endColor: MV.S.endColor, showMix: MV.S.showMix,
@@ -105,12 +106,13 @@ window.MV = {
     } catch (_) {}
   },
 
-  /* モードは保存しない(素材が消えている再訪で、いきなり作業画面に入ると迷うため
-     必ずモード選択から始める) */
+  /* 2026-07-20: 雰囲気選択が単体の着地ページでなくなり、作業領域内の
+     1セクションになったため、モードも他の設定と同様に保存して復元する */
   restoreState() {
     try {
       const r = JSON.parse(localStorage.getItem(MV.SKEY) || "null");
       if (!r) return;
+      if (r.mode) MV.S.mode = r.mode;
       if (r.orgName) MV.S.orgName = r.orgName;
       if (r.forWhom) MV.S.forWhom = r.forWhom;
       if (MV.ASPECTS[r.aspect]) MV.S.aspect = r.aspect;

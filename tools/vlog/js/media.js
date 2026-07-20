@@ -49,7 +49,7 @@ MV.media.addVideos = async (slot, files) => {
   const L = window.MZ_LIMITS || {};
   const list = slot === "itv" ? MV.S.interviews : MV.S.inserts;
   const max = slot === "itv" ? (L.maxVlogInterviews || 1) : (L.maxVlogInserts || 5);
-  const labelJa = slot === "itv" ? "インタビュー" : "映像";
+  const labelJa = slot === "itv" ? "インタビュー" : "インサート映像";
 
   for (const f of files) {
     if (MV.media.kindOf(f) !== "video") {
@@ -99,11 +99,12 @@ MV.media.addVideos = async (slot, files) => {
       continue;
     }
 
-    if (v.duration > (L.maxVideoSec || 300.5)) {
+    // Vlog専用の1本あたりの上限。Switcher/ReAngleのmaxVideoSecとは別枠(2026-07-20)
+    if (v.duration > (L.maxVlogClipSec || 300)) {
       MV.ui.toast(`⚠ ${f.name} は約${Math.round(v.duration / 60)}分です。`
         + (L.member || L.unlimited
-            ? `1本${L.videoLimitLabel || "12分"}までです。`
-            : `ゲストは${L.videoLimitLabel || "5分"}・無料登録で12分まで使えます。`)
+            ? `1本${L.vlogClipLimitLabel || "10分"}までです。`
+            : `ゲストは${L.vlogClipLimitLabel || "5分"}・無料登録で10分まで使えます。`)
         + "使いたい場面だけ切り出してからお試しください");
       URL.revokeObjectURL(clip.url);
       continue;
@@ -184,6 +185,11 @@ MV.media.addAudios = async files => {
 /* ---------- ロゴ ---------- */
 MV.media.addLogo = async f => {
   if (!f) return;
+  const L = window.MZ_LIMITS || {};
+  if (!(L.maxVlogLogos > 0)) {
+    MV.ui.toast("ロゴの追加は無料登録が必要です。 " + "登録すると団体ロゴを1枚まで使えます");
+    return;
+  }
   if (MV.media.kindOf(f) !== "image") { MV.ui.toast(`⚠ ${f.name} は画像ではありません`); return; }
   if (MV.S.logo) MV.media.remove("logo", "logo");
   await MV.logo.load(f);

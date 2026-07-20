@@ -30,10 +30,26 @@ window.MZSiteChrome = (() => {
   const X_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">'
     + '<path d="M18.9 2h3.68l-8.04 9.19L24 22h-7.41l-5.8-7.58L4.16 22H.47l8.6-9.83L0 2h7.6l5.24 6.91L18.9 2zm-1.29 17.8h2.04L6.49 4.1H4.3L17.61 19.8z" fill="currentColor"></path></svg>';
 
+  /* ログイン状態の表示。ツールはFirebase SDKを読まない設計なので、本体
+     auth.jsがlocalStorageへ書く印(limits.jsが読んでいるのと同じ)を見る。
+     未ログイン=「はじめての方/ログイン」、ログイン中=「マイページ」1つだけ
+     (会員か管理者かはここでは区別しない。ログインしている事実だけを見せる)。 */
+  function authAreaHtml() {
+    const L = window.MZ_LIMITS;
+    const loggedIn = Boolean(L && (L.member || L.admin));
+    if (loggedIn) {
+      return '<a href="/#profile" class="mzsc-brand-btn mzsc-brand-btn--primary">'
+        + '<i class="fa-solid fa-user" aria-hidden="true"></i> マイページ</a>';
+    }
+    return '<a href="/#signup" class="mzsc-brand-btn mzsc-brand-btn--primary">はじめての方</a>'
+      + '<a href="/#login" class="mzsc-brand-btn">ログイン</a>';
+  }
+
   /* ヘッダー: ブランド + グローバルナビ(TOPと同じ並び) */
   function headerHtml() {
     const nav = NAV.map(([href, label]) =>
       `<a href="${href}"${href === "/#creators" ? ' class="on"' : ""}>${esc(label)}</a>`).join("");
+    const auth = authAreaHtml();
     return `
 <header class="mzsc-brand">
   <div class="mzsc-brand-inner">
@@ -43,10 +59,7 @@ window.MZSiteChrome = (() => {
       </a>
       <p class="mzsc-brand-tagline">残す、見つける、盛り上げる！<br>マーチングコミュニティ「マーチンズ/MarchinZ」</p>
     </div>
-    <div class="mzsc-brand-right">
-      <a href="/#signup" class="mzsc-brand-btn mzsc-brand-btn--primary">はじめての方</a>
-      <a href="/#login" class="mzsc-brand-btn">ログイン</a>
-    </div>
+    <div class="mzsc-brand-right">${auth}</div>
     <button type="button" class="mzsc-burger" id="mzscBurger" aria-label="メニューを開く" aria-expanded="false">
       <span></span><span></span><span></span>
     </button>
@@ -57,10 +70,7 @@ window.MZSiteChrome = (() => {
   <button type="button" class="mzsc-drawer-bd" data-mzsc-close aria-label="メニューを閉じる"></button>
   <div class="mzsc-drawer-panel" role="dialog" aria-modal="true" aria-label="サイトメニュー">
     <button type="button" class="mzsc-drawer-close" data-mzsc-close aria-label="閉じる">×</button>
-    <div class="mzsc-drawer-cta">
-      <a href="/#signup" class="mzsc-brand-btn mzsc-brand-btn--primary">はじめての方</a>
-      <a href="/#login" class="mzsc-brand-btn">ログイン</a>
-    </div>
+    <div class="mzsc-drawer-cta">${auth}</div>
     <p class="mzsc-drawer-label">映像ツール</p>
     <nav class="mzsc-drawer-nav">
       <a href="/tools/vlog/"><i class="fa-solid fa-film" aria-hidden="true"></i> MarchinZ Vlog</a>

@@ -36,72 +36,63 @@
   <details class="disc-more"><summary>ベータ版の注意</summary>ベータ版のため動作は保証されず、生成結果・不具合について当方は責任を負いません。</details>
 </div>
 
-<!-- ============ モード選択 ============ -->
-<section id="modeSelect" class="mode-select">
-  <div class="mode-inner">
-    <h2 class="mode-title">Vlogの雰囲気を選ぶ</h2>
-    <p class="mode-lead">あとから切り替えられます</p>
-    <div class="mode-cards">
-
-      <button type="button" class="mode-card" data-mode="recommend">
-        <span class="mode-card-icon" aria-hidden="true"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
-        <span class="mode-card-name">おすすめ</span>
-        <span class="mode-card-desc">見やすさとテンポのバランス型。はじめてならこれ</span>
-        <span class="mode-card-meta">練習の記録・団体紹介に</span>
-      </button>
-
-      <button type="button" class="mode-card" data-mode="emotional">
-        <span class="mode-card-icon" aria-hidden="true"><i class="fa-solid fa-heart"></i></span>
-        <span class="mode-card-name">エモーショナル</span>
-        <span class="mode-card-desc">ゆっくり見せて余韻を残す。語りが主役</span>
-        <span class="mode-card-meta">引退・卒業・ドキュメント風に</span>
-      </button>
-
-      <button type="button" class="mode-card" data-mode="active">
-        <span class="mode-card-icon" aria-hidden="true"><i class="fa-solid fa-bolt"></i></span>
-        <span class="mode-card-name">アクティブ</span>
-        <span class="mode-card-desc">テンポよく畳みかける。海外コーのエピソード風</span>
-        <span class="mode-card-meta">大会・遠征・日常の裏側に</span>
-      </button>
-
-    </div>
-  </div>
-</section>
-
-<!-- ============ 作業領域 ============ -->
-<div id="workspace" hidden>
-<div class="mode-back-bar">
-  <button type="button" id="modeBackBtn" class="mode-back">← 雰囲気を選び直す</button>
-  <span id="modeLabel" class="mode-current"></span>
-</div>
-
+<!-- ============ 作業領域(雰囲気もこの中の1セクションとして選ぶ) ============ -->
+<div id="workspace">
 <main class="wrap">
   <div class="col">
+
+    <!-- 雰囲気(いつでも切り替えられる。あとから変えても素材はそのまま) -->
+    <section class="panel" id="moodSec">
+      <h2><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> 雰囲気</h2>
+      <p class="sec-lead">あとから切り替えられます</p>
+      <div class="mode-cards mode-cards--compact" role="radiogroup" aria-label="Vlogの雰囲気">
+
+        <button type="button" class="mode-card" data-mode="recommend" role="radio">
+          <span class="mode-card-icon" aria-hidden="true"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
+          <span class="mode-card-name">おすすめ</span>
+          <span class="mode-card-desc">見やすさとテンポのバランス型。はじめてならこれ</span>
+          <span class="mode-card-meta">練習の記録・団体紹介に</span>
+        </button>
+
+        <button type="button" class="mode-card" data-mode="active" role="radio">
+          <span class="mode-card-icon" aria-hidden="true"><i class="fa-solid fa-bolt"></i></span>
+          <span class="mode-card-name">アクティブ</span>
+          <span class="mode-card-desc">テンポよく畳みかける。海外コーのエピソード風</span>
+          <span class="mode-card-meta">大会・遠征・日常の裏側に</span>
+        </button>
+
+        <button type="button" class="mode-card" data-mode="emotional" role="radio">
+          <span class="mode-card-icon" aria-hidden="true"><i class="fa-solid fa-heart"></i></span>
+          <span class="mode-card-name">エモーショナル</span>
+          <span class="mode-card-desc">ゆっくり見せて余韻を残す。語りが主役</span>
+          <span class="mode-card-meta">引退・卒業・ドキュメント風に</span>
+        </button>
+
+      </div>
+    </section>
 
     <!-- 誰に見てほしいか(大石さんレビュー: これを決めると選ぶ素材が変わる) -->
     <section class="panel" id="whomSec">
       <div class="field">
-        <label for="forWhomInput">この動画、いちばん見てほしい人は？</label>
-        <input type="text" id="forWhomInput" placeholder="例: 引退する3年生 / 入部を迷っている小6"
-          maxlength="30" enterkeyhint="done">
+        <label for="forWhomSelect">この動画、いちばん見てほしい人は？</label>
+        <select id="forWhomSelect">
+          <option value="">選んでください</option>
+          <option value="引退・卒業する3年生">引退・卒業する3年生</option>
+          <option value="入部を迷っている新入生・中学生">入部を迷っている新入生・中学生</option>
+          <option value="保護者・ご家族">保護者・ご家族</option>
+          <option value="OB・OG（卒業生）">OB・OG（卒業生）</option>
+          <option value="大会の審査員・関係者">大会の審査員・関係者</option>
+          <option value="応援してくれる地域の方">応援してくれる地域の方</option>
+          <option value="同じ大会に出る他団体の仲間">同じ大会に出る他団体の仲間</option>
+          <option value="__other__">その他（自由入力）</option>
+        </select>
+        <input type="text" id="forWhomOtherInput" placeholder="例: 入部を迷っている小6"
+          maxlength="30" enterkeyhint="done" hidden>
         <p class="hint">ひとりだけ決めてください。選ぶ素材が変わります。</p>
       </div>
     </section>
 
-    <!-- 映像(必須) -->
-    <section class="panel" id="insSec">
-      <h2><i class="fa-solid fa-photo-film" aria-hidden="true"></i> 映像
-        <span class="hint" data-limit-note data-limit-note-member="(10本まで)">(ゲストは5本・無料登録で10本)</span></h2>
-      <p class="sec-lead">5本あれば形になります。順番は自動で決めるので、並べ替えは不要です。</p>
-      <div id="insCheck" class="checklist"></div>
-      <div id="insSlots" class="slots slots-grid"></div>
-      <button type="button" class="add-btn" data-mv-add="ins">
-        <i class="fa-solid fa-plus"></i> <span id="insAddLabel">映像を追加</span>
-      </button>
-      <input type="file" id="insInput" accept="video/mp4,video/quicktime,video/*" multiple hidden>
-    </section>
-
-    <!-- インタビュー(任意) -->
+    <!-- インタビュー(任意・先に置く) -->
     <section class="panel" id="itvSec">
       <h2><i class="fa-solid fa-comment-dots" aria-hidden="true"></i> インタビュー
         <span class="hint" data-limit-note data-limit-note-member="(3人まで)">(ゲストは1人・無料登録で3人)</span></h2>
@@ -113,17 +104,33 @@
       <input type="file" id="itvInput" accept="video/mp4,video/quicktime,video/*" hidden>
     </section>
 
-    <!-- 音 -->
+    <!-- インサート映像(Bロール・必須) -->
+    <section class="panel" id="insSec">
+      <h2><i class="fa-solid fa-photo-film" aria-hidden="true"></i> インサート映像（Bロール）
+        <span class="hint" data-limit-note data-limit-note-member="(8本まで)">(ゲストは4本・無料登録で8本)</span></h2>
+      <p class="sec-lead">インタビューで話している間に流れる映像です。5本あれば形になります。順番は自動で決めるので、並べ替えは不要です。</p>
+      <details id="insCheckDetails" class="checklist-details">
+        <summary>どんなインサート映像がいいの？</summary>
+        <div id="insCheck" class="checklist"></div>
+      </details>
+      <div id="insSlots" class="slots slots-grid"></div>
+      <button type="button" class="add-btn" data-mv-add="ins">
+        <i class="fa-solid fa-plus"></i> <span id="insAddLabel">インサート映像を追加</span>
+      </button>
+      <input type="file" id="insInput" accept="video/mp4,video/quicktime,video/*" multiple hidden>
+    </section>
+
+    <!-- BGM -->
     <section class="panel" id="audioSec">
-      <h2><i class="fa-solid fa-volume-high" aria-hidden="true"></i> 音</h2>
-      <div class="choice" role="radiogroup" aria-label="音の作り方">
-        <button type="button" class="choice-item on" data-audio="ambient" role="radio" aria-checked="true">
-          <span class="choice-name">演奏をそのまま聴かせる</span>
-          <span class="choice-desc">現場の音だけで作ります。BGMは要りません</span>
-        </button>
+      <h2><i class="fa-solid fa-music" aria-hidden="true"></i> BGM</h2>
+      <div class="choice" role="radiogroup" aria-label="BGMの使い方">
         <button type="button" class="choice-item" data-audio="bgm" role="radio" aria-checked="false">
           <span class="choice-name">BGMを入れる</span>
           <span class="choice-desc">曲を選びます。人が話すところは自動で音を下げます</span>
+        </button>
+        <button type="button" class="choice-item on" data-audio="ambient" role="radio" aria-checked="true">
+          <span class="choice-name">BGMなし</span>
+          <span class="choice-desc">現場の音だけで作ります。BGMは要りません</span>
         </button>
         <button type="button" class="choice-item" data-audio="both" role="radio" aria-checked="false">
           <span class="choice-name">両方</span>
@@ -140,11 +147,12 @@
       </div>
     </section>
 
-    <!-- ロゴ・団体名(任意) -->
+    <!-- ロゴ・団体名(任意。ロゴ画像は無料登録が必要) -->
     <details class="panel" id="logoSec">
       <summary><i class="fa-solid fa-certificate" aria-hidden="true"></i> ロゴと団体名
         <span class="hint">（任意）</span></summary>
       <p class="sec-lead">無くても大丈夫です。あれば右上と最後に表示します。</p>
+      <p class="hint" id="logoGuestNote" data-limit-note hidden>ロゴ画像の追加は無料登録が必要です。団体名だけなら今すぐ使えます。 <a href="/#signup">無料登録</a></p>
       <div id="logoSlot" class="slots"></div>
       <input type="file" id="logoInput" accept="image/png,image/jpeg,image/webp,image/*" hidden>
       <div id="logoTune" hidden>
@@ -179,7 +187,7 @@
 
       <div id="planSummary" class="plan-summary"></div>
       <button id="buildBtn" class="btn primary big" type="button" disabled>
-        <i class="fa-solid fa-wand-magic-sparkles"></i> 組み立てる
+        <i class="fa-solid fa-wand-magic-sparkles"></i> Vlog自動編集
       </button>
       <div id="buildProgress"></div>
       <div id="exportBox" hidden>
@@ -199,18 +207,11 @@
       <div data-mz-plan="vlog"></div>
     </section>
 
-    <!-- 権利・責任について -->
-    <details class="panel notice-panel" id="noticeSec">
-      <summary><i class="fa-solid fa-circle-info" aria-hidden="true"></i> 公開する前に確認してください</summary>
-      <ul class="notice-list">
-        <li><strong>写る人の同意</strong> — 掲載してよいか分からない方が写っていないか、書き出したあと必ず通してご確認ください。顔を隠したいときは
-          <a href="/tools/privacy/">MarchinZ Privacy</a> で先に処理できます。</li>
-        <li><strong>演奏している楽曲の権利</strong> — 本番映像には演奏中の楽曲が入ります。編曲物や市販曲の権利処理は団体様のご責任になります。</li>
-        <li><strong>大会・会場の規約</strong> — 撮影やSNS公開が禁じられている場合があります。主催者の規約をご確認ください。</li>
-        <li><strong>BGMの利用条件</strong> — お使いになる音源のライセンスをご確認ください。</li>
-        <li>本ツールは制作を補助するものです。<strong>できあがった映像の内容・公開について、MarchinZは責任を負いません。</strong></li>
-      </ul>
-    </details>
+    <!-- 責任について -->
+    <p class="panel notice-line">
+      <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+      本ツールは制作を補助するものです。制作した映像の内容・公開について、MarchinZは責任を負いません。
+    </p>
 
   </div>
 

@@ -1305,7 +1305,8 @@ body {
 /* ---------- クリエイターツール: ビジュアル付きカード(v1.36.2) ---------- */
 
 .mz-ctools-grid--visual {
-  grid-template-columns: repeat(3, 1fr);
+  /* 4ツールを 2x2 で(2026-07-20) */
+  grid-template-columns: repeat(2, 1fr);
   gap: 1rem;
 }
 

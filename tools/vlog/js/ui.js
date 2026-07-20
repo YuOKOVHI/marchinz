@@ -32,30 +32,32 @@ MV.ui.fmtClock = sec => {
   return `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
 };
 
-/* ---------- モード選択 ---------- */
+/* ---------- 雰囲気(モード) ----------
+   単体の着地ページではなく、作業領域の最初のセクションとして常に選べる状態にする
+   (2026-07-20)。切り替えても入れた素材は消えない。カードの並びは
+   おすすめ→アクティブ→エモーショナルの順(優さん指定)。 */
 MV.ui.initModes = () => {
   document.querySelectorAll(".mode-card").forEach(card => {
     card.onclick = () => MV.ui.chooseMode(card.getAttribute("data-mode"));
   });
-  MV.ui.$("#modeBackBtn").onclick = () => {
-    MV.ui.$("#workspace").hidden = true;
-    MV.ui.$("#modeSelect").hidden = false;
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
+};
+
+MV.ui.renderModeCards = () => {
+  document.querySelectorAll(".mode-card").forEach(card => {
+    const on = card.getAttribute("data-mode") === MV.S.mode;
+    card.classList.toggle("on", on);
+    card.setAttribute("aria-checked", on ? "true" : "false");
+  });
 };
 
 MV.ui.chooseMode = id => {
   const m = MV.DATA.MODES[id];
-  if (!m) return;
+  if (!m || id === MV.S.mode) return;
   MV.S.mode = id;
   MV.S.plan = null;
   MV.saveState();
-  MV.ui.$("#modeSelect").hidden = true;
-  MV.ui.$("#workspace").hidden = false;
-  MV.ui.$("#modeLabel").textContent = m.name;   // 長文は選択画面で読み終わっている
-  MV.ui.renderAll();
-  MV.ui.syncJourney();
-  window.scrollTo({ top: 0 });
+  MV.ui.renderModeCards();
+  MV.ui.renderAll();   // チェックリスト・Artlistの推奨・見込み尺が雰囲気で変わる
 };
 
 /* ---------- ジャーニーバー(既存3ツールと同じ現在地表示) ---------- */
@@ -73,8 +75,8 @@ MV.ui.initJourney = () => {
   MZJourney.init({
     container: MV.ui.$("#workspace"),
     phases: [
-      { id: "mat",   label: "素材",   hint: "映像を枠に入れてください" },
-      { id: "build", label: "組み立て", hint: "「組み立てる」で構成に沿って並びます" },
+      { id: "mat",   label: "素材",   hint: "インタビュー・インサート映像を枠に入れてください" },
+      { id: "build", label: "組み立て", hint: "「Vlog自動編集」で構成に沿って並びます" },
       { id: "check", label: "見て直す", hint: "できあがりを確認してください" },
       { id: "save",  label: "書き出す", hint: "MP4で保存します" },
     ],
@@ -103,9 +105,12 @@ MV.ui.renderChecklist = () => {
     // 入った本数ぶんだけ、上から満たされたとみなす(判定はせず、責めない見せ方)
     const done = i < n;
     return `<li class="${done ? "on" : ""}">
-      <i class="fa-solid ${done ? "fa-circle-check" : "fa-circle"}" aria-hidden="true"></i>
-      <span class="cl-what">${MV.ui.esc(g.what)}</span>
-      <span class="cl-how">${MV.ui.esc(g.how)}</span>
+      <span class="cl-icon" aria-hidden="true"><i class="fa-solid ${g.icon || "fa-video"}"></i></span>
+      <span class="cl-body">
+        <span class="cl-what">${MV.ui.esc(g.what)}
+          <i class="fa-solid ${done ? "fa-circle-check" : "fa-circle"} cl-status" aria-hidden="true"></i></span>
+        <span class="cl-how">${MV.ui.esc(g.how)}</span>
+      </span>
     </li>`;
   }).join("");
   host.innerHTML = `<p class="cl-lead">この${items.length}つがあると、いい形に組み上がります</p>
@@ -129,13 +134,18 @@ MV.ui.clipCard = (c, kind) => `
 
 MV.ui.renderInsSlots = () => {
   const L = window.MZ_LIMITS || {};
-  const max = L.maxVlogInserts || 5;
+  const max = L.maxVlogInserts || 4;
   const items = MV.S.inserts;
   MV.ui.$("#insSlots").innerHTML = items.map(c => MV.ui.clipCard(c, "ins")).join("");
-  const rest = Math.max(0, max - items.length);
   const btn = MV.ui.$('[data-mv-add="ins"]');
-  MV.ui.$("#insAddLabel").textContent = rest ? `映像を追加（あと${rest}本）` : "これ以上は追加できません";
-  btn.disabled = rest === 0;
+  if (!isFinite(max)) {
+    MV.ui.$("#insAddLabel").textContent = "インサート映像を追加";
+    btn.disabled = false;
+  } else {
+    const rest = Math.max(0, max - items.length);
+    MV.ui.$("#insAddLabel").textContent = rest ? `インサート映像を追加（あと${rest}本）` : "これ以上は追加できません";
+    btn.disabled = rest === 0;
+  }
 };
 
 MV.ui.renderItvSlots = () => {
@@ -143,12 +153,17 @@ MV.ui.renderItvSlots = () => {
   const max = L.maxVlogInterviews || 1;
   const items = MV.S.interviews;
   MV.ui.$("#itvSlots").innerHTML = items.map(c => MV.ui.clipCard(c, "itv")).join("");
-  const rest = Math.max(0, max - items.length);
   const btn = MV.ui.$('[data-mv-add="itv"]');
-  MV.ui.$("#itvAddLabel").textContent = rest
-    ? (items.length ? `もう1人追加（あと${rest}人）` : "インタビューを追加")
-    : "これ以上は追加できません";
-  btn.disabled = rest === 0;
+  if (!isFinite(max)) {
+    MV.ui.$("#itvAddLabel").textContent = items.length ? "もう1人追加" : "インタビューを追加";
+    btn.disabled = false;
+  } else {
+    const rest = Math.max(0, max - items.length);
+    MV.ui.$("#itvAddLabel").textContent = rest
+      ? (items.length ? `もう1人追加（あと${rest}人）` : "インタビューを追加")
+      : "これ以上は追加できません";
+    btn.disabled = rest === 0;
+  }
 };
 
 MV.ui.renderBgmSlots = () => {
@@ -171,12 +186,21 @@ MV.ui.renderBgmSlots = () => {
 MV.ui.renderLogoSlot = () => {
   const host = MV.ui.$("#logoSlot");
   const lg = MV.S.logo;
+  const L = window.MZ_LIMITS || {};
+  const canLogo = L.maxVlogLogos > 0;
+  const note = MV.ui.$("#logoGuestNote");
+  if (note) note.hidden = canLogo;
   MV.ui.$("#logoTune").hidden = !(lg && !lg.useOriginal);
   if (!lg) {
-    host.innerHTML = `<button type="button" class="slot" data-mv-add="logo">
-      <span class="slot-what"><i class="fa-solid fa-plus"></i> 団体のロゴ画像</span>
-      <span class="slot-how">PNGが理想です。背景がついていても自動で抜きます</span>
-    </button>`;
+    host.innerHTML = canLogo
+      ? `<button type="button" class="slot" data-mv-add="logo">
+          <span class="slot-what"><i class="fa-solid fa-plus"></i> 団体のロゴ画像</span>
+          <span class="slot-how">PNGが理想です。背景がついていても自動で抜きます</span>
+        </button>`
+      : `<button type="button" class="slot slot-locked" data-mv-add="logo">
+          <span class="slot-what"><i class="fa-solid fa-lock"></i> 団体のロゴ画像</span>
+          <span class="slot-how">無料登録が必要です</span>
+        </button>`;
     return;
   }
   host.innerHTML = `<div class="slot filled logo-slot">
@@ -228,7 +252,7 @@ MV.ui.renderArtlist = () => {
         <a class="btn" href="${MV.DATA.ARTLIST_REFERRAL}" target="_blank" rel="noopener">
           <i class="fa-solid fa-arrow-up-right-from-square"></i> Artlistで探す</a>
       </div>
-      <p class="hint">このリンクからのご登録で、MarchinZに紹介料が入ります。</p>
+      <p class="hint">このリンクからの年間登録で、サブスクリプション期間に ＋2ヶ月分が無料で追加されます（12ヶ月分の料金で14ヶ月間利用可能）</p>
     </div>`;
   const btn = MV.ui.$("#alCopy");
   if (btn) btn.onclick = async () => {
@@ -290,6 +314,7 @@ MV.ui.renderPlanSummary = () => {
 /* ---------- まとめ描画 ---------- */
 MV.ui.renderAll = () => {
   if (!MV.S.mode) return;
+  MV.ui.renderModeCards();
   MV.ui.renderChecklist();
   MV.ui.renderInsSlots();
   MV.ui.renderItvSlots();
@@ -311,6 +336,37 @@ MV.ui.updateThumb = clip => {
   img.className = "slot-thumb";
   img.src = clip.thumb;
   el.replaceWith(img);
+};
+
+/* ---------- 「いちばん見てほしい人」(プルダウン+その他) ---------- */
+MV.ui.initForWhom = () => {
+  const sel = MV.ui.$("#forWhomSelect");
+  const other = MV.ui.$("#forWhomOtherInput");
+  if (!sel || !other) return;
+
+  // 保存済みの値が選択肢のどれかに一致すればそれを選び、一致しなければ「その他」
+  const saved = MV.S.forWhom || "";
+  const known = [...sel.options].some(o => o.value === saved && o.value !== "__other__" && o.value !== "");
+  if (saved && known) {
+    sel.value = saved;
+  } else if (saved) {
+    sel.value = "__other__";
+    other.hidden = false;
+    other.value = saved;
+  }
+
+  sel.onchange = () => {
+    if (sel.value === "__other__") {
+      other.hidden = false;
+      other.focus();
+      MV.S.forWhom = other.value.trim();
+    } else {
+      other.hidden = true;
+      MV.S.forWhom = sel.value;
+    }
+    MV.saveState();
+  };
+  other.oninput = () => { MV.S.forWhom = other.value.trim(); MV.saveState(); };
 };
 
 /* ---------- ボトムアクションバー(親指ゾーン) ---------- */
@@ -354,11 +410,11 @@ MV.ui.updateActionBar = () => {
   let conf = null;
   if (ws && !ws.hidden && !busy) {
     if (!MV.S.inserts.length) {
-      conf = { label: "まず映像を選ぶ", icon: "fa-photo-film", note: "1本からはじめられます",
+      conf = { label: "まずインサート映像を選ぶ", icon: "fa-photo-film", note: "1本からはじめられます",
         act: () => MV.ui.focusSection("#insSec", () => MV.ui.$("#insInput").click()) };
     } else if (!MV.S.plan) {
       const est = MV.ui.estimate();
-      conf = { label: `組み立てる（約${MV.ui.fmtTime(est)}）`, icon: "fa-wand-magic-sparkles",
+      conf = { label: `Vlog自動編集（約${MV.ui.fmtTime(est)}）`, icon: "fa-wand-magic-sparkles",
         note: MV.S.interviews.length ? "" : "インタビューを足すと、もっと見られる動画になります",
         act: () => MV.ui.$("#buildBtn").click() };
     } else {
@@ -374,6 +430,25 @@ MV.ui.updateActionBar = () => {
   note.hidden = !conf.note;
   btn.disabled = !!conf.disabled;
   MV.ui._abAction = conf.act;
+};
+
+/* ---------- Vlog自動編集(組み立て) ----------
+   2026-07-20 時点、自動編集エンジン(planner/preview/exporter)は未実装
+   (Phase 0 のみ完了)。ボタンに結線が無く、押しても無反応だったのを修正する。
+   本体を実装するまでは、何が起きているかを正直に伝える */
+MV.ui.initBuild = () => {
+  const btn = MV.ui.$("#buildBtn");
+  if (!btn) return;
+  btn.onclick = () => {
+    if (!MV.ui.ready()) return;
+    MV.log("build: 自動編集エンジンは開発中のため未実行");
+    MV.ui.toast("Vlog自動編集は近日公開予定です。素材の登録はこのまま進められます");
+    const prog = MV.ui.$("#buildProgress");
+    if (prog) {
+      prog.innerHTML = '<p class="build-wip-note"><i class="fa-solid fa-hammer" aria-hidden="true"></i> '
+        + 'Vlog自動編集は近日公開予定です。もうしばらくお待ちください。</p>';
+    }
+  };
 };
 
 /* ---------- 入力の結線 ---------- */
@@ -442,9 +517,9 @@ MV.ui.initInputs = () => {
   org.value = MV.S.orgName || "";
   org.oninput = () => { MV.S.orgName = org.value.trim(); MV.saveState(); };
 
-  const whom = MV.ui.$("#forWhomInput");
-  whom.value = MV.S.forWhom || "";
-  whom.oninput = () => { MV.S.forWhom = whom.value.trim(); MV.saveState(); };
+  /* 「いちばん見てほしい人」はプルダウン。選択肢の候補で足りないときだけ
+     「その他」を選ぶと自由入力欄が出る(2026-07-20: テキスト入力→選択式に) */
+  MV.ui.initForWhom();
 
   const th = MV.ui.$("#logoThreshold");
   if (th) th.onchange = () => MV.logo.retry(Number(th.value));
@@ -452,9 +527,9 @@ MV.ui.initInputs = () => {
   const rb = MV.ui.$("#rebuildBtn");
   if (rb) rb.onclick = () => {
     MV.S.plan = null;
-    MV.ui.$("#workspace").hidden = true;
-    MV.ui.$("#modeSelect").hidden = false;
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    MV.ui.$("#exportBox").hidden = true;
+    MV.ui.renderPlanSummary();
+    MV.ui.$("#moodSec").scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   // 画面のどこにドロップしても受ける
@@ -466,8 +541,11 @@ MV.ui.initInputs = () => {
 };
 
 MV.ui.init = () => {
+  if (!MV.DATA.MODES[MV.S.mode]) MV.S.mode = "recommend";   // 着地ページが無くなったため既定を持つ
   MV.ui.initModes();
   MV.ui.initInputs();
+  MV.ui.initBuild();
   MV.ui.initActionBar();
   MV.ui.initJourney();
+  MV.ui.renderAll();
 };

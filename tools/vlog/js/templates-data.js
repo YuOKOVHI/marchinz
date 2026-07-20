@@ -50,12 +50,12 @@ MV.DATA = {
       blocks: [
         { id: "cold", label: "つかみ", src: "insert", pct: 5, cutSec: null, trans: "cut",
           dist: "寄り", emo: "静", ambient: true,
-          guide: { what: "何も起きていない時間",
+          guide: { what: "何も起きていない時間", icon: "fa-hourglass-half",
                    how: "集合前や練習の合間を10秒だけ回してください。呼びかけて振り向いたところ、笑っているところ。決めゼリフはいりません。気づかれても、そのまま回し続けて" } },
 
         { id: "today", label: "今日は何の日", src: "insert", pct: 5, cutSec: 3.0, trans: "cut",
           dist: "引き", emo: "静",
-          guide: { what: "日付と場所が分かるもの",
+          guide: { what: "日付と場所が分かるもの", icon: "fa-map-pin",
                    how: "会場の看板、朝の集合、バスの前。ひとこと「今日は◯◯大会です」と言ってもらえると完璧です" } },
 
         { id: "title", label: "タイトル", src: "title", pct: 3, cutSec: null, trans: "dissolve",
@@ -63,7 +63,7 @@ MV.DATA = {
 
         { id: "digestA", label: "練習の風景", src: "insert", pct: 15, cutSec: 3.0, trans: "cut",
           dist: "引き", emo: "積み上げ",
-          guide: { what: "合奏・基礎練・移動",
+          guide: { what: "合奏・基礎練・移動", icon: "fa-people-group",
                    how: "10秒回して、止めて、立ち位置を変える。これを3回。歩きながら撮らない、ズームは使わない(寄りたければ自分が近づく)。1本は全員が画面に入る位置から" } },
 
         { id: "itv1", label: "インタビュー①", src: "interview", pct: 13, cutSec: null,
@@ -74,7 +74,7 @@ MV.DATA = {
 
         { id: "insB", label: "表情・手元", src: "insert", pct: 7, cutSec: 3.0, trans: "cut",
           dist: "寄り", emo: "積み上げ",
-          guide: { what: "顔・指・楽器の寄り",
+          guide: { what: "顔・指・楽器の寄り", icon: "fa-magnifying-glass",
                    how: "手が届く距離まで寄って、両ひじを体につけて、息を止めて5秒。指・マウスピース・汗・靴・楽器のベル。顔が写っていなくて構いません" } },
 
         { id: "itv2", label: "インタビュー②", src: "interview", pct: 12, cutSec: null,
@@ -85,7 +85,7 @@ MV.DATA = {
 
         { id: "high", label: "本番ハイライト", src: "insert", pct: 16, cutSec: 3.5, trans: "cut",
           dist: "引き", emo: "爆発", show: true, ambient: true,
-          guide: { what: "本番・通し演技",
+          guide: { what: "本番・通し演技", icon: "fa-star",
                    how: "全体が入る位置から固定で回しっぱなし。途中で動かさない、ズームしない、追いかけない。どこを使うかはこちらで選びます。前の演目から回し始めておくと安全です" } },
 
         { id: "itv3", label: "締めの語り", src: "interview", pct: 16, cutSec: null,
@@ -95,7 +95,7 @@ MV.DATA = {
 
         { id: "after", label: "余韻", src: "insert", pct: 5, cutSec: null, trans: "dissolve",
           dist: "引き", emo: "昇華", ambient: true,
-          guide: { what: "終わったあとの風景",
+          guide: { what: "終わったあとの風景", icon: "fa-door-open",
                    how: "撮り終わったと思ってから、カメラを下ろさずもう10秒。誰もいなくなった場所を、手で持たずに(カバンや台に立てかけて)。片付け中の背中でも構いません" } },
 
         { id: "end", label: "エンディング", src: "logo", pct: 3, cutSec: null, trans: "dissolve",
@@ -112,7 +112,7 @@ MV.DATA = {
       blocks: [
         { id: "quiet", label: "静かな導入", src: "insert", pct: 10, cutSec: 4.5,
           trans: "dissolve", transSec: 2.0, dist: "寄り", emo: "静", ambient: true,
-          guide: { what: "ひとりでいる人",
+          guide: { what: "ひとりでいる人", icon: "fa-user",
                    how: "顔は見えなくていいです。準備している背中、片付けている手。スマホは手で持たず、棚やカバンの上に置いて8つ数えてから止める" } },
 
         { id: "itv1a", label: "語りのはじまり", src: "interview", srcRef: "itv1", pct: 7,
@@ -122,7 +122,7 @@ MV.DATA = {
 
         { id: "scene", label: "情景", src: "insert", pct: 9, cutSec: 3.5,
           trans: "dissolve", transSec: 1.2, dist: "引き", emo: "積み上げ",
-          guide: { what: "場所が分かる引き",
+          guide: { what: "場所が分かる引き", icon: "fa-mountain-sun",
                    how: "練習場の全景・校舎・空。人が小さく写るくらいで。ここは長回しにしなくて大丈夫です" } },
 
         { id: "itv1b", label: "語りの本題", src: "interview", srcRef: "itv1", pct: 11,
@@ -132,7 +132,7 @@ MV.DATA = {
 
         { id: "faces", label: "表情", src: "insert", pct: 9, cutSec: 4.0, trans: "cut",
           dist: "寄り", emo: "積み上げ",
-          guide: { what: "仲間の顔",
+          guide: { what: "仲間の顔", icon: "fa-face-smile",
                    how: "「撮るね」と言ってから、近づいて撮ってください。隠れて撮った顔より強いです。ズームは使わない(画質が落ちます)。1人5秒ずつ、3人ぶん" } },
 
         { id: "itv2", label: "インタビュー②", src: "interview", pct: 13, cutSec: null,
@@ -143,12 +143,12 @@ MV.DATA = {
 
         { id: "burst", label: "演奏", src: "insert", pct: 14, cutSec: 3.0, trans: "cut",
           dist: "引き", emo: "爆発", show: true, ambient: true,
-          guide: { what: "いちばん鳴っている場面",
+          guide: { what: "いちばん鳴っている場面", icon: "fa-bolt",
                    how: "全体が入る位置から固定で。ショウ動画を入れると山場を自動で選びます" } },
 
         { id: "afterglow", label: "余熱", src: "insert", pct: 4, cutSec: null, trans: "cut",
           dist: "寄り", emo: "昇華", ambient: true,
-          guide: { what: "演奏が終わった直後",
+          guide: { what: "演奏が終わった直後", icon: "fa-clock-rotate-left",
                    how: "楽器を下ろす手、肩で息をしている顔、目を合わせる二人。7秒だけ、誰も喋っていない時間が要ります" } },
 
         { id: "itv3", label: "締めの語り", src: "interview", pct: 12, cutSec: null,
@@ -159,7 +159,7 @@ MV.DATA = {
 
         { id: "symbol", label: "象徴の余韻", src: "insert", pct: 6, cutSec: null,
           trans: "dissolve", transSec: 2.0, dist: "引き", emo: "昇華", ambient: true,
-          guide: { what: "その人を思い出させるもの",
+          guide: { what: "その人を思い出させるもの", icon: "fa-heart",
                    how: "その人がいなくなった場所を、動かさず10秒。あとで効きます" } },
 
         { id: "end", label: "エンディング", src: "logo", pct: 5, cutSec: null,
@@ -177,7 +177,7 @@ MV.DATA = {
       blocks: [
         { id: "cold", label: "つかみ", src: "insert", pct: 5, cutSec: 2.0, trans: "cut",
           dist: "引き", emo: "爆発", ambient: true,
-          guide: { what: "動きのある一発",
+          guide: { what: "動きのある一発", icon: "fa-person-running",
                    how: "走る・跳ぶ・楽器を構える。1〜2秒で使うので、短くて構いません" } },
 
         { id: "title", label: "タイトル", src: "title", pct: 3, cutSec: null, trans: "cut",
@@ -185,12 +185,12 @@ MV.DATA = {
 
         { id: "today", label: "今日は何の日", src: "insert", pct: 5, cutSec: 2.5, trans: "cut",
           dist: "引き", emo: "積み上げ",
-          guide: { what: "日付と場所が分かるもの",
+          guide: { what: "日付と場所が分かるもの", icon: "fa-map-pin",
                    how: "会場の看板、朝の集合。「今日は◯◯大会です」と言ってもらうと一発で伝わります" } },
 
         { id: "behindA", label: "裏側①", src: "insert", pct: 17, cutSec: 2.5, trans: "cut",
           dist: "寄り", emo: "積み上げ",
-          guide: { what: "移動・積み込み・準備",
+          guide: { what: "移動・積み込み・準備", icon: "fa-truck",
                    how: "バスの中、荷物、着替え。生活感が効きます。1本10〜20秒で、場所を変えて数本" } },
 
         { id: "itv1", label: "インタビュー①", src: "interview", pct: 11, cutSec: null,
@@ -201,7 +201,7 @@ MV.DATA = {
 
         { id: "behindB", label: "裏側②", src: "insert", pct: 13, cutSec: 2.5, trans: "cut",
           dist: "引き", emo: "積み上げ",
-          guide: { what: "練習・リハーサル",
+          guide: { what: "練習・リハーサル", icon: "fa-dumbbell",
                    how: "同じ画が続かないよう、立ち位置を変えて数本。歩きながら撮らないこと" } },
 
         { id: "itv2", label: "インタビュー②", src: "interview", pct: 11, cutSec: null,
@@ -212,7 +212,7 @@ MV.DATA = {
 
         { id: "high", label: "ハイライト", src: "insert", pct: 18, cutSec: 3.0, trans: "cut",
           dist: "引き", emo: "爆発", show: true, ambient: true,
-          guide: { what: "本番・通し演技",
+          guide: { what: "本番・通し演技", icon: "fa-star",
                    how: "全体が入る位置から固定で回しっぱなし。動かさない、ズームしない。ショウ動画を入れると盛り上がる場所を自動で選びます" } },
 
         { id: "itv3", label: "本番直後の感想", src: "interview", pct: 14, cutSec: null,
@@ -238,7 +238,7 @@ MV.DATA = {
       if (b.src !== "insert" || !b.guide) continue;
       if (seen.has(b.guide.what)) continue;
       seen.add(b.guide.what);
-      out.push({ id: b.id, what: b.guide.what, how: b.guide.how });
+      out.push({ id: b.id, what: b.guide.what, how: b.guide.how, icon: b.guide.icon || "fa-video" });
     }
     return out;
   },
