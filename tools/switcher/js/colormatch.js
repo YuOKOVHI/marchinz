@@ -12,12 +12,12 @@ MC.color = { STD_CLIP: [0.6, 1.8], STATS_FRAMES: 8, _procs: new Map(), _uploadFa
 /* split=ティール&オレンジ強度 / rolloff=ハイライトの緩やかな肩 /
    black=黒レベルの締め / key=金管ゴールド等キー色域の彩度ブースト(いずれも0で無効) */
 MC.color.FILTERS = {
-  marchinz: { name: "MarchinZカラー", contrast: 1.06, sat: 0.94, warm: 0.008,
-              split: 1.0, rolloff: 0.7, black: 0.035, key: 0.35 },
+  marchinz: { name: "MarchinZカラー", contrast: 1.06, sat: 0.96, warm: 0.004,
+              split: 1.0, rolloff: 0.85, black: 0.018, key: 0.45 },
   none:   { name: "なし",     contrast: 1.0,  sat: 1.0,  warm: 0 },
   cinema: { name: "シネマ",   contrast: 1.12, sat: 0.9,  warm: 0.015 },
   vivid:  { name: "ビビッド", contrast: 1.06, sat: 1.28, warm: 0 },
-  warm:   { name: "ウォーム", contrast: 1.0,  sat: 1.05, warm: 0.05 },
+  warm:   { name: "ウォーム", contrast: 1.0,  sat: 1.05, warm: 0.06 },   // 加算→ゲイン化の分
   cool:   { name: "クール",   contrast: 1.0,  sat: 1.0,  warm: -0.05 },
   mono:   { name: "モノクロ", contrast: 1.08, sat: 0.0,  warm: 0 },
 };
@@ -139,26 +139,49 @@ void main(){
   }
   float lum = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
   rgb = mix(vec3(lum), rgb, uSat);
-  rgb = (rgb - 0.5) * uContrast + 0.5;
-  rgb += vec3(uWarm, 0.0, -uWarm);
+  rgb = (rgb - 0.45) * uContrast + 0.45;
+  // ホワイトバランスはゲイン型。加算(リフト)にすると黒にまで色が乗る
+  rgb *= vec3(1.0 + uWarm, 1.0, 1.0 - uWarm);
   rgb = clamp(rgb, 0.0, 1.0);
+
   // --- MarchinZルック(各uniform=0で完全に素通し) ---
-  // 黒レベルの締め: グレー浮きを防ぎ、しっかりした黒を出す
-  rgb = clamp((rgb - vec3(uBlack)) / (1.0 - uBlack), 0.0, 1.0);
-  // ハイライトの緩やかな肩: 白飛びさせず階調を残して「抜けよく」
-  //(tanh非搭載のGLSL ES 1.0向けに u/(1+u) の有理ソフトクリップ)
-  float knee = 0.72;
-  vec3 over = max(rgb - vec3(knee), vec3(0.0)) / (1.0 - knee);
-  vec3 soft = vec3(knee) + (1.0 - knee) * (over / (1.0 + over));
-  rgb = mix(rgb, min(soft, vec3(1.0)), uRolloff * step(vec3(knee), rgb));  // knee超のみ
-  // ティール&オレンジ: 暗部に青緑、明部・肌に暖色を微かに乗せる
+
+  // 黒レベルの締め: 最暗部(0〜22 IRE)だけに効かせる。
+  // 以前は全域アフィン変換だったため中間調まで沈み、画全体が暗くなっていた。
+  // 輝度で滑らかに重みを取る(チャンネル別にすると暗部の濃色で色相が回る)
+  float lumB = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
+  float bw = 1.0 - smoothstep(0.060, 0.220, lumB);
+  vec3 crushed = max(rgb - vec3(uBlack), vec3(0.0)) / (1.0 - uBlack);
+  rgb = mix(rgb, crushed, bw);
+
+  // ハイライトの肩: 1-(1-t)^1.5。knee直上は傾き1.5で軽く伸ばして抜けを作り、
+  // 白では傾き0。soft(1.0)=1.0 なので純白が確実に255へ到達する。
+  // 以前の u/(1+u) は入力1.0でも0.5が上限で、白が230で頭打ちになっていた。
+  // pow(w,1.5)ではなく w*sqrt(w): mediumpのpowは非整数指数で縞が出る
+  float knee = 0.78;
+  vec3 t = clamp((rgb - vec3(knee)) / (1.0 - knee), 0.0, 1.0);
+  vec3 w = 1.0 - t;
+  vec3 soft = vec3(knee) + (1.0 - knee) * (1.0 - w * sqrt(w));
+  rgb = mix(rgb, soft, uRolloff * step(vec3(knee), rgb));  // step は必須(knee以下の持ち上げ防止)
+
+  // ティール&オレンジ: 暗部に青緑、明部に暖色。
+  // ハイライト側のGは負にする。Gを足すとオレンジではなく黄色になる
   float lum2 = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
-  float sw = 1.0 - smoothstep(0.05, 0.5, lum2);
-  float hw = smoothstep(0.45, 0.92, lum2);
-  rgb += uSplit * (sw * vec3(-0.035, 0.018, 0.04) + hw * vec3(0.045, 0.012, -0.038));
-  // キー色域(金管ゴールド・オレンジ系 r>g>b)の彩度を際立たせる
-  float goldW = clamp((rgb.r - rgb.b) * 2.0, 0.0, 1.0) * clamp((rgb.g - rgb.b) * 1.5, 0.0, 1.0);
+  float sw = 1.0 - smoothstep(0.02, 0.26, lum2);   // 黒締めと同じ窓に合わせる
+  float hw = smoothstep(0.62, 1.0, lum2);          // 中間調に暖色を乗せない
+  rgb += uSplit * (sw * vec3(-0.016, 0.006, 0.022) + hw * vec3(0.030, -0.004, -0.026));
+
+  // ハイライト脱色: 上端を白へ寄せる。実光源の鏡面は被写体色ではなく光源色。
+  // splitの後に置く(前に置くと乗せた暖色が上端に残って白が転ぶ)
+  float lumH = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
+  rgb = mix(rgb, vec3(lumH), smoothstep(0.80, 0.98, lumH) * 0.55);
+
+  // キー色域(金管ゴールド)の彩度を際立たせる。
+  // 輝度ゲートで暗い暖色(木の床・暗部の肌)を除外し、明るい真鍮だけに効かせる
   float lum3 = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
+  float goldW = clamp((rgb.r - rgb.b) * 2.0, 0.0, 1.0)
+              * clamp((rgb.g - rgb.b) * 2.0, 0.0, 1.0)
+              * smoothstep(0.30, 0.55, lum3);
   rgb = mix(vec3(lum3), rgb, 1.0 + uKey * goldW);
   gl_FragColor = vec4(clamp(rgb, 0.0, 1.0), 1.0);
 }`;

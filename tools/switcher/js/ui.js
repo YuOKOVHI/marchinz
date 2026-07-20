@@ -316,7 +316,7 @@ MC.ui.renderLayout = () => {
   const L = MC.LAYOUTS[MC.S.layoutId];
   const isCutMode = L.type === "switch" || L.type === "wipe";
   MC.ui.$("#autocutPanel").style.display = isCutMode ? "block" : "none";
-  MC.ui.$("#wipeOpts").style.display = L.type === "wipe" ? "flex" : "none";
+  MC.ui.$("#wipeOpts").hidden = L.type !== "wipe";
   if (L.type === "wipe") {
     const pipCands = MC.media.slotClips();
     const ws = MC.ui.$("#wipeCamSelect");
@@ -384,7 +384,7 @@ MC.ui.renderExportMode = () => {
   }
 };
 
-/* 「おすすめ / こだわり」タブ。素材が入ったら出す(それまでは邪魔なので隠す) */
+/* 「おまかせ / こだわり」タブ。素材が入ったら出す(それまでは邪魔なので隠す) */
 MC.ui.setSetupTab = tab => {
   MC.ui._setupTab = tab;
   const easy = tab !== "pro";
@@ -406,7 +406,7 @@ MC.ui.refreshSetupTabs = () => {
   MC.ui.setSetupTab(MC.ui._setupTab || "easy");
 };
 
-/* おすすめで開始: 同期 → (カット割モードなら)自動カット割 → カラーマッチ を続けて実行 */
+/* おまかせで開始: 同期 → (カット割モードなら)自動カット割 → カラーマッチ を続けて実行 */
 /* 長い処理の間、競合する操作をまとめて止める(二重実行でcutList/offsetが壊れるのを防ぐ) */
 MC.ui.setBusy = busy => {
   MC.ui._busy = !!busy;
@@ -426,12 +426,19 @@ MC.ui.runEasy = async () => {
   MC.preview.pause();
   const cutMode = ["switch", "wipe"].includes(MC.S.layoutId);
   // sync/director/color はいずれも MZP の Handle をそのまま受け取る(legacy()は別物なので渡さない)
-  const p = MZP.start({ mount: "#easyStatus", chapter: "おすすめ", delay: 0,
+  const p = MZP.start({ mount: "#easyStatus", chapter: "おまかせ", delay: 0,
                         label: "音を合わせています…" });
   try {
     if (MC.S.clips.filter(c => !c.isImage).length >= 2) {
       p.pulse("音を合わせています…");
       await MC.sync.run(p);
+    }
+    // 開始/終了の自動区切り。演奏の前後(アナウンス・拍手・片付け)を落とす。
+    // カット割より先に行う: director は MC.trimRange() の中だけを割るため
+    if (MC.S.trimIn === 0 && MC.S.trimOut == null) {
+      p.pulse("最初と最後を探しています…");
+      await MZP.paint();
+      await MC.salute.autoTrim();   // 検出できなければ静かに諦める(トリムなしで続行)
     }
     if (cutMode) {
       p.pulse("カットを割っています…");
@@ -445,11 +452,13 @@ MC.ui.runEasy = async () => {
       await MC.color.run(p).catch(() => { colorFailed = true; });
     }
     MC.ui.renderAll();
-    MC.preview.seek(MC.trimRange()[0]);
+    const [ti, to] = MC.trimRange();
+    MC.preview.seek(ti);
+    const trimmed = MC.S.trimIn > 0 || MC.S.trimOut != null;
     p.done("できました", {
-      sub: colorFailed
-        ? "色そろえだけできませんでした。プレビューを見て、よければ書き出してください"
-        : "プレビューを見て、よければ書き出してください",
+      sub: (colorFailed ? "色そろえだけできませんでした。" : "")
+        + (trimmed ? `書き出し範囲 ${MC.ui.fmtTime(ti)}〜${MC.ui.fmtTime(to)} を自動設定。` : "")
+        + "プレビューを見て、よければ書き出してください",
     });
   } catch (e) {
     console.error(e);

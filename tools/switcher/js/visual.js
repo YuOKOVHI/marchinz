@@ -21,6 +21,13 @@ MC.visual = {
   // ブレ判定しきい値(画面幅比/秒)
   TH_RAPID: 0.28,    // これ以上のグローバル動き=急パン・激しいブレ
   TH_SHAKE: 0.11,    // これ以上+向きが暴れる=手ブレ
+  // カメラを振っている(パン)の判定。向きが一定のまま動いている状態。
+  // 手ブレ(向きが暴れる)と区別するため flipRatio が低いことを条件にする。
+  // ディレクター指示: 振っている最中の絵は絶対に使わない
+  TH_PAN: 0.05,      // これ以上動いていて
+  TH_PAN_FLIP: 0.30, // 向きの反転がこれ未満なら「振っている」
+  // 被写体がいない画(誰もいないピット等)の判定
+  TH_EMPTY: 0.12,    // 顔が取れず、動いている領域もこれ未満なら人がいない
 };
 
 /* ---------- YuNet(ORT)遅延ロード: Privacyのvendorを共用 ---------- */
@@ -291,6 +298,21 @@ MC.visual.seg = (clip, g0, g1) => {
     moves++;
     if (Math.sign(a) !== Math.sign(b)) flips++;
   }
+  /* パン(カメラを振っている)の度合い。
+     「はっきり動いているサンプルの割合」×「その向きがそろっている割合」。
+     固定カメラのノイズ由来の微小な揺れ(1px程度)は |dx|<2 で除外されるため、
+     panRatio が 0 になり、パンとは判定されない。
+     shakeP75 と flipRatio だけで判定すると、動きの小さい固定カメラが
+     flipRatio=0(=向きが一定)と評価されて誤って失格になる */
+  let posN = 0, negN = 0, movingN = 0;
+  for (const v of dxs) {
+    if (Math.abs(v) < 2) continue;
+    movingN++;
+    if (v > 0) posN++; else negN++;
+  }
+  const panRatio = movingN
+    ? (Math.max(posN, negN) / movingN) * (movingN / dxs.length)
+    : 0;
   const faces = [];
   const sizes = [];
   for (const i of idx) {
@@ -310,12 +332,34 @@ MC.visual.seg = (clip, g0, g1) => {
   };
 };
 
-/* ブレ・急パン・フォーカス外れの失格判定(絶対条件) */
-MC.visual.disqualified = m => {
+/* カメラを振っている(パン)か。向きが一定のまま動き続けている状態。
+   手ブレは向きが暴れる(flipRatioが高い)ので、それとは別物として扱う */
+MC.visual.isPanning = m => {
+  if (!m) return false;
+  return m.shakeP75 > MC.visual.TH_PAN && m.flipRatio < MC.visual.TH_PAN_FLIP;
+};
+
+/* 人が写っていないか(誰もいないピット、空の舞台など)。
+   顔が1つも取れず、画面もほとんど動いていないときは被写体がいないとみなす。
+   ※引きの画は顔が小さくて取れないことがあるため、動きの有無を併せて見る
+     (演者がいれば必ず画面のどこかが動く) */
+MC.visual.noSubject = (m, role) => {
+  if (!m || !m.faceOK || m.nF < 0) return false;   // 顔検出が効いていないときは判定しない
+  if (m.nF > 0) return false;                      // 顔が取れている=人がいる
+  // ピット用カメラは寄り気味で、人がいれば顔が取れるはず。空舞台の可能性が高い
+  if (role === "pit") return true;
+  return m.act < MC.visual.TH_EMPTY;
+};
+
+/* 採用してはいけない画の判定(絶対条件)。
+   role を渡すと、その役割に応じた判定(ピットの空舞台など)も行う */
+MC.visual.disqualified = (m, role) => {
   if (!m) return false;
   if (m.shakeP75 > MC.visual.TH_RAPID) return true;                       // 急パン・激ブレ
   if (m.shakeP75 > MC.visual.TH_SHAKE && m.flipRatio > 0.45) return true; // 向きの暴れる手ブレ
   if (m.sharpMed > 40 && m.sharpMean < m.sharpMed * 0.30) return true;    // フォーカス外れ
+  if (MC.visual.isPanning(m)) return true;                                // カメラを振っている
+  if (MC.visual.noSubject(m, role)) return true;                          // 人が写っていない
   return false;
 };
 

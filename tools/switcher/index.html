@@ -84,12 +84,12 @@
 
     <div id="setupTabs" class="setup-tabs" hidden>
       <div class="tabs" role="tablist" aria-label="設定の詳しさ">
-        <button type="button" class="tab on" data-tab="easy" role="tab" aria-selected="true">おすすめ</button>
+        <button type="button" class="tab on" data-tab="easy" role="tab" aria-selected="true">おまかせ</button>
         <button type="button" class="tab" data-tab="pro" role="tab" aria-selected="false">こだわり</button>
       </div>
       <div id="easyPane" class="easy-pane">
         <p class="easy-lead">同期・カット割・色みまで、おまかせで仕上げます。</p>
-        <button id="easyStartBtn" class="btn primary big"><i class="fa-solid fa-wand-magic-sparkles"></i> おすすめで開始</button>
+        <button id="easyStartBtn" class="btn primary big"><i class="fa-solid fa-wand-magic-sparkles"></i> おまかせで開始</button>
         <div id="easyStatus" class="status"></div>
         <p class="hint">細かく決めたいときは「こだわり」タブへ。</p>
       </div>
@@ -143,23 +143,26 @@
           <button id="autocutBtn" class="btn primary"><i class="fa-solid fa-clapperboard"></i> 自動カット割</button>
         </div>
         <p class="hint" style="margin:4px 0 0">音楽と映像を解析して、ブレの少ないカメラ・見せ場に合う画角を自動で選びます。</p>
-        <div id="wipeOpts" style="display:none">
-          <div class="row">
-            <label class="hint">小窓1</label>
-            <select id="wipeCamSelect" class="select" style="width:auto; margin:0"></select>
-            <select id="wipePosSelect" class="select" style="width:auto; margin:0">
+        <div id="wipeOpts" hidden>
+          <!-- 小窓1・2は同じ列で揃える。大きさは両方に効くので独立した行にする -->
+          <div class="wipe-grid">
+            <label class="hint" for="wipeCamSelect">小窓1</label>
+            <select id="wipeCamSelect" class="select"></select>
+            <select id="wipePosSelect" class="select">
               <option value="br">右下</option><option value="bl">左下</option>
               <option value="tr">右上</option><option value="tl">左上</option>
             </select>
-            <input type="range" id="wipeSizeRange" min="0.2" max="0.45" step="0.01" style="flex:1">
-          </div>
-          <div class="row">
-            <label class="hint">小窓2</label>
-            <select id="wipeCamSelect2" class="select" style="width:auto; margin:0"></select>
-            <select id="wipePosSelect2" class="select" style="width:auto; margin:0">
+
+            <label class="hint" for="wipeCamSelect2">小窓2</label>
+            <select id="wipeCamSelect2" class="select"></select>
+            <select id="wipePosSelect2" class="select">
               <option value="bl">左下</option><option value="br">右下</option>
               <option value="tr">右上</option><option value="tl">左上</option>
             </select>
+          </div>
+          <div class="wipe-size">
+            <label class="hint" for="wipeSizeRange">小窓の大きさ</label>
+            <input type="range" id="wipeSizeRange" min="0.2" max="0.45" step="0.01">
           </div>
         </div>
         <div id="autocutStatus" class="status"></div>

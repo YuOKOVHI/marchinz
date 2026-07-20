@@ -150,7 +150,8 @@ MC.director._rank = (g0, g1, cls, ctx) => {
     if (c.role === "wide") sh.wide = Math.max(sh.wide, 0.8);
     if (c.role === "close") sh.close = Math.max(sh.close, 0.7);
     let score = 0;
-    if (MC.visual.disqualified(m)) score -= 1000;      // 絶対条件: 採用不可(全滅時の比較用に相対値は残す)
+    const dq = MC.visual.disqualified(m, c.role);
+    if (dq) score -= 1000;      // 絶対条件: 採用不可(全滅時の比較用に相対値は残す)
     score += wClose * sh.close + wGroup * sh.group + wWide * sh.wide;
     // フラッグ等の同期した大きな動きは「引きで見せる」を後押し
     score += sh.ensemble * 0.3 * sh.wide;
@@ -164,7 +165,7 @@ MC.director._rank = (g0, g1, cls, ctx) => {
     if (c.id === ctx.prevId) score -= 0.9;
     if (c.id === ctx.prev2Id) score -= 0.25;
     score += 0.06 * Math.min(8, ctx.sinceUse.get(c.id) || 0);   // 出番が空くほど戻りやすく(最大0.48)
-    ranked.push({ id: c.id, score, wideChosen: sh.wide >= 0.5, dq: MC.visual.disqualified(m) });
+    ranked.push({ id: c.id, score, wideChosen: sh.wide >= 0.5, dq });
   }
   ranked.sort((a, b) => b.score - a.score);
 
@@ -216,7 +217,22 @@ MC.director.generate = () => {
     const cls = MC.sections.classify(audioClip, t, tNext);
     const ranked = MC.director._rank(t, tNext, cls, ctx);
     if (!ranked.length) break;
-    const top = ranked[0];
+    let top = ranked[0];
+
+    /* 採用できる画が1つも無い区間(全カメラがパン中・人が写っていない等)。
+       ディレクター指示「振っている絵は絶対に入れない」を満たすため、
+       妥協して失格の画を出すのではなく、直前のカットをこの区間まで延ばす。
+       延ばせない(冒頭)ときだけ、やむを得ず最良の1本を使う */
+    if (top.dq) {
+      if (cuts.length) {
+        MC.log(`director: ${t.toFixed(1)}s〜 は使える画が無いため直前のカットを延長`);
+        // 文脈は進めずに時刻だけ進める(このセグメントは前のカットが占める)
+        t = tNext;
+        continue;
+      }
+      const usable = ranked.find(r => !r.dq);
+      if (usable) top = usable;
+    }
 
     // トランジション: 静か or 局所BPM低 → ディゾルブ(冒頭カットはそのまま)
     let trans = "cut", dur = 0;
