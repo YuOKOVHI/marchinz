@@ -515,7 +515,7 @@ MC.ui.runEasy = async () => {
     const [ti, to] = MC.trimRange();
     MC.preview.seek(ti);
     const trimmed = MC.S.trimIn > 0 || MC.S.trimOut != null;
-    p.done("できました", {
+    p.done("書き出す準備ができました", {
       sub: (colorFailed ? "色そろえだけできませんでした。" : "")
         + (trimmed ? `書き出し範囲 ${MC.ui.fmtTime(ti)}〜${MC.ui.fmtTime(to)} を自動設定。` : "")
         + "プレビューを見て、よければ書き出してください",

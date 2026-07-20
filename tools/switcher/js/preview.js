@@ -24,6 +24,7 @@ MC.preview = {
         this._lastTick = performance.now();
       }
     }, 150);
+    this.startBusyWatch();   // 作業中オーバーレイのアニメーション
   },
 
   applyPreset() {
@@ -198,17 +199,42 @@ MC.preview = {
     ctx.restore();
   },
 
+  /* いま何をしているか。MZP の chapter で「分析」と「書き出し」を分ける。
+     dots は動きを見せるためのアニメーション用 */
+  busyLabel() {
+    const cur = window.MZP && MZP.current;
+    if (!cur || cur.closed || !["run", "pulse", "frozen"].includes(cur.state)) return null;
+    const ch = String((cur.opt && cur.opt.chapter) || "");
+    const label = ch.indexOf("書き出し") >= 0 ? "書き出し中" : "映像分析中";
+    return { label, dots: ".".repeat(Math.floor(Date.now() / 400) % 4) };
+  },
+
+  /* 作業中は再生ループが回らないため、オーバーレイが静止して固まって見える。
+     低頻度(400ms)で描き直して動いていることを見せる。コマ数を落としているのは
+     書き出し処理を邪魔しないため。
+     MZP.start は6箇所あり個別に仕込むと漏れるので、常時1本の監視に統一する */
+  startBusyWatch() {
+    if (this._busyTimer) return;
+    this._busyTimer = setInterval(() => {
+      if (MC.S.playing) return;                 // 再生中は tick が描いている
+      const busy = MC.preview.busyLabel();
+      if (busy) { MC.preview._wasBusy = true; try { MC.preview.draw(); } catch (err) {} return; }
+      if (MC.preview._wasBusy) {                // 終わった直後に1回だけ通常表示へ戻す
+        MC.preview._wasBusy = false;
+        try { MC.preview.draw(); } catch (err) {}
+      }
+    }, 400);
+  },
+
   /* 現在位置が書き出し範囲(IN〜OUT)の外なら、その旨をプレビューへ重ねる。
      プレビュー専用(書き出しはexporterが範囲内だけを描くため焼き込まれない) */
   drawRangeNotice() {
     if (!this.overlayOn) return;
     const dur = MC.timelineDuration();
     if (!dur) return;
-    /* 解析中は書き出し範囲の話をしても仕方がないので「映像分析中」に統一する。
-       分析が終わるまで、範囲外かどうかの案内は出さない */
-    const analyzing = !!(window.MZP && MZP.current && !MZP.current.closed
-      && ["run", "pulse", "frozen"].includes(MZP.current.state));
-    if (analyzing) { this.drawOverlayMessage("映像分析中", ""); return; }
+    /* 作業中は書き出し範囲の話をしても仕方がないので、いま何をしているかだけ出す */
+    const busy = this.busyLabel();
+    if (busy) { this.drawOverlayMessage(busy.label + busy.dots, busy.sub, { spinner: true }); return; }
     const [tIn, tOut] = MC.trimRange();
     if (MC.S.t >= tIn - 0.01 && MC.S.t <= tOut + 0.01) return;
     this.drawOverlayMessage(
@@ -216,22 +242,42 @@ MC.preview = {
       MC.S.t < tIn ? "書き出しは IN の位置から始まります" : "書き出しは OUT の位置で終わります");
   },
 
-  /* プレビュー上に重ねる案内。主文と補足の2行 */
-  drawOverlayMessage(title, sub) {
+  /* プレビュー上に重ねる案内。主文と補足の2行。
+     opts.spinner で回る弧を足し、処理が生きていることを見せる */
+  drawOverlayMessage(title, sub, opts) {
     const W = this.canvas.width, H = this.canvas.height, ctx = this.ctx;
+    const base = Math.min(W, H);
+    const spin = !!(opts && opts.spinner);
     ctx.save();
     ctx.fillStyle = "rgba(6, 10, 16, 0.55)";
     ctx.fillRect(0, 0, W, H);
-    const base = Math.min(W, H);
+    const cy = spin ? H / 2 + base * 0.02 : H / 2;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillStyle = "#fff";
     ctx.font = `700 ${Math.round(base * 0.05)}px -apple-system, sans-serif`;
-    ctx.fillText(title, W / 2, sub ? H / 2 - base * 0.035 : H / 2);
+    ctx.fillText(title, W / 2, sub ? cy - base * 0.035 : cy);
     if (sub) {
       ctx.fillStyle = "rgba(255,255,255,0.75)";
       ctx.font = `500 ${Math.round(base * 0.034)}px -apple-system, sans-serif`;
-      ctx.fillText(sub, W / 2, H / 2 + base * 0.03);
+      ctx.fillText(sub, W / 2, cy + base * 0.03);
+    }
+    if (spin) {
+      /* canvas は 1080〜1920px、表示は 375px 幅まで縮むので、
+         見た目で分かる大きさにするには canvas 上でかなり大きく描く必要がある */
+      const r = base * 0.09, a = (Date.now() / 1000) * 2.4;
+      const cx = W / 2, cyS = H / 2 - base * 0.115;
+      ctx.lineCap = "round";
+      ctx.beginPath();                       // 下地の輪(回転が分かりやすくなる)
+      ctx.arc(cx, cyS, r, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(255,255,255,0.18)";
+      ctx.lineWidth = Math.max(3, base * 0.013);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx, cyS, r, a, a + Math.PI * 0.7);
+      ctx.strokeStyle = "rgba(255,255,255,0.95)";
+      ctx.lineWidth = Math.max(3, base * 0.013);
+      ctx.stroke();
     }
     ctx.restore();
   },

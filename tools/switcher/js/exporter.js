@@ -480,6 +480,7 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
     const canvas = MC.exporter.makeCanvas(w, h);
     const ctx = canvas.getContext("2d");
     const t0 = performance.now();
+    let tRecent = t0, kRecent = 0;   // 残り時間は直近の速度で出す(序盤の助走に引きずられないため)
 
     /* どこが重いかを測る。推測で最適化しないための材料 */
     const prof = { decode: 0, draw: 0, encode: 0 };
@@ -516,9 +517,16 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
       while (venc.encodeQueueSize > 6) await MC.waitDequeue(venc);
       prof.encode += performance.now() - _tEnc;
       if (k % 10 === 0) {
-        const el = (performance.now() - t0) / 1000;
-        const eta = el / (k + 1) * (totalFrames - k - 1);
-        onProgress((k + 1) / totalFrames * 0.90, `映像 ${k + 1}/${totalFrames} コマ`, { eta });
+        const now = performance.now();
+        /* 長尺ではデコーダの助走で序盤が遅い。全体平均だと残りを過大に出し
+           続けてしまうので、直近60コマ分の速度で見積もる */
+        const perFrame = (k >= 60)
+          ? (now - tRecent) / 1000 / Math.max(1, k - kRecent)
+          : (now - t0) / 1000 / (k + 1);
+        const eta = perFrame * (totalFrames - k - 1);
+        if (k - kRecent >= 60) { tRecent = now; kRecent = k; }
+        onProgress((k + 1) / totalFrames * 0.90,
+          `映像 ${k + 1}/${totalFrames} コマ`, { eta });
         await MC.yield();  // UI息継ぎ(非表示タブでも節流されない)
       }
     }
