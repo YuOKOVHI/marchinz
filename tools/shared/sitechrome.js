@@ -75,6 +75,39 @@ window.MZSiteChrome = (() => {
 </div>`;
   }
 
+  /* ============ 版番(data-mz-version) ============
+     正本は本体 index.html の <html data-mz-version> の1箇所だけ。ツールの
+     ページは属性を持たないので、本体から読み取って自分の <html> へ注入する
+     (二重管理にするとズレるため)。フッターと Switcher のエラーログ(ui.js)が
+     この属性を参照する。取得完了までは前回取得値(localStorage)でつなぐ。 */
+  const VER_KEY = "mzscSiteVersion";
+  const copyHtml = ver =>
+    `©️ MarchinZ 2026${ver ? ` <span lang="en">ver. ${esc(ver)}</span>` : ""}`;
+
+  function setVersion(ver) {
+    if (!ver) return;
+    document.documentElement.setAttribute("data-mz-version", ver);
+    try { localStorage.setItem(VER_KEY, ver); } catch (_) {}
+    // フッターが版番なし/旧値で描画済みなら差し替える
+    const copy = document.querySelector(".mzsc-foot-copy");
+    if (copy) copy.innerHTML = copyHtml(ver);
+  }
+
+  async function syncVersion() {
+    if (document.documentElement.getAttribute("data-mz-version")) return;
+    try { setVersion(localStorage.getItem(VER_KEY)); } catch (_) {}
+    try {
+      // 属性は本体 index.html の先頭数十バイトにあるので、最初のチャンクだけ読んで打ち切る
+      const res = await fetch("/index.html", { cache: "no-store" });
+      const reader = res.body.getReader();
+      const { value } = await reader.read();
+      reader.cancel().catch(() => {});
+      const m = new TextDecoder().decode(value || new Uint8Array())
+        .match(/data-mz-version="([^"]+)"/);
+      if (m) setVersion(m[1]);
+    } catch (_) { /* オフライン・file://等。localStorageの値のままにする */ }
+  }
+
   /* フッター: サイト標準(YouTubeページ等と同じ)= バナー + リンク集 + コピーライト */
   function footerHtml() {
     const cols = FOOT_COLS.map(col =>
@@ -92,13 +125,14 @@ window.MZSiteChrome = (() => {
     <a href="https://x.com/marchinz2026" target="_blank" rel="noopener noreferrer" class="mzsc-x-link" aria-label="MarchinZ公式Xを開く" title="MarchinZ公式Xを開く">${X_SVG}</a>
   </div>
   <nav class="mzsc-foot-grid" aria-label="サイト内ページとポリシー">${cols}</nav>
-  <p class="mzsc-foot-copy">©️ MarchinZ 2026${ver ? ` <span lang="en">ver. ${esc(ver)}</span>` : ""}</p>
+  <p class="mzsc-foot-copy">${copyHtml(ver)}</p>
 </footer>`;
   }
 
   /* ツールのページへ差し込む。
      toolId: "switcher" | "reangle" | "privacy"(相互リンクで自分を外すため) */
   function mount(toolId) {
+    syncVersion(); // localStorage分は同期で反映→フッター描画に間に合う。fetch分は後追い差し替え
     const body = document.body;
     // ヘッダーは既存のツールバー(.topbar / header)より前へ
     const head = document.createElement("div");

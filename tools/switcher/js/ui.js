@@ -476,7 +476,7 @@ MC.ui._showErrorLog = err => {
   const host = MC.ui.$("#errorLog");
   if (!host) return;
   const env = [
-    `MarchinZ Switcher ${document.documentElement.getAttribute("data-mz-version") || ""}`,
+    `MarchinZ Switcher ${document.documentElement.getAttribute("data-mz-version") || "(版不明)"}`,
     `${navigator.userAgent}`,
     `書き出し方式: ${MC.ui.exportMode()} / H264:${MC.caps.h264} AAC:${MC.caps.aac}`,
     // メタデータ未確定のクリップでも落ちないよう、数値は必ず正規化する
