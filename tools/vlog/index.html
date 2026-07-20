@@ -190,6 +190,16 @@
           <i class="fa-solid fa-file-export"></i> MP4を書き出す
         </button>
         <div id="exportProgress"></div>
+        <div id="doneCard" class="done-card" hidden>
+          <p id="doneText"></p>
+          <p id="doneNote" class="hint"></p>
+          <div class="done-actions">
+            <button id="saveBtn" class="btn primary" type="button" style="display:none">
+              <i class="fa-solid fa-arrow-up-from-bracket"></i> 動画を保存</button>
+            <button id="downloadBtn" class="btn" type="button">
+              <i class="fa-solid fa-download"></i> ダウンロード</button>
+          </div>
+        </div>
         <button id="rebuildBtn" class="btn" type="button">
           <i class="fa-solid fa-rotate"></i> 別の雰囲気で組み直す
         </button>
@@ -247,6 +257,10 @@
 <script src="js/templates-data.js"></script>
 <script src="js/logo.js"></script>
 <script src="js/media.js"></script>
+<script src="js/compose.js"></script>
+<script src="js/planner.js"></script>
+<script src="js/preview.js"></script>
+<script src="js/exporter.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/app.js"></script>
 </body>

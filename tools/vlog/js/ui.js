@@ -406,6 +406,9 @@ MV.ui.updateActionBar = () => {
       conf = { label: `Vlog自動編集（約${MV.ui.fmtTime(est)}）`, icon: "fa-wand-magic-sparkles",
         note: MV.S.interviews.length ? "" : "インタビューを足すと、もっと見られる動画になります",
         act: () => MV.ui.$("#buildBtn").click() };
+    } else if (MV.exporter.lastResult && MV.exporter.shareMode()) {
+      conf = { label: "動画を保存", icon: "fa-arrow-up-from-bracket", note: "",
+        act: () => MV.ui.saveResult() };
     } else {
       conf = { label: "MP4を書き出す", icon: "fa-file-export", note: "",
         act: () => MV.ui.$("#exportBtn").click() };
@@ -422,22 +425,143 @@ MV.ui.updateActionBar = () => {
 };
 
 /* ---------- Vlog自動編集(組み立て) ----------
-   2026-07-20 時点、自動編集エンジン(planner/preview/exporter)は未実装
-   (Phase 0 のみ完了)。ボタンに結線が無く、押しても無反応だったのを修正する。
-   本体を実装するまでは、何が起きているかを正直に伝える */
+   planner が設計図(plan)を作り、プレビューを開く。書き出しはまだしない */
 MV.ui.initBuild = () => {
   const btn = MV.ui.$("#buildBtn");
   if (!btn) return;
-  btn.onclick = () => {
-    if (!MV.ui.ready()) return;
-    MV.log("build: 自動編集エンジンは開発中のため未実行");
-    MV.ui.toast("Vlog自動編集は近日公開予定です。素材の登録はこのまま進められます");
-    const prog = MV.ui.$("#buildProgress");
-    if (prog) {
-      prog.innerHTML = '<p class="build-wip-note"><i class="fa-solid fa-hammer" aria-hidden="true"></i> '
-        + 'Vlog自動編集は近日公開予定です。もうしばらくお待ちください。</p>';
+  btn.onclick = async () => {
+    if (!MV.ui.ready() || MV.exporter.running) return;
+    btn.disabled = true;
+    MV.ui.$("#doneCard").hidden = true;
+    const p = MZP.start({ mount: "#buildProgress", chapter: "組み立て", delay: 0 });
+    p.pulse("構成に沿って並べています…");
+    await MZP.paint();
+    try {
+      MV.S.plan = MV.planner.build();
+      MV.preview.show();
+      MV.ui.$("#exportBox").hidden = false;
+      p.done(`約${MV.ui.fmtTime(MV.S.plan.totalSec)}のVlogに組み立てました`, {
+        sub: MV.S.plan.shortNotice
+          ? "3分より短いため、MarchinZのYouTube一覧には載せられません（SNS向けはこのままで大丈夫です）"
+          : "下のプレビューで確認できます",
+      });
+      MV.ui.$("#stageSec").scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (e) {
+      console.error(e);
+      MV.log("build失敗: " + (e && e.message));
+      p.fail("組み立てられませんでした", { detail: e && e.message });
+      MV.S.plan = null;
+    } finally {
+      btn.disabled = !MV.ui.ready();
+      MV.ui.updateActionBar();
     }
   };
+};
+
+/* ---------- 書き出し ---------- */
+MV.ui.initExport = () => {
+  const btn = MV.ui.$("#exportBtn");
+  if (!btn) return;
+  btn.onclick = async () => {
+    if (!MV.S.plan || MV.exporter.running) return;
+    const mode = MV.exporter.mode();
+    if (mode === "none") { MV.ui.toast("この端末では書き出しできません"); return; }
+
+    /* iOSは完成MP4がメモリに載るかを先に確かめる(超えると無警告でタブが落ちる) */
+    const est = MV.exporter.estimateBytes();
+    if (est > MV.exporter.MEM_HARD_LIMIT && !window.showSaveFilePicker) {
+      MV.ui.toast(`この長さ(約${Math.round(est / 1e6)}MB)はこの端末では書き出せません。素材を減らして短くしてください`);
+      return;
+    }
+
+    /* 書き出しはサイト全体(全タブ)で同時に1本だけ(Switcher v1.39.18と同じ) */
+    let release = null;
+    if (navigator.locks) {
+      const got = await new Promise(resolve => {
+        navigator.locks.request("mz-export", { ifAvailable: true }, lock => {
+          if (!lock) { resolve(false); return; }
+          resolve(true);
+          return new Promise(r => { release = r; });
+        }).catch(() => resolve(true));
+      });
+      if (!got) {
+        MV.ui.toast("別のタブで書き出し中です。終わってからもう一度お試しください");
+        return;
+      }
+    }
+
+    btn.disabled = true;
+    MV.preview.pause();
+    MV.ui.$("#doneCard").hidden = true;
+    const p = MZP.start({
+      mount: "#exportProgress", chapter: "書き出し", delay: 0,
+      label: mode === "realtime" ? "再生しながら録画しています…" : "映像を作っています…",
+      sub: mode === "realtime" ? "画面を閉じずにお待ちください" : "",
+      cancel: () => { MV.exporter.cancelFlag = true; },
+    });
+    try {
+      const res = mode === "realtime"
+        ? await MV.exporter.exportRealtime(p.legacy())
+        : await MV.exporter.exportMP4(p.legacy());
+      p.done("書き出しました", { chip: false });
+      MV.ui.showDone(res);
+    } catch (e) {
+      console.error(e);
+      MV.log("export失敗: " + (e && e.message));
+      if (String(e && e.message).includes("キャンセル")) {
+        p.close();
+        MV.ui.toast("書き出しを中止しました");
+      } else {
+        p.fail("書き出せませんでした", { detail: e && e.message });
+      }
+    } finally {
+      if (release) release();
+      btn.disabled = false;
+      MV.ui.updateActionBar();
+    }
+  };
+  const sv = MV.ui.$("#saveBtn");
+  if (sv) sv.onclick = () => MV.ui.saveResult();
+  const dl = MV.ui.$("#downloadBtn");
+  if (dl) dl.onclick = () => {
+    const r = MV.exporter.lastResult;
+    if (r) MV.exporter.triggerDownload(r.blob, r.name);
+  };
+};
+
+/* 完了カード(Switcherと同じ保存フロー: iOSは共有シート、他は自動DL済み) */
+MV.ui.showDone = res => {
+  const share = MV.exporter.shareMode();
+  MV.ui.$("#doneCard").hidden = false;
+  const mb = (res.blob.size / 1e6).toFixed(1);
+  if (share) {
+    MV.ui.$("#saveBtn").style.display = "inline-flex";
+    MV.ui.$("#doneText").innerHTML = `<span class="ok">✓ 準備できました（${mb}MB）</span>`;
+    MV.ui.$("#doneNote").textContent = "「動画を保存」で写真（カメラロール）やファイルへ保存できます。";
+    MV.ui.toast("✔ 準備できました。保存を押してください");
+  } else {
+    MV.ui.$("#saveBtn").style.display = "none";
+    MV.ui.$("#doneText").innerHTML = `<span class="ok">✓ 「${MV.ui.esc(res.name)}」を保存しました（${mb}MB）</span>`;
+    MV.ui.$("#doneNote").textContent = "ダウンロードに保存されています（もう一度保存するには「ダウンロード」）。";
+    MV.ui.toast("✔ 書き出しが完了しました");
+  }
+};
+
+MV.ui.saveResult = async () => {
+  const r = MV.exporter.lastResult;
+  if (!r) return;
+  if (MV.exporter.shareMode()) {
+    try {
+      const file = new File([r.blob], r.name, { type: r.type || r.blob.type });
+      await navigator.share({ files: [file] });
+    } catch (e) {
+      if (e && e.name === "AbortError") return;
+      MV.log("share失敗→ダウンロード: " + (e && e.message));
+      MV.exporter.triggerDownload(r.blob, r.name);
+    }
+  } else {
+    MV.exporter.triggerDownload(r.blob, r.name);
+  }
 };
 
 /* ---------- 入力の結線 ---------- */
@@ -533,6 +657,8 @@ MV.ui.init = () => {
   MV.ui.initModes();
   MV.ui.initInputs();
   MV.ui.initBuild();
+  MV.ui.initExport();
+  MV.preview.init();
   MV.ui.initActionBar();
   MV.ui.initJourney();
   MV.ui.renderAll();
