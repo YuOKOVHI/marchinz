@@ -13,6 +13,21 @@ MC.ui.toast = msg => {
 };
 
 /* 書き出し完了カード。iOS(共有可)は「動画を保存」タップで初めて保存する */
+/* 端末のメモリでは収まらない長さのときの案内。
+   ただ断るのではなく、次の一手(範囲を狭める/パソコンで開く)まで書く */
+MC.ui.showLongExportHelp = (okMin, mb) => {
+  const $ = MC.ui.$;
+  $("#doneCard").hidden = false;
+  $("#saveBtn").style.display = "none";
+  const dl = $("#downloadBtn"); if (dl) dl.style.display = "none";
+  $("#doneText").innerHTML =
+    `<span class="warn">この端末では書き出せない長さです（約${mb}MB）</span>`;
+  $("#doneNote").textContent =
+    `iPhone・iPadは動画を丸ごとメモリに載せるため、${okMin}分ほどが上限です。`
+    + `「ここから書き出す IN」「ここまで OUT」で範囲を狭めるか、`
+    + `パソコンのChromeで開くと最後まで書き出せます。`;
+};
+
 MC.ui.showDone = res => {
   const share = MC.exporter.shareMode();
   const $ = MC.ui.$;
@@ -787,6 +802,21 @@ MC.ui.wire = () => {
       }
     } else if (mode !== "realtime") {
       MC.log(`推定 ${(estBytes / 1e6).toFixed(0)}MB。メモリ経由で書き出します（保存先の確認は出しません）`);
+      /* 保存先を選べない環境(iPhone等)はディスクへ直接書けず、完成MP4を
+         すべてメモリに載せるしかない。iOS は上限が厳しく、超えるとタブごと
+         落ちてエラーも出ない。無警告で走らせず、ここで止める */
+      if (estBytes > MC.exporter.MEM_HARD_LIMIT && !window.showSaveFilePicker) {
+        const mb = Math.round(estBytes / 1e6);
+        const okMin = Math.max(1, Math.floor(MC.exporter.MEM_HARD_LIMIT
+          / ((MC.exporter.videoBitrate() + 192e3) / 8) / 60));
+        MC.ui.toast(`この長さ(約${mb}MB)はこの端末では書き出せません。`
+          + `${okMin}分以内に範囲を狭めてお試しください`, 7000);
+        MC.ui.showLongExportHelp(okMin, mb);
+        $("#exportBtn").disabled = !MC.S.clips.length;
+        $("#cancelBtn").style.display = "none";
+        prog.style.display = "none";
+        return;
+      }
     }
 
     /* 書き出しはサイト全体(全タブ)で同時に1本だけ。

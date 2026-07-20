@@ -378,7 +378,14 @@ MC.exporter.encodeAudioFile = async (muxer, clip, fromLocalSec, durSec, onStatus
    30秒かけてから落ちるより、最初に分かった方がよい。 */
 /* 書き出しの推定バイト数。保存方法の判断に使う。
    映像ビットレートは exportMP4 の venc.configure と揃えること */
-MC.exporter.videoBitrate = () => (MC.S.preset === "1x1" ? 8e6 : 12e6);
+MC.exporter.videoBitrate = () => {
+  const base = MC.S.preset === "1x1" ? 8e6 : 12e6;
+  /* iPhone・iPad は完成MP4を丸ごとメモリに載せるしかない(showSaveFilePicker が
+     無くディスクへ直接書けない)。12Mbps だと2分ほどで上限に達して実用にならない。
+     SNS 投稿では 7Mbps でも見分けがつかない(YouTube の 1080p30 推奨が8Mbps、
+     Instagram は実質5Mbps程度へ再圧縮される)ので、尺を優先して落とす */
+  return MC.isIOS ? Math.round(base * 0.58) : base;
+};
 MC.exporter.estimateBytes = () => {
   const [tIn, tOut] = MC.trimRange();
   const sec = Math.max(0, tOut - tIn);
@@ -389,6 +396,11 @@ MC.exporter.estimateBytes = () => {
 /* メモリ上で組み立てられる上限の目安。これを超える見込みなら
    保存先を選ばせてディスクへ直接書く(ダイアログは大きいときだけ) */
 MC.exporter.MEM_LIMIT_BYTES = 700e6;
+
+/* 保存先を選べない環境(iPhone等)で、これを超えたら書き出しを断る。
+   iOS Safari はタブのメモリ上限が厳しく、超えると警告なくタブごと落ちる。
+   落ちてから気づくより、始める前に断って範囲の狭め方を案内する */
+MC.exporter.MEM_HARD_LIMIT = MC.isIOS ? 260e6 : 1.6e9;
 
 MC.exporter.preflightFiles = async clips => {
   for (const c of clips) {
