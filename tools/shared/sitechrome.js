@@ -6,14 +6,16 @@
    ツールはSPAではないため、リンクはすべて絶対パス(/#...)にする。 */
 
 window.MZSiteChrome = (() => {
+  /* [href, ラベル, アイコン] — アイコンは本体 marchinz-icons.js の割当と同じ
+     (本体はJSで後付けするが、ツールは最初から持たせる) */
   const NAV = [
-    ["/#top", "TOP"],
-    ["/#community/events", "コミュニティ"],
-    ["/#videos", "大会動画"],
-    ["/#youtube", "YouTube"],
-    ["/#webmagazine", "メディア"],
-    ["/#creators", "クリエイター"],
-    ["/#ops", "運営"],
+    ["/#top", "TOP", "fa-solid fa-house"],
+    ["/#community/events", "コミュニティ", "fa-solid fa-people-group"],
+    ["/#videos", "大会動画", "fa-solid fa-trophy"],
+    ["/#youtube", "YouTube", "fa-brands fa-youtube"],
+    ["/#webmagazine", "メディア", "fa-solid fa-newspaper"],
+    ["/#creators", "クリエイター", "fa-solid fa-camera"],
+    ["/#ops", "運営", "fa-solid fa-bullhorn"],
   ];
 
   const FOOT_COLS = [
@@ -87,8 +89,9 @@ window.MZSiteChrome = (() => {
 
   /* ヘッダー: ブランド + グローバルナビ(TOPと同じ並び) */
   function headerHtml() {
-    const nav = NAV.map(([href, label]) =>
-      `<a href="${href}"${href === "/#creators" ? ' class="on"' : ""}>${esc(label)}</a>`).join("");
+    const nav = NAV.map(([href, label, icon]) =>
+      `<a href="${href}"${href === "/#creators" ? ' class="on"' : ""}>`
+      + `<i class="${icon}" aria-hidden="true"></i>${esc(label)}</a>`).join("");
     const auth = headerAuthHtml();
     return `
 <header class="mzsc-brand">
@@ -119,7 +122,7 @@ window.MZSiteChrome = (() => {
       <a href="/tools/vlog/"><i class="fa-solid fa-film" aria-hidden="true"></i> MarchinZ Vlog（開発中）</a>
     </nav>
     <p class="mzsc-drawer-label">ページ一覧</p>
-    <nav class="mzsc-drawer-nav">${NAV.map(([h, l]) => `<a href="${h}">${esc(l)}</a>`).join("")}
+    <nav class="mzsc-drawer-nav">${NAV.map(([h, l, ic]) => `<a href="${h}"><i class="${ic}" aria-hidden="true"></i> ${esc(l)}</a>`).join("")}
       <a href="/#profile">マイページ</a>
     </nav>
   </div>
@@ -133,7 +136,7 @@ window.MZSiteChrome = (() => {
      この属性を参照する。取得完了までは前回取得値(localStorage)でつなぐ。 */
   const VER_KEY = "mzscSiteVersion";
   const copyHtml = ver =>
-    `©️ MarchinZ 2026${ver ? ` <span lang="en">ver. ${esc(ver)}</span>` : ""}`;
+    `©️ MarchinZ 2026${ver ? ` <span class="mzsc-foot-ver" lang="en">ver. ${esc(ver)}</span>` : ""}`;
 
   function setVersion(ver) {
     if (!ver) return;

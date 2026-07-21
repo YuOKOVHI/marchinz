@@ -47,37 +47,49 @@
 
 /* グローバルナビ(TOPと同じ並び)。狭い画面は横スクロール */
 .mzsc-nav {
-  background: #fff;
-  border-bottom: 1px solid rgba(15, 33, 56, 0.1);
+  /* 本体(marchinz-brushup.css)と同じ: 紺地+下辺の黄色いライン */
+  background: #0f2138;
+  border-bottom: 2px solid #f5c518;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-x: contain;
 }
 .mzsc-nav-inner {
-  max-width: 1080px;
+  max-width: 1400px;
   margin: 0 auto;
   display: flex;
-  gap: 4px;
-  padding: 0 12px;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem 0.5rem;
+  padding: 0.55rem 1.5rem;
   white-space: nowrap;
 }
+/* 本体と同じピル型。アクティブは青ピル */
 .mzsc-nav a {
-  display: inline-block;
-  padding: 12px 14px;
-  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 0.42rem 0.95rem;
+  font-size: 0.86rem;
   font-weight: 600;
-  color: #12213a;
+  color: rgba(255, 255, 255, 0.78);
+  background: rgba(255, 255, 255, 0.08);
   text-decoration: none;
-  border-bottom: 2px solid transparent;
+  transition: background 0.18s ease, color 0.18s ease;
+  min-height: 40px;
 }
-.mzsc-nav a:hover { color: #1e4fd6; }
-.mzsc-nav a.on { color: #1e4fd6; border-bottom-color: #1e4fd6; }
+.mzsc-nav a:hover { background: rgba(255, 255, 255, 0.16); color: #fff; }
+.mzsc-nav a.on, .mzsc-nav a.on:hover { background: #1e4fd6; color: #fff; }
+.mzsc-nav a i { font-size: 0.9em; }
 
 /* ---- フッター(TOPの「できること」以下と同じ内容) ---- */
-.mzsc-foot { background: #fefcef; color: #12213a; margin-top: 32px; text-align: left; }
-.mzsc-foot a { color: #1e4fd6; }
+/* 本体(marchinz-brushup.css .site-footer)と同じ紺地・白文字 */
+.mzsc-foot { background: #0f2138; color: rgba(255, 255, 255, 0.78); margin-top: 32px; text-align: left; }
+.mzsc-foot a { color: rgba(255, 255, 255, 0.78); }
+.mzsc-foot a:hover { color: #fff; }
 
-.mzsc-can { border-top: 1px solid rgba(15, 33, 56, 0.1); padding: 30px 18px 6px; }
+.mzsc-can { border-top: 1px solid rgba(255, 255, 255, 0.12); padding: 30px 18px 6px; }
 .mzsc-can-inner { max-width: 1080px; margin: 0 auto; }
 .mzsc-can h2 {
   margin: 0 0 6px;
@@ -125,7 +137,7 @@
   padding: 26px 18px 6px;
 }
 .mzsc-foot-banners img { max-height: 46px; width: auto; display: block; }
-.mzsc-x-link { display: inline-flex; color: #12213a; }
+.mzsc-x-link { display: inline-flex; color: #fff; }
 .mzsc-x-link svg { width: 24px; height: 24px; }
 
 .mzsc-foot-grid {
@@ -142,16 +154,17 @@
   /* タップ標的 44px(2026-07-20 UI/UXレビュー) */
   display: inline-flex; align-items: center; min-height: 44px; }
 .mzsc-foot-col a:hover { text-decoration: underline; }
-.mzsc-foot-tools { text-align: center; font-size: 12px; padding: 0 18px 4px; color: rgba(12, 15, 20, 0.66); }
+.mzsc-foot-tools { text-align: center; font-size: 12px; padding: 0 18px 4px; color: rgba(255, 255, 255, 0.7); }
 .mzsc-foot-copy {
   text-align: center;
   font-size: 11.5px;
-  /* 0.55 は #fefcef 地で 4.21 (2026-07-20 UI/UXレビュー) */
-  color: rgba(12, 15, 20, 0.64);
+  /* 本体と同じ 0.75。紺地 #0f2138 に対して十分なコントラスト */
+  color: rgba(255, 255, 255, 0.75);
   padding: 12px 18px calc(20px + env(safe-area-inset-bottom, 0px));
   margin: 0;
-  border-top: 1px solid rgba(15, 33, 56, 0.08);
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
 }
+.mzsc-foot-copy .mzsc-foot-ver { color: rgba(255, 255, 255, 0.5); }
 
 /* ---- 「使える条件」表(ゲスト/無料登録)。
    ツール本文は白基調(Switcher)とダーク(ReAngle)が混在するため、
