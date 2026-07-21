@@ -13,24 +13,43 @@
   padding: 12px 18px calc(10px);
   padding-top: calc(12px + env(safe-area-inset-top, 0px));
 }
+/* 本体(styles.css .site-brand)と同じ構え:
+   ロゴとタグラインは中央、ログイン系は右端へ絶対配置 */
 .mzsc-brand-inner {
-  text-align: left;
-  max-width: 1080px;
+  position: relative;
+  max-width: 1400px;
   margin: 0 auto;
+  text-align: center;
+}
+.mzsc-brand-logo { display: block; }
+.mzsc-brand-logo img {
+  display: block;
+  max-width: min(calc(92vw * 0.7), 252px);
+  width: auto;
+  height: auto;
+  margin: 0 auto;
+}
+/* 本体 .site-brand-tagline と同じ値 */
+.mzsc-brand-tagline {
+  margin: 0.35rem auto 0;
+  padding: 0;
+  font-size: 0.68rem;
+  line-height: 1.48;
+  color: rgba(12, 15, 20, 0.6);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-align: center;
+  max-width: 18.5rem;
+}
+.mzsc-brand-right {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
 }
-.mzsc-brand-logo { display: inline-flex; align-items: center; flex-shrink: 0; }
-.mzsc-brand-logo img { height: 40px; width: auto; display: block; }
-.mzsc-brand-tagline {
-  margin: 4px 0 0;
-  font-size: 11px;
-  line-height: 1.5;
-  color: rgba(12, 15, 20, 0.62);
-}
-.mzsc-brand-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .mzsc-brand-btn {
   font-size: 12px;
   font-weight: 700;
@@ -199,6 +218,10 @@
    本体は .site-brand-tagline / .site-brand-actions / .site-nav を隠して
    トグルだけ出すため、ツール側も同じ見え方に揃える */
 .mzsc-burger {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
   display: none;
   width: 42px;
   height: 42px;
@@ -289,7 +312,9 @@
 .mzsc-drawer-nav a i { width: 18px; text-align: center; color: rgba(12, 15, 20, 0.5); }
 
 @media (max-width: 719px) {
-  .mzsc-brand-tagline { display: none; }
+  /* 本体(marchinz-brushup.css)と同じく、モバイルでも消さずに小さくする */
+  .mzsc-brand-tagline { font-size: 0.6rem; margin-top: 0.15rem; }
+  .mzsc-brand-right { right: 50px; }   /* バーガーと重ねない */
   .mzsc-brand-right .mzsc-brand-btn { display: none; }   /* 未ログインのボタンはドロワー内へ */
   .mzsc-user-name { display: none; }                      /* 幅節約: アバターだけ見せる */
   .mzsc-nav { display: none; }

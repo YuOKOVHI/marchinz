@@ -59,6 +59,9 @@ window.MZ_LIMITS = (() => {
          実際にはどちらか厳しい方が効く */
     maxExportSec: unlimited ? Infinity : member ? 510 : 300,
     exportLimitLabel: member ? "8分30秒" : "5分",
+    /* 登録ユーザーの完成尺。ゲストに「登録すると何分まで作れるか」を
+       案内するときにも使うため、ロールに依らない定数として持つ */
+    memberExportLabel: "8分30秒",
     // Privacyの動画は誰でも10分(モザイク作業は選んだ範囲だけのため)
     maxPrivacyVideoSec: unlimited ? Infinity : 600.5,
     maxPhotos: unlimited ? Infinity : member ? 5 : 1,   // 一度に扱える写真の枚数
@@ -129,10 +132,18 @@ window.MZ_LIMITS = (() => {
     if (L.unlimited) {
       html = '<p class="mz-plan">上限なしで使えます。</p>';
     } else if (L.member) {
-      html = `<p class="mz-plan">${m}まで使えます。</p>`;
+      /* 「取り込める素材の長さ」と「書き出せる完成の長さ」は別枠なので、
+         どちらがどれだけ使えるのかを1文で言い切る(2026-07-21 優さん指示) */
+      html = kind === "photo"
+        ? `<p class="mz-plan">${m}まで使えます。</p>`
+        : `<p class="mz-plan">素材は${m}まで使用でき、完成は${L.exportLimitLabel}までです。</p>`;
     } else {
-      html = `<p class="mz-plan">ゲストは${g}まで、登録ユーザーは${m}まで。`
-        + ' <a href="/#signup">無料登録</a></p>';
+      html = kind === "photo"
+        ? `<p class="mz-plan">ゲストは${g}まで、登録ユーザーは${m}まで。`
+          + ' <a href="/#signup">無料登録</a></p>'
+        : `<p class="mz-plan">ゲストは素材${g}・完成${L.exportLimitLabel}まで。`
+          + `登録すると素材${m}・完成${L.memberExportLabel}に。`
+          + ' <a href="/#signup">無料登録</a></p>';
     }
     hosts.forEach(el => { el.innerHTML = html; });
   };
