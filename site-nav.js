@@ -1730,7 +1730,7 @@
       },
       {
         name: "ICHIKASHI ALUMNI CGT",
-        url: "https://www.youtube.com/@ichikashialumnicgt2562",
+        url: "https://www.youtube.com/@ikalumni_2022",
         category: "カラーガード",
         logo: "https://yt3.googleusercontent.com/ANzJOGnoYrbH3-WsYmxZMwWRO1iOUCyGqYJvmBXDfJ3lyEoNr5aLqNnNT0bPMayMWptBgIO8ZA=s900-c-k-c0x00ffffff-no-rj",
         thumbnails: [
@@ -2122,7 +2122,7 @@
         popularLive: "W5OCs5rigJk",
         gridExtra4: "S1aPAia3jvY",
       },
-      "https://www.youtube.com/@ichikashialumnicgt2562": {
+      "https://www.youtube.com/@ikalumni_2022": {
         latestVideo: "sXUDBOFOCVw",
         popularVideo: "sXUDBOFOCVw",
         popular2: "_1qnl2TBs20",
@@ -2191,7 +2191,7 @@
       "https://www.youtube.com/@mercurywinds2651": "2026/5/4",
       "https://www.youtube.com/@colorguardteamminerva5329": "2025/5/19",
       "https://www.youtube.com/@Revoltcolorguard": "2026/2/2",
-      "https://www.youtube.com/@ichikashialumnicgt2562": "2026/3/22",
+      "https://www.youtube.com/@ikalumni_2022": "2026/3/22",
       "https://www.youtube.com/@viacolorguard7940": "2025/7/11",
       "https://www.youtube.com/@viacolorguardjr": "2026/4/12",
     };

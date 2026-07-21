@@ -65,3 +65,12 @@ jobs:
           fi
           git commit -m "chore(data): refresh YouTube list + note feed"
           git push
+
+      # チャンネルのハンドル変更・削除でリンクが切れていないか確かめる。
+      # export_youtube_list_via_api.py は引けなかったチャンネルの行を静かに
+      # 空にするだけなので、放っておくと中身の無いカードが並ぶことに誰も
+      # 気づけない(2026-07-21、ICHIKASHI ALUMNI CGT のハンドル変更で発生)。
+      # データの更新と push が済んだ後に走らせ、切れていればこのジョブを
+      # 失敗させて GitHub から通知が届くようにする。
+      - name: Check channel links
+        run: python3 check_channel_links.py --quiet
