@@ -147,26 +147,31 @@
 .mzsc-can-item p { margin: 0; font-size: 12px; line-height: 1.85; color: rgba(12, 15, 20, 0.66); }
 
 /* 広告・公式Xのバナー行(TOPフッターと同じ) */
+/* 本体 .footer-banner-row の実測: flex / nowrap / gap 1.92px / width fit-content */
 .mzsc-foot-banners {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-wrap: wrap;
-  gap: 16px;
+  flex-wrap: nowrap;
+  gap: 0.12rem;
+  width: fit-content;
+  margin: 0 auto;
   padding: 26px 18px 6px;
 }
+.mzsc-foot-banners img { max-width: 100%; }
 .mzsc-foot-banners img { max-height: 46px; width: auto; display: block; }
 .mzsc-x-link { display: inline-flex; color: #fff; }
 .mzsc-x-link svg { width: 24px; height: 24px; }
 
+/* 本体 .mz-footer-grid の実測: grid 3列 / gap 0.6rem / max-width 400px */
 .mzsc-foot-grid {
-  max-width: 1080px;
+  max-width: 400px;
   margin: 0 auto;
-  display: flex;
-  justify-content: center;
-  gap: 40px;
-  flex-wrap: wrap;
-  padding: 18px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.6rem;
+  padding: 1.2rem 0.8rem 1.4rem;
+  text-align: left;
 }
 .mzsc-foot-col { display: flex; flex-direction: column; gap: 0; }
 .mzsc-foot-col a { font-size: 12.5px; text-decoration: none;
@@ -312,13 +317,27 @@
 .mzsc-drawer-nav a i { width: 18px; text-align: center; color: rgba(12, 15, 20, 0.5); }
 
 @media (max-width: 719px) {
-  /* 本体(marchinz-brushup.css)と同じく、モバイルでも消さずに小さくする */
-  .mzsc-brand-tagline { font-size: 0.6rem; margin-top: 0.15rem; }
-  .mzsc-brand-right { right: 50px; }   /* バーガーと重ねない */
+  /* 本体は375pxでタグラインを display:none にしている(実測)。
+     出すとロゴやアバターと重なるため、本体と同じく隠す */
+  .mzsc-brand-tagline { display: none; }
+  /* 本体はロゴを左寄せにしている(実測 left 8px)。中央のままだと
+     右端のアバターと重なる */
+  .mzsc-brand-inner { text-align: left; }
+  .mzsc-brand-logo img { margin: 0; }
+  /* 本体のアカウントメニューボタンはモバイルで 0x0(非表示)。
+     出すとサイトのハンバーガーと2つ並んで意味が分からなくなる。
+     アカウント操作はアバターのタップ(マイページ)へ集約する */
+  .mzsc-acct-wrap { display: none; }
+  /* 本体の実測: アバター32px / バーガーの左に置く */
+  .mzsc-user-avatar { width: 32px; height: 32px; }
+  .mzsc-brand-right { right: 56px; }
   .mzsc-brand-right .mzsc-brand-btn { display: none; }   /* 未ログインのボタンはドロワー内へ */
   .mzsc-user-name { display: none; }                      /* 幅節約: アバターだけ見せる */
   .mzsc-nav { display: none; }
   .mzsc-burger { display: inline-flex; }
   .mzsc-brand { padding: 8px 14px; padding-top: calc(8px + env(safe-area-inset-top, 0px)); }
-  .mzsc-brand-logo img { height: 32px; }
+  /* 旧: height:32px でロゴを潰していた(実測 88x32)。本体は 241x88 で
+     出しているので、同じ計算式(表示幅の約7割)に合わせる。
+     height を指定しないこと ── 指定すると max-width が効かなくなる */
+  .mzsc-brand-logo img { height: auto; }
 }
