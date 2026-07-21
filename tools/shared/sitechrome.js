@@ -113,10 +113,10 @@ window.MZSiteChrome = (() => {
     <div class="mzsc-drawer-cta">${authAreaHtml()}</div>
     <p class="mzsc-drawer-label">映像ツール</p>
     <nav class="mzsc-drawer-nav">
-      <a href="/tools/vlog/"><i class="fa-solid fa-film" aria-hidden="true"></i> MarchinZ Vlog（開発中）</a>
       <a href="/tools/switcher/"><i class="fa-solid fa-clapperboard" aria-hidden="true"></i> MarchinZ Switcher</a>
       <a href="/tools/reangle/"><i class="fa-solid fa-vector-square" aria-hidden="true"></i> MarchinZ ReAngle</a>
       <a href="/tools/privacy/"><i class="fa-solid fa-user-shield" aria-hidden="true"></i> MarchinZ Privacy</a>
+      <a href="/tools/vlog/"><i class="fa-solid fa-film" aria-hidden="true"></i> MarchinZ Vlog（開発中）</a>
     </nav>
     <p class="mzsc-drawer-label">ページ一覧</p>
     <nav class="mzsc-drawer-nav">${NAV.map(([h, l]) => `<a href="${h}">${esc(l)}</a>`).join("")}
