@@ -1271,10 +1271,16 @@
   }
 
   // 登録ユーザー(ログイン中)の印。ツール側はこれを見て取り込み上限を緩める(動画20分・写真5枚)
-  function syncMemberToolFlag(isMember) {
+  function syncMemberToolFlag(isMember, profile) {
     try {
       if (isMember) {
-        localStorage.setItem("mz_member_v1", JSON.stringify({ member: true, ts: Date.now() }));
+        // name/avatar はクリエイターツールのヘッダー表示用(sitechrome.js が読む)。
+        // limits.js は member と ts しか見ないので追記しても壊れない
+        localStorage.setItem("mz_member_v1", JSON.stringify({
+          member: true, ts: Date.now(),
+          name: (profile && profile.name) || "",
+          avatar: (profile && profile.avatar) || "",
+        }));
       } else {
         localStorage.removeItem("mz_member_v1");
       }
@@ -1410,7 +1416,10 @@
       mobileDrawerName.hidden = !showPublicLabel;
     }
     applyAdminOnlyVisibility(admin);
-    syncMemberToolFlag(true);
+    syncMemberToolFlag(true, {
+      name: label,
+      avatar: getProfileAvatarSrc(displayName, avatarUrl, currentProfileWithdrawn),
+    });
     syncSiteBrandAuthVisibility();
     syncInAppBrowserAuthGate();
   }

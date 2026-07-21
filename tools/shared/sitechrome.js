@@ -34,10 +34,50 @@ window.MZSiteChrome = (() => {
      auth.jsがlocalStorageへ書く印(limits.jsが読んでいるのと同じ)を見る。
      未ログイン=「はじめての方/ログイン」、ログイン中=「マイページ」1つだけ
      (会員か管理者かはここでは区別しない。ログインしている事実だけを見せる)。 */
-  function authAreaHtml() {
+  function loggedIn() {
     const L = window.MZ_LIMITS;
-    const loggedIn = Boolean(L && (L.member || L.admin));
-    if (loggedIn) {
+    return Boolean(L && (L.member || L.admin));
+  }
+
+  /* アバターと名前。auth.js がログイン時に mz_member_v1 へ書いた値を読む。
+     まだ無い(旧版でログインしたまま等)ときはプレースホルダ+名前なしで出す */
+  const AVATAR_FALLBACK = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Crect width='40' height='40' rx='20' fill='%231e3a5f'/%3E%3C/svg%3E";
+  function memberProfile() {
+    try {
+      const raw = JSON.parse(localStorage.getItem("mz_member_v1") || "null");
+      return { name: (raw && raw.name) || "", avatar: (raw && raw.avatar) || "" };
+    } catch (_) { return { name: "", avatar: "" }; }
+  }
+
+  /* ヘッダー右側: 本体(index.html)のログイン表示と同じ構成。
+     アバター+名前=マイページへ / ハンバーガー型ボタン=アカウントメニュー。
+     プロフィール編集・設定・ログアウトは本体のマイページでしかできないため、
+     メニューの行き先はすべて本体へのリンクにする */
+  function headerAuthHtml() {
+    if (loggedIn()) {
+      const p = memberProfile();
+      return '<div class="mzsc-user-area">'
+        + '<a href="/#profile" class="mzsc-user" aria-label="マイプロフィールを表示">'
+        + `<img class="mzsc-user-avatar" src="${esc(p.avatar || AVATAR_FALLBACK)}" alt="" width="40" height="40" decoding="async" onerror="this.src='${AVATAR_FALLBACK}'">`
+        + (p.name ? `<span class="mzsc-user-name">${esc(p.name)}</span>` : "")
+        + '</a>'
+        + '<div class="mzsc-acct-wrap">'
+        + '<button type="button" class="mzsc-acct-btn" id="mzscAcctBtn" aria-expanded="false"'
+        + ' aria-haspopup="menu" aria-controls="mzscAcctMenu" aria-label="アカウントメニューを開く">'
+        + '<span class="mzsc-acct-burger" aria-hidden="true"><span></span><span></span><span></span></span></button>'
+        + '<div id="mzscAcctMenu" class="mzsc-acct-menu" role="menu" hidden>'
+        + '<a href="/#profile" role="menuitem">プロフィールを見る</a>'
+        + '<a href="/#profile?tab=base" role="menuitem"><i class="fa-solid fa-drum" aria-hidden="true"></i> MarchinZ Days(練習記録)</a>'
+        + '<a href="/#profile" role="menuitem">設定・ログアウト(マイページ)</a>'
+        + '</div></div></div>';
+    }
+    return '<a href="/#signup" class="mzsc-brand-btn mzsc-brand-btn--primary">はじめての方</a>'
+      + '<a href="/#login" class="mzsc-brand-btn">ログイン</a>';
+  }
+
+  /* ドロワー内は場所が狭いのでボタン型のまま */
+  function authAreaHtml() {
+    if (loggedIn()) {
       return '<a href="/#profile" class="mzsc-brand-btn mzsc-brand-btn--primary">'
         + '<i class="fa-solid fa-user" aria-hidden="true"></i> マイページ</a>';
     }
@@ -49,7 +89,7 @@ window.MZSiteChrome = (() => {
   function headerHtml() {
     const nav = NAV.map(([href, label]) =>
       `<a href="${href}"${href === "/#creators" ? ' class="on"' : ""}>${esc(label)}</a>`).join("");
-    const auth = authAreaHtml();
+    const auth = headerAuthHtml();
     return `
 <header class="mzsc-brand">
   <div class="mzsc-brand-inner">
@@ -70,7 +110,7 @@ window.MZSiteChrome = (() => {
   <button type="button" class="mzsc-drawer-bd" data-mzsc-close aria-label="メニューを閉じる"></button>
   <div class="mzsc-drawer-panel" role="dialog" aria-modal="true" aria-label="サイトメニュー">
     <button type="button" class="mzsc-drawer-close" data-mzsc-close aria-label="閉じる">×</button>
-    <div class="mzsc-drawer-cta">${auth}</div>
+    <div class="mzsc-drawer-cta">${authAreaHtml()}</div>
     <p class="mzsc-drawer-label">映像ツール</p>
     <nav class="mzsc-drawer-nav">
       <a href="/tools/vlog/"><i class="fa-solid fa-film" aria-hidden="true"></i> MarchinZ Vlog（開発中）</a>
@@ -158,6 +198,56 @@ window.MZSiteChrome = (() => {
     const disc = document.querySelector(".beta-disclaimer");
     if (disc) body.insertBefore(disc, foot);
     wireDrawer();
+    wireAcctMenu();
+    wireVlogGate();
+  }
+
+  /* アカウントメニュー(ログイン中のみ存在)。外側タップ・Escで閉じる */
+  function wireAcctMenu() {
+    const btn = document.getElementById("mzscAcctBtn");
+    const menu = document.getElementById("mzscAcctMenu");
+    if (!btn || !menu) return;
+    const setOpen = open => {
+      menu.hidden = !open;
+      btn.setAttribute("aria-expanded", open ? "true" : "false");
+    };
+    btn.addEventListener("click", ev => { ev.stopPropagation(); setOpen(menu.hidden); });
+    document.addEventListener("click", ev => {
+      if (!menu.hidden && !ev.target.closest(".mzsc-acct-wrap")) setOpen(false);
+    });
+    document.addEventListener("keydown", ev => { if (ev.key === "Escape" && !menu.hidden) setOpen(false); });
+  }
+
+  /* MarchinZ Vlog は開発中のため管理者(+手元環境)のみ。
+     それ以外のクリックは止めて、開発中であることを告げる(2026-07-21 優さん指示)。
+     判定は毎クリック時に行う(読み込み時に固定するとログイン直後に反映されない) */
+  function vlogAllowed() {
+    const L = window.MZ_LIMITS;
+    return Boolean(L && L.unlimited);   // 管理者ログイン or localhost等の手元環境
+  }
+
+  function miniToast(msg) {
+    let el = document.getElementById("mzscToast");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "mzscToast";
+      el.className = "mzsc-toast";
+      document.body.appendChild(el);
+    }
+    el.textContent = msg;
+    el.classList.add("on");
+    clearTimeout(miniToast._t);
+    miniToast._t = setTimeout(() => el.classList.remove("on"), 3400);
+  }
+
+  function wireVlogGate() {
+    document.addEventListener("click", ev => {
+      const a = ev.target.closest('a[href^="/tools/vlog"]');
+      if (!a || vlogAllowed()) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      miniToast("開発中です。お待ち下さい。");
+    }, true);   // capture: ドロワーの「クリックで閉じる」より先に判定する
   }
 
   /* モバイルのメニュー開閉(本体サイトのドロワーと同じ役割) */

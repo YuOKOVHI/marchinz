@@ -2297,3 +2297,31 @@
 
   window.MarchinZBase = { mount, mountTools };
 })();
+
+/* ============ MarchinZ Vlog の開発中ゲート(TOPのカード) ============
+   Vlogは開発中のため、管理者(+手元環境)以外はツールへ入れない(2026-07-21)。
+   判定・案内はクリックの瞬間に行う(ページ読込時に固定すると、あとから
+   ログインしても反映されないため)。テストから差し替えられるよう公開する */
+window.MZVlogGate = {
+  allowed() {
+    try {
+      const raw = JSON.parse(localStorage.getItem("mz_admin_unlimited_v1") || "null");
+      const admin = Boolean(raw && raw.admin && Date.now() - (raw.ts || 0) < 30 * 24 * 60 * 60 * 1000);
+      if (admin) return true;
+    } catch (_) { /* 印なし */ }
+    const host = location.hostname;
+    return location.protocol === "file:" || host === "localhost" || host === "127.0.0.1";
+  },
+  handle(ev) {
+    if (this.allowed()) return true;
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (window.MZToast) MZToast.info("開発中です。お待ち下さい。");
+    else alert("開発中です。お待ち下さい。");
+    return false;
+  },
+};
+document.addEventListener("click", ev => {
+  const a = ev.target.closest('a[href^="/tools/vlog"]');
+  if (a) MZVlogGate.handle(ev);
+}, true);
