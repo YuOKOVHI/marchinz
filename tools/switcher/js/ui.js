@@ -114,33 +114,44 @@ MC.ui.checkExportable = () => {
   const host = MC.ui.$("#easyStatus");
   const old = document.getElementById("mzExportWarn");
   if (old) old.remove();
-  const maxSec = MC.exporter.maxExportableSec();
-  if (!isFinite(maxSec)) return;
+  const hardMax = MC.exporter.maxExportableSec();   // 端末のメモリから来る物理上限
+  if (!isFinite(hardMax)) return;                  // ディスクへ直接書ける環境は制限なし
   const [tIn, tOut] = MC.trimRange();
   const sec = Math.max(0, tOut - tIn);
-  if (sec <= maxSec) return;
+  if (sec <= hardMax) return;
+
+  /* 詰める長さは「ショウ1本ぶん」の 8分30秒 を基本にする。
+     端末上限(8分41秒など)の半端な数字ではなく、案内している上限と同じ
+     キリのいい長さに揃える(2026-07-21 優さん指示)。
+     ゲスト等でロール上限の方が短いときはそちらに従う */
+  const SHOW_SEC = 510;                            // 8分30秒
+  const roleMax = (window.MZ_LIMITS && MZ_LIMITS.maxExportSec) || Infinity;
+  const fitSec = Math.min(hardMax, isFinite(roleMax) ? roleMax : SHOW_SEC);
+  const mm = Math.floor(fitSec / 60), ss = Math.round(fitSec % 60);
+  const fitLabel = `${mm}分${String(ss).padStart(2, "0")}秒`;
 
   const box = document.createElement("div");
   box.id = "mzExportWarn";
   box.className = "mz-export-warn";
-  const mm = Math.floor(maxSec / 60), ss = Math.round(maxSec % 60);
   box.innerHTML =
     '<p class="mzw-title"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> '
     + `いまの範囲(${MC.ui.fmtTime(sec)})は、この端末では書き出せません</p>`
     + `<p class="mzw-body">iPhone・iPadは動画を丸ごとメモリに載せるため、`
-    + `${mm}分${String(ss).padStart(2, "0")}秒までです。`
+    + `${fitLabel}までです。`
     + `パソコンのChromeで開くと最後まで書き出せます。</p>`
     + '<button type="button" class="btn primary" id="mzwFit">'
-    + `<i class="fa-solid fa-scissors"></i> 書き出せる長さに詰める(先頭から${mm}分${String(ss).padStart(2, "0")}秒)</button>`;
+    + `<i class="fa-solid fa-scissors"></i> INから${fitLabel}に詰める</button>`;
   host.appendChild(box);
   box.querySelector("#mzwFit").onclick = () => {
+    /* INは動かさない。自動トリム(サリュート検出)が決めた「演奏の始まり」を
+       尊重し、そこから fitSec ぶんだけ残す(2026-07-21 優さん指示) */
     const [i0] = MC.trimRange();
     MC.S.trimIn = i0;
-    MC.S.trimOut = i0 + maxSec;
+    MC.S.trimOut = i0 + fitSec;
     MC.saveState();
     MC.ui.renderAll();
     MC.preview.seek(i0);
-    MC.ui.toast(`書き出す範囲を ${MC.ui.fmtTime(maxSec)} に詰めました`);
+    MC.ui.toast(`INから ${fitLabel} に詰めました`);
     MC.ui.checkExportable();
   };
 };
