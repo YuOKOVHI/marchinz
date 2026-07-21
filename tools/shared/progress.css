@@ -203,3 +203,18 @@ body.mzp-docked #toast { bottom: calc(86px + env(safe-area-inset-bottom)); }
   }
   .mzp-dock { transition: none; }
 }
+
+
+/* 動いていることが一目で分かるように、実行中はラベルを静かに脈打たせる。
+   止まって見えると「固まった?」と不安になる(2026-07-21 優さん指示)。
+   1秒周期・透明度だけの変化に留め、読みづらくしない */
+@keyframes mzpBreathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+.mzp[data-state="run"] .mzp-label,
+.mzp[data-state="pulse"] .mzp-label { animation: mzpBreathe 1.4s ease-in-out infinite; }
+.mzp[data-state="run"] .mzp-eta { font-variant-numeric: tabular-nums; }
+.mzp-dock[data-state="run"] .mzp-dock-label,
+.mzp-dock.show .mzp-dock-label { animation: mzpBreathe 1.4s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .mzp .mzp-label, .mzp-dock .mzp-dock-label { animation: none !important; }
+}

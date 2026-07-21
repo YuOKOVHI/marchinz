@@ -387,7 +387,19 @@ MC.exporter.videoBitrate = () => {
      マーチングは動きが細かく圧縮に厳しい素材なので、書き出しが荒いと感じたら
      この値を上げる(そのぶん書き出せる尺は短くなる)。
      Mac は据え置き。ディスクへ直接書けるので尺の制限を受けない */
-  return MC.isIOS ? 5e6 : base;
+  /* 会員が書き出せる上限(8分30秒=510秒)を、iPhoneのメモリ上限(260MB)の
+     中に必ず収める。260MB×8÷510秒 − 音声192kbps ≒ 3.88Mbps。
+     5Mbps だと 6.7分でメモリ上限に当たり、「8分30秒まで書き出せる」と
+     案内しておきながら実際には弾かれていた(2026-07-21 実機で発覚)。
+     画質よりも「案内どおり書き出せること」を優先する */
+  return MC.isIOS ? 3.8e6 : base;
+};
+
+/* この端末で書き出せる最大の秒数。案内と自動調整の両方で使う */
+MC.exporter.maxExportableSec = () => {
+  if (window.showSaveFilePicker) return Infinity;   // ディスクへ直接書ける環境は制限なし
+  const perSec = (MC.exporter.videoBitrate() + 192e3) / 8;
+  return MC.exporter.MEM_HARD_LIMIT / perSec;
 };
 MC.exporter.estimateBytes = () => {
   const [tIn, tOut] = MC.trimRange();

@@ -105,6 +105,61 @@ MC.ui.fmtTime = s => {
 MC.ui.esc = s => String(s).replace(/[&<>"']/g,
   ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
 
+/* 取り込んだ直後、次にすることが画面に入っていなければそこまで運ぶ。
+   スマホは画面が狭く、追加した下に何があるか分からない(2026-07-21 優さん指示)。
+   すでに見えているときは動かさない(勝手にスクロールされる不快感を避ける) */
+/* 書き出せる長さに収まっているか点検し、超えていればその場で直せるようにする。
+   「あとで弾く」のではなく「先に知らせて、ワンタップで直せる」形にする */
+MC.ui.checkExportable = () => {
+  const host = MC.ui.$("#easyStatus");
+  const old = document.getElementById("mzExportWarn");
+  if (old) old.remove();
+  const maxSec = MC.exporter.maxExportableSec();
+  if (!isFinite(maxSec)) return;
+  const [tIn, tOut] = MC.trimRange();
+  const sec = Math.max(0, tOut - tIn);
+  if (sec <= maxSec) return;
+
+  const box = document.createElement("div");
+  box.id = "mzExportWarn";
+  box.className = "mz-export-warn";
+  const mm = Math.floor(maxSec / 60), ss = Math.round(maxSec % 60);
+  box.innerHTML =
+    '<p class="mzw-title"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> '
+    + `いまの範囲(${MC.ui.fmtTime(sec)})は、この端末では書き出せません</p>`
+    + `<p class="mzw-body">iPhone・iPadは動画を丸ごとメモリに載せるため、`
+    + `${mm}分${String(ss).padStart(2, "0")}秒までです。`
+    + `パソコンのChromeで開くと最後まで書き出せます。</p>`
+    + '<button type="button" class="btn primary" id="mzwFit">'
+    + `<i class="fa-solid fa-scissors"></i> 書き出せる長さに詰める(先頭から${mm}分${String(ss).padStart(2, "0")}秒)</button>`;
+  host.appendChild(box);
+  box.querySelector("#mzwFit").onclick = () => {
+    const [i0] = MC.trimRange();
+    MC.S.trimIn = i0;
+    MC.S.trimOut = i0 + maxSec;
+    MC.saveState();
+    MC.ui.renderAll();
+    MC.preview.seek(i0);
+    MC.ui.toast(`書き出す範囲を ${MC.ui.fmtTime(maxSec)} に詰めました`);
+    MC.ui.checkExportable();
+  };
+};
+
+MC.ui.focusNextAction = () => {
+  if (!MC.S.clips.length) return;
+  setTimeout(() => {
+    const btn = MC.ui.$("#easyStartBtn");
+    if (!btn || btn.offsetParent === null) return;
+    const r = btn.getBoundingClientRect();
+    const visible = r.top >= 0 && r.bottom <= window.innerHeight;
+    if (visible) return;
+    const panel = btn.closest(".panel") || btn;
+    panel.scrollIntoView({ behavior: "smooth", block: "center" });
+    panel.classList.add("mz-focus-flash");
+    setTimeout(() => panel.classList.remove("mz-focus-flash"), 1200);
+  }, 260);   // サムネ生成でレイアウトが動くので少し待つ
+};
+
 /* おまかせ完了状態の解除。素材・モードが変わったら準備からやり直し */
 MC.ui.resetEasyDone = () => {
   if (!MC.S.easyDone) return;
@@ -589,6 +644,10 @@ MC.ui.runEasy = async () => {
     /* ここからの主役は書き出し。おまかせボタン自体を「動画を書き出す」に
        化けさせ、次にすることを迷わせない(2026-07-21 優さん指示) */
     MC.S.easyDone = true;
+    /* 長すぎて書き出せない場合は、ここで知らせる。
+       書き出しボタンを押すまで黙っていると「15分待って書き出せません」に
+       なる(2026-07-21 実機で発生) */
+    MC.ui.checkExportable();
   } catch (e) {
     console.error(e);
     p.fail("うまくできませんでした", { detail: e.message });

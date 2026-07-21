@@ -78,6 +78,14 @@ window.MZP = (function () {
     return `残り約${Math.ceil(sec / 60)}分`;
   }
 
+  /* 予想の終了時刻。長い処理では「あと何分」より「何時に終わるか」の方が
+     待てる(2026-07-21 優さん指示)。1分未満は出さない(秒単位で揺れて不安になる) */
+  function fmtEndAt(sec) {
+    if (!isFinite(sec) || sec < 60) return "";
+    const d = new Date(Date.now() + sec * 1000);
+    return `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}頃おわり`;
+  }
+
   class Handle {
     constructor(o) {
       this.opt = o;
@@ -143,7 +151,11 @@ window.MZP = (function () {
       let sub = this.sub;
       if (this.state === "frozen" && !sub) sub = "この間、数秒だけ画面が止まります";
       if (this._slow && running && !sub) sub = "時間がかかっています。そのままお待ちください";
-      const etaTxt = this._etaVisible() ? fmtEta(this.eta) : "";
+      let etaTxt = this._etaVisible() ? fmtEta(this.eta) : "";
+      if (etaTxt) {
+        const at = fmtEndAt(this.eta);
+        if (at) etaTxt += ` / ${at}`;
+      }
       const stepTxt = (this.steps && running) ? `${this.stepNo}/${this.steps}` : "";
       const width = `${Math.max(2, Math.round((this.state === "done" ? 1 : this.ratio) * 100))}%`;
 

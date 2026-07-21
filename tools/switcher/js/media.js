@@ -215,4 +215,5 @@ MC.media.afterChange = () => {
   MC.saveState();
   MC.ui.resetEasyDone();   // 素材が変わったら「書き出すだけ」状態を解除
   MC.ui.renderAll();
+  MC.ui.focusNextAction();   // 次にすること(おまかせで開始)まで運ぶ
 };

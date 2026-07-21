@@ -56,8 +56,18 @@ window.MZJourney = (() => {
     conf.container.insertBefore(root, conf.container.firstChild);
   }
 
+  /* バーの実際の高さを CSS 変数へ。フロートするプレビュー等が
+     「バーの真下」に着けるようにするため(2026-07-21 実機でプレビューが
+     バーの下へ潜り込んで見えなくなっていた) */
+  function syncHeight() {
+    if (!root) return;
+    const hpx = Math.round(root.getBoundingClientRect().height);
+    if (hpx > 0) document.documentElement.style.setProperty("--mz-journey-h", hpx + "px");
+  }
+
   function apply() {
     if (!root) return;
+    syncHeight();
     root.querySelectorAll(".mzj-phase").forEach(b => {
       const id = b.dataset.id;
       b.classList.toggle("current", id === cur);
@@ -114,7 +124,9 @@ window.MZJourney = (() => {
       refreshAuto();
       apply();
       clearInterval(watchTm);
-      watchTm = setInterval(() => { refreshAuto(); refreshActivity(); }, 400);  // 状態+MZP進捗のライブ反映
+      // 状態+MZP進捗のライブ反映。活動テキストの行数でバーの高さが変わるので
+      // 高さの同期もここで行う(プレビューの位置がずれないように)
+      watchTm = setInterval(() => { refreshAuto(); refreshActivity(); syncHeight(); }, 400);
     },
     set(currentId, doneIds) {
       cur = currentId;
