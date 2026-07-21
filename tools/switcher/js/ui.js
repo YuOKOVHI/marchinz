@@ -114,19 +114,25 @@ MC.ui.checkExportable = () => {
   const host = MC.ui.$("#easyStatus");
   const old = document.getElementById("mzExportWarn");
   if (old) old.remove();
-  const hardMax = MC.exporter.maxExportableSec();   // 端末のメモリから来る物理上限
-  if (!isFinite(hardMax)) return;                  // ディスクへ直接書ける環境は制限なし
+  /* 範囲は自動トリム(サリュート検出)の結果をそのまま使うのが基本。
+     書き出せる長さを超えたときだけ、ここで知らせて詰める(優さん指示)。
+     効く上限は2つあり、厳しい方が効く:
+       hardMax … 端末のメモリから来る物理上限(iPhoneで約8分41秒)
+       roleMax … 会員種別の上限(登録8分30秒 / ゲスト5分 / 管理者は無制限) */
+  const hardMax = MC.exporter.maxExportableSec();
+  const roleMax = (window.MZ_LIMITS && MZ_LIMITS.maxExportSec) || Infinity;
+  const limit = Math.min(hardMax, roleMax);
+  if (!isFinite(limit)) return;                    // どちらも無制限(Macの管理者等)
   const [tIn, tOut] = MC.trimRange();
   const sec = Math.max(0, tOut - tIn);
-  if (sec <= hardMax) return;
+  if (sec <= limit) return;                        // 収まっている=アルゴリズムの結果を尊重
 
   /* 詰める長さは「ショウ1本ぶん」の 8分30秒 を基本にする。
      端末上限(8分41秒など)の半端な数字ではなく、案内している上限と同じ
-     キリのいい長さに揃える(2026-07-21 優さん指示)。
-     ゲスト等でロール上限の方が短いときはそちらに従う */
+     キリのいい長さに揃える。ゲスト等で上限がさらに短ければそちらに従う */
   const SHOW_SEC = 510;                            // 8分30秒
-  const roleMax = (window.MZ_LIMITS && MZ_LIMITS.maxExportSec) || Infinity;
-  const fitSec = Math.min(hardMax, isFinite(roleMax) ? roleMax : SHOW_SEC);
+  const fitSec = Math.min(limit, isFinite(roleMax) ? roleMax : SHOW_SEC);
+  const byDevice = hardMax <= roleMax;             // どちらの制限で止まっているか
   const mm = Math.floor(fitSec / 60), ss = Math.round(fitSec % 60);
   const fitLabel = `${mm}分${String(ss).padStart(2, "0")}秒`;
 
@@ -136,9 +142,12 @@ MC.ui.checkExportable = () => {
   box.innerHTML =
     '<p class="mzw-title"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> '
     + `いまの範囲(${MC.ui.fmtTime(sec)})は、この端末では書き出せません</p>`
-    + `<p class="mzw-body">iPhone・iPadは動画を丸ごとメモリに載せるため、`
-    + `${fitLabel}までです。`
-    + `パソコンのChromeで開くと最後まで書き出せます。</p>`
+    + '<p class="mzw-body">'
+    + (byDevice
+        ? `iPhone・iPadは動画を丸ごとメモリに載せるため、${fitLabel}までです。`
+          + "パソコンのChromeで開くと最後まで書き出せます。"
+        : `いま書き出せるのは${fitLabel}までです。`)
+    + "</p>"
     + '<button type="button" class="btn primary" id="mzwFit">'
     + `<i class="fa-solid fa-scissors"></i> INから${fitLabel}に詰める</button>`;
   host.appendChild(box);
