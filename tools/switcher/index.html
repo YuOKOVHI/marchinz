@@ -234,7 +234,7 @@
   </aside>
 
   <section class="stage">
-    <div class="canvas-holder"><canvas id="cv" width="1080" height="1920"></canvas></div>
+    <div class="canvas-holder"><canvas id="cv" width="1080" height="1920"></canvas><button type="button" id="floatToggle" class="float-toggle" aria-label="プレビューの大きさを切り替え"><i class="fa-solid fa-up-right-and-down-left-from-center" aria-hidden="true"></i></button></div>
     <div class="transport">
       <button id="playBtn" class="btn round" title="再生/停止"><i class="fa-solid fa-play"></i></button>
       <div class="scrub-wrap">
@@ -245,11 +245,12 @@
       <span id="timeLabel" class="time-label">0:00.0 / 0:00.0</span>
     </div>
     <div class="trim-row">
-      <button id="trimInBtn" class="btn small" title="いま見ている位置から書き出します"><i class="fa-solid fa-flag"></i> ここから書き出す<b>IN</b></button>
-      <button id="trimOutBtn" class="btn small" title="いま見ている位置まで書き出します"><i class="fa-solid fa-flag-checkered"></i> ここまで<b>OUT</b></button>
+      <button id="trimInBtn" class="btn small trim-btn trim-btn--in" title="いま見ている位置から書き出します"><span class="trim-tri" aria-hidden="true">🔻</span><i class="fa-solid fa-flag"></i> <b>IN</b></button>
+      <button id="trimOutBtn" class="btn small trim-btn trim-btn--out" title="いま見ている位置まで書き出します"><span class="trim-tri" aria-hidden="true">🔻</span><i class="fa-solid fa-flag-checkered"></i> <b>OUT</b></button>
       <span id="trimLabel" class="hint"></span>
       <button id="trimResetBtn" class="btn small ghost">リセット</button>
     </div>
+    <button id="cutModeBtn" class="btn cutmode-btn" hidden><i class="fa-solid fa-table-cells-large" aria-hidden="true"></i> カット切替モード</button>
     <div id="timelineWrap" class="timeline-wrap" style="display:none">
       <div id="timelineStrip" class="tl-strip"></div>
       <div id="timelineToolbar" class="tl-toolbar" style="display:none">
@@ -260,6 +261,24 @@
   </section>
 </main>
 </div><!-- /#workspace -->
+
+<!-- カット切替モード(全画面)。プレビュー(#cv)はここへ移動して使う -->
+<div id="cutModal" class="cut-modal" hidden>
+  <div class="cm-head">
+    <span id="cmCounter" class="cm-counter">カット 1 / 1</span>
+    <span id="cmTime" class="cm-time"></span>
+    <button type="button" id="cmClose" class="cm-close" aria-label="カット切替モードを閉じる"><i class="fa-solid fa-xmark"></i></button>
+  </div>
+  <div id="cmStage" class="cm-stage"></div>
+  <div class="cm-nav">
+    <button type="button" id="cmPrev" class="btn cm-nav-btn"><i class="fa-solid fa-backward-step"></i> 前のカット</button>
+    <button type="button" id="cmPlay" class="btn cm-nav-btn"><i class="fa-solid fa-play"></i> このカットを再生</button>
+    <button type="button" id="cmNext" class="btn cm-nav-btn">次のカット <i class="fa-solid fa-forward-step"></i></button>
+  </div>
+  <p class="cm-hint">このカットに使うカメラをタップで選べます</p>
+  <div id="cmCams" class="cm-cams"></div>
+  <div id="cmList" class="cm-list"></div>
+</div>
 
 <footer>
   <p>端末内で完結・無料 | MarchinZ クリエイターツール〈ベータ版〉 | <a href="/#creators" class="foot-link">MarchinZへ戻る</a></p>
@@ -291,6 +310,7 @@
 <script src="js/salute.js"></script>
 <script src="js/preview.js"></script>
 <script src="js/timeline.js"></script>
+<script src="js/cutmode.js"></script>
 <script src="js/exporter.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/app.js"></script>

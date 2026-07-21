@@ -165,6 +165,7 @@ MC.media.makeThumb = async clip => {
 MC.media.removeClip = id => {
   const i = MC.S.clips.findIndex(c => c.id === id);
   if (i < 0) return;
+  MC.ui.resetEasyDone();   // 素材が変わったら「書き出すだけ」状態を解除
   const c = MC.S.clips[i];
   try { c.video.pause(); } catch (e) {}
   URL.revokeObjectURL(c.url);
@@ -212,5 +213,6 @@ MC.media.afterChange = () => {
   MC.restoreCutList();
   MC.preview.applyMute();
   MC.saveState();
+  MC.ui.resetEasyDone();   // 素材が変わったら「書き出すだけ」状態を解除
   MC.ui.renderAll();
 };

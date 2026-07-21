@@ -74,6 +74,7 @@ MV.planner.resolveBlocks = () => {
   const blocks = mode.blocks.filter(b => {
     if (b.src === "interview") return groupOf.get(b.id) < itvs.length;  // 素材のある分だけ
     if (b.src === "title" || b.src === "logo") return hasBrand;         // 出すものが無ければ落とす
+    if (b.src === "insert") return MV.S.inserts.length > 0;             // Bロール0本なら語りだけで組む
     return true;
   });
   return { blocks, groupOf, groupCount: Math.min(groupKeys.length, itvs.length) };
@@ -100,7 +101,9 @@ MV.planner.build = () => {
   const mode = MV.DATA.MODES[MV.S.mode];
   if (!mode) throw new Error("雰囲気が選ばれていません");
   const inserts = MV.S.inserts;
-  if (!inserts.length) throw new Error("インサート映像がありません");
+  /* インタビュー構成ツール(2026-07-21): 主役は語り。インタビューが無ければ
+     組めない。Bロール(インサート)は飾りなので無くても成立する */
+  if (!MV.S.interviews.length) throw new Error("インタビューがありません");
 
   const { blocks, groupOf, groupCount } = MV.planner.resolveBlocks();
   const target = MV.planner.targetSec(blocks, groupCount);
@@ -211,17 +214,30 @@ MV.planner.build = () => {
       const seg = {
         blockId: b.id, label: b.label, kind: "video",
         t0: t, t1: t + dur, clipId: clip.id, srcIn,
-        transIn, ambient: true, ambientGain: 1, bRoll: null,
+        transIn, ambient: true, ambientGain: 1, bRolls: [],
       };
-      /* Bロール: 語りの途中で絵だけ差し替える(音は継続)。
-         素人素材の据え置き25秒は物理的に持たない(原口さんレビュー) */
-      if (b.bRoll && inserts.length && dur > b.bRoll.sec + 2) {
-        const c = inserts[rrNorm % inserts.length]; rrNorm++;
-        const tA = t + dur * b.bRoll.atPct;
-        const tB = Math.min(tA + b.bRoll.sec, t + dur - 1);
-        const [uIn, uOut] = MV.planner.usable(c);
-        const bSrcIn = uIn + Math.max(0, (uOut - uIn - (tB - tA))) * rand();
-        if (tB - tA > 0.8) seg.bRoll = { clipId: c.id, srcIn: bSrcIn, tA, tB };
+      /* Bロールの被せ: bRollEvery 秒ごとに bRollSec 秒、絵だけ差し替える
+         (音は語りが続く。Bロール側は無音)。頭4秒は顔を見せてから、
+         締めの3秒は必ず顔へ戻る。同一素材はこのシーンでは1回まで
+         (2026-07-21 インタビュー構成ツール化) */
+      if (b.bRollEvery && inserts.length && dur > b.bRollEvery * 0.8) {
+        const usable = dur - 4 - 3;                       // 頭4秒・尻3秒は顔
+        let n = Math.max(0, Math.round(usable / b.bRollEvery));
+        n = Math.min(n, inserts.length);                  // 同一素材1回まで → 本数が上限
+        const usedHere = new Set();
+        const space = n > 0 ? usable / n : 0;
+        for (let k = 0; k < n; k++) {
+          const c = inserts[rrNorm % inserts.length]; rrNorm++;
+          if (usedHere.has(c.id)) continue;               // 念のための二重ガード
+          usedHere.add(c.id);
+          const slack = Math.max(0, space - b.bRollSec - 1);
+          const tA = t + 4 + k * space + rand() * slack;
+          const tB = Math.min(tA + b.bRollSec, t + dur - 3);
+          if (tB - tA < 1) continue;
+          const [uIn, uOut] = MV.planner.usable(c);
+          const bSrcIn = uIn + Math.max(0, (uOut - uIn - (tB - tA))) * rand();
+          seg.bRolls.push({ clipId: c.id, srcIn: bSrcIn, tA, tB });
+        }
       }
       segments.push(seg);
       t += dur;
@@ -241,7 +257,7 @@ MV.planner.build = () => {
           t0: t, t1: t + cutDur, clipId: c.id,
           srcIn: windowFor(c, cutDur),
           transIn: i === 0 ? transIn : 0,
-          ambient, ambientGain: ambient ? gain : 0, bRoll: null,
+          ambient, ambientGain: ambient ? gain : 0, bRolls: [],
         });
         t += cutDur;
       });
@@ -250,7 +266,7 @@ MV.planner.build = () => {
         blockId: b.id, label: b.label,
         kind: b.src === "title" ? "title" : "end",
         t0: t, t1: t + dur, clipId: null, srcIn: 0,
-        transIn, ambient: false, ambientGain: 0, bRoll: null,
+        transIn, ambient: false, ambientGain: 0, bRolls: [],
       });
       t += dur;
     }
@@ -334,9 +350,17 @@ MV.planner.validate = plan => {
       const over = (s.srcIn + (s.t1 - s.t0)) - c.duration;
       if (over > 0.75) throw new Error(`素材の範囲を超えています: ${s.blockId} ${c.name} 超過${over.toFixed(2)}秒`);
     }
-    if (s.bRoll) {
-      if (s.bRoll.tA < s.t0 || s.bRoll.tB > s.t1) throw new Error(`bRollが親からはみ出しています: ${s.blockId}`);
-      if (!MV.getClip(s.bRoll.clipId)) throw new Error(`bRoll素材が見つかりません: ${s.blockId}`);
+    if (s.bRolls && s.bRolls.length) {
+      let prevB = s.t0;
+      const usedClip = new Set();
+      for (const w of s.bRolls) {
+        if (w.tA < s.t0 || w.tB > s.t1) throw new Error(`bRollが親からはみ出しています: ${s.blockId}`);
+        if (w.tA < prevB) throw new Error(`bRoll窓が重なっています: ${s.blockId}`);
+        if (usedClip.has(w.clipId)) throw new Error(`同一Bロール素材が同じシーンに2回: ${s.blockId}`);
+        usedClip.add(w.clipId);
+        if (!MV.getClip(w.clipId)) throw new Error(`bRoll素材が見つかりません: ${s.blockId}`);
+        prevB = w.tB;
+      }
     }
     prev = s.t1;
   }

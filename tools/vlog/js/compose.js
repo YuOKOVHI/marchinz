@@ -92,9 +92,8 @@ MV.drawSegment = (ctx, W, H, plan, seg, t, resolveSrc, alpha = 1) => {
     return;
   }
   /* video: bRoll の窓の間は絵だけ差し替える(音は preview/exporter 側で継続) */
-  const br = seg.bRoll;
-  const useBRoll = br && t >= br.tA && t < br.tB;
-  const req = useBRoll
+  const br = (seg.bRolls || []).find(w => t >= w.tA && t < w.tB);
+  const req = br
     ? { clipId: br.clipId, srcSec: br.srcIn + (t - br.tA) }
     : { clipId: seg.clipId, srcSec: seg.srcIn + (t - seg.t0) };
   const src = resolveSrc(req);
@@ -149,11 +148,10 @@ MV.compose = (ctx, W, H, t, resolveSrc) => {
     MV.drawSegment(ctx, W, H, plan, seg, t, resolveSrc, 1);
   }
 
-  /* 右上のロゴ(バグ)。冒頭の静けさを邪魔しないよう最初のブロックが
-     終わってから出す。タイトル/エンドカードには重ねない */
+  /* 右上のロゴ(バグ)。最後のシーン(エンドカード)以外はずっと表示する
+     (2026-07-21 優さん指示)。タイトルカードは中央に大きく出すので重ねない */
   if (seg.kind === "video" && MV.S.logo && MV.S.logo.out) {
-    const first = plan.segments[0];
-    if (t > first.t1) MV.logo.drawBug(ctx, W, H);
+    MV.logo.drawBug(ctx, W, H);
   }
 
   /* ゲスト透かし(プレビューにも書き出しにも同じに載る) */

@@ -198,11 +198,11 @@ MV.preview.syncMedia = () => {
   };
 
   if (seg.kind === "video") {
-    const inBRoll = seg.bRoll && t >= seg.bRoll.tA && t < seg.bRoll.tB;
-    /* 本体は絵にも音にも要る(bRoll中も音は本体の音)。 */
+    const brw = (seg.bRolls || []).find(w => t >= w.tA && t < w.tB);
+    /* 本体は絵にも音にも要る(bRoll中も音は本体の音。Bロール側は無音) */
     const xf = seg.transIn > 0 && t - seg.t0 < seg.transIn ? (t - seg.t0) / seg.transIn : 1;
     addClip(seg.clipId, seg.srcIn + (t - seg.t0), seg.ambient ? seg.ambientGain * xf : 0);
-    if (inBRoll) addClip(seg.bRoll.clipId, seg.bRoll.srcIn + (t - seg.bRoll.tA), 0);
+    if (brw) addClip(brw.clipId, brw.srcIn + (t - brw.tA), 0);
   }
   /* ディゾルブ中は前セグメントの絵と音が残る(音はフェードアウト) */
   if (i > 0 && seg.transIn > 0 && t - seg.t0 < seg.transIn) {

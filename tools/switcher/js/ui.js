@@ -105,7 +105,21 @@ MC.ui.fmtTime = s => {
 MC.ui.esc = s => String(s).replace(/[&<>"']/g,
   ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
 
+/* おまかせ完了状態の解除。素材・モードが変わったら準備からやり直し */
+MC.ui.resetEasyDone = () => {
+  if (!MC.S.easyDone) return;
+  MC.S.easyDone = false;
+  MC.ui.renderEasyButton();
+};
+
 MC.ui.renderAll = () => {
+  /* スマホのフロートプレビューは素材があるときだけ(空の黒枠を浮かせない) */
+  document.body.classList.toggle("mz-has-clips", MC.S.clips.length > 0);
+  /* カット切替モードの入口はカットがあるときだけ */
+  {
+    const cmb = MC.ui.$("#cutModeBtn");
+    if (cmb) cmb.hidden = !MC.S.cutList.length;
+  }
   MC.ui.renderClips();
   MC.ui.renderAudio();
   MC.ui.renderEasyLead();
@@ -475,9 +489,26 @@ MC.ui.renderEasyLead = () => {
   const el = document.querySelector(".easy-lead");
   if (!el) return;
   const cutMode = ["switch", "wipe"].includes(MC.S.layoutId);
-  el.textContent = cutMode
-    ? "同期・カット割・色みまで、おまかせで仕上げます。"
-    : "同期・色みまで、おまかせで仕上げます。";
+  el.textContent = MC.S.easyDone
+    ? "準備ができました。あとは書き出すだけです。"
+    : cutMode
+      ? "同期・カット割・色みまで、おまかせで仕上げます。"
+      : "同期・色みまで、おまかせで仕上げます。";
+  MC.ui.renderEasyButton();
+};
+
+/* おまかせボタンの二役: 通常=おまかせで開始 / 完了後=動画を書き出す。
+   状態はボタンを見れば分かるように、文言も色もはっきり変える */
+MC.ui.renderEasyButton = () => {
+  const btn = MC.ui.$("#easyStartBtn");
+  if (!btn) return;
+  if (MC.S.easyDone) {
+    btn.innerHTML = '<i class="fa-solid fa-file-export"></i> 動画を書き出す';
+    btn.classList.add("export-ready");
+  } else {
+    btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> おまかせで開始';
+    btn.classList.remove("export-ready");
+  }
 };
 
 /* 「おまかせ / こだわり」タブ。素材が入ったら出す(それまでは邪魔なので隠す) */
@@ -555,6 +586,9 @@ MC.ui.runEasy = async () => {
         + (trimmed ? `書き出し範囲 ${MC.ui.fmtTime(ti)}〜${MC.ui.fmtTime(to)} を自動設定。` : "")
         + "プレビューを見て、よければ書き出してください",
     });
+    /* ここからの主役は書き出し。おまかせボタン自体を「動画を書き出す」に
+       化けさせ、次にすることを迷わせない(2026-07-21 優さん指示) */
+    MC.S.easyDone = true;
   } catch (e) {
     console.error(e);
     p.fail("うまくできませんでした", { detail: e.message });
@@ -722,8 +756,18 @@ MC.ui.wire = () => {
     card.onclick = () => MC.ui.chooseMode(card.dataset.mode));
   document.querySelectorAll("#setupTabs .tab").forEach(b =>
     b.onclick = () => MC.ui.setSetupTab(b.dataset.tab));
-  $("#easyStartBtn").onclick = () => MC.ui.runEasy();
+  $("#easyStartBtn").onclick = () => {
+    if (MC.S.easyDone) { $("#exportBtn").click(); return; }
+    MC.ui.runEasy();
+  };
   $("#modeBackBtn").onclick = () => MC.ui.showModeSelect();
+
+  if (MC.cutmode) MC.cutmode.init();
+  const ft = $("#floatToggle");
+  if (ft) ft.onclick = ev => {
+    ev.stopPropagation();
+    document.querySelector(".canvas-holder").classList.toggle("float-large");
+  };
 
   const dz = $("#clipSlots"), fi = $("#fileInput"), fiv = $("#fileInputV");
   fi.onchange = () => { MC.media.addFiles([...fi.files]); fi.value = ""; };

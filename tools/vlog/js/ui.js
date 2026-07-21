@@ -276,7 +276,8 @@ MV.ui.renderArtlist = () => {
 };
 
 /* ---------- 組み立ての可否と見込み ---------- */
-MV.ui.ready = () => MV.S.inserts.length > 0;
+/* インタビュー構成ツール(2026-07-21): 主役は語り。インタビューが必須 */
+MV.ui.ready = () => MV.S.interviews.length > 0;
 
 /* インタビュー実尺から、いまの素材だとおよそ何分になるかを見積もる */
 MV.ui.estimate = () => {
@@ -317,7 +318,11 @@ MV.ui.renderPlanSummary = () => {
     }
   } else {
     html += `<div class="ps-warn"><i class="fa-solid fa-circle-exclamation"></i>
-      映像を1本以上入れてください</div>`;
+      インタビューを1人以上入れてください（Vlogは語りが主役です）</div>`;
+  }
+  if (MV.ui.ready() && !MV.S.inserts.length) {
+    html += `<div class="ps-note"><i class="fa-solid fa-circle-info"></i>
+      Bロールが無いので語りだけで作ります。1本でもあると空気が伝わります</div>`;
   }
   host.innerHTML = html;
   MV.ui.$("#buildBtn").disabled = !MV.ui.ready();
@@ -411,9 +416,9 @@ MV.ui.updateActionBar = () => {
 
   let conf = null;
   if (ws && !ws.hidden && !busy) {
-    if (!MV.S.inserts.length) {
-      conf = { label: "まずインサート映像を選ぶ", icon: "fa-photo-film", note: "1本からはじめられます",
-        act: () => MV.ui.focusSection("#insSec", () => MV.ui.$("#insInput").click()) };
+    if (!MV.S.interviews.length) {
+      conf = { label: "まずインタビューを選ぶ", icon: "fa-comment-dots", note: "1人からはじめられます",
+        act: () => MV.ui.focusSection("#itvSec", () => MV.ui.$("#itvInput").click()) };
     } else if (!MV.S.plan) {
       const est = MV.ui.estimate();
       conf = { label: `Vlog自動編集（約${MV.ui.fmtTime(est)}）`, icon: "fa-wand-magic-sparkles",

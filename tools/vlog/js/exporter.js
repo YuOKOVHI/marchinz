@@ -414,7 +414,7 @@ MV.exporter.preflight = async () => {
   const ids = new Set();
   plan.segments.forEach(s => {
     if (s.clipId != null) ids.add(s.clipId);
-    if (s.bRoll) ids.add(s.bRoll.clipId);
+    (s.bRolls || []).forEach(w => ids.add(w.clipId));
   });
   for (const id of ids) {
     const c = MV.getClip(id);
@@ -503,19 +503,23 @@ MV.exporter.exportMP4 = async (onProgress, saveHandle) => {
       const wanted = new Map();   // key -> {clip, srcAt, srcSec}
       if (seg.kind === "video") {
         const clip = MV.getClip(seg.clipId);
-        const inBR = seg.bRoll && t >= seg.bRoll.tA && t < seg.bRoll.tB;
+        const wins = seg.bRolls || [];
+        const active = wins.find(w => t >= w.tA && t < w.tB);
         wanted.set(`s${i}`, {
           clip, srcAt: seg.srcIn,
-          srcSec: inBR ? null : Math.min(seg.srcIn + (t - seg.t0), clip.duration - 0.001),
+          srcSec: active ? null : Math.min(seg.srcIn + (t - seg.t0), clip.duration - 0.001),
         });
-        if (seg.bRoll && t >= seg.bRoll.tA - 0.2 && t < seg.bRoll.tB) {
-          const bc = MV.getClip(seg.bRoll.clipId);
-          wanted.set(`b${i}`, {
-            clip: bc, srcAt: seg.bRoll.srcIn,
-            srcSec: t >= seg.bRoll.tA
-              ? Math.min(seg.bRoll.srcIn + (t - seg.bRoll.tA), bc.duration - 0.001) : null,
-          });
-        }
+        /* いま映っている窓+0.2秒先の窓のパイプだけ開く(同時最大3本を守る) */
+        wins.forEach((w, k) => {
+          if (t >= w.tA - 0.2 && t < w.tB) {
+            const bc = MV.getClip(w.clipId);
+            wanted.set(`b${i}_${k}`, {
+              clip: bc, srcAt: w.srcIn,
+              srcSec: t >= w.tA
+                ? Math.min(w.srcIn + (t - w.tA), bc.duration - 0.001) : null,
+            });
+          }
+        });
       }
       if (i > 0 && seg.transIn > 0 && t - seg.t0 < seg.transIn && segs[i - 1].kind === "video") {
         const prev = segs[i - 1];

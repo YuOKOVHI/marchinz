@@ -184,9 +184,11 @@ MV.logo.reload = async () => {
 MV.logo.drawBug = (ctx, W, H, opacity = 0.85) => {
   const lg = MV.S.logo;
   if (!lg || !lg.out) return;
-  const tw = W * 0.12;
+  /* 放送局のウォーターマーク程度の控えめさ。上と右の余白は詰める
+     (2026-07-21 優さん指示: もっと小さく右上に・余白は少しに) */
+  const tw = W * 0.075;
   const th = tw * (lg.h / lg.w);
-  const pad = W * 0.03;
+  const pad = W * 0.012;
   ctx.save();
   ctx.globalAlpha = opacity;
   ctx.drawImage(lg.out, W - tw - pad, pad, tw, th);
