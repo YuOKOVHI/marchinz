@@ -692,9 +692,27 @@ MC.ui._holdWake = async want => {
   }
 };
 
+/* 作業中だけ出す「このまま待ってて」の帯。guardLeave と運命共同体にする
+   (出し忘れ・消し忘れが構造的に起きない)。2026-07-21 優さん指示 */
+MC.ui._stayBanner = on => {
+  let el = document.getElementById("mzStayBanner");
+  if (on && !el) {
+    el = document.createElement("div");
+    el.id = "mzStayBanner";
+    el.className = "mz-stay-banner";
+    el.setAttribute("role", "status");
+    el.innerHTML = '<i class="fa-solid fa-mug-hot" aria-hidden="true"></i> '
+      + '作業中です。この画面のまま、ほかのアプリに切り替えずにお待ちください';
+    document.body.appendChild(el);
+  } else if (!on && el) {
+    el.remove();
+  }
+};
+
 MC.ui.guardLeave = on => {
   if (on === MC.ui._leaveGuarded) return;
   MC.ui._leaveGuarded = on;
+  MC.ui._stayBanner(on);
   if (on) {
     window.addEventListener("beforeunload", MC.ui._onBeforeUnload);
     document.addEventListener("visibilitychange", MC.ui._onVisChange);

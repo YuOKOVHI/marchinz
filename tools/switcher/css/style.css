@@ -669,3 +669,37 @@ html, body { max-width: 100%; overflow-x: clip; }
   color: var(--navy);
 }
 .mz-pro-lock-note a { font-weight: 700; }
+
+
+/* ---------- 「このまま待ってて」まわり(2026-07-21) ---------- */
+/* 取り込む前の予告。目立たせすぎず、でも読み飛ばされない位置に */
+.mz-stay-hint {
+  margin: 6px 0 10px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: rgba(217, 119, 6, 0.08);
+  color: #8a5a04;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.mz-stay-hint i { margin-right: 3px; }
+
+/* 作業中の帯。下端に静かに出す(ボトムバーは作業中は消える仕様なので重ならない) */
+.mz-stay-banner {
+  position: fixed;
+  left: 10px; right: 10px;
+  bottom: calc(64px + env(safe-area-inset-bottom, 0px));  /* 進捗ミニバーの上 */
+  z-index: 85;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(15, 33, 56, 0.92);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
+  box-shadow: 0 6px 20px rgba(8, 12, 18, 0.25);
+  animation: mzStayIn 0.3s ease-out;
+  pointer-events: none;    /* 下の操作を邪魔しない */
+}
+.mz-stay-banner i { color: #f5c518; margin-right: 4px; }
+@keyframes mzStayIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
