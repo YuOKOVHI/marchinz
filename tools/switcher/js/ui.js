@@ -898,11 +898,27 @@ MC.ui.wire = () => {
   $("#modeBackBtn").onclick = () => MC.ui.showModeSelect();
 
   if (MC.cutmode) MC.cutmode.init();
-  const ft = $("#floatToggle");
-  if (ft) ft.onclick = ev => {
-    ev.stopPropagation();
-    document.querySelector(".canvas-holder").classList.toggle("float-large");
+  /* フロートのプレビューはタップで全画面。閉じるボタンで戻す
+     (2026-07-21 優さん指示)。全画面中は本文のスクロールを止める */
+  const holder = document.querySelector(".canvas-holder");
+  const closeBtn = $("#floatClose");
+  MC.ui.setFloatFull = on => {
+    if (!holder) return;
+    holder.classList.toggle("float-full", !!on);
+    document.body.classList.toggle("mz-float-full", !!on);   // バー類を隠すため
+    document.documentElement.style.overflow = on ? "hidden" : "";
   };
+  if (holder) holder.addEventListener("click", ev => {
+    if (ev.target.closest("#floatClose")) return;        // 閉じるボタンは別処理
+    if (holder.classList.contains("float-full")) return; // 全画面中の誤タップでは閉じない
+    if (!document.body.classList.contains("mz-has-clips")) return;  // フロートでない時は何もしない
+    if (document.body.classList.contains("cutmode-open")) return;
+    MC.ui.setFloatFull(true);
+  });
+  if (closeBtn) closeBtn.onclick = ev => { ev.stopPropagation(); MC.ui.setFloatFull(false); };
+  document.addEventListener("keydown", ev => {
+    if (ev.key === "Escape" && holder && holder.classList.contains("float-full")) MC.ui.setFloatFull(false);
+  });
 
   const dz = $("#clipSlots"), fi = $("#fileInput"), fiv = $("#fileInputV");
   fi.onchange = () => { MC.media.addFiles([...fi.files]); fi.value = ""; };

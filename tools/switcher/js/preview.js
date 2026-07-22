@@ -27,7 +27,17 @@ MC.preview = {
     this.startBusyWatch();   // 作業中オーバーレイのアニメーション
   },
 
+  /* 縦型かどうかでフロートの大きさを変える(縦は高さが出て画面を塞ぐため) */
+  syncFloatShape() {
+    const holder = document.querySelector(".canvas-holder");
+    if (!holder) return;
+    const pr = MC.PRESETS[MC.S.preset];
+    const tall = !!pr && pr.h > pr.w;
+    holder.classList.toggle("float-tall", tall);
+  },
+
   applyPreset() {
+    this.syncFloatShape();
     const { w, h } = MC.PRESETS[MC.S.preset];
     if (this.canvas.width !== w || this.canvas.height !== h) {
       this.canvas.width = w;

@@ -495,22 +495,72 @@ button, select, input, label, .btn { touch-action: manipulation; }
     box-shadow: 0 10px 28px rgba(8, 12, 18, 0.35);
     transition: width 0.2s ease;
   }
-  body.mz-has-clips:not(.cutmode-open) .canvas-holder.float-large {
-    width: 92vw;
-    right: 4vw;
+  /* 縦型(9:16・1:1)は同じ幅でも高さが1.5〜1.8倍になり画面を塞ぐため、
+     今の70%(44vw→31vw)に縮める(2026-07-21 優さん指示) */
+  body.mz-has-clips:not(.cutmode-open) .canvas-holder.float-tall {
+    width: 31vw;
+  }
+
+  /* 全画面: タップで開く。閉じるボタンで戻る。
+     float-tall(31vw)より詳細度を高くしないと幅が上書きされないため、
+     セレクタを :not(.cutmode-open) 付きで揃える(2026-07-21 検証で発覚) */
+  body.mz-has-clips:not(.cutmode-open) .canvas-holder.float-full,
+  body.mz-has-clips:not(.cutmode-open) .canvas-holder.float-tall.float-full {
+    position: fixed;
+    inset: 0;
+    top: 0;
+    right: 0;
+    width: 100vw;
+    height: 100dvh;
+    z-index: 115;                /* カット切替モード(110)より上 */
+    border-radius: 0;
+    background: rgba(8, 12, 18, 0.96);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: calc(12px + env(safe-area-inset-top, 0px)) 12px calc(12px + env(safe-area-inset-bottom, 0px));
+    cursor: default;
+  }
+  body.mz-has-clips:not(.cutmode-open) .canvas-holder.float-full #cv {
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    border: 0;
+    border-radius: 10px;
+  }
+  /* 小さいときのヒントは全画面では邪魔。!important で確実に消す
+     (.float-hint 側のルールと詳細度が拮抗するため) */
+  body.mz-has-clips:not(.cutmode-open) .canvas-holder.float-full .float-hint { display: none !important; }
+  /* 全画面の間は、上に貼り付くジャーニーバーとボトムバーを引っ込める。
+     プレビューより手前に残ると画面の真ん中を横切ってしまう(実測で発覚) */
+  body.mz-float-full .mzj,
+  body.mz-float-full .mz-actionbar,
+  body.mz-float-full .mzp-dock { display: none !important; }
+
+  body.mz-has-clips:not(.cutmode-open) .canvas-holder.float-full .float-close {
+    display: grid; place-items: center;
+    position: fixed;
+    top: calc(10px + env(safe-area-inset-top, 0px));
+    right: 10px;
+    width: 46px; height: 46px; border-radius: 50%;
+    border: 0; background: rgba(255, 255, 255, 0.16); color: #fff;
+    font-size: 20px; z-index: 116;
   }
   body.mz-has-clips:not(.cutmode-open) .canvas-holder #cv {
     max-height: none;            /* 幅基準で自然な高さに */
     border: 2px solid #fff;
   }
-  body.mz-has-clips:not(.cutmode-open) .float-toggle {
+  /* 小さいときは「タップで大きくなる」ことだけ示す(操作は面全体で受ける) */
+  body.mz-has-clips:not(.cutmode-open) .canvas-holder .float-hint {
     display: grid; place-items: center;
     position: absolute; right: 6px; bottom: 6px;
-    width: 34px; height: 34px; border-radius: 50%;
-    border: 0; background: rgba(8, 12, 18, 0.55); color: #fff;
-    font-size: 13px;
+    width: 30px; height: 30px; border-radius: 50%;
+    background: rgba(8, 12, 18, 0.5); color: #fff;
+    font-size: 12px; pointer-events: none;
   }
+  body.mz-has-clips:not(.cutmode-open) .canvas-holder { cursor: pointer; }
   .canvas-holder { position: relative; }
+  .float-close { display: none; }
   /* フロート化に伴い、stageの貼り付けは不要になった */
   .stage { position: static; padding-top: 0; }
 }
