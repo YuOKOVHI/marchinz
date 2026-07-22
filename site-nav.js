@@ -2759,7 +2759,25 @@
       // fallback to embedded defaults
     }
 
-    const channelsWithOrder = channels.map((item, idx) => ({ ...item, _order: idx }));
+    let channelsWithOrder = channels.map((item, idx) => ({ ...item, _order: idx }));
+
+    /* データのみのpushはNetlifyがビルドしない(netlify.toml ignore)。
+       marchinz-data-refresh.js が実行時に最新inlineを取得してグローバルを
+       上書きするが、このページは初期化時に一度読むだけだったので、
+       botの更新が次のコード修正のデプロイまで画面に出なかった
+       (2026-07-22 IK ALUMNI CGT の空白カードで発覚)。
+       更新イベントで名簿を読み直し、その場で描き直す */
+    document.addEventListener("mz:data-refreshed", () => {
+      const fresh = window.__YOUTUBE_LIST_ROWS;
+      if (!Array.isArray(fresh) || !fresh.length) return;
+      try {
+        applyYoutubeCsvRows(fresh);
+        channelsWithOrder = channels.map((item, idx) => ({ ...item, _order: idx }));
+        renderYoutubeCards();
+      } catch (e) {
+        console.warn("[youtube-list] refresh再描画に失敗:", e);
+      }
+    });
 
     let currentCategory = "all";
     let currentSort = "new";

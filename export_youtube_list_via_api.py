@@ -376,17 +376,45 @@ def main() -> int:
         print("ERROR: channels が 0 件です", file=sys.stderr)
         return 2
 
+    # 前回のCSVを読んでおく。チャンネルを引けなかったとき、行を空にすると
+    # サイトに空白カードが並び、しかも誰も気づけない(2026-07-21〜22
+    # ICHIKASHI ALUMNI CGT で1ヶ月分の表示が消えた)。引けない間は
+    # 前回の中身を残し、check_channel_links の通知だけで気づかせる
+    prev_by_url: dict[str, dict[str, str]] = {}
+    prev_by_name: dict[str, dict[str, str]] = {}
+    if OUT_CSV.exists():
+        with OUT_CSV.open(encoding="utf-8-sig", newline="") as fh:
+            for old in csv.DictReader(fh):
+                u = normalize_channel_url(str(old.get("チャンネルURL") or ""))
+                nm = str(old.get("チャンネル名") or "").strip()
+                if u:
+                    prev_by_url[u] = dict(old)
+                if nm:
+                    prev_by_name[nm] = dict(old)
+
+    def keep_previous_if_empty(row: dict[str, str], name: str, url: str) -> dict[str, str]:
+        if str(row.get("ロゴ画像URL") or "").strip():
+            return row  # 今回きちんと引けた
+        prev = prev_by_url.get(normalize_channel_url(url)) or prev_by_name.get(name)
+        if prev and str(prev.get("ロゴ画像URL") or "").strip():
+            print(f"  warn: {name}: 引けなかったため前回の内容を保持します", file=sys.stderr)
+            kept = {k: str(prev.get(k) or "") for k in FIELDNAMES}
+            kept["チャンネル名"] = name
+            kept["チャンネルURL"] = normalize_channel_url(url)  # 名簿のURL変更は反映する
+            return kept
+        return row
+
     rows: list[dict[str, str]] = []
     for i, (name, url) in enumerate(pairs, start=1):
         print(f"[{i}/{len(pairs)}] {name}", file=sys.stderr)
         try:
-            rows.append(build_row_for_channel(api_key, name, url, args.max_items))
+            rows.append(keep_previous_if_empty(build_row_for_channel(api_key, name, url, args.max_items), name, url))
         except Exception as ex:  # noqa: BLE001
             print(f"  warn: {name}: {ex}", file=sys.stderr)
             row = {k: "" for k in FIELDNAMES}
             row["チャンネル名"] = name
             row["チャンネルURL"] = normalize_channel_url(url)
-            rows.append(row)
+            rows.append(keep_previous_if_empty(row, name, url))
 
     if args.dry_run:
         print(f"DRY-RUN OK: rows={len(rows)}")

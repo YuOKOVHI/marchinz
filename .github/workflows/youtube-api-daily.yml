@@ -44,6 +44,13 @@ jobs:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
         run: bash ./run_youtube_api_refresh.sh
 
+      # botのpush(GITHUB_TOKEN)では「Verify repo data」ワークフローが発火しない
+      # (GitHubのループ防止)。生成したデータの整合はここで検証してからpushする
+      - name: Verify refreshed data
+        run: |
+          python3 verify_youtube_list_csv_inline.py
+          python3 check_data.py
+
       # note の新着フィード(キー不要)。取得失敗でも他の更新を止めない
       - name: Run note feed refresh
         run: python3 export_notes_feed.py || echo "note refresh skipped (fetch failed)"

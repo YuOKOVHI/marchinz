@@ -292,6 +292,9 @@
 
   /** @type {{ byUrl: Map<string,string>; byChannelId: Map<string,string>; byName: Map<string,string> } | null} */
   let youtubeLogoIndexes = null;
+  // 実行時リフレッシュでロゴが増えたら索引を作り直す(古い索引が残ると
+  // 新チャンネルのロゴだけ頭文字表示のままになる)
+  document.addEventListener("mz:data-refreshed", () => { youtubeLogoIndexes = null; });
 
   /** YouTube チャンネルページ URL をホスト＋パスで正規化（一覧CSVと大会動画CSVの表記ゆれを吸収） */
   function normalizeYoutubeChannelUrlKey(raw) {
