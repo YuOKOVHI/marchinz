@@ -97,11 +97,14 @@ function detectCharset(contentType, bytes) {
 function decodeBody(buf, contentType) {
   const bytes = new Uint8Array(buf);
   const label = detectCharset(contentType, bytes);
+  let text;
   try {
-    return new TextDecoder(label).decode(bytes);
+    text = new TextDecoder(label).decode(bytes);
   } catch {
-    return new TextDecoder("utf-8").decode(bytes);   // 不明ラベルはUTF-8で読む
+    text = new TextDecoder("utf-8").decode(bytes);   // 不明ラベルはUTF-8で読む
   }
+  // 長さの上限は「文字」で切る。バイトで切ると多バイト文字の途中を割る
+  return text.length > 800000 ? text.slice(0, 800000) : text;
 }
 
 /* ---------- 日付 ----------
@@ -302,7 +305,25 @@ function parseEventHtml(html) {
     pref = PREFS.find((p) => venueName.includes(p.replace(/[都府県]$/, ""))) || "";
   }
 
-  const kind = guessKind(headText + " " + text.slice(0, 2000));
+  /* 種別は「何も当たらなければイベント」に落ちる。当たったのか
+     落ちたのかを区別できないと、推測が断定の顔をしてしまうため
+     ここで分けて持つ(2026-07-22 レビュー) */
+  const kindText = headText + " " + text.slice(0, 2000);
+  const kindHit = /大会|コンテスト|コンクール|選手権|チャンピオンシップ|グランプリ|予選|カップ|演奏会|コンサート|定期演奏|リサイタル|発表会|ジョイント/.test(kindText);
+  const kind = guessKind(kindText);
+
+  /* 項目ごとの確信度。high=構造化データ(JSON-LD)や明示ラベルから確実に
+     取れたもの / low=本文からの推測。UIはこれを見て見せ方を変える */
+  const fromLd = via.includes("jsonld");
+  const confidence = {
+    title: title ? (fromLd || via.includes("og") ? "high" : "low") : "",
+    date: date ? (fromLd ? "high" : "low") : "",
+    end_date: endDate ? (fromLd ? "high" : "low") : "",
+    pref: pref ? (fromLd ? "high" : "low") : "",
+    venue_name: venueName ? (fromLd ? "high" : "low") : "",
+    time: time ? (fromLd ? "high" : "low") : "",
+    kind: kindHit ? "low" : "guess",   // 種別は常に埋まるので別格を用意する
+  };
 
   return {
     title: String(title || "").slice(0, 200),
@@ -313,6 +334,7 @@ function parseEventHtml(html) {
     venue_name: venueName,
     pref,
     kind,
+    confidence,
     via,
   };
 }
@@ -324,23 +346,41 @@ exports.handler = async (event) => {
   if (!/^https?:$/.test(target.protocol)) return json(400, { ok: false, error: "http/https のURLだけ対応しています" });
   if (isPrivateHost(target.hostname)) return json(400, { ok: false, error: "このURLは取得できません" });
 
+  /* リダイレクトは自前で追う。redirect:"follow" だと入口だけ検査して
+     飛び先が無検査になり、内部アドレス(クラウドのメタデータ等)へ
+     到達しうる。1ホップごとに isPrivateHost を通す(2026-07-22 レビュー) */
   let html = "";
   try {
     const ctl = new AbortController();
     const tm = setTimeout(() => ctl.abort(), 8000);
-    const res = await fetch(target.href, {
-      signal: ctl.signal,
-      redirect: "follow",
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; MarchinZEventBot/1.0; +https://marchinz.netlify.app)",
-        "Accept": "text/html,application/xhtml+xml",
-        "Accept-Language": "ja,en;q=0.8",
-      },
-    });
+    let cur = target;
+    let res = null;
+    for (let hop = 0; hop < 5; hop++) {
+      res = await fetch(cur.href, {
+        signal: ctl.signal,
+        redirect: "manual",
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; MarchinZEventBot/1.0; +https://marchinz.netlify.app)",
+          "Accept": "text/html,application/xhtml+xml",
+          "Accept-Language": "ja,en;q=0.8",
+        },
+      });
+      if (res.status < 300 || res.status >= 400) break;
+      const loc = res.headers.get("location");
+      if (!loc) break;
+      let next;
+      try { next = new URL(loc, cur.href); } catch { clearTimeout(tm); return json(200, { ok: false, error: "転送先のURLが正しくありません" }); }
+      if (!/^https?:$/.test(next.protocol) || isPrivateHost(next.hostname)) {
+        clearTimeout(tm);
+        return json(400, { ok: false, error: "このURLは取得できません" });
+      }
+      cur = next;
+      res = null;
+    }
     clearTimeout(tm);
+    if (!res) return json(200, { ok: false, error: "転送が多すぎます" });
     if (!res.ok) return json(200, { ok: false, error: `ページを取得できませんでした(HTTP ${res.status})` });
-    let buf = await res.arrayBuffer();
-    if (buf.byteLength > 1500000) buf = buf.slice(0, 1500000);
+    const buf = await res.arrayBuffer();
     html = decodeBody(buf, res.headers.get("content-type"));
   } catch {
     return json(200, { ok: false, error: "ページを取得できませんでした(時間切れ/接続失敗)" });

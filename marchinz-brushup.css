@@ -4637,3 +4637,20 @@ input.mz-auto-filled, select.mz-auto-filled { background: #f7faff; }
   cursor: pointer;
 }
 .calendar-ev-meta-chip--time { background: #fff7e8; }
+
+
+/* ---------- 自動入力の確信度(2026-07-22 レビュー) ----------
+   構造化データから確実に取れたものと、本文からの推測を同じ顔で
+   出すと、推測が断定に見える。色と文言で段階を分ける */
+.mz-auto-chip--high  { background: #eef3ff; border-color: rgba(30, 79, 214, 0.3); color: #1e4fd6; }
+.mz-auto-chip--low   { background: #fff6e5; border-color: rgba(200, 130, 0, 0.45); color: #8a5a00; }
+.mz-auto-chip--guess { background: #fdeeee; border-color: rgba(183, 28, 28, 0.35); color: #b71c1c; }
+input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
+/* 読み上げ専用(画面には出さないが、支援技術には伝える) */
+.mz-visually-hidden {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0; border: 0;
+  clip: rect(0 0 0 0); clip-path: inset(50%);
+  overflow: hidden; white-space: nowrap;
+}

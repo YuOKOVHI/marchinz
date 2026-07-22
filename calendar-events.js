@@ -153,6 +153,9 @@
   const editVenue = document.getElementById("calendar-edit-venue");
   const editTitle = document.getElementById("calendar-edit-title");
   const editUrl = document.getElementById("calendar-edit-url");
+  const editDateEnd = document.getElementById("calendar-edit-date-end");
+  const editVenueName = document.getElementById("calendar-edit-venue-name");
+  const editTime = document.getElementById("calendar-edit-time");
   const editParticipation = document.getElementById("calendar-edit-participation");
   const editHint = document.getElementById("calendar-edit-hint");
   const editSaveBtn = document.getElementById("calendar-edit-save");
@@ -1797,13 +1800,20 @@
     const detailsParts = [];
     const evUrl = String(ev.event_url || "").trim();
     if (/^https?:\/\/.+/i.test(evUrl)) detailsParts.push(evUrl);
-    if (/^\d{2}:\d{2}$/.test(tm)) detailsParts.push(`開演 ${tm}`);
+    if (/^\d{2}:\d{2}$/.test(tm)) {
+      detailsParts.push(`開演 ${tm}`);
+      // 終わりの時刻は分からないので仮に2時間で入れている。断定しない
+      detailsParts.push("※終了時刻は未確定のため、仮に2時間で登録しています");
+    }
     detailsParts.push("MarchinZ イベント一覧: https://marchinz.netlify.app/#community/events");
     const params = new URLSearchParams({
       action: "TEMPLATE",
       text: String(ev.title || "").trim() || "マーチングイベント",
       dates,
       details: detailsParts.join("\n"),
+      /* 日時は日本時間として渡す。指定しないと閲覧者の端末のタイムゾーンで
+         解釈され、海外から見た人の予定がずれる(2026-07-22 レビュー) */
+      ctz: "Asia/Tokyo",
     });
     const vn = String(ev.venue_name || "").trim();
     const pref = String(ev.venue_pref || "").trim();
@@ -2225,6 +2235,9 @@
 
     editDate.value = ev.date || "";
     editTitle.value = ev.title || "";
+    if (editDateEnd) editDateEnd.value = ev.end_date || "";
+    if (editVenueName) editVenueName.value = ev.venue_name || "";
+    if (editTime) editTime.value = ev.start_time || "";
     const v = ev.venue_pref || "";
     if (editVenue) {
       while (editVenue.querySelector("[data-legacy-fallback=\"1\"]")) {
@@ -2314,8 +2327,21 @@
     const participation_format = resolveParticipationForFirestore(editParticipation?.value);
     const editKindEl = document.getElementById("calendar-edit-kind");
     const nextKind = editKindEl ? String(editKindEl.value || "").trim() : "";
+    const end_date = String(editDateEnd?.value || "").trim();
+    const venue_name = String(editVenueName?.value || "").trim().slice(0, 120);
+    const start_time = String(editTime?.value || "").trim();
     if (!date || !title || !venue_pref || !CALENDAR_KIND_CREATE_OPTIONS.includes(nextKind)) {
       setFormMsg("開催日・種別・開催地・イベント名はすべて必須です。", true);
+      return;
+    }
+    /* 開催日だけ後ろへずらすと終了日を追い越して「8/20〜8/10」になる。
+       登録時と同じ検証を編集にも置く(2026-07-22 レビュー) */
+    if (end_date && end_date <= date) {
+      setFormMsg("終了日は開催日より後の日付にしてください（1日だけなら空欄でOKです）。", true);
+      return;
+    }
+    if (start_time && !/^\d{2}:\d{2}$/.test(start_time)) {
+      setFormMsg("開演時間の形式が正しくありません。", true);
       return;
     }
     /** 運用で URL 長過ぎを防ぐ */
@@ -2330,6 +2356,9 @@
       event_url,
       participation_format,
       kind: nextKind,
+      end_date,
+      venue_name,
+      start_time,
     };
     if (user.id === ev.created_by && !profileMini(ev.created_by).withdrawn) {
       patch.creator_display_name = displayNameFromUser(user);
@@ -3397,23 +3426,47 @@
   const autofillBtn = document.getElementById("calendar-ev-autofill");
   let lastScrape = null;
 
-  function markAuto(el) {
+  /* 確信度で見せ方を変える。ページの構造化データから確実に取れたものと、
+     本文からの当てずっぽうを同じ顔で出すと、推測が断定に見える
+     (2026-07-22 レビュー)。読み上げ用に aria-label も添える */
+  const AUTO_CONF = {
+    high:  { text: "自動", cls: "mz-auto-chip--high",  note: "ページの情報から自動入力しました" },
+    low:   { text: "自動・要確認", cls: "mz-auto-chip--low", note: "本文からの推測です。確認してください" },
+    guess: { text: "推測", cls: "mz-auto-chip--guess", note: "手がかりが無いため仮に入れています。確認してください" },
+  };
+  function markAuto(el, conf) {
     if (!el) return;
+    const c = AUTO_CONF[conf] || AUTO_CONF.low;
     el.classList.add("mz-auto-filled");
+    el.classList.toggle("mz-auto-filled--weak", conf !== "high");
     const lab = el.closest("label");
-    if (lab && !lab.querySelector(".mz-auto-chip")) {
-      const chip = document.createElement("span");
-      chip.className = "mz-auto-chip";
-      chip.textContent = "自動";
+    if (!lab) return;
+    let chip = lab.querySelector(".mz-auto-chip");
+    if (!chip) {
+      chip = document.createElement("span");
       lab.insertBefore(chip, el);
     }
+    chip.className = `mz-auto-chip ${c.cls}`;
+    chip.textContent = c.text;
+    chip.title = c.note;
+    el.setAttribute("aria-describedby", el.id + "-autonote");
+    let note = lab.querySelector(".mz-auto-note");
+    if (!note) {
+      note = document.createElement("span");
+      note.className = "mz-auto-note mz-visually-hidden";
+      lab.insertBefore(note, el);
+    }
+    note.id = el.id + "-autonote";
+    note.textContent = c.note;
   }
   function unmarkAuto(el) {
     if (!el) return;
-    el.classList.remove("mz-auto-filled");
+    el.classList.remove("mz-auto-filled", "mz-auto-filled--weak");
+    el.removeAttribute("aria-describedby");
     const lab = el.closest("label");
-    const chip = lab && lab.querySelector(".mz-auto-chip");
-    if (chip) chip.remove();
+    if (!lab) return;
+    lab.querySelector(".mz-auto-chip")?.remove();
+    lab.querySelector(".mz-auto-note")?.remove();
   }
   // 触ったら「自動」バッジを外す(そこから先は本人の入力として扱う)
   [inputTitle, inputDate, inputDateEnd, selectVenue, selectKind, inputVenueName, inputTime].forEach((el) => {
@@ -3434,6 +3487,7 @@
       return;
     }
     dateCandidatesBox.hidden = false;
+    dateCandidatesBox.setAttribute("role", "group");
     dateCandidatesBox.innerHTML = "";
     const lead = document.createElement("span");
     lead.className = "calendar-ev-date-candidates-lead";
@@ -3443,6 +3497,7 @@
       const b = document.createElement("button");
       b.type = "button";
       b.className = "calendar-ev-date-chip" + (d === picked ? " on" : "");
+      b.setAttribute("aria-pressed", d === picked ? "true" : "false");   // 色だけで状態を伝えない
       b.textContent = d.replace(/-/g, "/");
       b.addEventListener("click", () => {
         if (inputDate) {
@@ -3463,26 +3518,27 @@
 
   function applyScrape(data, { overwrite = false } = {}) {
     const filled = [];
-    const fill = (el, value, label) => {
+    const conf = (data && data.confidence) || {};
+    const fill = (el, value, label, key) => {
       if (!el || !value) return;
       if (!overwrite && String(el.value || "").trim()) return;
       el.value = value;
       el.dispatchEvent(new Event("change", { bubbles: true })); // 下書き保存と連動
-      markAuto(el);
+      markAuto(el, conf[key || ""] || "low");
       filled.push(label);
     };
-    fill(inputTitle, data.title, "イベント名");
-    fill(inputDate, data.date, "開催日");
+    fill(inputTitle, data.title, "イベント名", "title");
+    fill(inputDate, data.date, "開催日", "date");
     // 終了日は「いま入っている開催日より後」のときだけ。候補で別公演を
     // 選んだ後に、前の公演の終了日が紛れ込むのを防ぐ
     const curDate = String(inputDate?.value || "").trim();
     if (data.end_date && (!curDate || data.end_date > curDate)) {
-      fill(inputDateEnd, data.end_date, "終了日");
+      fill(inputDateEnd, data.end_date, "終了日", "end_date");
     }
-    if (data.pref && JP_PREFS.includes(data.pref)) fill(selectVenue, data.pref, "開催地");
-    fill(inputVenueName, data.venue_name, "会場名");
-    fill(inputTime, data.time, "開演時間");
-    fill(selectKind, data.kind, "種別");
+    if (data.pref && JP_PREFS.includes(data.pref)) fill(selectVenue, data.pref, "開催地", "pref");
+    fill(inputVenueName, data.venue_name, "会場名", "venue_name");
+    fill(inputTime, data.time, "開演時間", "time");
+    fill(selectKind, data.kind, "種別", "kind");
     renderDateCandidates(data.dates, inputDate ? inputDate.value : "");
     return filled;
   }
@@ -3492,7 +3548,10 @@
       const extra = Array.isArray(data.dates) && data.dates.length > 1
         ? " 日付は候補から選べます。"
         : "";
-      setFormMsg(`自動で入力しました（${filled.join("・")}）。内容を確認してから登録してください。${extra}`);
+      const conf = data.confidence || {};
+      const weak = Object.values(conf).some((v) => v === "low" || v === "guess");
+      const caution = weak ? "「要確認」「推測」の印が付いた項目は、特にご確認ください。" : "";
+      setFormMsg(`自動で入力しました（${filled.join("・")}）。内容を確認してから登録してください。${extra}${caution}`);
       return;
     }
     // 全部入力済みで何も入れなかった → 入れ替えの選択肢を出す
