@@ -737,6 +737,58 @@ MC.ui.setBusy = busy => {
   MC.ui.guardLeave(!!busy);   // 作業中はタブを閉じさせない・画面を消させない
 };
 
+/* ---------- 素材を入れた直後に「どれくらい待つか」を伝える ----------
+   長い処理が2段(分析→書き出し)あるので、始める前に合計の目安を出す。
+   分析の重さは「本数 × 尺」にほぼ比例する(各クリップの映像を順に見るため)。
+
+   速さは端末で何倍も違うので、**実際にかかった時間を覚えて次から使う**。
+   初回だけは控えめな既定値(iPhoneは実時間の0.5倍/本、パソコンは0.2倍/本)を
+   使い、おまかせが終わるたびに実測へ寄せていく(2026-07-22 優さん指示) */
+const MZ_SPEED_KEY = "mz_switcher_speed_v1";
+
+MC.ui.analysisRate = () => {
+  try {
+    const v = parseFloat(JSON.parse(localStorage.getItem(MZ_SPEED_KEY) || "{}").analysis);
+    if (isFinite(v) && v > 0.01 && v < 5) return v;   // 桁違いの値は信用しない
+  } catch (_) {}
+  return MC.isIOS ? 0.5 : 0.2;
+};
+
+/** おまかせにかかった実測から、1本1秒あたりの分析時間を覚える */
+MC.ui.learnAnalysisRate = (elapsedSec, clipCount, showSec) => {
+  if (!(elapsedSec > 0) || !(clipCount > 0) || !(showSec > 5)) return;
+  const rate = elapsedSec / (clipCount * showSec);
+  if (!(rate > 0.01 && rate < 5)) return;
+  /* 前回と平均して寄せる(1回の外れ値で見積りが暴れないように) */
+  const next = (MC.ui.analysisRate() + rate) / 2;
+  try {
+    localStorage.setItem(MZ_SPEED_KEY, JSON.stringify({ analysis: next, at: new Date().toISOString() }));
+  } catch (_) {}
+};
+
+MC.ui.renderTotalEta = (dur, tIn, tOut) => {
+  const el = MC.ui.$("#totalEtaHint");
+  if (!el) return;
+  const clips = MC.S.clips.filter(c => !c.isAudio && !c.isImage);
+  const showSec = Math.max(0, (tOut ?? 0) - (tIn ?? 0));
+  if (!dur || !clips.length || showSec < 1) { el.hidden = true; return; }
+
+  const anaSec = clips.length * showSec * MC.ui.analysisRate();
+  const expFactor = MC.ui.exportMode() === "realtime" ? 1.15 : (MC.isIOS ? 1.8 : 0.9);
+  const expSec = showSec * expFactor;
+
+  /* 1分未満は「1分ほど」に丸める。秒まで出すと正確に見えすぎる */
+  const mins = (s) => Math.max(1, Math.round(s / 60));
+  const anaMin = mins(anaSec), expMin = mins(expSec);
+  const end = new Date(Date.now() + (anaSec + expSec) * 1000);
+  const endTxt = `${end.getHours()}:${String(end.getMinutes()).padStart(2, "0")}頃`;
+
+  el.hidden = false;
+  el.innerHTML = `<i class="fa-solid fa-hourglass-half" aria-hidden="true"></i> `
+    + `素材の分析におよそ<b>${anaMin}分</b>、書き出しにおよそ<b>${expMin}分</b>かかりそうです。`
+    + `<span class="total-eta-sub">いま始めると${endTxt}に終わる見込みです（${clips.length}本・${MC.ui.fmtTime(showSec)}）</span>`;
+};
+
 /* ---------- フロートプレビューはスクロール時だけ ----------
    ずっと固定だと、画面上部にいるときまでヘッダーや操作に重なる。
    本来の位置を通り過ぎたときだけ浮かせる(2026-07-22 優さん指示)。
@@ -855,6 +907,7 @@ MC.ui.guardLeave = on => {
 MC.ui.runEasy = async () => {
   const btn = MC.ui.$("#easyStartBtn");
   if (btn.disabled || MC.ui._busy) return;
+  const easyT0 = performance.now();   // 次回の見積りを実測へ寄せるため
   MC.ui.setBusy(true);
   MC.ui.clearErrorLog();   // やり直しでは前回の失敗ログを見せない
   MC.preview.pause();
@@ -896,6 +949,12 @@ MC.ui.runEasy = async () => {
     /* ここからの主役は書き出し。おまかせボタン自体を「動画を書き出す」に
        化けさせ、次にすることを迷わせない(2026-07-21 優さん指示) */
     MC.S.easyDone = true;
+    /* 実際にかかった時間を覚えて、次からの見積りを自分の端末に合わせる */
+    const [eIn, eOut] = MC.trimRange();
+    MC.ui.learnAnalysisRate(
+      (performance.now() - easyT0) / 1000,
+      MC.S.clips.filter(c => !c.isAudio && !c.isImage).length,
+      Math.max(0, eOut - eIn));
     /* 長すぎて書き出せない場合は、ここで知らせる。
        書き出しボタンを押すまで黙っていると「15分待って書き出せません」に
        なる(2026-07-21 実機で発生) */
@@ -1021,6 +1080,8 @@ MC.ui.updateTransport = () => {
         + `書き出しにはおよそ${estMin}分（いま始めると${endTxt}に終わります）`;
     }
   }
+  MC.ui.renderTotalEta(dur, tIn, tOut);
+
   // スライダー下の範囲バンド(どこからどこまで書き出すかをいつでも見せる)
   const band = MC.ui.$("#trimBand");
   if (band) {
