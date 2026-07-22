@@ -97,10 +97,24 @@ body::before {
 .clip-slot.empty .clip-slot-add:hover, .clip-slots.over .clip-slot.empty .clip-slot-add {
   border-color: var(--acc); color: var(--tx); background: #f4f7ff;
 }
-.clip-card { display: flex; gap: 10px; background: var(--panel2); border: 1px solid var(--line);
-  border-radius: 10px; padding: 8px; position: relative; }
-.clip-thumb { width: 84px; height: 50px; border-radius: 6px; background: #000; object-fit: cover; flex-shrink: 0; }
-.clip-info { flex: 1; min-width: 0; }
+/* 素材カード: サムネイルを上に大きく、文字情報はその下にまとめる。
+   横並びだと情報側の幅が足りず、微調整ボタン(-1s…+1s)が右へはみ出していた
+   (2026-07-22 実機で発覚)。縦積みなら全幅を使えて折り返しも起きない */
+.clip-card { display: flex; flex-direction: column; gap: 8px; background: var(--panel2);
+  border: 1px solid var(--line); border-radius: 10px; padding: 8px; position: relative; }
+.clip-thumb-wrap {
+  width: 100%; aspect-ratio: 16 / 9; border-radius: 8px; background: #000;
+  display: flex; align-items: center; justify-content: center; overflow: hidden;
+}
+/* 切り取らずに全体を見せる。縦型素材でも何が写っているか分かるようにする */
+.clip-thumb { width: 100%; height: 100%; object-fit: contain; display: block; }
+.clip-thumb--empty { background: #000; }
+.clip-info { min-width: 0; }
+/* おまかせ: 解像度と長さ、そして「読み込みました」だけ */
+.clip-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.clip-spec { font-variant-numeric: tabular-nums; }
+.clip-ok { color: var(--ok, #1a7f45); font-weight: 700; font-size: 11px; }
+.clip-ok i { margin-right: 3px; }
 .clip-name { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .clip-meta { font-size: 11px; color: var(--tx2); margin-top: 2px; }
 .clip-sync { font-size: 11px; margin-top: 4px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
@@ -108,7 +122,7 @@ body::before {
 .sync-badge.wave { background: #e0f5e9; color: var(--ok); }
 .sync-badge.ts { background: #fdf3d7; color: var(--warn); }
 .sync-badge.ref { background: #e3edf8; color: var(--acc-deep); }
-.nudge { display: flex; gap: 3px; }
+.nudge { display: flex; gap: 3px; flex-wrap: wrap; }   /* はみ出さず折り返す */
 .nudge button { background: #fff; border: 1px solid var(--line); color: var(--tx); border-radius: 5px;
   font-size: 10px; padding: 1px 5px; cursor: pointer; }
 .nudge button:hover { border-color: var(--acc); }
@@ -482,7 +496,7 @@ button, select, input, label, .btn { touch-action: manipulation; }
 .float-toggle { display: none; }
 @media (max-width: 860px) {
   /* 素材が入っているときだけフロート化(空のプレビューを浮かせない) */
-  body.mz-has-clips:not(.cutmode-open) .canvas-holder {
+  body.mz-has-clips.mz-float-on:not(.cutmode-open) .canvas-holder {
     position: fixed;
     /* ジャーニーバー(進捗)の真下に着ける。重なると下のレイヤーへ潜って
        見えなくなる(2026-07-21 実機で発覚)。高さは journey.js が
@@ -497,7 +511,7 @@ button, select, input, label, .btn { touch-action: manipulation; }
   }
   /* 縦型(9:16・1:1)は同じ幅でも高さが1.5〜1.8倍になり画面を塞ぐため、
      今の70%(44vw→31vw)に縮める(2026-07-21 優さん指示) */
-  body.mz-has-clips:not(.cutmode-open) .canvas-holder.float-tall {
+  body.mz-has-clips.mz-float-on:not(.cutmode-open) .canvas-holder.float-tall {
     width: 31vw;
   }
 
@@ -546,19 +560,19 @@ button, select, input, label, .btn { touch-action: manipulation; }
     border: 0; background: rgba(255, 255, 255, 0.16); color: #fff;
     font-size: 20px; z-index: 116;
   }
-  body.mz-has-clips:not(.cutmode-open) .canvas-holder #cv {
+  body.mz-has-clips.mz-float-on:not(.cutmode-open) .canvas-holder #cv {
     max-height: none;            /* 幅基準で自然な高さに */
     border: 2px solid #fff;
   }
   /* 小さいときは「タップで大きくなる」ことだけ示す(操作は面全体で受ける) */
-  body.mz-has-clips:not(.cutmode-open) .canvas-holder .float-hint {
+  body.mz-has-clips.mz-float-on:not(.cutmode-open) .canvas-holder .float-hint {
     display: grid; place-items: center;
     position: absolute; right: 6px; bottom: 6px;
     width: 30px; height: 30px; border-radius: 50%;
     background: rgba(8, 12, 18, 0.5); color: #fff;
     font-size: 12px; pointer-events: none;
   }
-  body.mz-has-clips:not(.cutmode-open) .canvas-holder { cursor: pointer; }
+  body.mz-has-clips.mz-float-on:not(.cutmode-open) .canvas-holder { cursor: pointer; }
   .canvas-holder { position: relative; }
   .float-close { display: none; }
   /* フロート化に伴い、stageの貼り付けは不要になった */
@@ -722,3 +736,18 @@ html, body { max-width: 100%; overflow-x: clip; }
   line-height: 1.7;
 }
 .mz-restore-note i { margin-right: 4px; }
+
+
+/* ---------- フロートは下へスクロールしたときだけ(2026-07-22) ----------
+   画面上部にいる間は本来の位置(stage内)に置く。ずっと固定だと
+   ヘッダーや操作に重なり続けて邪魔になる(優さん指摘)。
+   全画面(float-full)はスクロール位置に関係なく効かせる */
+@media (max-width: 860px) {
+  body.mz-has-clips:not(.mz-float-on):not(.cutmode-open) .canvas-holder .float-close,
+  body.mz-has-clips:not(.mz-float-on):not(.cutmode-open) .canvas-holder .float-hint {
+    display: none;
+  }
+  body.mz-has-clips:not(.cutmode-open) .canvas-holder.float-full .float-close {
+    display: inline-flex;
+  }
+}

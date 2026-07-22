@@ -6,6 +6,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   MC.ui.wire();
   MC.ui.initJourney();
   MC.ui.initActionBar();
+  MC.ui.initFloatOnScroll();
   MC.ui.renderAll();
 
   // 保存済みのプリセット/レイアウト等を復元

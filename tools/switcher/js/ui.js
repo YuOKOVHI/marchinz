@@ -230,6 +230,7 @@ MC.ui.resetEasyDone = () => {
 
 MC.ui.renderAll = () => {
   MC.ui.applyGuestLocks();
+  if (MC.ui._syncFloatPos) MC.ui._syncFloatPos();   // 素材の増減で位置が変わる
   {
     const prb = MC.ui.$("#projectResetBtn");
     if (prb) prb.hidden = !MC.S.clips.length;
@@ -412,15 +413,26 @@ MC.ui.renderClips = () => {
       continue;
     }
     const card = document.createElement("div");
-    card.className = "clip-card";
+    /* おまかせのときは「ちゃんと取り込めた」ことだけ分かればいい。
+       同期のズレ・信頼度・微調整・横位置・役割・出番・撮り方は
+       こだわり側の話なので出さない(2026-07-22 優さん指示)。
+       サムネイルは切り取らず枠内に収め、文字情報はその下にまとめる */
+    const pro = MC.ui._setupTab === "pro";
+    card.className = "clip-card" + (pro ? " clip-card--pro" : " clip-card--easy");
     const badgeCls = c.isImage ? "" : c.syncMethod === "基準" ? "ref" : c.syncMethod.startsWith("波形") ? "wave" : c.syncMethod.startsWith("タイムスタンプ") ? "ts" : "";
     const conf = c.confidence != null && isFinite(c.confidence) ? `信頼度${c.confidence.toFixed(1)}` : "";
     card.innerHTML = `
-      ${c.thumb ? `<img class="clip-thumb" src="${c.thumb}">` : `<div class="clip-thumb"></div>`}
+      <div class="clip-thumb-wrap">
+        ${c.thumb ? `<img class="clip-thumb" src="${c.thumb}" alt="">` : `<div class="clip-thumb clip-thumb--empty"></div>`}
+      </div>
       <div class="clip-info">
         <div class="clip-name" title="${MC.ui.esc(c.name)}">${MC.ui.esc(c.name)}</div>
-        <div class="clip-meta">${c.width}×${c.height}${c.isImage ? "・写真" : "・" + MC.ui.fmtTime(c.duration)}</div>
-        ${c.isImage ? "" : `
+        <div class="clip-meta">
+          <span class="clip-spec">${c.width}×${c.height}</span>
+          <span class="clip-spec">${c.isImage ? "写真" : MC.ui.fmtTime(c.duration)}</span>
+          ${pro ? "" : '<span class="clip-ok"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> 読み込みました</span>'}
+        </div>
+        ${(!pro || c.isImage) ? "" : `
         <div class="clip-sync">
           <span class="sync-badge ${badgeCls}">${c.syncMethod}</span>
           <span>${c.offset ? "+" + c.offset.toFixed(3) + "s" : "0s"}</span>
@@ -433,8 +445,9 @@ MC.ui.renderClips = () => {
           </span>
           <button class="btn small ghost listen" title="基準と重ねて試聴">🎧</button>
         </div>`}
-        <div class="pan-row">横位置 <input type="range" class="pan" min="0" max="1" step="0.01" value="${c.pan}"></div>
-        ${MC.S.mode === "switch" ? `
+        ${!pro ? "" : `
+        <div class="pan-row">横位置 <input type="range" class="pan" min="0" max="1" step="0.01" value="${c.pan}"></div>`}
+        ${(pro && MC.S.mode === "switch") ? `
         <div class="pan-row">役割 <select class="role-sel select-mini" title="自動カット割でこのカメラをどう扱うか">
           <option value="auto" ${c.role === "auto" ? "selected" : ""}>自動判定</option>
           <option value="wide" ${c.role === "wide" ? "selected" : ""}>引き（全体）</option>
@@ -457,7 +470,8 @@ MC.ui.renderClips = () => {
       b.onclick = () => MC.sync.nudge(c.id, parseFloat(b.dataset.n)));
     const listen = card.querySelector(".listen");
     if (listen) listen.onclick = () => MC.sync.listenCheck(c.id);
-    card.querySelector(".pan").oninput = e => { c.pan = parseFloat(e.target.value); MC.saveState(); };
+    const panEl = card.querySelector(".pan");   // おまかせでは出さないので必ず確かめる
+    if (panEl) panEl.oninput = e => { c.pan = parseFloat(e.target.value); MC.saveState(); };
     const roleSel = card.querySelector(".role-sel");
     if (roleSel) roleSel.onchange = e => { c.role = e.target.value; MC.saveState(); };
     const freqSel = card.querySelector(".freq-sel");
@@ -685,6 +699,7 @@ MC.ui.applyGuestLocks = () => {
 };
 
 MC.ui.setSetupTab = tab => {
+  const changed = MC.ui._setupTab !== tab;
   MC.ui._setupTab = tab;
   const easy = tab !== "pro";
   MC.ui.$("#easyPane").hidden = !easy;
@@ -694,6 +709,9 @@ MC.ui.setSetupTab = tab => {
     b.classList.toggle("on", on);
     b.setAttribute("aria-selected", on ? "true" : "false");
   });
+  /* おまかせ⇄こだわりで素材カードの中身が変わる(おまかせは解像度と長さだけ)。
+     タブが変わったら描き直す */
+  if (changed && MC.S.clips.length) MC.ui.renderClips();
 };
 
 MC.ui.refreshSetupTabs = () => {
@@ -717,6 +735,47 @@ MC.ui.setBusy = busy => {
   const dz = MC.ui.$("#clipSlots");
   if (dz) dz.classList.toggle("mz-busy", !!busy);
   MC.ui.guardLeave(!!busy);   // 作業中はタブを閉じさせない・画面を消させない
+};
+
+/* ---------- フロートプレビューはスクロール時だけ ----------
+   ずっと固定だと、画面上部にいるときまでヘッダーや操作に重なる。
+   本来の位置を通り過ぎたときだけ浮かせる(2026-07-22 優さん指示)。
+
+   判定は「浮いていないときのプレビューの位置」を覚えておいて、
+   スクロール量と比べるだけにする。実装中に2つ踏んだので書き残す:
+     ・浮いた状態で位置を測ると、的(fixed=流れから外れる)が動いてしまい
+       測るたびに答えが変わる堂々巡りになる → 浮いていない間だけ測り直す
+     ・目印の空要素を差し込む案は、親がグリッドだと最後の枠へ飛ばされて
+       まったく違う位置になった → DOMは足さない
+   scrollY の比較だけなので rAF にも IntersectionObserver にも頼らない */
+MC.ui.initFloatOnScroll = () => {
+  const stage = document.querySelector(".stage");
+  if (!stage) return;
+  let baseY = 0;          // 浮いていないときのプレビューの位置(ページ先頭から)
+  const HYST = 24;        // 境目でのちらつき防止
+
+  const update = () => {
+    if (document.body.classList.contains("mz-float-full")) return;   // 全画面中は触らない
+    const on = document.body.classList.contains("mz-float-on");
+    if (!on) {
+      const rect = stage.getBoundingClientRect();
+      /* まだ画面に出ていない(モード選択中など)ときは矩形が全部0になる。
+         そのまま基準にすると「常に浮いている」状態になる(実装中に踏んだ) */
+      if (!rect.height) { document.body.classList.remove("mz-float-on"); return; }
+      baseY = rect.top + window.scrollY;
+    }
+    const barH = parseFloat(getComputedStyle(document.documentElement)
+      .getPropertyValue("--mz-journey-h")) || 72;
+    const onLine = baseY - barH;
+    document.body.classList.toggle("mz-float-on", on
+      ? window.scrollY > onLine - HYST    // 浮いている間は少し粘ってから戻す
+      : window.scrollY > onLine);
+  };
+
+  window.addEventListener("scroll", update, { passive: true });
+  window.addEventListener("resize", update, { passive: true });
+  MC.ui._syncFloatPos = update;   // 素材の増減で高さが変わったときに呼び直す
+  update();
 };
 
 /* ============ 作業中の離脱・画面ロックを防ぐ ============
