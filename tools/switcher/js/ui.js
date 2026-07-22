@@ -815,9 +815,8 @@ MC.ui.updateTransport = () => {
   const [tIn, tOut] = MC.trimRange();
   // INかOUTをユーザーが動かしているか(初期値=全体)
   const custom = MC.S.trimIn > 0.05 || MC.S.trimOut != null;
-  MC.ui.$("#trimLabel").textContent = !dur ? ""
-    : custom ? `書き出し範囲 IN ${MC.ui.fmtTime(tIn)} → OUT ${MC.ui.fmtTime(tOut)}`
-             : "いまは全体を書き出します(INとOUTで範囲を絞れます)";
+  MC.ui.$("#trimLabel").textContent = !dur || !custom ? ""
+    : `書き出し範囲 IN ${MC.ui.fmtTime(tIn)} → OUT ${MC.ui.fmtTime(tOut)}`;
   // スライダー下の範囲バンド(どこからどこまで書き出すかをいつでも見せる)
   const band = MC.ui.$("#trimBand");
   if (band) {
