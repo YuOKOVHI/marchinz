@@ -148,7 +148,45 @@ window.MZ_LIMITS = (() => {
     hosts.forEach(el => { el.innerHTML = html; });
   };
 
-  const boot = () => { L.applyToDom(); L.renderPlanNote(); };
+  /* ゲストにだけ「登録すると何が使えるようになるか」を見せる(2026-07-21)。
+     ログイン済み・管理者・手元環境には出さない(自分に関係ない情報を読ませない)。
+     文言はツールごと(body[data-mz-tool])に変える */
+  L.renderSignupPerks = () => {
+    if (L.member || L.unlimited) return;
+    const host = document.querySelector("[data-mz-plan]");
+    if (!host || document.getElementById("mzSignupPerks")) return;
+    const tool = document.body.getAttribute("data-mz-tool") || "";
+    const per = {
+      switcher: [
+        "取り込める動画: 5分 → 13分",
+        "書き出せる長さ: 5分 → 8分30秒(ショウ全体が入ります)",
+        "「こだわり」設定(同期・レイアウト・仕上げの調整)",
+      ],
+      reangle: [
+        "取り込める動画: 5分 → 13分",
+        "書き出せる長さ: 5分 → 8分30秒",
+      ],
+      privacy: [
+        "一度に扱える写真: 1枚 → 5枚",
+      ],
+      vlog: [
+        "素材1本の長さ: 5分 → 10分",
+        "インタビュー: 1人 → 3人",
+        "インサート映像(Bロール): 4本 → 8本",
+        "団体ロゴ入れ・完成5分まで",
+      ],
+    }[tool] || [];
+    if (!per.length) return;
+    const div = document.createElement("div");
+    div.id = "mzSignupPerks";
+    div.className = "mz-signup-perks";
+    div.innerHTML = '<p class="msp-title"><i class="fa-solid fa-unlock" aria-hidden="true"></i> MarchinZに無料登録すると</p>'
+      + `<ul>${per.map(t => `<li>${t}</li>`).join("")}</ul>`
+      + '<a class="msp-btn" href="/#signup">無料登録して全部使う</a>';
+    host.appendChild(div);
+  };
+
+  const boot = () => { L.applyToDom(); L.renderPlanNote(); L.renderSignupPerks(); };
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", boot, { once: true });
   } else {

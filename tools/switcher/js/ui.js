@@ -188,6 +188,7 @@ MC.ui.resetEasyDone = () => {
 };
 
 MC.ui.renderAll = () => {
+  MC.ui.applyGuestLocks();
   /* スマホのフロートプレビューは素材があるときだけ(空の黒枠を浮かせない) */
   document.body.classList.toggle("mz-has-clips", MC.S.clips.length > 0);
   /* カット切替モードの入口はカットがあるときだけ */
@@ -587,6 +588,33 @@ MC.ui.renderEasyButton = () => {
 };
 
 /* 「おまかせ / こだわり」タブ。素材が入ったら出す(それまでは邪魔なので隠す) */
+/* ゲストは「こだわり」の設定を触れない(音声の選択と書き出しだけ)。
+   隠すのではなくグレーアウトで見せる: 何が待っているか分かる方が
+   登録の動機になる(2026-07-21 優さん指示) */
+MC.ui.applyGuestLocks = () => {
+  const L = window.MZ_LIMITS || {};
+  const guest = !(L.member || L.unlimited);
+  document.body.classList.toggle("mz-guest", guest);
+  ["#syncSec", "#layoutSec", "#finishSec"].forEach(sel => {
+    const el = MC.ui.$(sel);
+    if (el) el.classList.toggle("mz-locked", guest);
+  });
+  const pane = MC.ui.$("#proPane");
+  let note = document.getElementById("mzProLockNote");
+  if (guest && pane && !note) {
+    note = document.createElement("div");
+    note.id = "mzProLockNote";
+    note.className = "mz-pro-lock-note";
+    note.innerHTML = '<i class="fa-solid fa-lock" aria-hidden="true"></i> '
+      + 'こだわり設定は MarchinZ への登録で使えます。'
+      + 'ゲストは「使う音声」の選択だけ変更できます。 '
+      + '<a href="/#signup">無料登録</a>';
+    pane.insertBefore(note, pane.firstChild);
+  } else if (!guest && note) {
+    note.remove();
+  }
+};
+
 MC.ui.setSetupTab = tab => {
   MC.ui._setupTab = tab;
   const easy = tab !== "pro";

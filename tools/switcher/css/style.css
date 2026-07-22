@@ -650,3 +650,22 @@ html, body { max-width: 100%; overflow-x: clip; }
   100% { box-shadow: 0 0 0 14px rgba(30, 79, 214, 0); }
 }
 .mz-focus-flash { animation: mzFocusFlash 1.2s ease-out; }
+
+
+/* ---------- ゲストの「こだわり」ロック(2026-07-21) ---------- */
+/* 見えるが触れない。何が待っているかは分かるようにする */
+.mz-locked {
+  opacity: 0.5;
+  pointer-events: none;
+  user-select: none;
+}
+.mz-pro-lock-note {
+  padding: 12px 14px;
+  border: 1px solid rgba(30, 79, 214, 0.3);
+  border-radius: 12px;
+  background: #eef3ff;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--navy);
+}
+.mz-pro-lock-note a { font-weight: 700; }

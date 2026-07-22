@@ -341,3 +341,34 @@
      height を指定しないこと ── 指定すると max-width が効かなくなる */
   .mzsc-brand-logo img { height: auto; }
 }
+
+
+/* ---------- ゲスト向け「登録すると使えるもの」カード(全ツール共通 2026-07-21) ---------- */
+.mz-signup-perks {
+  margin: 12px 0 4px;
+  padding: 14px;
+  border: 1px solid rgba(30, 79, 214, 0.25);
+  border-radius: 12px;
+  background: #fff;
+  color: #0f2138;
+}
+.mz-signup-perks .msp-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 800;
+}
+.mz-signup-perks .msp-title i { color: #1e4fd6; margin-right: 4px; }
+.mz-signup-perks ul { margin: 0 0 12px; padding-left: 1.3em; }
+.mz-signup-perks li { font-size: 12.5px; line-height: 1.8; }
+.mz-signup-perks .msp-btn {
+  display: block;
+  text-align: center;
+  padding: 11px 14px;
+  border-radius: 10px;
+  background: #f5a524;
+  color: #2a1a00;
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+}
+.mz-signup-perks .msp-btn:hover { filter: brightness(0.97); }
