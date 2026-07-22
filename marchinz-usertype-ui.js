@@ -259,6 +259,30 @@
     });
   }
 
+  /* ---------- アカウントメニューの近道 ----------
+     ドロワーとPCのアカウント欄に「MarchinZ Days(練習記録)」と
+     「MarchinZ Switcher(映像制作)」が全員に出ていた。
+     練習しない人(ファン/保護者)に練習記録を勧め続けるのは押し付けになる
+     (2026-07-22 優さん指摘)。自分の立場のものだけ出す。
+
+     消しても行き止まりにはしない: Days はマイページの中、Switcher は
+     クリエイターのページから、どのタイプでもたどり着ける。
+     ここは「近道」なので、近道が要る人にだけ見せる */
+  const MENU_SHORTCUTS = {
+    "#menu-open-days":            ["player"],   // PCのアカウント欄
+    "#menu-mobile-open-days":     ["player"],
+    "#menu-mobile-open-switcher": ["creator"],
+  };
+
+  function applyMenuShortcuts() {
+    if (!UT()) return;
+    const cur = UT().get();
+    Object.entries(MENU_SHORTCUTS).forEach(([sel, types]) => {
+      const el = document.querySelector(sel);
+      if (el) el.hidden = !types.includes(cur);
+    });
+  }
+
   function applyAll() {
     renderSettingsChoices();
     renderSignupChoices();
@@ -266,6 +290,7 @@
     applyNavOrder();
     applyTopOrder();
     applyTabbar();
+    applyMenuShortcuts();
   }
 
   window.addEventListener("mz:usertype", applyAll);

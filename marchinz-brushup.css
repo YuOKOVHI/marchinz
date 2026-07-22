@@ -4553,3 +4553,12 @@ body {
 }
 .mz-drawer-usertype-opt i { color: #1e4fd6; width: 1.1em; text-align: center; }
 .mz-drawer-usertype-opt.on { border-color: #1e4fd6; background: #eef3ff; }
+
+
+/* ---------- タイプ別に出し分けるメニュー項目(2026-07-22) ----------
+   .site-mobile-drawer-menu-item / .user-account-dropdown-item は
+   display:flex を持つため、hidden 属性(UA既定の display:none)を
+   打ち消してしまい、隠したつもりが全員に見えていた。
+   属性で隠すものは、クラスより強く止める */
+.site-mobile-drawer-menu-item[hidden],
+.user-account-dropdown-item[hidden] { display: none !important; }
