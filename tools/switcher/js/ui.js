@@ -710,6 +710,7 @@ MC.ui.runEasy = async () => {
   const btn = MC.ui.$("#easyStartBtn");
   if (btn.disabled || MC.ui._busy) return;
   MC.ui.setBusy(true);
+  MC.ui.clearErrorLog();   // やり直しでは前回の失敗ログを見せない
   MC.preview.pause();
   const cutMode = ["switch", "wipe"].includes(MC.S.layoutId);
   // sync/director/color はいずれも MZP の Handle をそのまま受け取る(legacy()は別物なので渡さない)
@@ -772,6 +773,16 @@ MC.ui.showErrorLog = err => {
     // 報告機構自体が落ちても、元のエラーを見失わないようにする
     console.error("[MC] showErrorLog failed", e, "original:", err);
   }
+};
+
+/* エラーログを消す。書き出し・おまかせを「やり直した」時に呼ぶ。
+   前回の失敗ログが残ったままだと、今回も失敗したのか紛らわしい
+   (2026-07-21 優さん指摘) */
+MC.ui.clearErrorLog = () => {
+  const host = MC.ui.$("#errorLog");
+  if (!host) return;
+  host.hidden = true;
+  host.textContent = "";
 };
 
 MC.ui._showErrorLog = err => {
@@ -1105,6 +1116,7 @@ MC.ui.wire = () => {
       sub: mode === "realtime" ? "画面を閉じずにお待ちください" : "",
       // 中止は枠の外の #cancelBtn が既に担っているので、ここでは出さない(二重表示の回避)
     });
+    MC.ui.clearErrorLog();   // やり直しでは前回の失敗ログを見せない
     /* 書き出しは最も長い処理。タブを閉じられたら当然止まり、画面が消えても
        rAF とデコーダが止まって進まなくなる。ここは setBusy を通らない経路
        なので、離脱防止を直接かける(2026-07-21 優さん報告) */
