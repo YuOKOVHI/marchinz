@@ -1,0 +1,41 @@
+# 本番サイトを外から見て、壊れていないかを1日1回確かめる。
+#
+# これまでの検査(Verify repo data)は「リポジトリの中身」しか見ていなかった。
+# 2026-07-22 に起きたのは **リポジトリは正しいのに本番だけ欠けている** という
+# 壊れ方で、リポジトリをいくら見ても永遠に気づけなかった
+# (ICHIKASHI ALUMNI CGT が本番の画面から消えたまま数日)。
+#
+# 消費するもの:
+#   - Netlify のビルドクレジット … **消費しない**。読むだけで、commit も push も
+#     しない(異常はこのジョブの失敗＝GitHubからのメールで伝える)
+#   - 帯域 … 1回あたり約400KB(月12MB程度)
+#   - GitHub Actions … public リポジトリのため無料。1回15秒ほど
+
+name: Check production
+
+on:
+  schedule:
+    # 21:00 UTC = 翌日 06:00 JST。データ更新bot(20:00 UTC)の後に見る
+    - cron: "0 21 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-production
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      # 名簿(site-nav.js)と HEAD の版を読むため、リポジトリ自体も要る
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Check production site
+        run: python3 check_production.py
