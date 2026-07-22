@@ -155,6 +155,7 @@ MC.exporter.VideoPipe = class {
     this.frames.forEach(f => { try { f.close(); } catch (e) {} });
     this.frames = [];
     if (this.current) { try { this.current.close(); } catch (e) {} this.current = null; }
+    if (this.cursor && this.cursor.stop) this.cursor.stop();   // mp4boxの抽出も止める
   }
 };
 
@@ -580,7 +581,11 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
         if (local < -0.05 || local > clip.duration + 0.05) { srcMap.set(id, null); return; }
         srcMap.set(id, await pipe.frameAt(Math.max(0, local)));
       }));
-      /* エンコーダの詰まり待ちをデコードと重ねる(待っている間も裏でデコードが進む) */
+      /* エンコーダの詰まり待ちをデコードと重ねる(待っている間も裏でデコードが進む)。
+         待っている間に decodeP が失敗すると、await が付くまでの一瞬だけ
+         「未処理のPromise拒否」になる。捨てハンドラを先に付けて黙らせ、
+         本物のエラーは下の await decodeP で受ける */
+      decodeP.catch(() => {});
       while (venc.encodeQueueSize > 6) await MC.waitDequeue(venc);
       await decodeP;
       prof.decode += performance.now() - _tDec;

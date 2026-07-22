@@ -497,5 +497,13 @@ MC.MP4Source.prototype.cursor = function (trackId) {
       }
       return queue.length ? { value: queue.shift(), done: false } : { value: undefined, done: true };
     },
+    /* 読み終わり。mp4boxの抽出を止めて溜まったサンプルを捨てる
+       (ページ内で完結するので必須ではないが、samples()の iter.return() と
+        対称にしておく) */
+    stop() {
+      queue.length = 0;
+      eof = true;
+      try { mp4.stop(); } catch (e) {}
+    },
   };
 };

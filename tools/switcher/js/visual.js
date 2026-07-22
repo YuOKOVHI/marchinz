@@ -32,8 +32,15 @@ MC.visual = {
   // 被写体がいない画(誰もいないピット等)の判定
   TH_EMPTY: 0.12,    // 顔が取れず、動いている領域もこれ未満なら人がいない
   /* WebCodecs解析でサンプル点の間がこれ(秒)より空くときだけシークで飛ぶ。
-     続行=空白×fps枚のデコード、飛び=RAPからのGOP再デコード(1〜2秒分)。
-     損益分岐は1〜2秒なので安全側の3秒 */
+     続行 = 空白秒ぶんのフレームをデコード
+     飛び = 平均 GOP長/2 ぶんの再デコード + reset + 読み直し
+     つまり **間隔 > GOP長/2 のときだけシークが得**。実カメラのGOPは1〜2秒
+     なので損益分岐は0.5〜1秒。3秒に置くのは、シーク回数を抑える方が
+     素材の読み直し(Driveや大容量で遅い)の失敗リスクが下がるため。
+     実測(2026-07-23、120秒/GOP2秒/間隔0.99秒、開発機):
+       毎点シーク(HOP=0.3) 5175ms / 連続デコード(HOP≧1) 3337ms
+     間隔0.99秒はGOP長の半分(1秒)とほぼ同じで、シークが損になる境界。
+     8分30秒の実ケースは間隔4秒なのでシークが明確に得(この設定で正しい) */
   HOP: 3.0,
   /* 殺しスイッチ: trueで旧video要素シーク方式に固定(実機切り分け用) */
   forceSeek: false,
@@ -385,7 +392,11 @@ MC.visual.analyzeClipWC = async (clip, l0, l1, prog) => {
       if (wt.t >= clip.duration - 0.05) continue;
       // 次の点まで遠い→間のGOPをデコードせずシークで飛ぶ
       if (isFinite(lastTs) && wt.t - lastTs > MC.visual.HOP) {
-        await dec.flush().catch(() => {});
+        /* flush() は溜まった出力を全部待つ同期点で、捨てるだけなのに待つのは無駄。
+           reset() は保留を捨てるだけで速い(実測40回シークで 643ms→507ms、21%短縮)。
+           reset 後は設定が消えるので configure し直す */
+        try { dec.reset(); dec.configure(cfg); }
+        catch (e) { await dec.flush().catch(() => {}); }   // reset非対応環境は従来どおり
         closeAll();
         cur.seek(wt.t);
         srcEof = false; flushed = false;
