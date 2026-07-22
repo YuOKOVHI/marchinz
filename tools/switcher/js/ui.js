@@ -83,7 +83,12 @@ MC.ui.saveResult = async () => {
   if (!r) return;
   if (MC.exporter.shareMode()) {
     try {
-      const file = new File([r.blob], r.name, { type: r.type || r.blob.type });
+      /* すでに File(OPFSから取り出したもの)ならそのまま渡す。
+         new File([blob]) は中身を丸ごとメモリへ複製するため、
+         長尺だとここで OPFS 化の意味が消える(2026-07-23 Phase 1) */
+      const file = (r.blob instanceof File && r.blob.name === r.name)
+        ? r.blob
+        : new File([r.blob], r.name, { type: r.type || r.blob.type });
       await navigator.share({ files: [file] });
     } catch (e) {
       if (e && e.name === "AbortError") return;         // ユーザーがキャンセル
@@ -93,6 +98,7 @@ MC.ui.saveResult = async () => {
   } else {
     MC.exporter.triggerDownload(r.blob, r.name);
   }
+  MC.exporter.releaseOpfs();   // 保存し終えたら書き出し用ファイルを片付ける
 };
 
 MC.ui.fmtTime = s => {
@@ -228,6 +234,38 @@ MC.ui.resetEasyDone = () => {
   MC.ui.renderEasyButton();
 };
 
+/* 「なぜ上限があるのか」を実態に合わせて書く(2026-07-23 B-2)。
+   OPFSへ逐次書ける端末ではメモリ上限が外れるので、理由をプラン側へ切り替える。
+   嘘の理由を残さないために、必ず maxExportableSec() の実値から書く */
+MC.ui.renderLimitWhy = () => {
+  const el = document.querySelector(".mz-limit-why");
+  if (!el) return;
+  const hardMax = MC.exporter.maxExportableSec();
+  const roleMax = (window.MZ_LIMITS && MZ_LIMITS.maxExportSec) || Infinity;
+  const mmss = sec => {
+    if (!isFinite(sec)) return "";
+    const m = Math.floor(sec / 60), ss = Math.round(sec % 60);
+    return ss ? `${m}分${String(ss).padStart(2, "0")}秒` : `${m}分`;
+  };
+  const icon = '<i class="fa-solid fa-circle-info" aria-hidden="true"></i> ';
+  if (isFinite(hardMax) && hardMax <= roleMax) {
+    // 端末のメモリで頭打ちになる環境(OPFS非対応の古いブラウザ等)
+    el.innerHTML = icon
+      + `<b>3本まで・${mmss(hardMax)}まで</b>なのは、この端末では動画を丸ごとメモリに`
+      + "載せて処理するためです。これを超えると書き出しの途中で止まってしまいます。"
+      + "長いときはINとOUTで区切ってお使いください。";
+    return;
+  }
+  if (isFinite(roleMax)) {
+    // 端末側の制限は無い。残るのはプランの上限だけ
+    el.innerHTML = icon
+      + `<b>3本まで・${mmss(roleMax)}まで</b>お使いいただけます。`
+      + "長いときはINとOUTで区切ってください。";
+    return;
+  }
+  el.innerHTML = icon + "<b>3本まで</b>お使いいただけます。長さの上限はありません。";
+};
+
 MC.ui.renderAll = () => {
   MC.ui.applyGuestLocks();
   MC.ui.renderQualityPicker();
@@ -245,6 +283,7 @@ MC.ui.renderAll = () => {
     if (cmb) cmb.hidden = !MC.S.cutList.length;
   }
   MC.ui.renderClips();
+  MC.ui.renderLimitWhy();
   MC.ui.renderAudio();
   MC.ui.renderEasyLead();
   MC.ui.renderLayout();
@@ -1634,6 +1673,7 @@ MC.ui.wire = () => {
   $("#cancelBtn").onclick = () => { MC.exporter.cancelFlag = true; };
   $("#saveBtn").onclick = () => MC.ui.saveResult();
   $("#downloadBtn").onclick = () => {
+    MC.exporter.releaseOpfs();
     const r = MC.exporter.lastResult;
     if (r) MC.exporter.triggerDownload(r.blob, r.name);
   };

@@ -483,8 +483,70 @@ MC.exporter.videoBitrate = () => {
 };
 
 /* この端末で書き出せる最大の秒数。案内と自動調整の両方で使う */
+/* ============ OPFS への逐次書き出し(Phase 1 / 2026-07-23) ============
+   iOS には showSaveFilePicker が無いため、これまでは完成MP4をメモリ上の
+   ArrayBuffer に丸ごと積んでいた。これが 8分41秒 の上限(MEM_HARD_LIMIT)の正体。
+
+   OPFS(ブラウザ内のプライベート領域)なら iOS Safari でもファイルへ逐次書ける。
+   muxer 側は既に FileSystemWritableFileStreamTarget + fastStart:false で
+   ストリーム対応済みなので、writable を差し替えるだけで尺に比例したメモリ消費が消える。
+
+   ・書き出し中: メモリではなく OPFS のファイルへ流れる
+   ・完成後:     handle.getFile() で File を得る(JSヒープに全読みしない)
+   ・後始末:     保存/破棄の後に削除。前回の書きかけは起動時に掃除する
+
+   殺しスイッチ: MC.exporter.FORCE_LEGACY = true でメモリ方式へ即時復帰 */
+MC.exporter.FORCE_LEGACY = false;
+MC.exporter.OPFS_DIR = "mz-export";
+
+MC.exporter.opfsSupported = () => {
+  if (MC.exporter.FORCE_LEGACY) return false;
+  try {
+    return !!(navigator.storage && navigator.storage.getDirectory &&
+      typeof FileSystemFileHandle !== "undefined" &&
+      FileSystemFileHandle.prototype.createWritable);
+  } catch (e) { return false; }
+};
+
+/** 書き出し用の OPFS ファイルを用意する。失敗したら null(=メモリ方式へ) */
+MC.exporter.opfsCreate = async name => {
+  if (!MC.exporter.opfsSupported()) return null;
+  try {
+    const root = await navigator.storage.getDirectory();
+    const dir = await root.getDirectoryHandle(MC.exporter.OPFS_DIR, { create: true });
+    const handle = await dir.getFileHandle(name, { create: true });
+    const writable = await handle.createWritable();
+    return { handle, writable, dir, name };
+  } catch (err) {
+    MC.log("OPFS 準備に失敗(メモリ方式へ): " + err.message);
+    return null;
+  }
+};
+
+/** 使い終わった書き出しファイルを消す。失敗しても黙って進む(掃除は必須ではない) */
+MC.exporter.opfsRemove = async name => {
+  try {
+    const root = await navigator.storage.getDirectory();
+    const dir = await root.getDirectoryHandle(MC.exporter.OPFS_DIR, { create: false });
+    await dir.removeEntry(name);
+  } catch (e) { /* 無ければそれでよい */ }
+};
+
+/** 起動時の掃除。前回の失敗で残った書きかけを消す(容量を食い続けないように) */
+MC.exporter.opfsSweep = async keepName => {
+  if (!MC.exporter.opfsSupported()) return;
+  try {
+    const root = await navigator.storage.getDirectory();
+    const dir = await root.getDirectoryHandle(MC.exporter.OPFS_DIR, { create: false });
+    for await (const [n] of dir.entries()) {
+      if (n !== keepName) await dir.removeEntry(n).catch(() => {});
+    }
+  } catch (e) { /* ディレクトリが無ければ何もしない */ }
+};
+
 MC.exporter.maxExportableSec = () => {
   if (window.showSaveFilePicker) return Infinity;   // ディスクへ直接書ける環境は制限なし
+  if (MC.exporter.opfsSupported()) return Infinity; // OPFSへ逐次書ける環境も制限なし
   const perSec = (MC.exporter.videoBitrate() + 192e3) / 8;
   return MC.exporter.MEM_HARD_LIMIT / perSec;
 };
@@ -519,6 +581,7 @@ MC.exporter.preflightFiles = async clips => {
 
 MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
   let writable = null;
+  let opfs = null;
   /* 失敗・中断時は abort で破棄する。FS Access API は swap ファイル方式で、
      close() は部分データの「コミット」= 壊れた書きかけMP4を実ファイルにして
      しまう。abort() なら何も書かれず、上書き対象だった既存ファイルも無傷 */
@@ -546,10 +609,18 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
        ArrayBufferTarget では確保に失敗する(実素材テストで発生)。
        保存先が選ばれていればディスクへ直接書く */
     let target;
+    const outName = saveHandle
+      ? saveHandle.name
+      : `MarchinZ_Switcher_${MC.S.preset}_${new Date().toISOString().slice(0, 10)}.mp4`;
     if (saveHandle) {
       writable = await saveHandle.createWritable();
       target = new Mp4Muxer.FileSystemWritableFileStreamTarget(writable);
       MC.log("export: ファイルへ直接書き込みます(メモリに溜めません)");
+    } else if ((opfs = await MC.exporter.opfsCreate(outName))) {
+      writable = opfs.writable;
+      target = new Mp4Muxer.FileSystemWritableFileStreamTarget(writable);
+      await MC.exporter.opfsSweep(outName);   // 前回の書きかけを掃除
+      MC.log("export: OPFSへ逐次書き込みます(メモリに溜めません)");
     } else {
       target = new Mp4Muxer.ArrayBufferTarget();
       MC.log("export: メモリ上で組み立てます(長尺では失敗することがあります)");
@@ -700,13 +771,21 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
 
     onProgress(0.97, "ファイルにまとめています…");
     muxer.finalize();
-    const name = saveHandle
-      ? saveHandle.name
-      : `MarchinZ_Switcher_${MC.S.preset}_${new Date().toISOString().slice(0, 10)}.mp4`;
+    const name = outName;
 
     if (writable) {
-      await writable.close();     // ここで初めてディスク上のファイルが完成する
+      await writable.close();     // ここで初めてファイルが完成する
       writable = null;
+      if (opfs) {
+        /* OPFS 上のファイルを File として取り出す。Blob なので保存・共有の
+           導線(saveResult / triggerDownload)は従来のまま使える。
+           ここで JS ヒープへ全読みはしない(ブラウザがファイルから読む) */
+        const file = await opfs.handle.getFile();
+        MC.exporter._opfsName = name;   // 保存/破棄のあとに消すため覚えておく
+        MC.exporter.download(file, name);
+        MC.log(`export done: ${name} bytes=${file.size} frames=${totalFrames} audio=${audioOk} (OPFS)`);
+        return { blob: file, name, opfs: true };
+      }
       MC.log(`export done: ${name} frames=${totalFrames} audio=${audioOk} (直接書き込み)`);
       return { name, saved: true, blob: null, size: null };
     }
@@ -719,6 +798,10 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
     if (venc) { try { venc.close(); } catch (e) {} }
     // 途中で失敗したときも書きかけのハンドルは閉じる(閉じないとファイルが壊れたまま残る)
     if (typeof writableRef === "function") writableRef();
+    // OPFS は abort しても実体が残るので、成功していなければ消す
+    if (opfs && MC.exporter._opfsName !== opfs.name) {
+      MC.exporter.opfsRemove(opfs.name);
+    }
     MC.exporter.running = false;
   }
 };
@@ -782,6 +865,17 @@ MC.exporter._exportRealtimeInner = async onProgress => {
    完了カードの「動画を保存」タップから MC.ui.saveResult() が共有する。
    (ReAngle/Privacyと同じ保存フロー) */
 MC.exporter.lastResult = null;
+MC.exporter._opfsName = null;
+
+/** 保存/ダウンロードが済んだ書き出しファイルを OPFS から消す。
+    lastResult.blob は File なので、消したあとに再保存はできない点に注意
+    (完了カードは保存後に閉じる運用なので実害なし) */
+MC.exporter.releaseOpfs = () => {
+  const n = MC.exporter._opfsName;
+  if (!n) return;
+  MC.exporter._opfsName = null;
+  MC.exporter.opfsRemove(n);
+};
 MC.exporter._shareMode = null;
 MC.exporter.shareMode = () => {
   if (MC.exporter._shareMode != null) return MC.exporter._shareMode;
