@@ -74,7 +74,11 @@ MC.exporter.VideoPipe = class {
   }
 
   async pump() {
-    while (!this.eof && this.decoder.decodeQueueSize < 12 && this.frames.length < 8) {
+    /* 保持するフレーム数は iOS だけ半分にする(2026-07-20 検討メモ 項目5)。
+       VideoFrame は iOS では IOSurface(GPUメモリ)を掴むため、1080p×3カメラ×8枚で
+       数十MBになる。水位を下げてもデコードは詰まらない(実測で速度差なし) */
+    while (!this.eof && this.decoder.decodeQueueSize < (MC.isIOS ? 6 : 12) &&
+           this.frames.length < (MC.isIOS ? 4 : 8)) {
       const { value: s, done } = await this.cursor.next();
       if (done) {
         this.eof = true;
@@ -487,9 +491,11 @@ MC.exporter.isPC = () =>
   !MC.isIOS && !/Android/i.test(navigator.userAgent);
 
 MC.exporter.quality = () => {
-  let q = MC.S.exportQuality || "full";
+  /* 既定はライト(720p/8Mbps)。多くの人はSNSへ出すので、速く軽い方を初期値にする。
+     きれいに残したい人はフルHDへ1タップで切り替えられる(2026-07-23 優さん指示) */
+  let q = MC.S.exportQuality || "light";
   q = MC.exporter.QUALITY_ALIAS[q] || q;              // 旧IDの保存値を寄せる
-  return MC.exporter.QUALITIES[q] ? q : "full";
+  return MC.exporter.QUALITIES[q] ? q : "light";
 };
 
 /* 書き出しの出力サイズ。プレビューはプリセットのまま、出力だけ変える */

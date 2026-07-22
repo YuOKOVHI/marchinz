@@ -956,3 +956,32 @@ body[data-mzj-phase="export"] .clip-slot.empty { display: none; }
 }
 .tilt-step:active { background: rgba(15, 33, 56, 0.08); }
 .tilt-val { font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }
+
+
+/* ---------- 中断のお知らせ(Phase 2 / 2026-07-23) ----------
+   トーストは見逃すので、閉じるまで残す。進捗ドック(90)より下、通常UIより上 */
+.mz-interrupt-note {
+  position: fixed;
+  left: 12px; right: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  z-index: 85;
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 12px 12px 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(217, 119, 6, 0.35);
+  background: #fff7e8;
+  color: var(--tx);
+  font-size: 12.5px; line-height: 1.7;
+  box-shadow: 0 8px 28px rgba(15, 33, 56, 0.18);
+}
+.mz-interrupt-note > i { color: var(--acc2); margin-top: 2px; }
+.mz-interrupt-note b { font-weight: 700; }
+.mz-interrupt-close {
+  flex-shrink: 0; width: 30px; height: 30px; margin: -4px -4px 0 0;
+  border: 0; border-radius: 8px; background: transparent;
+  font-size: 17px; line-height: 1; color: var(--tx2); cursor: pointer;
+}
+.mz-interrupt-close:active { background: rgba(15, 33, 56, 0.08); }
+@media (min-width: 860px) {
+  .mz-interrupt-note { left: auto; right: 20px; max-width: 420px; }
+}

@@ -826,11 +826,12 @@ MC.ui.renderQualityPicker = () => {
   /* スマホでもディスク(OPFS)へ直接書ける端末は、メモリのために画質を落とす
      必要がなくなった(2026-07-23 Phase 1)。「パソコン推奨」の但し書きは、
      本当に不利な端末にだけ出す。実態と違う遠慮はユーザーの損になる */
+  /* 既定のライトを先に置く。フルHDはいつでも選べる */
   const defs = [
-    { id: "full", name: "フルHD", tag: "おすすめ",
-      desc: "1080p・12Mbps／いちばんきれい" },
-    { id: "light", name: "ライト", tag: "",
-      desc: "720p・8Mbps／速くて軽い" },
+    { id: "light", name: "ライト", tag: "おすすめ",
+      desc: "720p・8Mbps／速くて軽い。SNS向け" },
+    { id: "full", name: "フルHD", tag: "",
+      desc: "1080p・12Mbps／いちばんきれい。時間と容量が増えます" },
   ];
   host.innerHTML = defs.map(d => `
     <button type="button" class="q-card${d.id === cur ? " on" : ""}" role="radio"
@@ -1032,8 +1033,11 @@ MC.ui.markExportFailed = () => {
   const lead = document.querySelector(".easy-lead");
   if (lead) {
     lead.hidden = false;   // 完了時は畳んでいるので、失敗表示のときは開く
-    lead.innerHTML = '<span class="err">書き出しに失敗しました。下の「詳しいログ」に原因が出ています。'
-      + 'ボタンからもう一度お試しください。</span>';
+    /* まず「何が残っているか」を言う。失敗の告知だけだと、
+       最初からやり直しだと思わせてしまう(2026-07-23 Phase 2) */
+    lead.innerHTML = '<span class="err"><b>同期・カット割・書き出し範囲は残っています。</b>'
+      + '書き出しだけが失敗しました。ボタンからもう一度お試しください'
+      + '(原因は下の「詳しいログ」に出ています)。</span>';
   }
 };
 
@@ -1129,6 +1133,8 @@ MC.ui.refreshSetupTabs = () => {
 /* 長い処理の間、競合する操作をまとめて止める(二重実行でcutList/offsetが壊れるのを防ぐ) */
 MC.ui.setBusy = busy => {
   MC.ui._busy = !!busy;
+  if (busy) MC.ui.clearInterruptNote();   // 新しい作業を始めたら前回の中断案内は消す
+  else MC.ui._hiddenAt = 0;
   const ids = ["#easyStartBtn", "#syncBtn", "#autocutBtn", "#colorMatchBtn", "#exportBtn", "#abPrimary"];
   ids.forEach(id => {
     const el = MC.ui.$(id);
@@ -1257,9 +1263,54 @@ MC.ui._onBeforeUnload = e => {
   return "";
 };
 
+/* ============ 離脱の検知(Phase 2 / 2026-07-23) ============
+   iOS はタブが背面に回ると処理を止め、メモリが逼迫すればタブごと捨てる。
+   Web である限り「切り替えても完走」は保証できないので、次の3つに絞る:
+     ① 隠れる瞬間に保存する    … 未保存の編集を落とさない
+     ② 隠れていた時間を数える  … 戻ってきたときに事実を伝えられる
+     ③ 戻ったら正直に伝える    … 「止まっていたかも」と、何が残っているか
+   処理そのものは止めない(勝手に中断する方が損)。 */
+MC.ui._hiddenAt = 0;
+
 MC.ui._onVisChange = () => {
+  if (document.visibilityState === "hidden") {
+    MC.saveState();                     // ① 未保存の編集をここで確定させる
+    if (MC.ui._busy) MC.ui._hiddenAt = Date.now();
+    return;
+  }
   // 画面が戻ったら Wake Lock を取り直す(消灯・アプリ切替で解放されるため)
-  if (document.visibilityState === "visible" && MC.ui._busy) MC.ui._holdWake(true);
+  if (MC.ui._busy) MC.ui._holdWake(true);
+  if (MC.ui._hiddenAt) {
+    const ms = Date.now() - MC.ui._hiddenAt;
+    MC.ui._hiddenAt = 0;
+    if (ms >= 2000) MC.ui.showInterruptNote(ms);   // ③
+  }
+};
+
+/* 「他のアプリに切り替えていた間、進んでいなかったかもしれません」を伝える。
+   トーストは3.4秒で消えて見逃すため、閉じるまで残る帯にする */
+MC.ui.showInterruptNote = ms => {
+  const sec = Math.round(ms / 1000);
+  const txt = sec >= 60 ? `${Math.round(sec / 60)}分` : `${sec}秒`;
+  let el = document.getElementById("mzInterruptNote");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "mzInterruptNote";
+    el.className = "mz-interrupt-note";
+    el.setAttribute("role", "status");
+    document.body.appendChild(el);
+  }
+  el.innerHTML = '<i class="fa-solid fa-circle-pause" aria-hidden="true"></i> '
+    + `<span>ほかの画面に${txt}切り替わっていました。その間、処理は進んでいなかった`
+    + "かもしれません。<b>同期・カット割・書き出し範囲は保存済み</b>なので、"
+    + "止まっていたら書き出しだけやり直せます。</span>"
+    + '<button type="button" class="mz-interrupt-close" aria-label="閉じる">×</button>';
+  el.querySelector(".mz-interrupt-close").onclick = () => el.remove();
+};
+
+MC.ui.clearInterruptNote = () => {
+  const el = document.getElementById("mzInterruptNote");
+  if (el) el.remove();
 };
 
 MC.ui._holdWake = async want => {
@@ -1301,13 +1352,18 @@ MC.ui.guardLeave = on => {
   MC.ui._stayBanner(on);
   if (on) {
     window.addEventListener("beforeunload", MC.ui._onBeforeUnload);
-    document.addEventListener("visibilitychange", MC.ui._onVisChange);
     MC.ui._holdWake(true);
   } else {
     window.removeEventListener("beforeunload", MC.ui._onBeforeUnload);
-    document.removeEventListener("visibilitychange", MC.ui._onVisChange);
     MC.ui._holdWake(false);
   }
+};
+
+/* visibilitychange は作業中に限らず常時聴く(2026-07-23 Phase 2)。
+   guardLeave の中で付け外ししていたため、編集中の離脱では保存が走らなかった。
+   Wake Lock の取り直しは _onVisChange 側で busy を見て判断する */
+MC.ui.initVisibility = () => {
+  document.addEventListener("visibilitychange", MC.ui._onVisChange);
 };
 
 MC.ui.runEasy = async () => {

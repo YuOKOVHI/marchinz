@@ -414,7 +414,7 @@ MC.visual.analyzeClipWC = async (clip, l0, l1, prog) => {
         }
         if (frame) break;
         if (srcEof && flushed && !outQ.length) { drained = true; break; }
-        if (!srcEof && dec.decodeQueueSize < 12 && outQ.length < 8) {
+        if (!srcEof && dec.decodeQueueSize < (MC.isIOS ? 6 : 12) && outQ.length < (MC.isIOS ? 4 : 8)) {
           const { value: s, done } = await cur.next();
           if (done) {
             srcEof = true;
