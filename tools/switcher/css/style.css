@@ -937,3 +937,22 @@ body[data-mzj-phase="export"] .clip-slot.empty { display: none; }
   color: var(--tx);
 }
 .mz-limit-why i { color: var(--acc); margin-right: 2px; }
+
+
+/* ---------- 確認ステップの自動傾き修正(2026-07-23) ---------- */
+.tilt-box { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.tilt-master { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; font-weight: 600; }
+.tilt-master .hint { font-weight: 500; }
+.tilt-row {
+  display: grid;
+  grid-template-columns: minmax(56px, 1fr) 34px minmax(70px, 2fr) 34px 44px auto;
+  align-items: center; gap: 6px; margin-top: 8px;
+}
+.tilt-name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tilt-range { width: 100%; accent-color: var(--acc); min-height: 34px; }
+.tilt-step {
+  min-height: 34px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel2); color: var(--tx); font-size: 15px; font-weight: 700; cursor: pointer;
+}
+.tilt-step:active { background: rgba(15, 33, 56, 0.08); }
+.tilt-val { font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }

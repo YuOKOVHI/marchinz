@@ -18,7 +18,11 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (saved.horizonOn != null) MC.S.horizonOn = saved.horizonOn;
     else if (Array.isArray(saved.clips) && saved.clips.some(c => c.rot)) MC.S.horizonOn = true; // 旧プロジェクト移行: rot設定済みなら水平補正ONを維持
     if (saved.colorStrength != null) MC.S.colorStrength = saved.colorStrength;
-    if (saved.exportQuality && MC.exporter.QUALITIES[saved.exportQuality]) MC.S.exportQuality = saved.exportQuality;
+    if (saved.exportQuality) {
+      // 旧ID(sns/hd/pro)は新ID(light/full)へ寄せてから採用する
+      const q = MC.exporter.QUALITY_ALIAS[saved.exportQuality] || saved.exportQuality;
+      if (MC.exporter.QUALITIES[q]) MC.S.exportQuality = q;
+    }
     // フィルターは復元しない: 初期値は常に「MarchinZ」(2026-07-19 優さん指定)
     if (saved.beatsPerBar) MC.S.beatsPerBar = saved.beatsPerBar;
     // 切替頻度: 旧5段階の保存値は3段階(少なめ/おすすめ/多め)へ寄せる

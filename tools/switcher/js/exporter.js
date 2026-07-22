@@ -216,10 +216,12 @@ MC.exporter.encodeAudio = async (muxer, clip, fromLocalSec, durSec, onStatus) =>
   const sup = await AudioDecoder.isConfigSupported(cfg).catch(() => ({ supported: false }));
   if (!sup.supported) return false;
 
-  // デコードして範囲分の48kHzステレオPCMを貯める
+  /* デコードしながら、1024フレーム窓が埋まるたびに即AACへ流す
+     (2026-07-23 Phase 1 項目4)。以前は全長のPCMを貯めてから
+     エンコードしており、8分30秒で約196MBを保持していた */
   const OUT_SR = 48000;
+  const FR = 1024;
   const need = Math.ceil(durSec * OUT_SR);
-  const chL = new Float32Array(need), chR = new Float32Array(need);
   let error = null;
   const rsL = new MC.audio.LinearResampler(cfg.sampleRate, OUT_SR);
   const rsR = new MC.audio.LinearResampler(cfg.sampleRate, OUT_SR);
@@ -227,13 +229,41 @@ MC.exporter.encodeAudio = async (muxer, clip, fromLocalSec, durSec, onStatus) =>
      ソースのelst分 + 出力AACエンコーダのプライミング分を足してスキップする */
   const editOff = src.editOffsetSec(at);
   const primingSec = (await MC.exporter.measureAacDelay()) / 48000;
-  let written = 0;          // 48kHz出力の書き込み位置
   let skipOut = null;       // fromLocalに相当する48kHz出力サンプル数(先頭スキップ)
   let outCount = 0;         // リサンプル出力の通し位置
+
+  let encErr = null;
+  const encoder = new AudioEncoder({
+    output: (chunk, meta) => {
+      try { muxer.addAudioChunk(chunk, meta); } catch (err) { encErr = encErr || err; }
+    },
+    error: e => { encErr = e; },
+  });
+  encoder.configure({ codec: "mp4a.40.2", sampleRate: OUT_SR, numberOfChannels: 2, bitrate: 192000 });
+
+  /* f32-planar 1窓ぶんの作業領域: [L×FR][R×FR] */
+  const pend = new Float32Array(FR * 2);
+  let pendN = 0, emitted = 0;
+  /* デコーダのコールバックは同期なので await できない。
+     encode() 自体は同期に積めるため、背圧は下の投入ループ側で見る */
+  const emitWindow = () => {
+    if (!pendN || encErr) { pendN = 0; return; }
+    const n = pendN;
+    const data = new Float32Array(n * 2);
+    data.set(pend.subarray(0, n), 0);
+    data.set(pend.subarray(FR, FR + n), n);
+    encoder.encode(new AudioData({
+      format: "f32-planar", sampleRate: OUT_SR, numberOfFrames: n, numberOfChannels: 2,
+      timestamp: Math.round(emitted * 1e6 / OUT_SR), data,
+    }));
+    emitted += n;
+    pendN = 0;
+  };
+
   const decoder = new AudioDecoder({
     output: ad => {
       try {
-        if (error || written >= need) { return; }
+        if (error || encErr || emitted + pendN >= need) { return; }
         const frames = ad.numberOfFrames, nch = ad.numberOfChannels;
         const buf = new Float32Array(frames);
         const L = new Float32Array(frames), R = new Float32Array(frames);
@@ -246,10 +276,11 @@ MC.exporter.encodeAudio = async (muxer, clip, fromLocalSec, durSec, onStatus) =>
         for (let i = 0; i < oL.length; i++) {
           const pos = outCount + i;
           if (pos < skipOut) continue;
-          const w = pos - skipOut;
-          if (w >= need) break;
-          chL[w] = oL[i]; chR[w] = oR[i];
-          if (w >= written) written = w + 1;
+          if (emitted + pendN >= need) break;
+          pend[pendN] = oL[i];
+          pend[FR + pendN] = oR[i];
+          pendN++;
+          if (pendN === FR) emitWindow();
         }
         outCount += oL.length;
       } finally { ad.close(); }
@@ -278,13 +309,45 @@ MC.exporter.encodeAudio = async (muxer, clip, fromLocalSec, durSec, onStatus) =>
     }));
     if (ctsSec - firstFedCts > (fromLocalSec + editOff - firstFedCts) + durSec + 1) break;
     if (decoder.decodeQueueSize > 32) await MC.waitDequeue(decoder);
+    if (encoder.encodeQueueSize > 32) await MC.waitDequeue(encoder);
   }
   if (!error) await decoder.flush().catch(() => {});
   try { decoder.close(); } catch (e) {}
-  if (error || MC.exporter.cancelFlag) return false;
+  if (error || MC.exporter.cancelFlag) { try { encoder.close(); } catch (e) {} return false; }
 
-  // AACエンコード(1024フレームずつ)
-  onStatus("音を入れています…", 0.6);
+  onStatus("音を入れています…", 0.9);
+  emitWindow();                     // 端数を出す
+  /* 素材が書き出し範囲より短いときは無音で埋めて尺を合わせる
+     (以前は「全長ゼロ配列」がこの役目を兼ねていた) */
+  while (emitted < need && !encErr && !MC.exporter.cancelFlag) {
+    const n = Math.min(FR, need - emitted);
+    pend.fill(0, 0, n);
+    pend.fill(0, FR, FR + n);
+    pendN = n;
+    emitWindow();
+    if (encoder.encodeQueueSize > 32) await MC.waitDequeue(encoder);
+  }
+  if (!encErr) await encoder.flush().catch(() => {});
+  try { encoder.close(); } catch (e) {}
+  return !encErr && !MC.exporter.cancelFlag;
+};
+
+/* リニアPCM音声(Resolve等のMOV): デコーダを通さず範囲を生読みして48kHzステレオ→AAC */
+/* 実素材(LPCM等)の音声を AAC へ。
+   **読みながら1024フレームずつ即エンコードする**(2026-07-23 Phase 1 項目4)。
+   以前は全長を Float32Array で確保しており、8分30秒で約196MB を保持していた。
+   映像を OPFS へ逃がしてもここが残るとメモリ削減が中途半端になる。
+   窓ぶん(1024×2ch=8KB)だけ持てば足りる。 */
+MC.exporter.encodeAudioPcm = async (muxer, src, fromLocalSec, durSec, onStatus) => {
+  const OUT_SR = 48000;
+  const FR = 1024;
+  const need = Math.ceil(durSec * OUT_SR);
+  const rsL = new MC.audio.LinearResampler(src.pcm.rate, OUT_SR);
+  const rsR = new MC.audio.LinearResampler(src.pcm.rate, OUT_SR);
+  const primingSec = (await MC.exporter.measureAacDelay()) / 48000;
+  const from = Math.max(0, fromLocalSec + primingSec);
+
+  onStatus("音を入れています…");
   let encErr = null;
   const encoder = new AudioEncoder({
     output: (chunk, meta) => {
@@ -293,37 +356,29 @@ MC.exporter.encodeAudio = async (muxer, clip, fromLocalSec, durSec, onStatus) =>
     error: e => { encErr = e; },
   });
   encoder.configure({ codec: "mp4a.40.2", sampleRate: OUT_SR, numberOfChannels: 2, bitrate: 192000 });
-  const FR = 1024;
-  for (let o = 0; o < need; o += FR) {
-    if (encErr || MC.exporter.cancelFlag) break;
-    if ((o / FR & 127) === 0) onStatus("音を入れています…", 0.6 + 0.4 * o / need);
-    const n = Math.min(FR, need - o);
+
+  /* f32-planar 1窓ぶんの作業領域: [L×FR][R×FR] */
+  const pend = new Float32Array(FR * 2);
+  let pendN = 0, emitted = 0;
+
+  const flushWindow = async () => {
+    if (!pendN || encErr) { pendN = 0; return; }
+    const n = pendN;
     const data = new Float32Array(n * 2);
-    data.set(chL.subarray(o, o + n), 0);
-    data.set(chR.subarray(o, o + n), n);
+    data.set(pend.subarray(0, n), 0);
+    data.set(pend.subarray(FR, FR + n), n);
     encoder.encode(new AudioData({
       format: "f32-planar", sampleRate: OUT_SR, numberOfFrames: n, numberOfChannels: 2,
-      timestamp: Math.round(o * 1e6 / OUT_SR), data,
+      timestamp: Math.round(emitted * 1e6 / OUT_SR), data,
     }));
+    emitted += n;
+    pendN = 0;
     if (encoder.encodeQueueSize > 16) await MC.waitDequeue(encoder);
-  }
-  if (!encErr) await encoder.flush().catch(() => {});
-  try { encoder.close(); } catch (e) {}
-  return !encErr && !MC.exporter.cancelFlag;
-};
+  };
 
-/* リニアPCM音声(Resolve等のMOV): デコーダを通さず範囲を生読みして48kHzステレオ→AAC */
-MC.exporter.encodeAudioPcm = async (muxer, src, fromLocalSec, durSec, onStatus) => {
-  const OUT_SR = 48000;
-  const need = Math.ceil(durSec * OUT_SR);
-  const chL = new Float32Array(need), chR = new Float32Array(need);
-  const rsL = new MC.audio.LinearResampler(src.pcm.rate, OUT_SR);
-  const rsR = new MC.audio.LinearResampler(src.pcm.rate, OUT_SR);
-  const primingSec = (await MC.exporter.measureAacDelay()) / 48000;
-  const from = Math.max(0, fromLocalSec + primingSec);
-  let skipOut = null, outCount = 0, written = 0;
+  let skipOut = null, outCount = 0, done = false;
   for await (const c of src.pcmChunks(Math.max(0, from - 0.5))) {
-    if (MC.exporter.cancelFlag) return false;
+    if (MC.exporter.cancelFlag || encErr) { done = true; break; }
     if (skipOut === null) {
       const firstSec = c.startFrame / src.pcm.rate;
       skipOut = Math.max(0, Math.round((from - firstSec) * OUT_SR));
@@ -335,38 +390,28 @@ MC.exporter.encodeAudioPcm = async (muxer, src, fromLocalSec, durSec, onStatus) 
     for (let i = 0; i < oL.length; i++) {
       const pos = outCount + i;
       if (pos < skipOut) continue;
-      const w = pos - skipOut;
-      if (w >= need) break;
-      chL[w] = oL[i]; chR[w] = oR[i];
-      if (w >= written) written = w + 1;
+      if (emitted + pendN >= need) { done = true; break; }
+      pend[pendN] = oL[i];
+      pend[FR + pendN] = oR[i];
+      pendN++;
+      if (pendN === FR) await flushWindow();
     }
     outCount += oL.length;
-    if (outCount - (skipOut || 0) >= need) break;
+    if (done) break;
     await MC.yield();
   }
+  await flushWindow();
 
-  onStatus("音を入れています…");
-  let encErr = null;
-  const encoder = new AudioEncoder({
-    output: (chunk, meta) => {
-      try { muxer.addAudioChunk(chunk, meta); } catch (err) { encErr = encErr || err; }
-    },
-    error: e => { encErr = e; },
-  });
-  encoder.configure({ codec: "mp4a.40.2", sampleRate: OUT_SR, numberOfChannels: 2, bitrate: 192000 });
-  const FR = 1024;
-  for (let o = 0; o < need; o += FR) {
-    if (encErr || MC.exporter.cancelFlag) break;
-    const n = Math.min(FR, need - o);
-    const data = new Float32Array(n * 2);
-    data.set(chL.subarray(o, o + n), 0);
-    data.set(chR.subarray(o, o + n), n);
-    encoder.encode(new AudioData({
-      format: "f32-planar", sampleRate: OUT_SR, numberOfFrames: n, numberOfChannels: 2,
-      timestamp: Math.round(o * 1e6 / OUT_SR), data,
-    }));
-    if (encoder.encodeQueueSize > 16) await MC.waitDequeue(encoder);
+  /* 素材が書き出し範囲より短いときは無音で埋めて尺を合わせる。
+     以前は「全長ゼロ配列」がこの役目を兼ねていた */
+  while (emitted < need && !encErr && !MC.exporter.cancelFlag) {
+    const n = Math.min(FR, need - emitted);
+    pend.fill(0, 0, n);
+    pend.fill(0, FR, FR + n);
+    pendN = n;
+    await flushWindow();
   }
+
   if (!encErr) await encoder.flush().catch(() => {});
   try { encoder.close(); } catch (e) {}
   return !encErr && !MC.exporter.cancelFlag;
@@ -381,14 +426,10 @@ MC.exporter.encodeAudioFile = async (muxer, clip, fromLocalSec, durSec, onStatus
   const primingSec = (await MC.exporter.measureAacDelay()) / 48000;
   const need = Math.ceil(durSec * OUT_SR);
   const off = Math.max(0, Math.round((fromLocalSec + primingSec) * OUT_SR));
-  const chL = new Float32Array(need), chR = new Float32Array(need);
   const L = buf.getChannelData(0);
   const R = buf.numberOfChannels > 1 ? buf.getChannelData(1) : L;
-  for (let i = 0; i < need; i++) {
-    const p = off + i;
-    if (p >= L.length) break;
-    chL[i] = L[p]; chR[i] = R[p];
-  }
+  /* デコード済みバッファから直接窓を切り出す。全長のコピーは作らない
+     (2026-07-23 Phase 1 項目4。encodeAudioPcm と同じ理由) */
   onStatus("音を入れています…");
   let encErr = null;
   const encoder = new AudioEncoder({
@@ -403,8 +444,11 @@ MC.exporter.encodeAudioFile = async (muxer, clip, fromLocalSec, durSec, onStatus
     if (encErr || MC.exporter.cancelFlag) break;
     const n = Math.min(FR, need - o);
     const data = new Float32Array(n * 2);
-    data.set(chL.subarray(o, o + n), 0);
-    data.set(chR.subarray(o, o + n), n);
+    for (let i = 0; i < n; i++) {
+      const p = off + o + i;
+      data[i] = p < L.length ? L[p] : 0;
+      data[n + i] = p < R.length ? R[p] : 0;
+    }
     encoder.encode(new AudioData({
       format: "f32-planar", sampleRate: OUT_SR, numberOfFrames: n, numberOfChannels: 2,
       timestamp: Math.round(o * 1e6 / OUT_SR), data,
@@ -430,19 +474,22 @@ MC.exporter.encodeAudioFile = async (muxer, clip, fromLocalSec, durSec, onStatus
    hd:  1080p。YouTubeへ上げる人向け。時間がかかる(パソコン推奨)
    pro: 1080p高ビットレート。ディスクへ直接書けるパソコン限定
         (スマホはメモリ上限があり高ビットレートは尺が入らない) */
+/* 書き出しの画質は2択(2026-07-23 優さん指示)。
+   端末で分けない: OPFSでメモリ制約が消えたので、iPhoneでもフルHD 12Mbpsを出す */
 MC.exporter.QUALITIES = {
-  sns: { label: "SNS用",  scale: 2 / 3 },
-  hd:  { label: "1080p",  scale: 1 },
-  pro: { label: "高画質", scale: 1 },
+  full:  { label: "フルHD", scale: 1 },      // 1080p / 12Mbps
+  light: { label: "ライト", scale: 2 / 3 },  // 720p / 8Mbps
 };
+/* 旧IDからの移行(sns=720p→light / hd,pro=1080p→full) */
+MC.exporter.QUALITY_ALIAS = { sns: "light", hd: "full", pro: "full" };
 
 MC.exporter.isPC = () =>
   !MC.isIOS && !/Android/i.test(navigator.userAgent);
 
 MC.exporter.quality = () => {
-  let q = MC.S.exportQuality || "sns";
-  if (q === "pro" && !MC.exporter.isPC()) q = "hd";   // 保存値がスマホに来ても壊れない
-  return q;
+  let q = MC.S.exportQuality || "full";
+  q = MC.exporter.QUALITY_ALIAS[q] || q;              // 旧IDの保存値を寄せる
+  return MC.exporter.QUALITIES[q] ? q : "full";
 };
 
 /* 書き出しの出力サイズ。プレビューはプリセットのまま、出力だけ変える */
@@ -456,41 +503,16 @@ MC.exporter.exportDims = () => {
 MC.exporter.videoBitrate = () => {
   const q = MC.exporter.quality();
   const sq = MC.S.preset === "1x1";
-  if (!MC.isIOS) {
-    /* パソコン: エンコードは全体の2%(実測)なので、ビットレートを上げても
-       速度にはほぼ響かない。proは高密度、snsは720pに十分な量 */
-    if (q === "pro") return sq ? 14e6 : 20e6;
-    if (q === "sns") return sq ? 6e6 : 8e6;
-    return sq ? 8e6 : 12e6;
-  }
-  const base = sq ? 8e6 : 12e6;
-  /* iPhone・iPad は完成MP4を丸ごとメモリに載せるしかない(showSaveFilePicker が
-     無くディスクへ直接書けない)。12Mbps だと2.8分ほどで上限に達して実用にならないため、
-     投稿先の実効レートに合わせて 5Mbps とし、書き出せる尺を優先する
-     (Instagram は実質5Mbps程度へ再圧縮。260MB で 2.8分 → 6.7分)。
-     マーチングは動きが細かく圧縮に厳しい素材なので、書き出しが荒いと感じたら
-     この値を上げる(そのぶん書き出せる尺は短くなる)。
-     Mac は据え置き。ディスクへ直接書けるので尺の制限を受けない */
-  /* 会員が書き出せる上限(8分30秒=510秒)を、iPhoneのメモリ上限(260MB)の
-     中に必ず収める。260MB×8÷510秒 − 音声192kbps ≒ 3.88Mbps。
-     5Mbps だと 6.7分でメモリ上限に当たり、「8分30秒まで書き出せる」と
-     案内しておきながら実際には弾かれていた(2026-07-21 実機で発覚)。
-     画質よりも「案内どおり書き出せること」を優先する */
-  /* ▼2026-07-23 Phase 1: OPFSへ逐次書き出せる端末では、上の「メモリに収める」
-     制約そのものが無くなる。3.8Mbpsはメモリ260MBのために払っていた画質の犠牲
-     なので、制約が消えたらパソコンと同じ本来のレートへ戻す。
-     マーチングは動きが細かく圧縮に厳しいため、ここが効く */
+  /* メモリに溜めずに書ける環境(ディスク直書き or OPFS)なら、端末で差をつけない。
+     iPhoneを3.8Mbpsに落としていたのは「完成MP4を丸ごとメモリに載せる」制約の
+     ためであって、その制約は Phase 1 で消えた(2026-07-23 優さん指示で12Mbpsへ) */
   if (MC.exporter.streamingOut()) {
-    if (q === "sns") return sq ? 6e6 : 8e6;
-    /* iOSは 8Mbps に留める。12Mbps だと 510秒で765MBになり、カメラロールへの
-       コピーと端末容量に重い。8Mbps(523MB)が画質と取り回しの均衡点で、
-       YouTube の 1080p30 推奨と同じ(2026-07-20 検討メモの採用案どおり) */
-    if (MC.isIOS) return sq ? 6e6 : 8e6;
-    return base;                                  // パソコンは 12e6(正方形は8e6)
+    return q === "light" ? (sq ? 6e6 : 8e6) : (sq ? 8e6 : 12e6);
   }
-  /* 旧経路(OPFS非対応の端末)はこれまで通り3.8Mbps固定。
-     snsモードはこの同じ量を720pに使うので、密度が2.25倍になる */
-  return 3.8e6;
+  /* 旧経路(OPFSもディスク直書きも使えない端末)だけは、メモリ上限に
+     8分30秒を収めるため3.8Mbpsに留める */
+  if (MC.isIOS) return 3.8e6;
+  return q === "light" ? (sq ? 6e6 : 8e6) : (sq ? 8e6 : 12e6);
 };
 
 /** 完成MP4をメモリに溜めずに書ける環境か(ディスク直書き or OPFS) */

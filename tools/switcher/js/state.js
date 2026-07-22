@@ -22,7 +22,7 @@ window.MC = {
     wipePos: "br", wipePos2: "bl", wipeSize: 0.32,
     /* Phase 3: 仕上げ */
     colorOn: true, colorStrength: 0.8,   // カラー自動マッチは初期ON(同期後に自動実行)
-    horizonOn: false,     // 自動水平補正のマスターON/OFF(仕上げ)
+    horizonOn: true,      // 自動傾き修正(既定ON。2026-07-23 優さん指示)
     filterId: "marchinz",  // MarchinZルックが初期フィルター
     autoTrim: true,        // 最初と最後の自動カット(サリュートIN+音終了10秒後OUT)
     /* 境界線(分割レイアウトのセル間+ワイプ小窓の枠) */

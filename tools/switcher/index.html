@@ -17,7 +17,7 @@
 <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
 <link rel="stylesheet" href="/tools/shared/progress.css">
 <link rel="stylesheet" href="/tools/shared/journey.css">
-<link rel="stylesheet" href="css/style.css?v=1.39.69">
+<link rel="stylesheet" href="css/style.css?v=1.39.70">
 <link rel="stylesheet" href="/tools/shared/sitechrome.css">
 </head>
 <body data-mz-tool="switcher">
@@ -96,9 +96,18 @@
     </section>
 
     <section class="panel" id="placeSec" hidden>
-      <h2>カメラの配置</h2>
+      <h2><span class="place-title">カメラの配置と傾き</span></h2>
       <p class="sec-lead place-lead">画面のどこに置くかを確認してください。入れ替えできます。</p>
       <div id="placeRows" class="place-rows"></div>
+      <div id="tiltBox" class="tilt-box" hidden>
+        <label class="tilt-master">
+          <input type="checkbox" id="tiltToggle">
+          <span>傾きを自動で直す</span>
+          <span class="hint">0.1°ずつ調整できます</span>
+        </label>
+        <div id="tiltStatus" class="status"></div>
+        <div id="tiltRows"></div>
+      </div>
     </section>
 
     <div id="easyPane" class="easy-pane">
@@ -313,24 +322,24 @@
 <script src="vendor/mp4box.all.min.js"></script>
 <script src="vendor/mp4-muxer.min.js"></script>
 <script src="vendor/fft.js"></script>
-<script src="js/state.js?v=1.39.69"></script>
-<script src="js/layout.js?v=1.39.69"></script>
-<script src="js/media.js?v=1.39.69"></script>
-<script src="js/demux.js?v=1.39.69"></script>
-<script src="js/audio.js?v=1.39.69"></script>
-<script src="js/sync.js?v=1.39.69"></script>
-<script src="js/beats.js?v=1.39.69"></script>
-<script src="js/sections.js?v=1.39.69"></script>
-<script src="js/visual.js?v=1.39.69"></script>
-<script src="js/director.js?v=1.39.69"></script>
-<script src="js/colormatch.js?v=1.39.69"></script>
-<script src="js/horizon.js?v=1.39.69"></script>
-<script src="js/salute.js?v=1.39.69"></script>
-<script src="js/preview.js?v=1.39.69"></script>
-<script src="js/timeline.js?v=1.39.69"></script>
-<script src="js/cutmode.js?v=1.39.69"></script>
-<script src="js/exporter.js?v=1.39.69"></script>
-<script src="js/ui.js?v=1.39.69"></script>
-<script src="js/app.js?v=1.39.69"></script>
+<script src="js/state.js?v=1.39.70"></script>
+<script src="js/layout.js?v=1.39.70"></script>
+<script src="js/media.js?v=1.39.70"></script>
+<script src="js/demux.js?v=1.39.70"></script>
+<script src="js/audio.js?v=1.39.70"></script>
+<script src="js/sync.js?v=1.39.70"></script>
+<script src="js/beats.js?v=1.39.70"></script>
+<script src="js/sections.js?v=1.39.70"></script>
+<script src="js/visual.js?v=1.39.70"></script>
+<script src="js/director.js?v=1.39.70"></script>
+<script src="js/colormatch.js?v=1.39.70"></script>
+<script src="js/horizon.js?v=1.39.70"></script>
+<script src="js/salute.js?v=1.39.70"></script>
+<script src="js/preview.js?v=1.39.70"></script>
+<script src="js/timeline.js?v=1.39.70"></script>
+<script src="js/cutmode.js?v=1.39.70"></script>
+<script src="js/exporter.js?v=1.39.70"></script>
+<script src="js/ui.js?v=1.39.70"></script>
+<script src="js/app.js?v=1.39.70"></script>
 </body>
 </html>

@@ -217,6 +217,9 @@ MC.ui.checkExportable = () => {
 
 MC.ui.focusNextAction = () => {
   if (!MC.S.clips.length) return;
+  /* 取り込んだ直後に傾きを測り、「直した後」を見せる(2026-07-23 優さん指示)。
+     待たせないよう裏で走らせ、終わり次第プレビューへ反映する */
+  MC.ui.autoDetectTilt();
   setTimeout(() => {
     const btn = MC.ui.$("#easyStartBtn");
     if (!btn || btn.offsetParent === null) return;
@@ -819,19 +822,15 @@ MC.ui.renderExportMode = () => {
 MC.ui.renderQualityPicker = () => {
   const host = MC.ui.$("#qualityPicker");
   if (!host) return;
-  const pc = MC.exporter.isPC();
   const cur = MC.exporter.quality();
   /* スマホでもディスク(OPFS)へ直接書ける端末は、メモリのために画質を落とす
      必要がなくなった(2026-07-23 Phase 1)。「パソコン推奨」の但し書きは、
      本当に不利な端末にだけ出す。実態と違う遠慮はユーザーの損になる */
-  const streaming = MC.exporter.streamingOut();
   const defs = [
-    { id: "sns", name: "SNS用", tag: "おすすめ",
-      desc: "720p・軽くて速い" },
-    { id: "hd", name: "1080p", tag: "",
-      desc: "YouTube向け。時間がかかります" + (pc || streaming ? "" : "(パソコン推奨)") },
-    ...(pc ? [{ id: "pro", name: "高画質", tag: "パソコン限定",
-      desc: "1080p・高ビットレート" }] : []),
+    { id: "full", name: "フルHD", tag: "おすすめ",
+      desc: "1080p・12Mbps／いちばんきれい" },
+    { id: "light", name: "ライト", tag: "",
+      desc: "720p・8Mbps／速くて軽い" },
   ];
   host.innerHTML = defs.map(d => `
     <button type="button" class="q-card${d.id === cur ? " on" : ""}" role="radio"
@@ -865,41 +864,146 @@ MC.ui.renderPlacement = () => {
   const ids = vertical && L.rects
     ? MC.S.slots.slice(0, L.n).filter(id => id != null && MC.getClip(id))
     : [];
-  if (!vertical || ids.length < 2) { sec.hidden = true; return; }
+  const cams = MC.S.clips.filter(c => !c.isAudio && !c.isImage);
+  const showPlace = vertical && ids.length >= 2;
+  /* 傾き修正は縦型・横型どちらでも出す(2026-07-23 優さん指示)。
+     素材が1本でも傾きは直せるので、カメラが1つ以上あれば表示する */
+  const showTilt = cams.length >= 1;
+  if (!showPlace && !showTilt) { sec.hidden = true; return; }
   sec.hidden = false;
-  const POS = ids.length === 2 ? ["上", "下"] : ["上", "中", "下"];
+
+  const head = sec.querySelector("h2 .place-title");
+  if (head) head.textContent = showPlace ? "カメラの配置と傾き" : "カメラの傾き";
+  const lead = sec.querySelector(".place-lead");
+  if (lead) {
+    lead.textContent = showPlace
+      ? "画面のどこに置くかを確認してください。入れ替えできます。傾きも直せます。"
+      : "傾きを自動で直しています。気になるときは調整してください。";
+  }
+
+  /* --- 縦型: 上/中/下 の並び替え --- */
   rows.innerHTML = "";
-  ids.forEach((id, i) => {
-    const c = MC.getClip(id);
-    if (!c) return;
-    const row = document.createElement("div");
-    row.className = "place-row";
-    row.innerHTML = `
-      <span class="place-pos">${POS[i] || i + 1}</span>
-      ${c.thumb ? `<img class="place-thumb" src="${c.thumb}" alt="">` : '<span class="place-thumb place-thumb--empty"></span>'}
-      <span class="place-name">${MC.ui.esc(c.name)}</span>
-      <span class="place-btns">
-        <button type="button" class="place-move" data-d="-1" ${i === 0 ? "disabled" : ""} aria-label="上へ">▲</button>
-        <button type="button" class="place-move" data-d="1" ${i === ids.length - 1 ? "disabled" : ""} aria-label="下へ">▼</button>
-      </span>`;
-    row.querySelectorAll(".place-move").forEach(b => {
-      b.onclick = () => {
-        const j = i + parseInt(b.dataset.d);
-        if (j < 0 || j >= ids.length) return;
-        // スロット配列上の実位置を入れ替える(nullを飛ばした表示順→実indexへ)
-        const realIdx = [];
-        MC.S.slots.forEach((s, k) => {
-          if (s != null && MC.getClip(s) && realIdx.length < ids.length) realIdx.push(k);
-        });
-        const a = realIdx[i], bIdx = realIdx[j];
-        [MC.S.slots[a], MC.S.slots[bIdx]] = [MC.S.slots[bIdx], MC.S.slots[a]];
-        MC.saveState();
-        MC.ui.renderAll();
-        MC.preview.seek(MC.S.t);   // 入れ替えを即プレビューに反映
-      };
+  rows.hidden = !showPlace;
+  if (showPlace) {
+    const POS = ids.length === 2 ? ["上", "下"] : ["上", "中", "下"];
+    ids.forEach((id, i) => {
+      const c = MC.getClip(id);
+      if (!c) return;
+      const row = document.createElement("div");
+      row.className = "place-row";
+      row.innerHTML = `
+        <span class="place-pos">${POS[i] || i + 1}</span>
+        ${c.thumb ? `<img class="place-thumb" src="${c.thumb}" alt="">` : '<span class="place-thumb place-thumb--empty"></span>'}
+        <span class="place-name">${MC.ui.esc(c.name)}</span>
+        <span class="place-btns">
+          <button type="button" class="place-move" data-d="-1" ${i === 0 ? "disabled" : ""} aria-label="上へ">▲</button>
+          <button type="button" class="place-move" data-d="1" ${i === ids.length - 1 ? "disabled" : ""} aria-label="下へ">▼</button>
+        </span>`;
+      row.querySelectorAll(".place-move").forEach(b => {
+        b.onclick = () => {
+          const k = i + parseInt(b.dataset.d);
+          if (k < 0 || k >= ids.length) return;
+          const realIdx = [];
+          MC.S.slots.forEach((sl, x) => {
+            if (sl != null && MC.getClip(sl) && realIdx.length < ids.length) realIdx.push(x);
+          });
+          const a = realIdx[i], bIdx = realIdx[k];
+          [MC.S.slots[a], MC.S.slots[bIdx]] = [MC.S.slots[bIdx], MC.S.slots[a]];
+          MC.saveState();
+          MC.ui.renderAll();
+          MC.preview.seek(MC.S.t);
+        };
+      });
+      rows.appendChild(row);
     });
-    rows.appendChild(row);
-  });
+  }
+
+  MC.ui.renderTilt(cams, showTilt);
+};
+
+/* ---------- 自動傾き修正(確認ステップ内) ----------
+   0.1°刻み。既定ONで、取り込み直後に自動検出して「直した後」を見せる。
+   仕上げ欄にも同じ機能があったが、確認するのは素材を入れた直後がいちばん自然
+   (2026-07-23 優さん指示) */
+MC.ui.renderTilt = (cams, show) => {
+  const box = MC.ui.$("#tiltBox");
+  if (!box) return;
+  box.hidden = !show;
+  if (!show) return;
+  const on = !!MC.S.horizonOn;
+  box.querySelector("#tiltToggle").checked = on;
+  const list = box.querySelector("#tiltRows");
+  list.hidden = !on;
+  if (!on) { list.innerHTML = ""; return; }
+
+  list.innerHTML = "";
+  for (const c of cams) {
+    const row = document.createElement("div");
+    row.className = "tilt-row";
+    const rot = +(c.rot || 0);
+    row.innerHTML = `
+      <span class="tilt-name" title="${MC.ui.esc(c.name)}">${MC.ui.esc(c.name.length > 10 ? c.name.slice(0, 9) + "…" : c.name)}</span>
+      <button type="button" class="tilt-step" data-d="-0.1" aria-label="左へ0.1度">−</button>
+      <input type="range" class="tilt-range" min="-5" max="5" step="0.1" value="${rot}" aria-label="${MC.ui.esc(c.name)} の傾き">
+      <button type="button" class="tilt-step" data-d="0.1" aria-label="右へ0.1度">＋</button>
+      <span class="tilt-val">${rot.toFixed(1)}°</span>
+      <button type="button" class="btn small tilt-auto" title="もう一度自動で検出">自動</button>`;
+    const range = row.querySelector(".tilt-range");
+    const val = row.querySelector(".tilt-val");
+    const apply = v => {
+      c.rot = Math.max(-5, Math.min(5, Math.round(v * 10) / 10));   // 0.1°刻みに丸める
+      range.value = c.rot;
+      val.textContent = c.rot.toFixed(1) + "°";
+      MC.saveState();
+      MC.preview.draw();      // 直した後をその場で見せる
+    };
+    range.oninput = e => apply(parseFloat(e.target.value));
+    row.querySelectorAll(".tilt-step").forEach(b => {
+      b.onclick = () => apply((+c.rot || 0) + parseFloat(b.dataset.d));
+    });
+    row.querySelector(".tilt-auto").onclick = async ev => {
+      ev.target.disabled = true;
+      try {
+        const sug = await MC.horizon.suggest(c);
+        if (sug == null || sug === 0) MC.ui.toast(`${c.name}: 傾きは見つかりませんでした`);
+        else { apply(sug); MC.ui.toast(`${c.name}: ${sug.toFixed(1)}° 直しました`); }
+      } finally { ev.target.disabled = false; }
+    };
+    list.appendChild(row);
+  }
+
+  box.querySelector("#tiltToggle").onchange = async e => {
+    MC.S.horizonOn = e.target.checked;
+    MC.saveState();
+    if (MC.S.horizonOn) await MC.ui.autoDetectTilt();
+    MC.ui.renderPlacement();
+    MC.preview.draw();
+  };
+};
+
+/* 未検出のカメラだけ自動で傾きを測る。手で直した値は上書きしない */
+MC.ui._tiltBusy = false;
+MC.ui.autoDetectTilt = async () => {
+  if (MC.ui._tiltBusy || !MC.S.horizonOn) return;
+  const todo = MC.S.clips.filter(c => !c.isAudio && !c.isImage && c.rot == null);
+  if (!todo.length) return;
+  MC.ui._tiltBusy = true;
+  const st = MC.ui.$("#tiltStatus");
+  if (st) st.textContent = "傾きを見ています…";
+  try {
+    for (const c of todo) {
+      try {
+        const sug = await MC.horizon.suggest(c);
+        c.rot = (sug == null) ? 0 : sug;    // 測れなかったら0(=再測定しない印)
+      } catch (_) { c.rot = 0; }
+    }
+    MC.saveState();
+  } finally {
+    MC.ui._tiltBusy = false;
+    if (st) st.textContent = "";
+    MC.ui.renderPlacement();
+    MC.preview.draw();
+  }
 };
 
 /* おまかせの説明。カット割をするのはスイッチング/ワイプのときだけなので、
@@ -1076,7 +1180,7 @@ MC.ui.renderTotalEta = (dur, tIn, tOut) => {
 
   const anaSec = clips.length * showSec * MC.ui.analysisRate();
   let expFactor = MC.ui.exportMode() === "realtime" ? 1.15 : (MC.isIOS ? 1.8 : 0.9);
-  if (MC.exporter.quality() === "sns") expFactor *= 0.8;
+  if (MC.exporter.quality() === "light") expFactor *= 0.8;
   const expSec = showSec * expFactor;
 
   /* 1分未満は「1分ほど」に丸める。秒まで出すと正確に見えすぎる */
@@ -1375,7 +1479,7 @@ MC.ui.updateTransport = () => {
       /* iPhone/iPadは実時間の約1.8倍。パソコンは同じ処理でもずっと速いので
          過大な数字を見せない(レビュー指摘)。実時間録画は尺そのもの+仕上げ */
       let factor = MC.ui.exportMode() === "realtime" ? 1.15 : (MC.isIOS ? 1.8 : 0.9);
-      if (MC.exporter.quality() === "sns") factor *= 0.8;   // 720pは実測22%速い
+      if (MC.exporter.quality() === "light") factor *= 0.8;   // 720pは実測22%速い
       const estMin = Math.max(1, Math.round(sec * factor / 60));
       const end = new Date(Date.now() + sec * factor * 1000);
       const endTxt = `${end.getHours()}:${String(end.getMinutes()).padStart(2, "0")}頃`;
