@@ -476,11 +476,22 @@ MC.exporter.videoBitrate = () => {
      5Mbps だと 6.7分でメモリ上限に当たり、「8分30秒まで書き出せる」と
      案内しておきながら実際には弾かれていた(2026-07-21 実機で発覚)。
      画質よりも「案内どおり書き出せること」を優先する */
-  /* iPhoneはどの画質モードでも3.8Mbps固定(メモリ260MBに8分30秒を収める制約)。
+  /* ▼2026-07-23 Phase 1: OPFSへ逐次書き出せる端末では、上の「メモリに収める」
+     制約そのものが無くなる。3.8Mbpsはメモリ260MBのために払っていた画質の犠牲
+     なので、制約が消えたらパソコンと同じ本来のレートへ戻す。
+     マーチングは動きが細かく圧縮に厳しいため、ここが効く */
+  if (MC.exporter.streamingOut()) {
+    if (q === "sns") return sq ? 6e6 : 8e6;
+    return base;                                  // hd/pro は 12e6(正方形は8e6)
+  }
+  /* 旧経路(OPFS非対応の端末)はこれまで通り3.8Mbps固定。
      snsモードはこの同じ量を720pに使うので、密度が2.25倍になる */
-  void base;
   return 3.8e6;
 };
+
+/** 完成MP4をメモリに溜めずに書ける環境か(ディスク直書き or OPFS) */
+MC.exporter.streamingOut = () =>
+  !!window.showSaveFilePicker || MC.exporter.opfsSupported();
 
 /* この端末で書き出せる最大の秒数。案内と自動調整の両方で使う */
 /* ============ OPFS への逐次書き出し(Phase 1 / 2026-07-23) ============
@@ -532,16 +543,41 @@ MC.exporter.opfsRemove = async name => {
   } catch (e) { /* 無ければそれでよい */ }
 };
 
-/** 起動時の掃除。前回の失敗で残った書きかけを消す(容量を食い続けないように) */
-MC.exporter.opfsSweep = async keepName => {
+/** 起動時の掃除。前回の失敗で残った書きかけを消す(容量を食い続けないように)。
+    **6時間より新しいファイルは触らない**: 別タブが今まさに書き出している最中に
+    新しいタブを開くと、その書きかけを消してしまうため(レビュー指摘 2026-07-23) */
+MC.exporter.OPFS_STALE_MS = 6 * 60 * 60 * 1000;
+MC.exporter.opfsSweep = async () => {
   if (!MC.exporter.opfsSupported()) return;
   try {
     const root = await navigator.storage.getDirectory();
     const dir = await root.getDirectoryHandle(MC.exporter.OPFS_DIR, { create: false });
-    for await (const [n] of dir.entries()) {
-      if (n !== keepName) await dir.removeEntry(n).catch(() => {});
+    const now = Date.now();
+    for await (const [n, h] of dir.entries()) {
+      try {
+        const f = await h.getFile();
+        if (now - f.lastModified < MC.exporter.OPFS_STALE_MS) continue;  // 進行中かも
+      } catch (e) { /* 読めないものは古いとみなして消す */ }
+      await dir.removeEntry(n).catch(() => {});
     }
   } catch (e) { /* ディレクトリが無ければ何もしない */ }
+};
+
+/** 書き出し前に空き容量を確かめる。足りないなら「始める前に」断る。
+    走り出してから途中で失敗するのがいちばん損(数分が無駄になる) */
+MC.exporter.checkQuota = async needBytes => {
+  if (!navigator.storage || !navigator.storage.estimate) return;   // 測れないなら通す
+  let est;
+  try { est = await navigator.storage.estimate(); } catch (e) { return; }
+  if (!est || !isFinite(est.quota)) return;
+  const free = est.quota - (est.usage || 0);
+  const need = needBytes * 1.15;                    // ヘッダ等の余裕を15%見る
+  if (free >= need) return;
+  const gb = b => (b / 1e9).toFixed(1) + "GB";
+  throw new Error(
+    `端末の空き容量が足りません(必要 約${gb(need)} / 空き 約${gb(free)})。` +
+    "不要な写真や動画を減らすか、書き出す範囲をINとOUTで短くしてください。"
+  );
 };
 
 MC.exporter.maxExportableSec = () => {
@@ -616,10 +652,17 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
       writable = await saveHandle.createWritable();
       target = new Mp4Muxer.FileSystemWritableFileStreamTarget(writable);
       MC.log("export: ファイルへ直接書き込みます(メモリに溜めません)");
-    } else if ((opfs = await MC.exporter.opfsCreate(outName))) {
+    } else if (MC.exporter.opfsSupported() &&
+               (await MC.exporter.checkQuota(MC.exporter.estimateBytes()), true) &&
+               (opfs = await MC.exporter.opfsCreate(outName))) {
       writable = opfs.writable;
       target = new Mp4Muxer.FileSystemWritableFileStreamTarget(writable);
-      await MC.exporter.opfsSweep(outName);   // 前回の書きかけを掃除
+      /* 一括sweepはしない。別タブが書き出し中だと、その書きかけを消してしまう
+         (レビュー指摘 2026-07-23)。片付けるのは「このタブの前回分」だけ */
+      if (MC.exporter._opfsName && MC.exporter._opfsName !== outName) {
+        MC.exporter.opfsRemove(MC.exporter._opfsName);
+      }
+      MC.exporter._opfsName = null;
       MC.log("export: OPFSへ逐次書き込みます(メモリに溜めません)");
     } else {
       target = new Mp4Muxer.ArrayBufferTarget();
@@ -874,6 +917,7 @@ MC.exporter.releaseOpfs = () => {
   const n = MC.exporter._opfsName;
   if (!n) return;
   MC.exporter._opfsName = null;
+  MC.exporter.lastResult = null;
   MC.exporter.opfsRemove(n);
 };
 MC.exporter._shareMode = null;

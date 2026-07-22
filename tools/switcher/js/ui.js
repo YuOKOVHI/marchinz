@@ -98,7 +98,8 @@ MC.ui.saveResult = async () => {
   } else {
     MC.exporter.triggerDownload(r.blob, r.name);
   }
-  MC.exporter.releaseOpfs();   // 保存し終えたら書き出し用ファイルを片付ける
+  /* ここでは消さない。保存 → ダウンロード と続けて押されると2回目が失敗する
+     (レビュー指摘 2026-07-23)。片付けは「次の書き出し」「やり直し」「起動時」で行う */
 };
 
 MC.ui.fmtTime = s => {
@@ -145,6 +146,7 @@ MC.ui.resetProject = () => {
   MC.S.cutList = [];
   MC.restoreInfo = { sync: 0, cuts: false, trim: false };
   try { localStorage.removeItem("marchcut_project"); } catch (_) {}
+  MC.exporter.releaseOpfs();   // 書き出し済みファイルもここで片付ける
   MC.ui.clearErrorLog();
   MC.ui.resetEasyDone();
   MC.ui.renderRestoreNote();
@@ -175,8 +177,9 @@ MC.ui.checkExportable = () => {
   if (sec <= limit) return;                        // 収まっている=アルゴリズムの結果を尊重
 
   /* 詰める長さは「ショウ1本ぶん」の 8分30秒 を基本にする。
-     端末上限(8分41秒など)の半端な数字ではなく、案内している上限と同じ
-     キリのいい長さに揃える。ゲスト等で上限がさらに短ければそちらに従う */
+     この数字の根拠は**マーチングのショウが規定8分**であること(2026-07-23 優さん確認)。
+     端末のメモリ上限から逆算した数字ではないので、端末が速くなっても変えない。
+     ゲスト等で上限がさらに短ければそちらに従う */
   const SHOW_SEC = 510;                            // 8分30秒
   const fitSec = Math.min(limit, isFinite(roleMax) ? roleMax : SHOW_SEC);
   const byDevice = hardMax <= roleMax;             // どちらの制限で止まっているか
@@ -818,11 +821,15 @@ MC.ui.renderQualityPicker = () => {
   if (!host) return;
   const pc = MC.exporter.isPC();
   const cur = MC.exporter.quality();
+  /* スマホでもディスク(OPFS)へ直接書ける端末は、メモリのために画質を落とす
+     必要がなくなった(2026-07-23 Phase 1)。「パソコン推奨」の但し書きは、
+     本当に不利な端末にだけ出す。実態と違う遠慮はユーザーの損になる */
+  const streaming = MC.exporter.streamingOut();
   const defs = [
     { id: "sns", name: "SNS用", tag: "おすすめ",
-      desc: MC.isIOS ? "720p・きれいで速い" : "720p・軽くて速い" },
+      desc: "720p・軽くて速い" },
     { id: "hd", name: "1080p", tag: "",
-      desc: "YouTube向け。時間がかかります" + (pc ? "" : "(パソコン推奨)") },
+      desc: "YouTube向け。時間がかかります" + (pc || streaming ? "" : "(パソコン推奨)") },
     ...(pc ? [{ id: "pro", name: "高画質", tag: "パソコン限定",
       desc: "1080p・高ビットレート" }] : []),
   ];
@@ -1673,7 +1680,6 @@ MC.ui.wire = () => {
   $("#cancelBtn").onclick = () => { MC.exporter.cancelFlag = true; };
   $("#saveBtn").onclick = () => MC.ui.saveResult();
   $("#downloadBtn").onclick = () => {
-    MC.exporter.releaseOpfs();
     const r = MC.exporter.lastResult;
     if (r) MC.exporter.triggerDownload(r.blob, r.name);
   };
