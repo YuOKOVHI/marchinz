@@ -2101,6 +2101,9 @@
         profile_birthdate,
         profile_bio: String(data.profile_bio ?? "").trim(),
         profile_attributes,
+        /* 画面の出し分け用(ファン/プレイヤー/クリエイター)。未設定は空で返し、
+           MZUserType 側で「ファン」に倒す(既存の登録者を驚かせない) */
+        user_type: String(data.user_type ?? "").trim(),
         legal_policy_accepted_version: String(data.legal_policy_accepted_version ?? "").trim(),
         b_test_consent_version: String(data.b_test_consent_version ?? "").trim(),
         b_test_opt_in: data.b_test_opt_in === true,
@@ -2311,6 +2314,14 @@
 
   async function refreshProfileView(user) {
     const p = await fetchProfile(user);
+    /* ユーザータイプの確定。登録の途中で選んでいればそれを採用し、
+       無ければ保存済みの値、それも無ければ「ファン」に倒して書き戻す
+       (2026-07-21 優さん指示: 既存の登録者はファン扱い) */
+    if (window.MZUserType) {
+      const pending = MZUserType.takePending();
+      if (pending) MZUserType.set(pending);
+      else MZUserType.adoptRemote(p);
+    }
     applyWithdrawnUi(Boolean(p.withdrawn));
     await hydrateProfileForm().catch(() => {});
     profileHeaderLabelPending = false;

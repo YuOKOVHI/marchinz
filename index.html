@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-version="1.39.47">
+<html lang="ja" data-mz-version="1.39.48">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -603,6 +603,13 @@
           <p class="mz-settings-lead">
             <a href="#" id="mz-settings-link-profile-edit" class="static-panel-link">プロフィール編集</a>
           </p>
+          <section class="mz-usertype-section" aria-labelledby="mz-usertype-heading">
+            <h3 id="mz-usertype-heading" class="mz-settings-subheading">表示のタイプ</h3>
+            <p class="static-panel-text mz-usertype-note">
+              いちばん使うものが上に来るように、TOPとメニューの並びが変わります。あとから何度でも変えられます。
+            </p>
+            <div class="mz-usertype-choices" role="radiogroup" aria-labelledby="mz-usertype-heading" id="mz-usertype-choices"></div>
+          </section>
           <section class="mz-settings-b-test-section" aria-labelledby="mz-b-test-settings-heading">
             <h3 id="mz-b-test-settings-heading" class="mz-settings-subheading">βテスト</h3>
             <p class="static-panel-text mz-settings-b-test-note">
@@ -803,6 +810,13 @@
           <p class="static-panel-lead auth-entry-lead">
             マーチンズに登録すると、MarchinZ Log・MarchinZ Note・MarchinZ Boardといったコミュニティやイベント機能をご利用いただけます。ログイン／登録の方法は Google認証でご利用いただけます。
           </p>
+          <section class="mz-usertype-signup" aria-labelledby="mz-usertype-signup-h">
+            <h3 id="mz-usertype-signup-h" class="mz-usertype-signup-head">どれにいちばん近いですか？</h3>
+            <p class="mz-usertype-signup-note">
+              TOPとメニューの並びが、その人に合わせて変わります。あとから設定でいつでも変えられます。
+            </p>
+            <div class="mz-usertype-choices" role="radiogroup" aria-labelledby="mz-usertype-signup-h" id="mz-usertype-signup-choices"></div>
+          </section>
           <div id="auth-entry-signup-block" class="auth-entry-signup-consent-block">
             <p class="auth-register-lead">
               <a href="#terms" class="auth-inline-link">利用規約</a>および<a href="#privacy" class="auth-inline-link">プライバシーポリシー</a>を確認し、内容に同意してください。
@@ -1355,7 +1369,7 @@
             <div class="mll-lp-container">
               <h2 id="mz-gate-h" class="mll-lp-section-head">あなたに合わせた、3つの入口。</h2>
               <p class="mll-lp-section-sub">観る人も、演じる人も、つくる人も。よく使う機能へ、ここからまっすぐ。</p>
-              <div class="mz-gate-grid">
+              <div data-mz-top-sections class="mz-gate-grid">
                 <article class="mz-gate-card mz-gate-card--fan">
                   <p class="mz-gate-eyebrow" lang="en">FOR FANS</p>
                   <h3 class="mz-gate-title"><i class="fa-solid fa-hands-clapping" aria-hidden="true"></i> 観る・応援する</h3>
@@ -1448,7 +1462,7 @@
             </div>
           </section>
 
-          <section class="mll-lp-band" data-mz-top-section hidden aria-labelledby="mz-top-events-h">
+          <section class="mll-lp-band" data-mz-top-section="community" hidden aria-labelledby="mz-top-events-h">
             <div class="mll-lp-container">
               <div class="mz-top-fresh-head">
                 <h2 id="mz-top-events-h" class="mll-lp-section-head">近日開催予定</h2>
@@ -1473,13 +1487,13 @@
             </div>
           </section>
 
-          <section class="mll-lp-band" data-mz-top-section hidden aria-label="今週のマーチング">
+          <section class="mll-lp-band" data-mz-top-section="digest" hidden aria-label="今週のマーチング">
             <div class="mll-lp-container">
               <div id="mz-top-digest" hidden></div>
             </div>
           </section>
 
-          <section class="mll-lp-band" data-mz-top-section hidden aria-labelledby="mz-top-yt-h">
+          <section class="mll-lp-band" data-mz-top-section="youtube" hidden aria-labelledby="mz-top-yt-h">
             <div class="mll-lp-container">
               <div class="mz-top-fresh-head">
                 <h2 id="mz-top-yt-h" class="mll-lp-section-head">YouTube 新着</h2>
@@ -1489,7 +1503,7 @@
             </div>
           </section>
 
-          <section class="mll-lp-band" data-mz-top-section hidden aria-labelledby="mz-top-fresh-h">
+          <section class="mll-lp-band" data-mz-top-section="videos" hidden aria-labelledby="mz-top-fresh-h">
             <div class="mll-lp-container">
               <div class="mz-top-fresh-head">
                 <h2 id="mz-top-fresh-h" class="mll-lp-section-head">新着の大会動画</h2>
@@ -1499,7 +1513,7 @@
             </div>
           </section>
 
-          <section class="mll-lp-band" data-mz-top-section hidden aria-labelledby="mz-top-note-h">
+          <section class="mll-lp-band" data-mz-top-section="webmagazine" hidden aria-labelledby="mz-top-note-h">
             <div class="mll-lp-container">
               <div class="mz-top-fresh-head">
                 <h2 id="mz-top-note-h" class="mll-lp-section-head">新着note</h2>
@@ -4046,8 +4060,10 @@
     <script defer src="marchinz-image-compress.js?v=1.27.1"></script>
     <script defer src="marchinz-rate-limit.js?v=1.25.64"></script>
     <script defer src="marchinz-toast.js?v=1.39.6"></script>
+    <script defer src="marchinz-usertype.js?v=1.39.48"></script>
+    <script defer src="marchinz-usertype-ui.js?v=1.39.48"></script>
     <script defer src="auth-config.js?v=1.26.0"></script>
-    <script defer src="auth.js?v=1.39.30"></script>
+    <script defer src="auth.js?v=1.39.48"></script>
     <script defer src="marchinz-admin-ugc-log.js?v=1.26.65"></script>
     <script defer src="marchinz-community-updates.js?v=1.26.28"></script>
     <script defer src="marchinz-b-test.js?v=1.25.64"></script>

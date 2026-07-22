@@ -4487,3 +4487,49 @@ body {
   font-size: 2.2rem;
 }
 
+
+
+/* ============ ユーザータイプ(表示のタイプ) 2026-07-21 ============ */
+.mz-usertype-section { margin: 1rem 0 0.5rem; }
+.mz-usertype-note { margin: 0 0 0.6rem; font-size: 0.78rem; line-height: 1.7; color: var(--muted); }
+.mz-usertype-choices { display: flex; flex-direction: column; gap: 0.5rem; }
+.mz-usertype-card {
+  display: flex; align-items: center; gap: 0.7rem;
+  width: 100%; padding: 0.75rem 0.85rem;
+  border: 1.5px solid var(--border); border-radius: 0.85rem;
+  background: #fff; text-align: left; cursor: pointer;
+  font-family: inherit;
+}
+.mz-usertype-card:hover { border-color: var(--blue); }
+.mz-usertype-card.on { border-color: var(--blue); background: rgba(30, 79, 214, 0.05); }
+.mz-usertype-icon {
+  display: grid; place-items: center; flex-shrink: 0;
+  width: 2.2rem; height: 2.2rem; border-radius: 50%;
+  background: rgba(30, 79, 214, 0.1); color: var(--blue); font-size: 0.9rem;
+}
+.mz-usertype-card.on .mz-usertype-icon { background: var(--blue); color: #fff; }
+.mz-usertype-body { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; flex: 1; }
+.mz-usertype-label { font-size: 0.87rem; font-weight: 700; }
+.mz-usertype-desc { font-size: 0.72rem; line-height: 1.6; color: var(--muted); }
+.mz-usertype-check { color: var(--border); flex-shrink: 0; }
+.mz-usertype-card.on .mz-usertype-check { color: var(--blue); }
+
+/* メニュー上部の「◯◯向けメニューを表示中」 */
+.mz-drawer-usertype {
+  display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;
+  margin: 0 0 0.6rem; padding: 0.45rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 0.7rem; color: rgba(255, 255, 255, 0.72);
+}
+.mz-drawer-usertype i { color: var(--yellow, #f5c518); }
+.mz-drawer-usertype-btn {
+  margin-left: auto; padding: 0.2rem 0.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.28); border-radius: 999px;
+  background: none; color: #fff; font-size: 0.68rem; font-family: inherit; cursor: pointer;
+}
+.mz-drawer-usertype-btn:hover { background: rgba(255, 255, 255, 0.14); }
+
+.mz-usertype-signup { margin: 1rem 0 1.2rem; }
+.mz-usertype-signup-head { margin: 0 0 0.3rem; font-size: 0.95rem; font-weight: 800; }
+.mz-usertype-signup-note { margin: 0 0 0.7rem; font-size: 0.78rem; line-height: 1.7; color: var(--muted); }
