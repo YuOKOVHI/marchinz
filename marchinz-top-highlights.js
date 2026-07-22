@@ -44,11 +44,24 @@
     return node;
   }
 
+  /* YouTubeのURLならサイト内プレイヤー(app.jsのモーダル)で開く。
+     プレイヤーが無い/YouTube以外(note等)は通常のリンク遷移のまま(2026-07-23 優さん指示) */
+  function wireInSitePlayer(a, url, titleHint) {
+    if (!extractVideoId(url)) return;
+    a.addEventListener("click", function (e) {
+      var P = window.MarchinZYouTubePlayer;
+      if (!P || !P.openEmbed) return;   // フォールバック: そのままYouTubeへ
+      e.preventDefault();
+      P.openEmbed(url, { titleHint: titleHint || "", anchor: a });
+    });
+  }
+
   function buildVideoCard(opts) {
     var a = el("a", "mz-video-card");
     a.href = opts.url;
     a.target = "_blank";
     a.rel = "noopener noreferrer";
+    wireInSitePlayer(a, opts.url, opts.title);
 
     var thumbWrap = el("div", "mz-video-card-thumb-wrap");
     if (opts.thumb) {
@@ -451,6 +464,13 @@
         thumb.src = thumbUrl(extractVideoId(latest["最新動画URL"]));
         title.textContent = latest["最新動画タイトル"] || "最新動画";
         link.hidden = false;
+        // ヒーローの最新動画もサイト内プレイヤーで。再描画で重複しないよう onclick 代入
+        link.onclick = function (e) {
+          var P = window.MarchinZYouTubePlayer;
+          if (!P || !P.openEmbed) return;
+          e.preventDefault();
+          P.openEmbed(latest["最新動画URL"], { titleHint: latest["最新動画タイトル"] || "最新動画", anchor: link });
+        };
       }
     }
 

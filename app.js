@@ -2131,7 +2131,64 @@
   function onYoutubeEmbedKeydown(ev) {
     if (ev.key !== "Escape") return;
     if (!youtubeEmbedOverlayEl || youtubeEmbedOverlayEl.hidden) return;
+    if (youtubeEmbedMini) return; // ミニプレイヤー中はモーダルではないのでEscで閉じない
     closeYouTubeEmbedModal();
+  }
+
+  /* ---------- ミニプレイヤー(2026-07-23 優さん指示「再生システムの改善」) ----------
+     モーダルを畳んでも再生を続け、右下の小窓でサイトを回遊できる。
+     iframe の src を触らない(=再生を切らない)のが肝。閉じる(×)だけが停止 */
+  /** @type {boolean} */
+  let youtubeEmbedMini = false;
+
+  function minimizeYouTubeEmbedModal() {
+    if (!youtubeEmbedOverlayEl || youtubeEmbedOverlayEl.hidden || youtubeEmbedMini) return;
+    youtubeEmbedMini = true;
+    youtubeEmbedOverlayEl.classList.add("mz-yt-mini");
+    applyMiniGeometry();
+    youtubeEmbedOverlayEl.setAttribute("aria-modal", "false");
+    document.documentElement.classList.remove("mz-youtube-embed-open"); // スクロール解放
+    const t = youtubeEmbedOverlayEl.querySelector(".mz-yt-mini-bar-title");
+    if (t && youtubeEmbedTitleEl) t.textContent = youtubeEmbedTitleEl.textContent;
+  }
+
+  function restoreYouTubeEmbedModal() {
+    if (!youtubeEmbedOverlayEl || !youtubeEmbedMini) return;
+    youtubeEmbedMini = false;
+    youtubeEmbedOverlayEl.classList.remove("mz-yt-mini");
+    youtubeEmbedOverlayEl.setAttribute("aria-modal", "true");
+    clearMiniGeometry();
+    document.documentElement.classList.add("mz-youtube-embed-open");
+  }
+
+  /* 小窓の寸法・位置はインラインで確定させる。
+     フルサイズ用の `width:100%` 等が後方の @media にあり、クラス側では
+     詳細度を上げても負けたため(2026-07-23 実測) */
+  function miniDialogEl() {
+    return youtubeEmbedOverlayEl?.querySelector(".mz-dialog") || null;
+  }
+  function applyMiniGeometry() {
+    const d = miniDialogEl();
+    if (!d) return;
+    const w = Math.round(Math.max(200, Math.min(320, window.innerWidth * 0.62)));
+    d.style.setProperty("position", "fixed", "important");
+    d.style.setProperty("width", w + "px", "important");
+    d.style.setProperty("max-width", w + "px", "important");
+    d.style.setProperty("left", "auto", "important");
+    d.style.setProperty("top", "auto", "important");
+    d.style.setProperty("right", "12px", "important");
+    d.style.setProperty(
+      "bottom",
+      "calc(var(--mz-tabbar-h, 0px) + env(safe-area-inset-bottom, 0px) + 12px)",
+      "important"
+    );
+    d.style.setProperty("max-height", "none", "important");
+  }
+  function clearMiniGeometry() {
+    const d = miniDialogEl();
+    if (!d) return;
+    ["position", "width", "max-width", "left", "top", "right", "bottom", "max-height"]
+      .forEach((k) => d.style.removeProperty(k));
   }
 
   function showYouTubeEmbedFullscreenHint() {
@@ -2170,7 +2227,12 @@
 
   function closeYouTubeEmbedModal() {
     if (!youtubeEmbedOverlayEl) return;
-    const returnAnchor = youtubeEmbedReturnAnchor;
+    const wasMini = youtubeEmbedMini;
+    youtubeEmbedMini = false;
+    youtubeEmbedOverlayEl.classList.remove("mz-yt-mini");
+    youtubeEmbedOverlayEl.setAttribute("aria-modal", "true");
+    clearMiniGeometry();
+    const returnAnchor = wasMini ? null : youtubeEmbedReturnAnchor; // ミニからの×は現在地に留まる
     youtubeEmbedReturnAnchor = null;
     if (document.fullscreenElement || document.webkitFullscreenElement) {
       const exit =
@@ -2243,6 +2305,10 @@
     qualityHint.textContent = "画質はプレイヤー内の ⚙️ から変更できます";
     const footActions = document.createElement("div");
     footActions.className = "mz-youtube-embed-foot-actions";
+    const miniBtn = document.createElement("button");
+    miniBtn.type = "button";
+    miniBtn.className = "mz-youtube-embed-mini-btn";
+    miniBtn.innerHTML = '<i class="fa-solid fa-down-left-and-up-right-to-center" aria-hidden="true"></i> 小さくして見る';
     const fullscreenBtn = document.createElement("button");
     fullscreenBtn.type = "button";
     fullscreenBtn.className = "mz-youtube-embed-fullscreen-btn";
@@ -2252,10 +2318,28 @@
     openExt.target = "_blank";
     openExt.rel = "noopener noreferrer";
     openExt.textContent = "YouTubeで開く";
-    footActions.append(fullscreenBtn, openExt);
+    footActions.append(miniBtn, fullscreenBtn, openExt);
     foot.append(qualityHint, footActions);
 
-    dialog.append(head, body, foot);
+    /* ミニプレイヤーの小窓ヘッダー(縮小中だけCSSで表示)。
+       動画部分は iframe がタップを取るので、操作はこのバーに集める */
+    const miniBar = document.createElement("div");
+    miniBar.className = "mz-yt-mini-bar";
+    const miniTitle = document.createElement("span");
+    miniTitle.className = "mz-yt-mini-bar-title";
+    const miniExpand = document.createElement("button");
+    miniExpand.type = "button";
+    miniExpand.className = "mz-yt-mini-bar-btn";
+    miniExpand.setAttribute("aria-label", "大きく戻す");
+    miniExpand.innerHTML = '<i class="fa-solid fa-up-right-and-down-left-from-center" aria-hidden="true"></i>';
+    const miniClose = document.createElement("button");
+    miniClose.type = "button";
+    miniClose.className = "mz-yt-mini-bar-btn";
+    miniClose.setAttribute("aria-label", "再生をやめて閉じる");
+    miniClose.innerHTML = '<i class="fa-solid fa-xmark" aria-hidden="true"></i>';
+    miniBar.append(miniTitle, miniExpand, miniClose);
+
+    dialog.append(miniBar, head, body, foot);
     overlay.appendChild(dialog);
     document.body.appendChild(overlay);
 
@@ -2267,6 +2351,31 @@
 
     fullscreenBtn.addEventListener("click", () => {
       void requestYouTubeEmbedFullscreen();
+    });
+
+    miniBtn.addEventListener("click", minimizeYouTubeEmbedModal);
+    window.addEventListener("resize", () => { if (youtubeEmbedMini) applyMiniGeometry(); }, { passive: true });
+    miniExpand.addEventListener("click", restoreYouTubeEmbedModal);
+    miniClose.addEventListener("click", closeYouTubeEmbedModal);
+
+    /* ヘッダーを下へスワイプ→ミニプレイヤー(YouTubeアプリと同じ操作感)。
+       iframe上のスワイプは取れないので、掴めるのはヘッダーだけ */
+    let swipeY = null;
+    head.addEventListener("touchstart", (ev) => {
+      if (youtubeEmbedMini || ev.touches.length !== 1) return;
+      swipeY = ev.touches[0].clientY;
+    }, { passive: true });
+    head.addEventListener("touchmove", (ev) => {
+      if (swipeY == null) return;
+      const dy = ev.touches[0].clientY - swipeY;
+      dialog.style.transform = dy > 0 ? `translateY(${Math.min(dy, 160)}px)` : "";
+    }, { passive: true });
+    head.addEventListener("touchend", (ev) => {
+      if (swipeY == null) return;
+      const dy = (ev.changedTouches[0]?.clientY ?? swipeY) - swipeY;
+      swipeY = null;
+      dialog.style.transform = "";
+      if (dy > 80) minimizeYouTubeEmbedModal();
     });
 
     youtubeEmbedOverlayEl = overlay;
@@ -2292,6 +2401,7 @@
     }
     youtubeEmbedReturnAnchor = opts.anchor instanceof Element ? opts.anchor : null;
     const overlay = ensureYoutubeEmbedOverlay();
+    if (youtubeEmbedMini) restoreYouTubeEmbedModal(); // ミニ再生中に別の動画を開いたら全画面へ戻す
     const titleText = resolveYouTubeEmbedTitle(raw, opts);
     if (youtubeEmbedTitleEl) youtubeEmbedTitleEl.textContent = titleText;
     if (youtubeEmbedIframe) youtubeEmbedIframe.title = titleText;
@@ -3514,6 +3624,8 @@
   window.MarchinZYouTubePlayer = {
     openEmbed: openYouTubeEmbedModal,
     close: closeYouTubeEmbedModal,
+    minimize: minimizeYouTubeEmbedModal,
+    restore: restoreYouTubeEmbedModal,
     watchUrlWithForcedStart: youtubeWatchUrlWithForcedStart,
   };
 

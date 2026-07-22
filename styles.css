@@ -922,6 +922,80 @@ html.mz-youtube-embed-open {
   overflow: hidden;
 }
 
+/* ---------- ミニプレイヤー(2026-07-23) ----------
+   モーダルを畳んで右下の小窓で再生を続ける。オーバーレイは透明+クリック透過にし、
+   小窓だけが操作を受ける。タブバーとセーフエリアの上に載せる */
+.mz-dialog-overlay.mz-youtube-embed-overlay.mz-yt-mini {
+  pointer-events: none;
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  padding: 0;
+}
+.mz-dialog-overlay.mz-youtube-embed-overlay.mz-yt-mini .mz-dialog {
+  /* 位置と見た目のみ。寸法(width/left/top)は既存のフルサイズ用ルールと
+     競合して負けるため、JS側でインライン指定する(2026-07-23) */
+  pointer-events: auto;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 10px 32px rgba(10, 20, 40, 0.35);
+  animation: mzYtMiniIn 0.18s ease-out;
+}
+@keyframes mzYtMiniIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+.mz-dialog-overlay.mz-youtube-embed-overlay.mz-yt-mini .mz-dialog-head,
+.mz-dialog-overlay.mz-youtube-embed-overlay.mz-yt-mini .mz-dialog-foot {
+  display: none;
+}
+
+/* 小窓ヘッダー(縮小中だけ表示) */
+.mz-yt-mini-bar {
+  display: none;
+}
+.mz-dialog-overlay.mz-youtube-embed-overlay.mz-yt-mini .mz-yt-mini-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.3rem 0.25rem 0.55rem;
+  background: #fff;
+}
+.mz-yt-mini-bar-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.66rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mz-yt-mini-bar-btn {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.mz-yt-mini-bar-btn:active {
+  background: rgba(25, 40, 72, 0.08);
+}
+
+/* フッターの「小さくして見る」は全画面ボタンと同じ見た目の系統に */
+.mz-youtube-embed-mini-btn {
+  border: 1px solid rgba(25, 40, 72, 0.22);
+  border-radius: 8px;
+  background: #fff;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .auth-entry-lead strong {
   font-weight: 700;
 }
