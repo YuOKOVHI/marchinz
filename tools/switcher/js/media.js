@@ -3,6 +3,31 @@
 
 MC.media = { nextId: 1 };
 
+/* 中身の先頭バイトでコンテナ形式を見分ける。
+   拡張子とMIMEは端末が勝手に付けるので信用できない。
+   MP4/MOV以外は取り込みの時点で断る: 書き出しの最後で
+   「解析できません」と言われるのが最悪のため(2026-07-22 広報レビュー) */
+MC.media.sniffContainer = async f => {
+  try {
+    const buf = new Uint8Array(await f.slice(0, 16).arrayBuffer());
+    if (buf.length < 12) return { ok: false, kind: "壊れたファイル" };
+    const tag = String.fromCharCode(buf[4], buf[5], buf[6], buf[7]);
+    // MP4/MOVは必ず「サイズ+アトム名」で始まる(古いMOVはftyp以外もある)
+    if (["ftyp", "moov", "mdat", "free", "skip", "wide", "pnot", "uuid"].includes(tag)) {
+      return { ok: true };
+    }
+    if (buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3) {
+      return { ok: false, kind: "WebM/MKV形式" };
+    }
+    const head4 = String.fromCharCode(buf[0], buf[1], buf[2], buf[3]);
+    if (head4 === "RIFF") return { ok: false, kind: "AVI形式" };
+    if (head4 === "OggS") return { ok: false, kind: "Ogg形式" };
+    return { ok: false, kind: "MP4/MOV以外の形式" };
+  } catch (_) {
+    return { ok: true };   // 読めなかったら従来どおり先へ(ここで足止めしない)
+  }
+};
+
 MC.media.addFiles = async files => {
   let added = 0;
   for (const f of files) {
@@ -14,6 +39,12 @@ MC.media.addFiles = async files => {
       continue;
     }
     if (!/^video\//.test(f.type) && !/\.(mp4|mov|m4v)$/i.test(f.name)) continue;
+    const sniff = await MC.media.sniffContainer(f);
+    if (!sniff.ok) {
+      MC.ui.toast(`⚠ ${f.name} は${sniff.kind}のため使えません。`
+        + "iPhoneやカメラで撮ったMP4/MOVをお使いください");
+      continue;
+    }
     const key = `${f.name}|${f.size}|${f.lastModified}`;
     if (MC.S.clips.some(c => MC.clipKey(c) === key)) { MC.ui.toast(`${f.name} は読み込み済みです`); continue; }
     if (MC.media.slotClips().length >= 3) { MC.ui.toast("素材は3つまでです"); break; }

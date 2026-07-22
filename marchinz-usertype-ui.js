@@ -215,12 +215,57 @@
       .forEach(el => parent.insertBefore(el, tail));
   }
 
+  /* ---------- 下部タブバー(スマホの主導線) ----------
+     ドロワーより先に、実際に親指が触るのはここ。TOPとマイページは
+     位置の記憶が強いので固定し、真ん中の3枠だけタイプで入れ替える。
+     クリエイターには「クリエイター」タブを出す(制作ツールへ1タップ) */
+  const TAB_MIDDLE = {
+    fan:     ["videos", "youtube", "community"],
+    player:  ["community", "videos", "youtube"],
+    creator: ["creators", "videos", "community"],
+  };
+  let tabStash = null;   // data-page → リンク要素(外している間も保持)
+
+  function creatorsTabLink(sample) {
+    const a = document.createElement("a");
+    a.href = "#creators";
+    a.setAttribute("data-page", "creators");
+    a.className = sample ? sample.className : "mz-tabbar-link";
+    a.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+      + '<path d="M5 7h1a2 2 0 0 0 2 -2a1 1 0 0 1 1 -1h6a1 1 0 0 1 1 1a2 2 0 0 0 2 2h1a2 2 0 0 1 2 2v9a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-9a2 2 0 0 1 2 -2" />'
+      + '<circle cx="12" cy="13" r="3" /></svg>'
+      + '<span>クリエイター</span>';
+    return a;
+  }
+
+  function applyTabbar() {
+    if (!UT()) return;
+    const bar = document.querySelector(".mz-tabbar");
+    if (!bar) return;
+    if (!tabStash) {
+      tabStash = new Map();
+      bar.querySelectorAll("a[data-page]").forEach(a => tabStash.set(a.getAttribute("data-page"), a));
+      if (!tabStash.has("creators")) {
+        tabStash.set("creators", creatorsTabLink(tabStash.get("videos")));
+      }
+    }
+    const middle = TAB_MIDDLE[UT().get()] || TAB_MIDDLE.fan;
+    const want = ["mll", ...middle, "profile"];
+    /* 5枠を並べ直す。使わないリンクは stash に残るだけで消えない */
+    if (want.some(p => !tabStash.has(p))) return;   // 想定外の構造では触らない
+    want.forEach(p => bar.appendChild(tabStash.get(p)));
+    [...bar.querySelectorAll("a[data-page]")].forEach(a => {
+      if (!want.includes(a.getAttribute("data-page"))) a.remove();
+    });
+  }
+
   function applyAll() {
     renderSettingsChoices();
     renderSignupChoices();
     renderDrawerBadge();
     applyNavOrder();
     applyTopOrder();
+    applyTabbar();
   }
 
   window.addEventListener("mz:usertype", applyAll);

@@ -311,6 +311,17 @@ MC.ui.updateActionBar = () => {
         conf = { label: "自動カット割", icon: "fa-clapperboard",
           act: () => MC.ui.$("#autocutBtn").click() };
       } else {
+        /* 本体の書き出しボタン(緑のおまかせ完了ボタン/書き出しセクション)が
+           画面に見えているなら、同じボタンを下にもう1つ重ねない。
+           1画面に「書き出す」が3つ並んで迷う(2026-07-22 広報レビュー) */
+        const dup = ["#easyStartBtn", "#exportBtn"].some(sel => {
+          const el = MC.ui.$(sel);
+          if (!el || el.disabled) return false;
+          if (sel === "#easyStartBtn" && !MC.S.easyDone) return false;
+          const r = el.getBoundingClientRect();
+          return r.height > 0 && r.top < window.innerHeight - 70 && r.bottom > 0;
+        });
+        if (dup) { bar.classList.remove("on"); return; }
         conf = { label: "MP4を書き出す", icon: "fa-file-export",
           disabled: MC.ui.$("#exportBtn").disabled, act: () => MC.ui.$("#exportBtn").click() };
       }
@@ -618,6 +629,19 @@ MC.ui.renderEasyLead = () => {
   MC.ui.renderEasyButton();
 };
 
+/* 書き出しに失敗したら、おまかせ側の「準備ができました」を失敗表示に
+   差し替える。上半分が成功・下半分が失敗という矛盾した画面を残さない
+   (2026-07-22 広報レビュー)。ボタンは「動画を書き出す」のまま=そのまま再挑戦できる */
+MC.ui.markExportFailed = () => {
+  const st = MC.ui.$("#easyStatus");
+  if (st) st.innerHTML = "";          // 「書き出す準備ができました」の完了カードを消す
+  const lead = document.querySelector(".easy-lead");
+  if (lead) {
+    lead.innerHTML = '<span class="err">書き出しに失敗しました。下の「詳しいログ」に原因が出ています。'
+      + 'ボタンからもう一度お試しください。</span>';
+  }
+};
+
 /* おまかせボタンの二役: 通常=おまかせで開始 / 完了後=動画を書き出す。
    状態はボタンを見れば分かるように、文言も色もはっきり変える */
 MC.ui.renderEasyButton = () => {
@@ -685,7 +709,7 @@ MC.ui.refreshSetupTabs = () => {
 /* 長い処理の間、競合する操作をまとめて止める(二重実行でcutList/offsetが壊れるのを防ぐ) */
 MC.ui.setBusy = busy => {
   MC.ui._busy = !!busy;
-  const ids = ["#easyStartBtn", "#syncBtn", "#autocutBtn", "#colorMatchBtn", "#exportBtn"];
+  const ids = ["#easyStartBtn", "#syncBtn", "#autocutBtn", "#colorMatchBtn", "#exportBtn", "#abPrimary"];
   ids.forEach(id => {
     const el = MC.ui.$(id);
     if (el) el.disabled = busy ? true : el.dataset.mzWasDisabled === "1";
@@ -1201,10 +1225,10 @@ MC.ui.wire = () => {
       // 中止は枠の外の #cancelBtn が既に担っているので、ここでは出さない(二重表示の回避)
     });
     MC.ui.clearErrorLog();   // やり直しでは前回の失敗ログを見せない
-    /* 書き出しは最も長い処理。タブを閉じられたら当然止まり、画面が消えても
-       rAF とデコーダが止まって進まなくなる。ここは setBusy を通らない経路
-       なので、離脱防止を直接かける(2026-07-21 優さん報告) */
-    MC.ui.guardLeave(true);
+    /* 書き出し中はボタンを全部止める。以前は離脱防止だけで、
+       3つある書き出しボタンがどれも押せて二重起動できた(2026-07-22)。
+       中止(#cancelBtn)は setBusy の対象外なのでいつでも押せる */
+    MC.ui.setBusy(true);
     try {
       if (mode === "none") throw new Error("この環境では書き出しできません");
       const res = mode === "realtime"
@@ -1220,9 +1244,10 @@ MC.ui.wire = () => {
       } else {
         p.fail("書き出せませんでした", { detail: MC.ui.exportFailHint(e) });
         MC.ui.showErrorLog(e);
+        MC.ui.markExportFailed();   // 「準備ができました」を残さない
       }
     } finally {
-      MC.ui.guardLeave(MC.ui._busy);   // 他の処理が続いていなければ解除
+      MC.ui.setBusy(false);   // ボタン解放+離脱防止の解除をまとめて
       if (releaseExportLock) releaseExportLock();
       $("#exportBtn").disabled = !MC.S.clips.length;
       $("#cancelBtn").style.display = "none";

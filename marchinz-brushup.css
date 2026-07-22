@@ -4515,20 +4515,25 @@ body {
 .mz-usertype-card.on .mz-usertype-check { color: var(--blue); }
 
 /* メニュー上部の「◯◯向けメニューを表示中」 */
+/* ドロワーのパネルは白。濃色ヘッダー向けの白文字を流用して
+   白×白で読めなくなっていた(2026-07-22 広報レビューで発覚)。
+   実測で直したので、色を変えるときはパネル背景とセットで */
 .mz-drawer-usertype {
   display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;
   margin: 0 0 0.6rem; padding: 0.45rem 0.7rem;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  font-size: 0.7rem; color: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(30, 79, 214, 0.18);
+  background: rgba(30, 79, 214, 0.07);
+  font-size: 0.7rem; color: #0f2138;
 }
-.mz-drawer-usertype i { color: var(--yellow, #f5c518); }
+.mz-drawer-usertype i { color: #1e4fd6; }
 .mz-drawer-usertype-btn {
   margin-left: auto; padding: 0.2rem 0.6rem;
-  border: 1px solid rgba(255, 255, 255, 0.28); border-radius: 999px;
-  background: none; color: #fff; font-size: 0.68rem; font-family: inherit; cursor: pointer;
+  border: 1px solid rgba(30, 79, 214, 0.45); border-radius: 999px;
+  background: #fff; color: #1e4fd6; font-weight: 700;
+  font-size: 0.68rem; font-family: inherit; cursor: pointer;
 }
-.mz-drawer-usertype-btn:hover { background: rgba(255, 255, 255, 0.14); }
+.mz-drawer-usertype-btn:hover { background: rgba(30, 79, 214, 0.08); }
 
 .mz-usertype-signup { margin: 1rem 0 1.2rem; }
 .mz-usertype-signup-head { margin: 0 0 0.3rem; font-size: 0.95rem; font-weight: 800; }
