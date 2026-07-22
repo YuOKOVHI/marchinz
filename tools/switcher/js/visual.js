@@ -31,6 +31,12 @@ MC.visual = {
   TH_CAM_RESID: 0.55,
   // 被写体がいない画(誰もいないピット等)の判定
   TH_EMPTY: 0.12,    // 顔が取れず、動いている領域もこれ未満なら人がいない
+  /* WebCodecs解析でサンプル点の間がこれ(秒)より空くときだけシークで飛ぶ。
+     続行=空白×fps枚のデコード、飛び=RAPからのGOP再デコード(1〜2秒分)。
+     損益分岐は1〜2秒なので安全側の3秒 */
+  HOP: 3.0,
+  /* 殺しスイッチ: trueで旧video要素シーク方式に固定(実機切り分け用) */
+  forceSeek: false,
 };
 
 /* ---------- YuNet(ORT)遅延ロード: Privacyのvendorを共用 ---------- */
@@ -66,17 +72,29 @@ MC.visual.initYuNet = async () => {
   return MC.visual._ortP;
 };
 
-/* 顔検出(全体1発)。video要素→640²正方(max辺基準)へ縮小してBGR planar化 */
-MC.visual.detectFaces = async v => {
+/* 顔検出(全体1発)。ソース→640²正方(表示辺max基準)へ縮小してBGR planar化。
+   VideoFrame は tkhd 回転が適用されていないため rotation を渡して正立させてから
+   検出する(これを忘れると縦撮り素材の顔検出が全滅する)。
+   <video> はブラウザが回転適用済みなので rotation=0 の薄いラッパを使う */
+MC.visual.detectFacesFrom = async (source, sw, sh, rotation = 0) => {
   const session = MC.visual._ort;
   if (!session) return null;
-  const S = Math.max(v.videoWidth, v.videoHeight);
+  const rot = (((rotation || 0) % 360) + 360) % 360;
+  const swp = rot === 90 || rot === 270;
+  const dw = swp ? sh : sw, dh = swp ? sw : sh;   // 表示上の寸法
+  const S = Math.max(dw, dh);
   const c = MC.visual._fcv || (MC.visual._fcv = document.createElement("canvas"));
   if (c.width !== 640) { c.width = 640; c.height = 640; }
   const ctx = c.getContext("2d", { willReadFrequently: true });
   ctx.fillStyle = "#000";
   ctx.fillRect(0, 0, 640, 640);
-  ctx.drawImage(v, 0, 0, S, S, 0, 0, 640, 640);
+  const k = 640 / S;
+  ctx.save();
+  ctx.translate(dw * k / 2, dh * k / 2);
+  if (rot) ctx.rotate(rot * Math.PI / 180);
+  ctx.scale(k, k);
+  ctx.drawImage(source, -sw / 2, -sh / 2, sw, sh);
+  ctx.restore();
   const px = ctx.getImageData(0, 0, 640, 640).data;
   const N = 640 * 640;
   const d = MC.visual._fbuf || (MC.visual._fbuf = new Float32Array(3 * N));
@@ -107,11 +125,13 @@ MC.visual.detectFaces = async v => {
   const res = [];
   for (const de of dets) {
     const fx = (de.x + de.w / 2) / 640 * S, fy = (de.y + de.h / 2) / 640 * S;
-    if (fx < 0 || fx > v.videoWidth || fy < 0 || fy > v.videoHeight) continue;
-    res.push({ h: de.h / 640 * S / v.videoHeight, score: de.score });
+    if (fx < 0 || fx > dw || fy < 0 || fy > dh) continue;
+    res.push({ h: de.h / 640 * S / dh, score: de.score });
   }
   return res;
 };
+
+MC.visual.detectFaces = v => MC.visual.detectFacesFrom(v, v.videoWidth, v.videoHeight, 0);
 
 MC.visual._nms = (dets, iouTh) => {
   dets.sort((a, b) => b.score - a.score);
@@ -137,14 +157,28 @@ MC.visual.seek = (v, t) => new Promise(res => {
   v.currentTime = Math.max(0, Math.min(v.duration - 0.05, t));
 });
 
-/* videoの現在フレームをグレースケール小画像へ */
-MC.visual.grabGray = v => {
+/* フレームをグレースケール小画像へ。rotation は VideoFrame 用
+   (tkhd回転を自前で適用して正立させる。<video>は適用済みなので0) */
+MC.visual.grabGrayFrom = (source, sw, sh, rotation = 0) => {
+  const rot = (((rotation || 0) % 360) + 360) % 360;
+  const swp = rot === 90 || rot === 270;
+  const dw = swp ? sh : sw, dh = swp ? sw : sh;   // 表示上の寸法
   const w = MC.visual.MOTION_W;
-  const h = Math.max(8, Math.round(v.videoHeight / v.videoWidth * w));
+  const h = Math.max(8, Math.round(dh / dw * w));
   const c = MC.visual._mcv || (MC.visual._mcv = document.createElement("canvas"));
   if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
   const ctx = c.getContext("2d", { willReadFrequently: true });
-  ctx.drawImage(v, 0, 0, w, h);
+  if (rot) {
+    ctx.save();
+    ctx.translate(w / 2, h / 2);
+    ctx.rotate(rot * Math.PI / 180);
+    const sc = w / dw;
+    ctx.scale(sc, sc);
+    ctx.drawImage(source, -sw / 2, -sh / 2, sw, sh);
+    ctx.restore();
+  } else {
+    ctx.drawImage(source, 0, 0, w, h);
+  }
   const px = ctx.getImageData(0, 0, w, h).data;
   const g = new Float32Array(w * h);
   for (let i = 0, p = 0; i < g.length; i++, p += 4) {
@@ -152,6 +186,8 @@ MC.visual.grabGray = v => {
   }
   return { g, w, h };
 };
+
+MC.visual.grabGray = v => MC.visual.grabGrayFrom(v, v.videoWidth, v.videoHeight, 0);
 
 /* Laplacian分散(シャープネス)。ブラー・フォーカス外れで低下 */
 MC.visual.sharpness = A => {
@@ -219,8 +255,217 @@ MC.visual.residualGrid = (A, B, dx, dy) => {
 };
 
 /* ---------- クリップ解析(メイン) ---------- */
-/* l0/l1 = クリップローカル秒。prog(i,n)で進捗通知。clip.visualへキャッシュ */
+/* 1サンプル点の計算(ペア2枚→動き/シャープ/残差/顔)。
+   WebCodecs経路とシーク経路で同じ数式を使うために抽出した。
+   dt はペア2枚の実時刻差(WebCodecsでは実フレーム差、シークではPAIR_DT) */
+MC.visual._samplePoint = (V, A, B, faces, t, dt) => {
+  const gm = MC.visual.globalMotion(A, B);
+  const res = MC.visual.residualGrid(A, B, gm.dx, gm.dy);
+  V.t.push(t);
+  V.shake.push(Math.hypot(gm.dx, gm.dy) / A.w / dt);   // 画面幅比/秒
+  V.dxs.push(gm.dx);
+  V.sharp.push(MC.visual.sharpness(A));
+  V.moE.push(res.moE);
+  V.act.push(res.act);
+  V.nF.push(faces ? faces.length : -1);           // -1 = この点は未検出
+  V.maxF.push(faces && faces.length ? Math.max(...faces.map(f => f.h)) : (faces ? 0 : -1));
+};
+
+/* サンプル収集後の集計(中央値・撮り方の自動判定)。両経路共通 */
+MC.visual._finalize = V => {
+  const ss = [...V.sharp].sort((a, b) => a - b);
+  V.sharpMed = ss.length ? ss[ss.length >> 1] : 0;
+
+  /* 撮り方の自動判定。
+     判別の原理は「背景ごと動いたか、被写体だけが動いたか」:
+       ・カメラマン付き(手持ち・ジンバル・操作する三脚)
+           → 画面全体が動く。その動き分ずらせば画面がピタリと揃う = 残差が小さい
+       ・定点固定カメラ
+           → 動くのは被写体だけ。カメラは動いていない
+
+     残差(補正後の act)を条件に入れているのが肝。globalMotion は
+     中央のブロックマッチングなので、大きな被写体が画面を占めると
+     マッチングが被写体に食いついて dx≠0 になる。その動きで補正すると
+     背景がずれて残差が大きくなるため、それをカメラの動きから除外できる。
+     この条件が無いと「定点カメラで奏者が大きく動いただけ」を
+     カメラマン付きと誤判定する */
+  let camMoveN = 0;
+  for (let i = 0; i < V.dxs.length; i++) {
+    if (Math.abs(V.dxs[i]) >= 2 && V.act[i] < MC.visual.TH_CAM_RESID) camMoveN++;
+  }
+  V.movingFrac = V.dxs.length ? camMoveN / V.dxs.length : 0;
+  V.operated = V.movingFrac > 0.15;
+};
+
+/* 入口: WebCodecs逐次デコード(速い)を試し、開けない素材・失敗は
+   従来のvideo要素シーク方式へ自動フォールバック。
+   iOSのシークは1回数十〜数百msで、1点2シーク×最大120点が解析の主コストだった
+   (2026-07-22 高速化)。MC.visual.forceSeek=true で旧方式へ固定できる */
 MC.visual.analyzeClip = async (clip, l0, l1, prog) => {
+  const key = `${l0.toFixed(1)}|${l1.toFixed(1)}`;
+  if (clip.visual && clip.visual.key === key) return clip.visual;
+  if (!MC.visual.forceSeek && typeof VideoDecoder !== "undefined" &&
+      !clip._wcAnalyzeNG && clip.file) {
+    try {
+      const V = await MC.visual.analyzeClipWC(clip, l0, l1, prog);
+      clip.visual = V;
+      return V;
+    } catch (e) {
+      clip._wcAnalyzeNG = true;   // この素材では再挑戦しない
+      MC.log("visual: WebCodecs解析不可→シーク方式へ:", clip.name, e && e.message);
+    }
+  }
+  return MC.visual.analyzeClipSeek(clip, l0, l1, prog);
+};
+
+/* WebCodecs経路: 連続デコードの流れからサンプル点を拾う。
+   1点2シークの往復が消えるぶん速い。色統計(colormatch)の8点も
+   同じ流れに相乗りさせ、2度目の動画オープンを消す */
+MC.visual.analyzeClipWC = async (clip, l0, l1, prog) => {
+  const key = `${l0.toFixed(1)}|${l1.toFixed(1)}`;
+  const range = Math.max(1, l1 - l0);
+  const interval = Math.max(0.8, Math.min(5, range / 120));
+  const n = Math.max(2, Math.floor(range / interval));
+  let faceOK = true;
+  try { await MC.visual.initYuNet(); }
+  catch (e) { faceOK = false; MC.log("visual: 顔検出なしで続行:", e.message); }
+
+  // 欲しい時刻(昇順)。A=ペア1枚目 / B=2枚目 / color=色統計
+  const wanted = [];
+  let pts = 0;
+  for (let i = 0; i < n; i++) {
+    const t = l0 + (i + 0.5) * interval;
+    if (t >= clip.duration - 0.2) break;
+    wanted.push({ t, kind: "A", i: pts });
+    wanted.push({ t: t + MC.visual.PAIR_DT, kind: "B", i: pts });
+    pts++;
+  }
+  if (!pts) throw new Error("解析範囲が短すぎます");
+  const wantColor = !clip.colorStats && MC.color && MC.color.statsAcc;
+  if (wantColor) {
+    for (let j = 0; j < MC.color.STATS_FRAMES; j++) {
+      const t = clip.duration * (0.1 + 0.8 * j / (MC.color.STATS_FRAMES - 1));
+      wanted.push({ t: Math.min(t, clip.duration - 0.25), kind: "color" });
+    }
+  }
+  wanted.sort((a, b) => a.t - b.t);
+
+  const src = new MC.MP4Source(clip.file);
+  await src.init();
+  const vt = src.videoTrack();
+  if (!vt) throw new Error("映像トラックなし");
+  const cfg = src.videoDecoderConfig();
+  if (!cfg) throw new Error("デコード設定を作れません");
+  const sup = await VideoDecoder.isConfigSupported(cfg).catch(() => ({ supported: false }));
+  if (!sup.supported) throw new Error("デコード非対応: " + cfg.codec);
+  const rotation = src.rotationOf(vt);      // VideoDecoderはtkhd回転を適用しない
+  const tsOff = src.editOffsetSec(vt);      // elst補正: frameSec = ts - tsOff
+  const cur = src.cursor(vt.id);
+
+  let decErr = null;
+  const outQ = [];
+  const dec = new VideoDecoder({ output: f => outQ.push(f), error: e => { decErr = e; } });
+  dec.configure(cfg);
+
+  const V = { key, t: [], shake: [], dxs: [], sharp: [], moE: [], act: [], nF: [], maxF: [], faceOK };
+  const colorAcc = wantColor ? MC.color.statsAcc() : null;
+  const pending = {};      // ペア1枚目の保管: i -> {A, tA, tWant, faces}
+  let sampleDone = 0;
+  let lastTs = -Infinity;  // 直近で出したフレームの秒(HOP判定)
+  let srcEof = false, flushed = false, drained = false;
+
+  const closeAll = () => { outQ.forEach(f => { try { f.close(); } catch (e) {} }); outQ.length = 0; };
+
+  try {
+    cur.seek(Math.max(0, wanted[0].t));
+    for (let ptr = 0; ptr < wanted.length; ptr++) {
+      if (decErr) throw decErr;
+      if (drained) break;                      // 素材が尽きた(末尾の点は欠測扱い)
+      const wt = wanted[ptr];
+      if (wt.t >= clip.duration - 0.05) continue;
+      // 次の点まで遠い→間のGOPをデコードせずシークで飛ぶ
+      if (isFinite(lastTs) && wt.t - lastTs > MC.visual.HOP) {
+        await dec.flush().catch(() => {});
+        closeAll();
+        cur.seek(wt.t);
+        srcEof = false; flushed = false;
+        lastTs = -Infinity;
+      }
+      // wt.t 以後の最初のフレームを得る
+      let frame = null, guard = 0;
+      while (!frame) {
+        if (decErr) throw decErr;
+        while (outQ.length) {
+          const f = outQ[0];
+          const fs = f.timestamp / 1e6 - tsOff;
+          if (fs + 1e-6 < wt.t) { lastTs = fs; outQ.shift().close(); }
+          else { frame = outQ.shift(); lastTs = fs; break; }
+        }
+        if (frame) break;
+        if (srcEof && flushed && !outQ.length) { drained = true; break; }
+        if (!srcEof && dec.decodeQueueSize < 12 && outQ.length < 8) {
+          const { value: s, done } = await cur.next();
+          if (done) {
+            srcEof = true;
+            await dec.flush().catch(() => {});
+            flushed = true;
+            continue;
+          }
+          dec.decode(new EncodedVideoChunk({
+            type: s.is_sync ? "key" : "delta",
+            timestamp: Math.round(s.cts * 1e6 / s.timescale),
+            duration: Math.max(1, Math.round(s.duration * 1e6 / s.timescale)),
+            data: s.data,
+          }));
+        } else {
+          await MC.waitDequeue(dec, 50);   // 出力待ち(イベント駆動)
+        }
+        if (++guard > 20000) throw new Error("解析デコードが進みません");
+      }
+      if (!frame) continue;
+      const fSec = frame.timestamp / 1e6 - tsOff;
+      const fw = frame.displayWidth || frame.codedWidth;
+      const fh = frame.displayHeight || frame.codedHeight;
+      if (wt.kind === "color") {
+        if (colorAcc) colorAcc.add(frame, fw, fh);
+      } else if (wt.kind === "A") {
+        const A = MC.visual.grabGrayFrom(frame, fw, fh, rotation);
+        let faces = null;
+        if (faceOK && wt.i % MC.visual.FACE_EVERY === 0) {
+          try { faces = await MC.visual.detectFacesFrom(frame, fw, fh, rotation); }
+          catch (e) { faceOK = false; V.faceOK = false; }
+        }
+        pending[wt.i] = { A, tA: fSec, tWant: wt.t, faces };
+      } else {   // "B" = ペア2枚目
+        const P = pending[wt.i];
+        if (P) {
+          const B = MC.visual.grabGrayFrom(frame, fw, fh, rotation);
+          /* 実フレームの時刻差で正規化(30fpsはPAIR_DT=0.12にぴったり乗らない)。
+             同一フレームを掴んだ場合(dt→0)はdx=0なのでclampで害はない */
+          const dt = Math.max(0.02, fSec - P.tA);
+          MC.visual._samplePoint(V, P.A, B, P.faces, P.tWant, dt);
+          delete pending[wt.i];
+        }
+        sampleDone++;
+        if (prog) prog(sampleDone, pts);
+      }
+      frame.close();
+      await MC.yield();
+    }
+  } finally {
+    try { dec.close(); } catch (e) {}
+    closeAll();
+  }
+  if (V.t.length < 2) throw new Error("解析サンプルが取れません");
+  MC.visual._finalize(V);
+  if (colorAcc && colorAcc.count() > 0) clip.colorStats = colorAcc.finish();
+  MC.log(`visual: WC解析 ${clip.name} 点${V.t.length}/${pts}` + (clip.colorStats ? " +色統計" : ""));
+  return V;
+};
+
+/* 従来経路(video要素シーク)。WebCodecsが使えない素材・失敗時の受け皿。
+   l0/l1 = クリップローカル秒。prog(i,n)で進捗通知。clip.visualへキャッシュ */
+MC.visual.analyzeClipSeek = async (clip, l0, l1, prog) => {
   const key = `${l0.toFixed(1)}|${l1.toFixed(1)}`;
   if (clip.visual && clip.visual.key === key) return clip.visual;
   const v = clip.video;
@@ -249,46 +494,11 @@ MC.visual.analyzeClip = async (clip, l0, l1, prog) => {
     }
     await MC.visual.seek(v, t + MC.visual.PAIR_DT);
     const B = MC.visual.grabGray(v);
-    const gm = MC.visual.globalMotion(A, B);
-    const res = MC.visual.residualGrid(A, B, gm.dx, gm.dy);
-    V.t.push(t);
-    // 画面幅比/秒に正規化した動き量
-    V.shake.push(Math.hypot(gm.dx, gm.dy) / A.w / MC.visual.PAIR_DT);
-    V.dxs.push(gm.dx);
-    V.sharp.push(MC.visual.sharpness(A));
-    V.moE.push(res.moE);
-    V.act.push(res.act);
-    V.nF.push(faces ? faces.length : -1);           // -1 = この点は未検出
-    V.maxF.push(faces && faces.length ? Math.max(...faces.map(f => f.h)) : (faces ? 0 : -1));
+    MC.visual._samplePoint(V, A, B, faces, t, MC.visual.PAIR_DT);
     if (prog) prog(i + 1, n);
     await MC.yield();
   }
-  // シャープネスのクリップ内中央値(フォーカス外れ判定の基準)
-  const ss = [...V.sharp].sort((a, b) => a - b);
-  V.sharpMed = ss.length ? ss[ss.length >> 1] : 0;
-
-  /* 撮り方の自動判定。
-     判別の原理は「背景ごと動いたか、被写体だけが動いたか」:
-       ・カメラマン付き(手持ち・ジンバル・操作する三脚)
-           → 画面全体が動く。その動き分ずらせば画面がピタリと揃う = 残差が小さい
-       ・定点固定カメラ
-           → 動くのは被写体だけ。カメラは動いていない
-
-     ここで残差(補正後の act)を条件に入れているのが肝。globalMotion は
-     中央のブロックマッチングなので、大きな被写体が画面を占めると
-     マッチングが被写体に食いついて dx≠0 になる。その動きで補正すると
-     背景がずれて残差が大きくなるため、それをカメラの動きから除外できる。
-     この条件が無いと「定点カメラで奏者が大きく動いただけ」を
-     カメラマン付きと誤判定する。
-
-     操作カメラは移動中の絵が使えない代わりに、据わっている絵は狙って撮られた
-     良い画(ソロ・ソリを抜いている等)なので、director 側で扱いを変える */
-  let camMoveN = 0;
-  for (let i = 0; i < V.dxs.length; i++) {
-    if (Math.abs(V.dxs[i]) >= 2 && V.act[i] < MC.visual.TH_CAM_RESID) camMoveN++;
-  }
-  V.movingFrac = V.dxs.length ? camMoveN / V.dxs.length : 0;
-  V.operated = V.movingFrac > 0.15;
+  MC.visual._finalize(V);
   await MC.visual.seek(v, keep);
   clip.visual = V;
   return V;

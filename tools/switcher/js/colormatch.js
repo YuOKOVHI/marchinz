@@ -34,8 +34,52 @@ MC.color.srgbToLab = (r, g, b) => {
   return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
 };
 
-/* クリップから8フレームをサンプリングしてLab統計 {mean, std} を返す */
+/* Lab統計の積算器。visual.analyzeClipWC が解析デコードの流れに相乗りさせて
+   フレームを add する(色統計のためだけに動画をもう一度開かない。2026-07-22)。
+   色統計は回転に影響されないので rotation は見ない */
+MC.color.statsAcc = () => {
+  const cv = document.createElement("canvas");
+  const sum = [0, 0, 0], sq = [0, 0, 0];
+  let n = 0;
+  return {
+    add(source, sw, sh) {
+      const scale = 320 / Math.max(sw, 1);
+      const w = Math.max(2, Math.round(sw * scale));
+      const h = Math.max(2, Math.round(sh * scale));
+      if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+      const cx = cv.getContext("2d", { willReadFrequently: true });
+      cx.drawImage(source, 0, 0, w, h);
+      const d = cx.getImageData(0, 0, w, h).data;
+      for (let p = 0; p < d.length; p += 16) {  // 4画素おき(十分な標本数)
+        const lab = MC.color.srgbToLab(d[p] / 255, d[p + 1] / 255, d[p + 2] / 255);
+        for (let k = 0; k < 3; k++) { sum[k] += lab[k]; sq[k] += lab[k] * lab[k]; }
+        n++;
+      }
+    },
+    count() { return n; },
+    finish() {
+      if (!n) return null;
+      const mean = sum.map(s => s / n);
+      const std = sq.map((s, k) => Math.sqrt(Math.max(s / n - mean[k] * mean[k], 1e-8)));
+      return { mean, std };
+    },
+  };
+};
+
+/* クリップのLab統計 {mean, std}。
+   おまかせでは director の解析(analyzeClipWC)が先に colorStats を埋めるので
+   ここはキャッシュを返すだけ=動画を開き直さない。
+   単独実行(こだわりのカラーマッチ)や解析が seek 方式へ落ちた素材だけ、
+   従来のシーク版で8点読む */
 MC.color.sampleStats = async clip => {
+  if (clip.colorStats) return clip.colorStats;
+  const s = await MC.color.sampleStatsSeek(clip);
+  clip.colorStats = s;
+  return s;
+};
+
+/* 従来経路: video要素を8回シークして統計(WebCodecs解析が使えないときの受け皿) */
+MC.color.sampleStatsSeek = async clip => {
   const v = clip.video;
   const keep = v.currentTime;
   const cv = document.createElement("canvas");
