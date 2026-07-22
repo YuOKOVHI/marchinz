@@ -273,10 +273,19 @@ MC.ui.initJourney = () => {
     doneHint: "書き出し完了。調整して書き出し直すこともできます",
     canSelect: () => true,   // タップ=そのセクションへ移動(状態は変えないので常に安全)
     onSelect: id => {
+      /* すんだステップは地図からのタップでそのまま開く(畳んだ先へ飛ばされて
+         「何もない」にならないように) */
+      const g = MC.ui.STEP_GROUPS.find(x => x.id === id);
+      if (g && MC.ui._stepPhase != null &&
+          MC.ui.STEP_RANK[id] < MC.ui.STEP_RANK[MC.ui._stepPhase]) {
+        g.panels.forEach(sel => MC.ui._stepOpen.add(sel));
+        MC.ui.applySteps(MC.ui._stepPhase);
+      }
       const el = document.querySelector(MC.ui.JOURNEY_SECTIONS[id]);
       if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
     },
   });
+  MC.ui.initSteps();
   MC.ui.refreshJourney();
 };
 
@@ -305,6 +314,18 @@ MC.ui.updateActionBar = () => {
       conf = { label: MC.S.mode === "vertical" ? "動画・写真を選ぶ" : "動画を選ぶ",
         icon: "fa-folder-open",
         act: () => MC.ui.$(MC.S.mode === "vertical" ? "#fileInputV" : "#fileInput").click() };
+    } else if ((cur === "sync" || cur === "polish") &&
+               MC.ui._setupTab !== "pro" && !MC.S.easyDone) {
+      /* おまかせタブでは同期ボタンは隠れている。次の一手は「おまかせで開始」。
+         本体の同じボタンが画面に見えているときは重ねない(2026-07-23) */
+      const eb = MC.ui.$("#easyStartBtn");
+      const r = eb.getBoundingClientRect();
+      if (r.height > 0 && r.top < window.innerHeight - 70 && r.bottom > 0) {
+        bar.classList.remove("on");
+        return;
+      }
+      conf = { label: "おまかせで開始", icon: "fa-wand-magic-sparkles",
+        disabled: eb.disabled, act: () => eb.click() };
     } else if (cur === "sync") {
       conf = { label: "波形で同期する", icon: "fa-wave-square",
         disabled: MC.ui.$("#syncBtn").disabled, act: () => MC.ui.$("#syncBtn").click() };
@@ -367,7 +388,114 @@ MC.ui.refreshJourney = () => {
   document.querySelectorAll(".side .panel").forEach(p => p.classList.remove("phase-current"));
   const target = document.querySelector(MC.ui.JOURNEY_SECTIONS[current]);
   if (target) target.classList.add("phase-current");
+  MC.ui.applySteps(current);
   MC.ui.updateActionBar();
+};
+
+/* ============ ステップ表示: ウィザード折衷案(2026-07-23 優さん指示) ============
+   画面遷移はしない。ジャーニーの現在フェーズから各パネルを
+     いま  = 展開(青枠の強調は従来どおり)
+     すみ  = 1行に畳む。タップでいつでも開閉できる(直したくなったら戻れる)
+     まだ  = 1行に畳んでロック。何が待っているかだけ見せる
+   に振り分ける。1画面で決めることを絞りつつ、全体の地図は縦に残す。
+   状態は refreshJourney が導出したものをそのまま使う(新しい状態機械を作らない) */
+MC.ui.STEP_RANK = { mat: 0, sync: 1, polish: 2, export: 3 };
+MC.ui.STEP_GROUPS = [
+  { id: "mat",    panels: ["#dropSec"] },
+  { id: "sync",   panels: ["#syncSec", "#audioSec"] },
+  { id: "polish", panels: ["#placeSec", "#layoutSec", "#finishSec"] },
+  { id: "export", panels: ["#exportSec"] },
+];
+/* ロック中に「何を待っているか」を短く。mat は最初のステップなのでロックされない */
+MC.ui.STEP_WAIT_NOTE = { sync: "素材のあと", polish: "同期のあと", export: "同期のあと" };
+MC.ui._stepOpen = new Set();   // 手で開いた「すみ」パネル(フェーズが進むと畳み直す)
+MC.ui._stepPhase = null;
+
+/* 畳んだヘッダーに残す一言。素材は本数が分かると安心(それ以外は✓だけで足りる) */
+MC.ui.stepSummary = sel => {
+  if (sel === "#dropSec") {
+    const n = MC.media.slotClips().length;
+    if (n) return `${n}本`;
+  }
+  return "すみ";
+};
+
+MC.ui.applySteps = current => {
+  const R = MC.ui.STEP_RANK;
+  const cur = R[current] ?? 0;
+  const advanced = MC.ui._stepPhase != null && cur > R[MC.ui._stepPhase];
+  if (MC.ui._stepPhase !== current) { MC.ui._stepOpen.clear(); MC.ui._stepPhase = current; }
+  let scrollTo = null;
+  MC.ui.STEP_GROUPS.forEach(g => {
+    let state = R[g.id] < cur ? "done" : R[g.id] === cur ? "current" : "locked";
+    /* 書き出しは「整える」と同時に開く。整えるのは任意で、ゴールのボタンを
+       ロックしたままにしない(自動カット割へは actionbar が誘導する) */
+    if (g.id === "export" && cur >= R.polish) state = "current";
+    g.panels.forEach(sel => {
+      const el = document.querySelector(sel);
+      if (!el) return;
+      const open = state === "current" || (state === "done" && MC.ui._stepOpen.has(sel));
+      el.classList.toggle("step-collapsed", !open);
+      el.classList.toggle("step-done", state === "done");
+      el.classList.toggle("step-locked", state === "locked");
+      const h2 = el.querySelector(":scope > h2");
+      if (h2) {
+        let html = "";
+        if (state === "done") {
+          html = open
+            ? '<i class="fa-solid fa-circle-check"></i> <i class="fa-solid fa-chevron-up"></i>'
+            : `<i class="fa-solid fa-circle-check"></i> ${MC.ui.stepSummary(sel)} <i class="fa-solid fa-chevron-down"></i>`;
+        } else if (state === "locked") {
+          html = `<i class="fa-solid fa-lock"></i> ${MC.ui.STEP_WAIT_NOTE[g.id] || ""}`;
+        }
+        let chip = h2.querySelector(".mz-step-chip");
+        if (html) {
+          if (!chip) {
+            chip = document.createElement("span");
+            chip.className = "mz-step-chip";
+            h2.appendChild(chip);
+          }
+          if (chip.dataset.h !== html) { chip.innerHTML = html; chip.dataset.h = html; }
+          chip.classList.toggle("locked", state === "locked");
+        } else if (chip) {
+          chip.remove();
+        }
+        if (state === "done") {
+          h2.setAttribute("role", "button");
+          h2.setAttribute("tabindex", "0");
+          h2.setAttribute("aria-expanded", open ? "true" : "false");
+        } else {
+          h2.removeAttribute("role");
+          h2.removeAttribute("tabindex");
+          h2.removeAttribute("aria-expanded");
+        }
+      }
+      if (!scrollTo && state === "current" && R[g.id] === cur && !el.hidden) scrollTo = el;
+    });
+  });
+  /* フェーズが進んだら、新しく開いたステップへそっと運ぶ。
+     おまかせの実行中は進捗ドックが主役なので動かさない */
+  if (advanced && !MC.ui._busy && scrollTo && scrollTo.offsetParent) {
+    scrollTo.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+};
+
+/* 「すみ」ヘッダーの開閉。パネルは静的HTMLなので初期化時に1回だけ付ける */
+MC.ui.initSteps = () => {
+  MC.ui.STEP_GROUPS.forEach(g => g.panels.forEach(sel => {
+    const h2 = document.querySelector(sel + " > h2");
+    if (!h2) return;
+    const act = () => {
+      if (!h2.parentElement.classList.contains("step-done")) return;   // いま/まだ は開閉しない
+      if (MC.ui._stepOpen.has(sel)) MC.ui._stepOpen.delete(sel);
+      else MC.ui._stepOpen.add(sel);
+      MC.ui.applySteps(MC.ui._stepPhase);
+    };
+    h2.addEventListener("click", act);
+    h2.addEventListener("keydown", e => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); act(); }
+    });
+  }));
 };
 
 /* 撮り方の判定バッジ。自動判定の結果と、手で上書きしているかが分かるようにする。
