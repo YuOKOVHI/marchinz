@@ -771,3 +771,124 @@ html, body { max-width: 100%; overflow-x: clip; }
   font-size: 11.5px;
   color: var(--tx2);
 }
+
+
+/* ---------- 書き出し画質の選択(2026-07-23) ---------- */
+.quality-picker { display: grid; gap: 8px; margin-bottom: 10px; }
+.q-card {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  width: 100%; padding: 10px 14px;
+  border: 1.5px solid var(--line); border-radius: 12px;
+  background: #fff; cursor: pointer; text-align: left; font-family: inherit;
+}
+.q-card.on { border-color: var(--acc); background: #f0f5ff; }
+.q-name { font-size: 13.5px; font-weight: 800; color: var(--tx); }
+.q-tag {
+  font-style: normal; font-size: 10px; font-weight: 800;
+  padding: 1px 8px; border-radius: 999px; vertical-align: 1px;
+  background: #e8f1fe; color: var(--acc-deep);
+}
+.q-card.on .q-name { color: var(--acc-deep); }
+.q-desc { font-size: 11.5px; color: var(--tx2); }
+
+/* ---------- 縦型: カメラの配置(上/中/下) ---------- */
+.place-rows { display: grid; gap: 6px; }
+.place-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--panel2);
+}
+.place-pos {
+  flex-shrink: 0; width: 34px; height: 34px; border-radius: 10px;
+  display: grid; place-items: center;
+  background: var(--acc); color: #fff; font-weight: 800; font-size: 14px;
+}
+.place-thumb { width: 56px; height: 34px; object-fit: cover; border-radius: 6px; background: #000; flex-shrink: 0; }
+.place-thumb--empty { display: inline-block; }
+.place-name { flex: 1; min-width: 0; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.place-btns { display: flex; gap: 4px; }
+.place-move {
+  width: 38px; height: 38px; border-radius: 10px;
+  border: 1px solid var(--line); background: #fff; color: var(--tx);
+  font-size: 14px; cursor: pointer;
+}
+.place-move:disabled { opacity: 0.3; cursor: default; }
+
+
+/* ============ 2026-07-23 リスタイル(スマホ最優先・Apple風) ============
+   方針: 余白と階層で整理し、枠線を減らして影で面を作る。
+   説明文は「いま必要なものだけ」: 済んだフェーズの説明はCSSで畳む */
+
+/* --- 済んだフェーズの説明は出さない --- */
+/* 素材が入ったら「固定カメラがおすすめ」「待ち時間の心得」は役目を終えている */
+body.mz-has-clips #dropSec .sec-lead,
+body.mz-has-clips #dropSec .mz-stay-hint { display: none; }
+/* 書き出しフェーズでは素材追加の点線枠も畳む(戻れば出る) */
+body[data-mzj-phase="export"] .clip-slot.empty { display: none; }
+
+/* --- 面と余白 --- */
+.panel {
+  border: none;
+  border-radius: 16px;
+  box-shadow: var(--shadow-card);
+  padding: 18px 16px 16px;
+}
+.panel + .panel, .setup-tabs, .pro-pane > .panel { margin-top: 14px; }
+
+/* 見出しは小さく静かに(内容が主役) */
+.panel h2 {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--tx2);
+  margin-bottom: 12px;
+}
+.panel h2 .hint { font-weight: 500; opacity: 0.8; }
+
+/* --- ボタン: 主役は1画面に1つ、丸く大きく --- */
+.btn.primary.big {
+  min-height: 52px;
+  border-radius: 999px;
+  font-size: 15.5px;
+  font-weight: 700;
+  box-shadow: 0 6px 18px rgba(30, 79, 214, 0.28);
+}
+.btn.primary { border-radius: 999px; }
+.btn { border-radius: 10px; }
+
+/* おまかせ/こだわりタブを丸ピルに */
+.tabs { border-radius: 999px; padding: 3px; background: var(--panel2); }
+.tabs .tab { border-radius: 999px; }
+
+/* ベータ注意は控えめな一行に */
+.beta-disclaimer {
+  background: none;
+  border: none;
+  box-shadow: none;
+  color: var(--tx2);
+  font-size: 11px;
+  padding: 6px 16px;
+}
+.beta-disclaimer strong { font-weight: 600; }
+
+/* ステータス・ヒントの文字を一段静かに */
+.status { font-size: 12px; }
+.hint { font-size: 11px; }
+
+/* モード選択カードを大きな入口に */
+.mode-card {
+  border: none;
+  border-radius: 18px;
+  box-shadow: var(--shadow-card);
+  padding: 22px 18px;
+}
+.mode-card:active { transform: scale(0.98); }
+.mode-card-name { font-size: 16.5px; font-weight: 800; }
+.mode-card-desc { font-size: 12px; color: var(--tx2); }
+
+/* スマホ: 端まで気持ちよく使う */
+@media (max-width: 860px) {
+  .wrap { padding: 10px 12px 90px; }
+  .panel { padding: 16px 14px; }
+  footer { font-size: 10.5px; }
+}

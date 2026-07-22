@@ -107,7 +107,7 @@ MC.sync.run = async p => {
   for (const c of clips) {
     i++;
     if (c.audio8k) continue;
-    if (p) p.step(1, "音を取り出しています…").count(i, clips.length, { unit: "本目", name: c.name });
+    if (p) p.step(1, "音を分析しています…").count(i, clips.length, { unit: "本目", name: c.name });
     try { await MC.audio.extract8k(c); }
     catch (e) { console.warn("[MC]", e.message); MC.ui.toast(`⚠ ${e.message}`); }
     await new Promise(r => setTimeout(r, 0));

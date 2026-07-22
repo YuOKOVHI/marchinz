@@ -258,9 +258,13 @@ MC.exporter.encodeAudio = async (muxer, clip, fromLocalSec, durSec, onStatus) =>
   });
   decoder.configure(cfg);
   let firstFedCts = null;
+  let fed = 0;
   for await (const s of src.samples(at.id, Math.max(0, fromLocalSec - 0.5))) {
     if (error || MC.exporter.cancelFlag) break;
     const ctsSec = s.cts / s.timescale;
+    if ((fed++ & 63) === 0 && firstFedCts !== null) {
+      onStatus("音を整えています…", 0.6 * Math.min(1, (ctsSec - firstFedCts) / Math.max(1, durSec)));
+    }
     if (firstFedCts === null) {
       firstFedCts = ctsSec;
       // 目標メディア時刻 = fromLocal + elst + エンコーダプライミング相殺
@@ -280,7 +284,7 @@ MC.exporter.encodeAudio = async (muxer, clip, fromLocalSec, durSec, onStatus) =>
   if (error || MC.exporter.cancelFlag) return false;
 
   // AACエンコード(1024フレームずつ)
-  onStatus("音を入れています…");
+  onStatus("音を入れています…", 0.6);
   let encErr = null;
   const encoder = new AudioEncoder({
     output: (chunk, meta) => {
@@ -292,6 +296,7 @@ MC.exporter.encodeAudio = async (muxer, clip, fromLocalSec, durSec, onStatus) =>
   const FR = 1024;
   for (let o = 0; o < need; o += FR) {
     if (encErr || MC.exporter.cancelFlag) break;
+    if ((o / FR & 127) === 0) onStatus("音を入れています…", 0.6 + 0.4 * o / need);
     const n = Math.min(FR, need - o);
     const data = new Float32Array(n * 2);
     data.set(chL.subarray(o, o + n), 0);
@@ -418,8 +423,47 @@ MC.exporter.encodeAudioFile = async (muxer, clip, fromLocalSec, durSec, onStatus
    30秒かけてから落ちるより、最初に分かった方がよい。 */
 /* 書き出しの推定バイト数。保存方法の判断に使う。
    映像ビットレートは exportMP4 の venc.configure と揃えること */
+/* ---------- 画質モード(2026-07-23 優さん指示) ----------
+   sns: 720p。iPhoneの画質を縛るのは解像度ではなくメモリ260MB(→3.88Mbps固定)。
+        720pなら同じビットレートで1画素あたり2.25倍=実質きれいで、22%速い(実測)。
+        SNS(Instagram/TikTok/X)は先方で再圧縮されるので720pで十分
+   hd:  1080p。YouTubeへ上げる人向け。時間がかかる(パソコン推奨)
+   pro: 1080p高ビットレート。ディスクへ直接書けるパソコン限定
+        (スマホはメモリ上限があり高ビットレートは尺が入らない) */
+MC.exporter.QUALITIES = {
+  sns: { label: "SNS用",  scale: 2 / 3 },
+  hd:  { label: "1080p",  scale: 1 },
+  pro: { label: "高画質", scale: 1 },
+};
+
+MC.exporter.isPC = () =>
+  !MC.isIOS && !/Android/i.test(navigator.userAgent);
+
+MC.exporter.quality = () => {
+  let q = MC.S.exportQuality || "sns";
+  if (q === "pro" && !MC.exporter.isPC()) q = "hd";   // 保存値がスマホに来ても壊れない
+  return q;
+};
+
+/* 書き出しの出力サイズ。プレビューはプリセットのまま、出力だけ変える */
+MC.exporter.exportDims = () => {
+  const { w, h } = MC.PRESETS[MC.S.preset];
+  const s = MC.exporter.QUALITIES[MC.exporter.quality()].scale;
+  const even = x => Math.round(x * s / 2) * 2;
+  return { w: even(w / 1), h: even(h / 1) };
+};
+
 MC.exporter.videoBitrate = () => {
-  const base = MC.S.preset === "1x1" ? 8e6 : 12e6;
+  const q = MC.exporter.quality();
+  const sq = MC.S.preset === "1x1";
+  if (!MC.isIOS) {
+    /* パソコン: エンコードは全体の2%(実測)なので、ビットレートを上げても
+       速度にはほぼ響かない。proは高密度、snsは720pに十分な量 */
+    if (q === "pro") return sq ? 14e6 : 20e6;
+    if (q === "sns") return sq ? 6e6 : 8e6;
+    return sq ? 8e6 : 12e6;
+  }
+  const base = sq ? 8e6 : 12e6;
   /* iPhone・iPad は完成MP4を丸ごとメモリに載せるしかない(showSaveFilePicker が
      無くディスクへ直接書けない)。12Mbps だと2.8分ほどで上限に達して実用にならないため、
      投稿先の実効レートに合わせて 5Mbps とし、書き出せる尺を優先する
@@ -432,7 +476,10 @@ MC.exporter.videoBitrate = () => {
      5Mbps だと 6.7分でメモリ上限に当たり、「8分30秒まで書き出せる」と
      案内しておきながら実際には弾かれていた(2026-07-21 実機で発覚)。
      画質よりも「案内どおり書き出せること」を優先する */
-  return MC.isIOS ? 3.8e6 : base;
+  /* iPhoneはどの画質モードでも3.8Mbps固定(メモリ260MBに8分30秒を収める制約)。
+     snsモードはこの同じ量を720pに使うので、密度が2.25倍になる */
+  void base;
+  return 3.8e6;
 };
 
 /* この端末で書き出せる最大の秒数。案内と自動調整の両方で使う */
@@ -481,7 +528,7 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
     writable = null;
     try { w.abort().catch(() => {}); } catch (err) {}
   };
-  const { w, h } = MC.PRESETS[MC.S.preset];
+  const { w, h } = MC.exporter.exportDims();   // 画質モードで720p/1080pが変わる
   const fps = 30;
   const [tIn, tOut] = MC.trimRange();
   const totalFrames = Math.max(1, Math.round((tOut - tIn) * fps));
@@ -641,9 +688,12 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
     let audioOk = false;
     if (withAudio) {
       const enc = audioClip.isAudio ? MC.exporter.encodeAudioFile : MC.exporter.encodeAudio;
+      /* 93%で固まって見えた問題(2026-07-23 優さん指摘): 音声は
+         デコード+エンコードで数十秒かかるのに、進捗が一点張り付きだった。
+         0.90〜0.97 を実際の進み(frac 0..1)で埋める */
       audioOk = await enc(
         muxer, audioClip, tIn - audioClip.offset, tOut - tIn,
-        s => onProgress(0.93, s));
+        (s, frac) => onProgress(0.90 + 0.07 * Math.max(0, Math.min(1, frac ?? 0.5)), s));
       if (!audioOk && !MC.exporter.cancelFlag) MC.ui.toast("⚠ 音声を書き出せませんでした(映像のみ出力します)");
     }
     if (MC.exporter.cancelFlag) throw new Error("キャンセルしました");

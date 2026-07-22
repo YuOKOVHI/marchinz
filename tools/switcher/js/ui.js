@@ -230,6 +230,8 @@ MC.ui.resetEasyDone = () => {
 
 MC.ui.renderAll = () => {
   MC.ui.applyGuestLocks();
+  MC.ui.renderQualityPicker();
+  MC.ui.renderPlacement();
   if (MC.ui._syncFloatPos) MC.ui._syncFloatPos();   // 素材の増減で位置が変わる
   {
     const prb = MC.ui.$("#projectResetBtn");
@@ -266,7 +268,7 @@ MC.ui.initJourney = () => {
       { id: "mat",    label: "素材",     hint: "3つまでまとめて選べます" },
       { id: "sync",   label: "同期",     hint: "「波形で同期する」でズレを合わせます" },
       { id: "polish", label: "整える",   hint: "音声・レイアウト・仕上げを整えます" },
-      { id: "export", label: "書き出す", hint: "「MP4を書き出す」で完成です" },
+      { id: "export", label: "書き出す", hint: "「動画を書き出す」で完成です" },
     ],
     doneHint: "書き出し完了。調整して書き出し直すこともできます",
     canSelect: () => true,   // タップ=そのセクションへ移動(状態は変えないので常に安全)
@@ -323,7 +325,7 @@ MC.ui.updateActionBar = () => {
           return r.height > 0 && r.top < window.innerHeight - 70 && r.bottom > 0;
         });
         if (dup) { bar.classList.remove("on"); return; }
-        conf = { label: "MP4を書き出す", icon: "fa-file-export",
+        conf = { label: "動画を書き出す", icon: "fa-file-export",
           disabled: MC.ui.$("#exportBtn").disabled, act: () => MC.ui.$("#exportBtn").click() };
       }
     } else if (cur === "export" && MC.exporter.lastResult) {
@@ -359,6 +361,8 @@ MC.ui.refreshJourney = () => {
     : (vids.length >= 2 && !synced) ? "sync"
     : exported ? "export" : "polish";
   MZJourney.set(current, done);
+  // 済んだフェーズの説明をCSSで畳むための現在地(2026-07-23 表示すっきり)
+  document.body.dataset.mzjPhase = current;
   // 現在フェーズのセクションをそっと強調
   document.querySelectorAll(".side .panel").forEach(p => p.classList.remove("phase-current"));
   const target = document.querySelector(MC.ui.JOURNEY_SECTIONS[current]);
@@ -614,19 +618,103 @@ MC.ui.renderExportMode = () => {
   const btn = MC.ui.$("#exportBtn");
   const mode = MC.ui.exportMode();
   if (mode === "fast") {
-    el.innerHTML = `<span class="ok">✓ MP4 (H.264+AAC) 高速書き出し — そのままSNSに投稿できます</span>`;
-    btn.innerHTML = '<i class="fa-solid fa-file-export"></i> MP4を書き出す';
+    el.innerHTML = "";   // 正常時は技術情報を出さない(そのまま保存できるのが当たり前の姿)
+    btn.innerHTML = '<i class="fa-solid fa-file-export"></i> 動画を書き出す';
   } else if (mode === "realtime") {
-    const mp4 = MC.caps.recMime.startsWith("video/mp4");
-    el.innerHTML = `<span class="warn">⚠ この端末は実時間録画モード(${mp4 ? "MP4" : "WebM"})。書き出し中は画面を閉じないでください</span>`;
-    btn.innerHTML = `<i class="fa-solid fa-file-export"></i> ${mp4 ? "MP4" : "WebM"}を書き出す(実時間)`;
+    el.innerHTML = `<span class="warn">⚠ この端末は実時間録画になります。書き出し中は画面を閉じないでください</span>`;
+    btn.innerHTML = '<i class="fa-solid fa-file-export"></i> 動画を書き出す(実時間)';
   } else if (mode === "mute") {
-    el.innerHTML = `<span class="warn">⚠ 音声エンコード非対応 → 映像のみMP4</span>`;
-    btn.innerHTML = '<i class="fa-solid fa-file-export"></i> MP4を書き出す(音声なし)';
+    el.innerHTML = `<span class="warn">⚠ この端末では音声を付けられません(映像のみ)</span>`;
+    btn.innerHTML = '<i class="fa-solid fa-file-export"></i> 動画を書き出す(音声なし)';
   } else {
     el.innerHTML = `<span class="err">✗ この環境では書き出しできません(Safari/Chromeの最新版をお使いください)</span>`;
     btn.textContent = "書き出し不可";
   }
+};
+
+/* ---------- 書き出し画質の選択(2026-07-23 優さん指示) ----------
+   sns(720p)が既定。1080pは時間がかかる旨+パソコン推奨を明記。
+   高画質はパソコン(ディスク直書きできる環境)限定で、スマホには出さない */
+MC.ui.renderQualityPicker = () => {
+  const host = MC.ui.$("#qualityPicker");
+  if (!host) return;
+  const pc = MC.exporter.isPC();
+  const cur = MC.exporter.quality();
+  const defs = [
+    { id: "sns", name: "SNS用", tag: "おすすめ",
+      desc: MC.isIOS ? "720p・きれいで速い" : "720p・軽くて速い" },
+    { id: "hd", name: "1080p", tag: "",
+      desc: "YouTube向け。時間がかかります" + (pc ? "" : "(パソコン推奨)") },
+    ...(pc ? [{ id: "pro", name: "高画質", tag: "パソコン限定",
+      desc: "1080p・高ビットレート" }] : []),
+  ];
+  host.innerHTML = defs.map(d => `
+    <button type="button" class="q-card${d.id === cur ? " on" : ""}" role="radio"
+      aria-checked="${d.id === cur}" data-q="${d.id}">
+      <span class="q-name">${d.name}${d.tag ? ` <em class="q-tag">${d.tag}</em>` : ""}</span>
+      <span class="q-desc">${d.desc}</span>
+    </button>`).join("");
+  host.querySelectorAll("[data-q]").forEach(b => {
+    b.onclick = () => {
+      MC.S.exportQuality = b.dataset.q;
+      MC.saveState();
+      MC.ui.renderQualityPicker();
+      MC.ui.renderTransport();       // 見積り(ETA)を新しい画質で引き直す
+      MC.ui.checkExportable();
+    };
+  });
+};
+
+/* ---------- 縦型: カメラの配置(上/中/下)の確認と入れ替え ----------
+   縦積みレイアウトはスロット順がそのまま上→下の並びになる。
+   どれがどこに置かれたかを見せて、▲▼で入れ替えられるようにする
+   (2026-07-23 優さん指示) */
+MC.ui.renderPlacement = () => {
+  const sec = MC.ui.$("#placeSec");
+  const rows = MC.ui.$("#placeRows");
+  if (!sec || !rows) return;
+  const L = MC.LAYOUTS[MC.S.layoutId];
+  const vertical = MC.S.mode === "vertical";
+  /* スロットには消したクリップのidが残ることがある(モードを行き来した後など)。
+     実在するクリップだけを表示対象にする */
+  const ids = vertical && L.rects
+    ? MC.S.slots.slice(0, L.n).filter(id => id != null && MC.getClip(id))
+    : [];
+  if (!vertical || ids.length < 2) { sec.hidden = true; return; }
+  sec.hidden = false;
+  const POS = ids.length === 2 ? ["上", "下"] : ["上", "中", "下"];
+  rows.innerHTML = "";
+  ids.forEach((id, i) => {
+    const c = MC.getClip(id);
+    if (!c) return;
+    const row = document.createElement("div");
+    row.className = "place-row";
+    row.innerHTML = `
+      <span class="place-pos">${POS[i] || i + 1}</span>
+      ${c.thumb ? `<img class="place-thumb" src="${c.thumb}" alt="">` : '<span class="place-thumb place-thumb--empty"></span>'}
+      <span class="place-name">${MC.ui.esc(c.name)}</span>
+      <span class="place-btns">
+        <button type="button" class="place-move" data-d="-1" ${i === 0 ? "disabled" : ""} aria-label="上へ">▲</button>
+        <button type="button" class="place-move" data-d="1" ${i === ids.length - 1 ? "disabled" : ""} aria-label="下へ">▼</button>
+      </span>`;
+    row.querySelectorAll(".place-move").forEach(b => {
+      b.onclick = () => {
+        const j = i + parseInt(b.dataset.d);
+        if (j < 0 || j >= ids.length) return;
+        // スロット配列上の実位置を入れ替える(nullを飛ばした表示順→実indexへ)
+        const realIdx = [];
+        MC.S.slots.forEach((s, k) => {
+          if (s != null && MC.getClip(s) && realIdx.length < ids.length) realIdx.push(k);
+        });
+        const a = realIdx[i], bIdx = realIdx[j];
+        [MC.S.slots[a], MC.S.slots[bIdx]] = [MC.S.slots[bIdx], MC.S.slots[a]];
+        MC.saveState();
+        MC.ui.renderAll();
+        MC.preview.seek(MC.S.t);   // 入れ替えを即プレビューに反映
+      };
+    });
+    rows.appendChild(row);
+  });
 };
 
 /* おまかせの説明。カット割をするのはスイッチング/ワイプのときだけなので、
@@ -635,11 +723,14 @@ MC.ui.renderEasyLead = () => {
   const el = document.querySelector(".easy-lead");
   if (!el) return;
   const cutMode = ["switch", "wipe"].includes(MC.S.layoutId);
-  el.textContent = MC.S.easyDone
-    ? "準備ができました。あとは書き出すだけです。"
-    : cutMode
+  /* 完了後は完了カード(easyStatus)が同じことを言うので、リード文は畳む
+     (同じ表示を2箇所に出さない。失敗時は markExportFailed がここへ書く) */
+  el.hidden = !!MC.S.easyDone;
+  if (!MC.S.easyDone) {
+    el.textContent = cutMode
       ? "同期・カット割・色みまで、おまかせで仕上げます。"
       : "同期・色みまで、おまかせで仕上げます。";
+  }
   MC.ui.renderEasyButton();
 };
 
@@ -651,6 +742,7 @@ MC.ui.markExportFailed = () => {
   if (st) st.innerHTML = "";          // 「書き出す準備ができました」の完了カードを消す
   const lead = document.querySelector(".easy-lead");
   if (lead) {
+    lead.hidden = false;   // 完了時は畳んでいるので、失敗表示のときは開く
     lead.innerHTML = '<span class="err">書き出しに失敗しました。下の「詳しいログ」に原因が出ています。'
       + 'ボタンからもう一度お試しください。</span>';
   }
@@ -769,12 +861,16 @@ MC.ui.learnAnalysisRate = (elapsedSec, clipCount, showSec) => {
 MC.ui.renderTotalEta = (dur, tIn, tOut) => {
   const el = MC.ui.$("#totalEtaHint");
   if (!el) return;
+  /* おまかせが済んだら、残る作業は書き出しだけ。書き出し欄のETAと
+     同じ内容を2箇所に出さない(2026-07-23 表示すっきり) */
+  if (MC.S.easyDone) { el.hidden = true; return; }
   const clips = MC.S.clips.filter(c => !c.isAudio && !c.isImage);
   const showSec = Math.max(0, (tOut ?? 0) - (tIn ?? 0));
   if (!dur || !clips.length || showSec < 1) { el.hidden = true; return; }
 
   const anaSec = clips.length * showSec * MC.ui.analysisRate();
-  const expFactor = MC.ui.exportMode() === "realtime" ? 1.15 : (MC.isIOS ? 1.8 : 0.9);
+  let expFactor = MC.ui.exportMode() === "realtime" ? 1.15 : (MC.isIOS ? 1.8 : 0.9);
+  if (MC.exporter.quality() === "sns") expFactor *= 0.8;
   const expSec = showSec * expFactor;
 
   /* 1分未満は「1分ほど」に丸める。秒まで出すと正確に見えすぎる */
@@ -1072,7 +1168,8 @@ MC.ui.updateTransport = () => {
       const mm = Math.floor(sec / 60), ss = Math.round(sec % 60);
       /* iPhone/iPadは実時間の約1.8倍。パソコンは同じ処理でもずっと速いので
          過大な数字を見せない(レビュー指摘)。実時間録画は尺そのもの+仕上げ */
-      const factor = MC.ui.exportMode() === "realtime" ? 1.15 : (MC.isIOS ? 1.8 : 0.9);
+      let factor = MC.ui.exportMode() === "realtime" ? 1.15 : (MC.isIOS ? 1.8 : 0.9);
+      if (MC.exporter.quality() === "sns") factor *= 0.8;   // 720pは実測22%速い
       const estMin = Math.max(1, Math.round(sec * factor / 60));
       const end = new Date(Date.now() + sec * factor * 1000);
       const endTxt = `${end.getHours()}:${String(end.getMinutes()).padStart(2, "0")}頃`;
@@ -1203,7 +1300,7 @@ MC.ui.wire = () => {
   $("#syncBtn").onclick = async () => {
     $("#syncBtn").disabled = true;
     const p = MZP.start({ mount: "#syncStatus", chapter: "同期", steps: 4,
-                          label: "音を取り出しています…" });
+                          label: "音を分析しています…" });
     try {
       const r = await MC.sync.run(p);
       // カラー自動マッチ(初期ON)。失敗しても同期は成功扱い

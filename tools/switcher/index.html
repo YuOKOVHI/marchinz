@@ -86,6 +86,12 @@
       <input type="file" id="audioInput" accept="audio/*,.mp3,.wav,.m4a,.aac" hidden>
     </section>
 
+    <section class="panel" id="placeSec" hidden>
+      <h2>カメラの配置</h2>
+      <p class="sec-lead place-lead">画面のどこに置くかを確認してください。入れ替えできます。</p>
+      <div id="placeRows" class="place-rows"></div>
+    </section>
+
     <div id="setupTabs" class="setup-tabs" hidden>
       <div class="tabs" role="tablist" aria-label="設定の詳しさ">
         <button type="button" class="tab on" data-tab="easy" role="tab" aria-selected="true">おまかせ</button>
@@ -219,9 +225,10 @@
       <button type="button" id="projectResetBtn" class="btn small ghost project-reset" hidden>
         <i class="fa-solid fa-rotate-left" aria-hidden="true"></i> 最初からやり直す（動画を外して保存も消す）
       </button>
+      <div id="qualityPicker" class="quality-picker" role="radiogroup" aria-label="書き出し画質"></div>
       <div id="exportMode" class="status"></div>
       <div class="row">
-        <button id="exportBtn" class="btn primary big" disabled><i class="fa-solid fa-file-export"></i> MP4を書き出す</button>
+        <button id="exportBtn" class="btn primary big" disabled><i class="fa-solid fa-file-export"></i> 動画を書き出す</button>
         <button id="cancelBtn" class="btn danger" style="display:none">中止</button>
       </div>
       <p id="exportEtaHint" class="hint export-eta-hint"></p>

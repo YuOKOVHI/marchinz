@@ -108,7 +108,7 @@ MC.activeClips = () => {
 MC.saveState = () => {
   try {
     localStorage.setItem("marchcut_project", JSON.stringify({
-      layoutId: MC.S.layoutId, preset: MC.S.preset,
+      layoutId: MC.S.layoutId, preset: MC.S.preset, exportQuality: MC.S.exportQuality,
       trimIn: MC.S.trimIn, trimOut: MC.S.trimOut,
       beatsPerBar: MC.S.beatsPerBar, cutLevel: MC.S.cutLevel,
       wipePos: MC.S.wipePos, wipePos2: MC.S.wipePos2, wipeSize: MC.S.wipeSize,
