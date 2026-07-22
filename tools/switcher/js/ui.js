@@ -619,6 +619,63 @@ MC.ui.setBusy = busy => {
   });
   const dz = MC.ui.$("#clipSlots");
   if (dz) dz.classList.toggle("mz-busy", !!busy);
+  MC.ui.guardLeave(!!busy);   // 作業中はタブを閉じさせない・画面を消させない
+};
+
+/* ============ 作業中の離脱・画面ロックを防ぐ ============
+   同期・カット割・書き出しはすべて「このタブが生きていること」が前提。
+   タブを閉じる/リロードすると当然止まり、画面がロックされても
+   rAF とデコーダが止まって進まなくなる(2026-07-21 優さん報告)。
+
+   3段構え:
+     ① beforeunload … 閉じる/リロードの前に確認ダイアログを出す
+     ② Wake Lock   … 画面を点けたままにする(marchinz-base.jsのメトロノームと同じ)
+     ③ 復帰時の再取得 … 一度でも画面が消えると Wake Lock は解放されるので、
+                        戻ってきたら取り直す
+   すべて「効かない環境では静かに諦める」設計にし、処理自体は止めない。 */
+MC.ui._wakeLock = null;
+MC.ui._leaveGuarded = false;
+
+MC.ui._onBeforeUnload = e => {
+  if (!MC.ui._busy) return;
+  e.preventDefault();
+  e.returnValue = "";   // 文言はブラウザ側が決める(独自文字列は無視される)
+  return "";
+};
+
+MC.ui._onVisChange = () => {
+  // 画面が戻ったら Wake Lock を取り直す(消灯・アプリ切替で解放されるため)
+  if (document.visibilityState === "visible" && MC.ui._busy) MC.ui._holdWake(true);
+};
+
+MC.ui._holdWake = async want => {
+  try {
+    if (want && !MC.ui._wakeLock && navigator.wakeLock) {
+      MC.ui._wakeLock = await navigator.wakeLock.request("screen");
+      MC.ui._wakeLock.addEventListener("release", () => { MC.ui._wakeLock = null; });
+    } else if (!want && MC.ui._wakeLock) {
+      const w = MC.ui._wakeLock;
+      MC.ui._wakeLock = null;
+      await w.release();
+    }
+  } catch (_) {
+    // 非対応・省電力モード・非表示タブ等。画面ロック対策なしで続行する
+    MC.ui._wakeLock = null;
+  }
+};
+
+MC.ui.guardLeave = on => {
+  if (on === MC.ui._leaveGuarded) return;
+  MC.ui._leaveGuarded = on;
+  if (on) {
+    window.addEventListener("beforeunload", MC.ui._onBeforeUnload);
+    document.addEventListener("visibilitychange", MC.ui._onVisChange);
+    MC.ui._holdWake(true);
+  } else {
+    window.removeEventListener("beforeunload", MC.ui._onBeforeUnload);
+    document.removeEventListener("visibilitychange", MC.ui._onVisChange);
+    MC.ui._holdWake(false);
+  }
 };
 
 MC.ui.runEasy = async () => {
@@ -1005,6 +1062,10 @@ MC.ui.wire = () => {
       sub: mode === "realtime" ? "画面を閉じずにお待ちください" : "",
       // 中止は枠の外の #cancelBtn が既に担っているので、ここでは出さない(二重表示の回避)
     });
+    /* 書き出しは最も長い処理。タブを閉じられたら当然止まり、画面が消えても
+       rAF とデコーダが止まって進まなくなる。ここは setBusy を通らない経路
+       なので、離脱防止を直接かける(2026-07-21 優さん報告) */
+    MC.ui.guardLeave(true);
     try {
       if (mode === "none") throw new Error("この環境では書き出しできません");
       const res = mode === "realtime"
@@ -1022,6 +1083,7 @@ MC.ui.wire = () => {
         MC.ui.showErrorLog(e);
       }
     } finally {
+      MC.ui.guardLeave(MC.ui._busy);   // 他の処理が続いていなければ解除
       if (releaseExportLock) releaseExportLock();
       $("#exportBtn").disabled = !MC.S.clips.length;
       $("#cancelBtn").style.display = "none";
