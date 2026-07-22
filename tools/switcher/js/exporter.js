@@ -482,7 +482,11 @@ MC.exporter.videoBitrate = () => {
      マーチングは動きが細かく圧縮に厳しいため、ここが効く */
   if (MC.exporter.streamingOut()) {
     if (q === "sns") return sq ? 6e6 : 8e6;
-    return base;                                  // hd/pro は 12e6(正方形は8e6)
+    /* iOSは 8Mbps に留める。12Mbps だと 510秒で765MBになり、カメラロールへの
+       コピーと端末容量に重い。8Mbps(523MB)が画質と取り回しの均衡点で、
+       YouTube の 1080p30 推奨と同じ(2026-07-20 検討メモの採用案どおり) */
+    if (MC.isIOS) return sq ? 6e6 : 8e6;
+    return base;                                  // パソコンは 12e6(正方形は8e6)
   }
   /* 旧経路(OPFS非対応の端末)はこれまで通り3.8Mbps固定。
      snsモードはこの同じ量を720pに使うので、密度が2.25倍になる */
