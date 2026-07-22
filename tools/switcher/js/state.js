@@ -151,8 +151,30 @@ MC.restoreClipState = clip => {
   } catch (e) { return false; }
 };
 
+/* 今回の読み込みで何がどこまで戻ったか。トーストの文言を事実に合わせるため、
+   推測ではなくここで実際の結果を記録する(2026-07-21 レビュー指摘) */
+MC.restoreInfo = { sync: 0, cuts: false, trim: false };
+
+/* 書き出し範囲(IN/OUT)の復元。保存はしていたのに起動時に読み戻していなかった
+   ため、「書き出し範囲も復元しました」が事実と違っていた(同レビュー指摘)。
+   素材が1本でも復元できたときだけ戻す(別の動画に範囲だけ残ると事故る) */
+MC.restoreTrim = () => {
+  MC.restoreInfo.trim = false;
+  if (!MC.S.clips.some(c => c.restored)) return;
+  if (MC.S.trimIn > 0.05 || MC.S.trimOut != null) return;   // すでに指定済みなら触らない
+  try {
+    const saved = JSON.parse(localStorage.getItem("marchcut_project") || "{}");
+    const hasTrim = (saved.trimIn > 0.05) || (saved.trimOut != null);
+    if (!hasTrim) return;
+    MC.S.trimIn = saved.trimIn || 0;
+    MC.S.trimOut = saved.trimOut == null ? null : saved.trimOut;
+    MC.restoreInfo.trim = true;
+  } catch (e) {}
+};
+
 /* クリップ読込後: 保存済みカットリストをkey→idで復元(全key解決時のみ) */
 MC.restoreCutList = () => {
+  MC.restoreInfo.cuts = false;
   if (MC.S.cutList.length) return;
   try {
     const saved = JSON.parse(localStorage.getItem("marchcut_project") || "{}");
@@ -160,6 +182,6 @@ MC.restoreCutList = () => {
     const byKey = new Map(MC.S.clips.map(c => [MC.clipKey(c), c.id]));
     const cuts = saved.cutList.map(e =>
       byKey.has(e.key) ? { t: e.t, clipId: byKey.get(e.key), trans: e.trans, dur: e.dur } : null);
-    if (cuts.every(Boolean)) MC.S.cutList = cuts;
+    if (cuts.every(Boolean)) { MC.S.cutList = cuts; MC.restoreInfo.cuts = true; }
   } catch (e) {}
 };

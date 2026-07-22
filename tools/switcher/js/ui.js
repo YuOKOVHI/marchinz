@@ -107,15 +107,41 @@ MC.ui.esc = s => String(s).replace(/[&<>"']/g,
 
 /* 最初からやり直す: 保存済みの設定(同期・カット割・範囲)ごと消す。
    「前回の続きが復元される」仕組みの対になる出口(2026-07-21 優さん指示) */
+/* 復元されたことを画面に残す。トーストは3.4秒で消えるうえ1回きりで、
+   見逃すと「同期し直し」に数分を無駄にする(2026-07-21 レビュー指摘)。
+   何が戻ったかは MC.restoreInfo(実際の結果)だけで書く。
+   推測で「書き出し範囲も復元」と言って事実と違っていたのが前版 */
+MC.ui.renderRestoreNote = () => {
+  const host = MC.ui.$("#dropSec");
+  const old = document.getElementById("mzRestoreNote");
+  if (old) old.remove();
+  const info = MC.restoreInfo || {};
+  if (!host || !info.sync) return;
+  const got = [`同期（${info.sync}本）`];
+  if (info.cuts) got.push("カット割");
+  if (info.trim) got.push("書き出し範囲");
+  const el = document.createElement("p");
+  el.id = "mzRestoreNote";
+  el.className = "mz-restore-note";
+  el.innerHTML = '<i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> '
+    + `前回の続きから始められます（${got.join("・")}を復元しました）`;
+  const slots = MC.ui.$("#clipSlots");
+  if (slots) host.insertBefore(el, slots); else host.appendChild(el);
+};
+
 MC.ui.resetProject = () => {
-  if (!confirm("同期・カット割・書き出し範囲の保存を消して、最初からやり直しますか？")) return;
-  try { localStorage.removeItem("marchcut_project"); } catch (_) {}
+  if (!confirm("最初からやり直します。\n\n読み込んだ動画を外し、同期・カット割・書き出し範囲の保存も消します。\n（動画ファイル自体は消えません）")) return;
+  /* 先に素材を外す。removeClip は afterChange 経由で saveState() を呼ぶため、
+     先に localStorage を消すと空データが書き戻されてしまう(レビュー指摘) */
+  [...MC.S.clips].forEach(c => MC.media.removeClip(c.id));
   MC.S.trimIn = 0;
   MC.S.trimOut = null;
   MC.S.cutList = [];
-  [...MC.S.clips].forEach(c => MC.media.removeClip(c.id));
+  MC.restoreInfo = { sync: 0, cuts: false, trim: false };
+  try { localStorage.removeItem("marchcut_project"); } catch (_) {}
   MC.ui.clearErrorLog();
   MC.ui.resetEasyDone();
+  MC.ui.renderRestoreNote();
   MC.ui.renderAll();
   MC.ui.toast("まっさらな状態に戻しました");
 };
@@ -902,8 +928,14 @@ MC.ui.updateTransport = () => {
     } else {
       const sec = Math.max(0, tOut - tIn);
       const mm = Math.floor(sec / 60), ss = Math.round(sec % 60);
-      const estMin = Math.max(1, Math.round(sec * 1.8 / 60));
-      etaHint.textContent = `${mm}分${ss ? String(ss).padStart(2, "0") + "秒" : ""}の動画で、書き出しにはおよそ${estMin}分かかります`;
+      /* iPhone/iPadは実時間の約1.8倍。パソコンは同じ処理でもずっと速いので
+         過大な数字を見せない(レビュー指摘)。実時間録画は尺そのもの+仕上げ */
+      const factor = MC.ui.exportMode() === "realtime" ? 1.15 : (MC.isIOS ? 1.8 : 0.9);
+      const estMin = Math.max(1, Math.round(sec * factor / 60));
+      const end = new Date(Date.now() + sec * factor * 1000);
+      const endTxt = `${end.getHours()}:${String(end.getMinutes()).padStart(2, "0")}頃`;
+      etaHint.textContent = `${mm}分${ss ? String(ss).padStart(2, "0") + "秒" : ""}の動画で、`
+        + `書き出しにはおよそ${estMin}分（いま始めると${endTxt}に終わります）`;
     }
   }
   // スライダー下の範囲バンド(どこからどこまで書き出すかをいつでも見せる)

@@ -211,17 +211,15 @@ MC.media.afterChange = () => {
   if (MC.S.refClipId == null && firstVideo) MC.S.refClipId = firstVideo.id;
   if (MC.S.wipeClipId == null && n) MC.S.wipeClipId = slotClips[0].id;
   MC.restoreCutList();
+  MC.restoreTrim();
   MC.preview.applyMute();
   MC.saveState();
   MC.ui.resetEasyDone();   // 素材が変わったら「書き出すだけ」状態を解除
   MC.ui.renderAll();
   MC.ui.focusNextAction();   // 次にすること(おまかせで開始)まで運ぶ
-  /* 前回の続き(同期・カット割・範囲)が復元されたら、それと分かるように知らせる。
-     途中で落ちても、同じ動画を選び直せば書き出し前まで一気に戻れる(2026-07-21) */
-  if (!MC._restoredToastShown && MC.S.clips.some(c => c.restored)) {
-    MC._restoredToastShown = true;
-    MC.ui.toast(MC.S.cutList.length
-      ? "💾 前回の続きを復元しました（同期・カット割・書き出し範囲）"
-      : "💾 前回の同期結果を復元しました");
-  }
+  /* 何がどこまで戻ったかを、実際の結果だけで伝える。
+     以前は cutList の有無だけを見て「書き出し範囲も復元」と言っており、
+     事実と違うことがあった(2026-07-21 レビュー指摘) */
+  MC.restoreInfo.sync = MC.S.clips.filter(c => c.restored).length;
+  MC.ui.renderRestoreNote();
 };
