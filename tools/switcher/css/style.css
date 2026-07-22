@@ -670,9 +670,10 @@ html, body { max-width: 100%; overflow-x: clip; }
 /* 見えるが触れない。何が待っているかは分かるようにする */
 .mz-locked {
   opacity: 0.5;
-  pointer-events: none;
   user-select: none;
+  cursor: pointer;   /* タップすると「登録で使えます」の案内を返す(2026-07-23 A-2) */
 }
+.mz-locked > *:not(h2) { pointer-events: none; }
 .mz-pro-lock-note {
   padding: 12px 14px;
   border: 1px solid rgba(30, 79, 214, 0.3);
@@ -914,3 +915,25 @@ body[data-mzj-phase="export"] .clip-slot.empty { display: none; }
 }
 .mz-step-chip.locked { color: var(--tx2); background: var(--panel2); }
 .mz-step-chip .fa-chevron-down, .mz-step-chip .fa-chevron-up { font-size: 9px; opacity: 0.7; }
+
+
+/* ============ 2026-07-23 レビュー反映 ============ */
+/* おまかせ/こだわりの分岐はモード選択直後(素材の前)に置く(B-1) */
+.setup-tabs-lead {
+  margin: 8px 2px 0;
+  font-size: 12px;
+  color: var(--tx2);
+}
+
+/* 「3本まで・8分30秒まで」の理由(B-2)。制約は理由とセットで見せる */
+.mz-limit-why {
+  margin: 8px 0 0;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: rgba(30, 79, 214, 0.06);
+  border: 1px solid rgba(30, 79, 214, 0.14);
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--tx);
+}
+.mz-limit-why i { color: var(--acc); margin-right: 2px; }

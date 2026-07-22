@@ -43,7 +43,7 @@ MC.ui.showLongExportHelp = (okMin, mb) => {
   $("#doneText").innerHTML =
     `<span class="warn">この端末では書き出せない長さです（約${mb}MB）</span>`;
   $("#doneNote").textContent =
-    `iPhone・iPadは動画を丸ごとメモリに載せるため、${okMin}分ほどが上限です。`
+    `スマホ・タブレットは動画を丸ごとメモリに載せるため、${okMin}分ほどが上限です。`
     + `「ここから書き出す IN」「ここまで OUT」で範囲を狭めるか、`
     + `パソコンのChromeで開くと最後まで書き出せます。`;
 };
@@ -185,7 +185,7 @@ MC.ui.checkExportable = () => {
     + `いまの範囲(${MC.ui.fmtTime(sec)})は、この端末では書き出せません</p>`
     + '<p class="mzw-body">'
     + (byDevice
-        ? `iPhone・iPadは動画を丸ごとメモリに載せるため、${fitLabel}までです。`
+        ? `スマホ・タブレットは動画を丸ごとメモリに載せるため、${fitLabel}までです。`
           + "パソコンのChromeで開くと最後まで書き出せます。"
         : `いま書き出せるのは${fitLabel}までです。`)
     + "</p>"
@@ -255,6 +255,11 @@ MC.ui.renderAll = () => {
   MC.ui.refreshSetupTabs();
   MC.ui.$("#syncBtn").disabled = MC.S.clips.filter(c => !c.isImage).length < 2;
   MC.ui.$("#exportBtn").disabled = !MC.S.clips.length;
+  {
+    // タブを先頭へ出したので、素材ゼロでもボタンが見える。押せない状態にしておく
+    const eb = MC.ui.$("#easyStartBtn");
+    if (eb) eb.disabled = !MC.S.clips.length;
+  }
   MC.ui.refreshJourney();
 };
 
@@ -521,6 +526,12 @@ MC.ui.renderClips = () => {
   const box = MC.ui.$("#clipSlots");
   box.innerHTML = "";
   const vertical = MC.S.mode === "vertical";
+  /* 縦型は写真も入れられる。見出しの名詞をモードに合わせる(2026-07-23 B-4)。
+     h2にはステップのチップが付くので、専用spanだけを書き換える */
+  {
+    const t = document.querySelector("#dropSec .drop-title");
+    if (t) t.textContent = vertical ? "動画・写真を読み込む" : "動画を読み込む";
+  }
   const slotClips = MC.media.slotClips();   // 音声のみを除く(動画+画像)
 
   for (let slotIdx = 0; slotIdx < 3; slotIdx++) {
@@ -902,6 +913,20 @@ MC.ui.applyGuestLocks = () => {
     const el = MC.ui.$(sel);
     if (el) el.classList.toggle("mz-locked", guest);
   });
+  /* ロックされた欄をタップしたら、黙って無視せず理由を返す(2026-07-23 A-2)。
+     操作の抑止は CSS(子要素の pointer-events を切る)側で行い、
+     セクション自身がタップを受けて案内を出す */
+  if (!MC.ui._guestLockWired) {
+    MC.ui._guestLockWired = true;
+    document.addEventListener("click", ev => {
+      if (!document.body.classList.contains("mz-guest")) return;
+      const sec = ev.target.closest(".mz-locked");
+      if (!sec || ev.target.closest("h2")) return;   // 見出しは畳み開閉に使う
+      MC.ui.toast("この設定は無料登録で使えます");
+      const n = document.getElementById("mzProLockNote");
+      if (n) n.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }
   const pane = MC.ui.$("#proPane");
   let note = document.getElementById("mzProLockNote");
   if (guest && pane && !note) {
@@ -934,12 +959,19 @@ MC.ui.setSetupTab = tab => {
   if (changed && MC.S.clips.length) MC.ui.renderClips();
 };
 
+/* 「おまかせ / こだわり」はモード選択の直後から出す(2026-07-23 B-1)。
+   以前は素材を入れてから現れたため、ステップ表示と二重の階層になっていた。
+   おまかせ = ステップを飛ばす道、と定義して分岐を先頭に置く */
 MC.ui.refreshSetupTabs = () => {
-  const has = MC.S.clips.length > 0;
   const tabs = MC.ui.$("#setupTabs");
   if (!tabs) return;
-  tabs.hidden = !has;
-  if (!has) { MC.ui.$("#proPane").hidden = true; return; }
+  tabs.hidden = false;
+  const lead = MC.ui.$("#setupTabsLead");
+  if (lead) {
+    lead.textContent = MC.ui._setupTab === "pro"
+      ? "同期・レイアウト・仕上げを自分で決めます"
+      : "同期もカット割も自動。まず素材を入れてください";
+  }
   MC.ui.setSetupTab(MC.ui._setupTab || "easy");
 };
 
