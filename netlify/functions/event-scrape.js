@@ -1,11 +1,22 @@
 "use strict";
 /**
- * イベントページのURLからタイトル/開催日/都道府県/種別を推定して返す。
- * イベント登録フォームの「URLから仮入力」用(ブラウザからは他サイトを直接fetchできないため
+ * イベントページのURLから登録フォームの中身を推定して返す(v2)。
+ * イベント登録フォームの「URLから自動入力」用(ブラウザからは他サイトを直接fetchできないため
  * サーバ側で取得する)。返すのは抽出済みフィールドのみで、HTML本体は返さない。
  *
  * GET /.netlify/functions/event-scrape?url=https://...
- * → { ok, title, date, pref, kind, via: ["jsonld"|"og"|"text", ...] }
+ * → { ok, title, date, end_date, dates, time, venue_name, pref, kind, via }
+ *   dates    … 見つかった開催日候補(最大6)。複数公演のページでは利用者に選ばせる
+ *   end_date … 「7/20〜21」のような期間表記の終わり
+ *   time     … 開演時刻 "HH:MM"(開演が無ければ開始/開場で代用)
+ *
+ * v2 (2026-07-22) の要点:
+ *   - 文字コード検出。旧版は UTF-8 決め打ちで、日本のイベントページに多い
+ *     Shift_JIS だと文字化けして抽出が全滅していた(効果が一番大きい修正)
+ *   - JSON-LD から endDate / location.name / addressRegion も読む
+ *   - 日付は候補を複数返す。勝手に1つ目へ決めない
+ *   - 解析は parseEventHtml() に純関数として分離(Node の無い開発機でも
+ *     ブラウザにフィクスチャを食わせて検証できるようにするため)
  */
 
 const PREFS = [
@@ -67,30 +78,115 @@ function isoDate(y, m, d) {
   return `${y}-${pad2(m)}-${pad2(d)}`;
 }
 
-/** 本文テキストから開催日候補を拾う。年つき(2026年7月20日 / 2026/7/20)優先、無ければ月日のみ(未来解釈) */
-function findDates(text) {
-  const out = [];
-  const re1 = /(20\d{2})\s*[年/.\-]\s*(\d{1,2})\s*[月/.\-]\s*(\d{1,2})/g;
-  let m;
-  while ((m = re1.exec(text)) && out.length < 8) {
-    const s = isoDate(Number(m[1]), Number(m[2]), Number(m[3]));
-    if (s) out.push(s);
+/* ---------- 文字コード ----------
+   ヘッダの charset → meta の charset の順に見る。Shift_JIS / EUC-JP の
+   ページはまだ現役(自治体・ホール・吹連系に多い)。UTF-8決め打ちだった
+   旧版はここで全滅していた */
+function detectCharset(contentType, bytes) {
+  const fromHeader = /charset=([\w-]+)/i.exec(String(contentType || ""));
+  if (fromHeader) return fromHeader[1].toLowerCase();
+  // meta は ASCII 互換領域に書かれるので、素朴に1バイトずつ覗けば拾える
+  let head = "";
+  const n = Math.min(bytes.length, 4096);
+  for (let i = 0; i < n; i++) head += String.fromCharCode(bytes[i]);
+  const m = /<meta[^>]+charset=["']?([\w-]+)/i.exec(head)
+    || /content=["'][^"']*charset=([\w-]+)/i.exec(head);
+  return m ? m[1].toLowerCase() : "utf-8";
+}
+
+function decodeBody(buf, contentType) {
+  const bytes = new Uint8Array(buf);
+  const label = detectCharset(contentType, bytes);
+  try {
+    return new TextDecoder(label).decode(bytes);
+  } catch {
+    return new TextDecoder("utf-8").decode(bytes);   // 不明ラベルはUTF-8で読む
   }
-  if (!out.length) {
+}
+
+/* ---------- 日付 ----------
+   候補を集めて返す。決めるのは人。
+   ・年つき(2026年7月20日 / 2026/7/20 / 2026-07-20)を優先
+   ・「2026年7月20日〜21日」のような続き表記は同じ年月の日として展開
+   ・年なし(7月20日)は未来解釈(過ぎていれば翌年) */
+function collectDates(text) {
+  const found = [];
+  const push = (s) => { if (s && !found.includes(s) && found.length < 6) found.push(s); };
+
+  const reFull = /(20\d{2})\s*[年/.\-]\s*(\d{1,2})\s*[月/.\-]\s*(\d{1,2})/g;
+  let m;
+  while ((m = reFull.exec(text))) {
+    const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
+    push(isoDate(y, mo, d));
+    // 直後の「〜21」「・21日」「,22」を同じ年月の日として拾う(期間・複数公演)
+    const tail = text.slice(m.index + m[0].length, m.index + m[0].length + 24);
+    const t = /^[^0-9]{0,6}[〜～\-・,、]\s*(\d{1,2})\s*日?/.exec(tail);
+    if (t) push(isoDate(y, mo, Number(t[1])));
+  }
+
+  if (!found.length) {
     const now = new Date();
     const today = now.toISOString().slice(0, 10);
     const y = now.getFullYear();
-    const re2 = /(\d{1,2})\s*月\s*(\d{1,2})\s*日/g;
-    while ((m = re2.exec(text)) && out.length < 8) {
+    const reMd = /(\d{1,2})\s*月\s*(\d{1,2})\s*日/g;
+    while ((m = reMd.exec(text))) {
       let s = isoDate(y, Number(m[1]), Number(m[2]));
       if (s && s < today) s = isoDate(y + 1, Number(m[1]), Number(m[2]));
-      if (s) out.push(s);
+      push(s);
     }
   }
-  return out;
+  return found;
 }
 
-/** JSON-LD から schema.org/Event ノードを探す(@graph・配列対応) */
+/** 「7/20(土)〜7/21(日)」「7月20日〜21日」を期間として読む。無ければ null */
+function findRange(text, year) {
+  const re = /(\d{1,2})\s*[月/]\s*(\d{1,2})\s*日?\s*(?:[（(][^）)]{1,3}[）)])?\s*[〜～]\s*(?:(\d{1,2})\s*[月/]\s*)?(\d{1,2})\s*日?/;
+  const m = re.exec(text);
+  if (!m) return null;
+  const mo1 = Number(m[1]), d1 = Number(m[2]);
+  const mo2 = m[3] ? Number(m[3]) : mo1;
+  const d2 = Number(m[4]);
+  const a = isoDate(year, mo1, d1);
+  const b = isoDate(year, mo2, d2);
+  if (a && b && a < b) return { start: a, end: b };
+  return null;
+}
+
+/* ---------- 時刻 ----------
+   開演を最優先、無ければ開始/スタート、最後に開場。
+   「開演 18:00」「開演18時30分」「18時開演」の形に対応 */
+function findTime(text) {
+  const labels = ["開演", "開始", "スタート", "開場"];
+  for (const label of labels) {
+    let m = new RegExp(label + "[^0-9]{0,6}(\\d{1,2})\\s*[:時]\\s*(\\d{1,2})?").exec(text);
+    if (!m) m = new RegExp("(\\d{1,2})\\s*[:時]\\s*(\\d{1,2})?\\s*" + label).exec(text);
+    if (m) {
+      const h = Number(m[1]);
+      const mi = m[2] == null ? 0 : Number(m[2]);
+      if (h >= 0 && h <= 23 && mi >= 0 && mi <= 59) return `${pad2(h)}:${pad2(mi)}`;
+    }
+  }
+  return "";
+}
+
+/* ---------- 会場名 ---------- */
+function cleanVenueName(s) {
+  let v = decodeEntities(String(s || "")).replace(/\s+/g, " ").trim();
+  v = v.replace(/[（(][^）)]*[）)]\s*$/, "").trim();   // 末尾の(住所)や(最寄駅)を落とす
+  v = v.replace(/\s*(開場|開演|開始|入場|受付|チケット).*$/, "").trim();   // 続く時刻情報を切る
+  if (v.length < 2 || v.length > 60) return "";
+  if (PREFS.includes(v)) return "";                   // 都道府県名だけなら会場名ではない
+  return v;
+}
+
+function findVenueName(text) {
+  // 2語目は数字を含むもの(開場12:30 等の時刻情報)を拾わない
+  const re = /(?:会場|開催場所|会場名|場所)\s*[：:]\s*([^\s、。｜|]{2,40}(?:\s[^\s、。｜|0-9]{1,20})?)/;
+  const m = re.exec(text);
+  return m ? cleanVenueName(m[1]) : "";
+}
+
+/* ---------- JSON-LD ---------- */
 function findJsonLdEvent(html) {
   const re = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
   let m;
@@ -122,10 +218,103 @@ function metaContent(html, patterns) {
   return "";
 }
 
+/* ---------- 種別 ----------
+   保存できるのは 大会/演奏会/イベント の3つ。講習会・体験会・フェス等は
+   「イベント」に寄せる(分類は増やさない: タブ・地図・色分けが3種前提) */
 function guessKind(text) {
-  if (/大会|コンテスト|コンクール|選手権|チャンピオンシップ|グランプリ/.test(text)) return "大会";
-  if (/演奏会|コンサート|定期演奏|リサイタル/.test(text)) return "演奏会";
+  const t = String(text || "");
+  if (/大会|コンテスト|コンクール|選手権|チャンピオンシップ|グランプリ|予選|カップ/.test(t)) return "大会";
+  if (/演奏会|コンサート|定期演奏|リサイタル|発表会|ジョイント/.test(t)) return "演奏会";
   return "イベント";
+}
+
+/* ================= 解析本体(純関数) =================
+   fetch と切り離してある。Node の無い開発機では、ブラウザで
+   このファイルを読み込んでフィクスチャHTMLを食わせて検証する */
+function parseEventHtml(html) {
+  const via = [];
+  let title = "";
+  let date = "";
+  let endDate = "";
+  let pref = "";
+  let venueName = "";
+  let time = "";
+  let dates = [];
+
+  // 1) JSON-LD(schema.org/Event) — 最も信頼できる
+  const ld = findJsonLdEvent(html);
+  if (ld) {
+    via.push("jsonld");
+    if (typeof ld.name === "string") title = ld.name.trim();
+    const pick = (v) => {
+      const m = String(v || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+      return m ? m[0] : "";
+    };
+    date = pick(ld.startDate);
+    endDate = pick(ld.endDate);
+    if (endDate && endDate <= date) endDate = "";
+    const loc0 = Array.isArray(ld.location) ? ld.location[0] : ld.location;
+    if (loc0 && typeof loc0 === "object") {
+      if (typeof loc0.name === "string") venueName = cleanVenueName(loc0.name);
+      const addr = loc0.address || {};
+      const region = typeof addr === "object" ? String(addr.addressRegion || "") : String(addr);
+      pref = PREFS.find((p) => region.includes(p) || region === p.replace(/[都府県]$/, "")) || "";
+    }
+    if (!pref) {
+      const locStr = JSON.stringify(ld.location || "");
+      pref = PREFS.find((p) => locStr.includes(p)) || "";
+    }
+    const tm = String(ld.startDate || "").match(/T(\d{2}):(\d{2})/);
+    if (tm) time = `${tm[1]}:${tm[2]}`;
+  }
+
+  // 2) OGP / <title>
+  const ogTitle = metaContent(html, ["og:title", "twitter:title"]);
+  const ogDesc = metaContent(html, ["og:description", "description"]);
+  if (!title && ogTitle) { title = ogTitle; via.push("og"); }
+  if (!title) {
+    const t = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    if (t) { title = stripTags(t[1]).trim(); via.push("title"); }
+  }
+
+  // 3) 本文テキストから補完
+  const text = stripTags(html).slice(0, 30000);
+  const headText = `${title} ${ogDesc}`;
+
+  dates = collectDates(`${headText} ${text}`);
+  if (!date && dates.length) { date = dates[0]; via.push("text"); }
+  if (date && !dates.includes(date)) dates.unshift(date);
+
+  if (!endDate) {
+    const year = Number((date || "").slice(0, 4)) || new Date().getFullYear();
+    const range = findRange(`${headText} ${text}`, year);
+    if (range && (!date || range.start === date)) {
+      date = date || range.start;
+      endDate = range.end;
+    }
+  }
+
+  if (!time) time = findTime(`${headText} ${text}`);
+  if (!venueName) venueName = findVenueName(`${headText} ${text}`);
+  if (!pref) pref = PREFS.find((p) => headText.includes(p)) || PREFS.find((p) => text.includes(p)) || "";
+  // 会場名から引く(「広島グリーンアリーナ」→広島県)。最後の手段
+  if (!pref && venueName) {
+    pref = PREFS.find((p) => venueName.includes(p.replace(/[都府県]$/, ""))) || "";
+  }
+
+  const kind = guessKind(headText + " " + text.slice(0, 2000));
+
+  return {
+    title: String(title || "").slice(0, 200),
+    date,
+    end_date: endDate,
+    dates,
+    time,
+    venue_name: venueName,
+    pref,
+    kind,
+    via,
+  };
 }
 
 exports.handler = async (event) => {
@@ -150,58 +339,34 @@ exports.handler = async (event) => {
     });
     clearTimeout(tm);
     if (!res.ok) return json(200, { ok: false, error: `ページを取得できませんでした(HTTP ${res.status})` });
-    html = (await res.text()).slice(0, 1500000);
+    let buf = await res.arrayBuffer();
+    if (buf.byteLength > 1500000) buf = buf.slice(0, 1500000);
+    html = decodeBody(buf, res.headers.get("content-type"));
   } catch {
     return json(200, { ok: false, error: "ページを取得できませんでした(時間切れ/接続失敗)" });
   }
 
-  const via = [];
-  let title = "";
-  let date = "";
-  let pref = "";
+  const out = parseEventHtml(html);
 
-  // 1) JSON-LD(schema.org/Event) — 最も信頼できる
-  const ld = findJsonLdEvent(html);
-  if (ld) {
-    via.push("jsonld");
-    if (typeof ld.name === "string") title = ld.name.trim();
-    if (typeof ld.startDate === "string") {
-      const m = ld.startDate.match(/^(\d{4})-(\d{2})-(\d{2})/);
-      if (m) date = m[0];
-    }
-    const loc = ld.location;
-    const locStr = JSON.stringify(loc || "");
-    pref = PREFS.find((p) => locStr.includes(p)) || "";
+  if (!out.title && !out.date && !out.pref) {
+    const sns = /(?:^|\.)(twitter\.com|x\.com|instagram\.com|facebook\.com|threads\.net)$/i.test(target.hostname);
+    return json(200, {
+      ok: false,
+      error: sns
+        ? "SNSの投稿ページは中身を読み取れないことが多いです。公式サイトや告知ページのURLでお試しください"
+        : "このページからはイベント情報を読み取れませんでした",
+    });
   }
-
-  // 2) OGP / <title>
-  const ogTitle = metaContent(html, ["og:title", "twitter:title"]);
-  const ogDesc = metaContent(html, ["og:description", "description"]);
-  if (!title && ogTitle) { title = ogTitle; via.push("og"); }
-  if (!title) {
-    const t = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-    if (t) { title = stripTags(t[1]).trim(); via.push("title"); }
-  }
-
-  // 3) 本文テキストから日付・都道府県を補完
-  const text = stripTags(html).slice(0, 20000);
-  if (!date) {
-    const dates = findDates(`${title} ${ogDesc} ${text}`);
-    if (dates.length) { date = dates[0]; via.push("text"); }
-  }
-  if (!pref) pref = PREFS.find((p) => `${title} ${ogDesc}`.includes(p)) || PREFS.find((p) => text.includes(p)) || "";
-
-  const kind = guessKind(`${title} ${ogDesc}`) || guessKind(text);
-
-  if (!title && !date && !pref) {
-    return json(200, { ok: false, error: "このページからはイベント情報を読み取れませんでした" });
-  }
-  return json(200, {
-    ok: true,
-    title: title.slice(0, 200),
-    date,
-    pref,
-    kind,
-    via,
-  });
+  return json(200, { ok: true, ...out });
 };
+
+// ブラウザでの検証用(Netlify実行時は handler だけが使われる)
+if (typeof module !== "undefined") {
+  module.exports.parseEventHtml = parseEventHtml;
+  module.exports.collectDates = collectDates;
+  module.exports.findTime = findTime;
+  module.exports.findVenueName = findVenueName;
+  module.exports.detectCharset = detectCharset;
+  module.exports.decodeBody = decodeBody;
+  module.exports.guessKind = guessKind;
+}

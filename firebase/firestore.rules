@@ -2005,7 +2005,9 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly([
           'kind', 'date', 'title', 'venue_pref', 'event_url', 'participation_format',
           'created_by', 'liked_by',
-          'creator_display_name', 'creator_avatar_url', 'created_at'
+          'creator_display_name', 'creator_avatar_url', 'created_at',
+          // 任意項目(2026-07-22 URLからの自動入力v2で追加)
+          'end_date', 'venue_name', 'start_time'
         ])
         && request.resource.data.kind in ['イベント', '演奏会', '大会', '一般', '高校', '中学生以下', 'カラーガード', '海外']
         && request.resource.data.date is string
@@ -2017,6 +2019,15 @@ service cloud.firestore {
         && request.resource.data.venue_pref.size() <= 48
         && request.resource.data.event_url is string
         && request.resource.data.event_url.size() <= 2000
+        && (!request.resource.data.keys().hasAny(['end_date'])
+          || (request.resource.data.end_date is string
+            && request.resource.data.end_date.size() <= 10))
+        && (!request.resource.data.keys().hasAny(['venue_name'])
+          || (request.resource.data.venue_name is string
+            && request.resource.data.venue_name.size() <= 120))
+        && (!request.resource.data.keys().hasAny(['start_time'])
+          || (request.resource.data.start_time is string
+            && request.resource.data.start_time.size() <= 5))
         && request.resource.data.participation_format is string
         && request.resource.data.participation_format in ['観戦', '出演', '運営', 'チームスタッフ', '未定']
         && request.resource.data.liked_by is map

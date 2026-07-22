@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-version="1.39.53">
+<html lang="ja" data-mz-version="1.39.54">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -2005,6 +2005,24 @@
               hidden
               aria-hidden="true"
             >
+              <div class="calendar-ev-urlfirst">
+                <label class="search-label-full">
+                  イベントページのURL（あれば、ここから自動入力できます）
+                  <input
+                    type="url"
+                    id="calendar-ev-url"
+                    maxlength="2000"
+                    name="calendar-ev-url"
+                    placeholder="公式サイト・告知ページの https://..."
+                    inputmode="url"
+                  />
+                </label>
+                <button type="button" id="calendar-ev-autofill" class="calendar-ev-autofill-btn calendar-ev-autofill-btn--hero">
+                  <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> URLから自動入力
+                </button>
+                <p class="calendar-ev-autofill-hint">名前・日付・会場などを読み取って下の項目に入れます。最後に内容をご確認ください。URLが無ければ、そのまま下に手入力でOKです。</p>
+                <div id="calendar-ev-date-candidates" class="calendar-ev-date-candidates" hidden aria-label="開催日の候補"></div>
+              </div>
               <label class="search-label-full">
                 種別（必須）
                 <select id="calendar-ev-kind" name="calendar-ev-kind" required aria-label="イベント種別">
@@ -2018,9 +2036,23 @@
                 開催日（必須）
                 <input type="date" id="calendar-ev-date" name="calendar-ev-date" required />
               </label>
+              <label class="search-label-full">
+                終了日（任意・複数日開催のとき）
+                <input type="date" id="calendar-ev-date-end" name="calendar-ev-date-end" />
+              </label>
               <label class="search-label-full calendar-ev-venue-label">
                 開催地（必須）
                 <select id="calendar-ev-venue" name="calendar-ev-venue" required aria-label="開催地（都道府県または海外）"></select>
+              </label>
+              <label class="search-label-full">
+                会場名（任意）
+                <input
+                  type="text"
+                  id="calendar-ev-venue-name"
+                  maxlength="120"
+                  name="calendar-ev-venue-name"
+                  placeholder="例）〇〇県民ホール"
+                />
               </label>
               <label class="search-label-full">
                 イベント名（必須）
@@ -2034,22 +2066,9 @@
                 />
               </label>
               <label class="search-label-full">
-                URL（任意）
-                <input
-                  type="url"
-                  id="calendar-ev-url"
-                  maxlength="2000"
-                  name="calendar-ev-url"
-                  placeholder="公式サイトなど https://..."
-                  inputmode="url"
-                />
+                開演時間（任意）
+                <input type="time" id="calendar-ev-time" name="calendar-ev-time" />
               </label>
-              <div class="calendar-ev-autofill-row">
-                <button type="button" id="calendar-ev-autofill" class="calendar-ev-autofill-btn">
-                  <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> URLの内容から仮入力
-                </button>
-                <span class="calendar-ev-autofill-hint">イベントページのURLを入れて押すと、名前や日付を仮で入れます（内容は要確認）</span>
-              </div>
               <label class="search-label-full">
                 あなたの関わり方（MarchinZ Log）（任意）
                 <select id="calendar-ev-participation" name="calendar-ev-participation" aria-label="あなたの関わり方（MarchinZ Log）">
@@ -4076,7 +4095,7 @@
     <script defer src="mll-role.js?v=1.28.0"></script>
     <script defer src="mll-video-mylist.js?v=1.26.62"></script>
     <script defer src="mll.js?v=1.26.62"></script>
-    <script defer src="calendar-events.js?v=1.30.3"></script>
+    <script defer src="calendar-events.js?v=1.39.54"></script>
     <script defer src="community.js?v=1.26.62"></script>
     <script defer src="event-log-diary.js?v=1.26.62"></script>
     <script defer src="mln-public-feed.js?v=1.25.79"></script>

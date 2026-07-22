@@ -127,6 +127,10 @@
   const inputUrl = document.getElementById("calendar-ev-url");
   const selectParticipation = document.getElementById("calendar-ev-participation");
   const selectKind = document.getElementById("calendar-ev-kind");
+  const inputDateEnd = document.getElementById("calendar-ev-date-end");
+  const inputVenueName = document.getElementById("calendar-ev-venue-name");
+  const inputTime = document.getElementById("calendar-ev-time");
+  const dateCandidatesBox = document.getElementById("calendar-ev-date-candidates");
   const formMsg = document.getElementById("calendar-ev-form-msg");
   const registerSuccessEl = document.getElementById("calendar-ev-register-success");
   const listEl = document.getElementById("calendar-event-list");
@@ -1249,6 +1253,9 @@
           date: String(x.date || ""),
           title: String(x.title || ""),
           venue_pref: String(x.venue_pref || "").trim(),
+          venue_name: String(x.venue_name || "").trim(),
+          end_date: String(x.end_date || "").trim(),
+          start_time: String(x.start_time || "").trim(),
           event_url: String(x.event_url || "").trim(),
           participation_format: String(x.participation_format || "").trim(),
           liked_by: normalizeLikedBy(x.liked_by),
@@ -1762,25 +1769,45 @@
   function buildGoogleCalendarUrl(ev) {
     const d = String(ev.date || "").slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return null;
-    const start = d.replace(/-/g, "");
-    const dt = new Date(`${d}T00:00:00`);
-    if (Number.isNaN(dt.getTime())) return null;
-    dt.setDate(dt.getDate() + 1);
-    const end =
-      dt.getFullYear() +
-      String(dt.getMonth() + 1).padStart(2, "0") +
-      String(dt.getDate()).padStart(2, "0");
+    const ymd = (s) => s.replace(/-/g, "");
+    const tm = String(ev.start_time || "").trim();
+    const end = String(ev.end_date || "").slice(0, 10);
+    let dates;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(end) && end > d) {
+      // 複数日: 終日イベント(終了日は排他的なので+1日)
+      const dt = new Date(`${end}T00:00:00`);
+      if (Number.isNaN(dt.getTime())) return null;
+      dt.setDate(dt.getDate() + 1);
+      dates = `${ymd(d)}/${dt.getFullYear()}${String(dt.getMonth() + 1).padStart(2, "0")}${String(dt.getDate()).padStart(2, "0")}`;
+    } else if (/^\d{2}:\d{2}$/.test(tm)) {
+      // 開演時間つき: 2時間枠で入れる(終わりは分からないため)
+      const st = new Date(`${d}T${tm}:00`);
+      if (Number.isNaN(st.getTime())) return null;
+      const en = new Date(st.getTime() + 2 * 3600 * 1000);
+      const fmt = (x) =>
+        x.getFullYear() + String(x.getMonth() + 1).padStart(2, "0") + String(x.getDate()).padStart(2, "0")
+        + "T" + String(x.getHours()).padStart(2, "0") + String(x.getMinutes()).padStart(2, "0") + "00";
+      dates = `${fmt(st)}/${fmt(en)}`;
+    } else {
+      const dt = new Date(`${d}T00:00:00`);
+      if (Number.isNaN(dt.getTime())) return null;
+      dt.setDate(dt.getDate() + 1);
+      dates = `${ymd(d)}/${dt.getFullYear()}${String(dt.getMonth() + 1).padStart(2, "0")}${String(dt.getDate()).padStart(2, "0")}`;
+    }
     const detailsParts = [];
     const evUrl = String(ev.event_url || "").trim();
     if (/^https?:\/\/.+/i.test(evUrl)) detailsParts.push(evUrl);
+    if (/^\d{2}:\d{2}$/.test(tm)) detailsParts.push(`開演 ${tm}`);
     detailsParts.push("MarchinZ イベント一覧: https://marchinz.netlify.app/#community/events");
     const params = new URLSearchParams({
       action: "TEMPLATE",
       text: String(ev.title || "").trim() || "マーチングイベント",
-      dates: `${start}/${end}`,
+      dates,
       details: detailsParts.join("\n"),
     });
-    const loc = String(ev.venue_pref || "").trim();
+    const vn = String(ev.venue_name || "").trim();
+    const pref = String(ev.venue_pref || "").trim();
+    const loc = vn && pref ? `${vn}（${pref}）` : vn || pref;
     if (loc) params.set("location", loc);
     return `https://calendar.google.com/calendar/render?${params.toString()}`;
   }
@@ -1919,8 +1946,13 @@
       return s;
     };
     const slug = kindSlugForCss(ev.kind);
-    wrap.appendChild(mk(displayDate(ev.date), "calendar-ev-meta-chip--date"));
-    wrap.appendChild(mk(venueTxt, "calendar-ev-meta-chip--venue"));
+    const end = String(ev.end_date || "").trim();
+    const dateTxt = end ? `${displayDate(ev.date)}〜${displayDate(end)}` : displayDate(ev.date);
+    wrap.appendChild(mk(dateTxt, "calendar-ev-meta-chip--date"));
+    const tm = String(ev.start_time || "").trim();
+    if (tm) wrap.appendChild(mk(`${tm}開演`, "calendar-ev-meta-chip--time"));
+    const vn = String(ev.venue_name || "").trim();
+    wrap.appendChild(mk(vn ? `${venueTxt}・${vn}` : venueTxt, "calendar-ev-meta-chip--venue"));
     wrap.appendChild(
       mk(
         kindLbl,
@@ -3193,6 +3225,11 @@
     inputTitle.value = "";
     if (inputUrl) inputUrl.value = "";
     if (selectParticipation) selectParticipation.value = "";
+    if (inputDateEnd) inputDateEnd.value = "";
+    if (inputVenueName) inputVenueName.value = "";
+    if (inputTime) inputTime.value = "";
+    lastScrape = null;
+    clearAutoMarks();
     clearCalendarEventDraft();
     closeRegisterForm({ skipPersist: true });
     await loadEventsAndAttendees();
@@ -3226,6 +3263,9 @@
     const venue_pref = selectVenue ? String(selectVenue.value || "").trim() : "";
     const event_url = normUrl(inputUrl?.value ?? "");
     const calendarKind = selectKind ? String(selectKind.value || "").trim() : "";
+    const end_date = String(inputDateEnd?.value || "").trim();
+    const venue_name = String(inputVenueName?.value || "").trim().slice(0, 120);
+    const start_time = String(inputTime?.value || "").trim();
 
     if (!date || !title || !venue_pref || !CALENDAR_KIND_CREATE_OPTIONS.includes(calendarKind)) {
       setFormMsg("開催日・種別・開催地・イベント名はすべて必須です。", true);
@@ -3235,6 +3275,14 @@
       setFormMsg("URL が長すぎます。", true);
       return;
     }
+    if (end_date && end_date <= date) {
+      setFormMsg("終了日は開催日より後の日付にしてください（1日だけなら空欄でOKです）。", true);
+      return;
+    }
+    if (start_time && !/^\d{2}:\d{2}$/.test(start_time)) {
+      setFormMsg("開演時間の形式が正しくありません。", true);
+      return;
+    }
 
     const payload = {
       kind: calendarKind,
@@ -3242,6 +3290,9 @@
       title,
       venue_pref,
       event_url,
+      end_date,
+      venue_name,
+      start_time,
       participation_format: pf,
       created_by: user.id,
       liked_by: {},
@@ -3336,9 +3387,130 @@
     onEnterEvents: onCalendarEventEnterEvents,
   };
 
-  // URLから仮入力(v1.36): イベントページのメタ情報(JSON-LD/OGP/本文)からタイトル・開催日・
-  // 都道府県・種別を推定して「空欄にだけ」入れる。最後は本人が確認してから登録する
+  /* ============ URLから自動入力(v2 2026-07-22) ============
+     v1.36の「仮入力」を大改修。読み取りエンジン(event-scrape v2)が
+     期間・開演時間・会場名・日付候補まで返すようになったのに合わせる。
+     - 自動で入れた欄には「自動」バッジ(利用者が触ると消える=手で確定した印)
+     - 日付が複数見つかったら候補チップを出して人に選ばせる(勝手に決めない)
+     - 2回目は「空欄にだけ」入れたうえで、全部入れ替えたい人向けの
+       上書きリンクを出す */
   const autofillBtn = document.getElementById("calendar-ev-autofill");
+  let lastScrape = null;
+
+  function markAuto(el) {
+    if (!el) return;
+    el.classList.add("mz-auto-filled");
+    const lab = el.closest("label");
+    if (lab && !lab.querySelector(".mz-auto-chip")) {
+      const chip = document.createElement("span");
+      chip.className = "mz-auto-chip";
+      chip.textContent = "自動";
+      lab.insertBefore(chip, el);
+    }
+  }
+  function unmarkAuto(el) {
+    if (!el) return;
+    el.classList.remove("mz-auto-filled");
+    const lab = el.closest("label");
+    const chip = lab && lab.querySelector(".mz-auto-chip");
+    if (chip) chip.remove();
+  }
+  // 触ったら「自動」バッジを外す(そこから先は本人の入力として扱う)
+  [inputTitle, inputDate, inputDateEnd, selectVenue, selectKind, inputVenueName, inputTime].forEach((el) => {
+    if (!el) return;
+    el.addEventListener("input", () => unmarkAuto(el));
+  });
+
+  function clearAutoMarks() {
+    [inputTitle, inputDate, inputDateEnd, selectVenue, selectKind, inputVenueName, inputTime].forEach(unmarkAuto);
+    if (dateCandidatesBox) { dateCandidatesBox.hidden = true; dateCandidatesBox.innerHTML = ""; }
+  }
+
+  function renderDateCandidates(dates, picked) {
+    if (!dateCandidatesBox) return;
+    if (!Array.isArray(dates) || dates.length < 2) {
+      dateCandidatesBox.hidden = true;
+      dateCandidatesBox.innerHTML = "";
+      return;
+    }
+    dateCandidatesBox.hidden = false;
+    dateCandidatesBox.innerHTML = "";
+    const lead = document.createElement("span");
+    lead.className = "calendar-ev-date-candidates-lead";
+    lead.textContent = "日付が複数見つかりました:";
+    dateCandidatesBox.appendChild(lead);
+    dates.forEach((d) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "calendar-ev-date-chip" + (d === picked ? " on" : "");
+      b.textContent = d.replace(/-/g, "/");
+      b.addEventListener("click", () => {
+        if (inputDate) {
+          inputDate.value = d;
+          inputDate.dispatchEvent(new Event("change", { bubbles: true }));
+          markAuto(inputDate);
+        }
+        // 選び直したら期間は一旦白紙(候補は別公演かもしれない)
+        if (inputDateEnd && inputDateEnd.classList.contains("mz-auto-filled")) {
+          inputDateEnd.value = "";
+          unmarkAuto(inputDateEnd);
+        }
+        renderDateCandidates(dates, d);
+      });
+      dateCandidatesBox.appendChild(b);
+    });
+  }
+
+  function applyScrape(data, { overwrite = false } = {}) {
+    const filled = [];
+    const fill = (el, value, label) => {
+      if (!el || !value) return;
+      if (!overwrite && String(el.value || "").trim()) return;
+      el.value = value;
+      el.dispatchEvent(new Event("change", { bubbles: true })); // 下書き保存と連動
+      markAuto(el);
+      filled.push(label);
+    };
+    fill(inputTitle, data.title, "イベント名");
+    fill(inputDate, data.date, "開催日");
+    // 終了日は「いま入っている開催日より後」のときだけ。候補で別公演を
+    // 選んだ後に、前の公演の終了日が紛れ込むのを防ぐ
+    const curDate = String(inputDate?.value || "").trim();
+    if (data.end_date && (!curDate || data.end_date > curDate)) {
+      fill(inputDateEnd, data.end_date, "終了日");
+    }
+    if (data.pref && JP_PREFS.includes(data.pref)) fill(selectVenue, data.pref, "開催地");
+    fill(inputVenueName, data.venue_name, "会場名");
+    fill(inputTime, data.time, "開演時間");
+    fill(selectKind, data.kind, "種別");
+    renderDateCandidates(data.dates, inputDate ? inputDate.value : "");
+    return filled;
+  }
+
+  function showAutofillResult(filled, data) {
+    if (filled.length) {
+      const extra = Array.isArray(data.dates) && data.dates.length > 1
+        ? " 日付は候補から選べます。"
+        : "";
+      setFormMsg(`自動で入力しました（${filled.join("・")}）。内容を確認してから登録してください。${extra}`);
+      return;
+    }
+    // 全部入力済みで何も入れなかった → 入れ替えの選択肢を出す
+    setFormMsg("読み取れましたが、すでに入力済みのため変更していません。");
+    if (!formMsg || formMsg.querySelector(".calendar-ev-overwrite-link")) return;
+    const link = document.createElement("button");
+    link.type = "button";
+    link.className = "calendar-ev-overwrite-link";
+    link.textContent = "読み取った内容で上書きする";
+    link.addEventListener("click", () => {
+      if (!lastScrape) return;
+      clearAutoMarks();
+      const f2 = applyScrape(lastScrape, { overwrite: true });
+      setFormMsg(f2.length ? `上書きしました（${f2.join("・")}）。内容を確認してから登録してください。` : "上書きできる項目がありませんでした。");
+    });
+    formMsg.appendChild(link);
+  }
+
   if (autofillBtn) {
     autofillBtn.addEventListener("click", async () => {
       const rawUrl = String(inputUrl?.value || "").trim();
@@ -3356,22 +3528,9 @@
           setFormMsg((data && data.error) || "このページからは読み取れませんでした。お手数ですが手入力をお願いします。", true);
           return;
         }
-        const filled = [];
-        const fill = (el, value, label) => {
-          if (!el || !value || String(el.value || "").trim()) return;
-          el.value = value;
-          el.dispatchEvent(new Event("change", { bubbles: true })); // 下書き保存と連動させる
-          filled.push(label);
-        };
-        fill(inputTitle, data.title, "イベント名");
-        fill(inputDate, data.date, "開催日");
-        if (data.pref && JP_PREFS.includes(data.pref)) fill(selectVenue, data.pref, "開催地");
-        fill(selectKind, data.kind, "種別");
-        setFormMsg(
-          filled.length
-            ? `仮で入力しました（${filled.join("・")}）。内容を確認してから登録してください。`
-            : "読み取れましたが、すでに入力済みのため変更していません。",
-        );
+        lastScrape = data;
+        const filled = applyScrape(data);
+        showAutofillResult(filled, data);
       } catch {
         setFormMsg("読み取りに失敗しました。通信環境を確認してもう一度お試しください。", true);
       } finally {
@@ -3380,7 +3539,7 @@
     });
   }
 
-  const calendarDraftInputs = [inputDate, selectVenue, inputTitle, inputUrl, selectParticipation, selectKind];
+  const calendarDraftInputs = [inputDate, inputDateEnd, selectVenue, inputVenueName, inputTitle, inputUrl, inputTime, selectParticipation, selectKind];
   calendarDraftInputs.forEach((el) => {
     if (!el) return;
     el.addEventListener("input", scheduleCalendarEventDraftSave);
