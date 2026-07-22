@@ -4533,3 +4533,18 @@ body {
 .mz-usertype-signup { margin: 1rem 0 1.2rem; }
 .mz-usertype-signup-head { margin: 0 0 0.3rem; font-size: 0.95rem; font-weight: 800; }
 .mz-usertype-signup-note { margin: 0 0 0.7rem; font-size: 0.78rem; line-height: 1.7; color: var(--muted); }
+
+
+/* ---------- ドロワー内のその場タイプ切り替え(ゲスト向け 2026-07-22) ----------
+   ゲストは設定ダイアログを開けない。タイプ自体はゲストでも効くので、
+   入口だけ無い状態を作らないためドロワー内で直接選べるようにする */
+.mz-drawer-usertype-pick { display: grid; gap: 6px; margin: 0 16px 10px; }
+.mz-drawer-usertype-opt {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 10px 12px; border: 1px solid rgba(15, 33, 56, 0.16);
+  border-radius: 10px; background: #fff;
+  font-size: 13px; font-weight: 700; color: #0f2138;
+  text-align: left; cursor: pointer;
+}
+.mz-drawer-usertype-opt i { color: #1e4fd6; width: 1.1em; text-align: center; }
+.mz-drawer-usertype-opt.on { border-color: #1e4fd6; background: #eef3ff; }

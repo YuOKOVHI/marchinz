@@ -47,14 +47,16 @@ window.MZUserType = (() => {
 
   const isValid = v => Object.prototype.hasOwnProperty.call(TYPES, String(v || ""));
 
-  /* いまのタイプ。何があっても必ず有効な値を返す */
-  function get() {
+  /* 保存されている値。未設定・不正・読めない場合は null(「まだ選ばれていない」) */
+  function readLocal() {
     try {
       const v = localStorage.getItem(KEY);
-      if (isValid(v)) return v;
-    } catch (_) { /* プライベートモード等 */ }
-    return DEFAULT;
+      return isValid(v) ? v : null;
+    } catch (_) { return null; }   // プライベートモード等
   }
+
+  /* いまのタイプ。何があっても必ず有効な値を返す */
+  function get() { return readLocal() || DEFAULT; }
 
   function info(id) { return TYPES[isValid(id) ? id : DEFAULT]; }
 
@@ -99,11 +101,14 @@ window.MZUserType = (() => {
       emit(remote);
       return remote;
     }
-    // 既存の登録者はここに来る。ファンとして確定させる(優さん指示)
-    const cur = DEFAULT;
+    /* リモート未設定。ここで無条件に「ファン」を書くと、ログイン前に選んだ値や、
+       通信できずに保存しそこねた値が、ログインのたびに巻き戻る。
+       手元に選ばれた値があるならそれを正とし、リモートへ書き戻す */
+    const local = readLocal();
+    const cur = local || DEFAULT;
     try { localStorage.setItem(KEY, cur); } catch (_) {}
     emit(cur);
-    saveRemote(cur);
+    saveRemote(cur);   // 既存の登録者はここで「ファン」が確定する(優さん指示)
     return cur;
   }
 

@@ -478,7 +478,9 @@ service cloud.firestore {
         'b_test_opt_in',
         'b_test_opt_in_at',
         'b_test_consent_version',
-        'b_test_prompt_dismissed_at'
+        'b_test_prompt_dismissed_at',
+        // 画面の出し分け(ファン/プレイヤー/クリエイター)。肩書きの profile_attributes とは別物
+        'user_type'
       ]);
     }
 
@@ -616,7 +618,10 @@ service cloud.firestore {
         && (!aff.hasAny(['b_test_prompt_dismissed_at'])
           || (request.resource.data.b_test_prompt_dismissed_at is string
             && request.resource.data.b_test_prompt_dismissed_at.size() >= 0
-            && request.resource.data.b_test_prompt_dismissed_at.size() <= 48));
+            && request.resource.data.b_test_prompt_dismissed_at.size() <= 48))
+        // 画面の出し分け。知らない値が入ると表示が壊れるので3つに限定する
+        && (!aff.hasAny(['user_type'])
+          || request.resource.data.user_type in ['fan', 'player', 'creator']);
     }
 
     function mllProfileOptionalFieldsOk() {
@@ -710,7 +715,8 @@ service cloud.firestore {
         'b_test_opt_in',
         'b_test_opt_in_at',
         'b_test_consent_version',
-        'b_test_prompt_dismissed_at'
+        'b_test_prompt_dismissed_at',
+        'user_type'
       ]);
     }
 

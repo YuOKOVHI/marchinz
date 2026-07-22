@@ -84,9 +84,38 @@
       + ` <button type="button" class="mz-drawer-usertype-btn" id="mzDrawerUserTypeBtn">切り替え</button>`;
     const btn = el.querySelector("#mzDrawerUserTypeBtn");
     if (btn) btn.onclick = () => {
+      /* 設定ダイアログが使えるならそちらへ。ゲストは設定ボタン自体が
+         隠れているので、その場で選べるようにドロワー内に3択を開く
+         (タイプ自体はゲストでも効くのに、入口だけ無い状態を作らない) */
       const s = document.getElementById("menu-open-settings");
-      if (s) s.click();
+      if (s && s.offsetParent !== null) { s.click(); return; }
+      toggleDrawerPicker(el);
     };
+  }
+
+  /* ドロワー内のその場切り替え(ゲスト向け) */
+  function toggleDrawerPicker(host) {
+    let box = document.getElementById("mz-drawer-usertype-pick");
+    if (box) { box.remove(); return; }
+    box = document.createElement("div");
+    box.id = "mz-drawer-usertype-pick";
+    box.className = "mz-drawer-usertype-pick";
+    box.setAttribute("role", "radiogroup");
+    box.setAttribute("aria-label", "だれ向けの表示にするか");
+    const cur = UT().get();
+    box.innerHTML = Object.values(UT().TYPES).map(t => `
+      <button type="button" class="mz-drawer-usertype-opt${t.id === cur ? " on" : ""}"
+        role="radio" aria-checked="${t.id === cur ? "true" : "false"}" data-mz-usertype="${t.id}">
+        <i class="fa-solid ${t.icon}" aria-hidden="true"></i> ${t.label}
+      </button>`).join("");
+    host.insertAdjacentElement("afterend", box);
+    box.querySelectorAll("[data-mz-usertype]").forEach(b => {
+      b.onclick = () => {
+        UT().set(b.getAttribute("data-mz-usertype"));
+        const gone = document.getElementById("mz-drawer-usertype-pick");
+        if (gone) gone.remove();   // 選んだら閉じる(applyAllで並びは描き直される)
+      };
+    });
   }
 
   /* ---------- 並び替え ----------
@@ -108,32 +137,59 @@
     creator: ["community", "videos", "digest", "youtube", "webmagazine"],
   };
 
-  function sortByPage(container, sel) {
-    if (!container) return;
-    const items = [...container.querySelectorAll(sel)];
-    if (!items.length) return;
+  /* ナビの並び替え。
+     リンクだけを見て入れ替えると、「コミュニティ」のように子リンクを束ねた
+     グループ(div)が動かないまま先頭へ取り残される(実機で発覚)。
+     そこで **コンテナの直下の子要素** を単位に、その子が持つ data-page で
+     順位を決める。グループはその中の最初のリンクの data-page を代表とする。
+     並べ替えるのは「動かしてよい子」だけで、位置は元々あった枠に収める
+     (管理者用の項目などが混ざっていても居場所が変わらない) */
+  function pageOf(el) {
+    if (el.getAttribute && el.getAttribute("data-page")) return el.getAttribute("data-page");
+    const inner = el.querySelector && el.querySelector("[data-page]");
+    return inner ? inner.getAttribute("data-page") : "";
+  }
+
+  function sortByPage(container, movableSel) {
+    if (!container || !UT()) return;
+    const kids = [...container.children];
+    if (kids.length < 2) return;
     const order = NAV_ORDER[UT().get()] || NAV_ORDER.fan;
+
+    /* 動かしてよい子: data-page を持ち(または内側に持ち)、管理者専用でないもの */
+    const movable = kids.filter(el => {
+      if (!pageOf(el)) return false;
+      if (el.hasAttribute("data-admin-only")) return false;
+      if (el.querySelector && el.querySelector("[data-admin-only]")) return false;
+      return !movableSel || el.matches(movableSel) || el.querySelector(movableSel);
+    });
+    if (movable.length < 2) return;
+
     const rank = el => {
-      const p = el.getAttribute("data-page") || "";
-      const i = order.indexOf(p);
+      const i = order.indexOf(pageOf(el));
       return i < 0 ? 999 : i;
     };
-    /* 管理者用など data-page を持たない項目は動かさない(先頭固定) */
-    const movable = items.filter(el => el.getAttribute("data-page") && !el.hasAttribute("data-admin-only"));
-    if (movable.length < 2) return;
-    const sorted = [...movable].sort((a, b) => rank(a) - rank(b));
-    const anchor = movable[0];
-    sorted.forEach(el => anchor.parentNode.insertBefore(el, null));
+    /* 元の並びを安定させたいので、同順位は元の順番を保つ */
+    const idx = new Map(movable.map((el, i) => [el, i]));
+    const sorted = [...movable].sort((a, b) => (rank(a) - rank(b)) || (idx.get(a) - idx.get(b)));
+
+    /* 「動かしてよい子」が元々いた枠(スロット)へ、並べ替えた順に流し込む。
+       枠の外(管理者項目など)には触らない */
+    const slots = movable.map(el => {
+      const mark = document.createComment("mz-slot");
+      container.insertBefore(mark, el);
+      return mark;
+    });
+    sorted.forEach((el, i) => container.insertBefore(el, slots[i]));
+    slots.forEach(m => m.remove());
   }
 
   function applyNavOrder() {
     if (!UT()) return;
     // PCのグローバルナビ
     sortByPage(document.querySelector(".site-nav-inner"), ".site-nav-link");
-    // モバイルのドロワー(ページ一覧)
-    document.querySelectorAll(".site-mobile-drawer-nav").forEach(nav => {
-      sortByPage(nav, ".site-mobile-drawer-nav-link:not(.site-mobile-drawer-nav-link--sub)");
-    });
+    // モバイルのドロワー(ページ一覧)。サブ束(div)も1つの塊として一緒に動かす
+    document.querySelectorAll(".site-mobile-drawer-nav").forEach(nav => sortByPage(nav, null));
   }
 
   /* ---------- TOPのセクション並び替え ----------
