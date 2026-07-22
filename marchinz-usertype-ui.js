@@ -269,8 +269,14 @@
      クリエイターのページから、どのタイプでもたどり着ける。
      ここは「近道」なので、近道が要る人にだけ見せる */
   const MENU_SHORTCUTS = {
-    "#menu-open-days":            ["player"],   // PCのアカウント欄
+    // ファン／保護者 … 見る・応援する人の入口
+    "#menu-open-moments":         ["fan"],      // PCのアカウント欄
+    "#menu-mobile-open-moments":  ["fan"],      // ハンバーガーメニュー
+    // プレイヤー／団体 … 練習を記録する人の入口
+    "#menu-open-days":            ["player"],
     "#menu-mobile-open-days":     ["player"],
+    // スタッフ／クリエイター … 映像をつくる人の入口
+    "#menu-open-switcher":        ["creator"],
     "#menu-mobile-open-switcher": ["creator"],
   };
 
