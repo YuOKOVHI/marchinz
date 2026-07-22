@@ -84,6 +84,9 @@
       <input type="file" id="fileInput" accept="video/mp4,video/quicktime,video/*" multiple hidden>
       <input type="file" id="fileInputV" accept="video/mp4,video/quicktime,video/*,image/*" multiple hidden>
       <input type="file" id="audioInput" accept="audio/*,.mp3,.wav,.m4a,.aac" hidden>
+      <button type="button" id="projectResetBtn" class="btn small ghost project-reset" hidden>
+        <i class="fa-solid fa-rotate-left" aria-hidden="true"></i> 最初からやり直す（保存した設定も消す）
+      </button>
     </section>
 
     <div id="setupTabs" class="setup-tabs" hidden>
@@ -220,6 +223,7 @@
         <button id="exportBtn" class="btn primary big" disabled><i class="fa-solid fa-file-export"></i> MP4を書き出す</button>
         <button id="cancelBtn" class="btn danger" style="display:none">中止</button>
       </div>
+      <p id="exportEtaHint" class="hint export-eta-hint"></p>
       <div id="exportProgress" class="progress" style="display:none">
         <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
         <div id="progressText" class="progress-text"></div>

@@ -105,6 +105,21 @@ MC.ui.fmtTime = s => {
 MC.ui.esc = s => String(s).replace(/[&<>"']/g,
   ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
 
+/* 最初からやり直す: 保存済みの設定(同期・カット割・範囲)ごと消す。
+   「前回の続きが復元される」仕組みの対になる出口(2026-07-21 優さん指示) */
+MC.ui.resetProject = () => {
+  if (!confirm("同期・カット割・書き出し範囲の保存を消して、最初からやり直しますか？")) return;
+  try { localStorage.removeItem("marchcut_project"); } catch (_) {}
+  MC.S.trimIn = 0;
+  MC.S.trimOut = null;
+  MC.S.cutList = [];
+  [...MC.S.clips].forEach(c => MC.media.removeClip(c.id));
+  MC.ui.clearErrorLog();
+  MC.ui.resetEasyDone();
+  MC.ui.renderAll();
+  MC.ui.toast("まっさらな状態に戻しました");
+};
+
 /* 取り込んだ直後、次にすることが画面に入っていなければそこまで運ぶ。
    スマホは画面が狭く、追加した下に何があるか分からない(2026-07-21 優さん指示)。
    すでに見えているときは動かさない(勝手にスクロールされる不快感を避ける) */
@@ -189,6 +204,10 @@ MC.ui.resetEasyDone = () => {
 
 MC.ui.renderAll = () => {
   MC.ui.applyGuestLocks();
+  {
+    const prb = MC.ui.$("#projectResetBtn");
+    if (prb) prb.hidden = !MC.S.clips.length;
+  }
   /* スマホのフロートプレビューは素材があるときだけ(空の黒枠を浮かせない) */
   document.body.classList.toggle("mz-has-clips", MC.S.clips.length > 0);
   /* カット切替モードの入口はカットがあるときだけ */
@@ -874,6 +893,19 @@ MC.ui.updateTransport = () => {
   const custom = MC.S.trimIn > 0.05 || MC.S.trimOut != null;
   MC.ui.$("#trimLabel").textContent = !dur || !custom ? ""
     : `書き出し範囲 IN ${MC.ui.fmtTime(tIn)} → OUT ${MC.ui.fmtTime(tOut)}`;
+  /* 書き出しの所要時間の目安。8分30秒×1.8倍≒15分(iPhone 15 Pro実測ベースの概算)。
+     嘘をつかないよう「およそ」で丸め、範囲が変わるたびに追随させる(2026-07-21) */
+  const etaHint = MC.ui.$("#exportEtaHint");
+  if (etaHint) {
+    if (!dur) {
+      etaHint.textContent = "";
+    } else {
+      const sec = Math.max(0, tOut - tIn);
+      const mm = Math.floor(sec / 60), ss = Math.round(sec % 60);
+      const estMin = Math.max(1, Math.round(sec * 1.8 / 60));
+      etaHint.textContent = `${mm}分${ss ? String(ss).padStart(2, "0") + "秒" : ""}の動画で、書き出しにはおよそ${estMin}分かかります`;
+    }
+  }
   // スライダー下の範囲バンド(どこからどこまで書き出すかをいつでも見せる)
   const band = MC.ui.$("#trimBand");
   if (band) {
@@ -955,6 +987,8 @@ MC.ui.wire = () => {
   $("#modeBackBtn").onclick = () => MC.ui.showModeSelect();
 
   if (MC.cutmode) MC.cutmode.init();
+  const prb = $("#projectResetBtn");
+  if (prb) prb.onclick = () => MC.ui.resetProject();
   /* フロートのプレビューはタップで全画面。閉じるボタンで戻す
      (2026-07-21 優さん指示)。全画面中は本文のスクロールを止める */
   const holder = document.querySelector(".canvas-holder");

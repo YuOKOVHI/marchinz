@@ -216,4 +216,12 @@ MC.media.afterChange = () => {
   MC.ui.resetEasyDone();   // 素材が変わったら「書き出すだけ」状態を解除
   MC.ui.renderAll();
   MC.ui.focusNextAction();   // 次にすること(おまかせで開始)まで運ぶ
+  /* 前回の続き(同期・カット割・範囲)が復元されたら、それと分かるように知らせる。
+     途中で落ちても、同じ動画を選び直せば書き出し前まで一気に戻れる(2026-07-21) */
+  if (!MC._restoredToastShown && MC.S.clips.some(c => c.restored)) {
+    MC._restoredToastShown = true;
+    MC.ui.toast(MC.S.cutList.length
+      ? "💾 前回の続きを復元しました（同期・カット割・書き出し範囲）"
+      : "💾 前回の同期結果を復元しました");
+  }
 };
