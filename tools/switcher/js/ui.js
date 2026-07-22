@@ -372,6 +372,7 @@ MC.ui.updateActionBar = () => {
       const r = eb.getBoundingClientRect();
       if (r.height > 0 && r.top < window.innerHeight - 70 && r.bottom > 0) {
         bar.classList.remove("on");
+        document.body.classList.remove("mz-actionbar-on");
         return;
       }
       conf = { label: "おまかせで開始", icon: "fa-wand-magic-sparkles",
@@ -395,7 +396,7 @@ MC.ui.updateActionBar = () => {
           const r = el.getBoundingClientRect();
           return r.height > 0 && r.top < window.innerHeight - 70 && r.bottom > 0;
         });
-        if (dup) { bar.classList.remove("on"); return; }
+        if (dup) { bar.classList.remove("on"); document.body.classList.remove("mz-actionbar-on"); return; }
         conf = { label: "動画を書き出す", icon: "fa-file-export",
           disabled: MC.ui.$("#exportBtn").disabled, act: () => MC.ui.$("#exportBtn").click() };
       }
@@ -407,8 +408,9 @@ MC.ui.updateActionBar = () => {
             act: () => MC.exporter.triggerDownload(r.blob, r.name) };
     }
   }
-  if (!conf) { bar.classList.remove("on"); return; }
+  if (!conf) { bar.classList.remove("on"); document.body.classList.remove("mz-actionbar-on"); return; }
   bar.classList.add("on");
+  document.body.classList.add("mz-actionbar-on");   // 中断の帯を親指バーの上へ積む(D-1)
   const html = `<i class="fa-solid ${conf.icon}"></i> ${conf.label}`;
   if (btn.dataset.h !== html) { btn.innerHTML = html; btn.dataset.h = html; }
   btn.disabled = !!conf.disabled;
@@ -1131,8 +1133,18 @@ MC.ui.refreshSetupTabs = () => {
 
 /* おまかせで開始: 同期 → (カット割モードなら)自動カット割 → カラーマッチ を続けて実行 */
 /* 長い処理の間、競合する操作をまとめて止める(二重実行でcutList/offsetが壊れるのを防ぐ) */
+MC.ui.BUSY_FLAG_KEY = "mz_switcher_busy_v1";
 MC.ui.setBusy = busy => {
   MC.ui._busy = !!busy;
+  /* 「作業中」の印を localStorage に置く(2026-07-23 E-3)。
+     _hiddenAt はメモリ上なので、iOSがタブごと捨てて再読込になると消える。
+     本当に作業が飛ぶのはその破棄ケースなのに、そこでは何も出せなかった。
+     印は再読込を越えて残るので、起動時に印があれば「途中で終わった」と分かる。
+     正常終了(busy=false)で必ず消す */
+  try {
+    if (busy) localStorage.setItem(MC.ui.BUSY_FLAG_KEY, String(Date.now()));
+    else localStorage.removeItem(MC.ui.BUSY_FLAG_KEY);
+  } catch (_) {}
   if (busy) MC.ui.clearInterruptNote();   // 新しい作業を始めたら前回の中断案内は消す
   else MC.ui._hiddenAt = 0;
   const ids = ["#easyStartBtn", "#syncBtn", "#autocutBtn", "#colorMatchBtn", "#exportBtn", "#abPrimary"];
@@ -1287,11 +1299,10 @@ MC.ui._onVisChange = () => {
   }
 };
 
-/* 「他のアプリに切り替えていた間、進んでいなかったかもしれません」を伝える。
-   トーストは3.4秒で消えて見逃すため、閉じるまで残る帯にする */
-MC.ui.showInterruptNote = ms => {
-  const sec = Math.round(ms / 1000);
-  const txt = sec >= 60 ? `${Math.round(sec / 60)}分` : `${sec}秒`;
+/* 中断を知らせる。言うことは2つだけ ─「中断されたかも」と「やり直せる」。
+   長文は読まれず×を押される(2026-07-23 D-2で短縮)。トーストは見逃すので
+   閉じるまで残す。crashed=前回タブごと終了(E-3) / それ以外=離脱からの復帰 */
+MC.ui.showInterruptNote = (ms, opts = {}) => {
   let el = document.getElementById("mzInterruptNote");
   if (!el) {
     el = document.createElement("div");
@@ -1300,10 +1311,11 @@ MC.ui.showInterruptNote = ms => {
     el.setAttribute("role", "status");
     document.body.appendChild(el);
   }
+  const head = opts.crashed
+    ? "前回は途中で終わっています。"
+    : "中断されたかもしれません。";
   el.innerHTML = '<i class="fa-solid fa-circle-pause" aria-hidden="true"></i> '
-    + `<span>ほかの画面に${txt}切り替わっていました。その間、処理は進んでいなかった`
-    + "かもしれません。<b>同期・カット割・書き出し範囲は保存済み</b>なので、"
-    + "止まっていたら書き出しだけやり直せます。</span>"
+    + `<span><b>${head}</b>同期とカット割は残っています。書き出しだけやり直せます。</span>`
     + '<button type="button" class="mz-interrupt-close" aria-label="閉じる">×</button>';
   el.querySelector(".mz-interrupt-close").onclick = () => el.remove();
 };
@@ -1339,7 +1351,7 @@ MC.ui._stayBanner = on => {
     el.className = "mz-stay-banner";
     el.setAttribute("role", "status");
     el.innerHTML = '<i class="fa-solid fa-mug-hot" aria-hidden="true"></i> '
-      + '作業中です。この画面のまま、ほかのアプリに切り替えずにお待ちください';
+      + '作業中です。この画面のままお待ちください（切り替えると止まることがあります）';
     document.body.appendChild(el);
   } else if (!on && el) {
     el.remove();
@@ -1364,6 +1376,17 @@ MC.ui.guardLeave = on => {
    Wake Lock の取り直しは _onVisChange 側で busy を見て判断する */
 MC.ui.initVisibility = () => {
   document.addEventListener("visibilitychange", MC.ui._onVisChange);
+  /* 前回、作業中のままタブが終了(iOSの破棄・クラッシュ・強制終了)していたら、
+     その印が残る。素材が復元されるこのタイミングで一度だけ知らせる(E-3)。
+     印はここで消す(一度きり) */
+  try {
+    const flag = localStorage.getItem(MC.ui.BUSY_FLAG_KEY);
+    if (flag) {
+      localStorage.removeItem(MC.ui.BUSY_FLAG_KEY);
+      /* 素材やUIが整ってから出す(初期化途中に body へ差し込むと位置が崩れる) */
+      setTimeout(() => MC.ui.showInterruptNote(null, { crashed: true }), 600);
+    }
+  } catch (_) {}
 };
 
 MC.ui.runEasy = async () => {

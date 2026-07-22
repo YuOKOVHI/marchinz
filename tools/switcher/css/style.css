@@ -964,7 +964,7 @@ body[data-mzj-phase="export"] .clip-slot.empty { display: none; }
   position: fixed;
   left: 12px; right: 12px;
   bottom: calc(12px + env(safe-area-inset-bottom, 0px));
-  z-index: 85;
+  z-index: 92;   /* 親指バー(80)より上。操作を隠さない(D-1) */
   display: flex; align-items: flex-start; gap: 8px;
   padding: 12px 12px 12px 14px;
   border-radius: 14px;
@@ -982,6 +982,10 @@ body[data-mzj-phase="export"] .clip-slot.empty { display: none; }
   font-size: 17px; line-height: 1; color: var(--tx2); cursor: pointer;
 }
 .mz-interrupt-close:active { background: rgba(15, 33, 56, 0.08); }
+/* 親指バーが出ているときは、その上へ積んで「やり直す」ボタンを覆わない(D-1) */
+body.mz-actionbar-on .mz-interrupt-note {
+  bottom: calc(69px + 12px + env(safe-area-inset-bottom, 0px));
+}
 @media (min-width: 860px) {
   .mz-interrupt-note { left: auto; right: 20px; max-width: 420px; }
 }

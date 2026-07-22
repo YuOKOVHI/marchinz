@@ -76,7 +76,8 @@ MC.exporter.VideoPipe = class {
   async pump() {
     /* 保持するフレーム数は iOS だけ半分にする(2026-07-20 検討メモ 項目5)。
        VideoFrame は iOS では IOSurface(GPUメモリ)を掴むため、1080p×3カメラ×8枚で
-       数十MBになる。水位を下げてもデコードは詰まらない(実測で速度差なし) */
+       数十MBになる。**iOS実機での速度影響は未検証**。詰まって遅くなるようなら
+       この係数(6/4)を戻す。デスクトップの水位(12/8)は変えない */
     while (!this.eof && this.decoder.decodeQueueSize < (MC.isIOS ? 6 : 12) &&
            this.frames.length < (MC.isIOS ? 4 : 8)) {
       const { value: s, done } = await this.cursor.next();
@@ -684,9 +685,20 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
       writable = await saveHandle.createWritable();
       target = new Mp4Muxer.FileSystemWritableFileStreamTarget(writable);
       MC.log("export: ファイルへ直接書き込みます(メモリに溜めません)");
-    } else if (MC.exporter.opfsSupported() &&
-               (await MC.exporter.checkQuota(MC.exporter.estimateBytes()), true) &&
-               (opfs = await MC.exporter.opfsCreate(outName))) {
+    } else if (MC.exporter.opfsSupported()) {
+      /* ここに来た時点で、尺の上限(maxExportableSec)もビットレート(videoBitrate)も
+         「OPFSへ逐次書ける」前提で決まっている。だから OPFS の準備に失敗したら、
+         メモリ方式へ黙って落とさず**断る**。落とすと「上限なし×高レート×メモリ」という
+         Phase 1 以前より確実に落ちる組み合わせで走り出す(レビュー指摘 2026-07-23 E-1)。
+         副作用(checkQuotaの例外)は if の前に素直に出す(E-2) */
+      await MC.exporter.checkQuota(MC.exporter.estimateBytes());   // 足りなければ throw
+      opfs = await MC.exporter.opfsCreate(outName);
+      if (!opfs) {
+        throw new Error(
+          "この端末の保存領域を用意できませんでした。ブラウザを開き直すか、" +
+          "端末の空き容量を増やしてからもう一度お試しください。"
+        );
+      }
       writable = opfs.writable;
       target = new Mp4Muxer.FileSystemWritableFileStreamTarget(writable);
       /* 一括sweepはしない。別タブが書き出し中だと、その書きかけを消してしまう
@@ -697,8 +709,10 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
       MC.exporter._opfsName = null;
       MC.log("export: OPFSへ逐次書き込みます(メモリに溜めません)");
     } else {
+      /* OPFSもディスク直書きも無い端末。ここは maxExportableSec が
+         メモリ上限で頭打ちにしており、ビットレートも3.8Mbpsに落ちている */
       target = new Mp4Muxer.ArrayBufferTarget();
-      MC.log("export: メモリ上で組み立てます(長尺では失敗することがあります)");
+      MC.log("export: メモリ上で組み立てます(短めの尺のみ)");
     }
     const muxer = new Mp4Muxer.Muxer({
       target,
