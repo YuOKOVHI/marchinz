@@ -3328,6 +3328,22 @@ body {
 
 .mz-base-tap-btn { min-width: 4.5rem; font-weight: 700; }
 
+/* テンポの上限(2026-07-23)。既定250・最大500。拍子と同じ「設定」の行に置く */
+.mz-base-bpm-max {
+  width: 4.6rem;
+  min-height: 44px;            /* iOSのタップ目標 */
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--navy);
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.mz-base-bpm-max-row { display: inline-flex; align-items: center; gap: 0.4rem; }
+.mz-base-field-unit { font-size: 0.72rem; font-weight: 700; color: var(--muted); white-space: nowrap; }
+
 /* ---------- チューナー ---------- */
 
 .mz-base-tuner-note {

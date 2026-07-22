@@ -45,6 +45,15 @@
 
   /* ツール(メトロノーム/チューナー)状態。AudioContext は遅延生成して使い回す(close しない) */
   const TOOLS_SETTINGS_KEY = "mz_days_tools";
+
+  /* メトロノームのテンポ上限(2026-07-23 優さん指示)。
+     既定は250。速いパッセージを刻みたい人は500まで自分で上げられる。
+     下限を60より下げないのは、上限を下げすぎてスライダーが使えなくなるのを防ぐため */
+  const BPM_MIN = 30;
+  const BPM_MAX_DEFAULT = 250;
+  const BPM_MAX_CEILING = 500;
+  const BPM_MAX_FLOOR = 60;
+
   let audioCtx = null;
   let metroOn = false;
   let metroTimer = null;
@@ -69,7 +78,7 @@
   }
 
   function loadToolsSettings() {
-    const def = { bpm: 120, beats: 4, accents: [true, false, false, false], transpose: "C", presets: [] };
+    const def = { bpm: 120, beats: 4, accents: [true, false, false, false], transpose: "C", presets: [], bpmMax: BPM_MAX_DEFAULT };
     try {
       const raw = JSON.parse(localStorage.getItem(TOOLS_SETTINGS_KEY) || "{}");
       const beats = Math.min(8, Math.max(2, Number(raw.beats) || def.beats));
@@ -77,15 +86,22 @@
       const rawAccents = Array.isArray(raw.accents)
         ? raw.accents
         : [raw.accent !== false];
+      const bpm = Math.min(BPM_MAX_CEILING, Math.max(BPM_MIN, Number(raw.bpm) || def.bpm));
+      /* 上限は「保存された上限」と「保存されたテンポ」の大きい方に合わせる。
+         旧版(上限400)で250超のテンポを使っていた人が、既定250へ引き下げられて
+         勝手に遅くされるのを防ぐ */
+      const savedMax = Number(raw.bpmMax) || def.bpmMax;
+      const bpmMax = Math.min(BPM_MAX_CEILING, Math.max(BPM_MAX_FLOOR, savedMax, bpm));
       return {
-        bpm: Math.min(400, Math.max(30, Number(raw.bpm) || def.bpm)),
+        bpm,
+        bpmMax,
         beats,
         accents: normAccents(rawAccents, beats),
         transpose: ["C", "B♭", "E♭", "F"].includes(raw.transpose) ? raw.transpose : def.transpose,
         // マイテンポプリセット(v1.34): BPM値を最大10個、ブラウザ(localStorage)に保存
         presets: (Array.isArray(raw.presets) ? raw.presets : [])
           .map((n) => Math.round(Number(n)))
-          .filter((n) => n >= 30 && n <= 400)
+          .filter((n) => n >= BPM_MIN && n <= BPM_MAX_CEILING)
           .slice(0, 10),
       };
     } catch {
@@ -1842,15 +1858,15 @@
 
     const slider = document.createElement("input");
     slider.type = "range";
-    slider.min = "30";
-    slider.max = "400";
+    slider.min = String(BPM_MIN);
+    slider.max = String(toolsSettings.bpmMax);
     slider.value = String(toolsSettings.bpm);
     slider.className = "mz-base-bpm-slider";
     slider.setAttribute("aria-label", "テンポ(BPM)");
     metroSec.appendChild(slider);
 
     const setBpm = (v) => {
-      v = Math.min(400, Math.max(30, Math.round(v)));
+      v = Math.min(toolsSettings.bpmMax, Math.max(BPM_MIN, Math.round(v)));
       toolsSettings.bpm = v;
       saveToolsSettings();
       bpmNum.textContent = String(v);
@@ -1896,6 +1912,40 @@
     beatRow.appendChild(beatsLabel);
     beatRow.appendChild(el("span", "mz-base-accent-hint", "拍の丸をタップでアクセント"));
     metroSec.appendChild(beatRow);
+
+    /* テンポの上限(2026-07-23 優さん指示)。既定250、500まで自由に上げられる。
+       速い曲を刻む人だけが触ればいい設定なので、拍子と同じ「設定」の行に静かに置く */
+    const maxRow = el("div", "mz-base-tool-row");
+    const maxLabel = el("label", "mz-base-field mz-base-field--inline");
+    maxLabel.appendChild(el("span", "mz-base-field-label", "テンポの上限"));
+    const maxInput = document.createElement("input");
+    maxInput.type = "number";
+    maxInput.className = "mz-base-bpm-max";
+    maxInput.min = String(BPM_MAX_FLOOR);
+    maxInput.max = String(BPM_MAX_CEILING);
+    maxInput.step = "10";
+    maxInput.inputMode = "numeric";
+    maxInput.value = String(toolsSettings.bpmMax);
+    /* mz-base-field は縦積みが既定なので、入力と単位だけ1行にまとめる */
+    const maxInputRow = el("span", "mz-base-bpm-max-row");
+    maxInputRow.appendChild(maxInput);
+    maxInputRow.appendChild(el("span", "mz-base-field-unit", `BPM（${BPM_MAX_FLOOR}〜${BPM_MAX_CEILING}）`));
+    maxLabel.appendChild(maxInputRow);
+    maxRow.appendChild(maxLabel);
+    metroSec.appendChild(maxRow);
+
+    const applyBpmMax = (v) => {
+      v = Math.min(BPM_MAX_CEILING, Math.max(BPM_MAX_FLOOR, Math.round(Number(v) || BPM_MAX_DEFAULT)));
+      toolsSettings.bpmMax = v;
+      slider.max = String(v);
+      maxInput.value = String(v);
+      // 上限を下げたときは、いまのテンポもその中へ収める
+      setBpm(Math.min(toolsSettings.bpm, v));
+      saveToolsSettings();
+    };
+    /* change(確定時)で反映する。input だと「5」と打った瞬間に60へ丸められ、
+       500と入れたいのに入力を奪われる */
+    maxInput.addEventListener("change", () => applyBpmMax(maxInput.value));
 
     // 拍ドット: タップで各拍のアクセントを自由に切り替え(1拍目以外もOK)
     const renderDots = () => {
