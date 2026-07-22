@@ -439,3 +439,63 @@ MC.MP4Source = class {
     }
   }
 };
+
+/* fromSecを何度でも変えられる再シーク可能カーソル。samples() の姉妹版。
+   書き出しの「出番のないカメラを飛ばす」と、解析の「サンプル点間のGOP飛ばし」の
+   両方が『同じ mp4box インスタンスで途中から読み直す』を必要とするために作った。
+   既存 samples() は一切触らない(あちらを使う経路の挙動を変えないため)。
+
+   注意:
+   - setExtractionOptions は同一トラックへ2度呼べないので started で1回に制限
+   - fromSec=0 でも必ず mp4.seek() する(2026-07-20 の「静かな黒抜け」の教訓。
+     seek しないと mp4box が『もう見た範囲』として appendBuffer を黙って無視する)
+   - 1つの MP4Source につき cursor は同時に1本だけ(onSamples を占有するため) */
+MC.MP4Source.prototype.cursor = function (trackId) {
+  const self = this;
+  const mp4 = this.mp4;
+  const queue = [];
+  let pos = 0, eof = false, started = false;
+  mp4.onSamples = (id, user, arr) => {
+    for (const s of arr) {
+      queue.push({
+        data: s.data, is_sync: s.is_sync,
+        cts: s.cts, duration: s.duration, timescale: s.timescale, number: s.number,
+      });
+    }
+    if (arr.length) {
+      try { mp4.releaseUsedSamples(id, arr[arr.length - 1].number); } catch (e) {}
+    }
+  };
+  return {
+    seek(fromSec) {
+      queue.length = 0;
+      eof = false;
+      if (!started) {
+        mp4.setExtractionOptions(trackId, null, { nbSamples: 64 });
+        started = true;
+      } else {
+        try { mp4.stop(); } catch (e) {}
+      }
+      try {
+        const sk = mp4.seek(Math.max(0, fromSec), true);   // 直前のRAPへ
+        pos = sk && sk.offset ? sk.offset : 0;
+      } catch (e) { pos = 0; }
+      mp4.start();
+    },
+    async next() {
+      const CH = 4 << 20;
+      while (!queue.length && !eof) {
+        if (pos >= self.file.size) {
+          try { mp4.flush(); } catch (e) {}
+          eof = true;
+          break;
+        }
+        const ab = await MC.readSlice(self.file, pos, Math.min(pos + CH, self.file.size));
+        ab.fileStart = pos;
+        mp4.appendBuffer(ab);
+        pos += ab.byteLength;
+      }
+      return queue.length ? { value: queue.shift(), done: false } : { value: undefined, done: true };
+    },
+  };
+};

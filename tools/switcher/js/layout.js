@@ -28,6 +28,31 @@ MC.cutAt = t => {
   return { cur: e.clipId, prev: null, blend: 1 };
 };
 
+/* 時刻tに drawComposite が実際に描くカメラid集合。
+   書き出しで「出番のないカメラをデコードしない」判定に使う。
+   **drawComposite が resolveSrc を呼ぶ id と完全に一致させること**。
+   ずれると、必要なフレームを取っておらず黒コマになる(静かな破損)。
+   下の drawComposite を変えるときは必ずここも揃えること */
+MC.neededIds = t => {
+  const L = MC.LAYOUTS[MC.S.layoutId];
+  if (L.type === "switch" || L.type === "wipe") {
+    const cut = MC.cutAt(t);
+    const ids = [];
+    if (cut.prev != null && cut.blend < 1) ids.push(cut.prev);   // ディゾルブ中は2台
+    if (cut.cur != null) ids.push(cut.cur);
+    if (L.type === "wipe") {
+      // drawComposite のワイプ小窓の既定規則と同じ(「cur以外の先頭」)
+      const id1 = MC.S.wipeClipId != null ? MC.S.wipeClipId
+        : (MC.S.clips.find(c => c.id !== cut.cur) || {}).id;
+      if (id1 != null) ids.push(id1);
+      if (MC.S.wipeClipId2 != null && MC.S.wipeClipId2 !== id1) ids.push(MC.S.wipeClipId2);
+    }
+    return ids;
+  }
+  // 分割系は全員が常時映る=飛ばせるカメラは無い
+  return MC.S.slots.slice(0, L.n).filter(id => id != null);
+};
+
 /* ソースを rect に cover-crop で描画。
    src = { source: <video>|VideoFrame|canvas, w, h, rotation }
    w/h はソースの「素の」ピクセル寸法(回転前)。<video>はブラウザが回転適用済みなので rotation=0 で渡す。

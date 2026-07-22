@@ -33,6 +33,14 @@ MC.exporter.makeCanvas = (w, h) => {
   return cv;
 };
 
+/* 出番のないカメラを飛ばす下限(秒)。これ以上先へ跳ぶ要求だけ再シークする。
+   続行コスト ≈ 空白秒×fps枚のデコード、飛びコスト ≈ flush+RAPからの
+   GOP再デコード(1〜2秒分)+読み直し。損益分岐は1.5〜2秒だが、再シークは
+   回数が少ないほど安全なので4秒に置く(カットが3〜8秒で回るスイッチングでは
+   「2カット以上出番が無いときだけ飛ぶ」相当)。
+   Infinity にすると従来どおり全部デコード(殺しスイッチ) */
+MC.exporter.SKIP_MIN = 4.0;
+
 /* ---- 1カメラ分のデコードパイプ: frameAt(tLocal秒)がhold-last-frameでフレームを返す ---- */
 MC.exporter.VideoPipe = class {
   constructor(clip) {
@@ -42,6 +50,9 @@ MC.exporter.VideoPipe = class {
     this.eof = false;
     this.flushed = false;
     this.error = null;
+    this.lastReqUs = null; // 直前に要求された時刻(前方ジャンプ検知用)
+    this.noSkip = false;   // 再シークに失敗したパイプは以後直列デコードへ
+    this.prof = null;      // exportMP4 が挿す(skips/reseekMs)
   }
 
   async init(fromLocalSec) {
@@ -58,12 +69,13 @@ MC.exporter.VideoPipe = class {
       error: e => { this.error = e; },
     });
     this.decoder.configure(cfg);
-    this.iter = this.src.samples(vt.id, Math.max(0, fromLocalSec));
+    this.cursor = this.src.cursor(vt.id);
+    this.cursor.seek(Math.max(0, fromLocalSec));
   }
 
   async pump() {
     while (!this.eof && this.decoder.decodeQueueSize < 12 && this.frames.length < 8) {
-      const { value: s, done } = await this.iter.next();
+      const { value: s, done } = await this.cursor.next();
       if (done) {
         this.eof = true;
         await this.decoder.flush().catch(() => {});
@@ -79,6 +91,27 @@ MC.exporter.VideoPipe = class {
     }
   }
 
+  /* 出番が無かった区間を飛ばして tLocalSec の直前RAPから読み直す。
+     this.current は閉じない(seek失敗・EOFクランプ時の hold-last-frame 保険) */
+  async skipTo(tLocalSec) {
+    const t0 = performance.now();
+    try {
+      await this.decoder.flush().catch(() => {});
+      this.frames.forEach(f => { try { f.close(); } catch (e) {} });
+      this.frames = [];
+      // 末尾ぎりぎりへ飛ぶと RAP 以降にフレームが無く黒コマ化するためクランプ
+      const target = Math.min(tLocalSec, Math.max(0, this.clip.duration - 0.3));
+      this.cursor.seek(target);
+      this.eof = false;
+      this.flushed = false;
+      if (this.prof) { this.prof.skips++; this.prof.reseekMs += performance.now() - t0; }
+    } catch (err) {
+      // 再シークできない素材は、このパイプだけ従来の直列デコードで続行
+      MC.log("skipTo失敗→このカメラは直列デコード:", this.clip.name, err && err.message);
+      this.noSkip = true;
+    }
+  }
+
   /* tLocalSec時点のVideoFrame(hold-last-frame)。クリップ末尾以降は最後のフレームを保持
      tLocalSec は「クリップ先頭からの秒数」。frames[].timestamp は demux が
      s.cts から作るトラック内の絶対時刻なので、そのまま突き合わせる。
@@ -89,6 +122,13 @@ MC.exporter.VideoPipe = class {
   async frameAt(tLocalSec) {
     if (this.error) throw this.error;
     const tUs = tLocalSec * 1e6;
+    /* 前回の要求からSKIP_MIN秒より先へ跳んでいる=その間このカメラは
+       出番が無かった。間のフレームをデコードせず直前RAPへ飛ぶ(2026-07-22) */
+    if (!this.noSkip && this.lastReqUs != null &&
+        tUs - this.lastReqUs > MC.exporter.SKIP_MIN * 1e6) {
+      await this.skipTo(tLocalSec);
+    }
+    this.lastReqUs = tUs;
     let guard = 0;
     while (guard < 4000) {
       let advanced = false;
@@ -115,7 +155,6 @@ MC.exporter.VideoPipe = class {
     this.frames.forEach(f => { try { f.close(); } catch (e) {} });
     this.frames = [];
     if (this.current) { try { this.current.close(); } catch (e) {} this.current = null; }
-    if (this.iter && this.iter.return) this.iter.return();
   }
 };
 
@@ -488,18 +527,32 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
       },
       error: e => { vencErr = e; },
     });
-    venc.configure({
+    /* ハードウェアエンコーダを明示要求(対応環境で速くなる。主にChrome系)。
+       "prefer-hardware" はHWが無い環境で unsupported になる仕様なので、
+       必ず isConfigSupported で確かめて従来構成へ戻す。
+       latencyMode は既定(quality)のまま: "realtime" はレート制御が緩んで
+       iOS 3.8Mbps×260MB のメモリ見積りが崩れるため使わない(2026-07-22) */
+    const baseCfg = {
       codec: "avc1.640028", width: w, height: h,
       bitrate: MC.exporter.videoBitrate(), framerate: fps,
-    });
+    };
+    let vcfg = { ...baseCfg, hardwareAcceleration: "prefer-hardware" };
+    try {
+      const s = await VideoEncoder.isConfigSupported(vcfg);
+      if (!s || !s.supported) vcfg = baseCfg;
+    } catch (err) { vcfg = baseCfg; }
+    venc.configure(vcfg);
+    MC.log("export: encoder=" + (vcfg.hardwareAcceleration || "auto"));
 
     // 素材が今も読めるかを先に確かめる(途中で落ちるより早く知らせる)
 
     await MC.exporter.preflightFiles(used.filter(c => !c.isImage));
 
+    const prof = { decode: 0, draw: 0, encode: 0, skips: 0, reseekMs: 0 };
     for (const c of used) {
       if (c.isImage) continue;   // 静止画はデコード不要(そのまま描く)
       const pipe = new MC.exporter.VideoPipe(c);
+      pipe.prof = prof;
       await pipe.init(tIn - c.offset);
       pipes.set(c.id, pipe);
     }
@@ -509,21 +562,27 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
     const t0 = performance.now();
     let tRecent = t0, kRecent = 0;   // 残り時間は直近の速度で出す(序盤の助走に引きずられないため)
 
-    /* どこが重いかを測る。推測で最適化しないための材料 */
-    const prof = { decode: 0, draw: 0, encode: 0 };
     for (let k = 0; k < totalFrames; k++) {
       if (MC.exporter.cancelFlag) throw new Error("キャンセルしました");
       if (vencErr) throw vencErr;
       const t = tIn + k / fps;
       const srcMap = new Map();
       const _tDec = performance.now();
-      for (const [id, pipe] of pipes) {
+      /* このコマに実際映るカメラだけデコードする(2026-07-22)。
+         出番のないカメラのパイプは触らず眠らせ、次に必要になったとき
+         frameAt の前方ジャンプ検知が間を飛ばす。
+         カメラ間は Promise.all で並行(パイプの状態は互いに独立) */
+      const need = new Set(MC.neededIds(t));
+      const decodeP = Promise.all([...pipes].map(async ([id, pipe]) => {
+        if (!need.has(id)) return;
         const clip = pipe.clip;
         const local = t - clip.offset;
-        if (local < -0.05 || local > clip.duration + 0.05) { srcMap.set(id, null); continue; }
-        const f = await pipe.frameAt(Math.max(0, local));
-        srcMap.set(id, f);
-      }
+        if (local < -0.05 || local > clip.duration + 0.05) { srcMap.set(id, null); return; }
+        srcMap.set(id, await pipe.frameAt(Math.max(0, local)));
+      }));
+      /* エンコーダの詰まり待ちをデコードと重ねる(待っている間も裏でデコードが進む) */
+      while (venc.encodeQueueSize > 6) await MC.waitDequeue(venc);
+      await decodeP;
       prof.decode += performance.now() - _tDec;
       const _tDraw = performance.now();
       MC.drawComposite(ctx, w, h, t, id => {
@@ -541,7 +600,6 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
       });
       venc.encode(vf, { keyFrame: k % (fps * 2) === 0 });
       vf.close();
-      while (venc.encodeQueueSize > 6) await MC.waitDequeue(venc);
       prof.encode += performance.now() - _tEnc;
       if (k % 10 === 0) {
         const now = performance.now();
@@ -565,7 +623,8 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
       MC.log(`映像の内訳: 合計${tot.toFixed(0)}秒 / デコード${(prof.decode / 1000).toFixed(0)}秒(${pc(prof.decode)}%) `
         + `合成${(prof.draw / 1000).toFixed(0)}秒(${pc(prof.draw)}%) `
         + `エンコード${(prof.encode / 1000).toFixed(0)}秒(${pc(prof.encode)}%) `
-        + `/ ${totalFrames}コマ ${w}x${h} ${(MC.exporter.videoBitrate() / 1e6).toFixed(0)}Mbps`);
+        + `/ ${totalFrames}コマ ${w}x${h} ${(MC.exporter.videoBitrate() / 1e6).toFixed(0)}Mbps`
+        + ` / スキップ${prof.skips}回(${(prof.reseekMs / 1000).toFixed(1)}秒)`);
     }
 
     /* 映像が終わったらデコーダを即解放する。音声エンコードは977秒分の
