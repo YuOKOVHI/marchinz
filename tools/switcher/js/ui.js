@@ -42,10 +42,14 @@ MC.ui.showLongExportHelp = (okMin, mb) => {
   const dl = $("#downloadBtn"); if (dl) dl.style.display = "none";
   $("#doneText").innerHTML =
     `<span class="warn">この端末では書き出せない長さです（約${mb}MB）</span>`;
+  /* 実測が失敗した理由を小さく添える。実機で原因を特定するための診断表示
+     (2026-07-24: iPhoneでディスク直書きが効かない原因調査) */
+  const diag = MC.exporter._opfsProbeErr;
   $("#doneNote").textContent =
     `スマホ・タブレットは動画を丸ごとメモリに載せるため、${okMin}分ほどが上限です。`
     + `「ここから書き出す IN」「ここまで OUT」で範囲を狭めるか、`
-    + `パソコンのChromeで開くと最後まで書き出せます。`;
+    + `パソコンのChromeで開くと最後まで書き出せます。`
+    + (diag ? `〔診断: ${diag}〕` : "");
 };
 
 /* ============ 書き出しの全画面(案B / 2026-07-24) ============
@@ -2031,16 +2035,25 @@ MC.ui.wire = () => {
          すべてメモリに載せるしかない。iOS は上限が厳しく、超えるとタブごと
          落ちてエラーも出ない。無警告で走らせず、ここで止める */
       if (estBytes > MC.exporter.MEM_HARD_LIMIT && !window.showSaveFilePicker) {
-        const mb = Math.round(estBytes / 1e6);
-        const okMin = Math.max(1, Math.floor(MC.exporter.MEM_HARD_LIMIT
-          / ((MC.exporter.videoBitrate() + 192e3) / 8) / 60));
-        MC.ui.toast(`この長さ(約${mb}MB)はこの端末では書き出せません。`
-          + `${okMin}分以内に範囲を狭めてお試しください`, 7000);
-        MC.ui.showLongExportHelp(okMin, mb);
-        $("#exportBtn").disabled = !MC.S.clips.length;
-        $("#cancelBtn").style.display = "none";
-        prog.style.display = "none";
-        return;
+        /* 断る前に、もう一度だけOPFS(ディスク直書き)を実測する【敗者復活】。
+           起動時の実測が一時的な理由で失敗すると false が永久キャッシュされ、
+           本当は書ける端末まで4分上限に落ちていた(2026-07-24 優さんのiPhoneで発覚) */
+        MC.ui.toast("この端末で長尺を書き出せるか確認しています…", 3000);
+        const revived = await MC.exporter.probeOpfs(true);
+        if (revived) {
+          MC.log("OPFS敗者復活: ディスク直書きが使えたので上限なしで続行します");
+        } else {
+          const mb = Math.round(estBytes / 1e6);
+          const okMin = Math.max(1, Math.floor(MC.exporter.MEM_HARD_LIMIT
+            / ((MC.exporter.videoBitrate() + 192e3) / 8) / 60));
+          MC.ui.toast(`この長さ(約${mb}MB)はこの端末では書き出せません。`
+            + `${okMin}分以内に範囲を狭めてお試しください`, 7000);
+          MC.ui.showLongExportHelp(okMin, mb);
+          $("#exportBtn").disabled = !MC.S.clips.length;
+          $("#cancelBtn").style.display = "none";
+          prog.style.display = "none";
+          return;
+        }
       }
     }
 

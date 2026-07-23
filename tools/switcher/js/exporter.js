@@ -561,21 +561,36 @@ MC.exporter.opfsSupported = () => {
 
 /** OPFSへ実際に書けるかをWorkerで一度だけ確かめ、結果をキャッシュする。
     起動時(app.js)に呼ぶ。以後 opfsSupported() はこの事実を返す */
-MC.exporter.probeOpfs = async () => {
-  if (MC.exporter._opfsProbed !== null) return MC.exporter._opfsProbed;
+MC.exporter._opfsProbeErr = null;   // 直近の実測失敗の理由(診断表示用)
+MC.exporter.probeOpfs = async force => {
+  if (MC.exporter._opfsProbed === true) return true;
+  if (MC.exporter._opfsProbed === false && !force) return false;
+  if (force && MC.exporter._writer) {
+    /* 敗者復活(2026-07-24): 起動時の一時的な失敗でfalseが永久キャッシュされ、
+       iPhoneがずっとメモリ方式(4分上限)に落ちていた。workerごと作り直して再実測 */
+    try { MC.exporter._writer.terminate(); } catch (_) {}
+    MC.exporter._writer = null;
+    MC.exporter._writerP = null;
+  }
   let ok = false;
+  const name = "__probe_" + Date.now() + ".mp4";   // 固定名だと前回の残骸と衝突しうる
   try {
     if (navigator.storage && navigator.storage.getDirectory && typeof Worker !== "undefined") {
       await MC.exporter.initWriter();
-      await MC.exporter._writerReq({ type: "open", dir: MC.exporter.OPFS_DIR, name: "__probe.mp4" });
+      await MC.exporter._writerReq({ type: "open", dir: MC.exporter.OPFS_DIR, name });
       const b = new Uint8Array([77, 90]);
       await MC.exporter._writerReq({ type: "write", data: b.buffer, position: 0 }, [b.buffer]);
       await MC.exporter._writerReq({ type: "finalize" });
       ok = true;
-      MC.exporter.opfsRemove("__probe.mp4");   // 後始末(非同期でよい)
+      MC.exporter._opfsProbeErr = null;
+      MC.exporter.opfsRemove(name);   // 後始末(非同期でよい)
+    } else {
+      MC.exporter._opfsProbeErr = "storage.getDirectoryまたはWorkerが無い";
     }
   } catch (e) {
-    MC.log("OPFS実測NG→この端末はメモリ方式: " + (e && e.message));
+    MC.exporter._opfsProbeErr =
+      (e && e.name ? e.name + ": " : "") + String((e && e.message) || e);
+    MC.log("OPFS実測NG→この端末はメモリ方式: " + MC.exporter._opfsProbeErr);
     ok = false;
   }
   MC.exporter._opfsProbed = ok;
@@ -592,24 +607,41 @@ MC.exporter.initWriter = () => {
     let w;
     try { w = new Worker("js/exportwriter.js?v=" + (document.documentElement.getAttribute("data-mz-app-v") || "1")); }
     catch (e) { rej(e); return; }
-    const tm = setTimeout(() => { try { w.terminate(); } catch (_) {} rej(new Error("writer worker timeout")); }, 8000);
-    w.onerror = () => { clearTimeout(tm); rej(new Error("writer workerを起動できません")); };
-    // 起動確認は「空ディレクトリを開けるか」ではなく、最初の open で兼ねる。
-    // ここでは worker が生きていることだけ確かめる(ping)
-    w.onmessage = () => {};   // open/write/finalize の応答は request 側で受ける
-    clearTimeout(tm);
-    MC.exporter._writer = w;
-    res(w);
+    /* worker からの ready 通知を待ってから使い始める(2026-07-24)。
+       以前は即resolveしており、workerの読み込みに失敗すると次の open が
+       永遠に待つ穴があった */
+    const tm = setTimeout(() => { try { w.terminate(); } catch (_) {} rej(new Error("writer worker起動タイムアウト")); }, 8000);
+    w.onerror = ev => {
+      clearTimeout(tm);
+      try { w.terminate(); } catch (_) {}
+      rej(new Error("writer workerを起動できません" + (ev && ev.message ? ": " + ev.message : "")));
+    };
+    const onReady = ev => {
+      if (!ev.data || ev.data.type !== "ready") return;
+      clearTimeout(tm);
+      w.removeEventListener("message", onReady);
+      w.onerror = null;
+      MC.exporter._writer = w;
+      res(w);
+    };
+    w.addEventListener("message", onReady);
   }).catch(e => { MC.exporter._writerP = null; throw e; });
   return MC.exporter._writerP;
 };
 
-/** worker と1往復。応答待ちは1件ずつ(sync handle は直列書き込み) */
-MC.exporter._writerReq = (msg, transfer) => new Promise((res, rej) => {
+/** worker と1往復。応答待ちは1件ずつ(sync handle は直列書き込み)。
+    応答が返らない事故で永遠に待たないようタイムアウト付き(2026-07-24) */
+MC.exporter._writerReq = (msg, transfer, timeoutMs = 12000) => new Promise((res, rej) => {
   const w = MC.exporter._writer;
   if (!w) { rej(new Error("writer未初期化")); return; }
+  const tm = setTimeout(() => {
+    w.removeEventListener("message", onMsg);
+    rej(new Error((msg && msg.type) + ": workerの応答がありません"));
+  }, timeoutMs);
   const onMsg = ev => {
     const m = ev.data || {};
+    if (m.type === "ready") return;   // 起動通知はここでは無視
+    clearTimeout(tm);
     w.removeEventListener("message", onMsg);
     if (m.type === "error") rej(new Error(m.op + ": " + m.message));
     else res(m);

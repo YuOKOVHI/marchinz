@@ -21,12 +21,26 @@
 let handle = null;
 let written = 0;
 
+/* 起動できたことをメインへ知らせる。メインの initWriter はこれを待ってから
+   使い始める(以前は待たずに使い、読み込み失敗時に永遠に待つ穴があった) */
+self.postMessage({ type: "ready" });
+
 async function open(dir, name) {
+  if (handle) { try { handle.close(); } catch (_) {} handle = null; }   // 前回の残りを閉じる
   const root = await navigator.storage.getDirectory();
   const d = await root.getDirectoryHandle(dir, { create: true });
-  const fh = await d.getFileHandle(name, { create: true });
+  let fh = await d.getFileHandle(name, { create: true });
   handle = await fh.createSyncAccessHandle();
-  handle.truncate(0);
+  try {
+    handle.truncate(0);
+  } catch (err) {
+    /* 一部のSafariで truncate が投げることがある → ファイルを作り直して代替 */
+    try { handle.close(); } catch (_) {}
+    handle = null;
+    await d.removeEntry(name).catch(() => {});
+    fh = await d.getFileHandle(name, { create: true });
+    handle = await fh.createSyncAccessHandle();
+  }
   written = 0;
 }
 
