@@ -59,6 +59,7 @@ MC.ui.exportOverlay = {
     const el = MC.ui.$("#exportOverlay");
     if (!el) return;
     MC.ui.$("#eoTitleText").textContent = "書き出し中…";
+    MC.ui.$("#eoTitleIcon").className = "fa-solid fa-file-export";
     MC.ui.$("#eoRun").hidden = false;
     MC.ui.$("#eoDone").hidden = true;
     MC.ui.$("#eoClose").hidden = true;
@@ -70,6 +71,7 @@ MC.ui.exportOverlay = {
     const el = MC.ui.$("#exportOverlay");
     if (!el || el.hidden) return;
     MC.ui.$("#eoTitleText").textContent = "できあがりました";
+    MC.ui.$("#eoTitleIcon").className = "fa-solid fa-circle-check eo-check";
     MC.ui.$("#eoRun").hidden = true;
     MC.ui.$("#eoDone").hidden = false;
     MC.ui.$("#eoClose").hidden = false;
@@ -78,6 +80,7 @@ MC.ui.exportOverlay = {
     const el = MC.ui.$("#exportOverlay");
     if (!el || el.hidden) return;
     MC.ui.$("#eoTitleText").textContent = "書き出せませんでした";
+    MC.ui.$("#eoTitleIcon").className = "fa-solid fa-triangle-exclamation";
     MC.ui.$("#eoCancel").style.display = "none";   // 失敗後の中止は意味がない
     MC.ui.$("#eoClose").hidden = false;            // 詳細はMZPのfail表示が出ている
   },

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-app-v="1.41.3">
+<html lang="ja" data-mz-app-v="1.42.0">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -17,7 +17,7 @@
 <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
 <link rel="stylesheet" href="/tools/shared/progress.css">
 <link rel="stylesheet" href="/tools/shared/journey.css">
-<link rel="stylesheet" href="css/style.css?v=1.41.3">
+<link rel="stylesheet" href="css/style.css?v=1.42.0">
 <link rel="stylesheet" href="/tools/shared/sitechrome.css">
 </head>
 <body data-mz-tool="switcher">
@@ -293,7 +293,7 @@
      書き出し中→保存 はこのオーバーレイ内で画面が切り替わる -->
 <div id="exportOverlay" class="export-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="eoTitle">
   <div class="eo-inner">
-    <p id="eoTitle" class="eo-title"><i class="fa-solid fa-file-export" aria-hidden="true"></i> <span id="eoTitleText">書き出し中…</span></p>
+    <p id="eoTitle" class="eo-title"><i id="eoTitleIcon" class="fa-solid fa-file-export" aria-hidden="true"></i> <span id="eoTitleText">書き出し中…</span></p>
     <div id="eoRun">
       <div id="eoProgress"></div>
       <p class="eo-note"><i class="fa-solid fa-mug-hot" aria-hidden="true"></i>
@@ -304,7 +304,7 @@
       <p id="eoDoneText" class="eo-done-text"></p>
       <div class="eo-actions">
         <button id="eoSaveBtn" class="btn primary big"><i class="fa-solid fa-arrow-up-from-bracket"></i> 動画を保存</button>
-        <button id="eoDownloadBtn" class="btn big"><i class="fa-solid fa-download"></i> ダウンロード</button>
+        <button id="eoDownloadBtn" class="btn ghost eo-dl"><i class="fa-solid fa-download"></i> ダウンロード</button>
       </div>
       <p id="eoDoneNote" class="eo-note"></p>
     </div>
@@ -345,24 +345,24 @@
 <script src="vendor/mp4box.all.min.js"></script>
 <script src="vendor/mp4-muxer.min.js"></script>
 <script src="vendor/fft.js"></script>
-<script src="js/state.js?v=1.41.3"></script>
-<script src="js/layout.js?v=1.41.3"></script>
-<script src="js/media.js?v=1.41.3"></script>
-<script src="js/demux.js?v=1.41.3"></script>
-<script src="js/audio.js?v=1.41.3"></script>
-<script src="js/sync.js?v=1.41.3"></script>
-<script src="js/beats.js?v=1.41.3"></script>
-<script src="js/sections.js?v=1.41.3"></script>
-<script src="js/visual.js?v=1.41.3"></script>
-<script src="js/director.js?v=1.41.3"></script>
-<script src="js/colormatch.js?v=1.41.3"></script>
-<script src="js/horizon.js?v=1.41.3"></script>
-<script src="js/salute.js?v=1.41.3"></script>
-<script src="js/preview.js?v=1.41.3"></script>
-<script src="js/timeline.js?v=1.41.3"></script>
-<script src="js/cutmode.js?v=1.41.3"></script>
-<script src="js/exporter.js?v=1.41.3"></script>
-<script src="js/ui.js?v=1.41.3"></script>
-<script src="js/app.js?v=1.41.3"></script>
+<script src="js/state.js?v=1.42.0"></script>
+<script src="js/layout.js?v=1.42.0"></script>
+<script src="js/media.js?v=1.42.0"></script>
+<script src="js/demux.js?v=1.42.0"></script>
+<script src="js/audio.js?v=1.42.0"></script>
+<script src="js/sync.js?v=1.42.0"></script>
+<script src="js/beats.js?v=1.42.0"></script>
+<script src="js/sections.js?v=1.42.0"></script>
+<script src="js/visual.js?v=1.42.0"></script>
+<script src="js/director.js?v=1.42.0"></script>
+<script src="js/colormatch.js?v=1.42.0"></script>
+<script src="js/horizon.js?v=1.42.0"></script>
+<script src="js/salute.js?v=1.42.0"></script>
+<script src="js/preview.js?v=1.42.0"></script>
+<script src="js/timeline.js?v=1.42.0"></script>
+<script src="js/cutmode.js?v=1.42.0"></script>
+<script src="js/exporter.js?v=1.42.0"></script>
+<script src="js/ui.js?v=1.42.0"></script>
+<script src="js/app.js?v=1.42.0"></script>
 </body>
 </html>

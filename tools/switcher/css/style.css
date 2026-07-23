@@ -1108,6 +1108,17 @@ body[data-mzj-phase="sync"] .stage { display: none; }
 .eo-done-text { font-size: 14px; text-align: center; line-height: 1.7; }
 .eo-actions { display: flex; flex-direction: column; gap: 10px; }
 .eo-actions .btn { width: 100%; }
+/* 完了時の登場アニメ(2026-07-24 案B B: 達成感を出す)。
+   [hidden]→表示に切り替わった瞬間に一度だけ走る */
+#eoDone:not([hidden]) { animation: eoRise .34s cubic-bezier(.2,.7,.3,1) both; }
+@keyframes eoRise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.eo-title i.eo-check { color: #2fa36b; animation: eoPop .42s cubic-bezier(.2,.8,.3,1.5) both; }
+@keyframes eoPop { 0% { transform: scale(.4); opacity: 0; } 60% { transform: scale(1.18); } 100% { transform: scale(1); opacity: 1; } }
+/* ダウンロードは「動画を保存」に対する控えめな二次導線(案B A) */
+.eo-dl { font-size: 13px; opacity: .85; }
+@media (prefers-reduced-motion: reduce) {
+  #eoDone:not([hidden]), .eo-title i.eo-check { animation: none; }
+}
 .eo-close { align-self: center; min-width: 120px; }
 /* オーバーレイ表示中はフロートやバー類を引っ込める(全部この画面が主役) */
 body.mz-export-open .mzj,
