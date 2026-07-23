@@ -830,10 +830,10 @@ MC.ui.renderQualityPicker = () => {
      本当に不利な端末にだけ出す。実態と違う遠慮はユーザーの損になる */
   /* 既定のライトを先に置く。フルHDはいつでも選べる */
   const defs = [
-    { id: "light", name: "ライト", tag: "おすすめ",
-      desc: "720p・8Mbps／速くて軽い。SNS向け" },
-    { id: "full", name: "フルHD", tag: "",
-      desc: "1080p・12Mbps／いちばんきれい。時間と容量が増えます" },
+    { id: "light", name: "ライトモード", tag: "おすすめ",
+      desc: "速度重視（720p）" },
+    { id: "full", name: "リッチモード", tag: "",
+      desc: "高画質ですが、時間がかかります（1080p）" },
   ];
   host.innerHTML = defs.map(d => `
     <button type="button" class="q-card${d.id === cur ? " on" : ""}" role="radio"

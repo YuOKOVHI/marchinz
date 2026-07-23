@@ -482,8 +482,8 @@ MC.exporter.encodeAudioFile = async (muxer, clip, fromLocalSec, durSec, onStatus
 /* 書き出しの画質は2択(2026-07-23 優さん指示)。
    端末で分けない: OPFSでメモリ制約が消えたので、iPhoneでもフルHD 12Mbpsを出す */
 MC.exporter.QUALITIES = {
-  full:  { label: "フルHD", scale: 1 },      // 1080p / 12Mbps
-  light: { label: "ライト", scale: 2 / 3 },  // 720p / 8Mbps
+  full:  { label: "リッチモード", scale: 1 },      // 1080p / 12Mbps(高画質・時間かかる)
+  light: { label: "ライトモード", scale: 2 / 3 },  // 720p / 8Mbps(速度重視・既定)
 };
 /* 旧IDからの移行(sns=720p→light / hd,pro=1080p→full) */
 MC.exporter.QUALITY_ALIAS = { sns: "light", hd: "full", pro: "full" };
