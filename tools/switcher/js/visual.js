@@ -46,6 +46,95 @@ MC.visual = {
   forceSeek: false,
 };
 
+/* ---------- 顔検出の実行場所(3段構え) ----------
+   ① 専用Worker(faceworker.js) … 前処理+推論を丸ごとWorkerで。デコードと完全並走
+   ② ORT proxy Worker          … 推論だけWorker(前処理はメインに残る)
+   ③ メインスレッド            … 従来どおり
+   どれで走っても**計算は同一**(前処理コードは一字一句同じ)。
+   殺しスイッチ: MC.visual.faceWorker = false(①を飛ばす) / faceProxy = false(②を飛ばす) */
+MC.visual._fw = null;
+MC.visual._fwDead = false;
+
+MC.visual.initFaceWorker = () => {
+  if (MC.visual._fwReadyP) return MC.visual._fwReadyP;
+  MC.visual._fwReadyP = new Promise((res, rej) => {
+    let w;
+    // ページ(tools/switcher/)からの相対。?v=はscriptタグ側の流儀に合わせて付ける
+    try { w = new Worker("js/faceworker.js?v=" + (document.documentElement.getAttribute("data-mz-app-v") || "1")); }
+    catch (e) { rej(e); return; }
+    const tm = setTimeout(() => { try { w.terminate(); } catch (_) {} rej(new Error("worker init timeout")); }, 15000);
+    w.onmessage = ev => {
+      const m = ev.data || {};
+      if (m.type === "ready") {
+        clearTimeout(tm);
+        MC.visual._fw = w;
+        MC.visual._fwSeq = 0;
+        MC.visual._fwMap = new Map();
+        MC.visual._fwInflight = [];
+        w.onmessage = ev2 => {
+          const r = ev2.data || {};
+          const h = MC.visual._fwMap.get(r.id);
+          if (!h) return;
+          MC.visual._fwMap.delete(r.id);
+          if (r.type === "result") h.res(r.res);
+          else h.rej(new Error(r.message || "worker error"));
+        };
+        w.onerror = e2 => {
+          MC.visual._fwDead = true;
+          for (const h of MC.visual._fwMap.values()) h.rej(new Error("worker crashed"));
+          MC.visual._fwMap.clear();
+        };
+        res(w);
+      } else if (m.type === "init-error") {
+        clearTimeout(tm);
+        try { w.terminate(); } catch (_) {}
+        rej(new Error(m.message));
+      }
+    };
+    w.onerror = e => { clearTimeout(tm); rej(new Error("workerを起動できません")); };
+    const base = new URL("../privacy/vendor/", location.href).href;
+    const mm = navigator.userAgent.match(/(?:iPhone|iPad).*OS (\d+)_(\d+)/);
+    const iPadDesktopUA = navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+    w.postMessage({ type: "init", base,
+      noSimd: (mm && +mm[1] === 16 && +mm[2] === 4) || iPadDesktopUA });
+  }).catch(e => { MC.visual._fwReadyP = null; MC.visual._fwDead = true; throw e; });
+  return MC.visual._fwReadyP;
+};
+
+/** VideoFrameをWorkerへtransferして顔検出。呼び出し時にclone(同期)するので、
+    呼び出し直後に元フレームをcloseしてよい */
+MC.visual._fwDetect = (frame, sw, sh, rotation) => {
+  let clone;
+  try { clone = frame.clone(); }
+  catch (e) { return Promise.reject(e); }
+  return (async () => {
+    // 背圧: Workerへ積みすぎない(VideoFrameを掴んだまま滞留させない)。同時4件まで
+    while (MC.visual._fwInflight.length >= 4) {
+      await Promise.race(MC.visual._fwInflight).catch(() => {});
+    }
+    if (MC.visual._fwDead || !MC.visual._fw) { try { clone.close(); } catch (_) {} throw new Error("worker dead"); }
+    const id = ++MC.visual._fwSeq;
+    const p = new Promise((res, rej) => MC.visual._fwMap.set(id, { res, rej }));
+    const track = p.then(() => {}, () => {}).finally(() => {
+      const i = MC.visual._fwInflight.indexOf(track);
+      if (i >= 0) MC.visual._fwInflight.splice(i, 1);
+    });
+    MC.visual._fwInflight.push(track);
+    MC.visual._fw.postMessage({ type: "detect", id, frame: clone, sw, sh, rotation }, [clone]);
+    return p;
+  })();
+};
+
+/** 顔検出の準備。使える実行場所を選んで返す("worker"|"proxy"|"main") */
+MC.visual.initFace = async () => {
+  if (MC.visual.faceWorker !== false && !MC.visual._fwDead) {
+    try { await MC.visual.initFaceWorker(); return "worker"; }
+    catch (e) { MC.log("visual: 専用Worker不可→次の手段へ:", e && e.message); }
+  }
+  await MC.visual.initYuNet();
+  return MC.visual._proxyOn ? "proxy" : "main";
+};
+
 /* ---------- YuNet(ORT)遅延ロード: Privacyのvendorを共用 ---------- */
 MC.visual._ort = null;
 
@@ -69,10 +158,33 @@ MC.visual.initYuNet = async () => {
     const m = navigator.userAgent.match(/(?:iPhone|iPad).*OS (\d+)_(\d+)/);
     const iPadDesktopUA = navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
     if ((m && +m[1] === 16 && +m[2] === 4) || iPadDesktopUA) ort.env.wasm.simd = false;
-    const session = await ort.InferenceSession.create(
-      base + "face_detection_yunet_2023mar.onnx",
-      { executionProviders: ["wasm"], graphOptimizationLevel: "all" });
-    MC.log("visual: yunet ready");
+    /* 推論をORT付属のproxy Workerへ(Phase 3 / 2026-07-23)。
+       wasm推論はメインスレッドを止めるため、デコードと直列になっていた
+       (顔61% vs デコード39%の実測)。Workerなら2つが重なり合計≒max(両者)。
+       モデル・入力・フレームは同一なので**結果は変わらない**(検証で完全一致を確認)。
+       proxyを作れない環境は従来どおりメインスレッドで動く。
+       殺しスイッチ: MC.visual.faceProxy = false */
+    let session = null;
+    MC.visual._proxyOn = false;
+    if (MC.visual.faceProxy !== false) {
+      try {
+        ort.env.wasm.proxy = true;
+        session = await ort.InferenceSession.create(
+          base + "face_detection_yunet_2023mar.onnx",
+          { executionProviders: ["wasm"], graphOptimizationLevel: "all" });
+        MC.visual._proxyOn = true;
+      } catch (e) {
+        MC.log("visual: proxy Worker不可→メインスレッドで続行:", e && e.message);
+        session = null;
+      }
+    }
+    if (!session) {
+      ort.env.wasm.proxy = false;
+      session = await ort.InferenceSession.create(
+        base + "face_detection_yunet_2023mar.onnx",
+        { executionProviders: ["wasm"], graphOptimizationLevel: "all" });
+    }
+    MC.log("visual: yunet ready" + (MC.visual._proxyOn ? " (worker)" : ""));
     MC.visual._ort = session;
     return session;
   })().catch(e => { MC.visual._ortP = null; throw e; });
@@ -84,6 +196,12 @@ MC.visual.initYuNet = async () => {
    検出する(これを忘れると縦撮り素材の顔検出が全滅する)。
    <video> はブラウザが回転適用済みなので rotation=0 の薄いラッパを使う */
 MC.visual.detectFacesFrom = async (source, sw, sh, rotation = 0) => {
+  /* 専用Workerが生きていて、ソースがVideoFrame(=transfer可能)ならWorkerで。
+     <video>やcanvasはtransferできないため従来経路(下)を使う */
+  if (MC.visual._fw && !MC.visual._fwDead &&
+      typeof VideoFrame !== "undefined" && source instanceof VideoFrame) {
+    return MC.visual._fwDetect(source, sw, sh, rotation);
+  }
   const session = MC.visual._ort;
   if (!session) return null;
   const rot = (((rotation || 0) % 360) + 360) % 360;
@@ -102,15 +220,35 @@ MC.visual.detectFacesFrom = async (source, sw, sh, rotation = 0) => {
   ctx.scale(k, k);
   ctx.drawImage(source, -sw / 2, -sh / 2, sw, sh);
   ctx.restore();
+  /* ここまで(画素の取り出し)は同期。VideoFrameは呼び出し直後にcloseされるため、
+     awaitを挟む前に必ずコピーを終えること(Phase 3で遅延実行にした際の前提) */
   const px = ctx.getImageData(0, 0, 640, 640).data;
   const N = 640 * 640;
-  const d = MC.visual._fbuf || (MC.visual._fbuf = new Float32Array(3 * N));
+  /* proxy(Worker)時は入力バッファを**毎回新品**にする。ORT proxyはテンソルの
+     ArrayBufferをWorkerへtransferするため、run()を呼んだ瞬間に手元のバッファは
+     長さ0に無効化される(再利用すると "data length(0)" で全滅。2026-07-23実測)。
+     transferはコピーではないので、新品を作って渡すのが正しくかつ速い。
+     非proxy時は従来どおり1本を使い回す(同期実行でバッファは無傷) */
+  const d = MC.visual._proxyOn
+    ? new Float32Array(3 * N)
+    : (MC.visual._fbuf || (MC.visual._fbuf = new Float32Array(3 * N)));
   for (let i = 0; i < N; i++) {
     d[i] = px[i * 4 + 2];
     d[N + i] = px[i * 4 + 1];
     d[2 * N + i] = px[i * 4];
   }
-  const out = await session.run({ input: new ort.Tensor("float32", d, [1, 3, 640, 640]) });
+  /* 背圧: Workerへ積みすぎない(1件4.9MBが滞留するため)。同時4件まで */
+  if (!MC.visual._inflight) MC.visual._inflight = [];
+  while (MC.visual._inflight.length >= 4) {
+    await Promise.race(MC.visual._inflight).catch(() => {});
+  }
+  const runP = session.run({ input: new ort.Tensor("float32", d, [1, 3, 640, 640]) });
+  const track = runP.then(() => {}, () => {}).finally(() => {
+    const i = MC.visual._inflight.indexOf(track);
+    if (i >= 0) MC.visual._inflight.splice(i, 1);
+  });
+  MC.visual._inflight.push(track);
+  const out = await runP;
   // stride 8/16/32 のcls/obj/bboxを復元(Privacy yunet.jsと同じ)
   let dets = [];
   for (const s of [8, 16, 32]) {
@@ -334,7 +472,7 @@ MC.visual.analyzeClipWC = async (clip, l0, l1, prog) => {
   const interval = Math.max(0.8, Math.min(5, range / 120));
   const n = Math.max(2, Math.floor(range / interval));
   let faceOK = true;
-  try { await MC.visual.initYuNet(); }
+  try { const mode = await MC.visual.initFace(); MC.log("visual: 顔検出=" + mode); }
   catch (e) { faceOK = false; MC.log("visual: 顔検出なしで続行:", e.message); }
 
   // 欲しい時刻(昇順)。A=ペア1枚目 / B=2枚目 / color=色統計
@@ -376,7 +514,8 @@ MC.visual.analyzeClipWC = async (clip, l0, l1, prog) => {
 
   const V = { key, t: [], shake: [], dxs: [], sharp: [], moE: [], act: [], nF: [], maxF: [], faceOK };
   const colorAcc = wantColor ? MC.color.statsAcc() : null;
-  const pending = {};      // ペア1枚目の保管: i -> {A, tA, tWant, faces}
+  const pending = {};      // ペア1枚目の保管: i -> {A, tA, tWant, facesP}
+  const deferred = [];     // 組み立て待ちのサンプル(順序保持。Phase 3)
   let sampleDone = 0;
   let lastTs = -Infinity;  // 直近で出したフレームの秒(HOP判定)
   let srcEof = false, flushed = false, drained = false;
@@ -441,12 +580,15 @@ MC.visual.analyzeClipWC = async (clip, l0, l1, prog) => {
         if (colorAcc) colorAcc.add(frame, fw, fh);
       } else if (wt.kind === "A") {
         const A = MC.visual.grabGrayFrom(frame, fw, fh, rotation);
-        let faces = null;
+        /* 顔検出はawaitしない(Phase 3)。画素の取り出しは関数内の同期部で終わるので、
+           この後すぐ frame.close() しても安全。推論はWorkerで走り、
+           その間メインスレッドは次のフレームのデコードを進める */
+        let facesP = null;
         if (faceOK && wt.i % MC.visual.FACE_EVERY === 0) {
-          try { faces = await MC.visual.detectFacesFrom(frame, fw, fh, rotation); }
-          catch (e) { faceOK = false; V.faceOK = false; }
+          facesP = MC.visual.detectFacesFrom(frame, fw, fh, rotation);
+          facesP.catch(() => {});   // 失敗は組み立て時にまとめて拾う(unhandled回避)
         }
-        pending[wt.i] = { A, tA: fSec, tWant: wt.t, faces };
+        pending[wt.i] = { A, tA: fSec, tWant: wt.t, facesP };
       } else {   // "B" = ペア2枚目
         const P = pending[wt.i];
         if (P) {
@@ -454,7 +596,11 @@ MC.visual.analyzeClipWC = async (clip, l0, l1, prog) => {
           /* 実フレームの時刻差で正規化(30fpsはPAIR_DT=0.12にぴったり乗らない)。
              同一フレームを掴んだ場合(dt→0)はdx=0なのでclampで害はない */
           const dt = Math.max(0.02, fSec - P.tA);
-          MC.visual._samplePoint(V, P.A, B, P.faces, P.tWant, dt);
+          /* その場で_samplePointしない(Phase 3)。顔の答え(facesP)を待つと
+             せっかくWorkerへ逃した推論と再び直列になる。順序ごと控えておき、
+             デコードが全部終わってからまとめて組み立てる(V配列の並びは不変)。
+             控えるのは縮小グレー(128px幅・約9KB)×最大240枚≒2MBで軽い */
+          deferred.push({ A: P.A, B, facesP: P.facesP, tWant: P.tWant, dt });
           delete pending[wt.i];
         }
         sampleDone++;
@@ -466,6 +612,16 @@ MC.visual.analyzeClipWC = async (clip, l0, l1, prog) => {
   } finally {
     try { dec.close(); } catch (e) {}
     closeAll();
+  }
+  /* デコードが終わってから、順序どおりに組み立てる。顔の答えが未着なら
+     ここで待つ(Workerが遅れても最後にまとめて追いつく) */
+  for (const dS of deferred) {
+    let faces = null;
+    if (dS.facesP) {
+      try { faces = await dS.facesP; }
+      catch (e) { faceOK = false; V.faceOK = false; }
+    }
+    MC.visual._samplePoint(V, dS.A, dS.B, faces, dS.tWant, dS.dt);
   }
   if (V.t.length < 2) throw new Error("解析サンプルが取れません");
   MC.visual._finalize(V);
