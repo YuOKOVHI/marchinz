@@ -1230,19 +1230,20 @@ body {
   .site-footer .mz-footer-grid {
     gap: 0.6rem;
     max-width: 400px;
-    padding: 1.2rem 0.8rem 1.4rem;
+    padding: 0.9rem 0.8rem 1rem;
     text-align: center;
   }
 
   .mz-footer-col {
     align-items: center;
-    /* リンク自体が min-height:44px を持つので gap は最小に */
-    gap: 0.1rem;
+    gap: 0;
   }
 
   .mz-footer-grid .footer-nav-link {
     font-size: 0.76rem;
     line-height: 1.3;
+    /* 行間を詰める(2026-07-24 優さん指示)。44pxの標的は間延びしすぎた */
+    min-height: 30px;
   }
 }
 

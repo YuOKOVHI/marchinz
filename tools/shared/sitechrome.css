@@ -372,3 +372,49 @@
   text-decoration: none;
 }
 .mz-signup-perks .msp-btn:hover { filter: brightness(0.97); }
+
+/* ---------- 下部タブバー(スマホ・ツールページ用 2026-07-24) ----------
+   本体の .mz-tabbar と同じ見た目・6枠。ツールへ行くと下のメニューが消えて
+   戻りにくい(優さん指摘)への対応。文字は本体と同じ約2/3(0.46rem) */
+.mzsc-tabbar { display: none; }
+@media (max-width: 768px) {
+  .mzsc-tabbar {
+    display: flex;
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    z-index: 70;   /* ツールの親指バー(80)より下、本文より上 */
+    background: rgba(255, 255, 255, 0.96);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    border-top: 0.5px solid rgba(15, 33, 56, 0.14);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .mzsc-tabbar a {
+    flex: 1 1 0; min-width: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 2px; padding: 0 1px; min-height: 3.6rem;
+    font-size: 0.46rem; font-weight: 700; letter-spacing: -0.01em; white-space: nowrap;
+    color: #6b7684; text-decoration: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mzsc-tabbar a svg { width: 22px; height: 22px; stroke: currentColor; }
+  .mzsc-tabbar a.on { color: #1e4fd6; }
+
+  /* 本文とツールの固定バー類をタブバーの上へ積む */
+  body.mzsc-has-tabbar { padding-bottom: calc(3.6rem + env(safe-area-inset-bottom, 0px)); }
+  body.mzsc-has-tabbar .mz-actionbar { bottom: calc(3.6rem + env(safe-area-inset-bottom, 0px)); }
+  body.mzsc-has-tabbar .mzp-dock { bottom: calc(3.6rem + 8px + env(safe-area-inset-bottom, 0px)); }
+
+  /* 全画面系(書き出し全画面・プレビュー全画面・カット切替)では引っ込める */
+  body.mz-export-open .mzsc-tabbar,
+  body.mz-float-full .mzsc-tabbar,
+  body.cutmode-open .mzsc-tabbar { display: none; }
+  body.mz-export-open.mzsc-has-tabbar .mzp-dock { bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
+}
+
+/* ---------- フッターを詰める(スマホ 2026-07-24 優さん指示) ----------
+   44pxのタップ標的でリンク行間が間延びしていた。スマホは30pxまで詰める */
+@media (max-width: 768px) {
+  .mzsc-foot-grid { padding: 0.9rem 0.8rem 1rem; }
+  .mzsc-foot-col a { min-height: 30px; }
+}

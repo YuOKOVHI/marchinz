@@ -183,6 +183,47 @@ window.MZSiteChrome = (() => {
 </footer>`;
   }
 
+  /* ---- 下部タブバー(スマホ) ----
+     本体と同じ6枠(TOP/モーメント/イベント/掲示板/属性/マイページ)をツールページにも出す。
+     ツールへ行くと下のメニューが消えて戻りにくい(2026-07-24 優さん指摘)への対応。
+     5番目は本体と同じく属性(localStorage mz_user_type_v1)で切り替える */
+  const TAB_SVG = {
+    home: '<path d="M5 12l-2 0 9 -9 9 9 -2 0"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-7"/><path d="M9 21v-6a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v6"/>',
+    bolt: '<path d="M13 3l-8 10h6l-1 8 8 -10h-6z"/>',
+    cal: '<rect x="4" y="5" width="16" height="16" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/>',
+    chat: '<path d="M21 14a2 2 0 0 1 -2 2h-6l-4 3v-3h-2a2 2 0 0 1 -2 -2v-8a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2z"/>',
+    people: '<circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M21 21v-2a4 4 0 0 0 -3 -3.85"/>',
+    drum: '<ellipse cx="12" cy="6.5" rx="8" ry="2.5"/><path d="M4 6.5v11c0 1.38 3.58 2.5 8 2.5s8 -1.12 8 -2.5v-11"/><path d="M4 12c0 1.38 3.58 2.5 8 2.5s8 -1.12 8 -2.5"/><path d="M16.5 4.5l3 -2.5"/>',
+    clap: '<rect x="3" y="8.5" width="18" height="11.5" rx="2"/><path d="M3 8.5l3 -4.5 3 1 -2.2 3.5M10 8.5l3 -4.5 3 1 -2.2 3.5"/>',
+    user: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="10" r="3"/><path d="M6.168 18.849a4 4 0 0 1 3.832 -2.849h4a4 4 0 0 1 3.834 2.855"/>',
+  };
+  function attrTabEntry() {
+    let t = "fan";
+    try { t = localStorage.getItem("mz_user_type_v1") || "fan"; } catch (_) {}
+    if (t === "player") return { href: "/#profile?tab=base", label: "練習記録", svg: TAB_SVG.drum };
+    if (t === "creator") return { href: "/tools/switcher/", label: "Switcher", svg: TAB_SVG.clap };
+    return { href: "/#community/events", label: "コミュニティ", svg: TAB_SVG.people };
+  }
+  function tabbarHtml() {
+    const attr = attrTabEntry();
+    const here = location.pathname.replace(/\/+$/, "/");
+    const tabs = [
+      { href: "/#top", label: "TOP", svg: TAB_SVG.home },
+      { href: "/#community/moments", label: "モーメント", svg: TAB_SVG.bolt },
+      { href: "/#community/events", label: "イベント", svg: TAB_SVG.cal },
+      { href: "/#community/board", label: "掲示板", svg: TAB_SVG.chat },
+      attr,
+      { href: "/#profile", label: "マイページ", svg: TAB_SVG.user },
+    ];
+    const a = tabs.map(t => {
+      const on = t.href.startsWith("/tools/") && here === t.href;   // 今いるツールだけ点灯
+      return `<a href="${t.href}"${on ? ' class="on"' : ""}>`
+        + '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+        + t.svg + `</svg><span>${esc(t.label)}</span></a>`;
+    }).join("");
+    return `<nav class="mzsc-tabbar" aria-label="モバイル下部ナビゲーション">${a}</nav>`;
+  }
+
   /* ツールのページへ差し込む。
      toolId: "switcher" | "reangle" | "privacy"(相互リンクで自分を外すため) */
   function mount(toolId) {
@@ -200,6 +241,11 @@ window.MZSiteChrome = (() => {
     // 「無料・すべて端末内で処理」はページの下(フッター直前)へ(2026-07-19 優さん指定)
     const disc = document.querySelector(".beta-disclaimer");
     if (disc) body.insertBefore(disc, foot);
+    // 下部タブバー(スマホ)。本体と同じ6枠で、ツールからも迷わず戻れるように
+    const tab = document.createElement("div");
+    tab.innerHTML = tabbarHtml();
+    body.appendChild(tab.firstElementChild);
+    body.classList.add("mzsc-has-tabbar");
     wireDrawer();
     wireAcctMenu();
     wireVlogGate();
