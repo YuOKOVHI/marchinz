@@ -27,10 +27,12 @@ window.MZ_LIMITS = (() => {
 
   // 登録ユーザー(ログイン中)の印。本体サイトのauth.jsがログイン時に書き、ログアウトで消す
   let member = false;
+  let beta = false;   // βテスト参加者(2026-07-23)。auth.js が印に beta を書く
   try {
     const raw = JSON.parse(localStorage.getItem("mz_member_v1") || "null");
     member = Boolean(raw && raw.member && Date.now() - (raw.ts || 0) < MAX_AGE_MS);
-  } catch (e) { member = false; }
+    beta = member && Boolean(raw && raw.beta);
+  } catch (e) { member = false; beta = false; }
 
   // 手元で開いているとき(開発・動作確認用)。本番ドメインでは決してtrueにならない。
   // 私用IPは「10.example.com」のような外部ドメインを拾わないよう、IPv4の形を確かめてから判定する
@@ -47,8 +49,11 @@ window.MZ_LIMITS = (() => {
     || privateIp;
 
   const unlimited = admin || local;
+  /* βテスト参加者の特典・上限拡大は**ここで beta を参照して**足す(2026-07-23)。
+     例: maxExportSec: unlimited ? Infinity : beta ? 900 : member ? 510 : 300
+     将来の有料会員も同じ型(profileの属性→auth.jsが印→ここで参照)で1箇所に集める */
   const L = {
-    admin, local, member, unlimited,
+    admin, local, member, beta, unlimited,
     // ReAngle/Switcher: ゲスト5分・登録13分(2026-07-20改定)
     maxVideoSec: unlimited ? Infinity : member ? 780.5 : 300.5,
     videoLimitLabel: member ? "13分" : "5分",   // エラーメッセージ用

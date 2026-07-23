@@ -156,7 +156,11 @@
       return;
     }
     const ok = String(prof?.b_test_consent_version || "").trim() === B_TEST_CONSENT_VERSION;
-    settingsStatus.textContent = ok ? "βテスト規約：同意済み" : "βテスト規約：未同意（次回ログイン時に同意をお願いします）";
+    // βテスト参加者の属性(2026-07-23)。判定はauth.jsのMarchinZRolesに一本化
+    const isBeta = Boolean(window.MarchinZRoles?.isBetaTester?.(prof));
+    settingsStatus.textContent = ok
+      ? (isBeta ? "βテスト規約：同意済み ・ βテスト参加者（特典は準備中）" : "βテスト規約：同意済み")
+      : "βテスト規約：未同意（次回ログイン時に同意をお願いします）";
   }
 
   /**

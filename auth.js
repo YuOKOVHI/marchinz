@@ -1275,9 +1275,16 @@
     try {
       if (isMember) {
         // name/avatar はクリエイターツールのヘッダー表示用(sitechrome.js が読む)。
-        // limits.js は member と ts しか見ないので追記しても壊れない
+        // beta はβテスト参加者の印(limits.js が読む。2026-07-23)。
+        // 呼び出し元が beta を渡さないとき(表示だけの更新)は既存値を保つ
+        let beta = profile && typeof profile.beta === "boolean" ? profile.beta : null;
+        if (beta === null) {
+          try { beta = Boolean(JSON.parse(localStorage.getItem("mz_member_v1") || "{}").beta); }
+          catch (e2) { beta = false; }
+        }
         localStorage.setItem("mz_member_v1", JSON.stringify({
           member: true, ts: Date.now(),
+          beta: Boolean(beta),
           name: (profile && profile.name) || "",
           avatar: (profile && profile.avatar) || "",
         }));
@@ -1392,7 +1399,26 @@
     return Boolean(email && adminEmails.has(email));
   }
 
-  function showLoggedInView(displayName, avatarUrl) {
+  /* ============ βテスト参加者の属性(2026-07-23 優さん指示) ============
+     「現在登録済みの全員」= 2026-07-23 までに作られたプロフィール。
+     全登録者はβテスト規約への必須同意を通っているので、実態とも一致する。
+     マイグレーション(全ドキュメント書き換え)はせず、created_at の締切で判定。
+     将来の運用: profile.beta_tester を true/false で明示すると締切より優先
+     (特典の個別付与・剥奪、有料会員などの属性コントロールも同じ型で足す)。
+     ※beta_tester フィールドは今はどこからも書かない=firestore.rulesも触らない
+       (自分で自分に付与できる穴を開けないため。書く時は管理者経路+rules変更) */
+  const BETA_TESTER_CUTOFF = "2026-07-24";   // これより前に created_at がある人
+  function isBetaTester(profile) {
+    if (!profile || profile.withdrawn) return false;
+    if (profile.beta_tester === false) return false;   // 明示剥奪
+    if (profile.beta_tester === true) return true;     // 明示付与
+    const c = String(profile.created_at || "");
+    return Boolean(c) && c < BETA_TESTER_CUTOFF;       // ISO文字列の辞書順比較
+  }
+  // 他モジュール(marchinz-b-test.js の表示等)から同じ判定を使う
+  window.MarchinZRoles = { isBetaTester, BETA_TESTER_CUTOFF };
+
+  function showLoggedInView(displayName, avatarUrl, profileForRoles) {
     currentProfileDisplayName = String(displayName || "").trim();
     const admin = isAdminUser();
     closeAccountDropdown();
@@ -1419,6 +1445,8 @@
     syncMemberToolFlag(true, {
       name: label,
       avatar: getProfileAvatarSrc(displayName, avatarUrl, currentProfileWithdrawn),
+      // profileが手元にある呼び出しだけ beta を更新(無い呼び出しは既存値を保つ)
+      beta: profileForRoles ? isBetaTester(profileForRoles) : null,
     });
     syncSiteBrandAuthVisibility();
     syncInAppBrowserAuthGate();
@@ -2325,7 +2353,7 @@
     applyWithdrawnUi(Boolean(p.withdrawn));
     await hydrateProfileForm().catch(() => {});
     profileHeaderLabelPending = false;
-    showLoggedInView(p.display_name, p.avatar_url);
+    showLoggedInView(p.display_name, p.avatar_url, p);
     return p;
   }
 
@@ -3072,7 +3100,7 @@
         croppedAvatarBlob = null;
         croppedCoverBlob = null;
         const p = await fetchProfile(currentUser);
-        showLoggedInView(p.display_name, p.avatar_url);
+        showLoggedInView(p.display_name, p.avatar_url, p);
         const wasSignupSetup = profileSetupRequired;
         profileSetupRequired = false;
         if (wasSignupSetup) {

@@ -1069,3 +1069,9 @@ body.mz-interrupt-on #dropSec .mz-stay-hint {
   from { opacity: 0; transform: translateX(-50%) translateY(10px); }
   to { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
+
+
+/* 拡大矢印(float-hint)は「浮いている小窓」のときだけ(2026-07-23 優さん指摘)。
+   基底で隠し、表示はモバイルの mz-float-on ルール(上の@media内)だけに任せる。
+   以前は基底が無く、デスクトップや素材ゼロのときに右上へ出っぱなしだった */
+.float-hint { display: none; }
