@@ -86,8 +86,9 @@ MC.beats.analyze = (pcm, sr = 8000) => {
 /* tGlobal近傍のRMS(音声クリップの8kHz PCMから、±winSec) */
 MC.beats.rmsAt = (clip, tGlobal, winSec = 1.0) => {
   const sr = MC.audio.SR;
-  const c0 = Math.max(0, Math.round((tGlobal - clip.offset - winSec) * sr));
-  const c1 = Math.min(clip.audio8k.length, Math.round((tGlobal - clip.offset + winSec) * sr));
+  const a0 = clip.audio8kStart || 0;   // 窓抽出でもズレない(2026-07-24)
+  const c0 = Math.max(0, Math.round((tGlobal - clip.offset - a0 - winSec) * sr));
+  const c1 = Math.min(clip.audio8k.length, Math.round((tGlobal - clip.offset - a0 + winSec) * sr));
   if (c1 - c0 < sr / 4) return 0;
   let s = 0;
   for (let i = c0; i < c1; i++) s += clip.audio8k[i] * clip.audio8k[i];
@@ -98,7 +99,7 @@ MC.beats.rmsAt = (clip, tGlobal, winSec = 1.0) => {
 MC.beats.autocut = async () => {
   const audioClip = MC.getClip(MC.S.audioClipId);
   if (!audioClip) throw new Error("音声クリップがありません");
-  if (!audioClip.audio8k) await MC.audio.extract8k(audioClip);
+  await MC.audio.extract8k(audioClip);   // 窓キャッシュなら全尺で読み直される(2026-07-24)
   if (!audioClip.beatsData) audioClip.beatsData = MC.beats.analyze(audioClip.audio8k);
   const B = audioClip.beatsData;
   const [tIn, tOut] = MC.trimRange();

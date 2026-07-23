@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-app-v="1.43.2">
+<html lang="ja" data-mz-app-v="1.43.3">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -17,7 +17,7 @@
 <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
 <link rel="stylesheet" href="/tools/shared/progress.css">
 <link rel="stylesheet" href="/tools/shared/journey.css">
-<link rel="stylesheet" href="css/style.css?v=1.43.2">
+<link rel="stylesheet" href="css/style.css?v=1.43.3">
 <link rel="stylesheet" href="/tools/shared/sitechrome.css">
 </head>
 <body data-mz-tool="switcher">
@@ -50,6 +50,17 @@
         </span>
         <span class="mode-card-name">縦型動画作成</span>
         <span class="mode-card-desc">動画も写真も、音で自動同期して1本に。SNS向けの縦型（9:16・1:1）</span>
+      </button>
+      <button type="button" class="mode-card" data-mode="wipeCam">
+        <span class="mode-card-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2.5" y="5" width="19" height="14" rx="2"></rect>
+            <rect x="13.5" y="12.5" width="5.5" height="4.5" rx="1"></rect>
+            <rect x="5" y="12.5" width="5.5" height="4.5" rx="1"></rect>
+          </svg>
+        </span>
+        <span class="mode-card-name">ワイプカメラ動画</span>
+        <span class="mode-card-desc">メイン1台を固定し、小窓を2つまで重ねる。分析が速い。横型（16:9）</span>
       </button>
       <button type="button" class="mode-card" data-mode="switch">
         <span class="mode-card-icon" aria-hidden="true">
@@ -92,7 +103,6 @@
       <div id="clipSlots" class="clip-slots"></div>
       <input type="file" id="fileInput" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" multiple hidden>
       <input type="file" id="fileInputV" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v,image/*" multiple hidden>
-      <input type="file" id="audioInput" accept="audio/*,.mp3,.wav,.m4a,.aac" hidden>
     </section>
 
     <section class="panel" id="placeSec" hidden>
@@ -110,6 +120,17 @@
       </div>
     </section>
 
+    <!-- 音声を選ぶ(独立フェーズ 2026-07-24 優さん指示)。分析(同期)のあとに
+         試聴して決める。動画1本ならフェーズごとスキップされる -->
+    <section class="panel" id="audioSec">
+      <h2>使う音声を選ぶ <span class="hint">いちばん良い音におすすめ印</span></h2>
+      <div id="audioChoices" class="audio-choices"><span class="hint">分析すると選べるようになります</span></div>
+      <div class="row" style="margin-top:10px">
+        <button id="audioListenBtn" class="btn small" type="button"><i class="fa-solid fa-headphones"></i> 試聴する</button>
+        <button id="audioDecideBtn" class="btn primary" type="button" style="flex:1"><i class="fa-solid fa-check"></i> この音で進める</button>
+      </div>
+    </section>
+
     <div id="easyPane" class="easy-pane">
       <p class="easy-lead">同期・カット割・色みまで、おまかせで仕上げます。</p>
       <p id="totalEtaHint" class="total-eta-hint" hidden></p>
@@ -124,15 +145,6 @@
         <button id="syncBtn" class="btn primary" disabled><i class="fa-solid fa-wave-square"></i> 波形で同期する</button>
       </div>
       <div id="syncStatus" class="status"></div>
-    </section>
-
-    <section class="panel" id="audioSec">
-      <h2>使う音声 <span class="hint">いちばん良い音におすすめ印</span></h2>
-      <div id="audioChoices" class="audio-choices"><span class="hint">クリップを読み込むと表示されます</span></div>
-      <div class="row" style="margin-top:8px">
-        <button id="audioImportBtn" class="btn small"><i class="fa-solid fa-file-audio"></i> 音声ファイルを取り込む</button>
-        <span class="hint">別録りの音源(mp3/wav等)。取り込むとこの音を使用します</span>
-      </div>
     </section>
 
     <section class="panel" id="layoutSec">
@@ -165,9 +177,14 @@
           <button id="autocutBtn" class="btn primary"><i class="fa-solid fa-clapperboard"></i> 自動カット割</button>
         </div>
         <p class="hint" style="margin:4px 0 0">音楽と映像を解析して、ブレの少ないカメラ・見せ場に合う画角を自動で選びます。</p>
-        <div id="wipeOpts" hidden>
-          <!-- 小窓1・2は同じ列で揃える。大きさは両方に効くので独立した行にする -->
+        <div id="autocutStatus" class="status"></div>
+      </div>
+      <!-- ワイプカメラ: メイン固定+小窓2まで(2026-07-24 優さん指示でautocutPanelから独立) -->
+      <div id="wipeOpts" hidden>
           <div class="wipe-grid">
+            <label class="hint" for="wipeMainSelect">メイン</label>
+            <select id="wipeMainSelect" class="select"></select>
+            <span aria-hidden="true"></span>
             <label class="hint" for="wipeCamSelect">小窓1</label>
             <select id="wipeCamSelect" class="select"></select>
             <select id="wipePosSelect" class="select">
@@ -186,8 +203,6 @@
             <label class="hint" for="wipeSizeRange">小窓の大きさ</label>
             <input type="range" id="wipeSizeRange" min="0.2" max="0.45" step="0.01">
           </div>
-        </div>
-        <div id="autocutStatus" class="status"></div>
       </div>
     </section>
 
@@ -340,24 +355,24 @@
 <script src="vendor/mp4box.all.min.js"></script>
 <script src="vendor/mp4-muxer.min.js"></script>
 <script src="vendor/fft.js"></script>
-<script src="js/state.js?v=1.43.2"></script>
-<script src="js/layout.js?v=1.43.2"></script>
-<script src="js/media.js?v=1.43.2"></script>
-<script src="js/demux.js?v=1.43.2"></script>
-<script src="js/audio.js?v=1.43.2"></script>
-<script src="js/sync.js?v=1.43.2"></script>
-<script src="js/beats.js?v=1.43.2"></script>
-<script src="js/sections.js?v=1.43.2"></script>
-<script src="js/visual.js?v=1.43.2"></script>
-<script src="js/director.js?v=1.43.2"></script>
-<script src="js/colormatch.js?v=1.43.2"></script>
-<script src="js/horizon.js?v=1.43.2"></script>
-<script src="js/salute.js?v=1.43.2"></script>
-<script src="js/preview.js?v=1.43.2"></script>
-<script src="js/timeline.js?v=1.43.2"></script>
-<script src="js/cutmode.js?v=1.43.2"></script>
-<script src="js/exporter.js?v=1.43.2"></script>
-<script src="js/ui.js?v=1.43.2"></script>
-<script src="js/app.js?v=1.43.2"></script>
+<script src="js/state.js?v=1.43.3"></script>
+<script src="js/layout.js?v=1.43.3"></script>
+<script src="js/media.js?v=1.43.3"></script>
+<script src="js/demux.js?v=1.43.3"></script>
+<script src="js/audio.js?v=1.43.3"></script>
+<script src="js/sync.js?v=1.43.3"></script>
+<script src="js/beats.js?v=1.43.3"></script>
+<script src="js/sections.js?v=1.43.3"></script>
+<script src="js/visual.js?v=1.43.3"></script>
+<script src="js/director.js?v=1.43.3"></script>
+<script src="js/colormatch.js?v=1.43.3"></script>
+<script src="js/horizon.js?v=1.43.3"></script>
+<script src="js/salute.js?v=1.43.3"></script>
+<script src="js/preview.js?v=1.43.3"></script>
+<script src="js/timeline.js?v=1.43.3"></script>
+<script src="js/cutmode.js?v=1.43.3"></script>
+<script src="js/exporter.js?v=1.43.3"></script>
+<script src="js/ui.js?v=1.43.3"></script>
+<script src="js/app.js?v=1.43.3"></script>
 </body>
 </html>

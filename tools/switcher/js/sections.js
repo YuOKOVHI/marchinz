@@ -18,7 +18,7 @@ MC.sections = { HOP: 0.5, WIN: 1.0 };
 
 MC.sections.analyze = async audioClip => {
   if (audioClip.sections) return audioClip.sections;
-  if (!audioClip.audio8k) await MC.audio.extract8k(audioClip);
+  await MC.audio.extract8k(audioClip);   // 窓キャッシュなら全尺で読み直される(2026-07-24)
   if (!audioClip.beatsData) audioClip.beatsData = MC.beats.analyze(audioClip.audio8k);
   const pcm = audioClip.audio8k, sr = MC.audio.SR;
   const B = audioClip.beatsData;

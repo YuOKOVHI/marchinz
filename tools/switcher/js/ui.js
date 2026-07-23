@@ -319,6 +319,7 @@ MC.ui.focusNextAction = () => {
 
 /* おまかせ完了状態の解除。素材・モードが変わったら準備からやり直し */
 MC.ui.resetEasyDone = () => {
+  MC.S.audioDecided = false;   // 素材が変われば音声も選び直し(2026-07-24)
   if (!MC.S.easyDone) return;
   MC.S.easyDone = false;
   MC.ui.renderEasyButton();
@@ -393,7 +394,7 @@ MC.ui.renderAll = () => {
 };
 
 /* ---- ジャーニーバー(どのフェーズにいるかの常時表示) ---- */
-MC.ui.JOURNEY_SECTIONS = { mat: "#dropSec", sync: "#syncSec", polish: "#layoutSec", export: "#exportSec" };
+MC.ui.JOURNEY_SECTIONS = { mat: "#dropSec", sync: "#syncSec", audio: "#audioSec", polish: "#layoutSec", export: "#exportSec" };
 
 MC.ui.initJourney = () => {
   MZJourney.init({
@@ -401,6 +402,7 @@ MC.ui.initJourney = () => {
     phases: [
       { id: "mat",    label: "動画を選ぶ",   hint: "3つまでまとめて選べます" },
       { id: "sync",   label: "同期と分析",   hint: "音のズレ合わせと素材の分析をします" },
+      { id: "audio",  label: "音声を選ぶ",   hint: "試聴して「この音で進める」を押してください" },
       { id: "polish", label: "自動編集設定", hint: "設定はそのままでOK。「動画を書き出す」で仕上がります" },
       { id: "export", label: "書き出し",     hint: "「動画を書き出す」で完成です" },
     ],
@@ -455,6 +457,16 @@ MC.ui.updateActionBar = () => {
       conf = { label: MC.S.mode === "vertical" ? "動画・写真を選ぶ" : "動画を選ぶ",
         icon: "fa-folder-open",
         act: () => MC.ui.$(MC.S.mode === "vertical" ? "#fileInputV" : "#fileInput").click() };
+    } else if (cur === "audio") {
+      /* 音声を選ぶ: 本体の決定ボタンが見えているなら重ねない(書き出しと同じ流儀) */
+      const db = MC.ui.$("#audioDecideBtn");
+      const r = db ? db.getBoundingClientRect() : { height: 0 };
+      if (r.height > 0 && r.top < window.innerHeight - 70 && r.bottom > 0) {
+        bar.classList.remove("on");
+        document.body.classList.remove("mz-actionbar-on");
+        return;
+      }
+      conf = { label: "この音で進める", icon: "fa-check", act: () => db && db.click() };
     } else if ((cur === "sync" || cur === "polish") &&
                MC.ui._setupTab !== "pro" && !MC.S.easyDone) {
       /* おまかせタブでは同期ボタンは隠れている。次の一手は「おまかせで開始」。
@@ -472,7 +484,7 @@ MC.ui.updateActionBar = () => {
       conf = { label: "波形で同期する", icon: "fa-wave-square",
         disabled: MC.ui.$("#syncBtn").disabled, act: () => MC.ui.$("#syncBtn").click() };
     } else if (cur === "polish") {
-      const cutMode = ["switch", "wipe"].includes(MC.S.layoutId);
+      const cutMode = MC.S.mode === "switch";   // カット割は③自動スイッチングだけ(2026-07-24)
       if (cutMode && !MC.S.cutList.length) {
         conf = { label: "自動カット割", icon: "fa-clapperboard",
           act: () => MC.ui.$("#autocutBtn").click() };
@@ -517,12 +529,18 @@ MC.ui.refreshJourney = () => {
     ? vids.every(c => c.syncMethod !== "未同期")
     : slot.length > 0;   // 素材1つ(写真のみ含む)なら同期は不要=済み扱い
   const exported = !!MC.exporter.lastResult;
+  /* 音声を選ぶフェーズ(2026-07-24): 音のある動画が2本以上のときだけ通る。
+     1本なら選ぶ余地がないのでスキップ(優さん確定) */
+  const audioNeeded = vids.length >= 2;
+  const audioDone = MC.S.audioDecided || !audioNeeded;
   const done = [];
   if (slot.length) done.push("mat");
   if (slot.length && synced) done.push("sync");
+  if (slot.length && synced && audioDone) done.push("audio");
   if (exported) done.push("polish", "export");
   const current = !slot.length ? "mat"
     : (vids.length >= 2 && !synced) ? "sync"
+    : !audioDone ? "audio"
     : exported ? "export" : "polish";
   MZJourney.set(current, done);
   // 済んだフェーズの説明をCSSで畳むための現在地(2026-07-23 表示すっきり)
@@ -542,15 +560,16 @@ MC.ui.refreshJourney = () => {
      まだ  = 1行に畳んでロック。何が待っているかだけ見せる
    に振り分ける。1画面で決めることを絞りつつ、全体の地図は縦に残す。
    状態は refreshJourney が導出したものをそのまま使う(新しい状態機械を作らない) */
-MC.ui.STEP_RANK = { mat: 0, sync: 1, polish: 2, export: 3 };
+MC.ui.STEP_RANK = { mat: 0, sync: 1, audio: 2, polish: 3, export: 4 };
 MC.ui.STEP_GROUPS = [
   { id: "mat",    panels: ["#dropSec"] },
-  { id: "sync",   panels: ["#syncSec", "#audioSec"] },
+  { id: "sync",   panels: ["#syncSec"] },
+  { id: "audio",  panels: ["#audioSec"] },
   { id: "polish", panels: ["#placeSec", "#layoutSec", "#finishSec"] },
   { id: "export", panels: ["#exportSec"] },
 ];
 /* ロック中に「何を待っているか」を短く。mat は最初のステップなのでロックされない */
-MC.ui.STEP_WAIT_NOTE = { sync: "素材のあと", polish: "同期のあと", export: "同期のあと" };
+MC.ui.STEP_WAIT_NOTE = { sync: "素材のあと", audio: "分析のあと", polish: "音声のあと", export: "音声のあと" };
 MC.ui._stepOpen = new Set();   // 手で開いた「すみ」パネル(フェーズが進むと畳み直す)
 MC.ui._stepPhase = null;
 
@@ -841,13 +860,18 @@ MC.ui.renderLayout = () => {
   // スイッチング/ワイプは自動カット割パネル、それ以外はスロット割当
   const L = MC.LAYOUTS[MC.S.layoutId];
   const isCutMode = L.type === "switch" || L.type === "wipe";
-  MC.ui.$("#autocutPanel").style.display = isCutMode ? "block" : "none";
+  /* 自動カット割はスイッチングだけ。ワイプはメイン固定なのでカット割なし(2026-07-24) */
+  MC.ui.$("#autocutPanel").style.display = L.type === "switch" ? "block" : "none";
   MC.ui.$("#wipeOpts").hidden = L.type !== "wipe";
   if (L.type === "wipe") {
     const pipCands = MC.media.slotClips();
+    const main = MC.wipeMain();
+    const wm = MC.ui.$("#wipeMainSelect");
+    wm.innerHTML = pipCands.map(c =>
+      `<option value="${c.id}" ${main === c.id ? "selected" : ""}>${MC.ui.esc(c.name.slice(0, 12))}</option>`).join("");
     const ws = MC.ui.$("#wipeCamSelect");
     ws.innerHTML = pipCands.map(c =>
-      `<option value="${c.id}" ${MC.S.wipeClipId === c.id ? "selected" : ""}>${MC.ui.esc(c.name.slice(0, 12))}</option>`).join("");
+      `<option value="${c.id}" ${MC.wipePip1(main) === c.id ? "selected" : ""}>${MC.ui.esc(c.name.slice(0, 12))}</option>`).join("");
     const ws2 = MC.ui.$("#wipeCamSelect2");
     ws2.innerHTML = `<option value="">（なし）</option>` + pipCands.map(c =>
       `<option value="${c.id}" ${MC.S.wipeClipId2 === c.id ? "selected" : ""}>${MC.ui.esc(c.name.slice(0, 12))}</option>`).join("");
@@ -1134,7 +1158,7 @@ MC.ui.autoDetectTilt = async () => {
 MC.ui.renderEasyLead = () => {
   const el = document.querySelector(".easy-lead");
   if (!el) return;
-  const cutMode = ["switch", "wipe"].includes(MC.S.layoutId);
+  const cutMode = MC.S.mode === "switch";   // カット割の説明は③だけ(2026-07-24)
   /* 完了後は完了カード(easyStatus)が同じことを言うので、リード文は畳む
      (同じ表示を2箇所に出さない。失敗時は markExportFailed がここへ書く) */
   el.hidden = !!MC.S.easyDone;
@@ -1615,22 +1639,51 @@ MC.ui.initVisibility = () => {
   } catch (_) {}
 };
 
+/* おまかせ 第1段(2026-07-24 優さん指示で2段化):
+   「分析を開始」= 同期(窓ラダー)だけ。終わったら「音声を選ぶ」フェーズへ。
+   動画1本(選ぶ余地なし)ならそのまま第2段へ直行する */
 MC.ui.runEasy = async () => {
   const btn = MC.ui.$("#easyStartBtn");
   if (btn.disabled || MC.ui._busy) return;
-  const easyT0 = performance.now();   // 次回の見積りを実測へ寄せるため
   MC.ui.setBusy(true);
   MC.ui.clearErrorLog();   // やり直しでは前回の失敗ログを見せない
   MC.preview.pause();
-  const cutMode = ["switch", "wipe"].includes(MC.S.layoutId);
-  // sync/director/color はいずれも MZP の Handle をそのまま受け取る(legacy()は別物なので渡さない)
-  const p = MZP.start({ mount: "#easyStatus", chapter: "おまかせ", delay: 0,
+  const p = MZP.start({ mount: "#easyStatus", chapter: "同期", delay: 0,
                         label: "音を合わせています…" });
   try {
-    if (MC.S.clips.filter(c => !c.isImage).length >= 2) {
+    const vids = MC.S.clips.filter(c => !c.isImage);
+    if (vids.length >= 2) {
       p.pulse("音を合わせています…");
       await MC.sync.run(p);
     }
+    if (vids.length >= 2 && !MC.S.audioDecided) {
+      /* ここで一度手を止める: 音声を選んでから仕上げへ */
+      p.done("同期できました", { sub: "使う音声を選んで「この音で進める」を押してください" });
+      MC.ui.renderAll();
+      MC.ui.gentleScrollTo(document.querySelector("#audioSec"), "start");
+      return;
+    }
+    await MC.ui.runEasyFinish(p);   // 1本だけ→選ぶフェーズを飛ばして仕上げへ
+  } catch (e) {
+    console.error(e);
+    p.fail("うまくできませんでした", { detail: e.message });
+    MC.ui.showErrorLog(e);
+  } finally {
+    MC.ui.setBusy(false);
+    MC.ui.renderAll();   // 途中で止まってもタイムライン等の表示を状態に合わせ直す
+  }
+};
+
+/* おまかせ 第2段: 「この音で進める」後の仕上げ。
+   トリム→(③自動スイッチングのみ)カット割→色そろえ。
+   ①縦動画/②ワイプカメラはシーン分析を丸ごと飛ばす(2026-07-24 優さん指示) */
+MC.ui.runEasyFinish = async pIn => {
+  if (!pIn && MC.ui._busy) return;
+  const t0 = performance.now();   // 次回の見積りを実測へ寄せるため
+  if (!pIn) { MC.ui.setBusy(true); MC.ui.clearErrorLog(); MC.preview.pause(); }
+  const p = pIn || MZP.start({ mount: "#easyStatus", chapter: "仕上げ", delay: 0,
+                               label: "仕上げています…" });
+  try {
     // 開始/終了の自動区切り。演奏の前後(アナウンス・拍手・片付け)を落とす。
     // カット割より先に行う: director は MC.trimRange() の中だけを割るため
     if (MC.S.trimIn === 0 && MC.S.trimOut == null) {
@@ -1638,7 +1691,7 @@ MC.ui.runEasy = async () => {
       await MZP.paint();
       await MC.salute.autoTrim();   // 検出できなければ静かに諦める(トリムなしで続行)
     }
-    if (cutMode) {
+    if (MC.S.mode === "switch") {   // シーン分析は③自動スイッチングだけ
       p.pulse("カットを割っています…");
       await MC.director.run(p);
       MC.timeline.render();
@@ -1672,10 +1725,11 @@ MC.ui.runEasy = async () => {
     /* ここからの主役は書き出し。おまかせボタン自体を「動画を書き出す」に
        化けさせ、次にすることを迷わせない(2026-07-21 優さん指示) */
     MC.S.easyDone = true;
-    /* 実際にかかった時間を覚えて、次からの見積りを自分の端末に合わせる */
+    /* 実際にかかった時間を覚えて、次からの見積りを自分の端末に合わせる
+       (2段化後は仕上げ段の実測。同期段はsync側で速くなっている) */
     const [eIn, eOut] = MC.trimRange();
     MC.ui.learnAnalysisRate(
-      (performance.now() - easyT0) / 1000,
+      (performance.now() - t0) / 1000,
       MC.S.clips.filter(c => !c.isAudio && !c.isImage).length,
       Math.max(0, eOut - eIn));
     /* 長すぎて書き出せない場合は、ここで知らせる。
@@ -1687,8 +1741,7 @@ MC.ui.runEasy = async () => {
     p.fail("うまくできませんでした", { detail: e.message });
     MC.ui.showErrorLog(e);
   } finally {
-    MC.ui.setBusy(false);
-    MC.ui.renderAll();   // 途中で止まってもタイムライン等の表示を状態に合わせ直す
+    if (!pIn) { MC.ui.setBusy(false); MC.ui.renderAll(); }
   }
 };
 
@@ -1829,10 +1882,15 @@ MC.ui.MODES = {
     presets: ["9x16"],                                   // 縦型で固定(比率は選ばせない)
     layouts: ["v3", "v2", "big2", "single"],             // 横並べは廃止
   },
+  wipeCam: {
+    preset: "16x9", layoutId: "wipe", label: "ワイプカメラ動画",   // メイン固定+小窓2まで(2026-07-24)
+    presets: ["16x9"],
+    layouts: ["wipe"],
+  },
   switch: {
     preset: "16x9", layoutId: "switch", label: "自動スイッチング動画",
     presets: ["16x9"],                                    // 横型のみ(2026-07-19 優さん指定)
-    layouts: ["switch", "wipe"],                          // スイッチングとワイプのみ
+    layouts: ["switch"],                                  // ワイプは専用モードへ分離(2026-07-24)
   },
 };
 
@@ -1926,11 +1984,20 @@ MC.ui.wire = () => {
   const dz = $("#clipSlots"), fi = $("#fileInput"), fiv = $("#fileInputV");
   fi.onchange = () => { MC.media.addFiles([...fi.files]); fi.value = ""; };
   fiv.onchange = () => { MC.media.addFiles([...fiv.files]); fiv.value = ""; };
-  const ai = $("#audioInput");
-  $("#audioImportBtn").onclick = () => ai.click();
-  ai.onchange = async () => {
-    if (ai.files.length) await MC.media.addAudioFile(ai.files[0]);
-    ai.value = "";
+  /* 音声を選ぶフェーズ(2026-07-24)。別録り音源の取り込みは廃止(優さん指示) */
+  $("#audioListenBtn").onclick = () => MC.preview.toggle();
+  $("#audioDecideBtn").onclick = () => {
+    if (MC.ui._busy) return;
+    MC.preview.pause();
+    MC.S.audioDecided = true;
+    if (MC.ui._setupTab === "pro") {
+      /* こだわりタブは自走させない(同期→カット割→色を自分の手順で進める人) */
+      MC.ui.refreshJourney();
+      MC.ui.toast("この音で進めます");
+      return;
+    }
+    if (!MC.S.easyDone) MC.ui.runEasyFinish();
+    else MC.ui.refreshJourney();   // 仕上げ済みで選び直しただけなら状態更新のみ
   };
   ["dragover", "dragenter"].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add("over"); }));
   ["dragleave", "drop"].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove("over"); }));
@@ -2161,6 +2228,7 @@ MC.ui.wire = () => {
       MC.ui.showErrorLog(e);
     } finally { $("#autocutBtn").disabled = false; }
   };
+  $("#wipeMainSelect").onchange = e => { MC.S.wipeMainId = parseInt(e.target.value); MC.ui.renderLayout(); MC.saveState(); MC.preview.draw(); };
   $("#wipeCamSelect").onchange = e => { MC.S.wipeClipId = parseInt(e.target.value); MC.saveState(); MC.preview.draw(); };
   $("#wipePosSelect").onchange = e => { MC.S.wipePos = e.target.value; MC.saveState(); MC.preview.draw(); };
   $("#wipeCamSelect2").onchange = e => { MC.S.wipeClipId2 = e.target.value ? parseInt(e.target.value) : null; MC.saveState(); MC.preview.draw(); };

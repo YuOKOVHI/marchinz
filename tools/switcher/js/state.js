@@ -10,6 +10,7 @@ window.MC = {
     audioClipId: null,    // 書き出し/再生に使う音声のクリップ
     audioPickedByUser: false,  // 手で選んだか。false の間は「おすすめ」に追従する
     refClipId: null,      // 同期の基準クリップ
+    audioDecided: false,  // 「この音で進める」を押したか(音声を選ぶフェーズ。非永続)
     slots: [null, null, null],  // スロットi に表示するクリップid
     trimIn: 0, trimOut: null,   // 書き出し範囲(グローバル秒)。null=末尾まで
     t: 0, playing: false,
@@ -17,6 +18,7 @@ window.MC = {
     cutList: [],                // [{t, clipId, trans:'cut'|'dissolve', dur}] 昇順・セグメント開始
     beatsPerBar: 4,
     cutLevel: 2,                // 切替頻度 1:少なめ 2:おすすめ 3:多め
+    wipeMainId: null,           // ワイプカメラモードのメイン(固定1カメラ。2026-07-24)
     wipeClipId: null,           // ワイプの小窓カメラ(1つ目)
     wipeClipId2: null,          // ワイプの小窓カメラ(2つ目、null=なし)
     wipePos: "br", wipePos2: "bl", wipeSize: 0.32,

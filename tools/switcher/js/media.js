@@ -133,49 +133,8 @@ MC.media.addImageFile = f => new Promise(resolve => {
   img.src = url;
 });
 
-/* 音声のみ取り込み(mp3/wav/m4a等)。取り込んだらこの音を使用する。
-   スロットには入らず、「使う音声」の選択肢+書き出し音声になる */
-MC.media.addAudioFile = async f => {
-  // 既存の音声のみクリップは置き換え(同時に使うのは1つ)
-  const old = MC.S.clips.find(c => c.isAudio);
-  if (old) MC.media.removeClip(old.id);
-  const a = document.createElement("audio");
-  const url = URL.createObjectURL(f);
-  a.src = url; a.preload = "metadata";
-  try {
-    await new Promise((res, rej) => {
-      a.onloadedmetadata = res;
-      a.onerror = () => rej(new Error("音声として読み込めません"));
-    });
-  } catch (e) {
-    MC.ui.toast(`⚠ ${f.name}: ${e.message}`);
-    URL.revokeObjectURL(url);
-    return false;
-  }
-  if (a.duration > MZ_LIMITS.maxVideoSec) {
-    MC.ui.toast(`⚠ ${f.name}: 音声は${MZ_LIMITS.videoLimitLabel}までです`);
-    URL.revokeObjectURL(url);
-    return false;
-  }
-  const clip = {
-    id: MC.media.nextId++, file: f,
-    name: f.name, size: f.size, lastModified: f.lastModified,
-    url, video: a, isAudio: true,
-    duration: a.duration, width: 0, height: 0,
-    offset: 0, confidence: null, syncMethod: "未同期",
-    pan: 0.5, role: "auto",
-    audio8k: null, stats: null, thumb: null, hasAudio: true,
-  };
-  clip.restored = MC.restoreClipState(clip);
-  MC.S.clips.push(clip);
-  MC.S.audioClipId = clip.id;   // 取り込んだらこの音を使用する
-  MC.S.audioPickedByUser = true;  // 明確な意思なので「おすすめ」に上書きさせない
-  // 音質統計(おすすめ表示用)は裏で
-  MC.audio.extract8k(clip).then(() => MC.ui.renderAudio()).catch(() => {});
-  MC.media.afterChange();
-  MC.ui.toast(`♪ ${f.name} を書き出しの音声にしました`);
-  return true;
-};
+/* 別録り音源の取り込み(addAudioFile)は廃止(2026-07-24 優さん指示)。
+   音声はカメラの中から「音声を選ぶ」フェーズで選ぶ */
 
 MC.media.makeThumb = async clip => {
   const v = clip.video;
@@ -204,6 +163,9 @@ MC.media.removeClip = id => {
   MC.S.slots = MC.S.slots.map(s => (s === id ? null : s));
   if (MC.S.audioClipId === id) MC.S.audioClipId = null;
   if (MC.S.refClipId === id) MC.S.refClipId = null;
+  if (MC.S.wipeMainId === id) MC.S.wipeMainId = null;
+  if (MC.S.wipeClipId === id) MC.S.wipeClipId = null;
+  if (MC.S.wipeClipId2 === id) MC.S.wipeClipId2 = null;
   MC.media.afterChange();
 };
 
@@ -240,7 +202,11 @@ MC.media.afterChange = () => {
   // stats が揃うまでの暫定。解析後は renderAudio が「おすすめ」に差し替える
   if (MC.S.audioClipId == null && firstVideo) MC.S.audioClipId = firstVideo.id;
   if (MC.S.refClipId == null && firstVideo) MC.S.refClipId = firstVideo.id;
-  if (MC.S.wipeClipId == null && n) MC.S.wipeClipId = slotClips[0].id;
+  if (MC.S.wipeMainId == null && firstVideo) MC.S.wipeMainId = firstVideo.id;   // ワイプのメイン既定(2026-07-24)
+  if (MC.S.wipeClipId == null && n) {
+    const sub = slotClips.find(c => c.id !== MC.S.wipeMainId) || slotClips[0];
+    MC.S.wipeClipId = sub.id;   // 小窓1の既定=メイン以外の先頭
+  }
   MC.restoreCutList();
   MC.restoreTrim();
   MC.preview.applyMute();

@@ -96,61 +96,105 @@ MC.sync.offsetBetween = async (ref8k, sig8k) => {
 /* タイムスタンプ推定: 更新時刻=録画終了とみなし、開始時刻 = mtime - duration */
 MC.sync.tsRecordStart = clip => clip.lastModified / 1000 - clip.duration;
 
-/* 全クリップの同期を実行 */
+/* 全クリップの同期を実行。
+   窓ラダー(2026-07-24 優さん指示): まず各クリップの「真ん中3分」だけ音声を
+   抽出して同期 → 信頼度不足のクリップだけ「先頭3分」→「全体」と読み直す。
+   8分素材×3本で抽出量が1/3近くになり分析が大幅に速くなる。最悪ケースは
+   従来(全体)と同じなので遅くなることはない */
 /* p: MZPの進捗ハンドル(省略可) */
 MC.sync.run = async p => {
   const clips = MC.S.clips.filter(c => !c.isImage);   // 静止画は同期対象外
   if (clips.length < 2) { MC.ui.toast("2本以上のクリップが必要です"); return; }
 
-  // 音声抽出。**抽出中も進捗を動かす**(2026-07-23 優さん指摘の99%固定を解消)。
-  //  以前は count(i, n) を「i本目を開始する時」に呼び、3本目開始で ratio=1.0→
-  //  99%キャップに張り付いたまま、最後の8分音声の抽出(数十秒)を無表示で待たせていた。
-  const needClips = clips.filter(c => !c.audio8k);
-  const needN = needClips.length;
-  let doneN = 0;
-  if (p) p.step(1, "音を分析しています…");
-  for (const c of clips) {
-    if (c.audio8k) continue;
-    const base = doneN;
-    const sub = needN > 1 ? `${base + 1} / ${needN} 本目・${MZP.shortName(c.name)}` : MZP.shortName(c.name);
-    try {
-      await MC.audio.extract8k(c, MC.audio.MAX_SEC, frac => {
-        if (p) p.set((base + frac) / needN, null, { sub });
-      });
-    } catch (e) { console.warn("[MC]", e.message); MC.ui.toast(`⚠ ${e.message}`); }
-    doneN++;
-    if (p) p.set(doneN / needN, null, { sub });
-    await new Promise(r => setTimeout(r, 0));
+  /* extract8k のキャッシュ判定と同じ式(抽出が必要か=進捗の分母に使う) */
+  const cached = (c, w) => c.audio8k &&
+    (c.audio8kReqStart || 0) === w.start &&
+    (c.audio8kReqSpan || 0) >= Math.min(w.span, Math.max(0, (c.duration || w.span) - w.start));
+
+  // 音声抽出。**抽出中も進捗を動かす**(2026-07-23 優さん指摘の99%固定を解消)
+  const extractStage = async (list, winOf, label) => {
+    const need = list.filter(c => !cached(c, winOf(c)));
+    const needN = need.length;
+    if (!needN) return;
+    let doneN = 0;
+    if (p) p.step(1, label);
+    for (const c of need) {
+      const w = winOf(c);
+      const base = doneN;
+      const sub = needN > 1 ? `${base + 1} / ${needN} 本目・${MZP.shortName(c.name)}` : MZP.shortName(c.name);
+      try {
+        await MC.audio.extract8k(c, w.span, frac => {
+          if (p) p.set((base + frac) / needN, null, { sub });
+        }, w.start);
+      } catch (e) { console.warn("[MC]", e.message); MC.ui.toast(`⚠ ${e.message}`); }
+      doneN++;
+      if (p) p.set(doneN / needN, null, { sub });
+      await new Promise(r => setTimeout(r, 0));
+    }
+  };
+
+  /* 照合1回。窓抽出でも成立するよう実開始秒で補正した絶対rawを返す。
+     refWin[u]=ref[rs+u], sigWin[v]=sig[ss+v] → raw = L_win + rs − ss */
+  const attempt = async (c, ref, stage) => {
+    const r = await MC.sync.offsetBetween(ref.audio8k, c.audio8k);
+    const raw = r.offset + (ref.audio8kStart || 0) - (c.audio8kStart || 0);
+    MC.log(`sync ${c.name}[${stage}]: L_win=${r.offset.toFixed(4)}s raw=${raw.toFixed(4)}s conf=${r.conf.toFixed(1)}`);
+    return { raw, conf: r.conf };
+  };
+
+  /* ステージ1: 真ん中3分 → 2: 先頭3分 → 3: 全体。基準も同じ窓で読み直す */
+  const STAGES = [
+    { name: "真ん中3分", win: c => MC.audio.midWindow(c), label: "音を分析しています…" },
+    { name: "先頭3分",   win: () => ({ start: 0, span: MC.audio.WIN_SEC }), label: "同期をやり直しています(先頭3分)…" },
+    { name: "全体",      win: () => ({ start: 0, span: MC.audio.MAX_SEC }), label: "同期をやり直しています(全体)…" },
+  ];
+
+  const okMap = new Map();   // clip → {raw, conf}
+  let ref = null;
+  let pending = clips.slice();
+  for (const st of STAGES) {
+    if (!pending.length) break;
+    /* 基準は毎ステージ同じ窓で読み直す(成功済みの raw は絶対値なので影響しない) */
+    ref = clips.find(c => c.id === MC.S.refClipId) || clips[0];
+    await extractStage([ref, ...pending.filter(c => c !== ref)], st.win, st.label);
+    if (!ref.audio8k) {
+      // 基準の音が取れない → 音の取れた別クリップを基準に(従来挙動の踏襲)
+      const alt = clips.find(c => c.audio8k);
+      if (!alt) break;
+      ref = alt;
+    }
+    const fails = [];
+    let j = 0;
+    for (const c of pending) {
+      j++;
+      if (c === ref) continue;
+      if (!c.audio8k) { fails.push(c); continue; }
+      if (p) p.step(2, "ズレを合わせています…").count(j, pending.length, { unit: "本目", name: c.name });
+      await new Promise(r => setTimeout(r, 0));  // UI更新の息継ぎ
+      try {
+        const r = await attempt(c, ref, st.name);
+        if (r.conf >= MC.sync.MIN_CONF) { okMap.set(c, r); continue; }
+      } catch (e) {
+        MC.log(`sync ${c.name}[${st.name}]: 波形照合に失敗:`, e.message);
+      }
+      fails.push(c);
+    }
+    pending = fails;
   }
 
-  const ref = clips.find(c => c.id === MC.S.refClipId && c.audio8k) || clips.find(c => c.audio8k);
   const results = [];
-  let j = 0;
   for (const c of clips) {
-    j++;
     if (ref && c === ref) {
       results.push({ clip: c, raw: 0, conf: Infinity, method: "基準" });
-      continue;
+    } else if (okMap.has(c)) {
+      const r = okMap.get(c);
+      results.push({ clip: c, raw: r.raw, conf: r.conf, method: "波形" });
+    } else {
+      // フォールバック: カメラのタイムスタンプ
+      const raw = ref ? MC.sync.tsRecordStart(c) - MC.sync.tsRecordStart(ref) : 0;
+      results.push({ clip: c, raw, conf: null, method: "タイムスタンプ" });
+      MC.log(`sync ${c.name}: timestamp fallback raw=${raw.toFixed(2)}s`);
     }
-    if (ref && c.audio8k) {
-      if (p) p.step(2, "ズレを合わせています…").count(j, clips.length, { unit: "本目", name: c.name });
-      await new Promise(r => setTimeout(r, 0));  // UI更新の息継ぎ
-      let r = null;
-      try {
-        r = await MC.sync.offsetBetween(ref.audio8k, c.audio8k);
-        MC.log(`sync ${c.name}: offset=${r.offset.toFixed(4)}s conf=${r.conf.toFixed(1)}`);
-      } catch (e) {
-        MC.log(`sync ${c.name}: 波形照合に失敗→タイムスタンプへ:`, e.message);
-      }
-      if (r && r.conf >= MC.sync.MIN_CONF) {
-        results.push({ clip: c, raw: r.offset, conf: r.conf, method: "波形" });
-        continue;
-      }
-    }
-    // フォールバック: カメラのタイムスタンプ
-    const raw = ref ? MC.sync.tsRecordStart(c) - MC.sync.tsRecordStart(ref) : 0;
-    results.push({ clip: c, raw, conf: null, method: "タイムスタンプ" });
-    MC.log(`sync ${c.name}: timestamp fallback raw=${raw.toFixed(2)}s`);
   }
 
   // 正規化: 最小オフセットを0に(グローバルタイムライン先頭)
@@ -191,7 +235,11 @@ MC.sync.listenCheck = clipId => {
   const ctx = MC.sync._actx || (MC.sync._actx = new AudioContext());
   const t = MC.S.t;
   const mk = clip => {
-    const start = Math.max(0, Math.round((t - clip.offset) * SR));
+    /* audio8k が窓抽出のときは実開始秒(audio8kStart)ぶんずらす(2026-07-24)。
+       窓より前は音が無いので null(下の「両方の音がありません」案内へ) */
+    const local = t - clip.offset - (clip.audio8kStart || 0);
+    if (local < 0) return null;
+    const start = Math.round(local * SR);
     const seg = clip.audio8k.subarray(start, start + DUR * SR);
     if (seg.length < SR) return null;
     const buf = ctx.createBuffer(1, seg.length, SR);

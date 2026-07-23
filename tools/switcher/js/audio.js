@@ -31,32 +31,57 @@ MC.audio.LinearResampler = class {
   }
 };
 
-/* クリップの音声を8kHzモノラルFloat32Arrayで取得(clip.audio8k にキャッシュ) */
-MC.audio.extract8k = async (clip, maxSec = MC.audio.MAX_SEC, onProg = null) => {
-  if (clip.audio8k) return clip.audio8k;
-  let pcm = null, err1 = null;
+/* クリップの音声を8kHzモノラルFloat32Arrayで取得(clip.audio8k にキャッシュ)。
+   startSec で「途中からの窓抽出」ができる(2026-07-24 窓同期)。
+   - clip.audio8kStart    … 実際の開始秒(AACはフレーム境界で要求とズレるため実測値)
+   - clip.audio8kReqStart … 要求した開始秒(キャッシュ判定のキー)
+   - clip.audio8kReqSpan  … 要求した長さ(秒)
+   窓→全尺のように条件が変わったら再抽出して上書きする。上書き時は
+   窓データ由来の解析キャッシュ(beatsData/sections)を必ず捨てる */
+MC.audio.extract8k = async (clip, maxSec = MC.audio.MAX_SEC, onProg = null, startSec = 0) => {
+  if (clip.audio8k &&
+      (clip.audio8kReqStart || 0) === startSec &&
+      (clip.audio8kReqSpan || 0) >= Math.min(maxSec, Math.max(0, (clip.duration || maxSec) - startSec))) {
+    return clip.audio8k;
+  }
+  let r = null, err1 = null;
   try {
-    pcm = await MC.audio.viaRawPcm(clip, maxSec, onProg);   // リニアPCM(Resolve等のMOV)は生読みが最速・最軽量
-    if (!pcm) pcm = await MC.audio.viaWebCodecs(clip, maxSec);
+    r = await MC.audio.viaRawPcm(clip, maxSec, onProg, startSec);   // リニアPCM(Resolve等のMOV)は生読みが最速・最軽量
+    if (!r) r = await MC.audio.viaWebCodecs(clip, maxSec, startSec);
   } catch (e) {
     err1 = e;
     console.warn("[MC] WebCodecs音声抽出失敗→decodeAudioDataへ:", e.message);
-    try { pcm = await MC.audio.viaDecodeAudioData(clip, maxSec); }
+    try { r = await MC.audio.viaDecodeAudioData(clip, maxSec, startSec); }
     catch (e2) {
       clip.hasAudio = false;
       throw new Error(`音声を抽出できません(${clip.name}): ${err1.message} / ${e2.message}`);
     }
   }
-  if (pcm.length < MC.audio.SR) { clip.hasAudio = false; throw new Error(`音声が短すぎます(1秒未満): ${clip.name}`); }
+  if (r.pcm.length < MC.audio.SR) { clip.hasAudio = false; throw new Error(`音声が短すぎます(1秒未満): ${clip.name}`); }
   clip.hasAudio = true;
-  clip.audio8k = pcm;
-  clip.stats = MC.audio.stats(pcm);
-  return pcm;
+  clip.audio8k = r.pcm;
+  clip.audio8kStart = r.start;
+  clip.audio8kReqStart = startSec;
+  clip.audio8kReqSpan = maxSec;
+  clip.beatsData = null;   // 旧窓データ由来の解析を残さない(静かな汚染防止)
+  clip.sections = null;
+  clip.stats = MC.audio.stats(r.pcm);
+  return r.pcm;
+};
+
+/* 同期用の窓: 3分超は「真ん中3分」だけ読む(2026-07-24 優さん指示)。
+   短い素材は窓化の得がないので全体 */
+MC.audio.WIN_SEC = 180;
+MC.audio.midWindow = clip => {
+  const d = clip.duration || 0;
+  if (d <= MC.audio.WIN_SEC + 30) return { start: 0, span: MC.audio.MAX_SEC };
+  return { start: (d - MC.audio.WIN_SEC) / 2, span: MC.audio.WIN_SEC };
 };
 
 /* リニアPCM(lpcm/sowt等)の生読み: デコーダ不要。チャンクを順に読み
-   モノラル化→8kHzへ。PCMトラックが無いファイルでは null を返す */
-MC.audio.viaRawPcm = async (clip, maxSec, onProg = null) => {
+   モノラル化→8kHzへ。PCMトラックが無いファイルでは null を返す。
+   startSec 指定時はそこから読む(跨ぎチャンクの頭は捨ててフレーム精度で揃える) */
+MC.audio.viaRawPcm = async (clip, maxSec, onProg = null, startSec = 0) => {
   const src = new MC.MP4Source(clip.file);
   await src.init();
   if (!src.pcm) return null;
@@ -64,13 +89,19 @@ MC.audio.viaRawPcm = async (clip, maxSec, onProg = null) => {
   const outChunks = [];
   let total = 0;
   const maxFrames = maxSec * MC.audio.SR;
-  /* 進捗の分母は「実音声長」を優先。maxSec(上限30分)で割ると、8分音声が
+  /* 進捗の分母は「実際に読む長さ」。maxSec(上限30分)で割ると、8分音声が
      27%で完了して見えるため。duration が無ければ上限で近似(2026-07-23) */
   const target = Math.min(maxFrames,
-    Math.max(1, Math.round((clip.duration || maxSec) * MC.audio.SR)));
+    Math.max(1, Math.round(((clip.duration || maxSec) - startSec) * MC.audio.SR)));
+  /* 窓の開始フレーム(ソースのレート基準)。pcmChunks は跨ぎチャンクを
+     丸ごと返すので、最初のチャンクで頭を捨てて startSec 始まりに揃える */
+  const startFrameReq = Math.max(0, Math.floor(startSec * src.pcm.rate));
+  const actualStart = startFrameReq / src.pcm.rate;
   let tick = 0;
-  for await (const c of src.pcmChunks(0)) {
-    const chans = src.pcmToFloat(c.data, c.frames);
+  for await (const c of src.pcmChunks(startSec)) {
+    let chans = src.pcmToFloat(c.data, c.frames);
+    const skip = startFrameReq - c.startFrame;
+    if (skip > 0) chans = chans.map(a => a.subarray(skip));
     const mono = chans[0];
     for (let ch = 1; ch < chans.length; ch++) {
       const a = chans[ch];
@@ -91,11 +122,13 @@ MC.audio.viaRawPcm = async (clip, maxSec, onProg = null) => {
     if (n <= 0) break;
     pcm.set(a.subarray(0, n), o); o += n;
   }
-  return pcm;
+  return { pcm, start: actualStart };
 };
 
-/* 主経路: mp4boxデマックス + AudioDecoder(大きいファイルでもメモリ軽量) */
-MC.audio.viaWebCodecs = async (clip, maxSec) => {
+/* 主経路: mp4boxデマックス + AudioDecoder(大きいファイルでもメモリ軽量)。
+   startSec 指定時はそこからデコード。AACはフレーム境界が要求秒に一致しないため、
+   最初に出てきた AudioData の実タイムスタンプを開始秒として返す(同期精度を守る) */
+MC.audio.viaWebCodecs = async (clip, maxSec, startSec = 0) => {
   const src = new MC.MP4Source(clip.file);
   await src.init();
   const at = src.audioTrack();
@@ -107,9 +140,11 @@ MC.audio.viaWebCodecs = async (clip, maxSec) => {
   const outChunks = [];
   let decodedSec = 0, error = null;
   let resampler = null;
+  let firstTs = null;   // 実際の開始秒(最初のデコード済みフレームのタイムスタンプ)
   const decoder = new AudioDecoder({
     output: ad => {
       try {
+        if (firstTs == null) firstTs = ad.timestamp / 1e6;
         const frames = ad.numberOfFrames, ch = ad.numberOfChannels;
         if (!resampler) resampler = new MC.audio.LinearResampler(ad.sampleRate, MC.audio.SR);
         // モノラルミックスダウン
@@ -127,7 +162,7 @@ MC.audio.viaWebCodecs = async (clip, maxSec) => {
     error: e => { error = e; },
   });
   decoder.configure(cfg);
-  for await (const s of src.samples(at.id, 0)) {
+  for await (const s of src.samples(at.id, startSec)) {
     if (error) break;
     decoder.decode(new EncodedAudioChunk({
       type: s.is_sync ? "key" : "delta",
@@ -150,19 +185,20 @@ MC.audio.viaWebCodecs = async (clip, maxSec) => {
     if (n <= 0) break;
     pcm.set(a.subarray(0, n), o); o += n;
   }
-  return pcm;
+  return { pcm, start: firstTs != null ? firstTs : startSec };
 };
 
 /* 代替経路: decodeAudioData(ファイル全読み込みなのでサイズ制限あり。iPhoneはメモリが厳しいため控えめに) */
-MC.audio.viaDecodeAudioData = async (clip, maxSec) => {
+MC.audio.viaDecodeAudioData = async (clip, maxSec, startSec = 0) => {
   const limit = MC.isIOS ? 3e8 : 1.2e9;
   if (clip.size > limit) throw new Error(`ファイルが大きすぎます(${Math.round(limit / 1e8) / 10}GB超)`);
   const ab = await clip.file.arrayBuffer();
   const ctx = new OfflineAudioContext(1, MC.audio.SR, MC.audio.SR);  // 8kHzへ自動リサンプル
   const buf = await ctx.decodeAudioData(ab);
   const d = buf.getChannelData(0);
-  const n = Math.min(d.length, maxSec * MC.audio.SR);
-  return Float32Array.from(d.subarray(0, n));
+  const s0 = Math.min(d.length, Math.max(0, Math.floor(startSec * MC.audio.SR)));
+  const n = Math.min(d.length - s0, maxSec * MC.audio.SR);
+  return { pcm: Float32Array.from(d.subarray(s0, s0 + n)), start: s0 / MC.audio.SR };
 };
 
 /* 音質統計: 有音部分の代表RMSとクリッピング率 */

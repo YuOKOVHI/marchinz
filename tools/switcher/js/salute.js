@@ -26,7 +26,7 @@ MC.salute.autoTrim = async () => {
 MC.salute.detect = async () => {
   const clip = MC.getClip(MC.S.audioClipId);
   if (!clip) throw new Error("音声クリップがありません");
-  if (!clip.audio8k) await MC.audio.extract8k(clip);
+  await MC.audio.extract8k(clip);   // 窓キャッシュなら全尺で読み直される(2026-07-24)
   const sr = MC.audio.SR, hop = sr / 10;  // 100ms
   const pcm = clip.audio8k;
   const nH = Math.floor(pcm.length / hop);
@@ -78,8 +78,8 @@ MC.salute.detect = async () => {
     MC.log("salute: 静寂→演奏 のパターンではないため簡易検出");
   }
   const res = {
-    musicStart: startH * 0.1 + clip.offset,
-    musicEnd: endH > startH ? endH * 0.1 + clip.offset : null,
+    musicStart: startH * 0.1 + (clip.audio8kStart || 0) + clip.offset,   // 窓抽出でもズレない(2026-07-24)
+    musicEnd: endH > startH ? endH * 0.1 + (clip.audio8kStart || 0) + clip.offset : null,
   };
   MC.log(`salute: start=${res.musicStart.toFixed(1)}s end=${res.musicEnd ? res.musicEnd.toFixed(1) : "?"}s`);
   return res;

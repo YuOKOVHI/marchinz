@@ -37,7 +37,7 @@ MC.director.run = async p => {
   p.step(1, "音楽を解析しています…");
   p.pulse("音楽を解析しています…");
   await MZP.paint();
-  if (!audioClip.audio8k) await MC.audio.extract8k(audioClip);
+  await MC.audio.extract8k(audioClip);   // 窓キャッシュなら全尺で読み直される(2026-07-24)
   if (!audioClip.beatsData) audioClip.beatsData = MC.beats.analyze(audioClip.audio8k);
   await MC.sections.analyze(audioClip);
   // サリュート(演奏開始)は取れれば使う(失敗しても続行)
