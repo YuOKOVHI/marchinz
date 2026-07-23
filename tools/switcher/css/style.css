@@ -989,3 +989,11 @@ body.mz-actionbar-on .mz-interrupt-note {
 @media (min-width: 860px) {
   .mz-interrupt-note { left: auto; right: 20px; max-width: 420px; }
 }
+
+
+/* 中断の帯を出している間は、素材欄の常設ヒントを控える(F-4 / 2026-07-23)。
+   一時通知(黄)と常設案内(青)が同時に並ぶと、対処すべきものが埋もれる */
+body.mz-interrupt-on #dropSec .mz-limit-why,
+body.mz-interrupt-on #dropSec .mz-stay-hint {
+  display: none;
+}

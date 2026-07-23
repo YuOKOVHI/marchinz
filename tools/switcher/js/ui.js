@@ -1136,14 +1136,15 @@ MC.ui.refreshSetupTabs = () => {
 MC.ui.BUSY_FLAG_KEY = "mz_switcher_busy_v1";
 MC.ui.setBusy = busy => {
   MC.ui._busy = !!busy;
-  /* 「作業中」の印を localStorage に置く(2026-07-23 E-3)。
+  /* 「作業中」の印を sessionStorage に置く(2026-07-23 E-3 / F-1で修正)。
      _hiddenAt はメモリ上なので、iOSがタブごと捨てて再読込になると消える。
      本当に作業が飛ぶのはその破棄ケースなのに、そこでは何も出せなかった。
-     印は再読込を越えて残るので、起動時に印があれば「途中で終わった」と分かる。
-     正常終了(busy=false)で必ず消す */
+     sessionStorage はタブ内では再読込を越えて残り、かつ別タブへは漏れない。
+     localStorage だと2枚目のタブが「前回途中で終わった」と誤報し、
+     さらに印を消して本物の破棄を検知できなくしてしまう。正常終了で必ず消す */
   try {
-    if (busy) localStorage.setItem(MC.ui.BUSY_FLAG_KEY, String(Date.now()));
-    else localStorage.removeItem(MC.ui.BUSY_FLAG_KEY);
+    if (busy) sessionStorage.setItem(MC.ui.BUSY_FLAG_KEY, String(Date.now()));
+    else sessionStorage.removeItem(MC.ui.BUSY_FLAG_KEY);
   } catch (_) {}
   if (busy) MC.ui.clearInterruptNote();   // 新しい作業を始めたら前回の中断案内は消す
   else MC.ui._hiddenAt = 0;
@@ -1317,12 +1318,17 @@ MC.ui.showInterruptNote = (ms, opts = {}) => {
   el.innerHTML = '<i class="fa-solid fa-circle-pause" aria-hidden="true"></i> '
     + `<span><b>${head}</b>同期とカット割は残っています。書き出しだけやり直せます。</span>`
     + '<button type="button" class="mz-interrupt-close" aria-label="閉じる">×</button>';
-  el.querySelector(".mz-interrupt-close").onclick = () => el.remove();
+  el.querySelector(".mz-interrupt-close").onclick = () => MC.ui.clearInterruptNote();
+  /* 中断の帯が出ている間は、素材欄の常設ヒント(青の上限案内・お待ちください)を
+     控える。黄色い帯と青い箱が同時に並んで「今どれに対処するのか」が
+     ぼやけるのを防ぐ(F-4) */
+  document.body.classList.add("mz-interrupt-on");
 };
 
 MC.ui.clearInterruptNote = () => {
   const el = document.getElementById("mzInterruptNote");
   if (el) el.remove();
+  document.body.classList.remove("mz-interrupt-on");
 };
 
 MC.ui._holdWake = async want => {
@@ -1375,16 +1381,24 @@ MC.ui.guardLeave = on => {
    guardLeave の中で付け外ししていたため、編集中の離脱では保存が走らなかった。
    Wake Lock の取り直しは _onVisChange 側で busy を見て判断する */
 MC.ui.initVisibility = () => {
+  // 冪等にする(2回呼ばれても二重登録しない)。_onVisChange は固定参照なので外せる(F-3)
+  document.removeEventListener("visibilitychange", MC.ui._onVisChange);
   document.addEventListener("visibilitychange", MC.ui._onVisChange);
   /* 前回、作業中のままタブが終了(iOSの破棄・クラッシュ・強制終了)していたら、
-     その印が残る。素材が復元されるこのタイミングで一度だけ知らせる(E-3)。
-     印はここで消す(一度きり) */
+     その印が残る。ただし知らせるのは**復元できる素材が実際にある**ときだけ(F-2)。
+     「始めてすぐ閉じた」等では素材が無く、翌日開いた人に身に覚えのない警告が出る。
+     印はここで必ず消す(一度きり)。素材の有無に関わらず消さないと残り続ける */
   try {
-    const flag = localStorage.getItem(MC.ui.BUSY_FLAG_KEY);
+    const flag = sessionStorage.getItem(MC.ui.BUSY_FLAG_KEY);
     if (flag) {
-      localStorage.removeItem(MC.ui.BUSY_FLAG_KEY);
-      /* 素材やUIが整ってから出す(初期化途中に body へ差し込むと位置が崩れる) */
-      setTimeout(() => MC.ui.showInterruptNote(null, { crashed: true }), 600);
+      sessionStorage.removeItem(MC.ui.BUSY_FLAG_KEY);
+      let hasRestorable = false;
+      try {
+        const saved = JSON.parse(localStorage.getItem("marchcut_project") || "{}");
+        hasRestorable = Array.isArray(saved.clips) && saved.clips.length > 0;
+      } catch (_) {}
+      // 素材やUIが整ってから出す(初期化途中に body へ差し込むと位置が崩れる)
+      if (hasRestorable) setTimeout(() => MC.ui.showInterruptNote(null, { crashed: true }), 600);
     }
   } catch (_) {}
 };
