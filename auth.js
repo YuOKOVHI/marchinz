@@ -2135,6 +2135,12 @@
         legal_policy_accepted_version: String(data.legal_policy_accepted_version ?? "").trim(),
         b_test_consent_version: String(data.b_test_consent_version ?? "").trim(),
         b_test_opt_in: data.b_test_opt_in === true,
+        /* βテスト参加者の判定材料(2026-07-24修正)。v1.41.0でisBetaTesterを作った際、
+           ここで created_at / beta_tester を返し忘れており、実フローでは
+           既存ユーザーが誰もβにならなかった。属性を足すときは
+           Firestore→この return→mz_member_v1印→limits.js の4点セットで通すこと */
+        created_at: String(data.created_at ?? "").trim(),
+        beta_tester: typeof data.beta_tester === "boolean" ? data.beta_tester : undefined,
         updated_at: String(data.updated_at ?? "").trim(),
       };
     } catch {
