@@ -32,11 +32,11 @@ MC.audio.LinearResampler = class {
 };
 
 /* クリップの音声を8kHzモノラルFloat32Arrayで取得(clip.audio8k にキャッシュ) */
-MC.audio.extract8k = async (clip, maxSec = MC.audio.MAX_SEC) => {
+MC.audio.extract8k = async (clip, maxSec = MC.audio.MAX_SEC, onProg = null) => {
   if (clip.audio8k) return clip.audio8k;
   let pcm = null, err1 = null;
   try {
-    pcm = await MC.audio.viaRawPcm(clip, maxSec);   // リニアPCM(Resolve等のMOV)は生読みが最速・最軽量
+    pcm = await MC.audio.viaRawPcm(clip, maxSec, onProg);   // リニアPCM(Resolve等のMOV)は生読みが最速・最軽量
     if (!pcm) pcm = await MC.audio.viaWebCodecs(clip, maxSec);
   } catch (e) {
     err1 = e;
@@ -56,7 +56,7 @@ MC.audio.extract8k = async (clip, maxSec = MC.audio.MAX_SEC) => {
 
 /* リニアPCM(lpcm/sowt等)の生読み: デコーダ不要。チャンクを順に読み
    モノラル化→8kHzへ。PCMトラックが無いファイルでは null を返す */
-MC.audio.viaRawPcm = async (clip, maxSec) => {
+MC.audio.viaRawPcm = async (clip, maxSec, onProg = null) => {
   const src = new MC.MP4Source(clip.file);
   await src.init();
   if (!src.pcm) return null;
@@ -64,6 +64,11 @@ MC.audio.viaRawPcm = async (clip, maxSec) => {
   const outChunks = [];
   let total = 0;
   const maxFrames = maxSec * MC.audio.SR;
+  /* 進捗の分母は「実音声長」を優先。maxSec(上限30分)で割ると、8分音声が
+     27%で完了して見えるため。duration が無ければ上限で近似(2026-07-23) */
+  const target = Math.min(maxFrames,
+    Math.max(1, Math.round((clip.duration || maxSec) * MC.audio.SR)));
+  let tick = 0;
   for await (const c of src.pcmChunks(0)) {
     const chans = src.pcmToFloat(c.data, c.frames);
     const mono = chans[0];
@@ -74,9 +79,11 @@ MC.audio.viaRawPcm = async (clip, maxSec) => {
     if (chans.length > 1) for (let i = 0; i < mono.length; i++) mono[i] /= chans.length;
     const out = resampler.push(mono);
     if (out.length) { outChunks.push(out); total += out.length; }
+    if (onProg && (tick++ & 7) === 0) onProg(Math.min(1, total / target));
     if (total >= maxFrames) break;
     await MC.yield();   // 20分素材でもUIを固めない
   }
+  if (onProg) onProg(1);
   const pcm = new Float32Array(Math.min(total, maxFrames));
   let o = 0;
   for (const a of outChunks) {

@@ -1347,6 +1347,44 @@ MC.ui.clearInterruptNote = () => {
   document.body.classList.remove("mz-interrupt-on");
 };
 
+/* ============ 分析完了の目立つ通知(2026-07-23 優さん指示) ============
+   ①バイブ ②タブのタイトルを一時的に変える(裏で待っている人向け)
+   ③画面内の大きな完了バナー(タップで消える)。三重にして見逃しを防ぐ */
+MC.ui.notifyAnalysisDone = () => {
+  try { if (navigator.vibrate) navigator.vibrate([80, 40, 80]); } catch (_) {}
+  /* タブ裏で待つ人向け: タイトルを点滅風に。操作が戻ったら元へ */
+  try {
+    const orig = document.title;
+    document.title = "✅ 分析完了 — 書き出せます";
+    const restore = () => {
+      document.title = orig;
+      document.removeEventListener("visibilitychange", onVis);
+    };
+    const onVis = () => { if (document.visibilityState === "visible") restore(); };
+    document.addEventListener("visibilitychange", onVis);
+    setTimeout(restore, 15000);
+  } catch (_) {}
+
+  let el = document.getElementById("mzAnalysisDone");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "mzAnalysisDone";
+    el.className = "mz-analysis-done";
+    el.setAttribute("role", "status");
+    document.body.appendChild(el);
+  }
+  el.innerHTML = '<span class="mz-adone-icon"><i class="fa-solid fa-circle-check" aria-hidden="true"></i></span>'
+    + '<span class="mz-adone-text"><b>分析が終わりました</b>下の「動画を書き出す」で仕上げられます</span>'
+    + '<button type="button" class="mz-adone-close" aria-label="閉じる"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>';
+  el.classList.remove("mz-adone-hide");
+  void el.offsetWidth;                 // アニメ再生のためリフロー
+  el.classList.add("mz-adone-show");
+  const hide = () => { el.classList.remove("mz-adone-show"); el.classList.add("mz-adone-hide"); };
+  el.querySelector(".mz-adone-close").onclick = hide;
+  clearTimeout(MC.ui._adoneTm);
+  MC.ui._adoneTm = setTimeout(hide, 8000);   // 8秒で自動で引っ込む
+};
+
 MC.ui._holdWake = async want => {
   try {
     if (want && !MC.ui._wakeLock && navigator.wakeLock) {
@@ -1461,6 +1499,10 @@ MC.ui.runEasy = async () => {
         + (trimmed ? `書き出し範囲 ${MC.ui.fmtTime(ti)}〜${MC.ui.fmtTime(to)} を自動設定。` : "")
         + "プレビューを見て、よければ書き出してください",
     });
+    /* 分析が終わったことを目立たせて知らせる(2026-07-23 優さん指示)。
+       スマホは分析中に別アプリへ切り替えていることが多いので、
+       戻ってきたとき/戻る前どちらでも気づけるように三重に出す */
+    MC.ui.notifyAnalysisDone();
     /* ここからの主役は書き出し。おまかせボタン自体を「動画を書き出す」に
        化けさせ、次にすることを迷わせない(2026-07-21 優さん指示) */
     MC.S.easyDone = true;

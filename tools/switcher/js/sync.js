@@ -102,14 +102,24 @@ MC.sync.run = async p => {
   const clips = MC.S.clips.filter(c => !c.isImage);   // 静止画は同期対象外
   if (clips.length < 2) { MC.ui.toast("2本以上のクリップが必要です"); return; }
 
-  // 音声抽出
-  let i = 0;
+  // 音声抽出。**抽出中も進捗を動かす**(2026-07-23 優さん指摘の99%固定を解消)。
+  //  以前は count(i, n) を「i本目を開始する時」に呼び、3本目開始で ratio=1.0→
+  //  99%キャップに張り付いたまま、最後の8分音声の抽出(数十秒)を無表示で待たせていた。
+  const needClips = clips.filter(c => !c.audio8k);
+  const needN = needClips.length;
+  let doneN = 0;
+  if (p) p.step(1, "音を分析しています…");
   for (const c of clips) {
-    i++;
     if (c.audio8k) continue;
-    if (p) p.step(1, "音を分析しています…").count(i, clips.length, { unit: "本目", name: c.name });
-    try { await MC.audio.extract8k(c); }
-    catch (e) { console.warn("[MC]", e.message); MC.ui.toast(`⚠ ${e.message}`); }
+    const base = doneN;
+    const sub = needN > 1 ? `${base + 1} / ${needN} 本目・${MZP.shortName(c.name)}` : MZP.shortName(c.name);
+    try {
+      await MC.audio.extract8k(c, MC.audio.MAX_SEC, frac => {
+        if (p) p.set((base + frac) / needN, null, { sub });
+      });
+    } catch (e) { console.warn("[MC]", e.message); MC.ui.toast(`⚠ ${e.message}`); }
+    doneN++;
+    if (p) p.set(doneN / needN, null, { sub });
     await new Promise(r => setTimeout(r, 0));
   }
 
