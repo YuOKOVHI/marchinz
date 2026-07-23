@@ -337,10 +337,10 @@ MC.ui.initJourney = () => {
   MZJourney.init({
     container: MC.ui.$("#workspace"),
     phases: [
-      { id: "mat",    label: "素材",     hint: "3つまでまとめて選べます" },
-      { id: "sync",   label: "同期",     hint: "「波形で同期する」でズレを合わせます" },
-      { id: "polish", label: "整える",   hint: "音声・レイアウト・仕上げを整えます" },
-      { id: "export", label: "書き出す", hint: "「動画を書き出す」で完成です" },
+      { id: "mat",    label: "動画を選ぶ",   hint: "3つまでまとめて選べます" },
+      { id: "sync",   label: "同期と分析",   hint: "音のズレ合わせと素材の分析をします" },
+      { id: "polish", label: "自動編集設定", hint: "おすすめ設定のまま「自動編集を開始」でOK" },
+      { id: "export", label: "書き出し",     hint: "「動画を書き出す」で完成です" },
     ],
     doneHint: "書き出し完了。調整して書き出し直すこともできます",
     canSelect: () => true,   // タップ=そのセクションへ移動(状態は変えないので常に安全)
@@ -397,7 +397,7 @@ MC.ui.updateActionBar = () => {
         document.body.classList.remove("mz-actionbar-on");
         return;
       }
-      conf = { label: "おまかせで開始", icon: "fa-wand-magic-sparkles",
+      conf = { label: "自動編集を開始", icon: "fa-wand-magic-sparkles",
         disabled: eb.disabled, act: () => eb.click() };
     } else if (cur === "sync") {
       conf = { label: "波形で同期する", icon: "fa-wave-square",
@@ -1081,7 +1081,7 @@ MC.ui.renderEasyButton = () => {
     btn.innerHTML = '<i class="fa-solid fa-file-export"></i> 動画を書き出す';
     btn.classList.add("export-ready");
   } else {
-    btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> おまかせで開始';
+    btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> 自動編集を開始';
     btn.classList.remove("export-ready");
   }
 };
@@ -1260,8 +1260,16 @@ MC.ui.initFloatOnScroll = () => {
   let baseY = 0;          // 浮いていないときのプレビューの位置(ページ先頭から)
   const HYST = 24;        // 境目でのちらつき防止
 
+  let baseH = 0;          // 浮いていないときのプレビューの高さ
   const update = () => {
     if (document.body.classList.contains("mz-float-full")) return;   // 全画面中は触らない
+    /* 自動編集設定(polish)フェーズは常時フロート(2026-07-24 優さん指示)。
+       設定を触りながら小窓で結果を見る段階なので、スクロール位置に依らない */
+    if (document.body.dataset.mzjPhase === "polish" &&
+        document.body.classList.contains("mz-has-clips")) {
+      document.body.classList.add("mz-float-on");
+      return;
+    }
     const on = document.body.classList.contains("mz-float-on");
     if (!on) {
       const rect = stage.getBoundingClientRect();
@@ -1269,10 +1277,13 @@ MC.ui.initFloatOnScroll = () => {
          そのまま基準にすると「常に浮いている」状態になる(実装中に踏んだ) */
       if (!rect.height) { document.body.classList.remove("mz-float-on"); return; }
       baseY = rect.top + window.scrollY;
+      baseH = rect.height;
     }
     const barH = parseFloat(getComputedStyle(document.documentElement)
       .getPropertyValue("--mz-journey-h")) || 72;
-    const onLine = baseY - barH;
+    /* 粘り(2026-07-24 優さん指示): プレビューの下端がバーを過ぎるまで
+       元の位置で見せ続ける。以前は上端が触れた瞬間に浮いて早すぎた */
+    const onLine = baseY + baseH * 0.7 - barH;
     document.body.classList.toggle("mz-float-on", on
       ? window.scrollY > onLine - HYST    // 浮いている間は少し粘ってから戻す
       : window.scrollY > onLine);
@@ -1282,58 +1293,6 @@ MC.ui.initFloatOnScroll = () => {
   window.addEventListener("resize", update, { passive: true });
   MC.ui._syncFloatPos = update;   // 素材の増減で高さが変わったときに呼び直す
   update();
-};
-
-/* ============ フロートプレビューのドラッグ移動(2026-07-23 優さん指示) ============
-   浮いている小窓を好きな場所へ。6px未満の動き=タップ(全画面)、それ以上=ドラッグ。
-   ドラッグ後のclickは_suppressFloatClickで1拍だけ抑止し、誤って全画面化しない */
-MC.ui.initFloatDrag = () => {
-  const holder = document.querySelector(".canvas-holder");
-  if (!holder) return;
-  let dragging = false, moved = false, sx = 0, sy = 0, ox = 0, oy = 0, pid = null;
-  const clamp = (nx, ny) => {
-    const w = holder.offsetWidth, h = holder.offsetHeight;
-    return [
-      Math.max(6, Math.min((window.innerWidth || 375) - w - 6, nx)),
-      Math.max(6, Math.min((window.innerHeight || 800) - h - 6, ny)),
-    ];
-  };
-  holder.addEventListener("pointerdown", e => {
-    if (!document.body.classList.contains("mz-float-on")) return;   // 浮いている時だけ
-    if (document.body.classList.contains("mz-float-full")) return;  // 全画面中は不可
-    if (e.target.closest("#floatClose")) return;
-    dragging = true; moved = false; pid = e.pointerId;
-    sx = e.clientX; sy = e.clientY;
-    const r = holder.getBoundingClientRect();
-    ox = r.left; oy = r.top;
-    try { holder.setPointerCapture(pid); } catch (_) {}
-  });
-  holder.addEventListener("pointermove", e => {
-    if (!dragging) return;
-    const dx = e.clientX - sx, dy = e.clientY - sy;
-    if (!moved && Math.abs(dx) < 6 && Math.abs(dy) < 6) return;   // タップ猶予
-    moved = true;
-    const [nx, ny] = clamp(ox + dx, oy + dy);
-    holder.style.left = nx + "px"; holder.style.top = ny + "px";
-    holder.style.right = "auto"; holder.style.bottom = "auto";
-  });
-  const end = () => {
-    if (!dragging) return;
-    dragging = false;
-    try { holder.releasePointerCapture(pid); } catch (_) {}
-    if (moved) {
-      MC.ui._suppressFloatClick = true;   // 直後のclickで全画面化しない
-      setTimeout(() => { MC.ui._suppressFloatClick = false; }, 60);
-    }
-  };
-  holder.addEventListener("pointerup", end);
-  holder.addEventListener("pointercancel", end);
-  // 回転や画面サイズ変更で画面外に取り残されないように収める
-  window.addEventListener("resize", () => {
-    if (!holder.style.left || !document.body.classList.contains("mz-float-on")) return;
-    const [nx, ny] = clamp(parseFloat(holder.style.left) || 0, parseFloat(holder.style.top) || 0);
-    holder.style.left = nx + "px"; holder.style.top = ny + "px";
-  }, { passive: true });
 };
 
 /* 全画面プレビューに「この見た目で書き出します」を出す(2026-07-23 優さん指示)。
@@ -1835,7 +1794,6 @@ MC.ui.wire = () => {
     MC.ui.renderFullLabel(!!on);   // 全画面中だけ「この見た目で書き出します」(2026-07-23)
   };
   if (holder) holder.addEventListener("click", ev => {
-    if (MC.ui._suppressFloatClick) return;               // ドラッグ直後は全画面化しない
     if (ev.target.closest("#floatClose")) return;        // 閉じるボタンは別処理
     if (holder.classList.contains("float-full")) return; // 全画面中の誤タップでは閉じない
     if (!document.body.classList.contains("mz-has-clips")) return;  // フロートでない時は何もしない

@@ -284,7 +284,7 @@ body::before {
   .wrap { flex-direction: column; padding: 10px; gap: 10px; }
   .stage { order: -1; width: 100%; }
   .side { width: 100%; }
-  #cv { max-height: 52vh; }
+  #cv { max-height: 35vh; }   /* 初期プレビューは画面の1/3強(2026-07-24 優さん指示で2/3に縮小) */
   .topbar { padding: 8px 12px; }
   .mz-logo { height: 28px; }
   .tool-name { font-size: 13px; padding-left: 8px; }
@@ -503,7 +503,8 @@ button, select, input, label, .btn { touch-action: manipulation; }
        --mz-journey-h に実測値を入れる */
     top: calc(var(--mz-journey-h, 72px) + 6px + env(safe-area-inset-top, 0px));
     right: 8px;
-    width: 44vw;                 /* いままでの半分弱。作業領域が下に見える */
+    width: 29vw;                 /* 2026-07-24 優さん指示でさらに2/3。右上固定 */
+    min-width: 104px;
     z-index: 55;   /* ジャーニーバー(60)より下。潜り込ませず、その下に並べる */
     border-radius: 12px;
     box-shadow: 0 10px 28px rgba(8, 12, 18, 0.35);
@@ -1075,3 +1076,9 @@ body.mz-interrupt-on #dropSec .mz-stay-hint {
    基底で隠し、表示はモバイルの mz-float-on ルール(上の@media内)だけに任せる。
    以前は基底が無く、デスクトップや素材ゼロのときに右上へ出っぱなしだった */
 .float-hint { display: none; }
+
+
+/* ============ フェーズ連動のプレビュー(2026-07-24 優さん指示) ============
+   同期と分析: 見せる編集結果がまだ無いのでプレビューを出さない。
+   自動編集設定(polish): モバイルではJSが常時フロート化する(ui.js側) */
+body[data-mzj-phase="sync"] .stage { display: none; }
