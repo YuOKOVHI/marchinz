@@ -224,6 +224,20 @@ MC.ui.checkExportable = () => {
   };
 };
 
+/* やさしいスクロール(2026-07-23 優さん指摘「ジャンプしすぎ」対応)。
+   block:"center"は要素を画面中央へ運ぶ=大移動になりがち。
+   対象が十分見えている(上部バーの下〜画面下80px)なら**動かさない**。
+   見えていないときだけ、最小限(nearest)で寄せる */
+MC.ui.gentleScrollTo = (el, block = "nearest") => {
+  if (!el || el.offsetParent === null) return;
+  const r = el.getBoundingClientRect();
+  const vh = window.innerHeight || 800;
+  const topBar = parseFloat(getComputedStyle(document.documentElement)
+    .getPropertyValue("--mz-journey-h")) || 72;
+  if (r.top >= topBar && r.top <= vh - 80) return;   // 見えている=動かさない
+  el.scrollIntoView({ behavior: "smooth", block });
+};
+
 MC.ui.focusNextAction = () => {
   if (!MC.S.clips.length) return;
   /* 取り込んだ直後に傾きを測り、「直した後」を見せる(2026-07-23 優さん指示)。
@@ -232,11 +246,10 @@ MC.ui.focusNextAction = () => {
   setTimeout(() => {
     const btn = MC.ui.$("#easyStartBtn");
     if (!btn || btn.offsetParent === null) return;
-    const r = btn.getBoundingClientRect();
-    const visible = r.top >= 0 && r.bottom <= window.innerHeight;
-    if (visible) return;
     const panel = btn.closest(".panel") || btn;
-    panel.scrollIntoView({ behavior: "smooth", block: "center" });
+    const r = panel.getBoundingClientRect();
+    if (r.top >= 60 && r.top <= (window.innerHeight || 800) - 120) return;
+    MC.ui.gentleScrollTo(panel, "nearest");
     panel.classList.add("mz-focus-flash");
     setTimeout(() => panel.classList.remove("mz-focus-flash"), 1200);
   }, 260);   // サムネ生成でレイアウトが動くので少し待つ
@@ -537,7 +550,7 @@ MC.ui.applySteps = current => {
   /* フェーズが進んだら、新しく開いたステップへそっと運ぶ。
      おまかせの実行中は進捗ドックが主役なので動かさない */
   if (advanced && !MC.ui._busy && scrollTo && scrollTo.offsetParent) {
-    scrollTo.scrollIntoView({ behavior: "smooth", block: "start" });
+    MC.ui.gentleScrollTo(scrollTo, "start");   // 見えていれば動かさない(2026-07-23)
   }
 };
 
@@ -1271,6 +1284,79 @@ MC.ui.initFloatOnScroll = () => {
   update();
 };
 
+/* ============ フロートプレビューのドラッグ移動(2026-07-23 優さん指示) ============
+   浮いている小窓を好きな場所へ。6px未満の動き=タップ(全画面)、それ以上=ドラッグ。
+   ドラッグ後のclickは_suppressFloatClickで1拍だけ抑止し、誤って全画面化しない */
+MC.ui.initFloatDrag = () => {
+  const holder = document.querySelector(".canvas-holder");
+  if (!holder) return;
+  let dragging = false, moved = false, sx = 0, sy = 0, ox = 0, oy = 0, pid = null;
+  const clamp = (nx, ny) => {
+    const w = holder.offsetWidth, h = holder.offsetHeight;
+    return [
+      Math.max(6, Math.min((window.innerWidth || 375) - w - 6, nx)),
+      Math.max(6, Math.min((window.innerHeight || 800) - h - 6, ny)),
+    ];
+  };
+  holder.addEventListener("pointerdown", e => {
+    if (!document.body.classList.contains("mz-float-on")) return;   // 浮いている時だけ
+    if (document.body.classList.contains("mz-float-full")) return;  // 全画面中は不可
+    if (e.target.closest("#floatClose")) return;
+    dragging = true; moved = false; pid = e.pointerId;
+    sx = e.clientX; sy = e.clientY;
+    const r = holder.getBoundingClientRect();
+    ox = r.left; oy = r.top;
+    try { holder.setPointerCapture(pid); } catch (_) {}
+  });
+  holder.addEventListener("pointermove", e => {
+    if (!dragging) return;
+    const dx = e.clientX - sx, dy = e.clientY - sy;
+    if (!moved && Math.abs(dx) < 6 && Math.abs(dy) < 6) return;   // タップ猶予
+    moved = true;
+    const [nx, ny] = clamp(ox + dx, oy + dy);
+    holder.style.left = nx + "px"; holder.style.top = ny + "px";
+    holder.style.right = "auto"; holder.style.bottom = "auto";
+  });
+  const end = () => {
+    if (!dragging) return;
+    dragging = false;
+    try { holder.releasePointerCapture(pid); } catch (_) {}
+    if (moved) {
+      MC.ui._suppressFloatClick = true;   // 直後のclickで全画面化しない
+      setTimeout(() => { MC.ui._suppressFloatClick = false; }, 60);
+    }
+  };
+  holder.addEventListener("pointerup", end);
+  holder.addEventListener("pointercancel", end);
+  // 回転や画面サイズ変更で画面外に取り残されないように収める
+  window.addEventListener("resize", () => {
+    if (!holder.style.left || !document.body.classList.contains("mz-float-on")) return;
+    const [nx, ny] = clamp(parseFloat(holder.style.left) || 0, parseFloat(holder.style.top) || 0);
+    holder.style.left = nx + "px"; holder.style.top = ny + "px";
+  }, { passive: true });
+};
+
+/* 全画面プレビューに「この見た目で書き出します」を出す(2026-07-23 優さん指示)。
+   範囲と画質を添えて、いま見ているものがそのまま完成品だと伝える */
+MC.ui.renderFullLabel = on => {
+  const holder = document.querySelector(".canvas-holder");
+  let el = document.getElementById("mzFullLabel");
+  if (!on) { if (el) el.remove(); return; }
+  if (!holder) return;
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "mzFullLabel";
+    el.className = "mz-full-label";
+    holder.appendChild(el);
+  }
+  const range = MC.trimRange();
+  const q = MC.exporter.QUALITIES[MC.exporter.quality()];
+  el.innerHTML = '<i class="fa-solid fa-clapperboard" aria-hidden="true"></i> '
+    + '<span><b>この見た目で書き出します</b>'
+    + `範囲 ${MC.ui.fmtTime(range[0])}〜${MC.ui.fmtTime(range[1])}`
+    + (q ? " ・ " + MC.ui.esc(q.label) : "") + "</span>";
+};
+
 /* ============ 作業中の離脱・画面ロックを防ぐ ============
    同期・カット割・書き出しはすべて「このタブが生きていること」が前提。
    タブを閉じる/リロードすると当然止まり、画面がロックされても
@@ -1746,8 +1832,10 @@ MC.ui.wire = () => {
     holder.classList.toggle("float-full", !!on);
     document.body.classList.toggle("mz-float-full", !!on);   // バー類を隠すため
     document.documentElement.style.overflow = on ? "hidden" : "";
+    MC.ui.renderFullLabel(!!on);   // 全画面中だけ「この見た目で書き出します」(2026-07-23)
   };
   if (holder) holder.addEventListener("click", ev => {
+    if (MC.ui._suppressFloatClick) return;               // ドラッグ直後は全画面化しない
     if (ev.target.closest("#floatClose")) return;        // 閉じるボタンは別処理
     if (holder.classList.contains("float-full")) return; // 全画面中の誤タップでは閉じない
     if (!document.body.classList.contains("mz-has-clips")) return;  // フロートでない時は何もしない
@@ -1797,10 +1885,7 @@ MC.ui.wire = () => {
                         : "ズレを合わせました",
              { sub: MC.S.trimOut != null ? `書き出し範囲 ${MC.ui.fmtTime(ti)}〜${MC.ui.fmtTime(to)} を自動設定` : "" });
       // 次のフェーズ(整える)へそっと誘導
-      setTimeout(() => {
-        const el = $("#layoutSec");
-        if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-      }, 900);
+      setTimeout(() => { MC.ui.gentleScrollTo($("#layoutSec"), "start"); }, 900);
     } catch (e) {
       MC.ui.toast("⚠ 同期に失敗: " + e.message); console.error(e);
       p.fail("ズレを合わせられませんでした", { detail: e.message,

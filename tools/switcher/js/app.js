@@ -7,6 +7,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   MC.ui.initJourney();
   MC.ui.initActionBar();
   MC.ui.initFloatOnScroll();
+  MC.ui.initFloatDrag();
   MC.ui.initVisibility();
   MC.ui.renderAll();
 
