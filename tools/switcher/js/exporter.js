@@ -669,7 +669,7 @@ MC.exporter.opfsCreate = async name => {
            16MB×数個ぶんのコピーが一時的にメモリに乗るが尺には比例しない */
         MC.exporter._pendWrites = (MC.exporter._pendWrites || Promise.resolve())
           .then(() => MC.exporter._writerReq(
-            { type: "write", data: copy.buffer, position }, [copy.buffer]));
+            { type: "write", data: copy.buffer, position }, [copy.buffer], 30000));   // 16MB書きに遅い端末の余裕
         MC.exporter._pendWrites.catch(() => {});   // 本エラーは finalize/await で受ける
       },
       chunked: true,
@@ -686,7 +686,9 @@ MC.exporter.opfsCreate = async name => {
 /** worker 書き込みの完了を待ち、ファイルを確定して File を取り出す(読み取りはメインでOK) */
 MC.exporter.opfsFinalizeWorker = async name => {
   await (MC.exporter._pendWrites || Promise.resolve());   // 積んだ write を全部流し切る
-  await MC.exporter._writerReq({ type: "finalize" });
+  /* finalize(flush+close)は500MB級だと遅い端末で12秒を超えうる。
+     数分書き出した後の最後の一瞬で殺さないよう、ここだけ大きく取る(レビュー指摘) */
+  await MC.exporter._writerReq({ type: "finalize" }, null, 120000);
   const root = await navigator.storage.getDirectory();
   const dir = await root.getDirectoryHandle(MC.exporter.OPFS_DIR, { create: false });
   const fh = await dir.getFileHandle(name, { create: false });
