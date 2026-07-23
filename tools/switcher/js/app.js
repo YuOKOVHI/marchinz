@@ -39,8 +39,9 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (saved.borderW != null) MC.S.borderW = saved.borderW;
   } catch (e) {}
 
-  // 前回の失敗で残った書き出しファイルを掃除する(容量を食い続けないように)
-  MC.exporter.opfsSweep().catch(() => {});
+  // OPFSへ本当に書けるかを一度だけ実測してキャッシュ(G-1)。
+  // これで maxExportableSec が「上限なし」と嘘をつかなくなる
+  MC.exporter.probeOpfs().then(() => MC.exporter.opfsSweep()).catch(() => {});
 
   await MC.exporter.probeCaps();
   const badge = document.getElementById("capsBadge");

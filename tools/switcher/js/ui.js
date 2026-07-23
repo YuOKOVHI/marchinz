@@ -1351,6 +1351,7 @@ MC.ui.clearInterruptNote = () => {
    ①バイブ ②タブのタイトルを一時的に変える(裏で待っている人向け)
    ③画面内の大きな完了バナー(タップで消える)。三重にして見逃しを防ぐ */
 MC.ui.notifyAnalysisDone = () => {
+  // iOS Safari は vibrate 非対応(効かない)。Android等では鳴る。害はないので残す(G-5)
   try { if (navigator.vibrate) navigator.vibrate([80, 40, 80]); } catch (_) {}
   /* タブ裏で待つ人向け: タイトルを点滅風に。操作が戻ったら元へ */
   try {
@@ -1373,14 +1374,25 @@ MC.ui.notifyAnalysisDone = () => {
     el.setAttribute("role", "status");
     document.body.appendChild(el);
   }
-  el.innerHTML = '<span class="mz-adone-icon"><i class="fa-solid fa-circle-check" aria-hidden="true"></i></span>'
-    + '<span class="mz-adone-text"><b>分析が終わりました</b>下の「動画を書き出す」で仕上げられます</span>'
+  el.innerHTML = '<button type="button" class="mz-adone-main">'
+    + '<span class="mz-adone-icon"><i class="fa-solid fa-circle-check" aria-hidden="true"></i></span>'
+    + '<span class="mz-adone-text"><b>分析が終わりました</b>タップで「動画を書き出す」へ</span>'
+    + '</button>'
     + '<button type="button" class="mz-adone-close" aria-label="閉じる"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>';
   el.classList.remove("mz-adone-hide");
   void el.offsetWidth;                 // アニメ再生のためリフロー
   el.classList.add("mz-adone-show");
   const hide = () => { el.classList.remove("mz-adone-show"); el.classList.add("mz-adone-hide"); };
   el.querySelector(".mz-adone-close").onclick = hide;
+  /* バナー本体タップ→書き出しボタンへ運ぶ(G-3)。「終わった、で、どこ?」を消す */
+  el.querySelector(".mz-adone-main").onclick = () => {
+    hide();
+    const b = MC.ui.$("#exportBtn") || MC.ui.$("#easyStartBtn");
+    if (b) {
+      const panel = b.closest(".panel") || b;
+      panel.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  };
   clearTimeout(MC.ui._adoneTm);
   MC.ui._adoneTm = setTimeout(hide, 8000);   // 8秒で自動で引っ込む
 };
@@ -1494,14 +1506,16 @@ MC.ui.runEasy = async () => {
     const [ti, to] = MC.trimRange();
     MC.preview.seek(ti);
     const trimmed = MC.S.trimIn > 0 || MC.S.trimOut != null;
-    p.done("書き出す準備ができました", {
+    /* ドックは「結果の詳細(範囲・色)」に徹する。「終わった」の気づきは下の
+       バナー(notifyAnalysisDone)に一本化し、同じ文言を2箇所に出さない(G-4) */
+    p.done("整いました", {
       sub: (colorFailed ? "色そろえだけできませんでした。" : "")
         + (trimmed ? `書き出し範囲 ${MC.ui.fmtTime(ti)}〜${MC.ui.fmtTime(to)} を自動設定。` : "")
         + "プレビューを見て、よければ書き出してください",
     });
     /* 分析が終わったことを目立たせて知らせる(2026-07-23 優さん指示)。
        スマホは分析中に別アプリへ切り替えていることが多いので、
-       戻ってきたとき/戻る前どちらでも気づけるように三重に出す */
+       戻ってきたとき/戻る前どちらでも気づけるように出す */
     MC.ui.notifyAnalysisDone();
     /* ここからの主役は書き出し。おまかせボタン自体を「動画を書き出す」に
        化けさせ、次にすることを迷わせない(2026-07-21 優さん指示) */

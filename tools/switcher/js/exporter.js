@@ -543,17 +543,43 @@ MC.exporter.streamingOut = () =>
 MC.exporter.FORCE_LEGACY = false;
 MC.exporter.OPFS_DIR = "mz-export";
 
+/* OPFSへ実際に書けるか(G-1 / 2026-07-23)。
+   以前は「getDirectoryとWorkerがある」だけの見込みでtrueを返していたが、
+   iOS Safariの createSyncAccessHandle が使えない端末で maxExportableSec が
+   Infinity(上限なし)を案内し、書き出しで断る矛盾が出た(E-1の再来)。
+   起動時に probeOpfs() が本当に書けるか一度だけ実測し、その事実をキャッシュ。
+   probe未了の間は「入口の有無」で暫定判定(probeが即後に上書きする) */
+MC.exporter._opfsProbed = null;   // null=未実測 / true / false
 MC.exporter.opfsSupported = () => {
   if (MC.exporter.FORCE_LEGACY) return false;
+  if (MC.exporter._opfsProbed !== null) return MC.exporter._opfsProbed;
   try {
-    /* iOS Safari はメインスレッドの createWritable を持たないが、
-       Worker内の createSyncAccessHandle でOPFSへ書ける(2026-07-23で判定を修正)。
-       ここは「見込み」判定。実際に開けるかは opfsCreate が Worker を起こして確かめる。
-       OPFSの入口(getDirectory)と Worker が両方あれば見込みありとする */
     return !!(navigator.storage && navigator.storage.getDirectory &&
-      typeof Worker !== "undefined" &&
-      typeof FileSystemFileHandle !== "undefined");
+      typeof Worker !== "undefined");
   } catch (e) { return false; }
+};
+
+/** OPFSへ実際に書けるかをWorkerで一度だけ確かめ、結果をキャッシュする。
+    起動時(app.js)に呼ぶ。以後 opfsSupported() はこの事実を返す */
+MC.exporter.probeOpfs = async () => {
+  if (MC.exporter._opfsProbed !== null) return MC.exporter._opfsProbed;
+  let ok = false;
+  try {
+    if (navigator.storage && navigator.storage.getDirectory && typeof Worker !== "undefined") {
+      await MC.exporter.initWriter();
+      await MC.exporter._writerReq({ type: "open", dir: MC.exporter.OPFS_DIR, name: "__probe.mp4" });
+      const b = new Uint8Array([77, 90]);
+      await MC.exporter._writerReq({ type: "write", data: b.buffer, position: 0 }, [b.buffer]);
+      await MC.exporter._writerReq({ type: "finalize" });
+      ok = true;
+      MC.exporter.opfsRemove("__probe.mp4");   // 後始末(非同期でよい)
+    }
+  } catch (e) {
+    MC.log("OPFS実測NG→この端末はメモリ方式: " + (e && e.message));
+    ok = false;
+  }
+  MC.exporter._opfsProbed = ok;
+  return ok;
 };
 
 /* ---- 書き込みワーカー(js/exportwriter.js)の起動と1往復のやりとり ---- */
@@ -606,12 +632,16 @@ MC.exporter.opfsCreate = async name => {
     const target = new Mp4Muxer.StreamTarget({
       onData: (data, position) => {
         const copy = data.slice();
+        /* 背圧の注記(G-3レビュー): onDataは同期で積まれ、実書き込みは直列。
+           チャンクは16MB単位(下のchunkSize)なので同時未完了は実測1〜数個で収まる。
+           16MB×数個ぶんのコピーが一時的にメモリに乗るが尺には比例しない */
         MC.exporter._pendWrites = (MC.exporter._pendWrites || Promise.resolve())
           .then(() => MC.exporter._writerReq(
             { type: "write", data: copy.buffer, position }, [copy.buffer]));
         MC.exporter._pendWrites.catch(() => {});   // 本エラーは finalize/await で受ける
       },
       chunked: true,
+      chunkSize: 16 * 1024 * 1024,   // 明示(G-2)。ライブラリ既定に依存しない
     });
     MC.exporter._pendWrites = Promise.resolve();
     return { name, target, viaWorker: true };
