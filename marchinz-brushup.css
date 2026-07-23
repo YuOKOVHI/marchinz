@@ -908,6 +908,15 @@ body {
 
 /* ---------- モバイル下部タブナビ ---------- */
 
+/* マップ: Leaflet内部のコントロール(ズーム/帰属は z-index~800-1000)が
+   固定下部ナビ(z-index 90)へ被る問題を、コンテナに stacking context を作って
+   内部を閉じ込めることで解消する(2026-07-24 優さん指摘: スクロール時に下メニューへ被る) */
+.mz-event-map {
+  position: relative;
+  z-index: 0;
+  isolation: isolate;
+}
+
 .mz-tabbar {
   display: none;
 }
@@ -929,14 +938,20 @@ body {
 
   .mz-tabbar-link {
     flex: 1 1 0;
+    min-width: 0; /* 6枠でも縮んで収まるように */
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: 2px;
+    padding: 0 1px;
     min-height: var(--mz-tabbar-h);
-    font-size: 0.66rem;
+    /* アイコンはそのまま、文字だけ約2/3へ(0.66rem→0.46rem)。6枠を1行に収める
+       (2026-07-24 優さん指示) */
+    font-size: 0.46rem;
     font-weight: 700;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
     color: #6b7684; /* AA 4.5確保。旧 #8a94a6 は白地で3.05 */
     text-decoration: none;
     -webkit-tap-highlight-color: transparent;

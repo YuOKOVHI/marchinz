@@ -216,47 +216,45 @@
   }
 
   /* ---------- 下部タブバー(スマホの主導線) ----------
-     ドロワーより先に、実際に親指が触るのはここ。TOPとマイページは
-     位置の記憶が強いので固定し、真ん中の3枠だけタイプで入れ替える。
-     クリエイターには「クリエイター」タブを出す(制作ツールへ1タップ) */
-  const TAB_MIDDLE = {
-    fan:     ["videos", "youtube", "community"],
-    player:  ["community", "videos", "youtube"],
-    creator: ["creators", "videos", "community"],
-  };
-  let tabStash = null;   // data-page → リンク要素(外している間も保持)
+     6枠: top / モーメント / イベント / 掲示板 / 各属性 / マイページ。
+     固定5枠はHTML側に静的に置き(site-navのnavLinksに拾わせる)、
+     5番目(#mz-tabbar-attr)だけをここで属性に合わせて中身ごと差し替える。
+     要素は作り直さず**同じ<a>を書き換える**。作り直すと static NodeList の
+     navLinks から外れ、アクティブ表示とリンク委譲が効かなくなる(2026-07-24) */
+  const SVG_PEOPLE = '<circle cx="9" cy="7" r="4" /><path d="M3 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /><path d="M21 21v-2a4 4 0 0 0 -3 -3.85" />';
+  const SVG_DRUM   = '<ellipse cx="12" cy="6.5" rx="8" ry="2.5" /><path d="M4 6.5v11c0 1.38 3.58 2.5 8 2.5s8 -1.12 8 -2.5v-11" /><path d="M4 12c0 1.38 3.58 2.5 8 2.5s8 -1.12 8 -2.5" /><path d="M16.5 4.5l3 -2.5" />';
+  const SVG_CLAP   = '<rect x="3" y="8.5" width="18" height="11.5" rx="2" /><path d="M3 8.5l3 -4.5 3 1 -2.2 3.5M10 8.5l3 -4.5 3 1 -2.2 3.5" />';
 
-  function creatorsTabLink(sample) {
-    const a = document.createElement("a");
-    a.href = "#creators";
-    a.setAttribute("data-page", "creators");
-    a.className = sample ? sample.className : "mz-tabbar-link";
-    a.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
-      + '<path d="M5 7h1a2 2 0 0 0 2 -2a1 1 0 0 1 1 -1h6a1 1 0 0 1 1 1a2 2 0 0 0 2 2h1a2 2 0 0 1 2 2v9a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-9a2 2 0 0 1 2 -2" />'
-      + '<circle cx="12" cy="13" r="3" /></svg>'
-      + '<span>クリエイター</span>';
-    return a;
-  }
+  /* 各属性の代表機能。5番目タブと heroボタンで共有する(2026-07-24 優さん決定) */
+  const ATTR_ENTRY = {
+    fan:     { href: "#community/events", page: "community", subtab: "", label: "コミュニティ", svg: SVG_PEOPLE, fa: "fa-users" },
+    player:  { href: "#profile?tab=base", page: "days",      subtab: "", label: "練習記録",     svg: SVG_DRUM,   fa: "fa-drum" },
+    creator: { href: "/tools/switcher/",  page: "switcher",  subtab: "", label: "Switcher",     svg: SVG_CLAP,   fa: "fa-clapperboard" },
+  };
 
   function applyTabbar() {
     if (!UT()) return;
-    const bar = document.querySelector(".mz-tabbar");
-    if (!bar) return;
-    if (!tabStash) {
-      tabStash = new Map();
-      bar.querySelectorAll("a[data-page]").forEach(a => tabStash.set(a.getAttribute("data-page"), a));
-      if (!tabStash.has("creators")) {
-        tabStash.set("creators", creatorsTabLink(tabStash.get("videos")));
-      }
-    }
-    const middle = TAB_MIDDLE[UT().get()] || TAB_MIDDLE.fan;
-    const want = ["mll", ...middle, "profile"];
-    /* 5枠を並べ直す。使わないリンクは stash に残るだけで消えない */
-    if (want.some(p => !tabStash.has(p))) return;   // 想定外の構造では触らない
-    want.forEach(p => bar.appendChild(tabStash.get(p)));
-    [...bar.querySelectorAll("a[data-page]")].forEach(a => {
-      if (!want.includes(a.getAttribute("data-page"))) a.remove();
-    });
+    const a = document.getElementById("mz-tabbar-attr");
+    if (!a) return;
+    const e = ATTR_ENTRY[UT().get()] || ATTR_ENTRY.fan;
+    a.setAttribute("href", e.href);
+    a.setAttribute("data-page", e.page);
+    if (e.subtab) a.setAttribute("data-community-subtab", e.subtab);
+    else a.removeAttribute("data-community-subtab");
+    a.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+      + e.svg + '</svg><span>' + e.label + '</span>';
+  }
+
+  /* ---------- heroの属性ボタン(ログイン時) ----------
+     「練習を記録」を属性に合わせて差し替える(2026-07-24 優さん指示)。
+     5番目タブと同じ代表機能で揃える */
+  function applyHeroCta() {
+    if (!UT()) return;
+    const a = document.getElementById("mz-hero-attr-cta");
+    if (!a) return;
+    const e = ATTR_ENTRY[UT().get()] || ATTR_ENTRY.fan;
+    a.setAttribute("href", e.href);
+    a.innerHTML = '<i class="fa-solid ' + e.fa + '" aria-hidden="true"></i> ' + e.label;
   }
 
   /* ---------- アカウントメニューの近道 ----------
@@ -268,10 +266,12 @@
      消しても行き止まりにはしない: Days はマイページの中、Switcher は
      クリエイターのページから、どのタイプでもたどり着ける。
      ここは「近道」なので、近道が要る人にだけ見せる */
+  const ALL_TYPES = ["fan", "player", "creator"];
   const MENU_SHORTCUTS = {
-    // ファン／保護者 … 見る・応援する人の入口
-    "#menu-open-moments":         ["fan"],      // PCのアカウント欄
-    "#menu-mobile-open-moments":  ["fan"],      // ハンバーガーメニュー
+    // モーメントは全属性に出す。各属性の代表メニュー(練習記録など)の上に置く
+    // (2026-07-24 優さん指示)。ドロワーではDOM上すでにDays/Switcherより上にある
+    "#menu-open-moments":         ALL_TYPES,    // PCのアカウント欄
+    "#menu-mobile-open-moments":  ALL_TYPES,    // ハンバーガーメニュー
     // プレイヤー／団体 … 練習を記録する人の入口
     "#menu-open-days":            ["player"],
     "#menu-mobile-open-days":     ["player"],
@@ -296,6 +296,7 @@
     applyNavOrder();
     applyTopOrder();
     applyTabbar();
+    applyHeroCta();
     applyMenuShortcuts();
   }
 
