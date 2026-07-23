@@ -1082,3 +1082,34 @@ body.mz-interrupt-on #dropSec .mz-stay-hint {
    同期と分析: 見せる編集結果がまだ無いのでプレビューを出さない。
    自動編集設定(polish): モバイルではJSが常時フロート化する(ui.js側) */
 body[data-mzj-phase="sync"] .stage { display: none; }
+
+
+/* ============ 書き出しの全画面(案B / 2026-07-24) ============
+   ドットは増やさず、書き出し中→保存 をこの中で切り替える(Apple Photos/iMovieの型)。
+   進捗(MZP)は #eoProgress にそのまま実る */
+.export-overlay {
+  position: fixed; inset: 0; z-index: 120;
+  background: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+  padding: calc(20px + env(safe-area-inset-top, 0px)) 20px
+           calc(20px + env(safe-area-inset-bottom, 0px));
+  overflow-y: auto;
+}
+.eo-inner { width: min(480px, 100%); display: flex; flex-direction: column; gap: 14px; }
+.eo-title {
+  font-size: 18px; font-weight: 800; color: var(--navy);
+  display: flex; align-items: center; gap: 8px; justify-content: center;
+}
+.eo-title i { color: var(--acc); }
+.eo-note { font-size: 12.5px; color: var(--tx2); line-height: 1.7; text-align: center; }
+.eo-note i { color: var(--acc2); margin-right: 3px; }
+#eoRun, #eoDone { display: flex; flex-direction: column; gap: 14px; }
+#eoCancel { align-self: center; min-width: 120px; }
+.eo-done-text { font-size: 14px; text-align: center; line-height: 1.7; }
+.eo-actions { display: flex; flex-direction: column; gap: 10px; }
+.eo-actions .btn { width: 100%; }
+.eo-close { align-self: center; min-width: 120px; }
+/* オーバーレイ表示中はフロートやバー類を引っ込める(全部この画面が主役) */
+body.mz-export-open .mzj,
+body.mz-export-open .mz-actionbar,
+body.mz-export-open .canvas-holder { display: none !important; }

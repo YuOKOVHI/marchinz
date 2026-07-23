@@ -48,10 +48,63 @@ MC.ui.showLongExportHelp = (okMin, mb) => {
     + `パソコンのChromeで開くと最後まで書き出せます。`;
 };
 
+/* ============ 書き出しの全画面(案B / 2026-07-24) ============
+   open()   : 書き出し開始時に「書き出し中」画面を全画面で出す
+   done()   : 成功したら同じ画面内で「保存」画面へ切り替える
+   fail()   : 失敗はMZPのfail表示(#eoProgress内)が出るので閉じるボタンだけ出す
+   close()  : 畳む。パネル側のdoneCard/エラーログは従来どおり残っているので、
+              閉じたあとも状態は見える */
+MC.ui.exportOverlay = {
+  open() {
+    const el = MC.ui.$("#exportOverlay");
+    if (!el) return;
+    MC.ui.$("#eoTitleText").textContent = "書き出し中…";
+    MC.ui.$("#eoRun").hidden = false;
+    MC.ui.$("#eoDone").hidden = true;
+    MC.ui.$("#eoClose").hidden = true;
+    MC.ui.$("#eoCancel").style.display = "";
+    el.hidden = false;
+    document.body.classList.add("mz-export-open");
+  },
+  done() {
+    const el = MC.ui.$("#exportOverlay");
+    if (!el || el.hidden) return;
+    MC.ui.$("#eoTitleText").textContent = "できあがりました";
+    MC.ui.$("#eoRun").hidden = true;
+    MC.ui.$("#eoDone").hidden = false;
+    MC.ui.$("#eoClose").hidden = false;
+  },
+  fail() {
+    const el = MC.ui.$("#exportOverlay");
+    if (!el || el.hidden) return;
+    MC.ui.$("#eoTitleText").textContent = "書き出せませんでした";
+    MC.ui.$("#eoCancel").style.display = "none";   // 失敗後の中止は意味がない
+    MC.ui.$("#eoClose").hidden = false;            // 詳細はMZPのfail表示が出ている
+  },
+  close() {
+    const el = MC.ui.$("#exportOverlay");
+    if (!el) return;
+    el.hidden = true;
+    document.body.classList.remove("mz-export-open");
+  },
+};
+
 MC.ui.showDone = res => {
   const share = MC.exporter.shareMode();
   const $ = MC.ui.$;
   $("#doneCard").hidden = false;
+  /* オーバーレイの保存画面にも同じ内容を映す(2026-07-24 案B)。
+     文言はパネル側(doneText/doneNote)を組み立ててからコピーする */
+  const mirror = () => {
+    const eo = $("#exportOverlay");
+    if (!eo || eo.hidden) return;
+    $("#eoDoneText").innerHTML = $("#doneText").innerHTML;
+    $("#eoDoneNote").textContent = $("#doneNote").textContent;
+    $("#eoSaveBtn").style.display = $("#saveBtn").style.display;
+    const dl = $("#downloadBtn");
+    $("#eoDownloadBtn").style.display = dl ? dl.style.display : "";
+    MC.ui.exportOverlay.done();
+  };
   /* ディスクへ直接書き出した場合は blob を持たない(メモリに溜めないため)。
      その場では既に保存が終わっているので、再保存の導線は出さない */
   if (res && res.saved) {
@@ -60,6 +113,7 @@ MC.ui.showDone = res => {
     $("#doneText").innerHTML = `<span class="ok">✓ 「${MC.ui.esc(res.name)}」を保存しました</span>`;
     $("#doneNote").textContent = "選んだ場所に書き出し済みです。";
     MC.ui.toast("✔ 書き出しが完了しました");
+    mirror();
     return;
   }
   if (share) {
@@ -75,6 +129,7 @@ MC.ui.showDone = res => {
     $("#doneNote").textContent = "ダウンロードに保存されています(もう一度保存するには「ダウンロード」)。";
     MC.ui.toast("✔ 書き出しが完了しました");
   }
+  mirror();
 };
 
 /* 保存の実行。iOSはWeb Shareで写真/ファイルへ、それ以外はダウンロード */
@@ -1863,8 +1918,7 @@ MC.ui.wire = () => {
   $("#exportBtn").onclick = async () => {
     if (MC.exporter.running) return;
     MC.preview.pause();
-    const prog = $("#exportProgress");
-    prog.style.display = "block";
+    const prog = $("#exportProgress");   // 旧・パネル内進捗(全画面移行後は使わない)
     $("#doneCard").hidden = true;
     $("#exportBtn").disabled = true;
     $("#cancelBtn").style.display = "inline-block";
@@ -1953,8 +2007,9 @@ MC.ui.wire = () => {
         return;
       }
     }
+    MC.ui.exportOverlay.open();   // ここから全画面(案B)。進捗は下のmountへ実る
     const p = MZP.start({
-      mount: "#exportProgress", chapter: "書き出し", delay: 0,
+      mount: "#eoProgress", chapter: "書き出し", delay: 0,
       label: mode === "realtime" ? "再生しながら録画しています…" : "映像を作っています…",
       sub: mode === "realtime" ? "画面を閉じずにお待ちください" : "",
       // 中止は枠の外の #cancelBtn が既に担っているので、ここでは出さない(二重表示の回避)
@@ -1975,9 +2030,11 @@ MC.ui.wire = () => {
       console.error(e);
       if (e.message.includes("キャンセル")) {
         p.close();
+        MC.ui.exportOverlay.close();   // 中止はそのまま元の画面へ
         MC.ui.toast("書き出しを中止しました");
       } else {
         p.fail("書き出せませんでした", { detail: MC.ui.exportFailHint(e) });
+        MC.ui.exportOverlay.fail();    // 全画面に失敗表示を残し「閉じる」を出す
         MC.ui.showErrorLog(e);
         MC.ui.markExportFailed();   // 「準備ができました」を残さない
       }
@@ -1995,6 +2052,20 @@ MC.ui.wire = () => {
     const r = MC.exporter.lastResult;
     if (r) MC.exporter.triggerDownload(r.blob, r.name);
   };
+  // 書き出し全画面(案B)のボタン。中身はパネル側と同じ動きに寄せる
+  $("#eoCancel").onclick = () => { MC.exporter.cancelFlag = true; };
+  $("#eoSaveBtn").onclick = () => MC.ui.saveResult();
+  $("#eoDownloadBtn").onclick = () => {
+    const r = MC.exporter.lastResult;
+    if (r) MC.exporter.triggerDownload(r.blob, r.name);
+  };
+  $("#eoClose").onclick = () => MC.ui.exportOverlay.close();
+  document.addEventListener("keydown", ev => {
+    // Escは「閉じる」が出ているときだけ(書き出し中の誤爆で消さない)
+    if (ev.key === "Escape" && !$("#exportOverlay").hidden && !$("#eoClose").hidden) {
+      MC.ui.exportOverlay.close();
+    }
+  });
 
   // --- Phase 2: 自動カット割+ワイプ+タイムライン ---
   $("#bpbSelect").onchange = e => { MC.S.beatsPerBar = parseInt(e.target.value); MC.saveState(); };
