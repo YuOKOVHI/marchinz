@@ -112,6 +112,15 @@ MC.ui.fmtTime = s => {
 MC.ui.esc = s => String(s).replace(/[&<>"']/g,
   ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
 
+/* ファイル名を短く。拡張子は落とし、長ければ頭を残して末尾…にする
+   (Timeline 3.mov → Timeline 3 / 長い名前 → 頭6文字…)。
+   2026-07-23 優さん指示「今の半分でいい」。番号が見える方を優先 */
+MC.ui.shortName = (name, max = 16) => {
+  let s = String(name || "").replace(/\.[^.]{1,5}$/, "");   // まず拡張子(.mov等)を落とす
+  if (s.length <= max) return s;                             // これで大半は十分短い
+  return s.slice(0, max - 1) + "…";                          // それでも長い名前だけ末尾…
+};
+
 /* 最初からやり直す: 保存済みの設定(同期・カット割・範囲)ごと消す。
    「前回の続きが復元される」仕組みの対になる出口(2026-07-21 優さん指示) */
 /* 復元されたことを画面に残す。トーストは3.4秒で消えるうえ1回きりで、
@@ -897,7 +906,7 @@ MC.ui.renderPlacement = () => {
       row.innerHTML = `
         <span class="place-pos">${POS[i] || i + 1}</span>
         ${c.thumb ? `<img class="place-thumb" src="${c.thumb}" alt="">` : '<span class="place-thumb place-thumb--empty"></span>'}
-        <span class="place-name">${MC.ui.esc(c.name)}</span>
+        <span class="place-name" title="${MC.ui.esc(c.name)}">${MC.ui.esc(MC.ui.shortName(c.name))}</span>
         <span class="place-btns">
           <button type="button" class="place-move" data-d="-1" ${i === 0 ? "disabled" : ""} aria-label="上へ">▲</button>
           <button type="button" class="place-move" data-d="1" ${i === ids.length - 1 ? "disabled" : ""} aria-label="下へ">▼</button>
@@ -937,20 +946,27 @@ MC.ui.renderTilt = (cams, show) => {
   box.querySelector("#tiltToggle").checked = on;
   const list = box.querySelector("#tiltRows");
   list.hidden = !on;
-  if (!on) { list.innerHTML = ""; return; }
-
   list.innerHTML = "";
+  if (!on) return;
+
+  /* 各カメラ1枚のカードに、上段=名前+角度、下段=−／スライダー／＋／自動。
+     以前は6列gridで375pxだと横に潰れて見えなくなっていた(2026-07-23 実機で発覚)。
+     縦2段なら幅に依存せず必ず出る */
   for (const c of cams) {
+    const rot = +(c.rot || 0);
     const row = document.createElement("div");
     row.className = "tilt-row";
-    const rot = +(c.rot || 0);
     row.innerHTML = `
-      <span class="tilt-name" title="${MC.ui.esc(c.name)}">${MC.ui.esc(c.name.length > 10 ? c.name.slice(0, 9) + "…" : c.name)}</span>
-      <button type="button" class="tilt-step" data-d="-0.1" aria-label="左へ0.1度">−</button>
-      <input type="range" class="tilt-range" min="-5" max="5" step="0.1" value="${rot}" aria-label="${MC.ui.esc(c.name)} の傾き">
-      <button type="button" class="tilt-step" data-d="0.1" aria-label="右へ0.1度">＋</button>
-      <span class="tilt-val">${rot.toFixed(1)}°</span>
-      <button type="button" class="btn small tilt-auto" title="もう一度自動で検出">自動</button>`;
+      <div class="tilt-top">
+        <span class="tilt-name" title="${MC.ui.esc(c.name)}">${MC.ui.esc(MC.ui.shortName(c.name))}</span>
+        <span class="tilt-val">${rot.toFixed(1)}°</span>
+      </div>
+      <div class="tilt-ctrl">
+        <button type="button" class="tilt-step" data-d="-0.1" aria-label="左へ0.1度">−</button>
+        <input type="range" class="tilt-range" min="-5" max="5" step="0.1" value="${rot}" aria-label="${MC.ui.esc(c.name)} の傾き">
+        <button type="button" class="tilt-step" data-d="0.1" aria-label="右へ0.1度">＋</button>
+        <button type="button" class="tilt-auto" title="もう一度自動で検出">自動</button>
+      </div>`;
     const range = row.querySelector(".tilt-range");
     const val = row.querySelector(".tilt-val");
     const apply = v => {
@@ -968,8 +984,8 @@ MC.ui.renderTilt = (cams, show) => {
       ev.target.disabled = true;
       try {
         const sug = await MC.horizon.suggest(c);
-        if (sug == null || sug === 0) MC.ui.toast(`${c.name}: 傾きは見つかりませんでした`);
-        else { apply(sug); MC.ui.toast(`${c.name}: ${sug.toFixed(1)}° 直しました`); }
+        if (sug == null || sug === 0) MC.ui.toast(`${MC.ui.shortName(c.name)}: 傾きは見つかりませんでした`);
+        else { apply(sug); MC.ui.toast(`${MC.ui.shortName(c.name)}: ${sug.toFixed(1)}° 直しました`); }
       } finally { ev.target.disabled = false; }
     };
     list.appendChild(row);

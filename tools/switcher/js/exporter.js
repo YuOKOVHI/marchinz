@@ -546,25 +546,95 @@ MC.exporter.OPFS_DIR = "mz-export";
 MC.exporter.opfsSupported = () => {
   if (MC.exporter.FORCE_LEGACY) return false;
   try {
+    /* iOS Safari はメインスレッドの createWritable を持たないが、
+       Worker内の createSyncAccessHandle でOPFSへ書ける(2026-07-23で判定を修正)。
+       ここは「見込み」判定。実際に開けるかは opfsCreate が Worker を起こして確かめる。
+       OPFSの入口(getDirectory)と Worker が両方あれば見込みありとする */
     return !!(navigator.storage && navigator.storage.getDirectory &&
-      typeof FileSystemFileHandle !== "undefined" &&
-      FileSystemFileHandle.prototype.createWritable);
+      typeof Worker !== "undefined" &&
+      typeof FileSystemFileHandle !== "undefined");
   } catch (e) { return false; }
 };
 
-/** 書き出し用の OPFS ファイルを用意する。失敗したら null(=メモリ方式へ) */
+/* ---- 書き込みワーカー(js/exportwriter.js)の起動と1往復のやりとり ---- */
+MC.exporter._writer = null;
+MC.exporter._writerBusy = false;
+MC.exporter.initWriter = () => {
+  if (MC.exporter._writer) return Promise.resolve(MC.exporter._writer);
+  if (MC.exporter._writerP) return MC.exporter._writerP;
+  MC.exporter._writerP = new Promise((res, rej) => {
+    let w;
+    try { w = new Worker("js/exportwriter.js?v=" + (document.documentElement.getAttribute("data-mz-app-v") || "1")); }
+    catch (e) { rej(e); return; }
+    const tm = setTimeout(() => { try { w.terminate(); } catch (_) {} rej(new Error("writer worker timeout")); }, 8000);
+    w.onerror = () => { clearTimeout(tm); rej(new Error("writer workerを起動できません")); };
+    // 起動確認は「空ディレクトリを開けるか」ではなく、最初の open で兼ねる。
+    // ここでは worker が生きていることだけ確かめる(ping)
+    w.onmessage = () => {};   // open/write/finalize の応答は request 側で受ける
+    clearTimeout(tm);
+    MC.exporter._writer = w;
+    res(w);
+  }).catch(e => { MC.exporter._writerP = null; throw e; });
+  return MC.exporter._writerP;
+};
+
+/** worker と1往復。応答待ちは1件ずつ(sync handle は直列書き込み) */
+MC.exporter._writerReq = (msg, transfer) => new Promise((res, rej) => {
+  const w = MC.exporter._writer;
+  if (!w) { rej(new Error("writer未初期化")); return; }
+  const onMsg = ev => {
+    const m = ev.data || {};
+    w.removeEventListener("message", onMsg);
+    if (m.type === "error") rej(new Error(m.op + ": " + m.message));
+    else res(m);
+  };
+  w.addEventListener("message", onMsg);
+  w.postMessage(msg, transfer || []);
+});
+
+/** 書き出し用の OPFS ファイルを用意する。失敗したら null(=メモリ方式へ)。
+    書き込みは Worker(createSyncAccessHandle)で行うため、Worker を起こして open する。
+    返り値の target を muxer に渡す(StreamTarget: onData→worker write)。 */
 MC.exporter.opfsCreate = async name => {
   if (!MC.exporter.opfsSupported()) return null;
   try {
-    const root = await navigator.storage.getDirectory();
-    const dir = await root.getDirectoryHandle(MC.exporter.OPFS_DIR, { create: true });
-    const handle = await dir.getFileHandle(name, { create: true });
-    const writable = await handle.createWritable();
-    return { handle, writable, dir, name };
+    await MC.exporter.initWriter();
+    await MC.exporter._writerReq({ type: "open", dir: MC.exporter.OPFS_DIR, name });
+    /* StreamTarget: muxer がチャンクを吐くたび onData(data, position)。
+       data は muxer 内部バッファなので、transfer せずコピー(slice)して送る
+       (transferすると muxer 側が壊れる可能性)。position は任意位置書き込み対応 */
+    const target = new Mp4Muxer.StreamTarget({
+      onData: (data, position) => {
+        const copy = data.slice();
+        MC.exporter._pendWrites = (MC.exporter._pendWrites || Promise.resolve())
+          .then(() => MC.exporter._writerReq(
+            { type: "write", data: copy.buffer, position }, [copy.buffer]));
+        MC.exporter._pendWrites.catch(() => {});   // 本エラーは finalize/await で受ける
+      },
+      chunked: true,
+    });
+    MC.exporter._pendWrites = Promise.resolve();
+    return { name, target, viaWorker: true };
   } catch (err) {
     MC.log("OPFS 準備に失敗(メモリ方式へ): " + err.message);
     return null;
   }
+};
+
+/** worker 書き込みの完了を待ち、ファイルを確定して File を取り出す(読み取りはメインでOK) */
+MC.exporter.opfsFinalizeWorker = async name => {
+  await (MC.exporter._pendWrites || Promise.resolve());   // 積んだ write を全部流し切る
+  await MC.exporter._writerReq({ type: "finalize" });
+  const root = await navigator.storage.getDirectory();
+  const dir = await root.getDirectoryHandle(MC.exporter.OPFS_DIR, { create: false });
+  const fh = await dir.getFileHandle(name, { create: false });
+  return fh.getFile();
+};
+
+/** worker 書き込みを中断(失敗・キャンセル時)。ファイルの削除は呼び出し側 */
+MC.exporter.opfsAbortWorker = async () => {
+  try { await (MC.exporter._pendWrites || Promise.resolve()); } catch (_) {}
+  try { if (MC.exporter._writer) await MC.exporter._writerReq({ type: "abort" }); } catch (_) {}
 };
 
 /** 使い終わった書き出しファイルを消す。失敗しても黙って進む(掃除は必須ではない) */
@@ -699,8 +769,9 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
           "端末の空き容量を増やしてからもう一度お試しください。"
         );
       }
-      writable = opfs.writable;
-      target = new Mp4Muxer.FileSystemWritableFileStreamTarget(writable);
+      /* 書き込みは Worker(createSyncAccessHandle)。target は opfsCreate が
+         用意した StreamTarget をそのまま使う(iOSでOPFSに書ける唯一の道) */
+      target = opfs.target;
       /* 一括sweepはしない。別タブが書き出し中だと、その書きかけを消してしまう
          (レビュー指摘 2026-07-23)。片付けるのは「このタブの前回分」だけ */
       if (MC.exporter._opfsName && MC.exporter._opfsName !== outName) {
@@ -862,19 +933,18 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
     muxer.finalize();
     const name = outName;
 
+    if (opfs && opfs.viaWorker) {
+      /* Worker(createSyncAccessHandle)へ積んだ書き込みを流し切り、確定して
+         File を取り出す。取り出し(getFile)はメインで動く。iOSでOPFSに書ける道 */
+      const file = await MC.exporter.opfsFinalizeWorker(name);
+      MC.exporter._opfsName = name;   // 保存/破棄のあとに消すため覚えておく
+      MC.exporter.download(file, name);
+      MC.log(`export done: ${name} bytes=${file.size} frames=${totalFrames} audio=${audioOk} (OPFS/worker)`);
+      return { blob: file, name, opfs: true };
+    }
     if (writable) {
-      await writable.close();     // ここで初めてファイルが完成する
+      await writable.close();     // PC等のディスク直書き。ここでファイル完成
       writable = null;
-      if (opfs) {
-        /* OPFS 上のファイルを File として取り出す。Blob なので保存・共有の
-           導線(saveResult / triggerDownload)は従来のまま使える。
-           ここで JS ヒープへ全読みはしない(ブラウザがファイルから読む) */
-        const file = await opfs.handle.getFile();
-        MC.exporter._opfsName = name;   // 保存/破棄のあとに消すため覚えておく
-        MC.exporter.download(file, name);
-        MC.log(`export done: ${name} bytes=${file.size} frames=${totalFrames} audio=${audioOk} (OPFS)`);
-        return { blob: file, name, opfs: true };
-      }
       MC.log(`export done: ${name} frames=${totalFrames} audio=${audioOk} (直接書き込み)`);
       return { name, saved: true, blob: null, size: null };
     }
@@ -887,8 +957,9 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
     if (venc) { try { venc.close(); } catch (e) {} }
     // 途中で失敗したときも書きかけのハンドルは閉じる(閉じないとファイルが壊れたまま残る)
     if (typeof writableRef === "function") writableRef();
-    // OPFS は abort しても実体が残るので、成功していなければ消す
-    if (opfs && MC.exporter._opfsName !== opfs.name) {
+    // OPFS(worker)は成功していなければ中断してファイルを消す
+    if (opfs && opfs.viaWorker && MC.exporter._opfsName !== opfs.name) {
+      await MC.exporter.opfsAbortWorker().catch(() => {});
       MC.exporter.opfsRemove(opfs.name);
     }
     MC.exporter.running = false;
