@@ -432,6 +432,13 @@ MC.ui.initActionBar = () => {
 MC.ui.updateActionBar = () => {
   const bar = document.querySelector(".mz-actionbar");
   if (!bar) return;
+  /* ピンチズーム中はfixedがビューポートに追従せず画面中央に浮いて見える
+     (2026-07-24 実機スクショで発覚)。ズームが戻るまで引っ込める */
+  if (window.visualViewport && window.visualViewport.scale > 1.05) {
+    bar.classList.remove("on");
+    document.body.classList.remove("mz-actionbar-on");
+    return;
+  }
   const btn = bar.querySelector("#abPrimary");
   const ws = document.getElementById("workspace");
   // 進捗ドック表示中はドックに場所を譲る(操作もさせない)
@@ -1045,9 +1052,11 @@ MC.ui.renderTilt = (cams, show) => {
       range.value = c.rot;
       val.textContent = c.rot.toFixed(1) + "°";
       MC.saveState();
-      MC.preview.draw();      // 直した後をその場で見せる
+      MC.ui.tiltFocus(c);     // 対象カメラを単独表示して「直した後」を見せる
     };
     range.oninput = e => apply(parseFloat(e.target.value));
+    /* 触れた瞬間から対象カメラを見せる(値が変わる前でも) */
+    range.addEventListener("pointerdown", () => MC.ui.tiltFocus(c), { passive: true });
     row.querySelectorAll(".tilt-step").forEach(b => {
       b.onclick = () => apply((+c.rot || 0) + parseFloat(b.dataset.d));
     });
@@ -1069,6 +1078,26 @@ MC.ui.renderTilt = (cams, show) => {
     MC.ui.renderPlacement();
     MC.preview.draw();
   };
+};
+
+/* 傾き調整中: 対象カメラをプレビューに単独表示し、見えていなければ
+   画面上部へピン留めする(2026-07-24 優さん指示: 対象の動画を見ながら調整)。
+   操作が2.6秒止まったら通常表示へ戻す */
+MC.ui.tiltFocus = c => {
+  if (!c) return;
+  MC.preview.soloId = c.id;
+  clearTimeout(MC.ui._tiltFocusTimer);
+  MC.ui._tiltFocusTimer = setTimeout(() => {
+    MC.preview.soloId = null;
+    document.body.classList.remove("mz-pin-force");
+    if (MC.ui._syncFloatPos) MC.ui._syncFloatPos();
+    MC.preview.draw();
+  }, 2600);
+  const holder = document.querySelector(".canvas-holder");
+  const r = holder ? holder.getBoundingClientRect() : null;
+  const visible = r && r.height > 0 && r.top >= 0 && r.top < window.innerHeight * 0.5;
+  if (!visible) document.body.classList.add("mz-pin-force");
+  MC.preview.draw();
 };
 
 /* 未検出のカメラだけ自動で傾きを測る。手で直した値は上書きしない */
@@ -1298,7 +1327,7 @@ MC.ui.renderTotalEta = (dur, tIn, tOut) => {
   el.hidden = false;
   el.innerHTML = `<i class="fa-solid fa-hourglass-half" aria-hidden="true"></i> `
     + `素材の分析におよそ<b>${anaMin}分</b>、書き出しにおよそ<b>${expMin}分</b>かかりそうです。`
-    + `<span class="total-eta-sub">いま始めると${endTxt}に終わる見込みです（${clips.length}本・${MC.ui.fmtTime(showSec)}）</span>`;
+    + `<span class="total-eta-sub">いま始めると${endTxt}に終わる見込みです</span>`;   // 本数・尺は非表示(2026-07-24 優さん指示)
 };
 
 /* ---------- フロートプレビューはスクロール時だけ ----------
@@ -1312,43 +1341,53 @@ MC.ui.renderTotalEta = (dur, tIn, tOut) => {
      ・目印の空要素を差し込む案は、親がグリッドだと最後の枠へ飛ばされて
        まったく違う位置になった → DOMは足さない
    scrollY の比較だけなので rAF にも IntersectionObserver にも頼らない */
+/* 旧: 右上の小窓フロート。実機でサイトヘッダーへ重なり破綻したため廃止し、
+   「スクロールでプレビューが見えなくなったら、画面上部1/3へ全幅ピン留め」に
+   変えた(2026-07-24 優さん指示)。クラスは mz-pin-on。
+   ピン留め中は .stage が空になり本文が跳ねるので、元の高さを min-height で保つ */
 MC.ui.initFloatOnScroll = () => {
   const stage = document.querySelector(".stage");
   if (!stage) return;
-  let baseY = 0;          // 浮いていないときのプレビューの位置(ページ先頭から)
+  let baseY = 0;          // ピンでないときのプレビューの位置(ページ先頭から)
+  let baseH = 0;          // ピンでないときのプレビューの高さ
   const HYST = 24;        // 境目でのちらつき防止
 
-  let baseH = 0;          // 浮いていないときのプレビューの高さ
   const update = () => {
     if (document.body.classList.contains("mz-float-full")) return;   // 全画面中は触らない
-    /* 自動編集設定(polish)フェーズは常時フロート(2026-07-24 優さん指示)。
-       設定を触りながら小窓で結果を見る段階なので、スクロール位置に依らない */
-    if (document.body.dataset.mzjPhase === "polish" &&
-        document.body.classList.contains("mz-has-clips")) {
-      document.body.classList.add("mz-float-on");
+    if (document.body.classList.contains("mz-pin-force")) return;    // 傾き調整中は固定のまま
+    /* ピンチズーム中は fixed がビューポートに追従せず画面を汚すので出さない
+       (2026-07-24 実機スクショで発覚) */
+    if (window.visualViewport && window.visualViewport.scale > 1.05) {
+      document.body.classList.remove("mz-pin-on");
+      stage.style.minHeight = "";
       return;
     }
-    const on = document.body.classList.contains("mz-float-on");
+    const on = document.body.classList.contains("mz-pin-on");
     if (!on) {
       const rect = stage.getBoundingClientRect();
       /* まだ画面に出ていない(モード選択中など)ときは矩形が全部0になる。
-         そのまま基準にすると「常に浮いている」状態になる(実装中に踏んだ) */
-      if (!rect.height) { document.body.classList.remove("mz-float-on"); return; }
+         そのまま基準にすると「常にピン」状態になる(実装中に踏んだ) */
+      if (!rect.height) { return; }
       baseY = rect.top + window.scrollY;
       baseH = rect.height;
     }
     const barH = parseFloat(getComputedStyle(document.documentElement)
       .getPropertyValue("--mz-journey-h")) || 72;
-    /* 粘り(2026-07-24 優さん指示): プレビューの下端がバーを過ぎるまで
-       元の位置で見せ続ける。以前は上端が触れた瞬間に浮いて早すぎた */
+    /* プレビューの大半(70%)が隠れるまでは元の位置のまま粘る */
     const onLine = baseY + baseH * 0.7 - barH;
-    document.body.classList.toggle("mz-float-on", on
-      ? window.scrollY > onLine - HYST    // 浮いている間は少し粘ってから戻す
-      : window.scrollY > onLine);
+    const want = on
+      ? window.scrollY > onLine - HYST    // ピンの間は少し粘ってから戻す
+      : window.scrollY > onLine;
+    document.body.classList.toggle("mz-pin-on", want);
+    stage.style.minHeight = want ? baseH + "px" : "";   // 本文の跳ね防止
   };
 
   window.addEventListener("scroll", update, { passive: true });
   window.addEventListener("resize", update, { passive: true });
+  if (window.visualViewport) visualViewport.addEventListener("resize", update, { passive: true });
+  /* scrollイベントを取りこぼす環境(iOSの慣性終端やズーム復帰など)への保険。
+     700msごとの再判定なら負荷は無視できる */
+  setInterval(update, 700);
   MC.ui._syncFloatPos = update;   // 素材の増減で高さが変わったときに呼び直す
   update();
 };
@@ -1616,6 +1655,12 @@ MC.ui.runEasy = async () => {
         + (trimmed ? `書き出し範囲 ${MC.ui.fmtTime(ti)}〜${MC.ui.fmtTime(to)} を自動設定。` : "")
         + "プレビューを見て、よければ書き出してください",
     });
+    /* 分析後は傾き補正を必ずON+自動調整+チェック(2026-07-24 優さん指示)。
+       旧保存のOFFが残っていても、ここで確実にONへ揃える */
+    MC.S.horizonOn = true;
+    MC.saveState();
+    MC.ui.renderPlacement();     // tiltBoxのチェックと角度表示を描き直す
+    MC.ui.autoDetectTilt();      // 未検出のカメラだけ裏で測って反映
     /* 分析が終わったことを目立たせて知らせる(2026-07-23 優さん指示)。
        スマホは分析中に別アプリへ切り替えていることが多いので、
        戻ってきたとき/戻る前どちらでも気づけるように出す */
@@ -1846,15 +1891,26 @@ MC.ui.wire = () => {
   const closeBtn = $("#floatClose");
   MC.ui.setFloatFull = on => {
     if (!holder) return;
+    /* 全画面中は本文スクロールを完全に止める(2026-07-24 優さん指示: 下が
+       スクロールできて透けていた)。iOSはoverflow:hiddenだけでは止まらないので
+       bodyをposition:fixedにし、閉じるとき元のスクロール位置へ戻す */
+    if (on && !holder.classList.contains("float-full")) {
+      MC.ui._fullLockY = window.scrollY || 0;
+      document.body.style.top = -MC.ui._fullLockY + "px";
+    }
     holder.classList.toggle("float-full", !!on);
     document.body.classList.toggle("mz-float-full", !!on);   // バー類を隠すため
     document.documentElement.style.overflow = on ? "hidden" : "";
+    if (!on) {
+      document.body.style.top = "";
+      window.scrollTo(0, MC.ui._fullLockY || 0);
+    }
     MC.ui.renderFullLabel(!!on);   // 全画面中だけ「この見た目で書き出します」(2026-07-23)
   };
   if (holder) holder.addEventListener("click", ev => {
     if (ev.target.closest("#floatClose")) return;        // 閉じるボタンは別処理
     if (holder.classList.contains("float-full")) return; // 全画面中の誤タップでは閉じない
-    if (!document.body.classList.contains("mz-has-clips")) return;  // フロートでない時は何もしない
+    if (!document.body.classList.contains("mz-has-clips")) return;  // 素材が無い時は何もしない
     if (document.body.classList.contains("cutmode-open")) return;
     MC.ui.setFloatFull(true);
   });
@@ -2190,64 +2246,8 @@ MC.ui.renderFinish = () => {
   MC.ui.$("#colorStrength").value = MC.S.colorStrength;
   MC.ui.$("#filterSelect").value = MC.S.filterId;
 
-  // 自動水平補正のマスターON/OFFトグル
-  const htoggle = MC.ui.$("#horizonToggle");
-  const rows = MC.ui.$("#horizonRows");
-  if (htoggle) {
-    htoggle.checked = !!MC.S.horizonOn;
-    rows.style.display = MC.S.horizonOn ? "" : "none";
-    htoggle.onchange = async e => {
-      MC.S.horizonOn = e.target.checked;
-      MC.saveState();
-      if (MC.S.horizonOn) {
-        // ONにしたら未設定(rot=0)のスロットを一括で自動検出。手動調整済みの値は温存。
-        htoggle.disabled = true;
-        MC.ui.$("#finishStatus").textContent = "水平の傾きを自動検出中…";
-        try {
-          for (const c of MC.S.clips) {
-            if (c.rot) continue;
-            try { const sug = await MC.horizon.suggest(c); if (sug != null && sug !== 0) c.rot = sug; } catch (_) { /* noop */ }
-          }
-        } finally { htoggle.disabled = false; }
-        MC.ui.$("#finishStatus").textContent = "自動水平補正: ON";
-        MC.saveState();
-      } else {
-        MC.ui.$("#finishStatus").textContent = "自動水平補正: OFF";
-      }
-      MC.ui.renderFinish();
-      MC.preview.draw();
-    };
-  }
-
-  rows.innerHTML = "";
-  for (const c of MC.S.clips.filter(x => !x.isAudio && !x.isImage)) {
-    const div = document.createElement("div");
-    div.className = "slot-row";
-    div.innerHTML = `
-      <label title="${MC.ui.esc(c.name)}">${MC.ui.esc(c.name.length > 8 ? c.name.slice(0, 7) + "…" : c.name)}</label>
-      <input type="range" class="hrot" min="-5" max="5" step="0.1" value="${c.rot || 0}" style="flex:1; accent-color:var(--acc)">
-      <span class="hval hint" style="width:44px; text-align:right">${(c.rot || 0).toFixed(1)}°</span>
-      <button class="btn small hauto" title="傾きを自動検出">📐</button>`;
-    const slider = div.querySelector(".hrot"), val = div.querySelector(".hval");
-    slider.oninput = e => {
-      c.rot = parseFloat(e.target.value);
-      val.textContent = c.rot.toFixed(1) + "°";
-      MC.saveState(); MC.preview.draw();
-    };
-    div.querySelector(".hauto").onclick = async ev => {
-      ev.target.disabled = true;
-      try {
-        const sug = await MC.horizon.suggest(c);
-        if (sug == null || sug === 0) MC.ui.toast(`${c.name}: 傾きは検出されませんでした`);
-        else {
-          c.rot = sug; slider.value = sug; val.textContent = sug.toFixed(1) + "°";
-          MC.saveState(); MC.preview.draw();
-          MC.ui.toast(`${c.name}: ${sug.toFixed(1)}° の水平補正を提案・適用(スライダーで調整可)`);
-        }
-      } finally { ev.target.disabled = false; }
-    };
-    rows.appendChild(div);
-  }
+  /* 自動水平補正のUIはここには置かない。「カメラの配置と傾き」(tiltBox)に一本化
+     (2026-07-24 優さん指示: 2箇所にあって混雑していた) */
 };
 
 /* サリュート検出結果をスクラブバー上のマーカーで表示 */

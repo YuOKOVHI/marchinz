@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-app-v="1.42.0">
+<html lang="ja" data-mz-app-v="1.42.1">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -17,7 +17,7 @@
 <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
 <link rel="stylesheet" href="/tools/shared/progress.css">
 <link rel="stylesheet" href="/tools/shared/journey.css">
-<link rel="stylesheet" href="css/style.css?v=1.42.0">
+<link rel="stylesheet" href="css/style.css?v=1.42.1">
 <link rel="stylesheet" href="/tools/shared/sitechrome.css">
 </head>
 <body data-mz-tool="switcher">
@@ -102,8 +102,8 @@
       <div id="tiltBox" class="tilt-box" hidden>
         <label class="tilt-master">
           <input type="checkbox" id="tiltToggle">
-          <span>傾きを自動で直す</span>
-          <span class="hint">0.1°ずつ調整できます</span>
+          <span>傾きを自動で直す（自動水平補正）</span>
+          <span class="hint">分析後に自動でON。0.1°ずつ調整できます</span>
         </label>
         <div id="tiltStatus" class="status"></div>
         <div id="tiltRows"></div>
@@ -205,12 +205,7 @@
         <label class="hint">フィルター</label>
         <select id="filterSelect" class="select" style="width:auto; margin:0"></select>
       </div>
-      <label class="row" style="gap:8px; cursor:pointer; align-items:center">
-        <input type="checkbox" id="horizonToggle">
-        <span>自動水平補正</span>
-        <span class="hint">ONで傾きを自動検出して水平に。OFFで無効</span>
-      </label>
-      <div id="horizonRows" class="slot-rows"></div>
+      <!-- 自動水平補正のUIは「カメラの配置と傾き」(tiltBox)に一本化(2026-07-24) -->
       <label class="row" style="gap:8px; cursor:pointer; align-items:center; margin-top:10px">
         <input type="checkbox" id="autoTrimToggle">
         <span>最初と最後を自動カット</span>
@@ -261,7 +256,7 @@
   </aside>
 
   <section class="stage">
-    <div class="canvas-holder"><canvas id="cv" width="1080" height="1920"></canvas><button type="button" id="floatClose" class="float-close" aria-label="プレビューを小さくする"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button><span class="float-hint" aria-hidden="true"><i class="fa-solid fa-up-right-and-down-left-from-center"></i></span></div>
+    <div class="canvas-holder"><canvas id="cv" width="1080" height="1920"></canvas><button type="button" id="floatClose" class="float-close" aria-label="プレビューを小さくする"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div>
     <div class="transport">
       <button id="playBtn" class="btn round" title="再生/停止"><i class="fa-solid fa-play"></i></button>
       <div class="scrub-wrap">
@@ -345,24 +340,24 @@
 <script src="vendor/mp4box.all.min.js"></script>
 <script src="vendor/mp4-muxer.min.js"></script>
 <script src="vendor/fft.js"></script>
-<script src="js/state.js?v=1.42.0"></script>
-<script src="js/layout.js?v=1.42.0"></script>
-<script src="js/media.js?v=1.42.0"></script>
-<script src="js/demux.js?v=1.42.0"></script>
-<script src="js/audio.js?v=1.42.0"></script>
-<script src="js/sync.js?v=1.42.0"></script>
-<script src="js/beats.js?v=1.42.0"></script>
-<script src="js/sections.js?v=1.42.0"></script>
-<script src="js/visual.js?v=1.42.0"></script>
-<script src="js/director.js?v=1.42.0"></script>
-<script src="js/colormatch.js?v=1.42.0"></script>
-<script src="js/horizon.js?v=1.42.0"></script>
-<script src="js/salute.js?v=1.42.0"></script>
-<script src="js/preview.js?v=1.42.0"></script>
-<script src="js/timeline.js?v=1.42.0"></script>
-<script src="js/cutmode.js?v=1.42.0"></script>
-<script src="js/exporter.js?v=1.42.0"></script>
-<script src="js/ui.js?v=1.42.0"></script>
-<script src="js/app.js?v=1.42.0"></script>
+<script src="js/state.js?v=1.42.1"></script>
+<script src="js/layout.js?v=1.42.1"></script>
+<script src="js/media.js?v=1.42.1"></script>
+<script src="js/demux.js?v=1.42.1"></script>
+<script src="js/audio.js?v=1.42.1"></script>
+<script src="js/sync.js?v=1.42.1"></script>
+<script src="js/beats.js?v=1.42.1"></script>
+<script src="js/sections.js?v=1.42.1"></script>
+<script src="js/visual.js?v=1.42.1"></script>
+<script src="js/director.js?v=1.42.1"></script>
+<script src="js/colormatch.js?v=1.42.1"></script>
+<script src="js/horizon.js?v=1.42.1"></script>
+<script src="js/salute.js?v=1.42.1"></script>
+<script src="js/preview.js?v=1.42.1"></script>
+<script src="js/timeline.js?v=1.42.1"></script>
+<script src="js/cutmode.js?v=1.42.1"></script>
+<script src="js/exporter.js?v=1.42.1"></script>
+<script src="js/ui.js?v=1.42.1"></script>
+<script src="js/app.js?v=1.42.1"></script>
 </body>
 </html>

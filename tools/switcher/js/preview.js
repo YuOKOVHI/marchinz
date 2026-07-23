@@ -305,6 +305,34 @@ MC.preview = {
 
   draw() {
     if (!MC.S.clips.length) { this.drawEmpty(); return; }
+    /* 傾き調整中は対象カメラだけを全面に出す(2026-07-24 優さん指示)。
+       rot(水平補正)は MC.drawFull → prepSrc 経由で書き出しと同じ式が掛かる */
+    if (this.soloId != null) {
+      const sc = MC.getClip(this.soloId);
+      if (sc && !sc.isAudio) {
+        const ctx = this.ctx, W = this.canvas.width, H = this.canvas.height;
+        ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H);
+        MC.drawFull(ctx, W, H, this.soloId, id => {
+          const cc = MC.getClip(id);
+          if (!cc) return null;
+          if (cc.isImage) return { source: cc.img, w: cc.width, h: cc.height, rotation: 0 };
+          if (!cc.video || !cc.video.videoWidth) return null;
+          return { source: cc.video, w: cc.video.videoWidth, h: cc.video.videoHeight, rotation: 0 };
+        });
+        // 何を見ているかのラベル(帯+カメラ名+角度)
+        const fs = Math.round(W * 0.032);
+        ctx.save();
+        ctx.fillStyle = "rgba(8,12,18,0.62)";
+        ctx.fillRect(0, 0, W, fs * 2.2);
+        ctx.fillStyle = "#fff";
+        ctx.font = `bold ${fs}px -apple-system, "Hiragino Sans", sans-serif`;
+        ctx.textBaseline = "middle";
+        ctx.fillText(`傾き調整中: ${MC.ui.shortName(sc.name)}  ${(+sc.rot || 0).toFixed(1)}°`,
+          fs * 0.6, fs * 1.1);
+        ctx.restore();
+        return;
+      }
+    }
     /* 「もう一度タップ」待ちの間だけ、そのカメラの画をプレビューに出す(まだ確定ではない)。
        cutList / MC.cutAt は書き出しも通る道なので触らず、ここでソースだけ差し替える。
        差し替えるのは「いま映っているカット」の絵だけ。ワイプの子画面は対象外 */

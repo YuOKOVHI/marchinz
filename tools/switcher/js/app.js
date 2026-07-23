@@ -16,8 +16,9 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (saved.preset && MC.PRESETS[saved.preset]) MC.S.preset = saved.preset;
     if (saved.layoutId && MC.LAYOUTS[saved.layoutId]) MC.S.layoutId = saved.layoutId;
     if (saved.colorOn != null) MC.S.colorOn = saved.colorOn;
-    if (saved.horizonOn != null) MC.S.horizonOn = saved.horizonOn;
-    else if (Array.isArray(saved.clips) && saved.clips.some(c => c.rot)) MC.S.horizonOn = true; // 旧プロジェクト移行: rot設定済みなら水平補正ONを維持
+    /* horizonOn(傾き補正)は保存値を復元しない=常に既定ON。旧保存のOFFを
+       引き継ぐと「初期でオン」の指示が巻き戻る(2026-07-24 実機で発覚)。
+       セッション内でOFFにするのは自由だが、次回開いたらONに戻る */
     if (saved.colorStrength != null) MC.S.colorStrength = saved.colorStrength;
     if (saved.exportQuality) {
       // 旧ID(sns/hd/pro)は新ID(light/full)へ寄せてから採用する
