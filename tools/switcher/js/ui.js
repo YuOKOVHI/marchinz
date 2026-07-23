@@ -401,7 +401,7 @@ MC.ui.initJourney = () => {
     phases: [
       { id: "mat",    label: "動画を選ぶ",   hint: "3つまでまとめて選べます" },
       { id: "sync",   label: "同期と分析",   hint: "音のズレ合わせと素材の分析をします" },
-      { id: "polish", label: "自動編集設定", hint: "おすすめ設定のまま「自動編集を開始」でOK" },
+      { id: "polish", label: "自動編集設定", hint: "設定はそのままでOK。「動画を書き出す」で仕上がります" },
       { id: "export", label: "書き出し",     hint: "「動画を書き出す」で完成です" },
     ],
     doneHint: "書き出し完了。調整して書き出し直すこともできます",
@@ -466,7 +466,7 @@ MC.ui.updateActionBar = () => {
         document.body.classList.remove("mz-actionbar-on");
         return;
       }
-      conf = { label: "自動編集を開始", icon: "fa-wand-magic-sparkles",
+      conf = { label: "分析を開始", icon: "fa-wand-magic-sparkles",
         disabled: eb.disabled, act: () => eb.click() };
     } else if (cur === "sync") {
       conf = { label: "波形で同期する", icon: "fa-wave-square",
@@ -1172,7 +1172,7 @@ MC.ui.renderEasyButton = () => {
     btn.innerHTML = '<i class="fa-solid fa-file-export"></i> 動画を書き出す';
     btn.classList.add("export-ready");
   } else {
-    btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> 自動編集を開始';
+    btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> 分析を開始';
     btn.classList.remove("export-ready");
   }
 };
