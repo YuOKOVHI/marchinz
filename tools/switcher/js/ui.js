@@ -1482,7 +1482,10 @@ MC.ui._onVisChange = () => {
   if (MC.ui._hiddenAt) {
     const ms = Date.now() - MC.ui._hiddenAt;
     MC.ui._hiddenAt = 0;
-    if (ms >= 2000) MC.ui.showInterruptNote(ms);   // ③
+    /* まだ走っているなら「続けています」、終わっていたら「やり直せます」。
+       走っている最中に「やり直せます」と出すと、健全な書き出しを
+       捨ててやり直す人が出る(2026-07-24 通知タップ問題の一部) */
+    if (ms >= 2000) MC.ui.showInterruptNote(ms, { running: MC.ui._busy });   // ③
   }
 };
 
@@ -1500,9 +1503,14 @@ MC.ui.showInterruptNote = (ms, opts = {}) => {
   }
   const head = opts.crashed
     ? "前回は途中で終わっています。"
-    : "中断されたかもしれません。";
+    : opts.running
+      ? "離れていた間は止まっていました。"
+      : "中断されたかもしれません。";
+  const body = opts.running
+    ? "続きから進めています。終わるまでこの画面のままお待ちください。"
+    : "同期とカット割は残っています。書き出しだけやり直せます。";
   el.innerHTML = '<i class="fa-solid fa-circle-pause" aria-hidden="true"></i> '
-    + `<span><b>${head}</b>同期とカット割は残っています。書き出しだけやり直せます。</span>`
+    + `<span><b>${head}</b>${body}</span>`
     + '<button type="button" class="mz-interrupt-close" aria-label="閉じる">×</button>';
   el.querySelector(".mz-interrupt-close").onclick = () => MC.ui.clearInterruptNote();
   /* 中断の帯が出ている間は、素材欄の常設ヒント(青の上限案内・お待ちください)を

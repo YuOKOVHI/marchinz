@@ -597,6 +597,29 @@ MC.exporter.probeOpfs = async force => {
   return ok;
 };
 
+/* ---- 画面が隠れていた時間を数えないタイムアウト(2026-07-24 優さん実機報告) ----
+   書き出し中にLINE等の通知を開くとSafariごと凍結される(タイマーもworkerも止まる)。
+   復帰した瞬間、期限切れのsetTimeoutがworkerの応答より先に発火し、
+   まだ健全な書き出しを「応答がありません」で殺していた。
+   visibilitychangeを見て、隠れたことがあれば測り直す。
+   見えたままの本物のハングは、従来どおり ms で打ち切る */
+MC.exporter._visEpoch = 0;
+document.addEventListener("visibilitychange", () => { MC.exporter._visEpoch++; });
+MC.exporter._patientTimeout = (fn, ms) => {
+  let epoch = MC.exporter._visEpoch;
+  let tm;
+  const fire = () => {
+    if (document.visibilityState === "hidden" || MC.exporter._visEpoch !== epoch) {
+      epoch = MC.exporter._visEpoch;   // 隠れていた間は無かったことにして再計測
+      tm = setTimeout(fire, ms);
+      return;
+    }
+    fn();
+  };
+  tm = setTimeout(fire, ms);
+  return () => clearTimeout(tm);
+};
+
 /* ---- 書き込みワーカー(js/exportwriter.js)の起動と1往復のやりとり ---- */
 MC.exporter._writer = null;
 MC.exporter._writerBusy = false;
@@ -610,15 +633,15 @@ MC.exporter.initWriter = () => {
     /* worker からの ready 通知を待ってから使い始める(2026-07-24)。
        以前は即resolveしており、workerの読み込みに失敗すると次の open が
        永遠に待つ穴があった */
-    const tm = setTimeout(() => { try { w.terminate(); } catch (_) {} rej(new Error("writer worker起動タイムアウト")); }, 8000);
+    const cancelTm = MC.exporter._patientTimeout(() => { try { w.terminate(); } catch (_) {} rej(new Error("writer worker起動タイムアウト")); }, 8000);
     w.onerror = ev => {
-      clearTimeout(tm);
+      cancelTm();
       try { w.terminate(); } catch (_) {}
       rej(new Error("writer workerを起動できません" + (ev && ev.message ? ": " + ev.message : "")));
     };
     const onReady = ev => {
       if (!ev.data || ev.data.type !== "ready") return;
-      clearTimeout(tm);
+      cancelTm();
       w.removeEventListener("message", onReady);
       w.onerror = null;
       MC.exporter._writer = w;
@@ -634,14 +657,14 @@ MC.exporter.initWriter = () => {
 MC.exporter._writerReq = (msg, transfer, timeoutMs = 12000) => new Promise((res, rej) => {
   const w = MC.exporter._writer;
   if (!w) { rej(new Error("writer未初期化")); return; }
-  const tm = setTimeout(() => {
+  const cancelTm = MC.exporter._patientTimeout(() => {
     w.removeEventListener("message", onMsg);
     rej(new Error((msg && msg.type) + ": workerの応答がありません"));
   }, timeoutMs);
   const onMsg = ev => {
     const m = ev.data || {};
     if (m.type === "ready") return;   // 起動通知はここでは無視
-    clearTimeout(tm);
+    cancelTm();
     w.removeEventListener("message", onMsg);
     if (m.type === "error") rej(new Error(m.op + ": " + m.message));
     else res(m);
