@@ -377,13 +377,23 @@ RA.MP4Source = class {
       }
     };
     mp4.setExtractionOptions(trackId, null, { nbSamples: 64 });
+    /* fromSec=0 でも必ず seek する。init() の moov 読み(mdatをヘッダだけ渡して
+       スキップさせる方式)を経た同一 mp4box インスタンスは、その時点で内部の
+       読み取り位置が既にファイル末尾(moov の直後)まで進んでいる。ここで
+       fileStart=0 から appendBuffer し直しても、mp4box は「もう見た範囲」と
+       判断して先頭のわずかな部分しか受け付けず、以降は黙って無視する
+       (onSamplesが一切発火しない=サンプル0件)。mp4.seek() を呼ぶと内部位置が
+       正しく巻き戻り、以降のappendBufferが効くようになる。
+       2026-07-20にSwitcher/Vlogで判明した「静かな黒抜け」と同一の罠。
+       このツールは fromSec=0 を常用する(exporter が範囲先頭から読む)ため、
+       条件付きseekのままでは moov が末尾にある MOV で必ず踏む。
+       エラーもguardタイムアウトも出ないので、直したことはコードでは確認できず
+       実素材での再生確認が要る。(2026-07-25 横展開) */
     let pos = 0;
-    if (fromSec > 0) {
-      try {
-        const sk = mp4.seek(fromSec, true);
-        pos = sk && sk.offset ? sk.offset : 0;
-      } catch (e) { pos = 0; }
-    }
+    try {
+      const sk = mp4.seek(Math.max(0, fromSec), true);
+      pos = sk && sk.offset ? sk.offset : 0;
+    } catch (e) { pos = 0; }
     mp4.start();
     const CH = 4 << 20;
     let eof = false;

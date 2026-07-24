@@ -1402,7 +1402,14 @@
       user_name: profile.display_name || "ユーザー",
       user_avatar: profile.avatar_url || "",
     };
-    await writePost(post);
+    /* writePost は失敗をローカルに逃がさず投げる(2026-07-25)。
+       ここで受けないと、返信が届いていないのに画面が無反応になる */
+    try {
+      await writePost(post);
+    } catch (e) {
+      setMsg(communityFriendlyErrorMessage(e, "返信の投稿に失敗しました。時間をおいて再度お試しください。"), true);
+      return;
+    }
     window.MarchinZAdminUgcLog?.recordBoardReply?.({
       postId: post.id,
       threadRootId: threadRoot.id,
@@ -1752,11 +1759,18 @@
     if (!db) {
       return loadLocalReports().sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
     }
+    /* 失敗したらローカルの控えではなく空を返す(2026-07-25)。
+       通報の read は isPrivileged() のみ許可(firestore.rules)なので、
+       一般ユーザーではここが必ず permission-denied になる。これは正常系。
+       以前はこのcatchが localStorage の通報控えを返していたため、
+       権限の無い人のモデレーション画面に「偽の通報一覧」が出ていた。
+       ここで例外を投げると refreshAll の Promise.all が落ちて掲示板ごと
+       描画されなくなるので、投げずに空で返す */
     try {
       const snap = await db.collection("mll_community_reports").orderBy("created_at", "desc").limit(300).get();
       return snap.docs.map((d) => mapReport({ id: d.id, ...(d.data() || {}) }));
     } catch {
-      return loadLocalReports().sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+      return [];
     }
   }
 
@@ -1791,13 +1805,14 @@
       saveLocalPosts(posts.slice(0, 200).map(normalizePostDoc));
       return;
     }
-    try {
-      await db.collection("mll_community_posts").doc(doc.id).set(doc);
-    } catch {
-      const posts = loadLocalPosts();
-      posts.unshift(mapPost(doc));
-      saveLocalPosts(posts.slice(0, 200).map(normalizePostDoc));
-    }
+    /* Firestoreへの書き込みが失敗したらローカルに逃がさず、そのまま投げる
+       (2026-07-25 セキュリティ/正しさレビュー)。
+       以前はここで catch して localStorage に積んでいたため、凍結ユーザーや
+       ルール検証に弾かれた投稿が「投稿しました」と表示され、本人の端末にだけ
+       並んだ。誰にも届いていないのに成功に見えるのが最悪の失敗の仕方なので、
+       呼び出し側でエラーを見せる。db自体が無い場合(上のif)だけは従来どおり
+       ローカル保存する ─ これはFirebase未設定のローカル開発用の経路 */
+    await db.collection("mll_community_posts").doc(doc.id).set(doc);
   }
 
   async function updatePost(updated) {
