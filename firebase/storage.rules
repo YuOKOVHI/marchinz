@@ -44,7 +44,11 @@ service firebase.storage {
 
     // Log日記の写真（クライアントは mll_event_diary_media/{uid}/... にアップロード）
     match /mll_event_diary_media/{userId}/{fileName} {
-      allow read: if signedIn();
+      // 本人のみ。uid照合が無いと resource を参照しないルールになり、
+      // Storage の list 操作まで許可される(listAll で他人の非公開写真を
+      // 全列挙→getDownloadURL で取得できた)。2026-07-25 セキュリティレビュー。
+      // 他人への公開は Firestore に保存済みのトークン付き downloadURL 経由のみ。
+      allow read: if signedIn() && request.auth.uid == userId;
 
       allow write: if signedIn()
         && request.resource.size < 8 * 1024 * 1024
@@ -57,7 +61,11 @@ service firebase.storage {
 
     // MarchinZ Moment の写真（mll_moment_media/{uid}/...）
     match /mll_moment_media/{userId}/{fileName} {
-      allow read: if signedIn();
+      // 本人のみ。uid照合が無いと resource を参照しないルールになり、
+      // Storage の list 操作まで許可される(listAll で他人の非公開写真を
+      // 全列挙→getDownloadURL で取得できた)。2026-07-25 セキュリティレビュー。
+      // 他人への公開は Firestore に保存済みのトークン付き downloadURL 経由のみ。
+      allow read: if signedIn() && request.auth.uid == userId;
 
       allow write: if signedIn()
         && request.resource.size < 8 * 1024 * 1024

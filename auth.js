@@ -2661,6 +2661,9 @@
     if (!storage || !uid) return;
     const r = (path) => storage.ref(path);
     await deleteStorageSubtreeRoot(r(`mll_event_diary_media/${uid}`));
+    // Moment は後から追加され、退会時の削除に追随していなかった(2026-07-25)。
+    // 消されないまま残ると、退会後も写真が Storage に残り続ける
+    await deleteStorageSubtreeRoot(r(`mll_moment_media/${uid}`));
     await deleteStorageSubtreeRoot(r(`mll_community/${uid}`));
     await Promise.all(
       ["avatar.jpg", "cover.jpg"].map((fn) => r(`mll_profile_media/${uid}/${fn}`).delete().catch(() => {})),

@@ -698,8 +698,10 @@ service cloud.firestore {
         'profile_address_prefecture_public',
         'profile_prefecture',
         'profile_attributes',
-        'profile_gender',
-        'profile_birthdate',
+        // profile_gender / profile_birthdate はここに置かない(2026-07-25)。
+        // 全文用 allowlist には元から無く、差分用にだけ在ったため、本人が
+        // 誰でも読める公開文書 root へ性別・生年月日を書けてしまっていた。
+        // 正式な置き場は profile_private/default(下の mllProfilePrivate... で型検証)。
         'like_show_mll',
         'like_show_community',
         'like_show_calendar',
