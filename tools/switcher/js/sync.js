@@ -150,24 +150,24 @@ MC.sync.run = async p => {
   ];
 
   const okMap = new Map();   // clip → {raw, conf}
+  /* 基準は「最初に音の取れた1本」に固定する。ステージ途中で基準を替えると、
+     成功済みの raw の基準が割れて全体のオフセットが混ざる(レビュー指摘 2026-07-24) */
   let ref = null;
   let pending = clips.slice();
   for (const st of STAGES) {
     if (!pending.length) break;
-    /* 基準は毎ステージ同じ窓で読み直す(成功済みの raw は絶対値なので影響しない) */
-    ref = clips.find(c => c.id === MC.S.refClipId) || clips[0];
-    await extractStage([ref, ...pending.filter(c => c !== ref)], st.win, st.label);
-    if (!ref.audio8k) {
-      // 基準の音が取れない → 音の取れた別クリップを基準に(従来挙動の踏襲)
-      const alt = clips.find(c => c.audio8k);
-      if (!alt) break;
-      ref = alt;
+    const cand = ref || clips.find(c => c.id === MC.S.refClipId) || clips[0];
+    await extractStage([cand, ...pending.filter(c => c !== cand)], st.win, st.label);
+    if (!ref) {
+      ref = cand.audio8k ? cand : (clips.find(c => c.audio8k) || null);
+      if (!ref) continue;   // このステージでは誰の音も取れない → 次の窓で再挑戦
+      pending = pending.filter(c => c !== ref);
+      if (ref !== cand) MC.log(`sync: 基準を ${ref.name} に変更(元の基準の音が取れないため)`);
     }
     const fails = [];
     let j = 0;
     for (const c of pending) {
       j++;
-      if (c === ref) continue;
       if (!c.audio8k) { fails.push(c); continue; }
       if (p) p.step(2, "ズレを合わせています…").count(j, pending.length, { unit: "本目", name: c.name });
       await new Promise(r => setTimeout(r, 0));  // UI更新の息継ぎ

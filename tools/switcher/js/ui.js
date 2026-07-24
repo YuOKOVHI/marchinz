@@ -371,7 +371,7 @@ MC.ui.renderAll = () => {
   /* カット切替モードの入口はカットがあるときだけ */
   {
     const cmb = MC.ui.$("#cutModeBtn");
-    if (cmb) cmb.hidden = !MC.S.cutList.length;
+    if (cmb) cmb.hidden = !MC.S.cutList.length || MC.S.mode !== "switch";   // カット割は③だけ(2026-07-24)
   }
   MC.ui.renderClips();
   MC.ui.renderLimitWhy();
@@ -1985,7 +1985,16 @@ MC.ui.wire = () => {
   fi.onchange = () => { MC.media.addFiles([...fi.files]); fi.value = ""; };
   fiv.onchange = () => { MC.media.addFiles([...fiv.files]); fiv.value = ""; };
   /* 音声を選ぶフェーズ(2026-07-24)。別録り音源の取り込みは廃止(優さん指示) */
-  $("#audioListenBtn").onclick = () => MC.preview.toggle();
+  $("#audioListenBtn").onclick = () => {
+    MC.preview.toggle();
+    /* 再生状態はplay()のPromise後に確定するので少し待ってから表示を合わせる */
+    setTimeout(() => {
+      const b = $("#audioListenBtn");
+      if (b) b.innerHTML = MC.S.playing
+        ? '<i class="fa-solid fa-pause"></i> 停止'
+        : '<i class="fa-solid fa-headphones"></i> 試聴する';
+    }, 250);
+  };
   $("#audioDecideBtn").onclick = () => {
     if (MC.ui._busy) return;
     MC.preview.pause();

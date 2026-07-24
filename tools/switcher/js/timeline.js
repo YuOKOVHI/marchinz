@@ -15,7 +15,9 @@ MC.timeline.color = clipId => {
 
 MC.timeline.visible = () => {
   const L = MC.LAYOUTS[MC.S.layoutId];
-  return (L.type === "switch" || L.type === "wipe") && MC.S.cutList.length > 0;
+  /* カット割は③自動スイッチングだけ。ワイプはメイン固定になったので
+     旧セッションのcutListが復元されてもタイムラインは出さない(2026-07-24) */
+  return MC.S.mode === "switch" && L.type === "switch" && MC.S.cutList.length > 0;
 };
 
 /* いま再生ヘッドがあるカットの index。プレビューに出ている画そのもの。
