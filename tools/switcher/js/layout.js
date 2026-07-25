@@ -105,9 +105,13 @@ MC.drawSource = (ctx, src, rx, ry, rw, rh, pan = 0.5) => {
 };
 
 /* クリップの仕上げ(カラーマッチ/フィルター/水平)をsrcに適用 */
-MC.prepSrc = (clip, src) => {
+/* clip の仕上げ(カラーマッチ/フィルター/水平)を src に適用。
+   dstW/dstH は「この src が最終的に描かれる矩形の大きさ」。色処理をそこまでの
+   解像度で済ませるために渡す(2026-07-25。渡さないと素材の解像度のまま処理して
+   9割を捨てることになり、書き出し時間の主因だった) */
+MC.prepSrc = (clip, src, dstW, dstH) => {
   if (!src) return null;
-  if (MC.color && MC.color.active(clip)) src = MC.color.process(clip, src);
+  if (MC.color && MC.color.active(clip)) src = MC.color.process(clip, src, dstW, dstH);
   if (MC.S.horizonOn && clip.rot) src = Object.assign({}, src, { fineRot: clip.rot * Math.PI / 180 });
   return src;
 };
@@ -115,7 +119,7 @@ MC.prepSrc = (clip, src) => {
 /* フルフレーム描画(なければ黒) */
 MC.drawFull = (ctx, W, H, clipId, resolveSrc, alpha = 1) => {
   const clip = MC.getClip(clipId);
-  const src = clip ? MC.prepSrc(clip, resolveSrc(clipId)) : null;
+  const src = clip ? MC.prepSrc(clip, resolveSrc(clipId), W, H) : null;
   if (!src) return;
   ctx.save();
   ctx.globalAlpha = alpha;
@@ -130,10 +134,10 @@ MC.borderPx = (W, H) => MC.S.borderW * Math.max(1, Math.min(W, H) / 1080);
 MC.drawPip = (ctx, W, H, clipId, pos, resolveSrc) => {
   const pipClip = MC.getClip(clipId);
   if (!pipClip) return;
-  const src = MC.prepSrc(pipClip, resolveSrc(pipClip.id));
-  if (!src) return;
   const s = MC.S.wipeSize;
   const pw = W * s, ph = pw * 9 / 16;
+  const src = MC.prepSrc(pipClip, resolveSrc(pipClip.id), pw, ph);
+  if (!src) return;
   const px = pos.includes("l") ? 0 : W - pw;   // 角にぴったり
   const py = pos.includes("t") ? 0 : H - ph;
   MC.drawSource(ctx, src, px, py, pw, ph, pipClip.pan);
@@ -182,7 +186,7 @@ MC.drawComposite = (ctx, W, H, t, resolveSrc) => {
     const rx = r.x * W, ry = r.y * H, rw = r.w * W, rh = r.h * H;
     const clipId = MC.S.slots[i];
     const clip = clipId != null ? MC.getClip(clipId) : null;
-    const src = clip ? MC.prepSrc(clip, resolveSrc(clip.id)) : null;
+    const src = clip ? MC.prepSrc(clip, resolveSrc(clip.id), rw, rh) : null;
     if (src) {
       MC.drawSource(ctx, src, rx, ry, rw, rh, clip.pan);
     } else {

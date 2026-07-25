@@ -236,8 +236,14 @@ MC.color.getProc = (w, h) => {
   if (p) return p;
   const canvas = document.createElement("canvas");
   canvas.width = w; canvas.height = h;
-  const gl = canvas.getContext("webgl", { premultipliedAlpha: false, preserveDrawingBuffer: true });
+  const opts = { premultipliedAlpha: false, preserveDrawingBuffer: true };
+  /* WebGL2 を優先する理由は縮小の画質。WebGL1 は2の冪でないテクスチャに
+     ミップマップを作れず、LINEAR だけで 1920→960 に縮めるとモアレが出る
+     (1px市松の実測で平均差28.9/255)。WebGL2 は NPOT でも作れる。
+     シェーダは GLSL ES 1.00 のままで WebGL2 でもそのまま動く。 */
+  const gl = canvas.getContext("webgl2", opts) || canvas.getContext("webgl", opts);
   if (!gl) return null;
+  const isGl2 = typeof WebGL2RenderingContext !== "undefined" && gl instanceof WebGL2RenderingContext;
   const mk = (type, src) => {
     const s = gl.createShader(type);
     gl.shaderSource(s, src); gl.compileShader(s);
@@ -263,7 +269,7 @@ MC.color.getProc = (w, h) => {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   gl.viewport(0, 0, w, h);
   const u = n => gl.getUniformLocation(prog, n);
-  p = { canvas, gl, w, h,
+  p = { canvas, gl, w, h, gl2: isGl2, minFilter: gl.LINEAR,
     uSrcMean: u("uSrcMean"), uScale: u("uScale"), uTgtMean: u("uTgtMean"),
     uMatch: u("uMatch"), uContrast: u("uContrast"), uSat: u("uSat"), uWarm: u("uWarm"),
     uSplit: u("uSplit"), uRolloff: u("uRolloff"), uBlack: u("uBlack"), uKey: u("uKey") };
@@ -271,10 +277,74 @@ MC.color.getProc = (w, h) => {
   return p;
 };
 
+/* 処理解像度は「素材のまま/半分/4分の1」の3段だけにする。理由は2つ:
+   ① getProc は寸法ごとに WebGL コンテキストを作る。描画先に合わせて
+      無段階に決めるとレイアウトや画質設定を変えるたびに新しい寸法が生まれ、
+      ブラウザのコンテキスト上限(16前後)に当たって古いものが殺される
+   ② 1/2・1/4 はミップマップの段そのものなので、縮小の品質が最も素直に出る
+   1/2 より細かく刻んでも、実測では速度がほとんど変わらなかった(759x427 でも
+   960x540 と同等)ので、刻む意味がない */
+MC.color.SCALE_LADDER = [1, 0.5, 0.25];
+
+/* WebGL2 が使えるか(縮小してよいかの判定)。1度だけ実測して覚える。
+   判定用のコンテキストは即座に手放す ─ 残すと本来の処理用と枠を奪い合う
+   (ブラウザは同時に持てる WebGL コンテキストを16前後に制限しており、
+    超えると古いものから殺される) */
+MC.color._gl2 = null;
+MC.color.gl2Available = () => {
+  if (MC.color._gl2 == null) {
+    try {
+      const g = document.createElement("canvas").getContext("webgl2");
+      MC.color._gl2 = !!g;
+      const lose = g && g.getExtension("WEBGL_lose_context");
+      if (lose) lose.loseContext();
+    } catch (e) { MC.color._gl2 = false; }
+  }
+  return MC.color._gl2;
+};
+
+/* 縮小して描くときだけミップマップを作り、min フィルタを切り替える。
+   毎コマ texImage2D し直すので generateMipmap も毎コマ必要。
+   WebGL1 では NPOT に作れないので、その環境は LINEAR のまま(画質は従来どおり
+   ─ ただし下の scale が 1 に固定されるので、そもそも縮小しない) */
+const setMinFilter = (p, wantMip) => {
+  const gl = p.gl;
+  const want = (wantMip && p.gl2) ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR;
+  if (wantMip && p.gl2) gl.generateMipmap(gl.TEXTURE_2D);
+  if (p.minFilter !== want) {
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, want);
+    p.minFilter = want;
+  }
+};
+
 /* srcにカラーマッチ+フィルターを適用したsrcを返す(GL不可なら素通し) */
-MC.color.process = (clip, src) => {
+MC.color.process = (clip, src, dstW, dstH) => {
   const cap = 1920;
-  const scale = Math.min(1, cap / Math.max(src.w, src.h));
+  let scale = Math.min(1, cap / Math.max(src.w, src.h));
+  /* 出力で実際に使う解像度までしか処理しない(2026-07-25)。
+     720x1280の3分割なら1枚のペインは720x427。素材1920x1080をそのまま処理すると
+     面積で6.7倍を作って9割捨てることになり、これが書き出し時間の主因だった。 */
+  if (dstW > 0 && dstH > 0) {
+    const rot = (((src.rotation || 0) % 360) + 360) % 360;
+    const swapped = rot === 90 || rot === 270;
+    const sw = swapped ? src.h : src.w;          // drawSource と同じ「表示上の寸法」
+    const sh = swapped ? src.w : src.h;
+    let need = Math.max(dstW / sw, dstH / sh);   // coverフィットの拡大率
+    // 水平補正は隅を隠すぶんさらにズームするので、その余白を見込む(drawSourceのzと同式)
+    if (MC.S.horizonOn && clip.rot) {
+      const th = Math.abs(clip.rot * Math.PI / 180);
+      need *= Math.max((sw * Math.cos(th) + sh * Math.sin(th)) / sw,
+                       (sw * Math.sin(th) + sh * Math.cos(th)) / sh);
+    }
+    /* WebGL1 しか無い端末は NPOT のミップマップを作れず、縮小するとモアレが出る。
+       その環境では素材の解像度のまま処理する(従来どおりの画質を守る) */
+    if (MC.color.gl2Available()) {
+      // need を下回らない中で最小の段を選ぶ(必要な解像度は必ず確保する)
+      let pick = MC.color.SCALE_LADDER[0];
+      for (const lv of MC.color.SCALE_LADDER) if (lv >= need) pick = lv;
+      scale = Math.min(scale, pick);
+    }
+  }
   const w = Math.max(2, Math.round(src.w * scale));
   const h = Math.max(2, Math.round(src.h * scale));
   const p = MC.color.getProc(w, h);
@@ -283,6 +353,7 @@ MC.color.process = (clip, src) => {
   try {
     if (MC.color._uploadFallback) throw new Error("fallback");
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src.source);
+    setMinFilter(p, scale < 1);
   } catch (e) {
     // VideoFrame直接アップロード非対応環境: 2D canvas経由
     if (!MC.color._scratch) MC.color._scratch = document.createElement("canvas");
@@ -290,6 +361,9 @@ MC.color.process = (clip, src) => {
     if (sc.width !== w || sc.height !== h) { sc.width = w; sc.height = h; }
     sc.getContext("2d").drawImage(src.source, 0, 0, w, h);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, sc);
+    /* この経路は2Dキャンバスで既に w×h まで縮めてある(こちらの縮小は高品質)。
+       テクスチャと描画先が同じ大きさなので、ミップマップは要らない */
+    setMinFilter(p, false);
     MC.color._uploadFallback = true;
   }
   const s = MC.S.colorStrength;

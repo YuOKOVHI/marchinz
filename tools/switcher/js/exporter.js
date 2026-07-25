@@ -906,7 +906,7 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
 
     await MC.exporter.preflightFiles(used.filter(c => !c.isImage));
 
-    const prof = { decode: 0, draw: 0, encode: 0, skips: 0, reseekMs: 0 };
+    const prof = { decode: 0, draw: 0, encode: 0, wait: 0, skips: 0, reseekMs: 0 };
     for (const c of used) {
       if (c.isImage) continue;   // 静止画はデコード不要(そのまま描く)
       const pipe = new MC.exporter.VideoPipe(c);
@@ -975,7 +975,6 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
       if (audioFatal) throw audioFatal;
       const t = tIn + k / fps;
       const srcMap = new Map();
-      const _tDec = performance.now();
       /* このコマに実際映るカメラだけデコードする(2026-07-22)。
          出番のないカメラのパイプは触らず眠らせ、次に必要になったとき
          frameAt の前方ジャンプ検知が間を飛ばす。
@@ -993,7 +992,18 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
          「未処理のPromise拒否」になる。捨てハンドラを先に付けて黙らせ、
          本物のエラーは下の await decodeP で受ける */
       decodeP.catch(() => {});
+      /* エンコーダの詰まり待ちは「デコード待ち」とは別物。混ぜて数えていたため
+         内訳が読めなくなっていた(2026-07-25 実測。ログはデコード81%と言うが、
+         デコードを止めても3%しか縮まなかった)。エンコードは投入が非同期なので、
+         この「下流待ち」は GPU 全体が追いついていない時間で、エンコード単体の
+         コストではない ─ 待っている間にデコードも色処理も裏で進んでいる。
+         ここが伸びていたら「GPUが飽和している」と読む(ビットレートを下げる
+         判断に直結させないこと)。実際、色処理を入れるとこの待ちが
+         0.8秒→2.8秒 に伸びた(エンコードの条件は同じまま)。 */
+      const _tWait = performance.now();
       while (venc.encodeQueueSize > 6) await MC.waitDequeue(venc);
+      prof.wait += performance.now() - _tWait;
+      const _tDec = performance.now();
       await decodeP;
       prof.decode += performance.now() - _tDec;
       const _tDraw = performance.now();
@@ -1005,11 +1015,14 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
         const pipe = pipes.get(id);
         return { source: f, w: f.displayWidth || f.codedWidth, h: f.displayHeight || f.codedHeight, rotation: pipe.rotation };
       });
-      prof.draw += performance.now() - _tDraw;
-      const _tEnc = performance.now();
+      /* new VideoFrame(canvas) がGPUのコマンドを流し切る同期点になる。
+         drawComposite だけを測ると、canvas への描画は積まれただけで
+         「合成0秒」に見えてしまうので、ここまでを合成として数える */
       const vf = new VideoFrame(canvas, {
         timestamp: Math.round(k * 1e6 / fps), duration: Math.round(1e6 / fps),
       });
+      prof.draw += performance.now() - _tDraw;
+      const _tEnc = performance.now();
       venc.encode(vf, { keyFrame: k % (fps * 2) === 0 });
       vf.close();
       prof.encode += performance.now() - _tEnc;
@@ -1030,11 +1043,13 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
     await venc.flush();
     if (vencErr) throw vencErr;
     {
-      const tot = (prof.decode + prof.draw + prof.encode) / 1000;
+      const tot = (prof.decode + prof.draw + prof.encode + prof.wait) / 1000;
       const pc = v => tot > 0 ? Math.round(v / 10 / tot) : 0;   // v[ms] / tot[s] → %
-      MC.log(`映像の内訳: 合計${tot.toFixed(0)}秒 / デコード${(prof.decode / 1000).toFixed(0)}秒(${pc(prof.decode)}%) `
-        + `合成${(prof.draw / 1000).toFixed(0)}秒(${pc(prof.draw)}%) `
-        + `エンコード${(prof.encode / 1000).toFixed(0)}秒(${pc(prof.encode)}%) `
+      const sec = v => (v / 1000).toFixed(1);
+      MC.log(`映像の内訳: 合計${tot.toFixed(1)}秒 / デコード待ち${sec(prof.decode)}秒(${pc(prof.decode)}%) `
+        + `合成${sec(prof.draw)}秒(${pc(prof.draw)}%) `
+        + `下流待ち${sec(prof.wait)}秒(${pc(prof.wait)}%) `
+        + `投入${sec(prof.encode)}秒(${pc(prof.encode)}%) `
         + `/ ${totalFrames}コマ ${w}x${h} ${(MC.exporter.videoBitrate() / 1e6).toFixed(0)}Mbps`
         + ` / スキップ${prof.skips}回(${(prof.reseekMs / 1000).toFixed(1)}秒)`);
     }
