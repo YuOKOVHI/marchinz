@@ -791,10 +791,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     void MZ.ui._buildStrip();
   };
 
-  // ステップウィザード
-  document.querySelectorAll("#stepper [data-step]").forEach(b => {
-    b.onclick = () => MZ.ui.setStep(parseInt(b.dataset.step, 10));
-  });
+  // ステップ遷移ボタン
   $("toStep2Btn").onclick = () => MZ.ui.setStep(2);
   $("toStep3Btn").onclick = () => MZ.ui.setStep(3);
   $("backTo1Btn").onclick = () => MZ.ui.setStep(1);

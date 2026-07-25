@@ -1,0 +1,25 @@
+{
+  "samples": 30,
+  "sampleSize": 96,
+  "timescale": 30000,
+  "sampleDuration": 1001,
+  "width": 320,
+  "height": 180,
+  "durationSec": 1.001,
+  "moov_tail.mp4": {
+    "bytes": 3681,
+    "topLevel": [
+      "ftyp",
+      "mdat",
+      "moov"
+    ]
+  },
+  "moov_head.mp4": {
+    "bytes": 3681,
+    "topLevel": [
+      "ftyp",
+      "moov",
+      "mdat"
+    ]
+  }
+}

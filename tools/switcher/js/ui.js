@@ -961,7 +961,12 @@ MC.ui.renderQualityPicker = () => {
       MC.S.exportQuality = b.dataset.q;
       MC.saveState();
       MC.ui.renderQualityPicker();
-      MC.ui.renderTransport();       // 見積り(ETA)を新しい画質で引き直す
+      /* 関数名は updateTransport。renderTransport は存在せず、ここで TypeError になって
+         次行の checkExportable() まで到達していなかった(2026-07-25 レビューで発覚)。
+         checkExportable は「この長さをこの端末で書き出せるか」を判定するが、その上限は
+         videoBitrate() 経由で画質に依存する(ライト8Mbps / フル12Mbps)。つまり
+         ライト→フルに切り替えたとき、出るべき「書き出せません」の警告が出ていなかった */
+      MC.ui.updateTransport();       // 見積り(ETA)を新しい画質で引き直す
       MC.ui.checkExportable();
     };
   });

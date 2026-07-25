@@ -357,10 +357,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
   setInterval(RA.ui.updateTime, 250);
 
-  // ステッパー(タップでも移動可)+ステップ遷移ボタン
-  document.querySelectorAll("#stepper [data-step]").forEach(b => {
-    b.onclick = () => RA.ui.setStep(parseInt(b.dataset.step, 10));
-  });
+  // ステップ遷移ボタン
   $("toStep2Btn").onclick = () => RA.ui.setStep(2);
   $("toStep3Btn").onclick = () => RA.ui.setStep(3);
   $("backTo1Btn").onclick = () => RA.ui.setStep(1);

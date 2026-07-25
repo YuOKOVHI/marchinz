@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>MarchinZ 映像ツール QA ランナー</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 14px/1.7 -apple-system, "Hiragino Sans", sans-serif; margin: 0; padding: 28px 32px; }
+  h1 { font-size: 19px; font-weight: 600; letter-spacing: .01em; margin: 0 0 4px; }
+  .sub { opacity: .6; margin: 0 0 24px; font-size: 13px; }
+  .grp { margin: 22px 0 8px; font-size: 12px; font-weight: 600; opacity: .55; letter-spacing: .08em; text-transform: uppercase; }
+  .row { display: grid; grid-template-columns: 62px 1fr auto; gap: 12px; align-items: baseline;
+         padding: 7px 12px; border-radius: 9px; }
+  .row + .row { margin-top: 3px; }
+  .pass { background: color-mix(in srgb, seagreen 12%, transparent); }
+  .fail { background: color-mix(in srgb, crimson 16%, transparent); }
+  .tag { font-weight: 600; font-size: 11px; letter-spacing: .06em; }
+  .pass .tag { color: seagreen; } .fail .tag { color: crimson; }
+  .det { opacity: .6; font-size: 12px; font-variant-numeric: tabular-nums; }
+  #sum { margin-top: 26px; padding: 14px 18px; border-radius: 11px;
+         background: color-mix(in srgb, currentColor 6%, transparent); font-weight: 600; }
+</style>
+</head>
+<body>
+<h1>MarchinZ 映像ツール QA ランナー</h1>
+<p class="sub">ブラウザで開くだけ。Node・npm・ビルド不要。素材は Python で合成した 3.6KB の MP4。</p>
+<div id="out"></div>
+<div id="sum">実行中…</div>
+
+<script src="../switcher/vendor/mp4box.all.min.js"></script>
+<script src="../switcher/vendor/mp4-muxer.min.js"></script>
+<script>
+/* ===== 最小テストフレームワーク ===== */
+const R = [];
+let curGroup = "";
+const group = g => { curGroup = g; const d = document.createElement("div"); d.className = "grp"; d.textContent = g; out.appendChild(d); };
+async function test(name, fn) {
+  const t0 = performance.now();
+  let ok = true, msg = "";
+  try { msg = (await fn()) || ""; }
+  catch (e) { ok = false; msg = (e && e.message) || String(e); }
+  const ms = Math.round(performance.now() - t0);
+  R.push({ group: curGroup, name, ok, msg, ms });
+  const d = document.createElement("div");
+  d.className = "row " + (ok ? "pass" : "fail");
+  d.innerHTML = `<span class="tag">${ok ? "PASS" : "FAIL"}</span><span></span><span class="det">${ms}ms</span>`;
+  d.children[1].textContent = name + (msg ? " — " + msg : "");
+  out.appendChild(d);
+}
+const eq = (a, b, what) => { if (a !== b) throw new Error(`${what}: 期待 ${b} / 実際 ${a}`); };
+const ge = (a, b, what) => { if (!(a >= b)) throw new Error(`${what}: ${a} は ${b} 以上であるべき`); };
+
+/* ===== ツールのソースを隔離ロード =====
+   demux.js / exporter.js は `MC.` `MZ.` などの名前空間グローバルに生やす形。
+   new Function で名前空間と偽 window を差し込むと、1ページ内に
+   「修正版」と「バグを注入した版」を同時に置ける(= 変異テストができる) */
+async function loadModule(url, nsName, mutate) {
+  let src = await (await fetch(url)).text();
+  if (mutate) src = mutate(src);
+  const ns = { log: () => {}, caps: {}, debug: [] };
+  const fakeWin = { [nsName]: ns, addEventListener: () => {} };
+  new Function(nsName, "window", src)(ns, fakeWin);
+  return ns;
+}
+
+/* 2026-07-20 に直した黒抜けバグを、そのままコードへ戻す変異 */
+const injectBlackoutBug = src => {
+  const before = "const sk = mp4.seek(Math.max(0, fromSec), true);";
+  const after  = "const sk = (fromSec > 0) ? mp4.seek(fromSec, true) : null;";
+  if (!src.includes(before)) throw new Error("変異ポイントが見つからない(修正が別の形に書き換わった?)");
+  return src.split(before).join(after);
+};
+
+let FIX = {};
+async function fixture(name) {
+  const buf = FIX[name] || (FIX[name] = await (await fetch("fixtures/" + name)).arrayBuffer());
+  return new File([buf], name, { type: "video/mp4" });
+}
+let META;
+
+/* demux の samples() が何サンプル返すか数える */
+async function countSamples(ns, file, fromSec) {
+  const src = new ns.MP4Source(file);
+  await src.init();
+  const vt = src.videoTrack();
+  if (!vt) throw new Error("映像トラックが見つからない");
+  let n = 0;
+  for await (const s of src.samples(vt.id, fromSec)) { n++; if (n > 5000) break; }
+  return n;
+}
+
+/* ===== 本体 ===== */
+(async () => {
+  META = await (await fetch("fixtures/meta.json")).json();
+  const N = META.samples;
+  const TOOLS = [["switcher", "MC"], ["vlog", "MV"], ["privacy", "MZ"], ["reangle", "RA"]];
+
+  group(`合成素材の健全性(サンプル数 ${N} / ${META.durationSec.toFixed(2)}秒)`);
+  await test("moov_head.mp4 は ftyp→moov→mdat", async () => {
+    eq(META["moov_head.mp4"].topLevel.join(","), "ftyp,moov,mdat", "並び"); return "faststart済み(対照)";
+  });
+  await test("moov_tail.mp4 は ftyp→mdat→moov", async () => {
+    eq(META["moov_tail.mp4"].topLevel.join(","), "ftyp,mdat,moov", "並び"); return "Resolve書き出しMOV相当(事故を再現する形)";
+  });
+
+  group("① 静かな黒抜け: samples(trackId, 0) が 0 件を返さないこと");
+  for (const [tool, ns] of TOOLS) {
+    await test(`${tool}: moov末尾 × fromSec=0 で ${N} サンプル読める`, async () => {
+      const M = await loadModule(`../${tool}/js/demux.js`, ns);
+      eq(await countSamples(M, await fixture("moov_tail.mp4"), 0), N, "サンプル数");
+      return "現行コード";
+    });
+    await test(`${tool}: moov先頭(対照)でも ${N} サンプル`, async () => {
+      const M = await loadModule(`../${tool}/js/demux.js`, ns);
+      eq(await countSamples(M, await fixture("moov_head.mp4"), 0), N, "サンプル数");
+    });
+  }
+
+  group("② 変異テスト: バグを戻すと ① が本当に落ちるか(テストに歯があるかの検査)");
+  for (const [tool, ns] of TOOLS) {
+    await test(`${tool}: 条件付きseekへ戻すと 0 件になる`, async () => {
+      const M = await loadModule(`../${tool}/js/demux.js`, ns, injectBlackoutBug);
+      const n = await countSamples(M, await fixture("moov_tail.mp4"), 0);
+      if (n === N) throw new Error("バグを注入しても通ってしまう= このテストは黒抜けを検知できない");
+      eq(n, 0, "バグ版のサンプル数");
+      return "エラーも例外も出ないまま0件(=映像が黒く抜ける)";
+    });
+    await test(`${tool}: バグ版でも moov先頭なら読める(条件の切り分け)`, async () => {
+      const M = await loadModule(`../${tool}/js/demux.js`, ns, injectBlackoutBug);
+      eq(await countSamples(M, await fixture("moov_head.mp4"), 0), N, "サンプル数");
+      return "moovの位置だけが分かれ目";
+    });
+  }
+
+  group("③ switcher cursor(): 書き出し経路も同じ罠を踏まないこと");
+  await test("cursor.seek(0) 後に全サンプル取れる(moov末尾)", async () => {
+    const M = await loadModule("../switcher/js/demux.js", "MC");
+    const src = new M.MP4Source(await fixture("moov_tail.mp4"));
+    await src.init();
+    const cur = src.cursor(src.videoTrack().id);
+    cur.seek(0);
+    let n = 0; while (true) { const r = await cur.next(); if (r.done) break; n++; if (n > 5000) break; }
+    cur.stop();
+    eq(n, META.samples, "サンプル数");
+  });
+  await test("cursor.seek(0.5) → 直前のRAPから読み直せる", async () => {
+    const M = await loadModule("../switcher/js/demux.js", "MC");
+    const src = new M.MP4Source(await fixture("moov_tail.mp4"));
+    await src.init();
+    const cur = src.cursor(src.videoTrack().id);
+    cur.seek(0.5);
+    const first = await cur.next();
+    if (first.done) throw new Error("再シーク後に1件も返らない");
+    if (!first.value.is_sync) throw new Error("RAP(キーフレーム)から始まっていない");
+    cur.stop();
+    return `先頭サンプル cts=${first.value.cts}`;
+  });
+
+  group("④ 通知タップ誤中断(79acfee): _patientTimeout の回帰テスト");
+  /* 偽 document を差し込む。ランナー自身のタブが background だと
+     visibilityState が "hidden" になり、_patientTimeout が正しく再武装して
+     永久に発火しない = テストが環境に左右される(実測で踏んだ) */
+  const loadExporter = async () => {
+    const doc = { visibilityState: "visible", addEventListener: () => {} };
+    const ns = { log: () => {}, caps: {}, isIOS: false, exporter: {}, _doc: doc };
+    const src = await (await fetch("../switcher/js/exporter.js")).text();
+    new Function("MC", "window", "document", src)(ns, { MC: ns, addEventListener: () => {} }, doc);
+    return ns;
+  };
+  await test("見えたままなら期限どおり発火する", async () => {
+    const MC = await loadExporter();
+    let fired = false;
+    MC.exporter._patientTimeout(() => { fired = true; }, 40);
+    await new Promise(r => setTimeout(r, 140));
+    if (!fired) throw new Error("本物のハングを打ち切れていない");
+  });
+  await test("隠れていた事実があれば測り直す(誤中断しない)", async () => {
+    const MC = await loadExporter();
+    let fired = false;
+    MC.exporter._patientTimeout(() => { fired = true; }, 40);
+    MC.exporter._visEpoch++;            // = 書き出し中に通知を開いて戻ってきた
+    await new Promise(r => setTimeout(r, 60));
+    if (fired) throw new Error("隠れていた間を数えて健全な書き出しを殺している(79acfeeの回帰)");
+    await new Promise(r => setTimeout(r, 120));
+    if (!fired) throw new Error("測り直したあとも発火しない(タイマーが死んでいる)");
+    return "1回目は見送り、次の周期で発火";
+  });
+  await test("画面が隠れている間は打ち切らない", async () => {
+    const MC = await loadExporter();
+    MC._doc.visibilityState = "hidden";
+    let fired = false;
+    MC.exporter._patientTimeout(() => { fired = true; }, 30);
+    await new Promise(r => setTimeout(r, 140));
+    if (fired) throw new Error("隠れている間に打ち切っている");
+    MC._doc.visibilityState = "visible";
+    await new Promise(r => setTimeout(r, 80));
+    if (!fired) throw new Error("復帰後も発火しない");
+    return "隠れ中は見送り→復帰後に発火";
+  });
+  await test("cancel() を呼べば以後発火しない", async () => {
+    const MC = await loadExporter();
+    let fired = false;
+    MC.exporter._patientTimeout(() => { fired = true; }, 30)();
+    await new Promise(r => setTimeout(r, 120));
+    if (fired) throw new Error("キャンセルが効いていない");
+  });
+
+  group("⑤ OPFS能力キャッシュ(敗者復活)の回帰テスト");
+  await test("一度 false でも force で再実測できる", async () => {
+    const MC = await loadExporter();
+    MC.exporter._opfsProbed = false;
+    eq(await MC.exporter.probeOpfs(false), false, "force無しはキャッシュを返す");
+    let reprobed = false;
+    const orig = MC.exporter.initWriter;
+    MC.exporter.initWriter = async () => { reprobed = true; throw new Error("stub"); };
+    await MC.exporter.probeOpfs(true);
+    MC.exporter.initWriter = orig;
+    if (!reprobed) throw new Error("force=true でも再実測していない(false が永久キャッシュされる)");
+    return "force で initWriter まで到達";
+  });
+  await test("true は再実測しない(無駄打ちしない)", async () => {
+    const MC = await loadExporter();
+    MC.exporter._opfsProbed = true;
+    let called = false;
+    MC.exporter.initWriter = async () => { called = true; };
+    eq(await MC.exporter.probeOpfs(true), true, "戻り値");
+    if (called) throw new Error("成功済みなのに再実測している");
+  });
+
+  group("⑥ 画素レベルの黒抜け検知(本物のH.264を実行時に生成)");
+  const EW = 320, EH = 180, EFPS = 30, EN = 45, elum = k => 40 + k * 4;
+  let synth = null;
+  await test("repo同梱の mp4-muxer で moov末尾のH.264を作れる", async () => {
+    const mx = new Mp4Muxer.Muxer({ target: new Mp4Muxer.ArrayBufferTarget(),
+      video: { codec: "avc", width: EW, height: EH }, fastStart: false });  // ← 本番 exporter.js と同じ設定
+    let err = null;
+    const enc = new VideoEncoder({ output: (c, m) => mx.addVideoChunk(c, m), error: e => { err = e; } });
+    enc.configure({ codec: "avc1.42001f", width: EW, height: EH, bitrate: 2e6, framerate: EFPS });
+    const cv = new OffscreenCanvas(EW, EH), ctx = cv.getContext("2d");
+    for (let k = 0; k < EN; k++) {
+      const v = elum(k);                                   // フレーム番号を輝度で符号化
+      ctx.fillStyle = `rgb(${v},${v},${v})`; ctx.fillRect(0, 0, EW, EH);
+      const f = new VideoFrame(cv, { timestamp: Math.round(k * 1e6 / EFPS), duration: Math.round(1e6 / EFPS) });
+      enc.encode(f, { keyFrame: k % 15 === 0 }); f.close();
+      while (enc.encodeQueueSize > 6) await new Promise(r => setTimeout(r, 4));
+    }
+    await enc.flush(); enc.close(); if (err) throw err;
+    mx.finalize();
+    const buf = mx.target.buffer, dv = new DataView(buf);
+    let pos = 0, order = [];
+    while (pos < buf.byteLength - 8) {
+      const sz = dv.getUint32(pos);
+      order.push(String.fromCharCode(dv.getUint8(pos + 4), dv.getUint8(pos + 5), dv.getUint8(pos + 6), dv.getUint8(pos + 7)));
+      if (sz < 8) break; pos += sz;
+    }
+    eq(order.join(","), "ftyp,mdat,moov", "トップレベルの並び");
+    synth = new File([buf], "synth_moov_tail.mp4", { type: "video/mp4" });
+    return `${buf.byteLength} bytes / ${EN}フレーム / moov末尾`;
+  });
+
+  async function decodeAndMeasure(ns, file) {
+    const src = new ns.MP4Source(file); await src.init();
+    const vt = src.videoTrack(); if (!vt) throw new Error("映像トラックが無い");
+    const out = []; let derr = null;
+    const cv = new OffscreenCanvas(EW, EH), ctx = cv.getContext("2d", { willReadFrequently: true });
+    const dec = new VideoDecoder({
+      output: f => {
+        ctx.drawImage(f, 0, 0, EW, EH); f.close();
+        const d = ctx.getImageData(EW / 2 - 4, EH / 2 - 4, 8, 8).data;
+        let s = 0; for (let i = 0; i < d.length; i += 4) s += d[i];
+        out.push(Math.round(s / (d.length / 4)));
+      }, error: e => { derr = e; },
+    });
+    dec.configure(src.videoDecoderConfig());
+    for await (const s of src.samples(vt.id, 0)) {
+      dec.decode(new EncodedVideoChunk({ type: s.is_sync ? "key" : "delta",
+        timestamp: Math.round(s.cts * 1e6 / s.timescale),
+        duration: Math.max(1, Math.round(s.duration * 1e6 / s.timescale)), data: s.data }));
+      if (dec.decodeQueueSize > 20) await new Promise(r => setTimeout(r, 4));
+    }
+    await dec.flush().catch(() => {}); dec.close(); if (derr) throw derr;
+    return out;
+  }
+
+  await test("現行コード: 45コマ全部デコードでき、画素が想定どおり(黒くない)", async () => {
+    const M = await loadModule("../switcher/js/demux.js", "MC");
+    const mean = await decodeAndMeasure(M, synth);
+    eq(mean.length, EN, "デコードできたコマ数");
+    const drift = mean.reduce((m, v, i) => Math.max(m, Math.abs(v - elum(i))), 0);
+    if (mean.every(v => v < 8)) throw new Error("全コマ真っ黒");
+    ge(6, drift, "想定輝度との最大差(6以下であるべき)");
+    return `中心画素 ${mean.slice(0, 4).join(",")}…${mean.slice(-1)} / 最大差 ${drift}`;
+  });
+  await test("バグ注入版: 0コマ・真っ黒・例外なし(=これが本番で起きていた)", async () => {
+    const M = await loadModule("../switcher/js/demux.js", "MC", injectBlackoutBug);
+    const mean = await decodeAndMeasure(M, synth);
+    eq(mean.length, 0, "デコードできたコマ数");
+    return "エラーもタイムアウトも出ずに映像が消える";
+  });
+
+  /* ===== 集計 ===== */
+  const bad = R.filter(r => !r.ok);
+  sum.textContent = bad.length
+    ? `FAIL ${bad.length} / ${R.length} — ${bad.map(b => b.name).join(" / ")}`
+    : `全 ${R.length} 件 PASS`;
+  sum.style.color = bad.length ? "crimson" : "seagreen";
+  window.__MZQA = { total: R.length, failed: bad.length, results: R };
+  document.title = (bad.length ? `FAIL(${bad.length})` : "PASS") + " — MarchinZ QA";
+})();
+</script>
+</body>
+</html>
