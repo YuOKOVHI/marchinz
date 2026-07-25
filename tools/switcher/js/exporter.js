@@ -1,7 +1,7 @@
 "use strict";
 /* ============ 書き出し: WebCodecs → MP4 (H.264+AAC) / WebM fallback ============ */
 
-MC.exporter = { cancelFlag: false, running: false };
+MC.exporter = { cancelFlag: false, running: false, _audioTask: null };
 
 MC.exporter.probeCaps = async () => {
   try {
@@ -806,6 +806,18 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
   const audioClip = MC.getClip(MC.S.audioClipId);
   const withAudio = MC.caps.aac && !!audioClip;
 
+  /* 前回の書き出しが途中で失敗したとき、並行で走らせた音声タスクだけが
+     生き残っていることがある(下の finally は音声を待たない。待つと失敗の報告が
+     そのぶん遅れるため)。放っておいても、書き込み先が既に閉じているので
+     addAudioChunk が失敗して自分から止まる ─ が、すぐ再挑戦されると
+     音声エンコーダが2本同時に立つ。iOSのメモリ上限では避けたいので、
+     始める前にここで確実に片付ける。cancelFlag を false に戻す前に置くこと
+     (先に戻すと、中止で止まりかけていた前回のタスクが走り続ける) */
+  if (MC.exporter._audioTask) {
+    await MC.exporter._audioTask.catch(() => {});
+    MC.exporter._audioTask = null;
+  }
+
   MC.exporter.cancelFlag = false;
   MC.exporter.running = true;
   const pipes = new Map();
@@ -903,6 +915,53 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
       pipes.set(c.id, pipe);
     }
 
+    /* ---- 音声を映像と並行で走らせる(2026-07-25) ----
+       以前は「映像を全部書き終えてから音声」の直列で、音声のデコード+エンコードに
+       かかる数十秒がそのまま書き出し時間に足されていた(進捗90%台で止まって見える区間)。
+       映像ループは待ち(デコードの完了待ち・エンコーダの詰まり待ち)が多く、その隙間で
+       音声を進められる。mp4-muxer 5.2.2 が両トラックの交互投入を正しく捌けることは
+       tools/qa/runner.html の ⑦ で実測してある。
+
+       並行にするのは「素材から音を抜く」2経路だけ:
+         encodeAudio    … AAC。ストリーミング(1024フレーム窓ごとに流す)
+         encodeAudioPcm … lpcm。チャンク単位で読む
+       音声ファイル取り込み(encodeAudioFile)だけは直列のまま据え置く。
+       OfflineAudioContext がファイル全体を読んでから全長PCMをメモリに展開するため
+       (8分30秒ステレオで約196MB)、3本ぶんの映像デコーダと同時に走らせると
+       iOSのメモリ上限に当たる。ここは並行にして得る数十秒より、落ちない方が大事。
+
+       ※音声クリップが映像クリップと同じファイルのことがある(カメラの音を使う場合)。
+         同じ File を2箇所から同時に読むことになるが、MZ_MP4.readSlice が
+         NotReadableError を4回まで読み直すので実用上は通る。 */
+    let audioOk = false;
+    let audioTask = null;
+    let audioFatal = null;      // 音声側が投げた例外(映像ループを早く畳むため)
+    let audioMs = 0;            // 音声にかかった実時間
+    let audioWaitMs = 0;        // そのうち「映像が終わってから待たされた」ぶん
+    let videoDone = false;
+    const audioParallel = withAudio && !audioClip.isAudio;
+    /* 映像を作っている間、音声の進捗は画面に出さない。
+       0.93 と 0.5 が交互に来ると進捗が行ったり来たりして壊れて見える */
+    const onAudioStatus = (st, frac) => {
+      if (!videoDone) return;
+      onProgress(0.93 + 0.04 * Math.max(0, Math.min(1, frac ?? 0.5)), st);
+    };
+    const runAudio = async () => {
+      const t0 = performance.now();
+      try {
+        const enc = audioClip.isAudio ? MC.exporter.encodeAudioFile : MC.exporter.encodeAudio;
+        return await enc(muxer, audioClip, tIn - audioClip.offset, tOut - tIn, onAudioStatus);
+      } finally {
+        audioMs = performance.now() - t0;
+      }
+    };
+    if (audioParallel) {
+      audioTask = MC.exporter._audioTask = runAudio();
+      /* 待つのは映像が終わってから。それまでに失敗すると「未処理のPromise拒否」に
+         なるので、ここで理由を控えて黙らせる(本物の再送出は下の await 側) */
+      audioTask.catch(e => { audioFatal = audioFatal || e; });
+    }
+
     const canvas = MC.exporter.makeCanvas(w, h);
     const ctx = canvas.getContext("2d");
     const t0 = performance.now();
@@ -911,6 +970,9 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
     for (let k = 0; k < totalFrames; k++) {
       if (MC.exporter.cancelFlag) throw new Error("キャンセルしました");
       if (vencErr) throw vencErr;
+      /* 音声が例外で落ちた時点で、この書き出しはどのみち失敗する。
+         最後まで映像を作ってから知らせるのは5分の無駄なので、ここで畳む */
+      if (audioFatal) throw audioFatal;
       const t = tIn + k / fps;
       const srcMap = new Map();
       const _tDec = performance.now();
@@ -960,7 +1022,7 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
           : (now - t0) / 1000 / (k + 1);
         const eta = perFrame * (totalFrames - k - 1);
         if (k - kRecent >= 60) { tRecent = now; kRecent = k; }
-        onProgress((k + 1) / totalFrames * 0.90,
+        onProgress((k + 1) / totalFrames * 0.93,
           `映像 ${k + 1}/${totalFrames} コマ`, { eta });
         await MC.yield();  // UI息継ぎ(非表示タブでも節流されない)
       }
@@ -983,16 +1045,24 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
     pipes.forEach(pp => pp.dispose());
     pipes.clear();
 
-    let audioOk = false;
+    videoDone = true;
     if (withAudio) {
-      const enc = audioClip.isAudio ? MC.exporter.encodeAudioFile : MC.exporter.encodeAudio;
-      /* 93%で固まって見えた問題(2026-07-23 優さん指摘): 音声は
-         デコード+エンコードで数十秒かかるのに、進捗が一点張り付きだった。
-         0.90〜0.97 を実際の進み(frac 0..1)で埋める */
-      audioOk = await enc(
-        muxer, audioClip, tIn - audioClip.offset, tOut - tIn,
-        (s, frac) => onProgress(0.90 + 0.07 * Math.max(0, Math.min(1, frac ?? 0.5)), s));
+      /* 93%で固まって見えた問題(2026-07-23 優さん指摘)の名残りで、
+         0.93〜0.97 を実際の進み(frac 0..1)で埋める。並行が効いていれば
+         ここは一瞬で終わり、そもそも数字が動かない */
+      const tWait = performance.now();
+      if (!audioTask) audioTask = MC.exporter._audioTask = runAudio();   // 音声ファイル経路(直列のまま)
+      try {
+        audioOk = await audioTask;              // 投げたらそのまま書き出し失敗(従来どおり)
+      } finally {
+        MC.exporter._audioTask = null;          // 待ち切ったので後始末は不要
+      }
+      audioWaitMs = performance.now() - tWait;
       if (!audioOk && !MC.exporter.cancelFlag) MC.ui.toast("⚠ 音声を書き出せませんでした(映像のみ出力します)");
+      const hidden = Math.max(0, audioMs - audioWaitMs);
+      MC.log(`音声: 合計${(audioMs / 1000).toFixed(1)}秒 / `
+        + `${audioParallel ? `映像と並行で${(hidden / 1000).toFixed(1)}秒ぶん隠れた・` : "直列(音声ファイル取り込み)・"}`
+        + `待たされた${(audioWaitMs / 1000).toFixed(1)}秒`);
     }
     if (MC.exporter.cancelFlag) throw new Error("キャンセルしました");
 

@@ -355,6 +355,104 @@ async function countSamples(ns, file, fromSec) {
     return "エラーもタイムアウトも出ずに映像が消える";
   });
 
+  group("⑦ 映像と音声を並行で積んでも壊れないか(音声の並行化の前提)");
+  /* 現行の書き出しは「映像を全部書き終えてから音声」という直列。
+     音声を映像ループと並行にすると、muxer へ両トラックのチャンクが
+     入り混じって届く。mp4-muxer 5.2.2 がそれを正しく捌けるかを、
+     本番と同じ設定(fastStart:false / avc + aac / 48kHz 2ch)で実測する。
+     ここが通らないなら並行化してはいけない。 */
+  const IW = 160, IH = 90, IFPS = 30, IN_V = 30;          // 1秒ぶん
+  const IN_A_SEC = 1.0, IA_SR = 48000, IA_FR = 1024;
+  const muxInterleaved = async interleave => {
+    const mx = new Mp4Muxer.Muxer({
+      target: new Mp4Muxer.ArrayBufferTarget(),
+      video: { codec: "avc", width: IW, height: IH },
+      audio: { codec: "aac", sampleRate: IA_SR, numberOfChannels: 2 },
+      fastStart: false,                                    // 本番 exporter.js と同じ
+    });
+    let err = null;
+    const venc = new VideoEncoder({
+      output: (c, m) => { try { mx.addVideoChunk(c, m); } catch (e) { err = err || e; } },
+      error: e => { err = e; },
+    });
+    venc.configure({ codec: "avc1.42001f", width: IW, height: IH, bitrate: 1e6, framerate: IFPS });
+    const aenc = new AudioEncoder({
+      output: (c, m) => { try { mx.addAudioChunk(c, m); } catch (e) { err = err || e; } },
+      error: e => { err = e; },
+    });
+    aenc.configure({ codec: "mp4a.40.2", sampleRate: IA_SR, numberOfChannels: 2, bitrate: 192000 });
+
+    const cv = new OffscreenCanvas(IW, IH), ctx = cv.getContext("2d");
+    const pushVideo = k => {
+      const v = 30 + k * 3;
+      ctx.fillStyle = `rgb(${v},${v},${v})`; ctx.fillRect(0, 0, IW, IH);
+      const f = new VideoFrame(cv, { timestamp: Math.round(k * 1e6 / IFPS), duration: Math.round(1e6 / IFPS) });
+      venc.encode(f, { keyFrame: k % 15 === 0 }); f.close();
+    };
+    const nWin = Math.ceil(IN_A_SEC * IA_SR / IA_FR);
+    const pushAudio = w => {
+      const data = new Float32Array(IA_FR * 2);
+      for (let i = 0; i < IA_FR; i++) {
+        const t = (w * IA_FR + i) / IA_SR;
+        data[i] = data[IA_FR + i] = Math.sin(2 * Math.PI * 440 * t) * 0.25;
+      }
+      aenc.encode(new AudioData({
+        format: "f32-planar", sampleRate: IA_SR, numberOfFrames: IA_FR,
+        numberOfChannels: 2, timestamp: Math.round(w * IA_FR * 1e6 / IA_SR), data,
+      }));
+    };
+
+    if (interleave) {
+      /* 並行を模す: 映像1コマごとに音声も1窓ずつ差し込む */
+      for (let k = 0; k < Math.max(IN_V, nWin); k++) {
+        if (k < IN_V) pushVideo(k);
+        if (k < nWin) pushAudio(k);
+        if (k % 8 === 0) await new Promise(r => setTimeout(r, 0));
+      }
+    } else {
+      for (let k = 0; k < IN_V; k++) pushVideo(k);      // 現行の直列
+      await venc.flush();
+      for (let w = 0; w < nWin; w++) pushAudio(w);
+    }
+    await venc.flush(); await aenc.flush();
+    venc.close(); aenc.close();
+    if (err) throw err;
+    mx.finalize();
+    return new File([mx.target.buffer], "mux.mp4", { type: "video/mp4" });
+  };
+
+  /* 出来上がったMP4を共有デマックスで開き直し、両トラックが揃っているか数える */
+  const probeTracks = async file => {
+    const M = await loadShared();
+    const src = new M.MP4Source(file);
+    await src.init();
+    const vt = src.videoTrack(), at = src.audioTrack();
+    if (!vt) throw new Error("映像トラックが無い");
+    if (!at) throw new Error("音声トラックが無い");
+    let nv = 0;
+    for await (const s of src.samples(vt.id, 0)) { nv++; if (nv > 500) break; }
+    return { nv, vDur: vt.duration / vt.timescale, aDur: at.duration / at.timescale,
+             aRate: at.audio.sample_rate || at.audio.samplerate, aCh: at.audio.channel_count };
+  };
+
+  let serialRef = null;
+  await test("直列(現行)で映像30コマ+音声1秒のMP4ができる", async () => {
+    serialRef = await probeTracks(await muxInterleaved(false));
+    eq(serialRef.nv, IN_V, "映像サンプル数");
+    eq(serialRef.aRate, IA_SR, "音声レート");
+    eq(serialRef.aCh, 2, "音声チャンネル数");
+    return `映像${serialRef.vDur.toFixed(2)}秒 / 音声${serialRef.aDur.toFixed(2)}秒`;
+  });
+  await test("★並行(交互)に積んでも同じ結果になる", async () => {
+    const r = await probeTracks(await muxInterleaved(true));
+    eq(r.nv, IN_V, "映像サンプル数");
+    eq(r.aRate, IA_SR, "音声レート");
+    eq(r.aCh, 2, "音声チャンネル数");
+    if (Math.abs(r.vDur - serialRef.vDur) > 0.01) throw new Error(`映像尺がずれた: ${r.vDur} vs ${serialRef.vDur}`);
+    if (Math.abs(r.aDur - serialRef.aDur) > 0.01) throw new Error(`音声尺がずれた: ${r.aDur} vs ${serialRef.aDur}`);
+    return "直列と尺・トラック構成が一致";
+  });
+
   /* ===== 集計 ===== */
   const bad = R.filter(r => !r.ok);
   sum.textContent = bad.length
