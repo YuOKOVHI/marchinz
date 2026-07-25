@@ -1106,6 +1106,16 @@ body[data-mzj-phase="sync"] .stage { display: none; }
   display: flex; align-items: center; gap: 8px; justify-content: center;
 }
 .eo-title i { color: var(--acc); }
+.eo-stats { margin: 14px 0 0; text-align: left; }
+.eo-stats > summary { cursor: pointer; font-size: 13px; opacity: .65; padding: 6px 0; list-style: none; }
+.eo-stats > summary::-webkit-details-marker { display: none; }
+.eo-stats > summary::before { content: "\25B8"; display: inline-block; width: 1em;
+  transition: transform .15s ease; }
+.eo-stats[open] > summary::before { transform: rotate(90deg); }
+.eo-stats pre { margin: 6px 0 10px; padding: 12px 14px; border-radius: 10px;
+  background: rgba(127, 127, 127, .12); font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap; word-break: break-word; overflow-x: auto; }
+
 .eo-note { font-size: 12.5px; color: var(--tx2); line-height: 1.7; text-align: center; }
 .eo-note i { color: var(--acc2); margin-right: 3px; }
 #eoRun, #eoDone { display: flex; flex-direction: column; gap: 14px; }

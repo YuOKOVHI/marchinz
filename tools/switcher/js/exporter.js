@@ -826,6 +826,8 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
 
   MC.exporter.cancelFlag = false;
   MC.exporter.running = true;
+  const tStart = performance.now();
+  let routeLabel = "メモリ";        // 完成MP4の置き場所(記録カードに出す)
   const pipes = new Map();
   let venc = null;
   try {
@@ -839,6 +841,7 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
     if (saveHandle) {
       writable = await saveHandle.createWritable();
       target = new Mp4Muxer.FileSystemWritableFileStreamTarget(writable);
+      routeLabel = "ディスクへ直接";
       MC.log("export: ファイルへ直接書き込みます(メモリに溜めません)");
     } else if (MC.exporter.opfsSupported()) {
       /* ここに来た時点で、尺の上限(maxExportableSec)もビットレート(videoBitrate)も
@@ -863,11 +866,13 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
         MC.exporter.opfsRemove(MC.exporter._opfsName);
       }
       MC.exporter._opfsName = null;
+      routeLabel = "端末内の保存領域(OPFS)";
       MC.log("export: OPFSへ逐次書き込みます(メモリに溜めません)");
     } else {
       /* OPFSもディスク直書きも無い端末。ここは maxExportableSec が
          メモリ上限で頭打ちにしており、ビットレートも3.8Mbpsに落ちている */
       target = new Mp4Muxer.ArrayBufferTarget();
+      routeLabel = "メモリ上(短い尺のみ)";
       MC.log("export: メモリ上で組み立てます(短めの尺のみ)");
     }
     const muxer = new Mp4Muxer.Muxer({
@@ -1086,6 +1091,20 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
         + `待たされた${(audioWaitMs / 1000).toFixed(1)}秒`);
     }
     if (MC.exporter.cancelFlag) throw new Error("キャンセルしました");
+
+    /* 完了画面の「書き出しの記録」に出すための構造化データ。
+       ログ文字列から読み取らせない ─ 文言を変えるたびに画面が壊れるため */
+    MC.exporter.lastStats = {
+      totalMs: performance.now() - tStart,
+      decodeMs: prof.decode, drawMs: prof.draw, waitMs: prof.wait, encodeMs: prof.encode,
+      skips: prof.skips, reseekMs: prof.reseekMs,
+      audioMs, audioWaitMs, audioParallel, audioOk, withAudio,
+      frames: totalFrames, w, h, fps,
+      bitrate: MC.exporter.videoBitrate(), quality: MC.exporter.quality(),
+      cams: used.length, layoutId: MC.S.layoutId, preset: MC.S.preset,
+      filterId: MC.S.filterId, colorOn: !!MC.S.colorOn,
+      spanSec: tOut - tIn, route: routeLabel,
+    };
 
     onProgress(0.97, "ファイルにまとめています…");
     muxer.finalize();

@@ -75,6 +75,7 @@ MC.ui.exportOverlay = {
   done() {
     const el = MC.ui.$("#exportOverlay");
     if (!el || el.hidden) return;
+    MC.ui.showExportStats();
     MC.ui.$("#eoTitleText").textContent = "できあがりました";
     MC.ui.$("#eoTitleIcon").className = "fa-solid fa-circle-check eo-check";
     MC.ui.$("#eoRun").hidden = true;
@@ -102,6 +103,71 @@ MC.ui.exportOverlay = {
     el.hidden = true;
     document.body.classList.remove("mz-export-open");
   },
+};
+
+/* 「書き出しの記録」。成功したときは今までログがどこにも出ず、実機(iPhone)では
+   何にどれだけ掛かったのか確かめようがなかった(失敗時の #errorLog だけが出口だった)。
+   ここが速度改善の効果を実機で読むための唯一の窓口になる。
+   ログ文字列を読み取るのではなく MC.exporter.lastStats(構造体)から組み立てる。 */
+MC.ui.showExportStats = () => {
+  const host = MC.ui.$("#eoStats");
+  const s = MC.exporter.lastStats;
+  if (!host) return;
+  if (!s) { host.hidden = true; return; }
+  const sec = ms => (ms / 1000).toFixed(1);
+  const mmss = t => `${Math.floor(t / 60)}分${String(Math.round(t % 60)).padStart(2, "0")}秒`;
+  /* 全角は2桁ぶんの幅を取るので、文字数ではなく表示幅で揃える。
+     iPhone(375px)で折り返さない範囲に収めること ─ 折り返すと表が読めなくなる */
+  const padW = (str, width) => {
+    let w = 0;
+    for (const ch of str) w += /[\u3000-\u30ff\u4e00-\u9fff\uff00-\uff60]/.test(ch) ? 2 : 1;
+    return str + " ".repeat(Math.max(0, width - w));
+  };
+  const bucket = (name, ms) => {
+    const tot = s.decodeMs + s.drawMs + s.waitMs + s.encodeMs;
+    const pc = tot > 0 ? Math.round(ms / tot * 100) : 0;
+    return `  ${padW(name, 13)}${sec(ms).padStart(5)}秒 ${String(pc).padStart(3)}%`;
+  };
+  const speed = s.spanSec > 0 ? (s.spanSec / (s.totalMs / 1000)).toFixed(1) : "-";
+  const lines = [
+    `書き出し ${sec(s.totalMs)}秒`,
+    `素材 ${mmss(s.spanSec)} → 実時間の${speed}倍速`,
+    `${s.w}x${s.h} ${(s.bitrate / 1e6).toFixed(0)}Mbps ${s.frames}コマ`,
+    `カメラ${s.cams}台 / ${s.layoutId} / 画質 ${s.quality}`,
+    "",
+    "── 何に時間がかかったか ──",
+    bucket("デコード待ち", s.decodeMs),
+    bucket("合成", s.drawMs),
+    bucket("下流待ち", s.waitMs),
+    bucket("投入", s.encodeMs),
+    "  ※下流待ちはGPU全体の待ち時間です",
+    "    (エンコードだけの重さではありません)",
+    "",
+    s.withAudio
+      ? `音声 ${sec(s.audioMs)}秒`
+        + `\n  ${s.audioParallel ? "映像と並行" : "直列"}・待たされた${sec(s.audioWaitMs)}秒`
+        + (s.audioOk ? "" : "\n  ※音声は入っていません")
+      : "音声 なし",
+    `色 ${s.filterId}${s.colorOn ? " + カメラ間の色合わせ" : ""}`,
+    `保存先 ${s.route}`,
+    s.skips ? `カメラの飛ばし読み ${s.skips}回 (${sec(s.reseekMs)}秒)` : null,
+  ].filter(v => v !== null);
+  const text = lines.join("\n");
+  host.hidden = false;
+  host.open = false;                       // 既定は畳んでおく(見たい人だけ開く)
+  MC.ui.$("#eoStatsText").textContent = text;
+  const btn = MC.ui.$("#eoStatsCopy");
+  if (btn) btn.onclick = async () => {
+    const full = `MarchinZ Switcher ${document.documentElement.getAttribute("data-mz-version") || "(版不明)"}\n`
+      + `${navigator.userAgent}\n\n${text}\n\n---- ログ ----\n${MC.debug.slice(-60).join("\n")}`;
+    try { await navigator.clipboard.writeText(full); MC.ui.toast("記録をコピーしました"); }
+    catch (e) {
+      const r = document.createRange();
+      r.selectNodeContents(MC.ui.$("#eoStatsText"));
+      const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+      MC.ui.toast("選択しました。長押しでコピーしてください");
+    }
+  };
 };
 
 MC.ui.showDone = res => {
