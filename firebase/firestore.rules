@@ -40,7 +40,7 @@ service cloud.firestore {
       allow read: if resource != null
         && (
           (signedIn() && diaryProfileOwnerUid() == request.auth.uid)
-          || (!resource.data.keys().hasAny(['visibility']) || resource.data.visibility == 'public')
+          || (resource.data.keys().hasAny(['visibility']) && resource.data.visibility == 'public')
           || (isPrivileged() && requesterProfileNotBanned())
         );
     }
@@ -50,7 +50,7 @@ service cloud.firestore {
       allow read: if resource != null
         && (
           (signedIn() && momentProfileOwnerUid() == request.auth.uid)
-          || (!resource.data.keys().hasAny(['visibility']) || resource.data.visibility == 'public')
+          || (resource.data.keys().hasAny(['visibility']) && resource.data.visibility == 'public')
         );
     }
 
@@ -184,10 +184,10 @@ service cloud.firestore {
         );
     }
 
-    // MLL ライフログ: visibility 未設定は公開扱い（既存データ互換）
+    // MLL ライフログ: visibility == 'public' のみ公開（2026-07-25 F2 でフェイルクローズ化）
     function mllLogDocIsPublic() {
-      return !resource.data.keys().hasAny(['visibility'])
-        || resource.data.visibility == 'public';
+      return resource.data.keys().hasAny(['visibility'])
+        && resource.data.visibility == 'public';
     }
 
     // プロフィール上の各タブ（mll_profiles の section_vis_*、未設定は公開）
@@ -234,20 +234,20 @@ service cloud.firestore {
         && sectionVideosPublic(profileUid)
         && (
           !exists(p)
-          || !get(p).data.keys().hasAny(['visibility'])
-          || get(p).data.visibility == 'public'
+          || (get(p).data.keys().hasAny(['visibility'])
+              && get(p).data.visibility == 'public')
         );
     }
 
-    // videoListIsPublicForRead と同じ基準（visibility 未設定は公開扱い）
+    // videoListIsPublicForRead と同じ基準（visibility == 'public' のみ公開）
     function videoListDocVisPublic() {
-      return !resource.data.keys().hasAny(['visibility'])
-        || resource.data.visibility == 'public';
+      return resource.data.keys().hasAny(['visibility'])
+        && resource.data.visibility == 'public';
     }
 
     function channelListDocVisPublic() {
-      return !resource.data.keys().hasAny(['visibility'])
-        || resource.data.visibility == 'public';
+      return resource.data.keys().hasAny(['visibility'])
+        && resource.data.visibility == 'public';
     }
 
     function channelBookmarkListIdRead() {
@@ -265,8 +265,8 @@ service cloud.firestore {
         && sectionYtPublic(profileUid)
         && (
           !exists(p)
-          || !get(p).data.keys().hasAny(['visibility'])
-          || get(p).data.visibility == 'public'
+          || (get(p).data.keys().hasAny(['visibility'])
+              && get(p).data.visibility == 'public')
         );
     }
 
@@ -400,7 +400,7 @@ service cloud.firestore {
     function diaryEntryReadableByActor(profileUid) {
       return signedIn() && request.auth.uid == profileUid
         || (resource != null
-          && (!resource.data.keys().hasAny(['visibility']) || resource.data.visibility == 'public'));
+          && (resource.data.keys().hasAny(['visibility']) && resource.data.visibility == 'public'));
     }
 
     function isDiaryLikeOnlyPatch(profileUid) {
@@ -417,7 +417,7 @@ service cloud.firestore {
     function momentEntryReadableByActor(profileUid) {
       return signedIn() && request.auth.uid == profileUid
         || (resource != null
-          && (!resource.data.keys().hasAny(['visibility']) || resource.data.visibility == 'public'));
+          && (resource.data.keys().hasAny(['visibility']) && resource.data.visibility == 'public'));
     }
 
     function isMomentLikeOnlyPatch(profileUid) {
@@ -1750,7 +1750,7 @@ service cloud.firestore {
           || (
             resource != null
             && profileOwnerActiveForPublicContent(uid)
-            && (!resource.data.keys().hasAny(['visibility']) || resource.data.visibility == 'public')
+            && (resource.data.keys().hasAny(['visibility']) && resource.data.visibility == 'public')
           )
           || (isPrivileged() && requesterProfileNotBanned());
 
@@ -1832,7 +1832,7 @@ service cloud.firestore {
           || (
             resource != null
             && profileOwnerActiveForPublicContent(uid)
-            && (!resource.data.keys().hasAny(['visibility']) || resource.data.visibility == 'public')
+            && (resource.data.keys().hasAny(['visibility']) && resource.data.visibility == 'public')
           );
 
         function momentFieldsOk() {
