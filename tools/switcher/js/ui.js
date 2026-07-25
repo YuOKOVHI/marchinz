@@ -64,6 +64,7 @@ MC.ui.exportOverlay = {
     if (!el) return;
     MC.ui.$("#eoTitleText").textContent = "書き出し中…";
     MC.ui.$("#eoTitleIcon").className = "fa-solid fa-file-export";
+    el.classList.remove("eo-failed");   // 前回の失敗表示を引きずらない
     MC.ui.$("#eoRun").hidden = false;
     MC.ui.$("#eoDone").hidden = true;
     MC.ui.$("#eoClose").hidden = true;
@@ -84,9 +85,16 @@ MC.ui.exportOverlay = {
     const el = MC.ui.$("#exportOverlay");
     if (!el || el.hidden) return;
     MC.ui.$("#eoTitleText").textContent = "書き出せませんでした";
-    MC.ui.$("#eoTitleIcon").className = "fa-solid fa-triangle-exclamation";
+    MC.ui.$("#eoTitleIcon").className = "fa-solid fa-triangle-exclamation eo-fail";
     MC.ui.$("#eoCancel").style.display = "none";   // 失敗後の中止は意味がない
     MC.ui.$("#eoClose").hidden = false;            // 詳細はMZPのfail表示が出ている
+    /* 「この画面のままお待ちください」を消す(2026-07-25 実機レビュー)。
+       失敗しているのに待機を促す文が残り、画面が矛盾していた。
+       #eoRun ごと隠してはいけない ─ 失敗の理由を出す #eoProgress(MZPのfailカード)が
+       その中にあるため、丸ごと隠すと対処法まで消える。案内文だけを落とす。
+       アイコンも eo-fail で危険色にする(それまで通常時と同じブランド青で、
+       色による危険の信号がゼロだった) */
+    el.classList.add("eo-failed");
   },
   close() {
     const el = MC.ui.$("#exportOverlay");

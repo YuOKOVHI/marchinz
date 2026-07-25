@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import hmac
 import os
 from datetime import datetime, timezone
 
@@ -23,7 +24,11 @@ def healthz():
 def trigger():
     token = os.getenv("TRIGGER_TOKEN", "").strip()
     got = request.headers.get("X-Trigger-Token", "").strip()
-    if not token or got != token:
+    # 定数時間で比較する(2026-07-25 セキュリティレビュー F4)。
+    # != は先頭から一致した分だけ早く返るため、応答時間からトークンを
+    # 1バイトずつ絞り込める。通れば Netlify のビルドフックを任意に叩けて
+    # ビルドクレジットを消費させられる。token 未設定なら 401 で閉じるのは従来どおり。
+    if not token or not hmac.compare_digest(got, token):
         return jsonify({"ok": False, "error": "unauthorized"}), 401
 
     hook = os.getenv("NETLIFY_BUILD_HOOK_URL", "").strip()

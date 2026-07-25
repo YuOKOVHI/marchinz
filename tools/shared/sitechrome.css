@@ -400,10 +400,17 @@
   .mzsc-tabbar a svg { width: 22px; height: 22px; stroke: currentColor; }
   .mzsc-tabbar a.on { color: #1e4fd6; }
 
-  /* 本文とツールの固定バー類をタブバーの上へ積む */
-  body.mzsc-has-tabbar { padding-bottom: calc(3.6rem + env(safe-area-inset-bottom, 0px)); }
-  body.mzsc-has-tabbar .mz-actionbar { bottom: calc(3.6rem + env(safe-area-inset-bottom, 0px)); }
-  body.mzsc-has-tabbar .mzp-dock { bottom: calc(3.6rem + 8px + env(safe-area-inset-bottom, 0px)); }
+  /* 本文とツールの固定バー類をタブバーの上へ積む。
+     高さは --mz-tabbar-h に1回だけ持たせ、各所はそれを参照する(2026-07-25)。
+     以前は 3.6rem を各行が個別に書いており、あとから足した中断ノートだけが
+     追随せず、実測で主ボタンを72%覆っていた */
+  body.mzsc-has-tabbar { --mz-tabbar-h: 3.6rem; }
+  body.mzsc-has-tabbar { padding-bottom: calc(var(--mz-tabbar-h) + env(safe-area-inset-bottom, 0px)); }
+  body.mzsc-has-tabbar .mz-actionbar { bottom: calc(var(--mz-tabbar-h) + env(safe-area-inset-bottom, 0px)); }
+  body.mzsc-has-tabbar .mzp-dock { bottom: calc(var(--mz-tabbar-h) + 8px + env(safe-area-inset-bottom, 0px)); }
+
+  /* 全画面系ではタブバーを畳むので、積み上げ高さも 0 に戻す(下の display:none と対) */
+  body.mz-export-open, body.mz-float-full, body.cutmode-open { --mz-tabbar-h: 0px; }
 
   /* 全画面系(書き出し全画面・プレビュー全画面・カット切替)では引っ込める */
   body.mz-export-open .mzsc-tabbar,

@@ -1345,7 +1345,18 @@ service cloud.firestore {
                 && mllProfileSectionVisMllPatchOk()
               )
               || (
-                mllProfileValuesOk(uid)
+                /* 本人チェックと requesterCanAct() を明示する(2026-07-25 セキュリティレビュー F1)。
+                   5本ある自己更新分岐のうち、この1本だけ requesterCanAct() が抜けていた。
+                   mllProfileRootSelfUpdateNotWithdrawn() は名前のとおり withdrawn しか見ず、
+                   mllProfileValuesOk / mllProfileUpdateInvariantsOk も banned を見ないため、
+                   凍結(banned)されたユーザーが display_name・bio・アバターを更新し続けられた。
+                   mll_profiles は read: if true なので、凍結の意図に反して
+                   書き換えた内容が未ログインの第三者からも読めていた。
+                   凍結ユーザーの退会経路は上の mllProfileSelfWithdrawOk が別に持っているので、
+                   ここを締めても詰まない */
+                request.auth.uid == uid
+                && requesterCanAct()
+                && mllProfileValuesOk(uid)
                 && mllProfileUpdateInvariantsOk()
                 && mllProfileRootSelfUpdateNotWithdrawn()
               )
@@ -1976,6 +1987,59 @@ service cloud.firestore {
     }
 
     // 作成者・管理人: 掲示をゴミ箱へ（物理削除しない）
+    /* 掲示の「作成者による編集」に create と同じ値検証を効かせる
+       (2026-07-25 セキュリティレビュー F3)。
+       それまで作成者 update は kind の列挙と created_by 不変しか見ておらず、
+       任意のキーを足したり title / venue_name を Firestore 上限(約1MB)まで
+       伸ばしたりできた。掲示は read: if true で全公開なので、
+       #community/events を開いた全員に転送される。
+
+       キーの allowlist は create のものに status / trashed_at / trashed_by を足す。
+       この3つはゴミ箱運用(isCalendarEventTrashPatch)で後から生えるため、
+       create と同じ hasOnly を当てると、一度ゴミ箱に入れた掲示を
+       作成者が編集できなくなる。 */
+    function calendarEventOwnerUpdateFieldsOk() {
+      return request.resource.data.keys().hasAll([
+          'kind', 'date', 'title', 'venue_pref', 'event_url', 'participation_format',
+          'created_by', 'liked_by',
+          'creator_display_name', 'creator_avatar_url', 'created_at'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'kind', 'date', 'title', 'venue_pref', 'event_url', 'participation_format',
+          'created_by', 'liked_by',
+          'creator_display_name', 'creator_avatar_url', 'created_at',
+          'end_date', 'venue_name', 'start_time',
+          // ゴミ箱運用で後から生えるキー
+          'status', 'trashed_at', 'trashed_by'
+        ])
+        && request.resource.data.date is string
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 200
+        && request.resource.data.venue_pref is string
+        && request.resource.data.venue_pref.size() > 0
+        && request.resource.data.venue_pref.size() <= 48
+        && request.resource.data.event_url is string
+        && request.resource.data.event_url.size() <= 2000
+        && (!request.resource.data.keys().hasAny(['end_date'])
+          || (request.resource.data.end_date is string
+            && request.resource.data.end_date.size() <= 10))
+        && (!request.resource.data.keys().hasAny(['venue_name'])
+          || (request.resource.data.venue_name is string
+            && request.resource.data.venue_name.size() <= 120))
+        && (!request.resource.data.keys().hasAny(['start_time'])
+          || (request.resource.data.start_time is string
+            && request.resource.data.start_time.size() <= 5))
+        && request.resource.data.participation_format is string
+        && request.resource.data.participation_format in ['観戦', '出演', '運営', 'チームスタッフ', '未定']
+        && request.resource.data.liked_by is map
+        && request.resource.data.creator_display_name is string
+        && request.resource.data.creator_display_name.size() <= 120
+        && request.resource.data.creator_avatar_url is string
+        && request.resource.data.creator_avatar_url.size() <= 2000
+        && request.resource.data.created_at is string;
+    }
+
     function isCalendarEventTrashPatch() {
       let d = request.resource.data.diff(resource.data);
       return signedIn()
@@ -2050,7 +2114,9 @@ service cloud.firestore {
                 && (
                   isCalendarEventLikeOnlyPatch()
                   || isCalendarEventTrashPatch()
-                  || resource.data.created_by == request.auth.uid
+                  // 作成者の編集にも create と同じ値検証を効かせる(F3)
+                  || (resource.data.created_by == request.auth.uid
+                    && calendarEventOwnerUpdateFieldsOk())
                 )
               )
             )

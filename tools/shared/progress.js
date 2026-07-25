@@ -43,6 +43,18 @@ window.MZP = (function () {
     ensureDock();
     dock.classList.toggle("show", !!on);
     document.body.classList.toggle("mzp-docked", !!on);
+    /* 実測した高さを配る(2026-07-25)。journey.js の --mz-journey-h と同じ方式。
+       下部の固定要素(親指バー・中断ノート)がこの上へ積めるようにする。
+       以前は各所が 69px / 3.6rem といった数値を個別に持っており、
+       タブバーが増えた(07-24)ときに中断ノートだけ追随せず、
+       実測で主ボタンを72%覆っていた */
+    const root = document.documentElement.style;
+    if (on) {
+      const h = Math.round(dock.getBoundingClientRect().height);
+      if (h > 0) root.setProperty("--mz-dock-h", h + "px");
+    } else {
+      root.removeProperty("--mz-dock-h");
+    }
   }
 
   /* ---- 描画の保証: 画面を止める処理の直前に必ず呼ぶ ----

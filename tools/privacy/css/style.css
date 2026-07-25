@@ -36,8 +36,12 @@ body::before {
   background-repeat: no-repeat;
 }
 
-/* ヘッダーは本体TOPと同じクリーム地+ネイビー文字 */
-header {
+/* ヘッダーは本体TOPと同じクリーム地+ネイビー文字。
+   セレクタは必ず .topbar で限定する(2026-07-25)。以前は裸の `header {}` だったため、
+   sitechrome.js が差し込む共有ブランドバー <header class="mzsc-brand"> にも適用され、
+   .mzsc-brand-inner が shrink-to-fit になってロゴ右端にハンバーガーが重なっていた。
+   mzsc- 接頭辞での衝突回避は要素セレクタからは守ってくれない。他3本と同じ形。 */
+.topbar {
   display: flex; align-items: center; justify-content: space-between;
   padding: 14px 16px; border-bottom: 1px solid var(--line);
   background: var(--cream);

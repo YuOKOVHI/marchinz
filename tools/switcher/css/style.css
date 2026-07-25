@@ -367,11 +367,16 @@ footer .foot-link { color: #1e4fd6; }
 button, select, input, label, .btn { touch-action: manipulation; }
 
 /* ============ ボトムアクションバー(モバイル): 親指ゾーンに「次の一手」 ============ */
+/* 親指バーの高さ。中断ノートは body 直下の兄弟なので、変数は body 側に置く
+   (カスタムプロパティは子孫にしか継承されない)。1箇所で持つ(2026-07-25)。
+   以前は .mz-interrupt-note 側にも 69px が直書きされ、二重管理だった */
+body { --mz-actionbar-h: 69px; }
+
 .mz-actionbar {
   display: none;
   position: fixed;
   left: 0; right: 0; bottom: 0;
-  z-index: 80;   /* MZPドック(90)の下: 進捗表示中はドックに譲る */
+  z-index: 80;   /* MZPドック(90)の下: 進捗表示中はドックに譲る(下の mzp-docked で畳む) */
   padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px));
   background: rgba(255, 255, 255, 0.86);
   -webkit-backdrop-filter: saturate(1.6) blur(14px);
@@ -972,10 +977,32 @@ body[data-mzj-phase="export"] .clip-slot.empty { display: none; }
   font-size: 17px; line-height: 1; color: var(--tx2); cursor: pointer;
 }
 .mz-interrupt-close:active { background: rgba(15, 33, 56, 0.08); }
-/* 親指バーが出ているときは、その上へ積んで「やり直す」ボタンを覆わない(D-1) */
-body.mz-actionbar-on .mz-interrupt-note {
-  bottom: calc(69px + 12px + env(safe-area-inset-bottom, 0px));
+/* 下部の固定要素の上へ積んで、主ボタンや進捗バーを覆わない(D-1 / 2026-07-25 実機修正)。
+   以前は 69px 決め打ちで、2026-07-24 に増えたタブバー(3.6rem)を知らなかったため
+   実測で #abPrimary を 72% 覆い、タップできるのは下端13pxだけだった。
+   いまは実在する要素の高さを変数から足し上げる:
+     --mz-tabbar-h  … shared/sitechrome.css がタブバー表示時に設定
+     --mz-dock-h    … shared/progress.js が進捗ドック表示時に実測して設定
+   どちらも無いときは 0 に落ちるので、単独表示のときの見た目は変わらない */
+.mz-interrupt-note {
+  bottom: calc(12px + var(--mz-tabbar-h, 0px) + env(safe-area-inset-bottom, 0px));
 }
+body.mz-actionbar-on .mz-interrupt-note {
+  bottom: calc(var(--mz-actionbar-h) + 12px + var(--mz-tabbar-h, 0px) + env(safe-area-inset-bottom, 0px));
+}
+/* 進捗ドックが出ているときはその上へ。ドック表示中は親指バーを畳む(下の規則)ので、
+   親指バーの高さは足さない */
+body.mzp-docked .mz-interrupt-note {
+  bottom: calc(var(--mz-dock-h, 64px) + 12px + 8px + var(--mz-tabbar-h, 0px) + env(safe-area-inset-bottom, 0px));
+}
+
+/* 進捗ドック表示中は親指バーを畳む(2026-07-25 実機修正)。
+   .mz-actionbar の z-index:80 のコメントは以前から「進捗表示中はドックに譲る」
+   と書いていたが、譲る規則が存在しなかった。結果ドック(z:90)が主ボタンを65%覆い、
+   ドックは pointer-events:none なので「進捗バーに見えるものを押すと
+   裏の『動画を選ぶ』が発火してファイルピッカーが開く」誤爆になっていた。
+   進捗が動いている間は setBusy() で主ボタンが disabled なので、畳んで支障はない */
+body.mzp-docked .mz-actionbar { display: none; }
 @media (min-width: 860px) {
   .mz-interrupt-note { left: auto; right: 20px; max-width: 420px; }
 }
@@ -1091,6 +1118,10 @@ body[data-mzj-phase="sync"] .stage { display: none; }
 #eoDone:not([hidden]) { animation: eoRise .34s cubic-bezier(.2,.7,.3,1) both; }
 @keyframes eoRise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 .eo-title i.eo-check { color: #2fa36b; animation: eoPop .42s cubic-bezier(.2,.8,.3,1.5) both; }
+/* 失敗表示(2026-07-25 実機レビュー)。危険色にして、待機の案内文だけを消す。
+   #eoProgress(失敗理由のカード)は #eoRun の中にあるので隠してはいけない */
+.eo-title i.eo-fail { color: var(--err); }
+.export-overlay.eo-failed .eo-note { display: none; }
 @keyframes eoPop { 0% { transform: scale(.4); opacity: 0; } 60% { transform: scale(1.18); } 100% { transform: scale(1); opacity: 1; } }
 /* ダウンロードは「動画を保存」に対する控えめな二次導線(案B A) */
 .eo-dl { font-size: 13px; opacity: .85; }
