@@ -534,7 +534,14 @@ MC.ui.updateActionBar = () => {
     } else if (cur === "audio") {
       /* 音声を選ぶ: 本体の決定ボタンが見えているなら重ねない(書き出しと同じ流儀) */
       const db = MC.ui.$("#audioDecideBtn");
-      const r = db ? db.getBoundingClientRect() : { height: 0 };
+      /* まだ分析していない＝本体のボタンが押せない状態なら、行動バーにも出さない。
+         出したままだと「押せそうなのに何も起きない」になる(2026-07-25) */
+      if (!db || db.disabled) {
+        bar.classList.remove("on");
+        document.body.classList.remove("mz-actionbar-on");
+        return;
+      }
+      const r = db.getBoundingClientRect();
       if (r.height > 0 && r.top < window.innerHeight - 70 && r.bottom > 0) {
         bar.classList.remove("on");
         document.body.classList.remove("mz-actionbar-on");
@@ -897,6 +904,20 @@ MC.ui.renderAudio = () => {
     };
     box.appendChild(label);
   }
+  /* 「この音で進める」は**分析が終わるまで押させない**（2026-07-25 実機で事故）。
+     このパネルは最初から画面にあり、読み込んだ直後でも押せてしまっていた。
+     押すと同期も解析もしていない素材のまま仕上げ(runEasyFinish)が走り、
+     優さんのiPhoneでタブごと落ちた。
+     判定は「解析で stats が付いたか」。音量表示が「未解析」のうちは押せない。 */
+  const analyzed = cands.some(c => c.stats);
+  const db = MC.ui.$("#audioDecideBtn");
+  if (db) {
+    db.disabled = !analyzed;
+    if (!analyzed) db.dataset.mzWasDisabled = "1";   // 作業中ロックの解除で誤って有効化されないように
+    else delete db.dataset.mzWasDisabled;
+  }
+  const hint = MC.ui.$("#audioGateHint");
+  if (hint) hint.hidden = analyzed;
 };
 
 /* --- プリセット/レイアウト/スロット --- */
@@ -1371,11 +1392,40 @@ MC.ui.setBusy = busy => {
   } catch (_) {}
   if (busy) MC.ui.clearInterruptNote();   // 新しい作業を始めたら前回の中断案内は消す
   else MC.ui._hiddenAt = 0;
-  const ids = ["#easyStartBtn", "#syncBtn", "#autocutBtn", "#colorMatchBtn", "#exportBtn", "#abPrimary"];
-  ids.forEach(id => {
-    const el = MC.ui.$(id);
-    if (el) el.disabled = busy ? true : el.dataset.mzWasDisabled === "1";
+  /* ---- 作業中は操作を全部止める（2026-07-25 実機で事故） ----
+     以前は6個を名指しで止めていた。名指しから漏れた #audioDecideBtn が分析中も
+     押せてしまい、優さんのiPhoneで分析の途中に押して落ちた。
+     名指しは「ボタンを増やすたびに漏れる」形なので、逆にする:
+     作業領域(main)のボタンを全部止め、**止めてはいけないものだけ**を残す。
+
+     残すもの:
+       #cancelBtn / #eoCancel … 中止。作業中にこそ押せないと困る
+       #eoClose               … 失敗表示を閉じる
+       #errorLog 内           … ログのコピー/閉じる（失敗時に必要）
+     ヘッダ(サイト共通のハンバーガー等)は main の外なので元から対象外。 */
+  const KEEP = new Set(["cancelBtn", "eoCancel", "eoClose"]);
+  const lockables = [
+    ...document.querySelectorAll("main button, main input, main select, #exportOverlay button"),
+    MC.ui.$("#abPrimary"),
+  ].filter(Boolean);
+  lockables.forEach(el => {
+    if (KEEP.has(el.id)) return;
+    if (el.closest("#errorLog")) return;
+    // 進捗カードが自分で出す「中止する」「やり直す」。ここを止めると長い処理を殺せなくなる
+    if (el.classList.contains("mzp-cancel") || el.classList.contains("mzp-retry")) return;
+    if (busy) {
+      /* もともと disabled だったものは、解除時にその状態へ戻す。
+         この印は今まで読むだけで一度も書かれておらず、解除のたびに
+         「本来まだ押せないボタン」まで有効になっていた（例: #exportBtn）。
+         直後の renderAll が上書きするので表面化していなかっただけ */
+      if (!el.dataset.mzWasDisabled) el.dataset.mzWasDisabled = el.disabled ? "1" : "0";
+      el.disabled = true;
+    } else {
+      el.disabled = el.dataset.mzWasDisabled === "1";
+      delete el.dataset.mzWasDisabled;
+    }
   });
+  document.body.classList.toggle("mz-busy-lock", !!busy);
   const dz = MC.ui.$("#clipSlots");
   if (dz) dz.classList.toggle("mz-busy", !!busy);
   MC.ui.guardLeave(!!busy);   // 作業中はタブを閉じさせない・画面を消させない
@@ -2054,6 +2104,8 @@ MC.ui.wire = () => {
   };
   $("#audioDecideBtn").onclick = () => {
     if (MC.ui._busy) return;
+    // 画面から無効にしてあっても、行動バーの act などが click() を代行しうる
+    if ($("#audioDecideBtn").disabled) return;
     MC.preview.pause();
     MC.S.audioDecided = true;
     if (MC.ui._setupTab === "pro") {

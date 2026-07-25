@@ -149,6 +149,17 @@ body::before {
   padding: 8px 14px; cursor: pointer; font-size: 13px; font-family: inherit; }
 .btn:hover:not(:disabled) { border-color: var(--acc); background: #f4f7ff; }
 .btn:disabled { opacity: .45; cursor: default; }
+/* 作業中のロック。disabled だけでもクリックは飛ばないが、iOSでは
+   押し込みのハイライトが出て「押せた」ように見えるので触感ごと殺す。
+   中止ボタンだけは押せないと困るので除外する(2026-07-25 実機で事故) */
+body.mz-busy-lock main button,
+body.mz-busy-lock main input,
+body.mz-busy-lock main select { pointer-events: none; -webkit-tap-highlight-color: transparent; }
+/* 中止と、進捗カード自身が出す「中止する」は必ず押せること。
+   ここを塞ぐと長い分析を止める手段が無くなる */
+body.mz-busy-lock #cancelBtn, body.mz-busy-lock #eoCancel, body.mz-busy-lock #eoClose,
+body.mz-busy-lock .mzp-cancel, body.mz-busy-lock .mzp-retry,
+body.mz-busy-lock #errorLog button { pointer-events: auto; opacity: 1; }
 .btn.primary { background: var(--acc); color: #fff; border: none; font-weight: bold; }
 .btn.primary:hover:not(:disabled) { background: var(--acc-deep); }
 .btn.big { padding: 11px 18px; font-size: 14px; }

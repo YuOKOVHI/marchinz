@@ -633,6 +633,92 @@ async function countSamples(ns, file, fromSec) {
     return `${a.length} バイト一致(組み直しが正しい証明)`;
   });
 
+  group("⑧ 作業中・分析前に押せてはいけないボタン(2026-07-25 実機で事故)");
+  /* 優さんのiPhoneで「分析完了前に『この音で進める』を押したら落ちた」。
+     原因は2つあり、どちらも「押せてしまう」形だった:
+       ① setBusy が6個を名指しで止めており、#audioDecideBtn が漏れていた
+       ② そもそも分析前から押せた(押すと未同期のまま仕上げが走る)
+     本物の画面を iframe で開いて、押せないことを確かめる。 */
+  const withSwitcher = async fn => {
+    const f = document.createElement("iframe");
+    f.style.cssText = "position:fixed;left:-9999px;top:0;width:390px;height:844px;border:0";
+    f.src = "../switcher/index.html";
+    document.body.appendChild(f);
+    try {
+      await new Promise((res, rej) => {
+        f.onload = res;
+        setTimeout(() => rej(new Error("switcher の読み込みが終わらない")), 20000);
+      });
+      const w = f.contentWindow;
+      for (let i = 0; i < 100 && !(w.MC && w.MC.ui && w.MC.ui.setBusy); i++) {
+        await new Promise(r => setTimeout(r, 100));
+      }
+      if (!(w.MC && w.MC.ui && w.MC.ui.setBusy)) throw new Error("MC.ui が生えない");
+      return await fn(w, f.contentDocument);
+    } finally { f.remove(); }
+  };
+
+  await test("★分析前は「この音で進める」が押せない", async () => {
+    return withSwitcher(async (w, d) => {
+      w.MC.S.clips = [
+        { id: 1, name: "a.mp4", isImage: false, isAudio: false, hasAudio: true, stats: null, duration: 60 },
+        { id: 2, name: "b.mp4", isImage: false, isAudio: false, hasAudio: true, stats: null, duration: 60 },
+      ];
+      w.MC.S.audioClipId = 1;
+      w.MC.ui.renderAudio();
+      const btn = d.getElementById("audioDecideBtn");
+      if (!btn) throw new Error("#audioDecideBtn が無い");
+      if (!btn.disabled) throw new Error("分析前なのに押せる(未同期のまま仕上げが走る)");
+      /* 押せない状態でも click() を代行されうる(行動バーの act)。走らないことまで見る */
+      let ran = false;
+      const orig = w.MC.ui.runEasyFinish;
+      w.MC.ui.runEasyFinish = () => { ran = true; };
+      btn.click();
+      w.MC.ui.runEasyFinish = orig;
+      if (ran) throw new Error("click() で仕上げが走ってしまう");
+      return "無効 + ハンドラも走らない";
+    });
+  });
+
+  await test("★分析が済むと押せるようになる(閉めっぱなしにしない)", async () => {
+    return withSwitcher(async (w, d) => {
+      w.MC.S.clips = [
+        { id: 1, name: "a.mp4", isImage: false, isAudio: false, hasAudio: true, stats: { rms: .05, clipRatio: 0 }, duration: 60 },
+        { id: 2, name: "b.mp4", isImage: false, isAudio: false, hasAudio: true, stats: { rms: .04, clipRatio: 0 }, duration: 60 },
+      ];
+      w.MC.S.audioClipId = 1;
+      w.MC.ui.renderAudio();
+      if (d.getElementById("audioDecideBtn").disabled) {
+        throw new Error("解析済みでも押せない(フローが進まなくなる)");
+      }
+      return "stats が付いたら開く";
+    });
+  });
+
+  await test("★作業中は操作を全部止め、中止だけ残す", async () => {
+    return withSwitcher(async (w, d) => {
+      w.MC.S.clips = [
+        { id: 1, name: "a.mp4", isImage: false, isAudio: false, hasAudio: true, stats: { rms: .05, clipRatio: 0 }, duration: 60 },
+        { id: 2, name: "b.mp4", isImage: false, isAudio: false, hasAudio: true, stats: { rms: .04, clipRatio: 0 }, duration: 60 },
+      ];
+      w.MC.S.audioClipId = 1;
+      w.MC.ui.renderAudio();
+      w.MC.ui.setBusy(true);
+      const locked = [];
+      for (const el of d.querySelectorAll("main button")) {
+        const keep = ["cancelBtn", "eoCancel", "eoClose"].includes(el.id)
+          || el.closest("#errorLog") || el.classList.contains("mzp-cancel");
+        if (!keep && !el.disabled) locked.push(el.id || el.className || el.textContent.trim().slice(0, 12));
+      }
+      const cancel = d.getElementById("cancelBtn");
+      w.MC.ui.setBusy(false);
+      if (locked.length) throw new Error("作業中なのに押せるボタンが残っている: " + locked.join(" / "));
+      if (cancel && cancel.disabled) throw new Error("中止まで止めてしまっている(長い処理を殺せない)");
+      if (!d.body.classList.contains("mz-busy-lock") === false) { /* 解除後なので付いていないのが正 */ }
+      return "main内すべて無効・中止は有効";
+    });
+  });
+
   /* ===== 集計 ===== */
   const bad = R.filter(r => !r.ok);
   sum.textContent = bad.length
