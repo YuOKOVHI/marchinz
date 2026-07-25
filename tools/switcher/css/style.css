@@ -899,11 +899,13 @@ body[data-mzj-phase="export"] .clip-slot.empty { display: none; }
 .side .panel.step-collapsed > *:not(h2) { display: none !important; }
 .side .panel.step-collapsed > h2 { margin-bottom: 0; }
 .side .panel.step-collapsed > h2 .hint { display: none; }   /* 畳み中の説明はチップに譲る */
-.side .panel.step-done > h2, .side .panel.step-locked > h2 { padding-right: 96px; }
+.side .panel.step-done > h2 { padding-right: 96px; }
 .side .panel.step-done > h2 { cursor: pointer; }
 .side .panel.step-done > h2:focus-visible { outline: 2px solid var(--acc); outline-offset: 4px; border-radius: 6px; }
-.side .panel.step-locked { opacity: 0.55; }
-.side .panel.step-locked > h2 { cursor: default; }
+/* まだ順番の来ていない工程は**出さない**(2026-07-25 優さん指示)。
+   以前は opacity .55 で薄く並べていたが、押せないものが画面を占めるだけだった。
+   道のりは上のジャーニーバー(1-2-3-4-5)が示すので、ここで重ねる必要がない */
+.side .panel.step-locked { display: none; }
 .mz-step-chip {
   position: absolute; right: 0; top: 50%; transform: translateY(-50%);
   display: inline-flex; align-items: center; gap: 5px;
@@ -911,7 +913,6 @@ body[data-mzj-phase="export"] .clip-slot.empty { display: none; }
   color: var(--ok); background: rgba(30, 122, 67, 0.08);
   border-radius: 999px; padding: 4px 9px; white-space: nowrap;
 }
-.mz-step-chip.locked { color: var(--tx2); background: var(--panel2); }
 .mz-step-chip .fa-chevron-down, .mz-step-chip .fa-chevron-up { font-size: 9px; opacity: 0.7; }
 
 

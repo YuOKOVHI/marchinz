@@ -649,8 +649,6 @@ MC.ui.STEP_GROUPS = [
   { id: "polish", panels: ["#placeSec", "#layoutSec", "#finishSec"] },
   { id: "export", panels: ["#exportSec"] },
 ];
-/* ロック中に「何を待っているか」を短く。mat は最初のステップなのでロックされない */
-MC.ui.STEP_WAIT_NOTE = { sync: "素材のあと", audio: "分析のあと", polish: "音声のあと", export: "音声のあと" };
 MC.ui._stepOpen = new Set();   // 手で開いた「すみ」パネル(フェーズが進むと畳み直す)
 MC.ui._stepPhase = null;
 
@@ -688,8 +686,6 @@ MC.ui.applySteps = current => {
           html = open
             ? '<i class="fa-solid fa-circle-check"></i> <i class="fa-solid fa-chevron-up"></i>'
             : `<i class="fa-solid fa-circle-check"></i> ${MC.ui.stepSummary(sel)} <i class="fa-solid fa-chevron-down"></i>`;
-        } else if (state === "locked") {
-          html = `<i class="fa-solid fa-lock"></i> ${MC.ui.STEP_WAIT_NOTE[g.id] || ""}`;
         }
         let chip = h2.querySelector(".mz-step-chip");
         if (html) {
@@ -699,7 +695,6 @@ MC.ui.applySteps = current => {
             h2.appendChild(chip);
           }
           if (chip.dataset.h !== html) { chip.innerHTML = html; chip.dataset.h = html; }
-          chip.classList.toggle("locked", state === "locked");
         } else if (chip) {
           chip.remove();
         }
