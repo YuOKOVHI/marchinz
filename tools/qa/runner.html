@@ -363,9 +363,21 @@ async function countSamples(ns, file, fromSec) {
      ここが通らないなら並行化してはいけない。 */
   const IW = 160, IH = 90, IFPS = 30, IN_V = 30;          // 1秒ぶん
   const IN_A_SEC = 1.0, IA_SR = 48000, IA_FR = 1024;
-  const muxInterleaved = async interleave => {
+  /* useStream=true は iPhone 本番と同じ経路(StreamTarget + chunked)。
+     ArrayBufferTarget は「完成MP4をメモリに載せられる端末」だけの経路で、
+     iPhone は OPFS worker へ StreamTarget で流す(exporter.js の opfsCreate)。
+     並行化は「target への書き込み順」を変える改造なので、こちらを通さないと
+     変えた当のものが試験対象から漏れる。 */
+  const muxInterleaved = async (interleave, useStream) => {
+    const writes = [];
     const mx = new Mp4Muxer.Muxer({
-      target: new Mp4Muxer.ArrayBufferTarget(),
+      target: useStream
+        ? new Mp4Muxer.StreamTarget({
+            onData: (data, position) => writes.push({ pos: position, buf: data.slice() }),
+            chunked: true,
+            chunkSize: 1 << 20,     // 本番は16MB。ここは素材が小さいので1MBで複数チャンクにする
+          })
+        : new Mp4Muxer.ArrayBufferTarget(),
       video: { codec: "avc", width: IW, height: IH },
       audio: { codec: "aac", sampleRate: IA_SR, numberOfChannels: 2 },
       fastStart: false,                                    // 本番 exporter.js と同じ
@@ -418,7 +430,23 @@ async function countSamples(ns, file, fromSec) {
     venc.close(); aenc.close();
     if (err) throw err;
     mx.finalize();
-    return new File([mx.target.buffer], "mux.mp4", { type: "video/mp4" });
+    if (!useStream) return { file: new File([mx.target.buffer], "mux.mp4", { type: "video/mp4" }) };
+    /* onData(data, position) を position どおりに組み直す。
+       worker(exportwriter.js)がやっているのと同じことを、ここで検算する */
+    const end = writes.reduce((m, w) => Math.max(m, w.pos + w.buf.byteLength), 0);
+    const out = new Uint8Array(end);
+    const covered = new Uint8Array(end);
+    for (const w of writes) {
+      out.set(w.buf, w.pos);
+      covered.fill(1, w.pos, w.pos + w.buf.byteLength);
+    }
+    let monotonic = true;
+    for (let i = 1; i < writes.length; i++) if (writes[i].pos < writes[i - 1].pos) monotonic = false;
+    return {
+      file: new File([out], "mux.mp4", { type: "video/mp4" }),
+      bytes: out,
+      info: { 書き込み回数: writes.length, 位置が単調: monotonic, 穴の位置: covered.indexOf(0), 総バイト: end },
+    };
   };
 
   /* 出来上がったMP4を共有デマックスで開き直し、両トラックが揃っているか数える */
@@ -435,22 +463,174 @@ async function countSamples(ns, file, fromSec) {
              aRate: at.audio.sample_rate || at.audio.samplerate, aCh: at.audio.channel_count };
   };
 
-  let serialRef = null;
+  let serialRef = null, serialBytes = null;
   await test("直列(現行)で映像30コマ+音声1秒のMP4ができる", async () => {
-    serialRef = await probeTracks(await muxInterleaved(false));
+    serialRef = await probeTracks((await muxInterleaved(false)).file);
     eq(serialRef.nv, IN_V, "映像サンプル数");
     eq(serialRef.aRate, IA_SR, "音声レート");
     eq(serialRef.aCh, 2, "音声チャンネル数");
     return `映像${serialRef.vDur.toFixed(2)}秒 / 音声${serialRef.aDur.toFixed(2)}秒`;
   });
   await test("★並行(交互)に積んでも同じ結果になる", async () => {
-    const r = await probeTracks(await muxInterleaved(true));
+    const r = await probeTracks((await muxInterleaved(true)).file);
     eq(r.nv, IN_V, "映像サンプル数");
     eq(r.aRate, IA_SR, "音声レート");
     eq(r.aCh, 2, "音声チャンネル数");
     if (Math.abs(r.vDur - serialRef.vDur) > 0.01) throw new Error(`映像尺がずれた: ${r.vDur} vs ${serialRef.vDur}`);
     if (Math.abs(r.aDur - serialRef.aDur) > 0.01) throw new Error(`音声尺がずれた: ${r.aDur} vs ${serialRef.aDur}`);
     return "直列と尺・トラック構成が一致";
+  });
+
+  /* エンコード済みチャンクを1度だけ作り、同じ列を2つの target へ流す。
+     2回エンコードして比べてはいけない ─ 映像エンコーダは同じ入力でも実行ごとに
+     揺れる(実測: SPS の VUI が 1バイトだけ 0x7e / 0x88 で変わった)。
+     それを比べると target の違いではなくエンコーダの揺れを見てしまう。 */
+  const captureAV = async () => {
+    const seq = [];
+    let err = null;
+    const venc = new VideoEncoder({ output: (c, m) => seq.push({ k: "V", c, m }), error: e => { err = e; } });
+    venc.configure({ codec: "avc1.42001f", width: IW, height: IH, bitrate: 1e6, framerate: IFPS });
+    const aenc = new AudioEncoder({ output: (c, m) => seq.push({ k: "A", c, m }), error: e => { err = e; } });
+    aenc.configure({ codec: "mp4a.40.2", sampleRate: IA_SR, numberOfChannels: 2, bitrate: 192000 });
+    const cv = new OffscreenCanvas(IW, IH), ctx = cv.getContext("2d");
+    const nWin = Math.ceil(IN_A_SEC * IA_SR / IA_FR);
+    for (let k = 0; k < Math.max(IN_V, nWin); k++) {          // 並行と同じ交互投入
+      if (k < IN_V) {
+        const v = 30 + k * 3;
+        ctx.fillStyle = `rgb(${v},${v},${v})`; ctx.fillRect(0, 0, IW, IH);
+        const f = new VideoFrame(cv, { timestamp: Math.round(k * 1e6 / IFPS), duration: Math.round(1e6 / IFPS) });
+        venc.encode(f, { keyFrame: k % 15 === 0 }); f.close();
+      }
+      if (k < nWin) {
+        const data = new Float32Array(IA_FR * 2);
+        for (let i = 0; i < IA_FR; i++) {
+          const t = (k * IA_FR + i) / IA_SR;
+          data[i] = data[IA_FR + i] = Math.sin(2 * Math.PI * 440 * t) * 0.25;
+        }
+        aenc.encode(new AudioData({ format: "f32-planar", sampleRate: IA_SR, numberOfFrames: IA_FR,
+          numberOfChannels: 2, timestamp: Math.round(k * IA_FR * 1e6 / IA_SR), data }));
+      }
+    }
+    await venc.flush(); await aenc.flush(); venc.close(); aenc.close();
+    if (err) throw err;
+    return seq;
+  };
+
+  /* 捕まえたチャンク列を、指定の target へ同じ順で流し込む */
+  const replay = (seq, useStream, chunkSize) => {
+    const writes = [];
+    const mx = new Mp4Muxer.Muxer({
+      target: useStream
+        ? new Mp4Muxer.StreamTarget({ onData: (d, pos) => writes.push({ pos, buf: d.slice() }),
+                                      chunked: true, chunkSize })
+        : new Mp4Muxer.ArrayBufferTarget(),
+      video: { codec: "avc", width: IW, height: IH },
+      audio: { codec: "aac", sampleRate: IA_SR, numberOfChannels: 2 },
+      fastStart: false,
+    });
+    for (const s of seq) (s.k === "V" ? mx.addVideoChunk : mx.addAudioChunk).call(mx, s.c, s.m);
+    mx.finalize();
+    if (!useStream) return { bytes: new Uint8Array(mx.target.buffer) };
+    const end = writes.reduce((m, w) => Math.max(m, w.pos + w.buf.byteLength), 0);
+    const out = new Uint8Array(end), covered = new Uint8Array(end);
+    for (const w of writes) { out.set(w.buf, w.pos); covered.fill(1, w.pos, w.pos + w.buf.byteLength); }
+    let monotonic = true;
+    for (let i = 1; i < writes.length; i++) if (writes[i].pos < writes[i - 1].pos) monotonic = false;
+    return { bytes: out, writes: writes.map(w => ({ pos: w.pos, len: w.buf.byteLength })),
+             info: { 回数: writes.length, 単調: monotonic, 穴: covered.indexOf(0), 総バイト: end } };
+  };
+
+  let AV = null;
+  await test("★StreamTargetの書き込みに穴が無い / 書き戻しの有無を明らかにする", async () => {
+    AV = AV || await captureAV();
+    const r = replay(AV, true, 4096);          // 小さめのチャンクで複数回書かせる
+    if (r.info.穴 >= 0) throw new Error(`書かれていない範囲がある @${r.info.穴}`);
+    ge(r.info.回数, 2, "書き込み回数(チャンクに分かれたか)");
+    /* mp4-muxer は finalize で mdat のサイズを前へ書き戻す。つまり position は
+       単調ではない。追記しかできない書き込み先だと壊れるということなので、
+       「戻る先が既に書いた範囲の中か(=穴あきの飛び越しではないか)」を確かめる。
+       本番の exportwriter.js は createSyncAccessHandle().write(data,{at})で
+       任意位置に書けるので、この前提を満たす */
+    let back = 0, high = 0;
+    for (const w of r.writes) {
+      if (w.pos < high) {
+        back++;
+        if (w.pos + w.len > high) throw new Error(`書き戻しが未書き込み領域へはみ出した @${w.pos}`);
+      }
+      high = Math.max(high, w.pos + w.len);
+    }
+    return `${r.info.回数}回 / ${r.info.総バイト}バイト / 書き戻し${back}回(追記専用の書き込み先では壊れる)`;
+  });
+
+  await test("★iPhone本番経路: exportwriter.js(worker+OPFS)へ実際に書いて読み戻せる", async () => {
+    AV = AV || await captureAV();
+    if (!navigator.storage || !navigator.storage.getDirectory) return "この環境にOPFSが無いので省略";
+    const w = new Worker("../switcher/js/exportwriter.js");
+    /* 本番の _writerReq と同じ「1往復ずつ」の作法。ready は読み飛ばす */
+    const req = (msg, transfer) => new Promise((res, rej) => {
+      const onMsg = ev => {
+        const m = ev.data || {};
+        if (m.type === "ready") return;
+        w.removeEventListener("message", onMsg);
+        if (m.type === "error") rej(new Error(m.op + ": " + m.message)); else res(m);
+      };
+      w.addEventListener("message", onMsg);
+      w.postMessage(msg, transfer || []);
+    });
+    try {
+      await req({ type: "open", dir: "mz-qa", name: "qa-iphone-path.mp4" });
+      let chain = Promise.resolve(), backWrites = 0, high = 0, n = 0;
+      const mx = new Mp4Muxer.Muxer({
+        target: new Mp4Muxer.StreamTarget({
+          onData: (d, pos) => {                       // 本番の opfsCreate と同じ形
+            const copy = d.slice();
+            if (pos < high) backWrites++;
+            high = Math.max(high, pos + copy.byteLength);
+            n++;
+            chain = chain.then(() => req({ type: "write", data: copy.buffer, position: pos }, [copy.buffer]));
+            chain.catch(() => {});
+          },
+          chunked: true, chunkSize: 4096,
+        }),
+        video: { codec: "avc", width: IW, height: IH },
+        audio: { codec: "aac", sampleRate: IA_SR, numberOfChannels: 2 },
+        fastStart: false,
+      });
+      for (const s of AV) (s.k === "V" ? mx.addVideoChunk : mx.addAudioChunk).call(mx, s.c, s.m);
+      mx.finalize();
+      await chain;                                   // 積んだ write を流し切ってから確定
+      const fin = await req({ type: "finalize" });
+      const root = await navigator.storage.getDirectory();
+      const dir = await root.getDirectoryHandle("mz-qa");
+      const fh = await dir.getFileHandle("qa-iphone-path.mp4");
+      const file = await fh.getFile();
+      const r = await probeTracks(new File([await file.arrayBuffer()], "o.mp4", { type: "video/mp4" }));
+      eq(r.nv, IN_V, "映像サンプル数");
+      eq(r.aCh, 2, "音声チャンネル数");
+      if (Math.abs(r.vDur - serialRef.vDur) > 0.01) throw new Error(`映像尺がずれた: ${r.vDur}`);
+      await dir.removeEntry("qa-iphone-path.mp4").catch(() => {});
+      return `worker書き込み${n}回(うち書き戻し${backWrites}回) / ${fin.size}バイト → 正しく開けた`;
+    } finally { w.terminate(); }
+  });
+  await test("★StreamTargetで組み直したMP4が正しく開ける", async () => {
+    AV = AV || await captureAV();
+    const r = await probeTracks(new File([replay(AV, true, 4096).bytes], "s.mp4", { type: "video/mp4" }));
+    eq(r.nv, IN_V, "映像サンプル数");
+    eq(r.aRate, IA_SR, "音声レート");
+    eq(r.aCh, 2, "音声チャンネル数");
+    if (Math.abs(r.vDur - serialRef.vDur) > 0.01) throw new Error(`映像尺がずれた: ${r.vDur}`);
+    if (Math.abs(r.aDur - serialRef.aDur) > 0.01) throw new Error(`音声尺がずれた: ${r.aDur}`);
+    return "ArrayBufferTarget版と尺・トラック構成が一致";
+  });
+  await test("★同じチャンク列なら StreamTarget と ArrayBufferTarget は同一バイト", async () => {
+    AV = AV || await captureAV();
+    const a = replay(AV, false).bytes;
+    const b = replay(AV, true, 4096).bytes;
+    eq(b.length, a.length, "長さ");
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] !== b[i]) throw new Error(`${i} バイト目が違う: ${a[i]} vs ${b[i]}`);
+    }
+    return `${a.length} バイト一致(組み直しが正しい証明)`;
   });
 
   /* ===== 集計 ===== */
