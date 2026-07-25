@@ -495,7 +495,7 @@ MC.visual.analyzeClipWC = async (clip, l0, l1, prog) => {
   }
   wanted.sort((a, b) => a.t - b.t);
 
-  const src = new MC.MP4Source(clip.file);
+  const src = new MZ_MP4.MP4Source(clip.file);
   await src.init();
   const vt = src.videoTrack();
   if (!vt) throw new Error("映像トラックなし");

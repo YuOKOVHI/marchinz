@@ -159,7 +159,7 @@ MZ.exporter.exportMP4 = async (clip, onProgress) => {
   const buffer = [];  // {frame, ts, dur, boxes} — 新しい顔の「さかのぼりマスク」用の遅延バッファ
   const frames = [];  // デコーダ出力の未処理フレーム(finallyで確実にcloseするためtryの外で宣言)
   try {
-    const src = new MZ.MP4Source(clip.file);
+    const src = new MZ_MP4.MP4Source(clip.file);
     await src.init();
     const vt = src.videoTrack();
     if (!vt) throw new Error("映像トラックがありません");

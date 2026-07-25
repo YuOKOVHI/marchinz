@@ -124,3 +124,7 @@ window.MV = {
 
   nextId: 1,
 };
+
+/* 共通デマックス(tools/shared/mp4source.js)のログをこのツールのデバッグ欄へ流す */
+MZ_MP4.setLogger(msg => MV.log(msg));
+

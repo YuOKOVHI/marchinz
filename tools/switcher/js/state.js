@@ -77,6 +77,9 @@ MC.log = (...a) => {
   }).join(" ");
   MC.pushDebug(line);
 };
+
+/* 共通デマックス(tools/shared/mp4source.js)のログをこのツールのデバッグ欄へ流す */
+MZ_MP4.setLogger(msg => MC.log(msg));
 /* 未捕捉のエラーもログへ(画面から見えるようにする) */
 window.addEventListener("error", e => {
   MC.pushDebug(`[error] ${e.message} @${(e.filename || "").split("/").pop()}:${e.lineno}`);

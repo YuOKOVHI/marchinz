@@ -27,6 +27,9 @@ MZ.log = (...a) => {
   MZ.debug.push(a.map(x => (typeof x === "string" ? x : JSON.stringify(x))).join(" "));
 };
 
+/* 共通デマックス(tools/shared/mp4source.js)のログをこのツールのデバッグ欄へ流す */
+MZ_MP4.setLogger(msg => MZ.log(msg));
+
 /* タイマー節流(非表示タブ)の影響を受けないyield */
 MZ.yield = () => new Promise(r => {
   const ch = new MessageChannel();

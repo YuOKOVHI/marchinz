@@ -152,7 +152,7 @@ RA.exporter.exportMP4 = async (clip, onProgress) => {
   let venc = null, decoder = null, renderer = null;
   const pending = [];
   try {
-    const src = new RA.MP4Source(clip.file);
+    const src = new MZ_MP4.MP4Source(clip.file);
     await src.init();
     const vt = src.videoTrack();
     if (!vt) throw new Error("映像トラックがありません");

@@ -87,7 +87,7 @@ MV.exporter.VideoPipe = class {
   }
 
   async init(fromLocalSec) {
-    this.src = new MV.MP4Source(this.clip.file);
+    this.src = new MZ_MP4.MP4Source(this.clip.file);
     await this.src.init();
     const vt = this.src.videoTrack();
     if (!vt) throw new Error("映像トラックがありません: " + this.clip.name);
@@ -206,7 +206,7 @@ MV.exporter.readClipAudio = async (clip, fromSec, durSec) => {
   const OUT_SR = MV.exporter.OUT_SR;
   const need = Math.ceil(durSec * OUT_SR);
   const L = new Float32Array(need), R = new Float32Array(need);
-  const src = new MV.MP4Source(clip.file);
+  const src = new MZ_MP4.MP4Source(clip.file);
   await src.init();
 
   /* リニアPCM(ResolveのMOV等)は生読み */

@@ -56,7 +56,7 @@ MC.exporter.VideoPipe = class {
   }
 
   async init(fromLocalSec) {
-    this.src = new MC.MP4Source(this.clip.file);
+    this.src = new MZ_MP4.MP4Source(this.clip.file);
     await this.src.init();
     const vt = this.src.videoTrack();
     if (!vt) throw new Error("映像トラックがありません: " + this.clip.name);
@@ -212,7 +212,7 @@ MC.exporter.measureAacDelay = async () => {
 
 /* ---- 音声: 選択クリップの範囲をデコード→48kHzステレオ→AAC ---- */
 MC.exporter.encodeAudio = async (muxer, clip, fromLocalSec, durSec, onStatus) => {
-  const src = new MC.MP4Source(clip.file);
+  const src = new MZ_MP4.MP4Source(clip.file);
   await src.init();
   if (src.pcm) return MC.exporter.encodeAudioPcm(muxer, src, fromLocalSec, durSec, onStatus);
   const at = src.audioTrack();
@@ -796,7 +796,7 @@ MC.exporter.preflightFiles = async clips => {
   for (const c of clips) {
     if (!c.file) continue;
     try {
-      await MC.readSlice(c.file, 0, Math.min(16, c.file.size));
+      await MZ_MP4.readSlice(c.file, 0, Math.min(16, c.file.size));
     } catch (err) {
       MC.log(`preflight NG: ${c.name}`);
       throw err;   // readSlice が日本語のメッセージに変換済み

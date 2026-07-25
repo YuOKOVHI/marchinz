@@ -57,7 +57,7 @@ MV.audio.extract8k = async (clip, maxSec = MV.audio.MAX_SEC) => {
 /* リニアPCM(lpcm/sowt等)の生読み: デコーダ不要。チャンクを順に読み
    モノラル化→8kHzへ。PCMトラックが無いファイルでは null を返す */
 MV.audio.viaRawPcm = async (clip, maxSec) => {
-  const src = new MV.MP4Source(clip.file);
+  const src = new MZ_MP4.MP4Source(clip.file);
   await src.init();
   if (!src.pcm) return null;
   const resampler = new MV.audio.LinearResampler(src.pcm.rate, MV.audio.SR);
@@ -89,7 +89,7 @@ MV.audio.viaRawPcm = async (clip, maxSec) => {
 
 /* 主経路: mp4boxデマックス + AudioDecoder(大きいファイルでもメモリ軽量) */
 MV.audio.viaWebCodecs = async (clip, maxSec) => {
-  const src = new MV.MP4Source(clip.file);
+  const src = new MZ_MP4.MP4Source(clip.file);
   await src.init();
   const at = src.audioTrack();
   if (!at) throw new Error("音声トラックがありません");

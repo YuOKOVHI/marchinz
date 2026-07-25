@@ -50,17 +50,21 @@ async function test(name, fn) {
 const eq = (a, b, what) => { if (a !== b) throw new Error(`${what}: 期待 ${b} / 実際 ${a}`); };
 const ge = (a, b, what) => { if (!(a >= b)) throw new Error(`${what}: ${a} は ${b} 以上であるべき`); };
 
-/* ===== ツールのソースを隔離ロード =====
-   demux.js / exporter.js は `MC.` `MZ.` などの名前空間グローバルに生やす形。
-   new Function で名前空間と偽 window を差し込むと、1ページ内に
-   「修正版」と「バグを注入した版」を同時に置ける(= 変異テストができる) */
-async function loadModule(url, nsName, mutate) {
-  let src = await (await fetch(url)).text();
+/* ===== ソースを隔離ロード =====
+   new Function で偽 window を差し込むと、1ページ内に「修正版」と
+   「バグを注入した版」を同時に置ける(= 変異テストができる)
+
+   共通デマックス(tools/shared/mp4source.js)を隔離ロードして MZ_MP4 を返す。
+   こちらは `window.MZ_MP4 = ...` の形なので偽 window から取り出す。
+   2026-07-25 の一本化まではツールごとに js/demux.js があり、ここも
+   4本ぶんループしていた。実装が1つになったのでロードも1回になった。 */
+async function loadShared(mutate) {
+  let src = await (await fetch("../shared/mp4source.js")).text();
   if (mutate) src = mutate(src);
-  const ns = { log: () => {}, caps: {}, debug: [] };
-  const fakeWin = { [nsName]: ns, addEventListener: () => {} };
-  new Function(nsName, "window", src)(ns, fakeWin);
-  return ns;
+  const fakeWin = { addEventListener: () => {} };
+  new Function("window", src)(fakeWin);
+  if (!fakeWin.MZ_MP4 || !fakeWin.MZ_MP4.MP4Source) throw new Error("MZ_MP4.MP4Source が生えていない");
+  return fakeWin.MZ_MP4;
 }
 
 /* 2026-07-20 に直した黒抜けバグを、そのままコードへ戻す変異 */
@@ -93,7 +97,7 @@ async function countSamples(ns, file, fromSec) {
 (async () => {
   META = await (await fetch("fixtures/meta.json")).json();
   const N = META.samples;
-  const TOOLS = [["switcher", "MC"], ["vlog", "MV"], ["privacy", "MZ"], ["reangle", "RA"]];
+  const TOOLS = ["switcher", "vlog", "privacy", "reangle"];
 
   group(`合成素材の健全性(サンプル数 ${N} / ${META.durationSec.toFixed(2)}秒)`);
   await test("moov_head.mp4 は ftyp→moov→mdat", async () => {
@@ -103,38 +107,51 @@ async function countSamples(ns, file, fromSec) {
     eq(META["moov_tail.mp4"].topLevel.join(","), "ftyp,mdat,moov", "並び"); return "Resolve書き出しMOV相当(事故を再現する形)";
   });
 
-  group("① 静かな黒抜け: samples(trackId, 0) が 0 件を返さないこと");
-  for (const [tool, ns] of TOOLS) {
-    await test(`${tool}: moov末尾 × fromSec=0 で ${N} サンプル読める`, async () => {
-      const M = await loadModule(`../${tool}/js/demux.js`, ns);
-      eq(await countSamples(M, await fixture("moov_tail.mp4"), 0), N, "サンプル数");
-      return "現行コード";
-    });
-    await test(`${tool}: moov先頭(対照)でも ${N} サンプル`, async () => {
-      const M = await loadModule(`../${tool}/js/demux.js`, ns);
-      eq(await countSamples(M, await fixture("moov_head.mp4"), 0), N, "サンプル数");
+  /* 一本化(2026-07-25)を維持できているかの見張り。
+     黒抜けバグが privacy/reangle へ5日間残ったのは、4本が同じ demux を
+     コピーで持っていたから。実装が1つである限り横展開漏れは起こり得ないので、
+     「1つであること」自体をテストする。
+     ※ js/demux.js を fetch して404を見る形にはしていない。ホスティングの
+       404の返し方に依存してテストが環境で揺れるため、index.html の
+       <script> を根拠にする(読まれていなければ再フォークしても無害)。 */
+  group("⓪ demux は tools/shared/mp4source.js の1本だけであること");
+  for (const tool of TOOLS) {
+    await test(`${tool}: 共有版を読み、自前の js/demux.js は読んでいない`, async () => {
+      const html = await (await fetch(`../${tool}/index.html`)).text();
+      if (!html.includes("/tools/shared/mp4source.js")) throw new Error("共有版を読んでいない");
+      if (/src="js\/demux\.js/.test(html)) throw new Error("自前の demux.js が復活している(再フォーク)");
+      return "共有版のみ";
     });
   }
+
+  group("① 静かな黒抜け: samples(trackId, 0) が 0 件を返さないこと");
+  await test(`共有版: moov末尾 × fromSec=0 で ${N} サンプル読める`, async () => {
+    const M = await loadShared();
+    eq(await countSamples(M, await fixture("moov_tail.mp4"), 0), N, "サンプル数");
+    return "現行コード(4本共通)";
+  });
+  await test(`共有版: moov先頭(対照)でも ${N} サンプル`, async () => {
+    const M = await loadShared();
+    eq(await countSamples(M, await fixture("moov_head.mp4"), 0), N, "サンプル数");
+  });
 
   group("② 変異テスト: バグを戻すと ① が本当に落ちるか(テストに歯があるかの検査)");
-  for (const [tool, ns] of TOOLS) {
-    await test(`${tool}: 条件付きseekへ戻すと 0 件になる`, async () => {
-      const M = await loadModule(`../${tool}/js/demux.js`, ns, injectBlackoutBug);
-      const n = await countSamples(M, await fixture("moov_tail.mp4"), 0);
-      if (n === N) throw new Error("バグを注入しても通ってしまう= このテストは黒抜けを検知できない");
-      eq(n, 0, "バグ版のサンプル数");
-      return "エラーも例外も出ないまま0件(=映像が黒く抜ける)";
-    });
-    await test(`${tool}: バグ版でも moov先頭なら読める(条件の切り分け)`, async () => {
-      const M = await loadModule(`../${tool}/js/demux.js`, ns, injectBlackoutBug);
-      eq(await countSamples(M, await fixture("moov_head.mp4"), 0), N, "サンプル数");
-      return "moovの位置だけが分かれ目";
-    });
-  }
+  await test("条件付きseekへ戻すと 0 件になる", async () => {
+    const M = await loadShared(injectBlackoutBug);
+    const n = await countSamples(M, await fixture("moov_tail.mp4"), 0);
+    if (n === N) throw new Error("バグを注入しても通ってしまう= このテストは黒抜けを検知できない");
+    eq(n, 0, "バグ版のサンプル数");
+    return "エラーも例外も出ないまま0件(=映像が黒く抜ける)";
+  });
+  await test("バグ版でも moov先頭なら読める(条件の切り分け)", async () => {
+    const M = await loadShared(injectBlackoutBug);
+    eq(await countSamples(M, await fixture("moov_head.mp4"), 0), N, "サンプル数");
+    return "moovの位置だけが分かれ目";
+  });
 
-  group("③ switcher cursor(): 書き出し経路も同じ罠を踏まないこと");
+  group("③ cursor(): 書き出し経路も同じ罠を踏まないこと");
   await test("cursor.seek(0) 後に全サンプル取れる(moov末尾)", async () => {
-    const M = await loadModule("../switcher/js/demux.js", "MC");
+    const M = await loadShared();
     const src = new M.MP4Source(await fixture("moov_tail.mp4"));
     await src.init();
     const cur = src.cursor(src.videoTrack().id);
@@ -144,7 +161,7 @@ async function countSamples(ns, file, fromSec) {
     eq(n, META.samples, "サンプル数");
   });
   await test("cursor.seek(0.5) → 直前のRAPから読み直せる", async () => {
-    const M = await loadModule("../switcher/js/demux.js", "MC");
+    const M = await loadShared();
     const src = new M.MP4Source(await fixture("moov_tail.mp4"));
     await src.init();
     const cur = src.cursor(src.videoTrack().id);
@@ -283,7 +300,7 @@ async function countSamples(ns, file, fromSec) {
   }
 
   await test("現行コード: 45コマ全部デコードでき、画素が想定どおり(黒くない)", async () => {
-    const M = await loadModule("../switcher/js/demux.js", "MC");
+    const M = await loadShared();
     const mean = await decodeAndMeasure(M, synth);
     eq(mean.length, EN, "デコードできたコマ数");
     const drift = mean.reduce((m, v, i) => Math.max(m, Math.abs(v - elum(i))), 0);
@@ -292,7 +309,7 @@ async function countSamples(ns, file, fromSec) {
     return `中心画素 ${mean.slice(0, 4).join(",")}…${mean.slice(-1)} / 最大差 ${drift}`;
   });
   await test("バグ注入版: 0コマ・真っ黒・例外なし(=これが本番で起きていた)", async () => {
-    const M = await loadModule("../switcher/js/demux.js", "MC", injectBlackoutBug);
+    const M = await loadShared(injectBlackoutBug);
     const mean = await decodeAndMeasure(M, synth);
     eq(mean.length, 0, "デコードできたコマ数");
     return "エラーもタイムアウトも出ずに映像が消える";

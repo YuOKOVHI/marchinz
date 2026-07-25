@@ -82,7 +82,7 @@ MC.audio.midWindow = clip => {
    モノラル化→8kHzへ。PCMトラックが無いファイルでは null を返す。
    startSec 指定時はそこから読む(跨ぎチャンクの頭は捨ててフレーム精度で揃える) */
 MC.audio.viaRawPcm = async (clip, maxSec, onProg = null, startSec = 0) => {
-  const src = new MC.MP4Source(clip.file);
+  const src = new MZ_MP4.MP4Source(clip.file);
   await src.init();
   if (!src.pcm) return null;
   const resampler = new MC.audio.LinearResampler(src.pcm.rate, MC.audio.SR);
@@ -129,7 +129,7 @@ MC.audio.viaRawPcm = async (clip, maxSec, onProg = null, startSec = 0) => {
    startSec 指定時はそこからデコード。AACはフレーム境界が要求秒に一致しないため、
    最初に出てきた AudioData の実タイムスタンプを開始秒として返す(同期精度を守る) */
 MC.audio.viaWebCodecs = async (clip, maxSec, startSec = 0) => {
-  const src = new MC.MP4Source(clip.file);
+  const src = new MZ_MP4.MP4Source(clip.file);
   await src.init();
   const at = src.audioTrack();
   if (!at) throw new Error("音声トラックがありません");
