@@ -817,6 +817,12 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
     await MC.exporter._audioTask.catch(() => {});
     MC.exporter._audioTask = null;
   }
+  /* タスクを待っただけでは足りない。音声が最後に積んだ worker への write が
+     まだ在飛のことがある。_writerReq は「応答待ちは1件ずつ」の前提で、最初の
+     非ready メッセージで listener を外す作りなので、在飛の write と次の open が
+     重なると応答を取り違える。ここで流し切る(直後の opfsCreate が
+     _pendWrites を Promise.resolve() で張り替えるので、待ち続けることはない) */
+  await (MC.exporter._pendWrites || Promise.resolve()).catch(() => {});
 
   MC.exporter.cancelFlag = false;
   MC.exporter.running = true;
@@ -1049,7 +1055,7 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
       MC.log(`映像の内訳: 合計${tot.toFixed(1)}秒 / デコード待ち${sec(prof.decode)}秒(${pc(prof.decode)}%) `
         + `合成${sec(prof.draw)}秒(${pc(prof.draw)}%) `
         + `下流待ち${sec(prof.wait)}秒(${pc(prof.wait)}%) `
-        + `投入${sec(prof.encode)}秒(${pc(prof.encode)}%) `
+        + `投入${sec(prof.encode)}秒(${pc(prof.encode)}%) / 音声${audioParallel ? "並行" : "直列"} `
         + `/ ${totalFrames}コマ ${w}x${h} ${(MC.exporter.videoBitrate() / 1e6).toFixed(0)}Mbps`
         + ` / スキップ${prof.skips}回(${(prof.reseekMs / 1000).toFixed(1)}秒)`);
     }

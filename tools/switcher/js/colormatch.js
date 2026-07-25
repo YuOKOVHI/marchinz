@@ -345,15 +345,35 @@ MC.color.process = (clip, src, dstW, dstH) => {
       scale = Math.min(scale, pick);
     }
   }
-  const w = Math.max(2, Math.round(src.w * scale));
-  const h = Math.max(2, Math.round(src.h * scale));
+  let w = Math.max(2, Math.round(src.w * scale));
+  let h = Math.max(2, Math.round(src.h * scale));
+  /* 縮小してよいかはグローバルの gl2Available() で決めたが、実際にミップマップを
+     張れるかはプロセッサ単位(getProc が webgl2 を取れたか)。コンテキストの枠が
+     逼迫して webgl1 に落ちた場合、「縮めるのに LINEAR」になってモアレが出る。
+     その時は素材の解像度へ戻す(速度より画質を採る) */
+  {
+    const q = MC.color.getProc(w, h);
+    if (q && !q.gl2 && scale < 1) {
+      scale = Math.min(1, cap / Math.max(src.w, src.h));
+      w = Math.max(2, Math.round(src.w * scale));
+      h = Math.max(2, Math.round(src.h * scale));
+    }
+  }
   const p = MC.color.getProc(w, h);
   if (!p) return src;
+  /* コンテキストが失われていたら素通しする。preserveDrawingBuffer:true なので、
+     気付かずに使うと texImage2D も drawArrays も黙って no-op になり、
+     p.canvas に残った「直前のコマ」を返し続ける ─ エラーの出ない焼き付きになる。
+     捨てておけば次のコマで作り直される */
+  if (p.gl.isContextLost && p.gl.isContextLost()) {
+    MC.color._procs.delete(w + "x" + h);
+    return src;
+  }
   const gl = p.gl;
+  let fellBack = false;
   try {
     if (MC.color._uploadFallback) throw new Error("fallback");
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src.source);
-    setMinFilter(p, scale < 1);
   } catch (e) {
     // VideoFrame直接アップロード非対応環境: 2D canvas経由
     if (!MC.color._scratch) MC.color._scratch = document.createElement("canvas");
@@ -363,9 +383,14 @@ MC.color.process = (clip, src, dstW, dstH) => {
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, sc);
     /* この経路は2Dキャンバスで既に w×h まで縮めてある(こちらの縮小は高品質)。
        テクスチャと描画先が同じ大きさなので、ミップマップは要らない */
-    setMinFilter(p, false);
     MC.color._uploadFallback = true;
+    fellBack = true;
   }
+  /* setMinFilter は try の外に置く。中に置くと generateMipmap が投げただけで
+     _uploadFallback(恒久・全クリップ)が立ち、以後ずっと2Dキャンバス経由に落ちる。
+     フォールバック経路は2Dキャンバスで既に w×h まで縮めてある(こちらの縮小は
+     高品質)ので、テクスチャと描画先が同寸法＝ミップマップは要らない */
+  setMinFilter(p, !fellBack && scale < 1);
   const s = MC.S.colorStrength;
   const t = MC.S.colorOn ? clip.colorT : null;
   if (t) {
