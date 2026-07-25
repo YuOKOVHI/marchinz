@@ -619,6 +619,7 @@ MZ.ui.startExport = async () => {
     label: isImage ? "写真にモザイクをかけています…" : "顔を隠しながら書き出しています…",
     cancel: () => { MZ.exporter.cancelFlag = true; },
   });
+  MZ_SESSION.guardLeave(true);   // 離脱ガード + 画面を消させない(2026-07-25 新設)
   try {
     if (!MZ.detect.ready()) {
       p.pulse("顔を見つけるAIを準備しています…");
@@ -636,6 +637,7 @@ MZ.ui.startExport = async () => {
       p.fail("書き出せませんでした", { detail: e.message, retry: MZ.ui.startExport });
     }
   } finally {
+    MZ_SESSION.guardLeave(false);
     btn.disabled = false;
   }
 };

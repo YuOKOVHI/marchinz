@@ -263,6 +263,7 @@ RA.ui.startExport = async () => {
   $("progressWrap").hidden = false;
   $("doneCard").hidden = true;
   if (RA.S.clip.video) RA.S.clip.video.pause();
+  MZ_SESSION.guardLeave(true);   // 離脱ガード + 画面を消させない(2026-07-25 新設)
   try {
     const res = await RA.exporter.run((p, txt) => {
       $("progressBar").style.width = `${Math.round(p * 100)}%`;
@@ -273,6 +274,7 @@ RA.ui.startExport = async () => {
     RA.log("export error:", e.message);
     RA.ui.toast(e.message === "キャンセルしました" ? "書き出しを中止しました" : `⚠ ${e.message}`);
   } finally {
+    MZ_SESSION.guardLeave(false);
     btn.disabled = false;
     $("progressWrap").hidden = true;
     $("progressBar").style.width = "0%";

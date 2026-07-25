@@ -53,20 +53,10 @@ MV.exporter.estimateWorkBytes = () => {
 };
 
 /* 書き出し中の画面ロック対策。ロックすると rAF / MediaRecorder が止まり、
-   壊れた短いMP4が無言で保存される。marchinz-base.js のメトロノームと同じ実装 */
-MV.exporter._wake = null;
-MV.exporter.holdWake = async want => {
-  try {
-    if (want && !MV.exporter._wake && navigator.wakeLock) {
-      MV.exporter._wake = await navigator.wakeLock.request("screen");
-      MV.exporter._wake.addEventListener("release", () => { MV.exporter._wake = null; });
-    } else if (!want && MV.exporter._wake) {
-      const w = MV.exporter._wake;
-      MV.exporter._wake = null;
-      await w.release();
-    }
-  } catch (_) { MV.exporter._wake = null; }
-};
+   壊れた短いMP4が無言で保存される。実装は tools/shared/session.js。
+   guardLeave にしないのは、Vlog は書き出し中のタブ離脱を引き止める作りに
+   まだなっていないため(帯も中断ノートも無い)。まず画面ロックだけ防ぐ。 */
+MV.exporter.holdWake = want => MZ_SESSION.keepAwake(want);
 
 MV.exporter.makeCanvas = (w, h) => {
   if (typeof OffscreenCanvas !== "undefined") return new OffscreenCanvas(w, h);

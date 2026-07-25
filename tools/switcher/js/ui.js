@@ -1465,15 +1465,7 @@ MC.ui.renderFullLabel = on => {
      ③ 復帰時の再取得 … 一度でも画面が消えると Wake Lock は解放されるので、
                         戻ってきたら取り直す
    すべて「効かない環境では静かに諦める」設計にし、処理自体は止めない。 */
-MC.ui._wakeLock = null;
 MC.ui._leaveGuarded = false;
-
-MC.ui._onBeforeUnload = e => {
-  if (!MC.ui._busy) return;
-  e.preventDefault();
-  e.returnValue = "";   // 文言はブラウザ側が決める(独自文字列は無視される)
-  return "";
-};
 
 /* ============ 離脱の検知(Phase 2 / 2026-07-23) ============
    iOS はタブが背面に回ると処理を止め、メモリが逼迫すればタブごと捨てる。
@@ -1491,7 +1483,7 @@ MC.ui._onVisChange = () => {
     return;
   }
   // 画面が戻ったら Wake Lock を取り直す(消灯・アプリ切替で解放されるため)
-  if (MC.ui._busy) MC.ui._holdWake(true);
+  if (MC.ui._busy) MZ_SESSION.keepAwake(true);
   if (MC.ui._hiddenAt) {
     const ms = Date.now() - MC.ui._hiddenAt;
     MC.ui._hiddenAt = 0;
@@ -1588,22 +1580,6 @@ MC.ui.notifyAnalysisDone = () => {
   MC.ui._adoneTm = setTimeout(hide, 8000);   // 8秒で自動で引っ込む
 };
 
-MC.ui._holdWake = async want => {
-  try {
-    if (want && !MC.ui._wakeLock && navigator.wakeLock) {
-      MC.ui._wakeLock = await navigator.wakeLock.request("screen");
-      MC.ui._wakeLock.addEventListener("release", () => { MC.ui._wakeLock = null; });
-    } else if (!want && MC.ui._wakeLock) {
-      const w = MC.ui._wakeLock;
-      MC.ui._wakeLock = null;
-      await w.release();
-    }
-  } catch (_) {
-    // 非対応・省電力モード・非表示タブ等。画面ロック対策なしで続行する
-    MC.ui._wakeLock = null;
-  }
-};
-
 /* 作業中だけ出す「このまま待ってて」の帯。guardLeave と運命共同体にする
    (出し忘れ・消し忘れが構造的に起きない)。2026-07-21 優さん指示 */
 MC.ui._stayBanner = on => {
@@ -1624,14 +1600,8 @@ MC.ui._stayBanner = on => {
 MC.ui.guardLeave = on => {
   if (on === MC.ui._leaveGuarded) return;
   MC.ui._leaveGuarded = on;
-  MC.ui._stayBanner(on);
-  if (on) {
-    window.addEventListener("beforeunload", MC.ui._onBeforeUnload);
-    MC.ui._holdWake(true);
-  } else {
-    window.removeEventListener("beforeunload", MC.ui._onBeforeUnload);
-    MC.ui._holdWake(false);
-  }
+  MC.ui._stayBanner(on);          // 帯はこのツール固有(共通側は見た目を持たない)
+  MZ_SESSION.guardLeave(on);      // beforeunload + Wake Lock
 };
 
 /* visibilitychange は作業中に限らず常時聴く(2026-07-23 Phase 2)。

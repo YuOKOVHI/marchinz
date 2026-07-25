@@ -114,11 +114,12 @@ async function countSamples(ns, file, fromSec) {
      ※ js/demux.js を fetch して404を見る形にはしていない。ホスティングの
        404の返し方に依存してテストが環境で揺れるため、index.html の
        <script> を根拠にする(読まれていなければ再フォークしても無害)。 */
-  group("⓪ demux は tools/shared/mp4source.js の1本だけであること");
+  group("⓪ demux とセッション保護は tools/shared/ の1本だけであること");
   for (const tool of TOOLS) {
-    await test(`${tool}: 共有版を読み、自前の js/demux.js は読んでいない`, async () => {
+    await test(`${tool}: 共有の mp4source/session を読み、自前の demux.js は無い`, async () => {
       const html = await (await fetch(`../${tool}/index.html`)).text();
-      if (!html.includes("/tools/shared/mp4source.js")) throw new Error("共有版を読んでいない");
+      if (!html.includes("/tools/shared/mp4source.js")) throw new Error("共有デマックスを読んでいない");
+      if (!html.includes("/tools/shared/session.js")) throw new Error("共有セッションを読んでいない");
       if (/src="js\/demux\.js/.test(html)) throw new Error("自前の demux.js が復活している(再フォーク)");
       return "共有版のみ";
     });
@@ -173,29 +174,38 @@ async function countSamples(ns, file, fromSec) {
     return `先頭サンプル cts=${first.value.cts}`;
   });
 
-  group("④ 通知タップ誤中断(79acfee): _patientTimeout の回帰テスト");
-  /* 偽 document を差し込む。ランナー自身のタブが background だと
-     visibilityState が "hidden" になり、_patientTimeout が正しく再武装して
-     永久に発火しない = テストが環境に左右される(実測で踏んだ) */
-  const loadExporter = async () => {
+  group("④ 通知タップ誤中断(79acfee): shared/session.js の回帰テスト");
+  /* 偽 document / window を差し込む。ランナー自身のタブが background だと
+     visibilityState が "hidden" になり、patientTimeout が正しく再武装して
+     永久に発火しない = テストが環境に左右される(実測で踏んだ)。
+     2026-07-25 に MC.exporter._patientTimeout から共通版へ移したので、
+     ここを1回通せば4本ぶんの守りを見たことになる */
+  const loadSession = async () => {
     const doc = { visibilityState: "visible", addEventListener: () => {} };
-    const ns = { log: () => {}, caps: {}, isIOS: false, exporter: {}, _doc: doc };
-    const src = await (await fetch("../switcher/js/exporter.js")).text();
-    new Function("MC", "window", "document", src)(ns, { MC: ns, addEventListener: () => {} }, doc);
-    return ns;
+    const listeners = [];
+    const win = {
+      addEventListener: (t, f) => listeners.push(t),
+      removeEventListener: (t, f) => { const i = listeners.indexOf(t); if (i >= 0) listeners.splice(i, 1); },
+    };
+    const src = await (await fetch("../shared/session.js")).text();
+    new Function("window", "document", "navigator", src)(win, doc, {});
+    const S = win.MZ_SESSION;
+    if (!S) throw new Error("MZ_SESSION が生えていない");
+    S._doc = doc; S._listeners = listeners;
+    return S;
   };
   await test("見えたままなら期限どおり発火する", async () => {
-    const MC = await loadExporter();
+    const S = await loadSession();
     let fired = false;
-    MC.exporter._patientTimeout(() => { fired = true; }, 40);
+    S.patientTimeout(() => { fired = true; }, 40);
     await new Promise(r => setTimeout(r, 140));
     if (!fired) throw new Error("本物のハングを打ち切れていない");
   });
   await test("隠れていた事実があれば測り直す(誤中断しない)", async () => {
-    const MC = await loadExporter();
+    const S = await loadSession();
     let fired = false;
-    MC.exporter._patientTimeout(() => { fired = true; }, 40);
-    MC.exporter._visEpoch++;            // = 書き出し中に通知を開いて戻ってきた
+    S.patientTimeout(() => { fired = true; }, 40);
+    S._visEpoch++;                      // = 書き出し中に通知を開いて戻ってきた
     await new Promise(r => setTimeout(r, 60));
     if (fired) throw new Error("隠れていた間を数えて健全な書き出しを殺している(79acfeeの回帰)");
     await new Promise(r => setTimeout(r, 120));
@@ -203,24 +213,54 @@ async function countSamples(ns, file, fromSec) {
     return "1回目は見送り、次の周期で発火";
   });
   await test("画面が隠れている間は打ち切らない", async () => {
-    const MC = await loadExporter();
-    MC._doc.visibilityState = "hidden";
+    const S = await loadSession();
+    S._doc.visibilityState = "hidden";
     let fired = false;
-    MC.exporter._patientTimeout(() => { fired = true; }, 30);
+    S.patientTimeout(() => { fired = true; }, 30);
     await new Promise(r => setTimeout(r, 140));
     if (fired) throw new Error("隠れている間に打ち切っている");
-    MC._doc.visibilityState = "visible";
+    S._doc.visibilityState = "visible";
     await new Promise(r => setTimeout(r, 80));
     if (!fired) throw new Error("復帰後も発火しない");
     return "隠れ中は見送り→復帰後に発火";
   });
   await test("cancel() を呼べば以後発火しない", async () => {
-    const MC = await loadExporter();
+    const S = await loadSession();
     let fired = false;
-    MC.exporter._patientTimeout(() => { fired = true; }, 30)();
+    S.patientTimeout(() => { fired = true; }, 30)();
     await new Promise(r => setTimeout(r, 120));
     if (fired) throw new Error("キャンセルが効いていない");
   });
+
+  group("④' 離脱ガード(privacy/reangle には 2026-07-25 まで無かった守り)");
+  await test("guardLeave(true/false) で beforeunload が付いて外れる", async () => {
+    const S = await loadSession();
+    eq(S._listeners.length, 0, "初期の登録数");
+    S.guardLeave(true);
+    eq(S._listeners.join(","), "beforeunload", "ON後");
+    if (!S.guarded) throw new Error("guarded が立たない");
+    S.guardLeave(true);                 // 二重呼びしても増えない
+    eq(S._listeners.length, 1, "二重ON後の登録数");
+    S.guardLeave(false);
+    eq(S._listeners.length, 0, "OFF後");
+    if (S.guarded) throw new Error("guarded が下りない");
+    return "冪等";
+  });
+  await test("Wake Lock 非対応の端末でも例外を投げない", async () => {
+    const S = await loadSession();
+    await S.keepAwake(true);            // navigator.wakeLock が無い偽環境
+    await S.keepAwake(false);
+    return "静かに諦めて処理は続く";
+  });
+
+  /* ⑤ は switcher の exporter.js を直接読む(OPFS は switcher 固有) */
+  const loadExporter = async () => {
+    const doc = { visibilityState: "visible", addEventListener: () => {} };
+    const ns = { log: () => {}, caps: {}, isIOS: false, exporter: {}, _doc: doc };
+    const src = await (await fetch("../switcher/js/exporter.js")).text();
+    new Function("MC", "window", "document", src)(ns, { MC: ns, addEventListener: () => {} }, doc);
+    return ns;
+  };
 
   group("⑤ OPFS能力キャッシュ(敗者復活)の回帰テスト");
   await test("一度 false でも force で再実測できる", async () => {
