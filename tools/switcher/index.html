@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-app-v="1.46.2">
+<html lang="ja" data-mz-app-v="1.46.3">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -17,7 +17,7 @@
 <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
 <link rel="stylesheet" href="/tools/shared/progress.css">
 <link rel="stylesheet" href="/tools/shared/journey.css">
-<link rel="stylesheet" href="css/style.css?v=1.46.2">
+<link rel="stylesheet" href="css/style.css?v=1.46.3">
 <link rel="stylesheet" href="/tools/shared/sitechrome.css">
 </head>
 <body data-mz-tool="switcher">
@@ -124,14 +124,15 @@
          試聴して決める。動画1本ならフェーズごとスキップされる -->
     <section class="panel" id="audioSec">
       <h2>使う音声を選ぶ <span class="hint">いちばん良い音におすすめ印</span></h2>
-      <div id="audioChoices" class="audio-choices"><span class="hint">分析すると選べるようになります</span></div>
+      <div id="audioChoices" class="audio-choices"></div>
       <div class="row" style="margin-top:10px">
         <button id="audioListenBtn" class="btn small" type="button"><i class="fa-solid fa-headphones"></i> 試聴する</button>
         <button id="audioDecideBtn" class="btn primary" type="button" style="flex:1" disabled><i class="fa-solid fa-check"></i> この音で進める</button>
       </div>
-      <p id="audioGateHint" class="hint" style="margin-top:8px">
+      <p id="audioGateHint" class="audio-gate-hint">
         <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
-        「分析を開始」が終わると、ここで音を選べるようになります。</p>
+        まだ分析していません。下の「分析を開始」を押してください。<br>
+        終わると、いちばん良い音に「おすすめ」の印がつきます。</p>
     </section>
 
     <div id="easyPane" class="easy-pane">
@@ -244,12 +245,18 @@
 
     </div>
 
-    <section class="panel" id="exportSec">
-      <h2>書き出し</h2>
+    <!-- 失敗したときのログと脱出口。工程のパネルの中に置くと、
+         その工程がまだ来ていないときに display:none で一緒に消える。
+         分析の失敗は書き出しより手前で起きるので、常に見える場所に出す -->
+    <div id="troubleBox" class="trouble-box">
       <div id="errorLog" class="error-log" hidden></div>
       <button type="button" id="projectResetBtn" class="btn small ghost project-reset" hidden>
         <i class="fa-solid fa-rotate-left" aria-hidden="true"></i> 最初からやり直す（動画を外して保存も消す）
       </button>
+    </div>
+
+    <section class="panel" id="exportSec">
+      <h2>書き出し</h2>
       <div id="qualityPicker" class="quality-picker" role="radiogroup" aria-label="書き出し画質"></div>
       <div id="exportMode" class="status"></div>
       <div class="row">
@@ -320,9 +327,10 @@
         <button id="eoDownloadBtn" class="btn ghost eo-dl"><i class="fa-solid fa-download"></i> ダウンロード</button>
       </div>
       <p id="eoDoneNote" class="eo-note"></p>
+      <p id="eoOneLine" class="eo-note eo-oneline" hidden></p>
       <!-- 何にどれだけ掛かったか。普段は畳んでおき、知りたい人だけ開く -->
       <details id="eoStats" class="eo-stats" hidden>
-        <summary>書き出しの記録</summary>
+        <summary>うまくいかないときの記録（開発者へ送る用）</summary>
         <pre id="eoStatsText"></pre>
         <button type="button" id="eoStatsCopy" class="btn small ghost"><i class="fa-regular fa-copy"></i> コピー</button>
       </details>
@@ -366,23 +374,23 @@
 <script src="vendor/mp4box.all.min.js"></script>
 <script src="vendor/mp4-muxer.min.js"></script>
 <script src="vendor/fft.js"></script>
-<script src="js/state.js?v=1.46.2"></script>
-<script src="js/layout.js?v=1.46.2"></script>
-<script src="js/media.js?v=1.46.2"></script>
-<script src="js/audio.js?v=1.46.2"></script>
-<script src="js/sync.js?v=1.46.2"></script>
-<script src="js/beats.js?v=1.46.2"></script>
-<script src="js/sections.js?v=1.46.2"></script>
-<script src="js/visual.js?v=1.46.2"></script>
-<script src="js/director.js?v=1.46.2"></script>
-<script src="js/colormatch.js?v=1.46.2"></script>
-<script src="js/horizon.js?v=1.46.2"></script>
-<script src="js/salute.js?v=1.46.2"></script>
-<script src="js/preview.js?v=1.46.2"></script>
-<script src="js/timeline.js?v=1.46.2"></script>
-<script src="js/cutmode.js?v=1.46.2"></script>
-<script src="js/exporter.js?v=1.46.2"></script>
-<script src="js/ui.js?v=1.46.2"></script>
-<script src="js/app.js?v=1.46.2"></script>
+<script src="js/state.js?v=1.46.3"></script>
+<script src="js/layout.js?v=1.46.3"></script>
+<script src="js/media.js?v=1.46.3"></script>
+<script src="js/audio.js?v=1.46.3"></script>
+<script src="js/sync.js?v=1.46.3"></script>
+<script src="js/beats.js?v=1.46.3"></script>
+<script src="js/sections.js?v=1.46.3"></script>
+<script src="js/visual.js?v=1.46.3"></script>
+<script src="js/director.js?v=1.46.3"></script>
+<script src="js/colormatch.js?v=1.46.3"></script>
+<script src="js/horizon.js?v=1.46.3"></script>
+<script src="js/salute.js?v=1.46.3"></script>
+<script src="js/preview.js?v=1.46.3"></script>
+<script src="js/timeline.js?v=1.46.3"></script>
+<script src="js/cutmode.js?v=1.46.3"></script>
+<script src="js/exporter.js?v=1.46.3"></script>
+<script src="js/ui.js?v=1.46.3"></script>
+<script src="js/app.js?v=1.46.3"></script>
 </body>
 </html>

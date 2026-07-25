@@ -660,9 +660,12 @@ async function countSamples(ns, file, fromSec) {
 
   await test("★分析前は「この音で進める」が押せない", async () => {
     return withSwitcher(async (w, d) => {
+      /* 読み込んだ直後の実物と同じ形(media.js:57 が syncMethod:"未同期" を入れる)。
+         stats ではなく syncMethod が通行判定なので、ここを実物に合わせないと
+         テストが素通りする */
       w.MC.S.clips = [
-        { id: 1, name: "a.mp4", isImage: false, isAudio: false, hasAudio: true, stats: null, duration: 60 },
-        { id: 2, name: "b.mp4", isImage: false, isAudio: false, hasAudio: true, stats: null, duration: 60 },
+        { id: 1, name: "a.mp4", isImage: false, isAudio: false, hasAudio: true, syncMethod: "未同期", duration: 60 },
+        { id: 2, name: "b.mp4", isImage: false, isAudio: false, hasAudio: true, syncMethod: "未同期", duration: 60 },
       ];
       w.MC.S.audioClipId = 1;
       w.MC.ui.renderAudio();
@@ -680,18 +683,65 @@ async function countSamples(ns, file, fromSec) {
     });
   });
 
-  await test("★分析が済むと押せるようになる(閉めっぱなしにしない)", async () => {
+  await test("★同期が済むと押せるようになる(閉めっぱなしにしない)", async () => {
     return withSwitcher(async (w, d) => {
       w.MC.S.clips = [
-        { id: 1, name: "a.mp4", isImage: false, isAudio: false, hasAudio: true, stats: { rms: .05, clipRatio: 0 }, duration: 60 },
-        { id: 2, name: "b.mp4", isImage: false, isAudio: false, hasAudio: true, stats: { rms: .04, clipRatio: 0 }, duration: 60 },
+        { id: 1, name: "a.mp4", isImage: false, isAudio: false, hasAudio: true, syncMethod: "波形", duration: 60 },
+        { id: 2, name: "b.mp4", isImage: false, isAudio: false, hasAudio: true, syncMethod: "波形", duration: 60 },
       ];
       w.MC.S.audioClipId = 1;
       w.MC.ui.renderAudio();
       if (d.getElementById("audioDecideBtn").disabled) {
-        throw new Error("解析済みでも押せない(フローが進まなくなる)");
+        throw new Error("同期済みでも押せない(フローが進まなくなる)");
       }
-      return "stats が付いたら開く";
+      return "syncMethod が付いたら開く";
+    });
+  });
+
+  await test("★再読込後(stats が無く syncMethod だけ復元)でも詰まない", async () => {
+    /* localStorage は syncMethod を復元するが stats は復元できない(File由来)。
+       ゲートを stats で見ていた版は、ここで永久に開かず書き出しへ行けなかった */
+    return withSwitcher(async (w, d) => {
+      w.MC.S.clips = [
+        { id: 1, name: "a.mp4", isImage: false, isAudio: false, hasAudio: true, syncMethod: "波形", stats: null, duration: 60 },
+        { id: 2, name: "b.mp4", isImage: false, isAudio: false, hasAudio: true, syncMethod: "波形", stats: null, duration: 60 },
+      ];
+      w.MC.S.audioClipId = 1;
+      w.MC.ui.renderAudio();
+      if (d.getElementById("audioDecideBtn").disabled) {
+        throw new Error("再読込後に「この音で進める」が永久に押せない(書き出しへ行けない)");
+      }
+      return "stats が無くても同期済みなら進める";
+    });
+  });
+
+  await test("★音声が取れない素材(タイムスタンプ同期)でも詰まない", async () => {
+    return withSwitcher(async (w, d) => {
+      w.MC.S.clips = [
+        { id: 1, name: "a.mp4", isImage: false, isAudio: false, hasAudio: false, syncMethod: "タイムスタンプ", stats: null, duration: 60 },
+        { id: 2, name: "b.mp4", isImage: false, isAudio: false, hasAudio: false, syncMethod: "タイムスタンプ", stats: null, duration: 60 },
+      ];
+      w.MC.S.audioClipId = 1;
+      w.MC.ui.renderAudio();
+      if (d.getElementById("audioDecideBtn").disabled) {
+        throw new Error("無音素材で行き止まりになる");
+      }
+      return "音が無くても同期済みなら進める";
+    });
+  });
+
+  await test("★失敗時のログと「最初からやり直す」が工程パネルに埋もれていない", async () => {
+    /* #errorLog / #projectResetBtn を #exportSec の中に置いていたため、
+       分析が失敗する段階(=書き出しより手前)では display:none で一緒に消えていた */
+    return withSwitcher(async (w, d) => {
+      const log = d.getElementById("errorLog");
+      const reset = d.getElementById("projectResetBtn");
+      if (!log || !reset) throw new Error("#errorLog / #projectResetBtn が無い");
+      for (const [name, el] of [["#errorLog", log], ["#projectResetBtn", reset]]) {
+        const sec = el.closest("section.panel");
+        if (sec) throw new Error(`${name} が工程パネル(${sec.id})の中にある。その工程が来るまで消える`);
+      }
+      return "常に見える場所にある";
     });
   });
 
@@ -704,18 +754,30 @@ async function countSamples(ns, file, fromSec) {
       w.MC.S.audioClipId = 1;
       w.MC.ui.renderAudio();
       w.MC.ui.setBusy(true);
-      const locked = [];
-      for (const el of d.querySelectorAll("main button")) {
-        const keep = ["cancelBtn", "eoCancel", "eoClose"].includes(el.id)
-          || el.closest("#errorLog") || el.classList.contains("mzp-cancel");
-        if (!keep && !el.disabled) locked.push(el.id || el.className || el.textContent.trim().slice(0, 12));
+      /* 作業中に付くはずのクラス。再描画で新しく生えたボタンを塞ぐ唯一の手段なので、
+         ここが無検証だと変更Aの要が守られない */
+      const lockedBody = d.body.classList.contains("mz-busy-lock");
+      const KEEP = ["cancelBtn", "eoCancel", "eoClose", "floatClose"];
+      const leftOpen = [];
+      /* main だけでなく #workspace / モード選択 / カット切替も見る
+         (#modeBackBtn は走っている解析を止めずに画面だけ戻してしまう) */
+      const sel = "#workspace button, #workspace input, #workspace select, "
+        + "#modeSelect button, #cutModal button";
+      for (const el of d.querySelectorAll(sel)) {
+        const keep = KEEP.includes(el.id) || el.closest("#errorLog")
+          || el.classList.contains("mzp-cancel") || el.classList.contains("mzp-retry");
+        if (!keep && !el.disabled) leftOpen.push(el.id || el.className || el.textContent.trim().slice(0, 12));
       }
       const cancel = d.getElementById("cancelBtn");
+      const floatClose = d.getElementById("floatClose");
       w.MC.ui.setBusy(false);
-      if (locked.length) throw new Error("作業中なのに押せるボタンが残っている: " + locked.join(" / "));
+      const bodyAfter = d.body.classList.contains("mz-busy-lock");
+      if (!lockedBody) throw new Error("作業中なのに body.mz-busy-lock が付いていない");
+      if (bodyAfter) throw new Error("解除後も body.mz-busy-lock が残っている");
+      if (leftOpen.length) throw new Error("作業中なのに押せるものが残っている: " + leftOpen.join(" / "));
       if (cancel && cancel.disabled) throw new Error("中止まで止めてしまっている(長い処理を殺せない)");
-      if (!d.body.classList.contains("mz-busy-lock") === false) { /* 解除後なので付いていないのが正 */ }
-      return "main内すべて無効・中止は有効";
+      if (floatClose && floatClose.disabled) throw new Error("全画面プレビューの閉じるを止めている(iPhoneで出られなくなる)");
+      return "workspace/モード/カット切替すべて無効・中止と閉じるは有効";
     });
   });
 

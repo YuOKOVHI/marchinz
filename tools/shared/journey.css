@@ -128,9 +128,18 @@
 /* 狭い画面: ラベルは現在フェーズだけ(他はドットのみ) */
 @media (max-width: 560px) {
   .mzj { padding: 8px 10px 7px; }
-  .mzj-phase:not(.current) .mzj-label { display: none; }
-  .mzj-phase { padding: 4px 6px; }
-  .mzj-phase.current { padding: 4px 12px 4px 6px; }
+  /* 狭幅でも工程名は消さない(2026-07-26)。先の工程のパネルを画面から
+     消したので、ここが「何が残っているか」を知る唯一の場所になった。
+     消す代わりに短い名前へ差し替える(journey.js が shortLabel を使う)。
+     375px に5工程を収めるため、現在地以外は詰める ─ 溢れると右端の
+     工程名が切れて読めなくなる(実測: 何もしないと 394px で 39px はみ出す) */
+  .mzj-track { gap: 3px; }
+  .mzj-link { max-width: 8px; }
+  .mzj-phase { padding: 4px 3px; gap: 4px; }
+  .mzj-phase.current { padding: 4px 10px 4px 5px; gap: 6px; }
+  .mzj-phase:not(.current) .mzj-dot { width: 17px; height: 17px; font-size: 10px; }
+  .mzj-phase:not(.current) .mzj-label { font-size: 9.5px; max-width: 2.2em;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .75; }
 }
 
 @media (prefers-reduced-motion: reduce) {

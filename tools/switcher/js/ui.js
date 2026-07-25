@@ -153,6 +153,12 @@ MC.ui.showExportStats = () => {
     s.skips ? `カメラの飛ばし読み ${s.skips}回 (${sec(s.reseekMs)}秒)` : null,
   ].filter(v => v !== null);
   const text = lines.join("\n");
+  /* 中高生が読むのはこの1行だけでよい。畳んだ中身は開発者向け */
+  const one = MC.ui.$("#eoOneLine");
+  if (one) {
+    one.textContent = `${mmss(s.spanSec)}の動画を${sec(s.totalMs)}秒で書き出しました（${s.w}×${s.h}）`;
+    one.hidden = false;
+  }
   host.hidden = false;
   host.open = false;                       // 既定は畳んでおく(見たい人だけ開く)
   MC.ui.$("#eoStatsText").textContent = text;
@@ -474,11 +480,14 @@ MC.ui.initJourney = () => {
   MZJourney.init({
     container: MC.ui.$("#workspace"),
     phases: [
-      { id: "mat",    label: "動画を選ぶ",   hint: "3つまでまとめて選べます" },
-      { id: "sync",   label: "同期と分析",   hint: "音のズレ合わせと素材の分析をします" },
-      { id: "audio",  label: "音声を選ぶ",   hint: "試聴して「この音で進める」を押してください" },
-      { id: "polish", label: "自動編集設定", hint: "設定はそのままでOK。「動画を書き出す」で仕上がります" },
-      { id: "export", label: "書き出し",     hint: "「動画を書き出す」で完成です" },
+      /* shortLabel は狭い画面(iPhone)で現在地以外に出す短縮名。
+         先の工程のパネルを画面から消した以上、ここが「何が残っているか」を
+         知る唯一の場所になったので、名前を消してはいけない(2026-07-26) */
+      { id: "mat",    label: "動画を選ぶ",   shortLabel: "動画", hint: "3つまでまとめて選べます" },
+      { id: "sync",   label: "同期と分析",   shortLabel: "同期", hint: "音のズレ合わせと素材の分析をします" },
+      { id: "audio",  label: "音声を選ぶ",   shortLabel: "音声", hint: "試聴して「この音で進める」を押してください" },
+      { id: "polish", label: "自動編集設定", shortLabel: "設定", hint: "設定はそのままでOK。「動画を書き出す」で仕上がります" },
+      { id: "export", label: "書き出し",     shortLabel: "書出", hint: "「動画を書き出す」で完成です" },
     ],
     doneHint: "書き出し完了。調整して書き出し直すこともできます",
     canSelect: () => true,   // タップ=そのセクションへ移動(状態は変えないので常に安全)
@@ -602,13 +611,22 @@ MC.ui.updateActionBar = () => {
 };
 
 /* stateからフェーズを導出してバーと現在セクションの強調を更新 */
+/* 「同期が済んでいるか」の唯一の判定。ジャーニーの現在地と、
+   「この音で進める」を押させてよいかの両方がこれを見る。
+   ※ clip.stats で代用してはいけない。stats は File 由来で再読込後に復元されず、
+     「再読込→同じ動画を入れ直す」で永久に false になる(2026-07-26 レビュー指摘)。
+     syncMethod は localStorage から復元される(state.js の restoreClipState) */
+MC.ui.isSynced = () => {
+  const vids = MC.S.clips.filter(c => !c.isAudio && !c.isImage);
+  if (vids.length >= 2) return vids.every(c => (c.syncMethod || "未同期") !== "未同期");
+  return MC.media.slotClips().length > 0;   // 素材1つ(写真のみ含む)なら同期は不要=済み扱い
+};
+
 MC.ui.refreshJourney = () => {
   if (!document.querySelector(".mzj")) return;   // 未初期化なら何もしない
   const slot = MC.media.slotClips();
   const vids = MC.S.clips.filter(c => !c.isAudio && !c.isImage);
-  const synced = vids.length >= 2
-    ? vids.every(c => c.syncMethod !== "未同期")
-    : slot.length > 0;   // 素材1つ(写真のみ含む)なら同期は不要=済み扱い
+  const synced = MC.ui.isSynced();
   const exported = !!MC.exporter.lastResult;
   /* 音声を選ぶフェーズ(2026-07-24): 音のある動画が2本以上のときだけ通る。
      1本なら選ぶ余地がないのでスキップ(優さん確定) */
@@ -903,8 +921,8 @@ MC.ui.renderAudio = () => {
      このパネルは最初から画面にあり、読み込んだ直後でも押せてしまっていた。
      押すと同期も解析もしていない素材のまま仕上げ(runEasyFinish)が走り、
      優さんのiPhoneでタブごと落ちた。
-     判定は「解析で stats が付いたか」。音量表示が「未解析」のうちは押せない。 */
-  const analyzed = cands.some(c => c.stats);
+     判定は「同期が済んだか」(MC.ui.isSynced)。ジャーニーの現在地と同じ物差しを使う。 */
+  const analyzed = MC.ui.isSynced();
   const db = MC.ui.$("#audioDecideBtn");
   if (db) {
     db.disabled = !analyzed;
@@ -1398,10 +1416,16 @@ MC.ui.setBusy = busy => {
        #eoClose               … 失敗表示を閉じる
        #errorLog 内           … ログのコピー/閉じる（失敗時に必要）
      ヘッダ(サイト共通のハンバーガー等)は main の外なので元から対象外。 */
-  const KEEP = new Set(["cancelBtn", "eoCancel", "eoClose"]);
+  /* #floatClose を止めると、分析中に全画面プレビューへ入った人が出られなくなる。
+     入口(.canvas-holder のclick)は div なので busy でも通り、出口は
+     このボタンと Escape だけ ─ iPhone に Escape は無い(2026-07-26 レビュー指摘) */
+  const KEEP = new Set(["cancelBtn", "eoCancel", "eoClose", "floatClose"]);
+  /* main では狭い。#modeBackBtn / モード選択カード / #cutModal / 行動バーは main の外にあり、
+     とくに「つくる動画を選び直す」は走っている解析を止めずに画面だけ戻してしまう */
   const lockables = [
-    ...document.querySelectorAll("main button, main input, main select, #exportOverlay button"),
-    MC.ui.$("#abPrimary"),
+    ...document.querySelectorAll(
+      "#workspace button, #workspace input, #workspace select, " +
+      "#modeSelect button, #exportOverlay button, #cutModal button"),
   ].filter(Boolean);
   lockables.forEach(el => {
     if (KEEP.has(el.id)) return;
@@ -1415,7 +1439,10 @@ MC.ui.setBusy = busy => {
          直後の renderAll が上書きするので表面化していなかっただけ */
       if (!el.dataset.mzWasDisabled) el.dataset.mzWasDisabled = el.disabled ? "1" : "0";
       el.disabled = true;
-    } else {
+    } else if ("mzWasDisabled" in el.dataset) {
+      /* busy 中に生まれた要素は印を持たない。印の無いものまで有効化すると、
+         例えば「音声の無いカメラ」のラジオが選べるようになる(いまは直後の
+         renderAll に救われているだけ)。印のあるものだけ元へ戻す */
       el.disabled = el.dataset.mzWasDisabled === "1";
       delete el.dataset.mzWasDisabled;
     }
@@ -2160,6 +2187,9 @@ MC.ui.wire = () => {
 
   $("#exportBtn").onclick = async () => {
     if (MC.exporter.running) return;
+    /* pointer-events はキーボード操作を止めない。分析中に Tab→Enter が届くと
+       書き出しが並走する(2026-07-26 レビュー指摘) */
+    if (MC.ui._busy) return;
     MC.preview.pause();
     const prog = $("#exportProgress");   // 旧・パネル内進捗(全画面移行後は使わない)
     $("#doneCard").hidden = true;

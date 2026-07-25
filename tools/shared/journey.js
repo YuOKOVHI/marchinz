@@ -38,7 +38,12 @@ window.MZJourney = (() => {
       b.dataset.id = p.id;
       b.appendChild(h("span", "mzj-dot",
         `<span class="mzj-num">${i + 1}</span><i class="fa-solid fa-check mzj-check" aria-hidden="true"></i>`));
-      b.appendChild(h("span", "mzj-label", p.label));
+      /* 現在地は正式名、それ以外は短縮名(狭幅で並べきるため)。
+         shortLabel が無ければ label をそのまま使う */
+      const lab = h("span", "mzj-label", p.label);
+      lab.dataset.full = p.label;
+      lab.dataset.short = p.shortLabel || p.label;
+      b.appendChild(lab);
       b.onclick = () => {
         const sel = conf.canSelect ? conf.canSelect(p.id)
           : (done.has(p.id) || p.id === cur);
@@ -72,6 +77,11 @@ window.MZJourney = (() => {
       const id = b.dataset.id;
       b.classList.toggle("current", id === cur);
       b.classList.toggle("done", done.has(id) && id !== cur);
+      const lab = b.querySelector(".mzj-label");
+      if (lab) {
+        const want = id === cur ? lab.dataset.full : lab.dataset.short;
+        if (lab.textContent !== want) lab.textContent = want;
+      }
       const sel = conf.canSelect ? conf.canSelect(id) : (done.has(id) || id === cur);
       b.disabled = !sel;
       b.setAttribute("aria-current", id === cur ? "step" : "false");
