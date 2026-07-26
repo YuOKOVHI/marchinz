@@ -562,9 +562,23 @@ MC.exporter.opfsSupported = () => {
 /** OPFSへ実際に書けるかをWorkerで一度だけ確かめ、結果をキャッシュする。
     起動時(app.js)に呼ぶ。以後 opfsSupported() はこの事実を返す */
 MC.exporter._opfsProbeErr = null;   // 直近の実測失敗の理由(診断表示用)
-MC.exporter.probeOpfs = async force => {
-  if (MC.exporter._opfsProbed === true) return true;
-  if (MC.exporter._opfsProbed === false && !force) return false;
+MC.exporter._probeP = null;         // 実測中のPromise(2本同時に走らせない)
+MC.exporter.probeOpfs = force => {
+  if (MC.exporter._opfsProbed === true) return Promise.resolve(true);
+  if (MC.exporter._opfsProbed === false && !force) return Promise.resolve(false);
+  /* 実測中に別の入口(書き出し開始・敗者復活)から呼ばれたら、2本目を走らせず
+     結果に相乗りする。2本走ると同じ worker に open/write/finalize が交錯し、
+     「応答待ちは1件ずつ」という _writerReq の前提(下の注記)が崩れて
+     応答を取り違える。実測の結末は _runProbe が _opfsProbed と _probeP を
+     隣り合う同期文で更新するので、その間に割り込まれることはない */
+  if (MC.exporter._probeP) return MC.exporter._probeP;
+  const p = MC.exporter._runProbe(force).finally(() => {
+    if (MC.exporter._probeP === p) MC.exporter._probeP = null;   // 例外時の後始末
+  });
+  MC.exporter._probeP = p;
+  return p;
+};
+MC.exporter._runProbe = async force => {
   if (force && MC.exporter._writer) {
     /* 敗者復活(2026-07-24): 起動時の一時的な失敗でfalseが永久キャッシュされ、
        iPhoneがずっとメモリ方式(4分上限)に落ちていた。workerごと作り直して再実測 */
@@ -593,7 +607,10 @@ MC.exporter.probeOpfs = async force => {
     MC.log("OPFS実測NG→この端末はメモリ方式: " + MC.exporter._opfsProbeErr);
     ok = false;
   }
+  /* この2行は隣り合わせで置くこと(間にawaitを挟まない)。同期に更新するので、
+     「結果は出たが _probeP がまだ残っている」瞬間に割り込まれることがない */
   MC.exporter._opfsProbed = ok;
+  MC.exporter._probeP = null;
   return ok;
 };
 
@@ -672,8 +689,18 @@ MC.exporter.opfsCreate = async name => {
            16MB×数個ぶんのコピーが一時的にメモリに乗るが尺には比例しない */
         MC.exporter._pendWrites = (MC.exporter._pendWrites || Promise.resolve())
           .then(() => MC.exporter._writerReq(
-            { type: "write", data: copy.buffer, position }, [copy.buffer], 30000));   // 16MB書きに遅い端末の余裕
-        MC.exporter._pendWrites.catch(() => {});   // 本エラーは finalize/await で受ける
+            { type: "write", data: copy.buffer, position }, [copy.buffer], 30000))   // 16MB書きに遅い端末の余裕
+          /* 最初の失敗を控えておく(2026-07-26 レビュー指摘)。
+             このチェーンは一度 reject すると、以後 .then(書き込み) が
+             呼ばれなくなる ─ つまり**実際の書き込みが飛ばなくなる**。
+             それでも映像ループは回り続けるので、控えておかないと
+             8分の書き出しの1分目に失敗しても、残り7分を待たされたあと
+             finalize でようやく失敗が分かる。ループ側が毎コマ見て即座に畳む */
+          .catch(err => {
+            if (!MC.exporter._writeFatal) MC.exporter._writeFatal = err;
+            throw err;
+          });
+        MC.exporter._pendWrites.catch(() => {});   // 本エラーは上の _writeFatal と finalize で受ける
       },
       chunked: true,
       chunkSize: 16 * 1024 * 1024,   // 明示(G-2)。ライブラリ既定に依存しない
@@ -786,6 +813,12 @@ MC.exporter.preflightFiles = async clips => {
 };
 
 MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
+  /* OPFSへ本当に書けるかの実測(起動時に走らせてある)を、ここで確定させる。
+     未確定のまま進むと opfsSupported() が「入口の有無」だけで暫定 true を返し、
+     ビットレートも書き込み経路もその暫定値で決まってしまう(2026-07-26 レビュー指摘)。
+     実測済みなら即返るので待ち時間は増えない。ディスク直書き(saveHandle)の
+     ときは OPFS を使わないので待たない */
+  if (!saveHandle) await MC.exporter.probeOpfs().catch(() => {});
   let writable = null;
   let opfs = null;
   /* 失敗・中断時は abort で破棄する。FS Access API は swap ファイル方式で、
@@ -823,6 +856,10 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
      重なると応答を取り違える。ここで流し切る(直後の opfsCreate が
      _pendWrites を Promise.resolve() で張り替えるので、待ち続けることはない) */
   await (MC.exporter._pendWrites || Promise.resolve()).catch(() => {});
+  /* 前回の書き込み失敗を持ち越さない。opfsCreate の中で消すだけでは足りない
+     ─ 前回OPFSで失敗し、今回メモリ方式(opfsCreateを通らない)で走ると、
+     古い失敗が残ったまま1コマ目で畳んでしまう */
+  MC.exporter._writeFatal = null;
 
   MC.exporter.cancelFlag = false;
   MC.exporter.running = true;
@@ -984,6 +1021,14 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
       /* 音声が例外で落ちた時点で、この書き出しはどのみち失敗する。
          最後まで映像を作ってから知らせるのは5分の無駄なので、ここで畳む */
       if (audioFatal) throw audioFatal;
+      /* 書き込み先が死んだら即やめる。ここを見ないと、以後の write が
+         本当に飛ばなくなっているのに映像だけ最後まで作り続け、
+         8分の書き出しの1分目の失敗を7分後に知らせることになる */
+      if (MC.exporter._writeFatal) {
+        MC.log("書き込みに失敗したので中断します: " + (MC.exporter._writeFatal.message || MC.exporter._writeFatal));
+        throw new Error("端末の保存領域へ書き込めなくなりました。"
+          + "空き容量を増やすか、書き出す範囲を短くしてお試しください。");
+      }
       const t = tIn + k / fps;
       const srcMap = new Map();
       /* このコマに実際映るカメラだけデコードする(2026-07-22)。
@@ -1046,8 +1091,14 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
           : (now - t0) / 1000 / (k + 1);
         const eta = perFrame * (totalFrames - k - 1);
         if (k - kRecent >= 60) { tRecent = now; kRecent = k; }
-        onProgress((k + 1) / totalFrames * 0.93,
-          `映像 ${k + 1}/${totalFrames} コマ`, { eta });
+        /* いちばん目立つ行(.mzp-label)は人の言葉のまま固定する。
+           以前はここへ「映像 8340/15300 コマ」を流しており、15分のあいだ
+           主見出しが計器になっていた。「コマ」は部員には通じないし、
+           数字は右隣の % と重複していた(2026-07-26)。細かい数字は副文言へ */
+        onProgress((k + 1) / totalFrames * 0.93, "映像を作っています…", {
+          eta,
+          sub: `${Math.round((k + 1) / fps)}秒ぶん / 全${Math.round(totalFrames / fps)}秒`,
+        });
         await MC.yield();  // UI息継ぎ(非表示タブでも節流されない)
       }
     }
@@ -1065,9 +1116,11 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
         + ` / スキップ${prof.skips}回(${(prof.reseekMs / 1000).toFixed(1)}秒)`);
     }
 
-    /* 映像が終わったらデコーダを即解放する。音声エンコードは977秒分の
-       Float32(数百MB)を確保するため、3本分のデコーダとフレームキューを
-       抱えたままだとメモリの取り合いになる */
+    /* 映像が終わったらデコーダを即解放する。音声はストリーム化済みで
+       1024フレーム窓しか持たない(Phase 1)が、3本分のデコーダとフレームキューは
+       尺に比例せず常に重い。次に来る音声エンコードと取り合わせない。
+       ※「音声が977秒分のFloat32(数百MB)を確保する」と書いてあった名残を
+       2026-07-26に訂正。この古い記述がレビューの誤指摘の根拠になっていた */
     pipes.forEach(pp => pp.dispose());
     pipes.clear();
 

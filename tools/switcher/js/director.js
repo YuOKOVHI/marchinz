@@ -27,14 +27,17 @@ MC.director = {
 };
 
 /* ---------- パイプライン(UIのボタンから呼ぶ) ---------- */
-/* p = MZP進捗(steps:3)。①音声解析 ②映像解析 ③カット割 */
-MC.director.run = async p => {
+/* p = MZP進捗。①音声解析 ②映像解析 ③カット割 の3段を名乗る。
+   base = 外側の流れで既に済んでいる段数。おまかせ(runEasyFinish)は同期・区切りが
+   先にあるので、その数を渡してもらう。渡さないと 1/6 の途中で 1/6 へ巻き戻って
+   「何段目か」が嘘になる(2026-07-26)。単体の #autocutBtn は steps:3 なので base=0 */
+MC.director.run = async (p, base = 0) => {
   const audioClip = MC.getClip(MC.S.audioClipId);
   if (!audioClip) throw new Error("音声クリップがありません");
   if (MC.S.clips.filter(c => !c.isAudio && !c.isImage).length < 2) throw new Error("2本以上の動画が必要です");
 
   // ① 音声: 拍+セクション
-  p.step(1, "音楽を解析しています…");
+  p.step(base + 1, "音楽を解析しています…");
   p.pulse("音楽を解析しています…");
   await MZP.paint();
   await MC.audio.extract8k(audioClip);   // 窓キャッシュなら全尺で読み直される(2026-07-24)
@@ -50,7 +53,7 @@ MC.director.run = async p => {
   const vclips = MC.S.clips.filter(c => !c.isAudio && !c.isImage);
   for (let ci = 0; ci < vclips.length; ci++) {
     const c = vclips[ci];
-    p.step(2, `映像を見ています…(${ci + 1}/${vclips.length}本目)`);
+    p.step(base + 2, `映像を見ています…(${ci + 1}/${vclips.length}本目)`);
     const l0 = Math.max(0, tIn - c.offset);
     const l1 = Math.max(l0 + 1, Math.min(c.duration, tOut - c.offset));
     // 進捗は全クリップ通算(クリップごとに0%へ巻き戻さない)
@@ -60,7 +63,7 @@ MC.director.run = async p => {
   }
 
   // ③ カット割
-  p.step(3, "カットを割っています…");
+  p.step(base + 3, "カットを割っています…");
   p.pulse("カットを割っています…");
   await MZP.paint();
   return MC.director.generate();

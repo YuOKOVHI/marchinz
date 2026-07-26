@@ -53,7 +53,16 @@
   transition: background 0.22s ease, color 0.22s ease, opacity 0.22s ease;
   white-space: nowrap;
 }
-.mzj-phase:disabled { cursor: default; opacity: 0.75; }
+/* まだ来ていない工程(押せない)。ラベルは薄くしない ─ 先の工程のパネルを
+   画面から消した以上、ここが「何が残っているか」を知る唯一の場所だから。
+   押せないことは丸い印の側で示す(2026-07-26)。以前の opacity:.75 は
+   「読みにくいのに押せるかは分からない」という両方悪い状態だった */
+.mzj-phase:disabled { cursor: default; opacity: 1; }
+.mzj-phase:disabled .mzj-dot {
+  background: rgba(15, 33, 56, 0.06);
+  color: var(--mzj-sub);
+  box-shadow: none;
+}
 
 .mzj-dot {
   position: relative;
@@ -133,13 +142,17 @@
      消す代わりに短い名前へ差し替える(journey.js が shortLabel を使う)。
      375px に5工程を収めるため、現在地以外は詰める ─ 溢れると右端の
      工程名が切れて読めなくなる(実測: 何もしないと 394px で 39px はみ出す) */
-  .mzj-track { gap: 3px; }
-  .mzj-link { max-width: 8px; }
-  .mzj-phase { padding: 4px 3px; gap: 4px; }
+  /* 幅は接続線を捨てて作る(2026-07-26)。9.5px・opacity .75 は
+     実効3.45:1 で 4.5:1 を割り、タップ標的も25px(44ptの57%)しかなかった。
+     線4本ぶんを文字と親指に回す */
+  .mzj-track { gap: 2px; }
+  .mzj-link { display: none; }
+  .mzj-phase { padding: 4px 3px; gap: 4px; min-height: 44px; }
   .mzj-phase.current { padding: 4px 10px 4px 5px; gap: 6px; }
   .mzj-phase:not(.current) .mzj-dot { width: 17px; height: 17px; font-size: 10px; }
-  .mzj-phase:not(.current) .mzj-label { font-size: 9.5px; max-width: 2.2em;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .75; }
+  .mzj-phase:not(.current) .mzj-label { font-size: 11px; max-width: 2.4em;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    opacity: 1; color: var(--mzj-fg); }
 }
 
 @media (prefers-reduced-motion: reduce) {

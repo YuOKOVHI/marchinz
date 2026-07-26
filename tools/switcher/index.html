@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-app-v="1.47.0">
+<html lang="ja" data-mz-app-v="1.47.1">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -17,7 +17,7 @@
 <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
 <link rel="stylesheet" href="/tools/shared/progress.css">
 <link rel="stylesheet" href="/tools/shared/journey.css">
-<link rel="stylesheet" href="css/style.css?v=1.47.0">
+<link rel="stylesheet" href="css/style.css?v=1.47.1">
 <link rel="stylesheet" href="/tools/shared/sitechrome.css">
 </head>
 <body data-mz-tool="switcher">
@@ -315,6 +315,10 @@
   <div class="eo-inner">
     <p id="eoTitle" class="eo-title"><i id="eoTitleIcon" class="fa-solid fa-file-export" aria-hidden="true"></i> <span id="eoTitleText">書き出し中…</span></p>
     <div id="eoRun">
+      <!-- 開始前に読めていた見積り(#exportEtaHint)をここへ引き継ぐ。全画面が
+           不透明で元の行を覆うため、残り時間が実測で出るまでの数十秒、
+           画面上のどこにも時間の手がかりが無くなっていた(2026-07-26) -->
+      <p id="eoPreEta" class="eo-note"></p>
       <div id="eoProgress"></div>
       <p class="eo-note"><i class="fa-solid fa-mug-hot" aria-hidden="true"></i>
         この画面のままお待ちください（LINE等の通知を開くと、開いている間は止まります）</p>
@@ -374,23 +378,23 @@
 <script src="vendor/mp4box.all.min.js"></script>
 <script src="vendor/mp4-muxer.min.js"></script>
 <script src="vendor/fft.js"></script>
-<script src="js/state.js?v=1.47.0"></script>
-<script src="js/layout.js?v=1.47.0"></script>
-<script src="js/media.js?v=1.47.0"></script>
-<script src="js/audio.js?v=1.47.0"></script>
-<script src="js/sync.js?v=1.47.0"></script>
-<script src="js/beats.js?v=1.47.0"></script>
-<script src="js/sections.js?v=1.47.0"></script>
-<script src="js/visual.js?v=1.47.0"></script>
-<script src="js/director.js?v=1.47.0"></script>
-<script src="js/colormatch.js?v=1.47.0"></script>
-<script src="js/horizon.js?v=1.47.0"></script>
-<script src="js/salute.js?v=1.47.0"></script>
-<script src="js/preview.js?v=1.47.0"></script>
-<script src="js/timeline.js?v=1.47.0"></script>
-<script src="js/cutmode.js?v=1.47.0"></script>
-<script src="js/exporter.js?v=1.47.0"></script>
-<script src="js/ui.js?v=1.47.0"></script>
-<script src="js/app.js?v=1.47.0"></script>
+<script src="js/state.js?v=1.47.1"></script>
+<script src="js/layout.js?v=1.47.1"></script>
+<script src="js/media.js?v=1.47.1"></script>
+<script src="js/audio.js?v=1.47.1"></script>
+<script src="js/sync.js?v=1.47.1"></script>
+<script src="js/beats.js?v=1.47.1"></script>
+<script src="js/sections.js?v=1.47.1"></script>
+<script src="js/visual.js?v=1.47.1"></script>
+<script src="js/director.js?v=1.47.1"></script>
+<script src="js/colormatch.js?v=1.47.1"></script>
+<script src="js/horizon.js?v=1.47.1"></script>
+<script src="js/salute.js?v=1.47.1"></script>
+<script src="js/preview.js?v=1.47.1"></script>
+<script src="js/timeline.js?v=1.47.1"></script>
+<script src="js/cutmode.js?v=1.47.1"></script>
+<script src="js/exporter.js?v=1.47.1"></script>
+<script src="js/ui.js?v=1.47.1"></script>
+<script src="js/app.js?v=1.47.1"></script>
 </body>
 </html>

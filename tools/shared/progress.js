@@ -15,6 +15,15 @@
 window.MZP = (function () {
   const ETA_MIN_MS = 5000;      // これ未満の経過では残り時間を出さない(推定が外れて信用を落とす)
   const ETA_MIN_RATIO = 0.10;   // 進捗がこれ未満でも出さない
+  const ETA_GIVEN_MIN_MS = 3000; // 実測を渡された場合の待ち(序盤の助走で外れるぶんだけ)
+
+  /* 進捗バーの帯。確定進捗のときだけインラインで幅を持たせ、
+     それ以外(pulse=不定 / frozen)は CSS のアニメーション用の幅へ返す */
+  const setFill = (el, determinate, width) => {
+    if (!el) return;
+    if (determinate) el.style.width = width;
+    else if (el.style.width) el.style.width = "";
+  };
   const SLOW_MS = 8000;         // 「時間がかかっています」を足すまで
   const CANCEL_MS = 25000;      // 中止ボタンを出すまで
   const CHIP_MS = 2500;         // 完了表示をチップへ畳むまで
@@ -113,7 +122,12 @@ window.MZP = (function () {
       this.el = null;
       this.mountEl = typeof o.mount === "string" ? document.querySelector(o.mount) : o.mount;
       this._delayTm = setTimeout(() => this._mount(), o.delay == null ? DEFAULT_DELAY : o.delay);
-      this._slowTm = setTimeout(() => { this._slow = true; this._render(); }, SLOW_MS);
+      /* 「時間がかかっています」を出すまでの時間。呼び出し側が所要を知っている
+         処理(書き出しは設計上10〜15分)では 0 を渡して黙らせる ─ 既定の8秒で
+         出すと、正常な待ちの間ずっと異常を宣告し続けることになる(2026-07-26) */
+      const slowMs = o.slowMs == null ? SLOW_MS : o.slowMs;
+      this._slowTm = slowMs > 0
+        ? setTimeout(() => { this._slow = true; this._render(); }, slowMs) : 0;
       this._cancelTm = o.cancel
         ? setTimeout(() => { this._cancelable = true; this._render(); }, CANCEL_MS) : 0;
       if (current && !current.closed) current.close();   // 前の進捗が残っていたら片付ける
@@ -180,26 +194,36 @@ window.MZP = (function () {
         el.querySelector(".mzp-pct").textContent = pctTxt;
         el.querySelector(".mzp-sub").textContent = sub;
         el.querySelector(".mzp-eta").textContent = etaTxt;
-        if (running || this.state === "done") el.querySelector(".mzp-fill").style.width = width;
+        /* pulse/frozen へ戻ったらインラインの width を捨てて CSS(34%+スライド)に返す。
+           残したままだと、直前が99%だった場合に「幅99%の帯を -115%〜315% へ
+           動かす」になり、周期の大半で帯が枠の外に出て空の溝に見える。
+           おまかせの「カットを割っています…」(director.js:63)が実際にこれだった */
+        setFill(el.querySelector(".mzp-fill"), running || this.state === "done", width);
       }
       if (dock && dock.classList.contains("show")) {
         dock.dataset.state = this.state;
         dock.querySelector(".mzp-dock-chapter").textContent = this.opt.chapter || "";
         dock.querySelector(".mzp-dock-label").textContent = this.label;
         dock.querySelector(".mzp-dock-pct").textContent = pctTxt;
-        if (running || this.state === "done") dock.querySelector(".mzp-dock-fill").style.width = width;
+        setFill(dock.querySelector(".mzp-dock-fill"), running || this.state === "done", width);
       }
     }
 
     _etaVisible() {
-      return this.eta != null && this.state === "run"
-        && performance.now() - this.t0 > ETA_MIN_MS && this.ratio > ETA_MIN_RATIO;
+      if (this.eta == null || this.state !== "run") return false;
+      if (performance.now() - this.t0 < ETA_GIVEN_MIN_MS) return false;
+      /* 呼び出し側が実測から eta を渡してきたなら、進捗の比率で止めない。
+         書き出しは10〜15分かかるので ratio>10% に届くのが約2分後になり、
+         「あと何分か」を一番知りたい最初の2分だけ画面から時間が消えていた
+         (2026-07-26)。自前推定(比率から割り戻す)のときだけ従来の門を残す */
+      if (this._etaGiven) return true;
+      return performance.now() - this.t0 > ETA_MIN_MS && this.ratio > ETA_MIN_RATIO;
     }
 
     _apply(o) {
       if (!o) return;
       if (o.sub !== undefined) this.sub = o.sub;
-      if (o.eta !== undefined) this.eta = o.eta;
+      if (o.eta !== undefined) { this.eta = o.eta; this._etaGiven = true; }
       if (o.cancelable) this._cancelable = true;
     }
 

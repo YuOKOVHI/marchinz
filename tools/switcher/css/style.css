@@ -300,7 +300,9 @@ body.mz-busy-lock #errorLog button { pointer-events: auto; opacity: 1; }
   .mz-logo { height: 28px; }
   .tool-name { font-size: 13px; padding-left: 8px; }
   .btn { padding: 11px 16px; }
-  .btn.small { padding: 8px 12px; font-size: 12px; }
+  /* IN/OUT・試聴・記録のコピー等。長すぎて書き出せないときの逃げ道が
+     この小ボタンなので、親指で外さない大きさを確保する(2026-07-26) */
+  .btn.small { padding: 8px 12px; font-size: 12px; min-height: 44px; }
   .btn.round { width: 52px; height: 52px; }
   .nudge button { padding: 6px 8px; font-size: 12px; }
   .dropzone { padding: 16px; }
@@ -852,7 +854,10 @@ body[data-mzj-phase="export"] .clip-slot.empty { display: none; }
   color: var(--tx2);
   margin-bottom: 12px;
 }
-.panel h2 .hint { font-weight: 500; opacity: 0.8; }
+/* opacity は付けない。--tx2(#616366 相当 6.03:1)が 0.8 で #818385=3.84:1 まで
+   落ち、4.5:1 を割る。ここに入るのは装飾ではなく「(3本まで)」等の制約説明。
+   見出しより静かに、は font-weight:500 が担う(2026-07-26) */
+.panel h2 .hint { font-weight: 500; }
 
 /* --- ボタン: 主役は1画面に1つ、丸く大きく --- */
 .btn.primary.big {
@@ -981,7 +986,10 @@ body[data-mzj-phase="export"] .clip-slot.empty { display: none; }
   position: fixed;
   left: 12px; right: 12px;
   bottom: calc(12px + env(safe-area-inset-bottom, 0px));
-  z-index: 92;   /* 親指バー(80)より上。操作を隠さない(D-1) */
+  /* 書き出し全画面(.export-overlay = 120)より前。ここを下回ると、
+     iOSでタブが凍結して戻ってきた部員に「離れていた間は止まっていました」が
+     一度も見えない ─ いちばん誤解しやすい瞬間の唯一の説明だった(2026-07-26) */
+  z-index: 130;
   display: flex; align-items: flex-start; gap: 8px;
   padding: 12px 12px 12px 14px;
   border-radius: 14px;
@@ -1117,12 +1125,19 @@ body[data-mzj-phase="sync"] .stage { display: none; }
 .export-overlay {
   position: fixed; inset: 0; z-index: 120;
   background: var(--bg);
-  display: flex; align-items: center; justify-content: center;
+  /* align-items:center は使わない。overflow-y:auto と併せると、中身が画面より
+     高いとき上へはみ出した分にスクロールで到達できなくなる(記録を開くと
+     「できあがりました」と一行説明が消える。2026-07-26)。
+     margin-block:auto なら収まるときは中央、溢れたら上端から読める */
+  display: flex; justify-content: center;
   padding: calc(20px + env(safe-area-inset-top, 0px)) 20px
            calc(20px + env(safe-area-inset-bottom, 0px));
   overflow-y: auto;
 }
-.eo-inner { width: min(480px, 100%); display: flex; flex-direction: column; gap: 14px; }
+.eo-inner {
+  width: min(480px, 100%); margin-block: auto;
+  display: flex; flex-direction: column; gap: 14px;
+}
 .eo-title {
   font-size: 18px; font-weight: 800; color: var(--navy);
   display: flex; align-items: center; gap: 8px; justify-content: center;

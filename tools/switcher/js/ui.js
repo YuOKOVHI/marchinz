@@ -65,6 +65,14 @@ MC.ui.exportOverlay = {
     MC.ui.$("#eoTitleText").textContent = "書き出し中…";
     MC.ui.$("#eoTitleIcon").className = "fa-solid fa-file-export";
     el.classList.remove("eo-failed");   // 前回の失敗表示を引きずらない
+    /* 開始前の見積りを引き継ぐ。実測の残り時間が出るまでの間、
+       ここだけが「あと何分か」の手がかりになる */
+    const pre = MC.ui.$("#exportEtaHint");
+    const preEl = MC.ui.$("#eoPreEta");
+    if (preEl) {
+      preEl.textContent = (pre && pre.textContent) || "";
+      preEl.hidden = !preEl.textContent;
+    }
     MC.ui.$("#eoRun").hidden = false;
     MC.ui.$("#eoDone").hidden = true;
     MC.ui.$("#eoClose").hidden = true;
@@ -156,7 +164,9 @@ MC.ui.showExportStats = () => {
   /* 中高生が読むのはこの1行だけでよい。畳んだ中身は開発者向け */
   const one = MC.ui.$("#eoOneLine");
   if (one) {
-    one.textContent = `${mmss(s.spanSec)}の動画を${sec(s.totalMs)}秒で書き出しました（${s.w}×${s.h}）`;
+    /* 同じ1行で単位系を割らない。素材側を「8分30秒」と読ませておいて
+       所要だけ「912.4秒」だと、それが15分だと分かる部員はいない(2026-07-26) */
+    one.textContent = `${mmss(s.spanSec)}の動画を${mmss(s.totalMs / 1000)}で書き出しました（${s.w}×${s.h}）`;
     one.hidden = false;
   }
   host.hidden = false;
@@ -490,7 +500,15 @@ MC.ui.initJourney = () => {
       { id: "export", label: "書き出し",     shortLabel: "書出", hint: "「動画を書き出す」で完成です" },
     ],
     doneHint: "書き出し完了。調整して書き出し直すこともできます",
-    canSelect: () => true,   // タップ=そのセクションへ移動(状態は変えないので常に安全)
+    /* タップ=そのセクションへ移動(状態は変えないので安全)。ただし
+       まだ来ていない工程のパネルは display:none(style.css:918)なので
+       scrollIntoView が何も起こらない ─ 「押せるのに反応しない」ボタンになる。
+       実際に画面に出ている工程だけ押せるようにする(2026-07-26)。
+       済んだ工程は step-collapsed(中身だけ非表示)なので、ここは通る */
+    canSelect: id => {
+      const el = document.querySelector(MC.ui.JOURNEY_SECTIONS[id]);
+      return !!(el && el.getClientRects().length);
+    },
     onSelect: id => {
       /* すんだステップは地図からのタップでそのまま開く(畳んだ先へ飛ばされて
          「何もない」にならないように) */
@@ -1777,12 +1795,18 @@ MC.ui.runEasy = async () => {
   MC.ui.setBusy(true);
   MC.ui.clearErrorLog();   // やり直しでは前回の失敗ログを見せない
   MC.preview.pause();
+  const vids = MC.S.clips.filter(c => !c.isImage);
+  /* 「全何段の何段目か」を出す。5〜9分の待ちで文言だけが入れ替わると、
+     あと何が残っているのか分からず体感が倍になる(2026-07-26)。
+     分母は下の分岐と同じ条件で数えること ─ ずれると「4/3」になる */
+  const syncSteps = vids.length >= 2 ? 1 : 0;
+  const goesOn = !(vids.length >= 2 && !MC.S.audioDecided);   // 音声選択で一度止まるか
   const p = MZP.start({ mount: "#easyStatus", chapter: "同期", delay: 0,
+                        steps: syncSteps + (goesOn ? MC.ui.finishSteps() : 0),
                         label: "音を合わせています…" });
   try {
-    const vids = MC.S.clips.filter(c => !c.isImage);
     if (vids.length >= 2) {
-      p.pulse("音を合わせています…");
+      p.step(1, "音を合わせています…").pulse("音を合わせています…");
       await MC.sync.run(p);
     }
     if (vids.length >= 2 && !MC.S.audioDecided) {
@@ -1792,7 +1816,7 @@ MC.ui.runEasy = async () => {
       MC.ui.gentleScrollTo(document.querySelector("#audioSec"), "start");
       return;
     }
-    await MC.ui.runEasyFinish(p);   // 1本だけ→選ぶフェーズを飛ばして仕上げへ
+    await MC.ui.runEasyFinish(p, syncSteps);   // 1本だけ→選ぶフェーズを飛ばして仕上げへ
   } catch (e) {
     console.error(e);
     p.fail("うまくできませんでした", { detail: e.message });
@@ -1806,28 +1830,37 @@ MC.ui.runEasy = async () => {
 /* おまかせ 第2段: 「この音で進める」後の仕上げ。
    トリム→(③自動スイッチングのみ)カット割→色そろえ。
    ①縦動画/②ワイプカメラはシーン分析を丸ごと飛ばす(2026-07-24 優さん指示) */
-MC.ui.runEasyFinish = async pIn => {
+/* この実行で実際に通る段の数。進捗の分母に使うので、runEasyFinish 本体の
+   分岐と同じ条件で数えること(ずれると「4/3」や「2/5で完了」になる) */
+MC.ui.finishSteps = () =>
+  ((MC.S.trimIn === 0 && MC.S.trimOut == null) ? 1 : 0)   // 最初と最後を探す
+  + (MC.S.mode === "switch" ? 3 : 0)                      // director の3段
+  + (MC.S.colorOn ? 1 : 0);                               // 色をそろえる
+
+MC.ui.runEasyFinish = async (pIn, base = 0) => {
   if (!pIn && MC.ui._busy) return;
   const t0 = performance.now();   // 次回の見積りを実測へ寄せるため
   if (!pIn) { MC.ui.setBusy(true); MC.ui.clearErrorLog(); MC.preview.pause(); }
   const p = pIn || MZP.start({ mount: "#easyStatus", chapter: "仕上げ", delay: 0,
+                               steps: MC.ui.finishSteps(),
                                label: "仕上げています…" });
+  let n = base;   // ここまでに済んだ段数
   try {
     // 開始/終了の自動区切り。演奏の前後(アナウンス・拍手・片付け)を落とす。
     // カット割より先に行う: director は MC.trimRange() の中だけを割るため
     if (MC.S.trimIn === 0 && MC.S.trimOut == null) {
-      p.pulse("最初と最後を探しています…");
+      p.step(++n, "最初と最後を探しています…").pulse();
       await MZP.paint();
       await MC.salute.autoTrim();   // 検出できなければ静かに諦める(トリムなしで続行)
     }
     if (MC.S.mode === "switch") {   // シーン分析は③自動スイッチングだけ
-      p.pulse("カットを割っています…");
-      await MC.director.run(p);
+      await MC.director.run(p, n);   // 中で3段ぶん進む(音楽/映像/カット割)
+      n += 3;
       MC.timeline.render();
     }
     let colorFailed = false;
     if (MC.S.colorOn) {
-      p.pulse("色をそろえています…");
+      p.step(++n, "色をそろえています…").pulse();
       await MC.color.run(p).catch(() => { colorFailed = true; });
     }
     MC.ui.renderAll();
@@ -2292,8 +2325,12 @@ MC.ui.wire = () => {
     MC.ui.exportOverlay.open();   // ここから全画面(案B)。進捗は下のmountへ実る
     const p = MZP.start({
       mount: "#eoProgress", chapter: "書き出し", delay: 0,
+      /* 書き出しは設計上10〜15分かかる。既定の8秒で「時間がかかっています」を
+         出すと、正常な待ちの間ずっと異常を宣告し続ける(2026-07-26) */
+      slowMs: 0,
       label: mode === "realtime" ? "再生しながら録画しています…" : "映像を作っています…",
-      sub: mode === "realtime" ? "画面を閉じずにお待ちください" : "",
+      sub: mode === "realtime" ? "画面を閉じずにお待ちください"
+         : "終わるまで、この画面を開いたままにしてください",
       // 中止は枠の外の #cancelBtn が既に担っているので、ここでは出さない(二重表示の回避)
     });
     MC.ui.clearErrorLog();   // やり直しでは前回の失敗ログを見せない
