@@ -781,6 +781,187 @@ async function countSamples(ns, file, fromSec) {
     });
   });
 
+  group("⑨ 合成(レイアウト) ─ 高速化の前に「いまの絵」を固定する");
+  /* 狙いは2つ。
+     ① layout.js:31 が「必ず一致させること」と書いている不変条件を機械で守る。
+        neededIds が返すカメラと drawComposite が実際に resolveSrc を呼ぶカメラが
+        ずれると、書き出しで必要なコマを取っておらず**黒コマ**になる(例外は出ない)。
+     ② これから合成をレイヤー1パス化する(引き継ぎ書 B)。書き換えで絵が変わったら
+        落ちるよう、先に画素で固定しておく。
+
+     色処理は切って測る。色を通すと「GLで縮小→2Dへ1:1」と「2Dで縮小→GLで1:1」で
+     リサンプルの経路が変わり、画素は厳密には一致しない(ここは許容差の話になる)。
+     レイアウトの正しさ＝どのカメラがどこに出るか、は色と無関係に決まる。 */
+  let CF = null, CW = null, CD = null;
+  const compEnv = async () => {
+    if (CW) return CW;
+    CF = document.createElement("iframe");
+    CF.style.cssText = "position:fixed;left:-9999px;top:0;width:390px;height:844px;border:0";
+    CF.src = "../switcher/index.html";
+    document.body.appendChild(CF);
+    await new Promise((res, rej) => {
+      CF.onload = res;
+      setTimeout(() => rej(new Error("switcher の読み込みが終わらない")), 20000);
+    });
+    CW = CF.contentWindow; CD = CF.contentDocument;
+    for (let i = 0; i < 100 && !(CW.MC && CW.MC.drawComposite); i++) {
+      await new Promise(r => setTimeout(r, 100));
+    }
+    if (!(CW.MC && CW.MC.drawComposite)) throw new Error("MC.drawComposite が生えない");
+    return CW;
+  };
+  /* 合成だけを見る素の状態。色・水平補正・境界線・ウォーターマークは既定で切る
+     (ウォーターマークは layout.js が window.MZWM を見るので iframe 側を空にする) */
+  const compReset = w => {
+    const S = w.MC.S;
+    S.colorOn = false; S.filterId = "none"; S.horizonOn = false;
+    S.borderOn = false; S.cutList = [];
+    S.clips = [1, 2, 3].map(id => ({
+      id, name: `c${id}.mp4`, isImage: false, isAudio: false,
+      duration: 60, offset: 0, pan: 0.5, colorT: null,
+    }));
+    S.slots = [1, 2, 3];
+    S.audioClipId = 1;
+    S.wipeMainId = 1; S.wipeClipId = 2; S.wipeClipId2 = null;
+    S.wipePos = "br"; S.wipePos2 = "bl"; S.wipeSize = 0.32;
+    w.MZWM = null;
+    return S;
+  };
+  /* 単色のソース。cover-crop で拡縮しても色が変わらないので、
+     ブラウザごとのリサンプル差に左右されずに「どこに何が出たか」だけを見られる */
+  const mkSrc = (w, rgb) => {
+    const cv = w.document.createElement("canvas");
+    cv.width = 64; cv.height = 36;
+    const c = cv.getContext("2d");
+    c.fillStyle = `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
+    c.fillRect(0, 0, 64, 36);
+    return { source: cv, w: 64, h: 36, rotation: 0 };
+  };
+  const CAM = { 1: [255, 0, 0], 2: [0, 255, 0], 3: [0, 0, 255] };
+  const render = (w, W, H, t) => {
+    const srcs = { 1: mkSrc(w, CAM[1]), 2: mkSrc(w, CAM[2]), 3: mkSrc(w, CAM[3]) };
+    const cv = w.document.createElement("canvas");
+    cv.width = W; cv.height = H;
+    const ctx = cv.getContext("2d", { willReadFrequently: true });
+    const asked = [];
+    w.MC.drawComposite(ctx, W, H, t, id => { asked.push(id); return srcs[id] || null; });
+    return {
+      asked,
+      px: (x, y) => {
+        const p = ctx.getImageData(Math.round(x), Math.round(y), 1, 1).data;
+        return [p[0], p[1], p[2]];
+      },
+    };
+  };
+  const near = (got, want, tol, what) => {
+    for (let i = 0; i < 3; i++) {
+      if (Math.abs(got[i] - want[i]) > tol) {
+        throw new Error(`${what}: 期待 rgb(${want}) / 実際 rgb(${got})`);
+      }
+    }
+  };
+
+  await test("★どのレイアウトでも「要るカメラ」と「実際に描くカメラ」が一致する", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    const seen = [];
+    for (const id of Object.keys(w.MC.LAYOUTS)) {
+      S.layoutId = id;
+      const L = w.MC.LAYOUTS[id];
+      let times = [0.5];
+      if (L.type === "switch") {
+        /* カット2つ。t=1.5 はディゾルブ(1秒)の真ん中＝2台が同時に要る瞬間 */
+        S.cutList = [{ t: 0, clipId: 1, trans: "cut", dur: 0 },
+                     { t: 1, clipId: 2, trans: "dissolve", dur: 1 }];
+        times = [0.5, 1.5];
+      } else { S.cutList = []; }
+      if (L.type === "wipe") S.wipeClipId2 = 3;   // 小窓2つの最大構成で見る
+      for (const t of times) {
+        const need = [...new Set(w.MC.neededIds(t))].sort();
+        const asked = [...new Set(render(w, 240, 426, t).asked)].sort();
+        if (need.join(",") !== asked.join(",")) {
+          throw new Error(`${id} t=${t}: neededIds=[${need}] だが描いたのは [${asked}]`
+            + " ─ 書き出しで黒コマになる組み合わせ");
+        }
+        seen.push(`${id}${L.type === "switch" ? "@" + t : ""}`);
+      }
+      S.wipeClipId2 = null;
+    }
+    return `${seen.length}通り一致 (${seen.join(" ")})`;
+  });
+
+  await test("★分割レイアウトはスロット順どおりの位置にカメラが出る", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    const checked = [];
+    for (const id of ["v2", "v3", "h2", "h3", "big2", "single"]) {
+      S.layoutId = id;
+      const L = w.MC.LAYOUTS[id];
+      const W = 240, H = 426;
+      const r = render(w, W, H, 0.5);
+      L.rects.forEach((rc, i) => {
+        const camId = S.slots[i];
+        /* セルの中心。境界線は切ってあるので中心＝そのカメラの色そのもの */
+        near(r.px((rc.x + rc.w / 2) * W, (rc.y + rc.h / 2) * H), CAM[camId], 2,
+          `${id} の${i + 1}枠目にカメラ${camId}が出ていない`);
+      });
+      checked.push(`${id}(${L.rects.length})`);
+    }
+    return checked.join(" ");
+  });
+
+  await test("★境界線はセルの境目に、指定の色と太さで出る", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.layoutId = "v3";
+    S.borderOn = true; S.borderColor = "#ffff00"; S.borderW = 8;
+    const W = 240, H = 426;
+    const r = render(w, W, H, 0.5);
+    near(r.px(W / 2, H / 3), [255, 255, 0], 6, "1枠目と2枠目の境目に線が無い");
+    near(r.px(W / 2, H * 2 / 3), [255, 255, 0], 6, "2枠目と3枠目の境目に線が無い");
+    /* 中身まで塗り潰していないこと(太さの暴走検出) */
+    near(r.px(W / 2, H / 6), CAM[1], 2, "境界線がセルの中身を塗り潰している");
+    S.borderOn = false;
+    const r2 = render(w, W, H, 0.5);
+    /* 境目の行(426/3=142)は2枠目の1行目。OFFなら線ではなく2枠目のカメラが出る */
+    near(r2.px(W / 2, H / 3), CAM[2], 2, "境界線をOFFにしても線が残る");
+    return "境目に出る・中身は無事・OFFで消える";
+  });
+
+  await test("★ディゾルブの途中は2台が指定の比率で混ざる", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.layoutId = "switch";
+    S.cutList = [{ t: 0, clipId: 1, trans: "cut", dur: 0 },
+                 { t: 1, clipId: 2, trans: "dissolve", dur: 1 }];
+    const W = 240, H = 426;
+    /* t=1.5 → blend 0.5。前カメラ(赤)を不透明で敷き、次カメラ(緑)を50%で重ねる */
+    near(render(w, W, H, 1.5).px(W / 2, H / 2), [128, 128, 0], 3, "ディゾルブ中点");
+    near(render(w, W, H, 0.5).px(W / 2, H / 2), CAM[1], 2, "ディゾルブ前は前カメラ単独");
+    near(render(w, W, H, 2.5).px(W / 2, H / 2), CAM[2], 2, "ディゾルブ後は次カメラ単独");
+    return "0% / 50% / 100% とも一致";
+  });
+
+  await test("★ワイプは小窓が指定の角に出て、メインを隠さない", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.layoutId = "wipe";
+    S.wipeMainId = 1; S.wipeClipId = 2; S.wipeClipId2 = 3;
+    S.wipePos = "br"; S.wipePos2 = "bl"; S.wipeSize = 0.32;
+    const W = 240, H = 426;
+    const r = render(w, W, H, 0.5);
+    const pw = W * S.wipeSize, ph = pw * 9 / 16;
+    near(r.px(W / 2, H / 2), CAM[1], 2, "画面中央がメインカメラでない");
+    near(r.px(W - pw / 2, H - ph / 2), CAM[2], 2, "右下の小窓1がカメラ2でない");
+    near(r.px(pw / 2, H - ph / 2), CAM[3], 2, "左下の小窓2がカメラ3でない");
+    /* 小窓のすぐ上はメインのまま＝小窓が想定より大きくない */
+    near(r.px(W - pw / 2, H - ph - 12), CAM[1], 2, "小窓が指定より大きい");
+    S.wipeClipId2 = null;
+    return "中央=メイン / 右下・左下=小窓 / はみ出し無し";
+  });
+
+  if (CF) { CF.remove(); CF = null; CW = null; CD = null; }
+
   /* ===== 集計 ===== */
   const bad = R.filter(r => !r.ok);
   sum.textContent = bad.length
