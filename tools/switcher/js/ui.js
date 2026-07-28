@@ -675,17 +675,25 @@ MC.ui.refreshJourney = () => {
   MC.ui.updateActionBar();
 };
 
-/* ============ ステップ表示: ウィザード折衷案(2026-07-23 優さん指示) ============
-   画面遷移はしない。ジャーニーの現在フェーズから各パネルを
-     いま  = 展開(青枠の強調は従来どおり)
-     すみ  = 1行に畳む。タップでいつでも開閉できる(直したくなったら戻れる)
-     まだ  = 1行に畳んでロック。何が待っているかだけ見せる
-   に振り分ける。1画面で決めることを絞りつつ、全体の地図は縦に残す。
+/* ============ ステップ表示: 1画面1操作(2026-07-28 優さん指示) ============
+   ジャーニーの現在フェーズの工程だけを画面に出す。済んだ工程も、まだの工程も出さない。
+
+   2026-07-23〜27 は「いま=展開 / すみ=1行に畳む / まだ=畳んでロック」の
+   折衷案だった。これを捨てた理由は思想ではなく実測:
+     ・設定の画面に押せるものが29個・ページが2039px(画面の2.9倍)あった
+     ・「動画を書き出す」が同じ画面に2つ出ていた
+     ・そして #syncSec と #layoutSec は #proPane(hidden)の中にあったため、
+       既定のおまかせでは工程②と④の画面が1枚も表示されなかった ─
+       ジャーニーが現在地だと言っている工程の中身が画面に無い状態
+   畳み方をいくら調整してもこれは直らないので、出し分けをここに一本化した。
    状態は refreshJourney が導出したものをそのまま使う(新しい状態機械を作らない) */
 MC.ui.STEP_RANK = { mat: 0, sync: 1, audio: 2, polish: 3, export: 4 };
 MC.ui.STEP_GROUPS = [
   { id: "mat",    panels: ["#dropSec"] },
-  { id: "sync",   panels: ["#syncSec"] },
+  /* #easyPane を sync に載せる(2026-07-28)。おまかせの実際の操作＝「分析を開始」は
+     この枠にあるのに、工程表に載っていなかったため applySteps が一切触れられず、
+     分析が済んだあとも全工程に出続けていた */
+  { id: "sync",   panels: ["#syncSec", "#easyPane"] },
   { id: "audio",  panels: ["#audioSec"] },
   { id: "polish", panels: ["#placeSec", "#layoutSec", "#finishSec"] },
   { id: "export", panels: ["#exportSec"] },
@@ -706,57 +714,34 @@ MC.ui.applySteps = current => {
   const R = MC.ui.STEP_RANK;
   const cur = R[current] ?? 0;
   const advanced = MC.ui._stepPhase != null && cur > R[MC.ui._stepPhase];
-  if (MC.ui._stepPhase !== current) { MC.ui._stepOpen.clear(); MC.ui._stepPhase = current; }
-  let scrollTo = null;
+  const changed = MC.ui._stepPhase !== current;
+  if (changed) { MC.ui._stepOpen.clear(); MC.ui._stepPhase = current; }
   MC.ui.STEP_GROUPS.forEach(g => {
-    let state = R[g.id] < cur ? "done" : R[g.id] === cur ? "current" : "locked";
-    /* 書き出しは「整える」と同時に開く。整えるのは任意で、ゴールのボタンを
-       ロックしたままにしない(自動カット割へは actionbar が誘導する) */
-    if (g.id === "export" && cur >= R.polish) state = "current";
+    const state = R[g.id] < cur ? "done" : R[g.id] === cur ? "current" : "locked";
     g.panels.forEach(sel => {
       const el = document.querySelector(sel);
       if (!el) return;
-      const open = state === "current" || (state === "done" && MC.ui._stepOpen.has(sel));
-      el.classList.toggle("step-collapsed", !open);
+      /* いまの工程だけ出す。「書き出しは整えると同時に開く」の例外は捨てた ─
+         ジャーニーが「5 書出」をまだ先だと表示している横で、その中身
+         (画質の選択と「動画を書き出す」)が既に画面にあった */
+      el.classList.toggle("step-off", state !== "current");
       el.classList.toggle("step-done", state === "done");
-      el.classList.toggle("step-locked", state === "locked");
+      el.classList.remove("step-collapsed", "step-locked");
+      /* 畳みヘッダーの✓チップはもう使わない(畳まないので)。残骸を消す */
       const h2 = el.querySelector(":scope > h2");
+      const chip = h2 && h2.querySelector(".mz-step-chip");
+      if (chip) chip.remove();
       if (h2) {
-        let html = "";
-        if (state === "done") {
-          html = open
-            ? '<i class="fa-solid fa-circle-check"></i> <i class="fa-solid fa-chevron-up"></i>'
-            : `<i class="fa-solid fa-circle-check"></i> ${MC.ui.stepSummary(sel)} <i class="fa-solid fa-chevron-down"></i>`;
-        }
-        let chip = h2.querySelector(".mz-step-chip");
-        if (html) {
-          if (!chip) {
-            chip = document.createElement("span");
-            chip.className = "mz-step-chip";
-            h2.appendChild(chip);
-          }
-          if (chip.dataset.h !== html) { chip.innerHTML = html; chip.dataset.h = html; }
-        } else if (chip) {
-          chip.remove();
-        }
-        if (state === "done") {
-          h2.setAttribute("role", "button");
-          h2.setAttribute("tabindex", "0");
-          h2.setAttribute("aria-expanded", open ? "true" : "false");
-        } else {
-          h2.removeAttribute("role");
-          h2.removeAttribute("tabindex");
-          h2.removeAttribute("aria-expanded");
-        }
+        h2.removeAttribute("role");
+        h2.removeAttribute("tabindex");
+        h2.removeAttribute("aria-expanded");
       }
-      if (!scrollTo && state === "current" && R[g.id] === cur && !el.hidden) scrollTo = el;
     });
   });
-  /* フェーズが進んだら、新しく開いたステップへそっと運ぶ。
+  /* 工程が変わったら必ず先頭から読ませる。前の工程のスクロール位置が残ると、
+     新しい画面の途中から始まって「何も出ていない」ように見える。
      おまかせの実行中は進捗ドックが主役なので動かさない */
-  if (advanced && !MC.ui._busy && scrollTo && scrollTo.offsetParent) {
-    MC.ui.gentleScrollTo(scrollTo, "start");   // 見えていれば動かさない(2026-07-23)
-  }
+  if (advanced && !MC.ui._busy) window.scrollTo({ top: 0, behavior: "smooth" });
 };
 
 /* 「すみ」ヘッダーの開閉。パネルは静的HTMLなので初期化時に1回だけ付ける */
@@ -1302,12 +1287,10 @@ MC.ui.renderEasyLead = () => {
   const cutMode = MC.S.mode === "switch";   // カット割の説明は③だけ(2026-07-24)
   /* 完了後は完了カード(easyStatus)が同じことを言うので、リード文は畳む
      (同じ表示を2箇所に出さない。失敗時は markExportFailed がここへ書く) */
-  el.hidden = !!MC.S.easyDone;
-  if (!MC.S.easyDone) {
-    el.textContent = cutMode
-      ? "同期・カット割・色みまで、おまかせで仕上げます。"
-      : "同期・色みまで、おまかせで仕上げます。";
-  }
+  /* リード文はもう出さない(2026-07-28)。すぐ上のタブ説明
+     「おまかせ＝同期もカット割も自動で仕上げます」(setSetupTabsLead)と
+     ほぼ同じ文が、同じ画面に2行並んでいた。残すのは失敗時の差し替えだけ */
+  el.hidden = true;
   MC.ui.renderEasyButton();
 };
 
@@ -1368,7 +1351,9 @@ MC.ui.applyGuestLocks = () => {
       if (n) n.scrollIntoView({ behavior: "smooth", block: "center" });
     });
   }
-  const pane = MC.ui.$("#proPane");
+  /* 土台だった #proPane は廃止したので、こだわりの先頭パネル(#syncSec)へ寄せる。
+     null のまま放置すると落ちはしないが、ゲストへの案内が二度と出なくなる */
+  const pane = MC.ui.$("#syncSec");
   let note = document.getElementById("mzProLockNote");
   if (guest && pane && !note) {
     note = document.createElement("div");
@@ -1388,8 +1373,12 @@ MC.ui.setSetupTab = tab => {
   const changed = MC.ui._setupTab !== tab;
   MC.ui._setupTab = tab;
   const easy = tab !== "pro";
-  MC.ui.$("#easyPane").hidden = !easy;
-  MC.ui.$("#proPane").hidden = easy;
+  /* #proPane は廃止した(2026-07-28)。ラッパで隠すと、その中の #syncSec と
+     #layoutSec が工程②④の画面そのものなので、おまかせでは現在地の画面が
+     消えていた。おまかせ/こだわりの出し分けは body のクラスで行い、
+     工程の出し分け(applySteps)と喧嘩させない */
+  document.body.classList.toggle("tab-easy", easy);
+  document.body.classList.toggle("tab-pro", !easy);
   document.querySelectorAll("#setupTabs .tab").forEach(b => {
     const on = b.dataset.tab === tab;
     b.classList.toggle("on", on);

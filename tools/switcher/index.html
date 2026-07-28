@@ -146,7 +146,11 @@
       <div id="easyStatus" class="status"></div>
     </div>
 
-    <div id="proPane" class="pro-pane" hidden>
+    <!-- #proPane ラッパは廃止した(2026-07-28)。ここに #syncSec と #layoutSec が
+         入っていたため、既定の「おまかせ」タブでは工程②と④の画面が
+         1枚も表示されなかった ─ ジャーニーが現在地だと言っている工程の中身が
+         画面に存在しない状態。工程の出し分けは applySteps に一本化し、
+         おまかせ/こだわりの出し分けは body.tab-easy / body.tab-pro で行う -->
     <section class="panel" id="syncSec">
       <h2>同期 <span class="hint">音の波形で自動合わせ</span></h2>
       <div class="row">
@@ -246,8 +250,6 @@
       </div>
       <div id="finishStatus" class="status"></div>
     </section>
-
-    </div>
 
     <!-- 失敗したときのログと脱出口。工程のパネルの中に置くと、
          その工程がまだ来ていないときに display:none で一緒に消える。

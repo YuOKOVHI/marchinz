@@ -1204,5 +1204,20 @@ body:not(.mz-has-clips) #easyPane { display: none; }
    data-mzj-phase は「計算された現在地」なので、素材が揃うと mat へは戻らず、
    脱出口が永久に押せなくなる(2026-07-28 実測で確認して撤回)。
    破壊操作である点は、置き場所ではなく確認ダイアログで守ること。 */
-body[data-mzj-phase="polish"] #easyPane,
-body[data-mzj-phase="export"] #easyPane { display: none; }
+/* ↑の出し分けは applySteps(.step-off)へ移した(2026-07-28)。
+   data-mzj-phase を別途見ると二重に効いて、同期の画面が空になる */
+
+
+/* ---------- 1画面1操作: いまの工程だけを出す 2026-07-28 ----------
+   applySteps が現在地以外のパネルへ .step-off を付ける。
+   済んだ工程を1行に畳んで並べる方式(step-collapsed)は捨てた ─ 実測で
+   設定の画面が 29個 / 2039px あり、畳み方の調整では届かなかった。 */
+.side .panel.step-off,
+#easyPane.step-off { display: none !important; }
+
+/* おまかせ/こだわりの出し分け。工程の出し分け(.step-off)とは別の軸なので、
+   両方が「出す」と言ったときだけ出る(ラッパで隠すと工程の画面ごと消えた) */
+body.tab-easy #syncSec,
+body.tab-easy #layoutSec,
+body.tab-easy #finishSec { display: none !important; }
+body.tab-pro #easyPane { display: none !important; }
