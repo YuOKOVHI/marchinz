@@ -116,18 +116,23 @@
       <div id="tiltBox" class="tilt-box" hidden>
         <label class="tilt-master">
           <input type="checkbox" id="tiltToggle">
-          <span>傾きを自動で直す（自動水平補正）</span>
-          <span class="hint">分析後に自動でON。0.1°ずつ調整できます</span>
+          <span>傾きを自動でまっすぐにする</span>
         </label>
         <div id="tiltStatus" class="status"></div>
-        <div id="tiltRows"></div>
+        <!-- カメラごとの0.1°スライダーは畳んでおく(2026-07-28)。
+             おまかせの「設定」画面で押せるもの25個のうち13個がこの微調整だった。
+             自動でまっすぐになるのが既定なので、開けたい人だけ開く -->
+        <details class="tilt-fine">
+          <summary>じぶんで微調整する</summary>
+          <div id="tiltRows"></div>
+        </details>
       </div>
     </section>
 
     <!-- 音声を選ぶ(独立フェーズ 2026-07-24 優さん指示)。分析(同期)のあとに
          試聴して決める。動画1本ならフェーズごとスキップされる -->
     <section class="panel" id="audioSec">
-      <h2>使う音声を選ぶ <span class="hint">いちばん良い音におすすめ印</span></h2>
+      <h2>使う音声を選ぶ</h2>
       <div id="audioChoices" class="audio-choices"></div>
       <div class="row" style="margin-top:10px">
         <button id="audioListenBtn" class="btn small" type="button"><i class="fa-solid fa-headphones"></i> 試聴する</button>
@@ -135,7 +140,7 @@
       </div>
       <p id="audioGateHint" class="audio-gate-hint">
         <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
-        まだ分析していません。下の「分析を開始」を押してください。<br>
+        さきに「分析を開始」をおわらせてください。
         終わると、いちばん良い音に「おすすめ」の印がつきます。</p>
     </section>
 
@@ -236,10 +241,10 @@
       <label class="row" style="gap:8px; cursor:pointer; align-items:center; margin-top:10px">
         <input type="checkbox" id="autoTrimToggle">
         <span>最初と最後を自動カット</span>
-        <span class="hint">同期後に演奏開始(サリュート考慮)〜終了+10秒を書き出し範囲に</span>
+        <span class="hint">演奏がはじまる少し前から、おわって10秒後までを自動でえらびます</span>
       </label>
       <div class="row">
-        <button id="saluteBtn" class="btn"><i class="fa-solid fa-music"></i> 演奏区間を検出 <span class="hint">サリュート考慮</span></button>
+        <button id="saluteBtn" class="btn"><i class="fa-solid fa-music"></i> 演奏の範囲をさがす</button>
       </div>
       <div class="row" id="saluteRow" style="display:none">
         <span id="saluteInfo"></span>

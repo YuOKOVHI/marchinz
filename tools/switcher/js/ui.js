@@ -501,7 +501,7 @@ MC.ui.initJourney = () => {
       { id: "mat",    label: "動画を選ぶ",   shortLabel: "動画", hint: "1本でも作れます" },
       { id: "sync",   label: "同期と分析",   shortLabel: "同期", hint: "音のズレ合わせと素材の分析をします" },
       { id: "audio",  label: "音声を選ぶ",   shortLabel: "音声", hint: "試聴して「この音で進める」を押してください" },
-      { id: "polish", label: "自動編集設定", shortLabel: "設定", hint: "設定はそのままでOK。「動画を書き出す」で仕上がります" },
+      { id: "polish", label: "自動編集設定", shortLabel: "設定", hint: "そのままでもOK。気になるところだけ直してください" },
       { id: "export", label: "書き出し",     shortLabel: "書出", hint: "「動画を書き出す」で完成です" },
     ],
     doneHint: "書き出し完了。調整して書き出し直すこともできます",
@@ -771,12 +771,12 @@ MC.ui.rigBadge = c => {
   }
   const v = c.visual;
   if (!v || typeof v.operated !== "boolean") {
-    return `<span class="rig-badge none" title="自動カット割を実行すると判定されます">解析前</span>`;
+    return `<span class="rig-badge none" title="自動カット割を実行すると判定されます">まだ見ていません</span>`;
   }
   const pct = Math.round((v.movingFrac || 0) * 100);
   return v.operated
-    ? `<span class="rig-badge op" title="画面全体が動いている区間が${pct}%。人が操作していると判定">カメラマン付き</span>`
-    : `<span class="rig-badge fx" title="画面全体が動いている区間が${pct}%。動いているのは被写体だけと判定">定点固定</span>`;
+    ? `<span class="rig-badge op" title="画面全体が動いている区間が${pct}%。人が操作していると判定">手でもって撮影</span>`
+    : `<span class="rig-badge fx" title="画面全体が動いている区間が${pct}%。動いているのは被写体だけと判定">置いて撮影</span>`;
 };
 
 /* --- クリップカード --- */
@@ -868,8 +868,8 @@ MC.ui.renderClips = () => {
         </select></div>
         <div class="pan-row">撮り方 <select class="rig-sel select-mini" title="定点固定か、人が操作しているか。カット割の扱いが変わります">
           <option value="auto" ${!c.rig || c.rig === "auto" ? "selected" : ""}>自動判定</option>
-          <option value="fixed" ${c.rig === "fixed" ? "selected" : ""}>定点固定</option>
-          <option value="operated" ${c.rig === "operated" ? "selected" : ""}>カメラマン付き</option>
+          <option value="fixed" ${c.rig === "fixed" ? "selected" : ""}>置いて撮影</option>
+          <option value="operated" ${c.rig === "operated" ? "selected" : ""}>手でもって撮影</option>
         </select>${MC.ui.rigBadge(c)}</div>` : ""}
       </div>
       <button class="clip-remove" title="削除">✕</button>`;
@@ -914,12 +914,20 @@ MC.ui.renderAudio = () => {
   for (const c of cands) {
     const label = document.createElement("label");
     label.className = "audio-choice" + (MC.S.audioClipId === c.id ? " selected" : "");
+    /* dB表記はやめた(2026-07-28 文言見直し)。「音量-14dB」は中高生に通じない。
+       rms を3段の言葉に割る(-20dB相当=0.1 / -34dB相当=0.02 が境目) */
+    const loud = r => r >= 0.1 ? "音が大きい" : r >= 0.02 ? "音はふつう" : "音が小さめ";
     const stat = c.stats
-      ? `音量${(20 * Math.log10(c.stats.rms || 1e-6)).toFixed(0)}dB${c.stats.clipRatio > 0.001 ? "・歪みあり⚠" : ""}`
-      : (c.hasAudio === false ? "音声なし" : "未解析");
+      ? `${loud(c.stats.rms || 0)}${c.stats.clipRatio > 0.001 ? "・音がわれています⚠" : ""}`
+      : (c.hasAudio === false ? "音声なし" : "まだ聞いていません");
+    /* 名前はプレビューの左下と同じ「カメラN」に統一する。選択肢だけ
+       IMG_0001.MOV だと、同じものに2つの名前がある状態だった */
+    const slotIdx = MC.S.slots.indexOf(c.id);
+    const dispName = c.isAudio ? "音声ファイル"
+      : slotIdx >= 0 ? `カメラ${slotIdx + 1}` : MC.ui.shortName(c.name);
     label.innerHTML = `
       <input type="radio" name="audioClip" ${MC.S.audioClipId === c.id ? "checked" : ""} ${c.hasAudio === false ? "disabled" : ""}>
-      ${c.isAudio ? '<i class="fa-solid fa-file-audio" title="取り込んだ音声ファイル"></i> ' : ""}<span>${MC.ui.esc(c.name.length > 18 ? c.name.slice(0, 17) + "…" : c.name)}</span>
+      ${c.isAudio ? '<i class="fa-solid fa-file-audio" title="取り込んだ音声ファイル"></i> ' : ""}<span>${MC.ui.esc(dispName)}${!c.isAudio && slotIdx >= 0 ? ` <span class="hint">${MC.ui.esc(MC.ui.shortName(c.name, 12))}</span>` : ""}</span>
       ${reco && reco.id === c.id ? `<span class="reco-badge">おすすめ</span>` : ""}
       <span class="audio-stat">${stat}</span>`;
     label.querySelector("input").onchange = () => {
@@ -1043,8 +1051,8 @@ MC.ui.renderExportMode = () => {
     el.innerHTML = "";   // 正常時は技術情報を出さない(そのまま保存できるのが当たり前の姿)
     btn.innerHTML = '<i class="fa-solid fa-file-export"></i> 動画を書き出す';
   } else if (mode === "realtime") {
-    el.innerHTML = `<span class="warn">⚠ この端末は実時間録画になります。書き出し中は画面を閉じないでください</span>`;
-    btn.innerHTML = '<i class="fa-solid fa-file-export"></i> 動画を書き出す(実時間)';
+    el.innerHTML = `<span class="warn">この端末では、動画とおなじ長さの時間がかかります（3分の動画なら約3分）。おわるまで画面を閉じないでください</span>`;
+    btn.innerHTML = '<i class="fa-solid fa-file-export"></i> 動画を書き出す';
   } else if (mode === "mute") {
     el.innerHTML = `<span class="warn">⚠ この端末では音声を付けられません(映像のみ)</span>`;
     btn.innerHTML = '<i class="fa-solid fa-file-export"></i> 動画を書き出す(音声なし)';
@@ -1065,11 +1073,13 @@ MC.ui.renderQualityPicker = () => {
      必要がなくなった(2026-07-23 Phase 1)。「パソコン推奨」の但し書きは、
      本当に不利な端末にだけ出す。実態と違う遠慮はユーザーの損になる */
   /* 既定のライトを先に置く。フルHDはいつでも選べる */
+  /* 「ライトモード(720p)」等はやめた(2026-07-28)。「モード」はこのツールで
+     3つの意味に使われ、p表記は通じない。速いか・きれいか、だけを言う */
   const defs = [
-    { id: "light", name: "ライトモード", tag: "おすすめ",
-      desc: "速度重視（720p）" },
-    { id: "full", name: "リッチモード", tag: "",
-      desc: "高画質ですが、時間がかかります（1080p）" },
+    { id: "light", name: "はやい", tag: "おすすめ",
+      desc: "SNSに出すのに十分な画質。時間が2割みじかい" },
+    { id: "full", name: "きれい", tag: "",
+      desc: "大きな画面で見る用。そのぶん時間がかかります" },
   ];
   host.innerHTML = defs.map(d => `
     <button type="button" class="q-card${d.id === cur ? " on" : ""}" role="radio"
@@ -1178,6 +1188,8 @@ MC.ui.renderTilt = (cams, show) => {
   box.querySelector("#tiltToggle").checked = on;
   const list = box.querySelector("#tiltRows");
   list.hidden = !on;
+  const fine = box.querySelector(".tilt-fine");
+  if (fine) fine.hidden = !on;   // OFFのとき空の「じぶんで微調整する」を残さない
   list.innerHTML = "";
   if (!on) return;
 
