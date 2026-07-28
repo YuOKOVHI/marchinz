@@ -182,7 +182,12 @@ window.MZP = (function () {
         const at = fmtEndAt(this.eta);
         if (at) etaTxt += ` / ${at}`;
       }
-      const stepTxt = (this.steps && running) ? `${this.stepNo}/${this.steps}` : "";
+      /* 段表示は「いま何段目か」であって、バーが確定進捗かどうかとは別の話。
+         run だけを条件にすると `p.step(n,...).pulse()` の呼び方で
+         step() が描いた直後に pulse() が同じtickで消してしまい、段表示が
+         一度も画面に出ない(2026-07-26。おまかせの段数を入れた当日に発覚) */
+      const alive = running || this.state === "pulse" || this.state === "frozen";
+      const stepTxt = (this.steps && alive) ? `${this.stepNo}/${this.steps}` : "";
       const width = `${Math.max(2, Math.round((this.state === "done" ? 1 : this.ratio) * 100))}%`;
 
       if (this.el) {

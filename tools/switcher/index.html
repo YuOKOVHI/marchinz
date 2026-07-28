@@ -93,13 +93,17 @@
     </div>
 
     <section class="panel" id="dropSec">
-      <h2><span class="drop-title">動画を読み込む</span> <span class="hint">(3本まで)</span></h2>
+      <!-- 「(3本まで)」は外した(2026-07-28)。上限は端末やログイン状態で変わるので、
+           下の .mz-limit-why が動的に1文で言う。固定文を併記すると
+           「(3本まで)」と「本数・長さの上限なし」が同じ画面に同時に出て矛盾する -->
+      <h2><span class="drop-title">動画を読み込む</span></h2>
       <p class="sec-lead">カメラを固定して撮影した映像がおすすめです</p>
       <p class="mz-limit-why"></p>
-      <p class="mz-stay-hint"><i class="fa-solid fa-mug-hot" aria-hidden="true"></i>
-        書き出しには数分かかります。ほかのアプリに切り替えると止まることが
-        あるので、できればこの画面のままお待ちください。</p>
-      <div data-mz-plan="video"></div>
+      <!-- 「書き出しには数分かかります」はここから外した(2026-07-28)。
+           まだ1本も選んでいない画面で書き出しの注意をするのは順番が違う。
+           同じ注意は書き出しの全画面(#eoRun)に既にある。
+           data-mz-plan も外した ─ 上限の話は .mz-limit-why に一本化する
+           (「3本まで」と「上限なし」が同じ画面に同時に出ていた) -->
       <div id="clipSlots" class="clip-slots"></div>
       <input type="file" id="fileInput" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" multiple hidden>
       <input type="file" id="fileInputV" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v,image/*" multiple hidden>

@@ -444,7 +444,12 @@ MC.ui.renderLimitWhy = () => {
       + "長いときはINとOUTで区切ってください。";
     return;
   }
-  el.innerHTML = icon + "<b>3本まで</b>お使いいただけます。長さの上限はありません。";
+  /* 上限が外れている端末(手元の環境・管理者)。ここで「3本まで」と言うと、
+     limits.js が出す #adminLimitBadge の「上限なし」と真正面から矛盾する。
+     上限の話はこの1文に集約し、バッジの方を畳む(2026-07-28) */
+  el.innerHTML = icon + "<b>本数・長さの上限なし</b>で取り込めます。";
+  const badge = document.getElementById("adminLimitBadge");
+  if (badge) badge.hidden = true;
 };
 
 MC.ui.renderAll = () => {
@@ -493,7 +498,7 @@ MC.ui.initJourney = () => {
       /* shortLabel は狭い画面(iPhone)で現在地以外に出す短縮名。
          先の工程のパネルを画面から消した以上、ここが「何が残っているか」を
          知る唯一の場所になったので、名前を消してはいけない(2026-07-26) */
-      { id: "mat",    label: "動画を選ぶ",   shortLabel: "動画", hint: "3つまでまとめて選べます" },
+      { id: "mat",    label: "動画を選ぶ",   shortLabel: "動画", hint: "1本でも作れます" },
       { id: "sync",   label: "同期と分析",   shortLabel: "同期", hint: "音のズレ合わせと素材の分析をします" },
       { id: "audio",  label: "音声を選ぶ",   shortLabel: "音声", hint: "試聴して「この音で進める」を押してください" },
       { id: "polish", label: "自動編集設定", shortLabel: "設定", hint: "設定はそのままでOK。「動画を書き出す」で仕上がります" },
@@ -802,9 +807,12 @@ MC.ui.renderClips = () => {
     if (t) t.textContent = vertical ? "動画・写真を読み込む" : "動画を読み込む";
   }
   const slotClips = MC.media.slotClips();   // 音声のみを除く(動画+画像)
+  /* 空き枠の補足を出す最初の1枠。3枠すべてに同じ説明を繰り返さない */
+  const firstEmptyIdx = [0, 1, 2].find(i => !slotClips[i]);
 
   for (let slotIdx = 0; slotIdx < 3; slotIdx++) {
     const c = slotClips[slotIdx];
+    const firstEmpty = slotIdx === firstEmptyIdx;
     const slot = document.createElement("div");
     slot.className = "clip-slot" + (c ? " filled" : " empty");
     const lb = document.createElement("div");
@@ -817,8 +825,10 @@ MC.ui.renderClips = () => {
       btn.type = "button";
       btn.className = "clip-slot-add";
       btn.innerHTML = vertical
-        ? 'タップして動画・写真を選ぶ<br><span class="hint">まとめて選べます／ここにドロップでもOK</span>'
-        : 'タップして動画を選ぶ<br><span class="hint">まとめて選べます／ここにドロップでもOK</span>';
+        /* 補足は最初の空き枠にだけ付ける。3枠すべてに同じ説明を繰り返すと、
+           1画面に同じ文が3回並ぶ(2026-07-28 文言の棚卸し) */
+        ? 'タップして動画・写真を選ぶ' + (firstEmpty ? '<br><span class="hint">まとめて選べます／ここにドロップでもOK</span>' : '')
+        : 'タップして動画を選ぶ' + (firstEmpty ? '<br><span class="hint">まとめて選べます／ここにドロップでもOK</span>' : '');
       btn.onclick = () => MC.ui.$(vertical ? "#fileInputV" : "#fileInput").click();
       slot.appendChild(btn);
       box.appendChild(slot);
@@ -1401,7 +1411,7 @@ MC.ui.refreshSetupTabs = () => {
   if (lead) {
     lead.textContent = MC.ui._setupTab === "pro"
       ? "同期・レイアウト・仕上げを自分で決めます"
-      : "同期もカット割も自動。まず素材を入れてください";
+      : "おまかせ＝同期もカット割も自動で仕上げます";
   }
   MC.ui.setSetupTab(MC.ui._setupTab || "easy");
 };
@@ -1832,10 +1842,15 @@ MC.ui.runEasy = async () => {
    ①縦動画/②ワイプカメラはシーン分析を丸ごと飛ばす(2026-07-24 優さん指示) */
 /* この実行で実際に通る段の数。進捗の分母に使うので、runEasyFinish 本体の
    分岐と同じ条件で数えること(ずれると「4/3」や「2/5で完了」になる) */
-MC.ui.finishSteps = () =>
-  ((MC.S.trimIn === 0 && MC.S.trimOut == null) ? 1 : 0)   // 最初と最後を探す
-  + (MC.S.mode === "switch" ? 3 : 0)                      // director の3段
-  + (MC.S.colorOn ? 1 : 0);                               // 色をそろえる
+MC.ui.finishSteps = () => {
+  /* 色そろえは2本以上でしか走らない(colormatch.js:117 が throw する)。
+     colorOn だけで数えると、動画1本のとき分母が1多く、しかも必ず
+     「色そろえだけできませんでした。」が出る ─ 成功しているのに失敗を見せる */
+  const vclips = MC.S.clips.filter(c => !c.isAudio && !c.isImage);
+  return ((MC.S.trimIn === 0 && MC.S.trimOut == null) ? 1 : 0)   // 最初と最後を探す
+    + (MC.S.mode === "switch" ? 3 : 0)                           // director の3段
+    + ((MC.S.colorOn && vclips.length >= 2) ? 1 : 0);            // 色をそろえる
+};
 
 MC.ui.runEasyFinish = async (pIn, base = 0) => {
   if (!pIn && MC.ui._busy) return;
@@ -1859,7 +1874,8 @@ MC.ui.runEasyFinish = async (pIn, base = 0) => {
       MC.timeline.render();
     }
     let colorFailed = false;
-    if (MC.S.colorOn) {
+    /* 条件は finishSteps() と必ず揃える(分母と実際に通る段がずれる) */
+    if (MC.S.colorOn && MC.S.clips.filter(c => !c.isAudio && !c.isImage).length >= 2) {
       p.step(++n, "色をそろえています…").pulse();
       await MC.color.run(p).catch(() => { colorFailed = true; });
     }
@@ -2080,6 +2096,9 @@ MC.ui.chooseMode = (mode, { silent = false } = {}) => {
   if (!silent) MC.saveState();
   MC.ui.$("#modeSelect").hidden = true;
   MC.ui.$("#workspace").hidden = false;
+  /* 工程に入ったらサイト共通の外枠を下げる(1画面1操作。2026-07-28 優さん指示)。
+     実測で最初の工程に押せるものが40個あり、24個がツールと無関係なサイトナビだった */
+  document.body.classList.add("mz-focus");
   const lbl = MC.ui.$("#modeLabel");
   if (lbl) lbl.textContent = m.label;
   MC.preview.applyPreset();
@@ -2090,6 +2109,7 @@ MC.ui.showModeSelect = () => {
   MC.preview.pause();  // 選択画面の裏で音が鳴り続けないように
   MC.ui.$("#workspace").hidden = true;
   MC.ui.$("#modeSelect").hidden = false;
+  document.body.classList.remove("mz-focus");   // 工程を抜けたらサイトの外枠を戻す
 };
 
 /* --- イベント配線 --- */

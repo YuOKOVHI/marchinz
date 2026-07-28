@@ -425,3 +425,17 @@
   .mzsc-foot-grid { padding: 0.9rem 0.8rem 1rem; }
   .mzsc-foot-col a { min-height: 30px; }
 }
+
+
+/* ---------- 作業に集中する(1画面1操作) 2026-07-28 ----------
+   ツールの工程に入っている間、サイト共通の外枠(ブランド帯・ヘッダー・
+   フッター・下部タブ)を丸ごと下げる。実測で、最初の工程の画面に
+   「押せるもの」が40個あり、そのうち24個がツールの作業と無関係な
+   サイトナビだった。やることが1つの画面に選択肢が40個あると、
+   どれが本命か分からない ─ これが「1画面1操作になっていない」正体。
+   工程を抜ける(完成・戻る)と自動で戻る。 */
+body.mz-focus { --mz-tabbar-h: 0px; }
+body.mz-focus .mzsc-brand,
+body.mz-focus .mzsc-tabbar,
+body.mz-focus .mzsc-foot { display: none !important; }
+body.mz-focus.mzsc-has-tabbar .mzp-dock { bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }

@@ -1182,3 +1182,16 @@ body[data-mzj-phase="sync"] .stage { display: none; }
 body.mz-export-open .mzj,
 body.mz-export-open .mz-actionbar,
 body.mz-export-open .canvas-holder { display: none !important; }
+
+
+/* ---------- 素材が1本も無いうちは、映像まわりを丸ごと出さない ----------
+   2026-07-28 優さん指示「1画面1操作」。実測で、最初の工程(動画を選ぶ)の画面に
+   押せるものが40個あり、うち6個が再生/スクラブ/IN/OUT/リセット ─ まだ
+   1本も素材が無いので、どれを押しても何も起きない。空の黒枠(約400px)も
+   「動画を選ぶ」を画面の外へ押し出していた。
+   素材が入った瞬間に mz-has-clips が付いて元どおり出る(ui.js:460)。 */
+body:not(.mz-has-clips) .stage { display: none; }
+
+/* 素材が無いうちは「おまかせで仕上げます／分析を開始」を出さない。
+   まだ1本も選んでいない画面に主ボタンが2つ見えていた(2026-07-28) */
+body:not(.mz-has-clips) #easyPane { display: none; }
