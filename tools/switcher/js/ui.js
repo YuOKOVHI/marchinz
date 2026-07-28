@@ -1812,7 +1812,7 @@ MC.ui.runEasy = async () => {
   const syncSteps = vids.length >= 2 ? 1 : 0;
   const goesOn = !(vids.length >= 2 && !MC.S.audioDecided);   // 音声選択で一度止まるか
   const p = MZP.start({ mount: "#easyStatus", chapter: "同期", delay: 0,
-                        steps: syncSteps + (goesOn ? MC.ui.finishSteps() : 0),
+                        steps: syncSteps + (goesOn ? MC.ui.finishSteps(vids.length >= 2) : 0),
                         label: "音を合わせています…" });
   try {
     if (vids.length >= 2) {
@@ -1842,12 +1842,17 @@ MC.ui.runEasy = async () => {
    ①縦動画/②ワイプカメラはシーン分析を丸ごと飛ばす(2026-07-24 優さん指示) */
 /* この実行で実際に通る段の数。進捗の分母に使うので、runEasyFinish 本体の
    分岐と同じ条件で数えること(ずれると「4/3」や「2/5で完了」になる) */
-MC.ui.finishSteps = () => {
+/* trimWillReset = このあと同期が走るか。sync.run は最後に必ず
+   trimIn=0 / trimOut=null へ戻す(sync.js:207)。分母はその**前**に確定するので、
+   前回の分析でトリムが入ったまま2回目を回すと「最初と最後を探す」を数え落とし、
+   実際には走るので 4/3 のような表示になる(2026-07-28 レビュー指摘) */
+MC.ui.finishSteps = (trimWillReset = false) => {
   /* 色そろえは2本以上でしか走らない(colormatch.js:117 が throw する)。
      colorOn だけで数えると、動画1本のとき分母が1多く、しかも必ず
      「色そろえだけできませんでした。」が出る ─ 成功しているのに失敗を見せる */
   const vclips = MC.S.clips.filter(c => !c.isAudio && !c.isImage);
-  return ((MC.S.trimIn === 0 && MC.S.trimOut == null) ? 1 : 0)   // 最初と最後を探す
+  const trimStep = trimWillReset || (MC.S.trimIn === 0 && MC.S.trimOut == null);
+  return (trimStep ? 1 : 0)                                      // 最初と最後を探す
     + (MC.S.mode === "switch" ? 3 : 0)                           // director の3段
     + ((MC.S.colorOn && vclips.length >= 2) ? 1 : 0);            // 色をそろえる
 };
