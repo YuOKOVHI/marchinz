@@ -1267,3 +1267,7 @@ body[data-mzj-phase="tilt"] .side { padding-top: var(--mz-tilt-pad, 0px); }
 /* 連打する前提なので44pt以上を確保(実測40x34だった) */
 body[data-mzj-phase="tilt"] .tilt-step { width: 52px; min-height: 48px; font-size: 20px; }
 #tiltOkBtn, #tiltPrevBtn { min-height: 48px; }
+
+/* 完成画面の顔の注意(2026-07-29) */
+.eo-faces { color: #7a4a12; }
+.eo-faces a { color: inherit; font-weight: 700; }

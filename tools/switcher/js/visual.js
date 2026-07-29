@@ -731,9 +731,14 @@ MC.visual.seg = (clip, g0, g1) => {
   for (const i of idx) {
     if (V.nF[i] >= 0) { faces.push(V.nF[i]); sizes.push(V.maxF[i]); }
   }
+  /* 「被写体が動いただけ」のサンプルを除いた手ブレ量。補正後も画面が揃わない
+     (act >= TH_CAM_RESID)ときは、動いたのはカメラではなく被写体なので数えない。
+     panRatio(:722)と operated(:439)は同じ考えで既に除外していた(2026-07-29) */
+  const shakesCam = idx.filter(i => V.act[i] < MC.visual.TH_CAM_RESID).map(i => V.shake[i]);
   return {
     n: idx.length,
     shakeP75: p(shakes, 0.75),
+    shakeCamP75: shakesCam.length ? p(shakesCam, 0.75) : null,
     flipRatio: moves ? flips / moves : 0,
     panRatio,
     // 撮り方は自動判定だが、外していたら手で上書きできる(clip.rig)
@@ -786,7 +791,14 @@ MC.visual.dqReason = (m, role) => {
      以前は flipRatio > 0.45 との AND だったが、flipRatio は |dx|<2px のサンプルを
      除外して数えるため、ゆっくり同じ方向へ揺れる手ブレでは 0 に近くなる。
      その結果しっかりブレていても失格を免れていた */
-  if (m.shakeP75 > MC.visual.TH_SHAKE) return "手ブレ";
+  /* 被写体の動きを手ブレと取り違えない(2026-07-29 マーチング指導者の指摘)。
+     中央ブロックマッチングは大きな被写体に食いつくので、カンパニーフロントや
+     ドラムラインが画面を横切ると、微動だにしていない三脚カメラでも
+     globalMotion が大きく出る ─ つまり**いちばん見せたい瞬間**が「手ブレ」で
+     失格していた。panRatio(:722)と operated(:439)には同じガード(act < TH_CAM_RESID)が
+     既に入っており、ここだけ抜けていた */
+  if (m.shakeCamP75 != null ? m.shakeCamP75 > MC.visual.TH_SHAKE
+                            : m.shakeP75 > MC.visual.TH_SHAKE) return "手ブレ";
   if (m.sharpMed > 40 && m.sharpMean < m.sharpMed * 0.30) return "フォーカス外れ";
   if (MC.visual.isPanning(m)) return "カメラを振っている";
   if (MC.visual.noSubject(m, role)) return "人が写っていない";

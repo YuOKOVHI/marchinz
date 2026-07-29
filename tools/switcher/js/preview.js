@@ -10,6 +10,12 @@ MC.preview = {
   init(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d");
+    /* 縮小品質(2026-07-29 プロビデオグラファー指摘)。既定は "low" = バイリニア単独で、
+       1/2 を超える縮小(1920→1080 は0.5625倍)では入力画素を取りこぼし、
+       スタンドの観客・ヤードライン・制服の飾緒といった高周波な被写体が
+       モアレになる。GL側はミップマップを正しく作っているのに、最後の2D縮小で
+       台無しになっていた。"high" で Skia のミップ縮小に切り替わる */
+    this.ctx.imageSmoothingQuality = "high";
     this.applyPreset();
     const loop = ts => { this.tick(ts); this._lastTick = performance.now(); requestAnimationFrame(loop); };
     requestAnimationFrame(loop);

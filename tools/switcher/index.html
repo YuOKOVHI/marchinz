@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-app-v="1.49.3">
+<html lang="ja" data-mz-app-v="1.49.4">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -17,7 +17,7 @@
 <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
 <link rel="stylesheet" href="/tools/shared/progress.css">
 <link rel="stylesheet" href="/tools/shared/journey.css">
-<link rel="stylesheet" href="css/style.css?v=1.49.3">
+<link rel="stylesheet" href="css/style.css?v=1.49.4">
 <link rel="stylesheet" href="/tools/shared/sitechrome.css">
 </head>
 <body data-mz-tool="switcher">
@@ -364,6 +364,13 @@
       </div>
       <p id="eoDoneNote" class="eo-note"></p>
       <p id="eoOneLine" class="eo-note eo-oneline" hidden></p>
+      <!-- 顔の注意は、いちばん思い出すべきこの瞬間に出す(2026-07-29 広報レビューP0)。
+           本文フッターの Privacy リンクは sitechrome.js:240 のフッター差し替えで
+           消えており、導線がハンバーガーの中の1行だけになっていた -->
+      <p class="eo-note eo-faces">
+        <i class="fa-solid fa-user-shield" aria-hidden="true"></i>
+        みんなの顔が写っています。SNSや外部へ出すときは、
+        <a href="/tools/privacy/">顔モザイク（Privacy）</a>で隠せます。</p>
       <!-- 何にどれだけ掛かったか。普段は畳んでおき、知りたい人だけ開く -->
       <details id="eoStats" class="eo-stats" hidden>
         <summary>うまくいかないときの記録（開発者へ送る用）</summary>
@@ -410,23 +417,23 @@
 <script src="vendor/mp4box.all.min.js"></script>
 <script src="vendor/mp4-muxer.min.js"></script>
 <script src="vendor/fft.js"></script>
-<script src="js/state.js?v=1.49.3"></script>
-<script src="js/layout.js?v=1.49.3"></script>
-<script src="js/media.js?v=1.49.3"></script>
-<script src="js/audio.js?v=1.49.3"></script>
-<script src="js/sync.js?v=1.49.3"></script>
-<script src="js/beats.js?v=1.49.3"></script>
-<script src="js/sections.js?v=1.49.3"></script>
-<script src="js/visual.js?v=1.49.3"></script>
-<script src="js/director.js?v=1.49.3"></script>
-<script src="js/colormatch.js?v=1.49.3"></script>
+<script src="js/state.js?v=1.49.4"></script>
+<script src="js/layout.js?v=1.49.4"></script>
+<script src="js/media.js?v=1.49.4"></script>
+<script src="js/audio.js?v=1.49.4"></script>
+<script src="js/sync.js?v=1.49.4"></script>
+<script src="js/beats.js?v=1.49.4"></script>
+<script src="js/sections.js?v=1.49.4"></script>
+<script src="js/visual.js?v=1.49.4"></script>
+<script src="js/director.js?v=1.49.4"></script>
+<script src="js/colormatch.js?v=1.49.4"></script>
 <!-- horizon.js(自動傾き検出)は読み込まない(2026-07-28 検知全廃。ファイルは残置) -->
-<script src="js/salute.js?v=1.49.3"></script>
-<script src="js/preview.js?v=1.49.3"></script>
-<script src="js/timeline.js?v=1.49.3"></script>
-<script src="js/cutmode.js?v=1.49.3"></script>
-<script src="js/exporter.js?v=1.49.3"></script>
-<script src="js/ui.js?v=1.49.3"></script>
-<script src="js/app.js?v=1.49.3"></script>
+<script src="js/salute.js?v=1.49.4"></script>
+<script src="js/preview.js?v=1.49.4"></script>
+<script src="js/timeline.js?v=1.49.4"></script>
+<script src="js/cutmode.js?v=1.49.4"></script>
+<script src="js/exporter.js?v=1.49.4"></script>
+<script src="js/ui.js?v=1.49.4"></script>
+<script src="js/app.js?v=1.49.4"></script>
 </body>
 </html>

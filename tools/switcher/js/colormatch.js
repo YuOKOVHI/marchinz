@@ -156,7 +156,14 @@ MC.color.active = clip =>
 const CM_VS = `attribute vec2 p; varying vec2 uv;
 void main(){ uv = vec2(p.x, 1.0 - p.y); gl_Position = vec4(p*2.0-1.0, 0.0, 1.0); }`;
 
-const CM_FS = `precision mediump float;
+/* highp にする(2026-07-29 プロビデオグラファー指摘)。iOS/Android の GPU では
+   mediump = fp16(仮数10bit)で、このシェーダは Lab(L=0..100 / a,b=±127)を経由するため
+   100付近の刻みが 8bit コード値で 0.15〜0.25 相当になる。往復で2回乗るので、
+   空・体育館の壁・照明のグラデーションに縞が出る。Macでは mediump が fp32 へ
+   昇格されるので**手元では再現しない**(iPhone最優先の方針と相性が悪い欠陥だった)。
+   すぐ下の「mediumpのpowは非整数指数で縞が出る」という回避策は入っていたのに、
+   根本の精度指定が残っていた */
+const CM_FS = `precision highp float;
 varying vec2 uv; uniform sampler2D tex;
 uniform vec3 uSrcMean, uScale, uTgtMean;
 uniform float uMatch, uContrast, uSat, uWarm;

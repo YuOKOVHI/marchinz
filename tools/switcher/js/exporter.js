@@ -64,13 +64,20 @@ MC.exporter.VideoPipe = class {
     const sup = await VideoDecoder.isConfigSupported(cfg).catch(() => ({ supported: false }));
     if (!sup.supported) throw new Error(`デコード非対応(${cfg.codec}): ${this.clip.name}`);
     this.rotation = this.src.rotationOf(vt);
+    /* elst(エディットリスト)の補正。音声(下の encodeAudio)と解析(visual.js)は
+       editOffsetSec で補正しているのに、**書き出しの映像だけ生の cts を使っていた**
+       (2026-07-29 プロビデオグラファー指摘)。Bフレームを持つ H.264 は
+       composition delay 相当の elst が入るのが普通で、そのぶん映像が音声に対して
+       1〜3フレームずれる。素材によって出たり出なかったりするので気づきにくい */
+    this.tsOff = this.src.editOffsetSec(vt) || 0;
     this.decoder = new VideoDecoder({
       output: f => this.frames.push(f),
       error: e => { this.error = e; },
     });
     this.decoder.configure(cfg);
     this.cursor = this.src.cursor(vt.id);
-    this.cursor.seek(Math.max(0, fromLocalSec));
+    /* cursor はコンテナ時刻で探すので、補正ぶんを足し戻してから探す */
+    this.cursor.seek(Math.max(0, fromLocalSec + this.tsOff));
   }
 
   async pump() {
@@ -89,7 +96,7 @@ MC.exporter.VideoPipe = class {
       }
       this.decoder.decode(new EncodedVideoChunk({
         type: s.is_sync ? "key" : "delta",
-        timestamp: Math.round(s.cts * 1e6 / s.timescale),
+        timestamp: Math.round((s.cts / s.timescale - this.tsOff) * 1e6),   // elst補正
         duration: Math.max(1, Math.round(s.duration * 1e6 / s.timescale)),
         data: s.data,
       }));
@@ -299,7 +306,11 @@ MC.exporter.encodeAudio = async (muxer, clip, fromLocalSec, durSec, onStatus) =>
     if (error || MC.exporter.cancelFlag) break;
     const ctsSec = s.cts / s.timescale;
     if ((fed++ & 63) === 0 && firstFedCts !== null) {
-      onStatus("音を整えています…", 0.6 * Math.min(1, (ctsSec - firstFedCts) / Math.max(1, durSec)));
+      /* 「整えています」と言っていたが、音量調整もノイズ処理も一切していない
+         (2026-07-29 ビデオグラファーのレビューで発覚。gain/normalize/compress は
+          exporter.js・audio.js のどちらにも1行も無い)。素通しなのが正しい設計
+         (演奏の弱奏〜フォルティシモを潰さない)ので、表示の方を事実に合わせる */
+      onStatus("音を書き出しています…", 0.6 * Math.min(1, (ctsSec - firstFedCts) / Math.max(1, durSec)));
     }
     if (firstFedCts === null) {
       firstFedCts = ctsSec;
@@ -1036,6 +1047,7 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
 
     const canvas = MC.exporter.makeCanvas(w, h);
     const ctx = canvas.getContext("2d");
+    ctx.imageSmoothingQuality = "high";   // 縮小の折り返し対策(preview.js と同じ理由)
     const t0 = performance.now();
     let tRecent = t0, kRecent = 0;   // 残り時間は直近の速度で出す(序盤の助走に引きずられないため)
 
@@ -1322,7 +1334,12 @@ MC.exporter.triggerDownload = (blob, name) => {
 
 MC.exporter.download = (blob, name) => {
   MC.exporter.lastResult = { blob, name, type: blob.type };
-  if (MC.testMode) {  // 自動検証用: ローカルサーバへも保存
+  /* 自動検証用のローカル保存。**localhost に限る**(2026-07-29 広報レビュー)。
+     入口の ?test は誰でも付けられるので、本番URLで付けられると
+     「動画はどこにも送信されません」という掲示と食い違う。
+     本番に /save は無いので実害は出ていなかったが、掲示と実装は揃える */
+  const isLocal = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+  if (MC.testMode && isLocal) {  // 自動検証用: ローカルサーバへも保存
     fetch(`/save?name=${encodeURIComponent(name)}`, { method: "PUT", body: blob })
       .then(() => MC.log("test upload ok:", name))
       .catch(e => MC.log("test upload failed:", e.message));
