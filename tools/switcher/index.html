@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-app-v="1.52.0">
+<html lang="ja" data-mz-app-v="1.52.1">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -17,7 +17,7 @@
 <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
 <link rel="stylesheet" href="/tools/shared/progress.css">
 <link rel="stylesheet" href="/tools/shared/journey.css">
-<link rel="stylesheet" href="css/style.css?v=1.52.0">
+<link rel="stylesheet" href="css/style.css?v=1.52.1">
 <link rel="stylesheet" href="/tools/shared/sitechrome.css">
 </head>
 <body data-mz-tool="switcher">
@@ -323,6 +323,19 @@
         <button id="cancelBtn" class="btn danger" style="display:none">中止</button>
       </div>
       <p id="exportEtaHint" class="hint export-eta-hint"></p>
+      <!-- 途中で止まる端末の切り分け用(2026-07-30)。URLに ?noskip を手で打つのは
+           iPhoneでは現実的でないので、画面から触れるようにする -->
+      <details class="diag-box">
+        <summary><i class="fa-solid fa-stethoscope" aria-hidden="true"></i>
+          途中で止まってしまうとき</summary>
+        <label class="diag-toggle">
+          <input type="checkbox" id="noSkipToggle">
+          <span><b>ゆっくり書き出す</b>（原因さがし用）</span>
+        </label>
+        <p class="hint">カメラを切り替えるときの内部の巻き戻しをやめます。
+          そのぶん<b>時間はかかります</b>が、これで最後まで書き出せたら
+          原因がそこだと分かります。次に開いたときは元に戻ります。</p>
+      </details>
       <div id="exportProgress" class="progress" style="display:none">
         <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
         <div id="progressText" class="progress-text"></div>
@@ -444,23 +457,23 @@
 <script src="vendor/mp4box.all.min.js"></script>
 <script src="vendor/mp4-muxer.min.js"></script>
 <script src="vendor/fft.js"></script>
-<script src="js/state.js?v=1.52.0"></script>
-<script src="js/layout.js?v=1.52.0"></script>
-<script src="js/media.js?v=1.52.0"></script>
-<script src="js/audio.js?v=1.52.0"></script>
-<script src="js/sync.js?v=1.52.0"></script>
-<script src="js/beats.js?v=1.52.0"></script>
-<script src="js/sections.js?v=1.52.0"></script>
-<script src="js/visual.js?v=1.52.0"></script>
-<script src="js/director.js?v=1.52.0"></script>
-<script src="js/colormatch.js?v=1.52.0"></script>
+<script src="js/state.js?v=1.52.1"></script>
+<script src="js/layout.js?v=1.52.1"></script>
+<script src="js/media.js?v=1.52.1"></script>
+<script src="js/audio.js?v=1.52.1"></script>
+<script src="js/sync.js?v=1.52.1"></script>
+<script src="js/beats.js?v=1.52.1"></script>
+<script src="js/sections.js?v=1.52.1"></script>
+<script src="js/visual.js?v=1.52.1"></script>
+<script src="js/director.js?v=1.52.1"></script>
+<script src="js/colormatch.js?v=1.52.1"></script>
 <!-- horizon.js(自動傾き検出)は読み込まない(2026-07-28 検知全廃。ファイルは残置) -->
-<script src="js/salute.js?v=1.52.0"></script>
-<script src="js/preview.js?v=1.52.0"></script>
-<script src="js/timeline.js?v=1.52.0"></script>
-<script src="js/cutmode.js?v=1.52.0"></script>
-<script src="js/exporter.js?v=1.52.0"></script>
-<script src="js/ui.js?v=1.52.0"></script>
-<script src="js/app.js?v=1.52.0"></script>
+<script src="js/salute.js?v=1.52.1"></script>
+<script src="js/preview.js?v=1.52.1"></script>
+<script src="js/timeline.js?v=1.52.1"></script>
+<script src="js/cutmode.js?v=1.52.1"></script>
+<script src="js/exporter.js?v=1.52.1"></script>
+<script src="js/ui.js?v=1.52.1"></script>
+<script src="js/app.js?v=1.52.1"></script>
 </body>
 </html>

@@ -44,11 +44,22 @@ MC.exporter.SKIP_MIN = 4.0;
    再シークを全廃して全コマ直列デコードにする。書き出しは遅くなるが、
    これで落ちなくなれば「skipTo の flush+reseek の蓄積が原因」がほぼ確定する。
    iPhone実機で切り分けるための入口(コードを書き換えずに試せる) */
+MC.exporter.NOSKIP_KEY = "mz_switcher_noskip_v1";
+/* URL(?noskip)でも、画面のトグルでも入れる。トグルは sessionStorage なので
+   タブを閉じれば元に戻る(設定として residue を残さない) */
+MC.exporter.setNoSkip = on => {
+  MC.exporter.SKIP_MIN = on ? Infinity : 4.0;
+  try {
+    if (on) sessionStorage.setItem(MC.exporter.NOSKIP_KEY, "1");
+    else sessionStorage.removeItem(MC.exporter.NOSKIP_KEY);
+  } catch (_) {}
+  document.body.classList.toggle("mz-diag-noskip", !!on);
+};
 try {
-  if (new URLSearchParams(location.search).has("noskip")) {
-    MC.exporter.SKIP_MIN = Infinity;
-    console.log("[MC] 診断モード: 再シーク無効(全コマ直列デコード)");
-  }
+  const byUrl = new URLSearchParams(location.search).has("noskip");
+  let byFlag = false;
+  try { byFlag = sessionStorage.getItem(MC.exporter.NOSKIP_KEY) === "1"; } catch (_) {}
+  if (byUrl || byFlag) MC.exporter.setNoSkip(true);
 } catch (_) {}
 
 /* ---- 1カメラ分のデコードパイプ: frameAt(tLocal秒)がhold-last-frameでフレームを返す ---- */

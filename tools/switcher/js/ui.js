@@ -674,11 +674,20 @@ MC.ui.refreshJourney = () => {
   if (slot.length && synced) done.push("sync");
   if (slot.length && synced && audioDone) done.push("audio");
   if (exported) done.push("polish", "export");
-  const current = !slot.length ? "mat"
+  let current = !slot.length ? "mat"
     : (!tiltDone && !MC.S.easyDone) ? "tilt"
     : (vids.length >= 2 && !synced) ? "sync"
     : !audioDone ? "audio"
-    : exported ? "export" : "polish";
+    /* 分析が済んだら書き出しへ運ぶ。「仕上げ設定」は“そのままでもOK”な寄り道なので
+       自動では現在地にしない。ここを polish にしていたため、初回は #exportSec が
+       step-off のままで**書き出しボタンがどこにも出ない**デッドロックだった
+       (2026-07-28に直したと報告したが、一括スクリプトが手前で中断しており
+        実際には適用されていなかった。2026-07-30 に実測で発覚し再適用) */
+    : (MC.S.easyDone || exported) ? "export" : "polish";
+  /* 分析の実行中は「同期と分析」を見せる。進捗(#easyStatus)は #easyPane の中にあり、
+     これは sync 工程のパネルなので、他の工程を見せると進捗と中止ボタンが
+     画面から消える。書き出し中は専用の全画面があるので対象外 */
+  if (MC.ui._busy && !(MC.exporter && MC.exporter.running)) current = "sync";
   /* 到達点(current)と、いま見せている工程(shown)を分ける。
      ジャーニーから済んだ工程へ戻れるようにするため(2026-07-28) */
   const advanced = MC.ui._derivedPhase !== current;
@@ -2315,6 +2324,32 @@ MC.ui.wire = () => {
   fi.onchange = () => { MC.media.addFiles([...fi.files]); fi.value = ""; };
   fiv.onchange = () => { MC.media.addFiles([...fiv.files]); fiv.value = ""; };
   /* 音声を選ぶフェーズ(2026-07-24)。別録り音源の取り込みは廃止(優さん指示) */
+  {
+    const ns = $("#noSkipToggle");
+    if (ns) {
+      ns.checked = !isFinite(MC.exporter.SKIP_MIN);
+      ns.onchange = e => {
+        MC.exporter.setNoSkip(e.target.checked);
+        MC.ui.toast(e.target.checked
+          ? "ゆっくり書き出します（時間はかかります）"
+          : "通常の速さに戻しました");
+      };
+    }
+  }
+  /* 「最初からやり直す」は全工程に常駐する破壊操作。置き場所では守れないので
+     確認で守る。既存の onclick より先に捕まえて止める
+     (2026-07-28に入れたと報告したが未適用だった。2026-07-30 再適用) */
+  {
+    const pr = $("#projectResetBtn");
+    if (pr) pr.addEventListener("click", ev => {
+      if (pr.dataset.mzConfirmed === "1") { delete pr.dataset.mzConfirmed; return; }
+      ev.preventDefault(); ev.stopImmediatePropagation();
+      if (!window.confirm("いま選んでいる動画を外して、保存した内容も消します。\n\n"
+        + "（撮った動画そのものは消えません）\n\nよろしいですか？")) return;
+      pr.dataset.mzConfirmed = "1";
+      pr.click();
+    }, true);
+  }
   MC.ui.wireTiltSec();
   $("#audioListenBtn").onclick = () => {
     MC.preview.toggle();

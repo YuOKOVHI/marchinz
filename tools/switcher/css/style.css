@@ -1293,3 +1293,18 @@ body[data-mzj-phase="tilt"] .tilt-step { width: 52px; min-height: 48px; font-siz
 /* 止まった位置の内訳(2026-07-29) */
 .mz-stall-detail { display: inline-block; margin-top: 4px; font-size: 11.5px;
   opacity: .85; font-variant-numeric: tabular-nums; }
+
+/* 原因さがし用の切り分けトグル(2026-07-30) */
+.diag-box { margin-top: 10px; }
+.diag-box > summary { cursor: pointer; padding: 10px 2px; min-height: 44px;
+  display: flex; align-items: center; gap: 6px; color: var(--tx2); font-size: 13px; }
+.diag-toggle { display: flex; align-items: center; gap: 8px; min-height: 44px;
+  font-size: 13px; }
+.diag-toggle input { width: 20px; height: 20px; }
+.diag-box .hint { line-height: 1.6; }
+/* 診断モード中はひと目で分かるように帯を出す */
+body.mz-diag-noskip #exportSec::before {
+  content: "原因さがしモード（ゆっくり書き出します）";
+  display: block; margin: 0 0 10px; padding: 7px 10px; border-radius: 8px;
+  background: #fff4d6; color: #7a5200; font-size: 12.5px; font-weight: 700;
+}

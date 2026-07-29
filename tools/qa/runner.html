@@ -813,12 +813,20 @@ async function countSamples(ns, file, fromSec) {
   /* 合成だけを見る素の状態。色・水平補正・境界線・ウォーターマークは既定で切る
      (ウォーターマークは layout.js が window.MZWM を見るので iframe 側を空にする) */
   const compReset = w => {
+    /* モードを選ばないと #workspace が hidden のままで、DOMの見え方を見る
+       テストが全部素通り(または誤検知)する(2026-07-30) */
+    if (w.document.getElementById("workspace").hidden) w.MC.ui.chooseMode("switch", { silent: true });
     const S = w.MC.S;
     S.colorOn = false; S.filterId = "none"; S.horizonOn = false;
     S.borderOn = false; S.cutList = [];
     S.clips = [1, 2, 3].map(id => ({
-      id, name: `c${id}.mp4`, isImage: false, isAudio: false,
+      id, name: `c${id}.mp4`, size: 100 + id, lastModified: 900 + id,
+      isImage: false, isAudio: false, hasAudio: true,
       duration: 60, offset: 0, pan: 0.5, colorT: null,
+      /* 実物は media.js:57 が必ず syncMethod を入れる。
+         省くと renderClips の syncMethod.startsWith で落ちる */
+      syncMethod: "未同期", role: "auto", freq: "auto", rig: "auto",
+      rot: 0, tiltOk: false, stats: { rms: 0.05, clipRatio: 0 },
     }));
     S.slots = [1, 2, 3];
     S.audioClipId = 1;
@@ -1050,6 +1058,73 @@ async function countSamples(ns, file, fromSec) {
     }
     w.localStorage.removeItem("marchcut_project");
     return "空では消えない / 入れ直せば更新される";
+  });
+
+  group("⑬ 到達できない画面が無いこと(2026-07-30 「直した」と報告した修正が未適用だった)");
+  /* 一括修正スクリプトが途中で中断したのに、その後ろの修正を「適用した」と
+     報告してしまった。人の目視では気づけないので、機械で見張る。 */
+  await test("★分析が終わったら書き出しの画面へ行ける（初回・未書き出しでも）", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.clips.forEach(c => { c.tiltOk = true; c.syncMethod = "波形"; });
+    S.audioDecided = true;
+    S.cutList = [{ t: 0, clipId: 1, trans: "cut", dur: 0 }];
+    S.easyDone = true;
+    w.MC.exporter.lastResult = null;      // まだ一度も書き出していない
+    w.MC.ui._viewPhase = null;
+    w.MC.ui.refreshJourney();
+    const ph = w.document.body.dataset.mzjPhase;
+    if (ph !== "export") throw new Error(`分析後の現在地が export でなく ${ph}`);
+    const sec = w.document.getElementById("exportSec");
+    const btn = w.document.getElementById("exportBtn");
+    if (!sec || !sec.getClientRects().length) throw new Error("#exportSec が画面に無い");
+    if (!btn || !btn.getClientRects().length) throw new Error("「動画を書き出す」がどこにも無い");
+    return "export が現在地・書き出しボタンが出る";
+  });
+
+  await test("★分析の実行中は進捗と中止が画面から消えない", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.clips.forEach(c => { c.tiltOk = true; c.syncMethod = "波形"; });
+    S.audioDecided = true; S.easyDone = false;
+    /* renderAll が body.mz-has-clips を付ける。これが無いと
+       body:not(.mz-has-clips) #easyPane{display:none} で消えてしまい、
+       実物と違う条件で測ることになる(2026-07-30) */
+    w.MC.ui.renderAll();
+    w.MC.ui._busy = true;                 // 仕上げの実行中
+    w.MC.ui._viewPhase = null;
+    try {
+      w.MC.ui.refreshJourney();
+      if (w.document.body.dataset.mzjPhase !== "sync") {
+        throw new Error("分析中なのに sync 以外を見せている(進捗の置き場が消える)");
+      }
+      const pane = w.document.getElementById("easyPane");
+      if (!pane || !pane.getClientRects().length) throw new Error("#easyPane が消えている");
+      /* 書き出し中は専用の全画面があるので、sync へ引き戻してはいけない */
+      w.MC.exporter.running = true; S.easyDone = true;
+      w.MC.ui.refreshJourney();
+      if (w.document.body.dataset.mzjPhase === "sync") {
+        throw new Error("書き出し中まで sync へ引き戻している");
+      }
+    } finally { w.MC.ui._busy = false; w.MC.exporter.running = false; }
+    return "分析中=sync / 書き出し中は引き戻さない";
+  });
+
+  await test("★「最初からやり直す」は確認してからでないと実行されない", async () => {
+    const w = await compEnv();
+    compReset(w);
+    w.MC.ui.renderAll();
+    const pr = w.document.getElementById("projectResetBtn");
+    if (!pr) throw new Error("#projectResetBtn が無い");
+    let asked = null, ran = false;
+    const oc = w.confirm, orp = w.MC.ui.projectReset;
+    w.confirm = m => { asked = m; return false; };
+    if (orp) w.MC.ui.projectReset = () => { ran = true; };
+    try { pr.click(); } finally { w.confirm = oc; if (orp) w.MC.ui.projectReset = orp; }
+    if (!asked) throw new Error("確認なしで消えてしまう");
+    if (ran) throw new Error("キャンセルしたのに実行された");
+    if (!/消えません/.test(asked)) throw new Error("「撮った動画は消えません」が文言に無い");
+    return "確認あり・キャンセルで実行されない";
   });
 
   if (CF) { CF.remove(); CF = null; CW = null; CD = null; }
