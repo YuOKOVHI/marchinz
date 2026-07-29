@@ -1805,7 +1805,10 @@ MC.ui.showInterruptNote = (ms, opts = {}) => {
         + `${stalled.w}x${stalled.h}・${stalled.mbps || "?"}Mbps・`
         + `カメラ${stalled.cams || "?"}本・${stalled.route || "?"}・`
         + `${stalled.sec != null ? stalled.sec + "秒で" : ""}約${stalled.mb || "?"}MBまで`
-        + `${stalled.apar ? "・音声並行" : "・音声直列"}</span>`
+        + `${stalled.apar ? "・音声並行" : "・音声直列"}`
+        + `・再シーク${stalled.skips ?? "?"}回`
+        + `${stalled.freeMB != null ? "・空き" + stalled.freeMB + "MB" : ""}`
+        + `${stalled.noskip ? "・診断(noskip)中" : ""}</span>`
       : "同期とカット割は残っています。<b>同じ動画を・前と同じ順番で</b>選び直してください。";
   el.innerHTML = '<i class="fa-solid fa-circle-pause" aria-hidden="true"></i> '
     + `<span><b>${head}</b>${body}</span>`

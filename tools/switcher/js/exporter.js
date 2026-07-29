@@ -40,6 +40,16 @@ MC.exporter.makeCanvas = (w, h) => {
    「2カット以上出番が無いときだけ飛ぶ」相当)。
    Infinity にすると従来どおり全部デコード(殺しスイッチ) */
 MC.exporter.SKIP_MIN = 4.0;
+/* 診断スイッチ(2026-07-30 62%クラッシュ協議): URLに ?noskip を付けると
+   再シークを全廃して全コマ直列デコードにする。書き出しは遅くなるが、
+   これで落ちなくなれば「skipTo の flush+reseek の蓄積が原因」がほぼ確定する。
+   iPhone実機で切り分けるための入口(コードを書き換えずに試せる) */
+try {
+  if (new URLSearchParams(location.search).has("noskip")) {
+    MC.exporter.SKIP_MIN = Infinity;
+    console.log("[MC] 診断モード: 再シーク無効(全コマ直列デコード)");
+  }
+} catch (_) {}
 
 /* ---- 1カメラ分のデコードパイプ: frameAt(tLocal秒)がhold-last-frameでフレームを返す ---- */
 MC.exporter.VideoPipe = class {
@@ -907,6 +917,12 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
         mb: Math.round((MC.exporter.videoBitrate() + 192e3) / 8 * (k / fps) / 1e6),
         pend: MC.exporter._pendMax || 0,
         apar: !!MC.exporter._audioParallel,
+        /* H1判定: 再シークが何回起きたか(カットのたびの flush+reseek の蓄積疑い) */
+        skips: (MC.exporter._prof && MC.exporter._prof.skips) || 0,
+        reseekS: Math.round(((MC.exporter._prof && MC.exporter._prof.reseekMs) || 0) / 1000),
+        noskip: !isFinite(MC.exporter.SKIP_MIN),
+        /* H4判定: 端末の空き容量(300コマごとに更新するキャッシュ値) */
+        freeMB: MC.exporter._freeMB ?? null,
       }));
     } catch (_) {}
   };
@@ -1157,6 +1173,12 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
       vf.close();
       prof.encode += performance.now() - _tEnc;
       if (k % 10 === 0) {
+        MC.exporter._prof = prof;   // 途中経過の記録から skips を読めるように
+        if (k % 300 === 0 && navigator.storage && navigator.storage.estimate) {
+          navigator.storage.estimate().then(e => {
+            MC.exporter._freeMB = Math.round(((e.quota || 0) - (e.usage || 0)) / 1e6);
+          }).catch(() => {});
+        }
         MC.exporter._markProgress(k, totalFrames);
         const now = performance.now();
         /* 長尺ではデコーダの助走で序盤が遅い。全体平均だと残りを過大に出し
