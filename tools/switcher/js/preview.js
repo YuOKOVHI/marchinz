@@ -334,8 +334,22 @@ MC.preview = {
         ctx.fillStyle = "#fff";
         ctx.font = `bold ${fs}px -apple-system, "Hiragino Sans", sans-serif`;
         ctx.textBaseline = "middle";
-        ctx.fillText(`傾き調整中: ${MC.ui.shortName(sc.name)}  ${(+sc.rot || 0).toFixed(1)}°`,
+        ctx.fillText(`${MC.ui.shortName(sc.name)}  ${(+sc.rot || 0).toFixed(1)}°`,
           fs * 0.6, fs * 1.1);
+        ctx.restore();
+        /* まっすぐかどうかを見るための基準線(2026-07-28 レビューP0)。
+           これが無いまま「まっすぐか確かめてください」と聞いていた ─
+           0.1度を目視で判断する手がかりが画面に1つも無かった */
+        ctx.save();
+        ctx.strokeStyle = "rgba(255,255,255,0.45)";
+        ctx.lineWidth = Math.max(1, W * 0.0016);
+        for (const f of [1 / 3, 2 / 3]) {
+          ctx.beginPath(); ctx.moveTo(0, H * f); ctx.lineTo(W, H * f); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(W * f, 0); ctx.lineTo(W * f, H); ctx.stroke();
+        }
+        ctx.strokeStyle = "rgba(255,214,0,0.95)";
+        ctx.lineWidth = Math.max(2, W * 0.0026);
+        ctx.beginPath(); ctx.moveTo(0, H / 2); ctx.lineTo(W, H / 2); ctx.stroke();
         ctx.restore();
         return;
       }

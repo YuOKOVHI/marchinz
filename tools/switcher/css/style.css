@@ -1126,6 +1126,12 @@ body[data-mzj-phase="audio"] .stage { display: none; }
 body[data-mzj-phase="tilt"] .transport,
 body[data-mzj-phase="tilt"] .trim-row,
 body[data-mzj-phase="tilt"] #cutModeBtn { display: none; }
+/* 書き出しの画面は「画質を選んで書き出す」だけにする。範囲(IN/OUT)・
+   カット切替・タイムラインは仕上げ設定の道具で、実測で41文言/1388pxの
+   大半がこれだった(2026-07-28)。直したくなったらジャーニーの「設定」へ戻る */
+body[data-mzj-phase="export"] .trim-row,
+body[data-mzj-phase="export"] #cutModeBtn,
+body[data-mzj-phase="export"] #timelineWrap { display: none !important; }
 
 
 /* ============ 書き出しの全画面(案B / 2026-07-24) ============
@@ -1238,3 +1244,26 @@ body.tab-pro #easyPane { display: none !important; }
   -webkit-user-select: none; user-select: none;
 }
 .tilt-fine[open] > summary { color: var(--tx); }
+
+/* ---------- 傾きの確認(2026-07-28) ----------
+   プレビューは position:fixed で流れの高さを持たないので、
+   その分の場所を空けないと見出しと説明が永久に隠れる
+   (実測375x700: h2が100%・説明が57%被覆、しかも scrollHeight===innerHeight で
+    スクロールもできなかった) */
+/* 空ける量は固定値にしない。30vh を仮定すると端末で141px余ったり足りなかったりする
+   (実測)。renderTiltSec が実際のプレビュー下端から測って --mz-tilt-pad に入れる */
+body[data-mzj-phase="tilt"] .side { padding-top: var(--mz-tilt-pad, 0px); }
+.tilt-stage { margin-top: 10px; padding: 12px; border: 1px solid var(--line);
+  border-radius: 12px; background: var(--panel2); }
+.tilt-top { display: flex; align-items: center; gap: 10px; }
+.tilt-thumb { width: 52px; height: 31px; object-fit: cover; border-radius: 5px;
+  background: #0b0e13; flex: 0 0 auto; }
+.tilt-who { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
+.tilt-count { font-size: 13px; font-weight: 700; color: var(--tx2); }
+.tilt-who .hint { font-size: 11px; }
+#tiltVal2 { margin-left: auto; font-size: 24px; font-weight: 700;
+  font-variant-numeric: tabular-nums; }
+.tilt-crop { margin: 6px 0 0; color: #a8601a; }
+/* 連打する前提なので44pt以上を確保(実測40x34だった) */
+body[data-mzj-phase="tilt"] .tilt-step { width: 52px; min-height: 48px; font-size: 20px; }
+#tiltOkBtn, #tiltPrevBtn { min-height: 48px; }

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-app-v="1.49.2">
+<html lang="ja" data-mz-app-v="1.49.3">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -17,7 +17,7 @@
 <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
 <link rel="stylesheet" href="/tools/shared/progress.css">
 <link rel="stylesheet" href="/tools/shared/journey.css">
-<link rel="stylesheet" href="css/style.css?v=1.49.2">
+<link rel="stylesheet" href="css/style.css?v=1.49.3">
 <link rel="stylesheet" href="/tools/shared/sitechrome.css">
 </head>
 <body data-mz-tool="switcher">
@@ -113,24 +113,34 @@
          自動検出は全廃し、1本ずつ本人の目で確認して手で直す。0.1度きざみ。
          プレビューはそのカメラを単独表示(soloId)+画面上部に固定(mz-pin-force) -->
     <section class="panel" id="tiltSec">
-      <h2>動画の傾きを確認</h2>
-      <p class="sec-lead">1本ずつ、まっすぐかどうか確かめてください。
-        ずれていたら −・＋ かスライダーで直せます(0.1度ずつ)。</p>
+      <h2>動画をまっすぐにする</h2>
+      <p class="sec-lead">黄色い線を目印に、1本ずつ見てください。
+        かたむいていたら、まっすぐになるまで動かします。</p>
       <div class="tilt-stage">
         <div class="tilt-top">
-          <span id="tiltCamNo" class="tilt-count"></span>
+          <img id="tiltThumb" class="tilt-thumb" alt="">
+          <span class="tilt-who"><span id="tiltCamNo" class="tilt-count"></span>
+            <span id="tiltFile" class="hint"></span></span>
           <span id="tiltVal2" class="tilt-val">0.0°</span>
         </div>
+        <p id="tiltCrop" class="hint tilt-crop"></p>
         <div class="tilt-ctrl">
-          <button type="button" class="tilt-step" id="tiltMinus" aria-label="マイナス0.1度">−</button>
-          <input type="range" id="tiltRange2" class="tilt-range" min="-5" max="5" step="0.1" value="0" aria-label="傾きの調整">
-          <button type="button" class="tilt-step" id="tiltPlus" aria-label="プラス0.1度">＋</button>
+          <button type="button" class="tilt-step" id="tiltMinus" aria-label="左へ0.5度まわす">↺</button>
+          <input type="range" id="tiltRange2" class="tilt-range" min="-3" max="3" step="0.1" value="0" aria-label="傾きの調整">
+          <button type="button" class="tilt-step" id="tiltPlus" aria-label="右へ0.5度まわす">↻</button>
         </div>
+        <button type="button" id="tiltSceneBtn" class="btn small ghost" style="margin-top:8px">
+          <i class="fa-solid fa-shuffle" aria-hidden="true"></i> べつの場面を見る</button>
         <div class="row" style="margin-top:10px">
-          <button type="button" id="tiltPrevBtn" class="btn small ghost">まえの動画</button>
+          <button type="button" id="tiltPrevBtn" class="btn small ghost">1つ前のカメラ</button>
           <button type="button" id="tiltOkBtn" class="btn primary" style="flex:1">
             <i class="fa-solid fa-check"></i> この動画はOK</button>
         </div>
+        <!-- 1画面1操作にしてから、動画を選ぶ枠は他の工程では消える。
+             2台目を足す・入れ違いを消すのはたいていこの直後なので、
+             ここに戻り道を明示する(2026-07-28 レビューP0) -->
+        <button type="button" id="tiltAddBtn" class="btn small ghost" style="margin-top:8px">
+          <i class="fa-solid fa-plus" aria-hidden="true"></i> 動画を追加・削除する</button>
       </div>
     </section>
 
@@ -400,23 +410,23 @@
 <script src="vendor/mp4box.all.min.js"></script>
 <script src="vendor/mp4-muxer.min.js"></script>
 <script src="vendor/fft.js"></script>
-<script src="js/state.js?v=1.49.2"></script>
-<script src="js/layout.js?v=1.49.2"></script>
-<script src="js/media.js?v=1.49.2"></script>
-<script src="js/audio.js?v=1.49.2"></script>
-<script src="js/sync.js?v=1.49.2"></script>
-<script src="js/beats.js?v=1.49.2"></script>
-<script src="js/sections.js?v=1.49.2"></script>
-<script src="js/visual.js?v=1.49.2"></script>
-<script src="js/director.js?v=1.49.2"></script>
-<script src="js/colormatch.js?v=1.49.2"></script>
+<script src="js/state.js?v=1.49.3"></script>
+<script src="js/layout.js?v=1.49.3"></script>
+<script src="js/media.js?v=1.49.3"></script>
+<script src="js/audio.js?v=1.49.3"></script>
+<script src="js/sync.js?v=1.49.3"></script>
+<script src="js/beats.js?v=1.49.3"></script>
+<script src="js/sections.js?v=1.49.3"></script>
+<script src="js/visual.js?v=1.49.3"></script>
+<script src="js/director.js?v=1.49.3"></script>
+<script src="js/colormatch.js?v=1.49.3"></script>
 <!-- horizon.js(自動傾き検出)は読み込まない(2026-07-28 検知全廃。ファイルは残置) -->
-<script src="js/salute.js?v=1.49.2"></script>
-<script src="js/preview.js?v=1.49.2"></script>
-<script src="js/timeline.js?v=1.49.2"></script>
-<script src="js/cutmode.js?v=1.49.2"></script>
-<script src="js/exporter.js?v=1.49.2"></script>
-<script src="js/ui.js?v=1.49.2"></script>
-<script src="js/app.js?v=1.49.2"></script>
+<script src="js/salute.js?v=1.49.3"></script>
+<script src="js/preview.js?v=1.49.3"></script>
+<script src="js/timeline.js?v=1.49.3"></script>
+<script src="js/cutmode.js?v=1.49.3"></script>
+<script src="js/exporter.js?v=1.49.3"></script>
+<script src="js/ui.js?v=1.49.3"></script>
+<script src="js/app.js?v=1.49.3"></script>
 </body>
 </html>

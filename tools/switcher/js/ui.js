@@ -498,33 +498,28 @@ MC.ui.initJourney = () => {
          先の工程のパネルを画面から消した以上、ここが「何が残っているか」を
          知る唯一の場所になったので、名前を消してはいけない(2026-07-26) */
       { id: "mat",    label: "動画を選ぶ",   shortLabel: "動画", hint: "1本でも作れます" },
-      { id: "tilt",   label: "傾きを直す",   shortLabel: "傾き", hint: "1本ずつ、まっすぐか確かめてください" },
+      { id: "tilt",   label: "まっすぐにする", shortLabel: "傾き", hint: "黄色い線を目印に、1本ずつ見てください" },
       { id: "sync",   label: "同期と分析",   shortLabel: "同期", hint: "音のズレ合わせと素材の分析をします" },
       { id: "audio",  label: "音声を選ぶ",   shortLabel: "音声", hint: "試聴して「この音で進める」を押してください" },
       { id: "polish", label: "仕上げ設定", shortLabel: "設定", hint: "そのままでもOK。気になるところだけ直してください" },
       { id: "export", label: "書き出し",     shortLabel: "書出", hint: "「動画を書き出す」で完成です" },
     ],
     doneHint: "書き出し完了。調整して書き出し直すこともできます",
-    /* タップ=そのセクションへ移動(状態は変えないので安全)。ただし
-       まだ来ていない工程のパネルは display:none(style.css:918)なので
-       scrollIntoView が何も起こらない ─ 「押せるのに反応しない」ボタンになる。
-       実際に画面に出ている工程だけ押せるようにする(2026-07-26)。
-       済んだ工程は step-collapsed(中身だけ非表示)なので、ここは通る */
+    /* 1画面1操作(デッキ式)になってから、画面に出ているパネルは常に1枚だけ。
+       「見えているか」で判定すると現在地しか押せず、**戻る導線が全滅**する
+       (2026-07-28 実測: 6枠中5枠が disabled)。到達済みかどうかで判定し、
+       タップしたらその工程の画面へ切り替える(scrollIntoView は効かない) */
     canSelect: id => {
-      const el = document.querySelector(MC.ui.JOURNEY_SECTIONS[id]);
-      return !!(el && el.getClientRects().length);
+      const R = MC.ui.STEP_RANK;
+      const reached = MC.ui._derivedPhase || "mat";
+      return !!document.querySelector(MC.ui.JOURNEY_SECTIONS[id]) && R[id] <= R[reached];
     },
     onSelect: id => {
-      /* すんだステップは地図からのタップでそのまま開く(畳んだ先へ飛ばされて
-         「何もない」にならないように) */
-      const g = MC.ui.STEP_GROUPS.find(x => x.id === id);
-      if (g && MC.ui._stepPhase != null &&
-          MC.ui.STEP_RANK[id] < MC.ui.STEP_RANK[MC.ui._stepPhase]) {
-        g.panels.forEach(sel => MC.ui._stepOpen.add(sel));
-        MC.ui.applySteps(MC.ui._stepPhase);
-      }
-      const el = document.querySelector(MC.ui.JOURNEY_SECTIONS[id]);
-      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      const R = MC.ui.STEP_RANK;
+      if (R[id] > R[MC.ui._derivedPhase || "mat"]) return;   // まだ来ていない工程へは飛ばない
+      MC.ui._viewPhase = id;      // 進行が先に進むまで、この工程を見せ続ける
+      MC.ui.refreshJourney();     // showPhase だけだとジャーニーと行動バーが前の工程のまま
+      window.scrollTo({ top: 0, behavior: "smooth" });
     },
   });
   MC.ui.initSteps();
@@ -560,9 +555,18 @@ MC.ui.updateActionBar = () => {
   if (!ws.hidden && !busy) {
     const cur = MZJourney.current;
     if (cur === "mat") {
-      conf = { label: MC.S.mode === "vertical" ? "動画・写真を選ぶ" : "動画を選ぶ",
-        icon: "fa-folder-open",
-        act: () => MC.ui.$(MC.S.mode === "vertical" ? "#fileInputV" : "#fileInput").click() };
+      /* 素材を見に戻っているだけ(_viewPhase)なら、進む道を主ボタンにする。
+         ここが無いと「動画を選ぶ」画面から先へ戻れない(2026-07-28) */
+      const R = MC.ui.STEP_RANK;
+      const reached = MC.ui._derivedPhase || "mat";
+      if (MC.ui._viewPhase === "mat" && R[reached] > R.mat) {
+        conf = { label: "これでOK、つづける", icon: "fa-arrow-right",
+          act: () => { MC.ui._viewPhase = null; MC.ui.refreshJourney(); } };
+      } else {
+        conf = { label: MC.S.mode === "vertical" ? "動画・写真を選ぶ" : "動画を選ぶ",
+          icon: "fa-folder-open",
+          act: () => MC.ui.$(MC.S.mode === "vertical" ? "#fileInputV" : "#fileInput").click() };
+      }
     } else if (cur === "audio") {
       /* 音声を選ぶ: 本体の決定ボタンが見えているなら重ねない(書き出しと同じ流儀) */
       const db = MC.ui.$("#audioDecideBtn");
@@ -658,7 +662,12 @@ MC.ui.refreshJourney = () => {
   /* 傾きの確認(2026-07-28 優さん指示): 自動検出は全廃。動画1本ずつ
      本人がOKするまで先へ進まない。easyDone 済みの旧セッションは
      引き戻さない(過去の自動値は本人が polish で見られる) */
-  const tiltDone = !vids.length || vids.every(c => c.tiltOk);
+  /* tiltOk を持たない保存データ(この機能より前のセッション)は「未確認」ではなく
+     「対象外」として扱う。こだわりで使っていた人は easyDone が立たないため、
+     同期もレイアウトも済んでいるのに毎回傾きへ引き戻されていた
+     (2026-07-28 レビュー指摘) */
+  const legacy = synced && vids.some(c => c.tiltOk === undefined);
+  const tiltDone = !vids.length || legacy || vids.every(c => c.tiltOk);
   const done = [];
   if (slot.length) done.push("mat");
   if (slot.length && tiltDone) done.push("tilt");
@@ -670,26 +679,16 @@ MC.ui.refreshJourney = () => {
     : (vids.length >= 2 && !synced) ? "sync"
     : !audioDone ? "audio"
     : exported ? "export" : "polish";
-  MZJourney.set(current, done);
-  // 済んだフェーズの説明をCSSで畳むための現在地(2026-07-23 表示すっきり)
-  document.body.dataset.mzjPhase = current;
-  // 現在フェーズのセクションをそっと強調
-  document.querySelectorAll(".side .panel").forEach(p => p.classList.remove("phase-current"));
-  const target = document.querySelector(MC.ui.JOURNEY_SECTIONS[current]);
-  if (target) target.classList.add("phase-current");
-  MC.ui.applySteps(current);
-  /* 傾きフェーズ: 対象カメラを単独表示+画面上部に固定。抜けたら必ず戻す
-     (mz-pin-force を残すと次の工程でもプレビューが固定されたままになる) */
-  if (current === "mat") MC.ui._tiltIdx = 0;   // 入れ直したら1台目から確認し直す
-  if (current === "tilt") {
-    MC.ui.renderTiltSec();
-  } else if (MC.ui._tiltPinned) {
-    MC.ui._tiltPinned = false;
-    document.body.classList.remove("mz-pin-force");
-    MC.preview.soloId = null;
-    MC.preview.draw();
-  }
-  MC.ui.refreshSetupTabs();   // タブの表示条件は現在工程に依存する(polish以降)
+  /* 到達点(current)と、いま見せている工程(shown)を分ける。
+     ジャーニーから済んだ工程へ戻れるようにするため(2026-07-28) */
+  const advanced = MC.ui._derivedPhase !== current;
+  MC.ui._derivedPhase = current;
+  if (advanced) MC.ui._viewPhase = null;   // 工程が進んだら寄り道を解除して追従する
+  const R2 = MC.ui.STEP_RANK;
+  const shown = (MC.ui._viewPhase && R2[MC.ui._viewPhase] <= R2[current])
+    ? MC.ui._viewPhase : current;
+  MZJourney.set(shown, done);
+  MC.ui.showPhase(shown);
   MC.ui.updateActionBar();
 };
 
@@ -727,6 +726,26 @@ MC.ui.stepSummary = sel => {
     if (n) return `${n}本`;
   }
   return "すみ";
+};
+
+/* 表示する工程を切り替える唯一の入口。dataset(CSSの出し分け)・強調・
+   applySteps・傾きフェーズの出入りをここに集約する */
+MC.ui.showPhase = id => {
+  document.body.dataset.mzjPhase = id;
+  document.querySelectorAll(".side .panel").forEach(p => p.classList.remove("phase-current"));
+  const target = document.querySelector(MC.ui.JOURNEY_SECTIONS[id]);
+  if (target) target.classList.add("phase-current");
+  MC.ui.applySteps(id);
+  if (id === "tilt") {
+    MC.ui.renderTiltSec();
+  } else if (MC.ui._tiltPinned) {
+    MC.ui._tiltPinned = false;
+    document.body.classList.remove("mz-pin-force");
+    document.documentElement.style.removeProperty("--mz-tilt-pad");
+    MC.preview.soloId = null;
+    MC.preview.draw();
+  }
+  MC.ui.refreshSetupTabs();   // タブの表示条件は現在工程に依存する(polish以降)
 };
 
 MC.ui.applySteps = current => {
@@ -1199,15 +1218,47 @@ MC.ui.renderPlacement = () => {
 MC.ui._tiltIdx = 0;
 MC.ui._tiltPinned = false;
 MC.ui.tiltCams = () => MC.S.clips.filter(c => !c.isAudio && !c.isImage);
+/* 傾きの補正は隅が出ないようにズームするので、まわりが切れる(layout.js の z と同式)。
+   何%切れるかを言わないと、5度も回して「なんか小さくなった」になる */
+MC.ui.tiltCropPct = deg => {
+  const th = Math.abs((+deg || 0) * Math.PI / 180);
+  if (!th) return 0;
+  const w = 16, h = 9;   // 比率だけで決まる
+  const z = Math.max((w * Math.cos(th) + h * Math.sin(th)) / w,
+                     (w * Math.sin(th) + h * Math.cos(th)) / h);
+  return Math.round((1 - 1 / z) * 1000) / 10;
+};
 MC.ui.renderTiltSec = () => {
   const cams = MC.ui.tiltCams();
   if (!cams.length) return;
+  /* まだ確認していないカメラから始める(全部OKなら最後の1台)。
+     入れ直しのたびに確認済みの分まで押させない */
+  if (MC.ui._tiltIdx == null || !cams[MC.ui._tiltIdx] || cams[MC.ui._tiltIdx].tiltOk) {
+    const i = cams.findIndex(c => !c.tiltOk);
+    MC.ui._tiltIdx = i >= 0 ? i : cams.length - 1;
+  }
   MC.ui._tiltIdx = Math.max(0, Math.min(MC.ui._tiltIdx, cams.length - 1));
   const c = cams[MC.ui._tiltIdx];
   const no = MC.ui.$("#tiltCamNo");
   if (no) no.textContent = `カメラ${MC.ui._tiltIdx + 1} / ${cams.length}`;
+  const fileEl = MC.ui.$("#tiltFile");
+  if (fileEl) fileEl.textContent = MC.ui.shortName(c.name, 14);
+  const th = MC.ui.$("#tiltThumb");
+  if (th) { if (c.thumb) { th.src = c.thumb; th.hidden = false; } else { th.hidden = true; } }
   const val = MC.ui.$("#tiltVal2");
   if (val) val.textContent = (+(c.rot || 0)).toFixed(1) + "°";
+  const crop = MC.ui.$("#tiltCrop");
+  if (crop) {
+    const pct = MC.ui.tiltCropPct(c.rot);
+    crop.textContent = pct ? `まわりが約${pct}%切れます` : "";
+    crop.hidden = !pct;
+  }
+  /* 0秒目は三脚を触っている・足元が映っている等で判断できない。
+     真ん中あたりの場面を出す(2026-07-28 レビューP0) */
+  if (c.video && c.duration && !c._tiltSeeked) {
+    c._tiltSeeked = true;
+    try { c.video.currentTime = Math.min(c.duration * 0.35, Math.max(0, c.duration - 0.1)); } catch (_) {}
+  }
   const range = MC.ui.$("#tiltRange2");
   if (range) range.value = +(c.rot || 0);
   const prev = MC.ui.$("#tiltPrevBtn");
@@ -1220,6 +1271,24 @@ MC.ui.renderTiltSec = () => {
   MC.ui._tiltPinned = true;
   document.body.classList.add("mz-pin-force");
   MC.preview.draw();
+  /* 固定プレビューは流れの高さを持たない。実際の下端を測って、その分だけ
+     パネルを下げる(足りないと見出しが隠れ、多いと主ボタンが画面外に出る)。
+     rAF に入れてはいけない ─ 非表示タブでは発火せず、別アプリから戻ったときに
+     余白ゼロのまま見出しが隠れる。getBoundingClientRect がレイアウトを
+     確定させるので、ここで同期に測って問題ない */
+  {
+    const ch = document.querySelector(".canvas-holder");
+    const side = document.querySelector(".side");
+    if (ch && side) {
+      const r = ch.getBoundingClientRect();
+      if (r.height >= 1) {                          // 固定が効かない画面幅では何もしない
+        const prev = parseFloat(getComputedStyle(side).paddingTop) || 0;
+        const top = side.getBoundingClientRect().top - prev;   // padding を除いた本来の位置
+        const pad = Math.max(0, Math.round(r.bottom - top + 12));
+        document.documentElement.style.setProperty("--mz-tilt-pad", pad + "px");
+      }
+    }
+  }
 };
 MC.ui.wireTiltSec = () => {
   const $ = MC.ui.$;
@@ -1227,20 +1296,45 @@ MC.ui.wireTiltSec = () => {
   const apply = v => {
     const c = cur();
     if (!c) return;
-    c.rot = Math.max(-5, Math.min(5, Math.round(v * 10) / 10));   // 0.1°刻み
+    /* 実用範囲は±3度。±5度は15%も切れて使いものにならず、
+       スライダーの1目盛りが指より細かくなるだけだった(2026-07-28 実測) */
+    c.rot = Math.max(-3, Math.min(3, Math.round(v * 10) / 10));   // 0.1°刻み
     const val = $("#tiltVal2"); if (val) val.textContent = c.rot.toFixed(1) + "°";
     const range = $("#tiltRange2"); if (range) range.value = c.rot;
+    const crop = $("#tiltCrop");
+    if (crop) {
+      const pct = MC.ui.tiltCropPct(c.rot);
+      crop.textContent = pct ? `まわりが約${pct}%切れます` : "";
+      crop.hidden = !pct;
+    }
     MC.saveState();
     MC.preview.draw();
   };
   const range = $("#tiltRange2");
   if (range) range.oninput = e => apply(parseFloat(e.target.value));
   const minus = $("#tiltMinus"), plus = $("#tiltPlus");
-  if (minus) minus.onclick = () => apply((+(cur()?.rot) || 0) - 0.1);
-  if (plus) plus.onclick = () => apply((+(cur()?.rot) || 0) + 0.1);
+  /* 1タップ0.5度。0.1度刻みだと端から端まで50タップで実用外だった */
+  if (minus) minus.onclick = () => apply((+(cur()?.rot) || 0) - 0.5);
+  if (plus) plus.onclick = () => apply((+(cur()?.rot) || 0) + 0.5);
+  const scene = $("#tiltSceneBtn");
+  if (scene) scene.onclick = () => {
+    const c = cur();
+    if (!c || !c.video || !c.duration) return;
+    /* 0.2 → 0.35 → 0.5 → 0.65 → 0.8 と場面を送る。1か所で決めさせない */
+    const steps = [0.2, 0.35, 0.5, 0.65, 0.8];
+    c._tiltScene = ((c._tiltScene == null ? 1 : c._tiltScene) + 1) % steps.length;
+    try { c.video.currentTime = Math.min(c.duration * steps[c._tiltScene], c.duration - 0.1); } catch (_) {}
+    setTimeout(() => MC.preview.draw(), 120);
+  };
   const prev = $("#tiltPrevBtn");
   if (prev) prev.onclick = () => {
     if (MC.ui._tiltIdx > 0) { MC.ui._tiltIdx--; MC.ui.renderTiltSec(); }
+  };
+  const add = $("#tiltAddBtn");
+  if (add) add.onclick = () => {
+    MC.ui._viewPhase = "mat";
+    MC.ui.refreshJourney();
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
   const ok = $("#tiltOkBtn");
   if (ok) ok.onclick = () => {
@@ -1249,8 +1343,9 @@ MC.ui.wireTiltSec = () => {
     if (!c) return;
     c.tiltOk = true;
     MC.saveState();
-    if (MC.ui._tiltIdx < cams.length - 1) {
-      MC.ui._tiltIdx++;
+    const next = cams.findIndex((x, i) => i > MC.ui._tiltIdx && !x.tiltOk);
+    if (next >= 0) {
+      MC.ui._tiltIdx = next;
       MC.ui.renderTiltSec();
     } else {
       /* 全カメラ確認済み → refreshJourney が次の工程(同期)へ運ぶ。
@@ -1590,6 +1685,17 @@ MC.ui.renderFullLabel = on => {
     el.className = "mz-full-label";
     holder.appendChild(el);
   }
+  /* 傾きの確認中に見えているのは1台のソロ表示で、完成品ではない
+     (2026-07-28 レビューP1)。工程に合わない断言をしない */
+  const ph = document.body.dataset.mzjPhase;
+  if (ph !== "polish" && ph !== "export") {
+    const sc0 = MC.getClip(MC.preview.soloId);
+    el.innerHTML = '<i class="fa-solid fa-ruler-horizontal" aria-hidden="true"></i> '
+      + '<span><b>まっすぐか見ています</b>'
+      + (sc0 ? `${MC.ui.esc(MC.ui.shortName(sc0.name))} ${(+sc0.rot || 0).toFixed(1)}°` : "")
+      + "</span>";
+    return;
+  }
   const range = MC.trimRange();
   const q = MC.exporter.QUALITIES[MC.exporter.quality()];
   el.innerHTML = '<i class="fa-solid fa-clapperboard" aria-hidden="true"></i> '
@@ -1797,6 +1903,9 @@ MC.ui.runEasy = async () => {
     if (vids.length >= 2) {
       p.step(1, "音を合わせています…").pulse("音を合わせています…");
       await MC.sync.run(p);
+      /* 同期に成功したら、失敗時に前倒しで開いたタブを本来の条件へ戻す
+         (立てっぱなしだと以後ずっと序盤からタブが出る) */
+      MC.ui._tabsForced = false;
     }
     if (vids.length >= 2 && !MC.S.audioDecided) {
       /* ここで一度手を止める: 音声を選んでから仕上げへ */

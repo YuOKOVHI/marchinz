@@ -1084,7 +1084,12 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
       while (venc.encodeQueueSize > 6) await MC.waitDequeue(venc);
       /* OPFS書き込みが3個以上滞留したら追い越さない(背圧)。16MB×滞留数が
          ヒープに乗るのを頭打ちにする。通常は0〜1個で素通り */
-      while ((MC.exporter._pendCount || 0) > 3) await MC.yield();
+      while ((MC.exporter._pendCount || 0) > 3) {
+        /* 中止を見ないと、遅い保存先で最大30秒(writerReqのタイムアウト)
+           「中止する」が効かない画面になる(2026-07-28 レビュー指摘) */
+        if (MC.exporter.cancelFlag) throw new Error("キャンセルしました");
+        await MC.yield();
+      }
       prof.wait += performance.now() - _tWait;
       const _tDec = performance.now();
       await decodeP;
