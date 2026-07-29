@@ -893,11 +893,20 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
 
   /* 到達点を sessionStorage に逐次残す。タブごと落ちると画面もログも消えるので、
      「何コマ目で止まったか」を再読込後に伝える唯一の手段(2026-07-29) */
+  const _t0mark = Date.now();
   MC.exporter._markProgress = (k, total) => {
     try {
       sessionStorage.setItem("mz_switcher_export_at_v1", JSON.stringify({
         k, total, pct: Math.round((k / Math.max(1, total)) * 100),
         w, h, fps, ios: !!MC.isIOS, at: Date.now(),
+        sec: Math.round((Date.now() - _t0mark) / 1000),   // 開始から何秒で落ちたか
+        route: MC.exporter._routeLabel || "?",            // OPFS か メモリか
+        mbps: Math.round(MC.exporter.videoBitrate() / 1e5) / 10,
+        cams: used.length,
+        /* ここまでに書けたおおよそのバイト数。OPFSの容量で落ちているのかの判断材料 */
+        mb: Math.round((MC.exporter.videoBitrate() + 192e3) / 8 * (k / fps) / 1e6),
+        pend: MC.exporter._pendMax || 0,
+        apar: !!MC.exporter._audioParallel,
       }));
     } catch (_) {}
   };
@@ -911,6 +920,7 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
   MC.exporter.running = true;
   const tStart = performance.now();
   let routeLabel = "メモリ";        // 完成MP4の置き場所(記録カードに出す)
+  MC.exporter._routeLabel = routeLabel;
   const pipes = new Map();
   let venc = null;
   try {
@@ -925,6 +935,7 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
       writable = await saveHandle.createWritable();
       target = new Mp4Muxer.FileSystemWritableFileStreamTarget(writable);
       routeLabel = "ディスクへ直接";
+      MC.exporter._routeLabel = routeLabel;
       MC.log("export: ファイルへ直接書き込みます(メモリに溜めません)");
     } else if (MC.exporter.opfsSupported()) {
       /* ここに来た時点で、尺の上限(maxExportableSec)もビットレート(videoBitrate)も
@@ -950,6 +961,7 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
       }
       MC.exporter._opfsName = null;
       routeLabel = "端末内の保存領域(OPFS)";
+      MC.exporter._routeLabel = routeLabel;
       MC.log("export: OPFSへ逐次書き込みます(メモリに溜めません)");
     } else {
       /* OPFSもディスク直書きも無い端末。ここは maxExportableSec が
@@ -1040,6 +1052,7 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
        直列にすると音声ぶん(実測で数十秒)だけ書き出しが伸びるが、完走を優先する。
        デスクトップは並行のまま */
     const audioParallel = withAudio && !audioClip.isAudio && !MC.isIOS;
+    MC.exporter._audioParallel = audioParallel;
     /* 映像を作っている間、音声の進捗は画面に出さない。
        0.93 と 0.5 が交互に来ると進捗が行ったり来たりして壊れて見える */
     const onAudioStatus = (st, frac) => {

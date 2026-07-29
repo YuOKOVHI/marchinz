@@ -123,6 +123,30 @@ MC.activeClips = () => {
 
 MC.saveState = () => {
   try {
+    /* ---- 再読込直後に「前回のつづき」を自分で消さない(2026-07-29 優さん実機) ----
+       File はブラウザに保存できないので、再読込すると MC.S.clips も cutList も空になる。
+       その状態で saveState が走ると clips:[] / cutList:[] を書き込み、
+       **前回の同期とカット割を自分で消してしまう**。
+       実際の順番はこうだった:
+         書き出しが62%で落ちる → 再読込 → 「つづきがあります」の案内は正しく出る
+         → モードのカードをタップ(chooseMode が saveState を呼ぶ ui.js:2236)
+         → ここで保存が空になる → 同じ動画を選び直しても照合先が無い
+       素材が1本も無いときは、前回の clips / cutList をそのまま残す。
+       本当に捨てたいときは「最初からやり直す」が localStorage を消すので影響しない */
+    let prev = null;
+    try { prev = JSON.parse(localStorage.getItem("marchcut_project") || "null"); } catch (_) {}
+    const clipsNow = MC.S.clips.map(c => ({
+      key: MC.clipKey(c), offset: c.offset, confidence: c.confidence,
+      syncMethod: c.syncMethod, pan: c.pan,
+      role: c.role || "auto", freq: c.freq || "auto", rig: c.rig || "auto",
+      colorT: c.colorT || null, rot: c.rot || 0, tiltOk: !!c.tiltOk,
+    }));
+    const cutNow = MC.S.cutList.map(e => {
+      const c = MC.getClip(e.clipId);
+      return c ? { t: e.t, key: MC.clipKey(c), trans: e.trans, dur: e.dur } : null;
+    }).filter(Boolean);
+    const keepPrev = !clipsNow.length && prev
+      && Array.isArray(prev.clips) && prev.clips.length > 0;
     localStorage.setItem("marchcut_project", JSON.stringify({
       layoutId: MC.S.layoutId, preset: MC.S.preset, exportQuality: MC.S.exportQuality,
       trimIn: MC.S.trimIn, trimOut: MC.S.trimOut,
@@ -132,17 +156,11 @@ MC.saveState = () => {
       borderOn: MC.S.borderOn, borderColor: MC.S.borderColor, borderW: MC.S.borderW,
       colorOn: MC.S.colorOn, colorStrength: MC.S.colorStrength, filterId: MC.S.filterId,
       horizonOn: MC.S.horizonOn,
-      clips: MC.S.clips.map(c => ({
-        key: MC.clipKey(c), offset: c.offset, confidence: c.confidence,
-        syncMethod: c.syncMethod, pan: c.pan,
-        role: c.role || "auto", freq: c.freq || "auto", rig: c.rig || "auto",
-        colorT: c.colorT || null, rot: c.rot || 0, tiltOk: !!c.tiltOk,
-      })),
       // クリップidは読込順で変わるためkeyで保存
-      cutList: MC.S.cutList.map(e => {
-        const c = MC.getClip(e.clipId);
-        return c ? { t: e.t, key: MC.clipKey(c), trans: e.trans, dur: e.dur } : null;
-      }).filter(Boolean),
+      clips: keepPrev ? prev.clips : clipsNow,
+      cutList: keepPrev ? (prev.cutList || []) : cutNow,
+      // 範囲も同じ理由で守る(空の状態で0/nullを書き戻さない)
+      ...(keepPrev ? { trimIn: prev.trimIn ?? 0, trimOut: prev.trimOut ?? null } : {}),
     }));
   } catch (e) { /* localStorage不可でも動作は継続 */ }
 };

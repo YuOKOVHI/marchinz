@@ -1800,7 +1800,12 @@ MC.ui.showInterruptNote = (ms, opts = {}) => {
     ? "続きから進めています。終わるまでこの画面のままお待ちください。"
     : (opts.crashed && stalled)
       ? `同期もカット割も残っています。<b>同じ動画を・前と同じ順番で</b>選び直せば、`
-        + `書き出しからやり直せます（${stalled.k}/${stalled.total}コマ・${stalled.w}x${stalled.h}）。`
+        + `書き出しからやり直せます。`
+        + `<br><span class="mz-stall-detail">${stalled.k}/${stalled.total}コマ・`
+        + `${stalled.w}x${stalled.h}・${stalled.mbps || "?"}Mbps・`
+        + `カメラ${stalled.cams || "?"}本・${stalled.route || "?"}・`
+        + `${stalled.sec != null ? stalled.sec + "秒で" : ""}約${stalled.mb || "?"}MBまで`
+        + `${stalled.apar ? "・音声並行" : "・音声直列"}</span>`
       : "同期とカット割は残っています。<b>同じ動画を・前と同じ順番で</b>選び直してください。";
   el.innerHTML = '<i class="fa-solid fa-circle-pause" aria-hidden="true"></i> '
     + `<span><b>${head}</b>${body}</span>`

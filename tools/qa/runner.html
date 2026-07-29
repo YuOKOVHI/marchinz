@@ -1014,6 +1014,44 @@ async function countSamples(ns, file, fromSec) {
     return "未OK=tilt / 全OK=次の工程へ";
   });
 
+  group("⑫ 再読込で「前回のつづき」を自分で消さない(2026-07-29 実機で再開できなかった)");
+  await test("★素材が0本のとき、保存済みの同期・カット割を空で上書きしない", async () => {
+    const w = await compEnv();
+    const S = w.MC.S;
+    S.clips = [1, 2].map(i => ({
+      id: i, name: `c${i}.mov`, size: 100 + i, lastModified: 900 + i,
+      isImage: false, isAudio: false, hasAudio: true, duration: 60,
+      offset: i * 0.5, pan: .5, colorT: null, rot: 0, freq: "auto",
+      role: "auto", rig: "auto", syncMethod: "波形", tiltOk: true,
+    }));
+    S.cutList = [{ t: 0, clipId: 1, trans: "cut", dur: 0 }];
+    S.trimIn = 5; S.trimOut = 50;
+    w.MC.saveState();
+    const before = JSON.parse(w.localStorage.getItem("marchcut_project"));
+    if (before.clips.length !== 2 || before.cutList.length !== 1) {
+      throw new Error("前提が作れていない");
+    }
+    /* 再読込の再現: File は復元できないので clips も cutList も空になる */
+    S.clips = []; S.cutList = []; S.trimIn = 0; S.trimOut = null;
+    w.MC.saveState();
+    const after = JSON.parse(w.localStorage.getItem("marchcut_project"));
+    if (after.clips.length !== 2) throw new Error("clips が空で上書きされた(再開できなくなる)");
+    if (after.cutList.length !== 1) throw new Error("cutList が空で上書きされた");
+    if (after.trimIn !== 5 || after.trimOut !== 50) throw new Error("書き出し範囲が消えた");
+    if (after.clips[1].syncMethod !== "波形") throw new Error("同期の結果が消えた");
+    /* 素材を入れ直したら、今度はちゃんと新しい内容で上書きする */
+    S.clips = [{ id: 9, name: "new.mov", size: 1, lastModified: 1, isImage: false,
+      isAudio: false, hasAudio: true, duration: 10, offset: 0, pan: .5, colorT: null,
+      rot: 0, freq: "auto", role: "auto", rig: "auto", syncMethod: "未同期" }];
+    w.MC.saveState();
+    const after2 = JSON.parse(w.localStorage.getItem("marchcut_project"));
+    if (after2.clips.length !== 1 || !after2.clips[0].key.startsWith("new.mov")) {
+      throw new Error("素材を入れ直しても古い保存が残る(上書きできない)");
+    }
+    w.localStorage.removeItem("marchcut_project");
+    return "空では消えない / 入れ直せば更新される";
+  });
+
   if (CF) { CF.remove(); CF = null; CW = null; CD = null; }
 
   /* ===== 集計 ===== */
