@@ -687,9 +687,14 @@ MC.exporter.opfsCreate = async name => {
         /* 背圧の注記(G-3レビュー): onDataは同期で積まれ、実書き込みは直列。
            チャンクは16MB単位(下のchunkSize)なので同時未完了は実測1〜数個で収まる。
            16MB×数個ぶんのコピーが一時的にメモリに乗るが尺には比例しない */
+        /* 滞留数を数える(2026-07-28)。「実測1〜数個で収まる」は推測のままだった。
+           遅いストレージでmuxerが先行すると16MBコピーが複数個ヒープに乗る */
+        MC.exporter._pendCount = (MC.exporter._pendCount || 0) + 1;
+        MC.exporter._pendMax = Math.max(MC.exporter._pendMax || 0, MC.exporter._pendCount);
         MC.exporter._pendWrites = (MC.exporter._pendWrites || Promise.resolve())
           .then(() => MC.exporter._writerReq(
             { type: "write", data: copy.buffer, position }, [copy.buffer], 30000))   // 16MB書きに遅い端末の余裕
+          .finally(() => { MC.exporter._pendCount--; })
           /* 最初の失敗を控えておく(2026-07-26 レビュー指摘)。
              このチェーンは一度 reject すると、以後 .then(書き込み) が
              呼ばれなくなる ─ つまり**実際の書き込みが飛ばなくなる**。
@@ -812,7 +817,21 @@ MC.exporter.preflightFiles = async clips => {
   MC.log(`preflight OK: ${clips.length}本すべて読めます`);
 };
 
+/* 分析にしか使わないWorker/WASMを書き出しの前に解放する(2026-07-28 クラッシュ検証)。
+   顔検出Worker+ONNX RuntimeのWASMヒープは、分析が終わっても居座り続けていた。
+   書き出しは 3本のVideoDecoder+VideoEncoder+GL でメモリを詰めるので、
+   関与しない死荷重を先に下ろす。再分析すれば遅延生成で立ち直る */
+MC.exporter._releaseAnalysisWorkers = () => {
+  const V = window.MC && MC.visual;
+  if (!V) return;
+  if (V._fw) { try { V._fw.terminate(); } catch (_) {} }
+  V._fw = null; V._fwReadyP = null; V._fwDead = false;
+  if (V._ort) { try { V._ort.release && V._ort.release(); } catch (_) {} }
+  V._ort = null; V._ortP = null;
+};
+
 MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
+  MC.exporter._releaseAnalysisWorkers();
   /* OPFSへ本当に書けるかの実測(起動時に走らせてある)を、ここで確定させる。
      未確定のまま進むと opfsSupported() が「入口の有無」だけで暫定 true を返し、
      ビットレートも書き込み経路もその暫定値で決まってしまう(2026-07-26 レビュー指摘)。
@@ -862,6 +881,11 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
   MC.exporter._writeFatal = null;
 
   MC.exporter.cancelFlag = false;
+  MC.exporter._pendCount = 0;
+  MC.exporter._pendMax = 0;
+  /* 実機ログ用: 何を何本、どの解像度でデコードするか(P1-1 の裏取り) */
+  MC.log("export素材: " + used.map(c =>
+    `${MC.ui.shortName(c.name, 10)}=${c.width || "?"}x${c.height || "?"}`).join(" / "));
   MC.exporter.running = true;
   const tStart = performance.now();
   let routeLabel = "メモリ";        // 完成MP4の置き場所(記録カードに出す)
@@ -1058,6 +1082,9 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
          0.8秒→2.8秒 に伸びた(エンコードの条件は同じまま)。 */
       const _tWait = performance.now();
       while (venc.encodeQueueSize > 6) await MC.waitDequeue(venc);
+      /* OPFS書き込みが3個以上滞留したら追い越さない(背圧)。16MB×滞留数が
+         ヒープに乗るのを頭打ちにする。通常は0〜1個で素通り */
+      while ((MC.exporter._pendCount || 0) > 3) await MC.yield();
       prof.wait += performance.now() - _tWait;
       const _tDec = performance.now();
       await decodeP;
@@ -1113,7 +1140,8 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
         + `下流待ち${sec(prof.wait)}秒(${pc(prof.wait)}%) `
         + `投入${sec(prof.encode)}秒(${pc(prof.encode)}%) / 音声${audioParallel ? "並行" : "直列"} `
         + `/ ${totalFrames}コマ ${w}x${h} ${(MC.exporter.videoBitrate() / 1e6).toFixed(0)}Mbps`
-        + ` / スキップ${prof.skips}回(${(prof.reseekMs / 1000).toFixed(1)}秒)`);
+        + ` / スキップ${prof.skips}回(${(prof.reseekMs / 1000).toFixed(1)}秒)`
+        + ` / 書込滞留max${MC.exporter._pendMax || 0}`);
     }
 
     /* 映像が終わったらデコーダを即解放する。音声はストリーム化済みで

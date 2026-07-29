@@ -124,6 +124,12 @@ MC.preview = {
       MC.ui.updateTransport();
       MC.timeline.syncToPlayhead();   // 「いま映っているカット」の表示を追従させる
     }
+    /* 書き出し中は描かない(2026-07-28 クラッシュ検証)。exporter が別の
+       canvas+GLで同じ合成を回している最中に、こちらも60fpsで
+       drawComposite+色シェーダを回し続けていた ─ 画面は書き出しの
+       全画面(不透過)に覆われていて誰にも見えないのに、GPUとメモリを
+       まるごと二重に使う。iPhoneが書き出し中に落ちる報告の本命 */
+    if (MC.exporter && MC.exporter.running) return;
     this.draw();
   },
 
@@ -238,6 +244,7 @@ MC.preview = {
     if (this._busyTimer) return;
     this._busyTimer = setInterval(() => {
       if (MC.S.playing) return;                 // 再生中は tick が描いている
+      if (MC.exporter && MC.exporter.running) return;   // 書き出し中は描かない(上のtickと同じ理由)
       const busy = MC.preview.busyLabel();
       if (busy) { MC.preview._wasBusy = true; try { MC.preview.draw(); } catch (err) {} return; }
       if (MC.preview._wasBusy) {                // 終わった直後に1回だけ通常表示へ戻す

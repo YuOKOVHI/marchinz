@@ -136,7 +136,7 @@ MC.saveState = () => {
         key: MC.clipKey(c), offset: c.offset, confidence: c.confidence,
         syncMethod: c.syncMethod, pan: c.pan,
         role: c.role || "auto", freq: c.freq || "auto", rig: c.rig || "auto",
-        colorT: c.colorT || null, rot: c.rot || 0,
+        colorT: c.colorT || null, rot: c.rot || 0, tiltOk: !!c.tiltOk,
       })),
       // クリップidは読込順で変わるためkeyで保存
       cutList: MC.S.cutList.map(e => {
@@ -162,6 +162,7 @@ MC.restoreClipState = clip => {
       clip.rig = hit.rig || "auto";
       clip.colorT = hit.colorT || null;
       clip.rot = hit.rot || 0;
+      clip.tiltOk = !!hit.tiltOk;
     }
     return !!hit;
   } catch (e) { return false; }

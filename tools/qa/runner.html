@@ -960,6 +960,60 @@ async function countSamples(ns, file, fromSec) {
     return "中央=メイン / 右下・左下=小窓 / はみ出し無し";
   });
 
+  group("⑩ 書き出し中の二重負荷(2026-07-28 iPhone実機で落ちた報告への対策)");
+  /* 書き出し中、プレビューの rAF ループが別の canvas+GL で同じ合成を
+     60fps で回し続けていた(誰にも見えないのに)。ガードの実在を機械で守る */
+  await test("★書き出し中はプレビューが合成しない", async () => {
+    const w = await compEnv();
+    compReset(w);
+    let calls = 0;
+    const orig = w.MC.drawComposite;
+    w.MC.drawComposite = (...a) => { calls++; return orig(...a); };
+    w.MC.exporter.running = true;
+    try {
+      w.MC.preview.tick(performance.now());
+      if (calls !== 0) throw new Error(`書き出し中に drawComposite が${calls}回呼ばれた(GPU二重使用)`);
+      w.MC.exporter.running = false;
+      w.MC.preview.tick(performance.now());
+      if (calls < 1) throw new Error("書き出しが終わってもプレビューが再開しない");
+    } finally { w.MC.drawComposite = orig; w.MC.exporter.running = false; }
+    return "書き出し中0回・終了後に再開";
+  });
+
+  await test("★書き出し開始時に分析用Worker(顔検出/ORT)を解放する", async () => {
+    const w = await compEnv();
+    let term = false, rel = false;
+    w.MC.visual._fw = { terminate: () => { term = true; } };
+    w.MC.visual._ort = { release: () => { rel = true; } };
+    w.MC.exporter._releaseAnalysisWorkers();
+    if (!term) throw new Error("顔検出Workerがterminateされていない");
+    if (!rel) throw new Error("ORTセッションがreleaseされていない");
+    if (w.MC.visual._fw !== null || w.MC.visual._ort !== null) {
+      throw new Error("参照がnullに戻っていない(再生成できない)");
+    }
+    return "terminate+release+参照クリア";
+  });
+
+  group("⑪ 傾きフェーズ(2026-07-28 手動確認制へ)");
+  await test("★動画を入れた直後は傾きフェーズで、全部OKするまで先へ進まない", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.clips.forEach(c => { c.tiltOk = false; c.syncMethod = "未同期"; });
+    S.easyDone = false;
+    w.MC.ui.refreshJourney();
+    if (w.document.body.dataset.mzjPhase !== "tilt") {
+      throw new Error(`現在地が tilt でなく ${w.document.body.dataset.mzjPhase}`);
+    }
+    /* 1台OK → まだ tilt(3台あるので) */
+    S.clips[0].tiltOk = true;
+    w.MC.ui.refreshJourney();
+    if (w.document.body.dataset.mzjPhase !== "tilt") throw new Error("1台OKしただけで先へ進んでしまう");
+    S.clips.forEach(c => { c.tiltOk = true; });
+    w.MC.ui.refreshJourney();
+    if (w.document.body.dataset.mzjPhase === "tilt") throw new Error("全台OKしたのに傾きから出られない");
+    return "未OK=tilt / 全OK=次の工程へ";
+  });
+
   if (CF) { CF.remove(); CF = null; CW = null; CD = null; }
 
   /* ===== 集計 ===== */

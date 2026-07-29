@@ -392,9 +392,8 @@ MC.ui.gentleScrollTo = (el, block = "nearest") => {
 
 MC.ui.focusNextAction = () => {
   if (!MC.S.clips.length) return;
-  /* 取り込んだ直後に傾きを測り、「直した後」を見せる(2026-07-23 優さん指示)。
-     待たせないよう裏で走らせ、終わり次第プレビューへ反映する */
-  MC.ui.autoDetectTilt();
+  /* 傾きの自動検出は全廃した(2026-07-28 優さん指示)。
+     取り込み後の tilt フェーズで、1本ずつ本人が確認して手で直す */
   setTimeout(() => {
     const btn = MC.ui.$("#easyStartBtn");
     if (!btn || btn.offsetParent === null) return;
@@ -489,7 +488,7 @@ MC.ui.renderAll = () => {
 };
 
 /* ---- ジャーニーバー(どのフェーズにいるかの常時表示) ---- */
-MC.ui.JOURNEY_SECTIONS = { mat: "#dropSec", sync: "#syncSec", audio: "#audioSec", polish: "#layoutSec", export: "#exportSec" };
+MC.ui.JOURNEY_SECTIONS = { mat: "#dropSec", tilt: "#tiltSec", sync: "#syncSec", audio: "#audioSec", polish: "#layoutSec", export: "#exportSec" };
 
 MC.ui.initJourney = () => {
   MZJourney.init({
@@ -499,9 +498,10 @@ MC.ui.initJourney = () => {
          先の工程のパネルを画面から消した以上、ここが「何が残っているか」を
          知る唯一の場所になったので、名前を消してはいけない(2026-07-26) */
       { id: "mat",    label: "動画を選ぶ",   shortLabel: "動画", hint: "1本でも作れます" },
+      { id: "tilt",   label: "傾きを直す",   shortLabel: "傾き", hint: "1本ずつ、まっすぐか確かめてください" },
       { id: "sync",   label: "同期と分析",   shortLabel: "同期", hint: "音のズレ合わせと素材の分析をします" },
       { id: "audio",  label: "音声を選ぶ",   shortLabel: "音声", hint: "試聴して「この音で進める」を押してください" },
-      { id: "polish", label: "自動編集設定", shortLabel: "設定", hint: "そのままでもOK。気になるところだけ直してください" },
+      { id: "polish", label: "仕上げ設定", shortLabel: "設定", hint: "そのままでもOK。気になるところだけ直してください" },
       { id: "export", label: "書き出し",     shortLabel: "書出", hint: "「動画を書き出す」で完成です" },
     ],
     doneHint: "書き出し完了。調整して書き出し直すこともできます",
@@ -655,12 +655,18 @@ MC.ui.refreshJourney = () => {
      1本なら選ぶ余地がないのでスキップ(優さん確定) */
   const audioNeeded = vids.length >= 2;
   const audioDone = MC.S.audioDecided || !audioNeeded;
+  /* 傾きの確認(2026-07-28 優さん指示): 自動検出は全廃。動画1本ずつ
+     本人がOKするまで先へ進まない。easyDone 済みの旧セッションは
+     引き戻さない(過去の自動値は本人が polish で見られる) */
+  const tiltDone = !vids.length || vids.every(c => c.tiltOk);
   const done = [];
   if (slot.length) done.push("mat");
+  if (slot.length && tiltDone) done.push("tilt");
   if (slot.length && synced) done.push("sync");
   if (slot.length && synced && audioDone) done.push("audio");
   if (exported) done.push("polish", "export");
   const current = !slot.length ? "mat"
+    : (!tiltDone && !MC.S.easyDone) ? "tilt"
     : (vids.length >= 2 && !synced) ? "sync"
     : !audioDone ? "audio"
     : exported ? "export" : "polish";
@@ -672,6 +678,18 @@ MC.ui.refreshJourney = () => {
   const target = document.querySelector(MC.ui.JOURNEY_SECTIONS[current]);
   if (target) target.classList.add("phase-current");
   MC.ui.applySteps(current);
+  /* 傾きフェーズ: 対象カメラを単独表示+画面上部に固定。抜けたら必ず戻す
+     (mz-pin-force を残すと次の工程でもプレビューが固定されたままになる) */
+  if (current === "mat") MC.ui._tiltIdx = 0;   // 入れ直したら1台目から確認し直す
+  if (current === "tilt") {
+    MC.ui.renderTiltSec();
+  } else if (MC.ui._tiltPinned) {
+    MC.ui._tiltPinned = false;
+    document.body.classList.remove("mz-pin-force");
+    MC.preview.soloId = null;
+    MC.preview.draw();
+  }
+  MC.ui.refreshSetupTabs();   // タブの表示条件は現在工程に依存する(polish以降)
   MC.ui.updateActionBar();
 };
 
@@ -687,9 +705,10 @@ MC.ui.refreshJourney = () => {
        ジャーニーが現在地だと言っている工程の中身が画面に無い状態
    畳み方をいくら調整してもこれは直らないので、出し分けをここに一本化した。
    状態は refreshJourney が導出したものをそのまま使う(新しい状態機械を作らない) */
-MC.ui.STEP_RANK = { mat: 0, sync: 1, audio: 2, polish: 3, export: 4 };
+MC.ui.STEP_RANK = { mat: 0, tilt: 1, sync: 2, audio: 3, polish: 4, export: 5 };
 MC.ui.STEP_GROUPS = [
   { id: "mat",    panels: ["#dropSec"] },
+  { id: "tilt",   panels: ["#tiltSec"] },
   /* #easyPane を sync に載せる(2026-07-28)。おまかせの実際の操作＝「分析を開始」は
      この枠にあるのに、工程表に載っていなかったため applySteps が一切触れられず、
      分析が済んだあとも全工程に出続けていた */
@@ -1120,14 +1139,12 @@ MC.ui.renderPlacement = () => {
     : [];
   const cams = MC.S.clips.filter(c => !c.isAudio && !c.isImage);
   const showPlace = vertical && ids.length >= 2;
-  /* 傾き修正は縦型・横型どちらでも出す(2026-07-23 優さん指示)。
-     素材が1本でも傾きは直せるので、カメラが1つ以上あれば表示する */
-  const showTilt = cams.length >= 1;
-  if (!showPlace && !showTilt) { sec.hidden = true; return; }
+  /* 傾きUIは独立フェーズ(#tiltSec)へ移した(2026-07-28)。ここは配置専用 */
+  if (!showPlace) { sec.hidden = true; return; }
   sec.hidden = false;
 
   const head = sec.querySelector("h2 .place-title");
-  if (head) head.textContent = showPlace ? "カメラの配置と傾き" : "カメラの傾き";
+  if (head) head.textContent = "カメラの配置";
   const lead = sec.querySelector(".place-lead");
   if (lead) {
     lead.textContent = showPlace
@@ -1172,123 +1189,75 @@ MC.ui.renderPlacement = () => {
     });
   }
 
-  MC.ui.renderTilt(cams, showTilt);
 };
 
-/* ---------- 自動傾き修正(確認ステップ内) ----------
-   0.1°刻み。既定ONで、取り込み直後に自動検出して「直した後」を見せる。
-   仕上げ欄にも同じ機能があったが、確認するのは素材を入れた直後がいちばん自然
-   (2026-07-23 優さん指示) */
-MC.ui.renderTilt = (cams, show) => {
-  const box = MC.ui.$("#tiltBox");
-  if (!box) return;
-  box.hidden = !show;
-  if (!show) return;
-  const on = !!MC.S.horizonOn;
-  box.querySelector("#tiltToggle").checked = on;
-  const list = box.querySelector("#tiltRows");
-  list.hidden = !on;
-  const fine = box.querySelector(".tilt-fine");
-  if (fine) fine.hidden = !on;   // OFFのとき空の「じぶんで微調整する」を残さない
-  list.innerHTML = "";
-  if (!on) return;
-
-  /* 各カメラ1枚のカードに、上段=名前+角度、下段=−／スライダー／＋／自動。
-     以前は6列gridで375pxだと横に潰れて見えなくなっていた(2026-07-23 実機で発覚)。
-     縦2段なら幅に依存せず必ず出る */
-  for (const c of cams) {
-    const rot = +(c.rot || 0);
-    const row = document.createElement("div");
-    row.className = "tilt-row";
-    row.innerHTML = `
-      <div class="tilt-top">
-        <span class="tilt-name" title="${MC.ui.esc(c.name)}">${MC.ui.esc(MC.ui.shortName(c.name))}</span>
-        <span class="tilt-val">${rot.toFixed(1)}°</span>
-      </div>
-      <div class="tilt-ctrl">
-        <button type="button" class="tilt-step" data-d="-0.1" aria-label="左へ0.1度">−</button>
-        <input type="range" class="tilt-range" min="-5" max="5" step="0.1" value="${rot}" aria-label="${MC.ui.esc(c.name)} の傾き">
-        <button type="button" class="tilt-step" data-d="0.1" aria-label="右へ0.1度">＋</button>
-        <button type="button" class="tilt-auto" title="もう一度自動で検出">自動</button>
-      </div>`;
-    const range = row.querySelector(".tilt-range");
-    const val = row.querySelector(".tilt-val");
-    const apply = v => {
-      c.rot = Math.max(-5, Math.min(5, Math.round(v * 10) / 10));   // 0.1°刻みに丸める
-      range.value = c.rot;
-      val.textContent = c.rot.toFixed(1) + "°";
-      MC.saveState();
-      MC.ui.tiltFocus(c);     // 対象カメラを単独表示して「直した後」を見せる
-    };
-    range.oninput = e => apply(parseFloat(e.target.value));
-    /* 触れた瞬間から対象カメラを見せる(値が変わる前でも) */
-    range.addEventListener("pointerdown", () => MC.ui.tiltFocus(c), { passive: true });
-    row.querySelectorAll(".tilt-step").forEach(b => {
-      b.onclick = () => apply((+c.rot || 0) + parseFloat(b.dataset.d));
-    });
-    row.querySelector(".tilt-auto").onclick = async ev => {
-      ev.target.disabled = true;
-      try {
-        const sug = await MC.horizon.suggest(c);
-        if (sug == null || sug === 0) MC.ui.toast(`${MC.ui.shortName(c.name)}: 傾きは見つかりませんでした`);
-        else { apply(sug); MC.ui.toast(`${MC.ui.shortName(c.name)}: ${sug.toFixed(1)}° 直しました`); }
-      } finally { ev.target.disabled = false; }
-    };
-    list.appendChild(row);
-  }
-
-  box.querySelector("#tiltToggle").onchange = async e => {
-    MC.S.horizonOn = e.target.checked;
-    MC.saveState();
-    if (MC.S.horizonOn) await MC.ui.autoDetectTilt();
-    MC.ui.renderPlacement();
-    MC.preview.draw();
-  };
-};
-
-/* 傾き調整中: 対象カメラをプレビューに単独表示し、見えていなければ
-   画面上部へピン留めする(2026-07-24 優さん指示: 対象の動画を見ながら調整)。
-   操作が2.6秒止まったら通常表示へ戻す */
-MC.ui.tiltFocus = c => {
-  if (!c) return;
+/* ---------- 傾きの確認(独立フェーズ・手動のみ 2026-07-28 優さん指示) ----------
+   自動検出(horizon.js)は全廃。1本ずつプレビューで確認し、0.1度きざみで手で直す。
+   全カメラをOKするまで次の工程へ進まない(スキップなし。OKは1タップ)。
+   c.rot は従来どおり保存・復元(layout.js の fineRot 経路は無変更)。
+   c.tiltOk = 本人が確認した印(保存・復元する) */
+MC.ui._tiltIdx = 0;
+MC.ui._tiltPinned = false;
+MC.ui.tiltCams = () => MC.S.clips.filter(c => !c.isAudio && !c.isImage);
+MC.ui.renderTiltSec = () => {
+  const cams = MC.ui.tiltCams();
+  if (!cams.length) return;
+  MC.ui._tiltIdx = Math.max(0, Math.min(MC.ui._tiltIdx, cams.length - 1));
+  const c = cams[MC.ui._tiltIdx];
+  const no = MC.ui.$("#tiltCamNo");
+  if (no) no.textContent = `カメラ${MC.ui._tiltIdx + 1} / ${cams.length}`;
+  const val = MC.ui.$("#tiltVal2");
+  if (val) val.textContent = (+(c.rot || 0)).toFixed(1) + "°";
+  const range = MC.ui.$("#tiltRange2");
+  if (range) range.value = +(c.rot || 0);
+  const prev = MC.ui.$("#tiltPrevBtn");
+  if (prev) prev.disabled = MC.ui._tiltIdx === 0;
+  const ok = MC.ui.$("#tiltOkBtn");
+  if (ok) ok.innerHTML = '<i class="fa-solid fa-check"></i> '
+    + (MC.ui._tiltIdx === cams.length - 1 ? "OK、これで進む" : "この動画はOK");
+  /* 対象カメラを単独表示し、プレビューを画面上部に固定して見ながら直す */
   MC.preview.soloId = c.id;
-  clearTimeout(MC.ui._tiltFocusTimer);
-  MC.ui._tiltFocusTimer = setTimeout(() => {
-    MC.preview.soloId = null;
-    document.body.classList.remove("mz-pin-force");
-    if (MC.ui._syncFloatPos) MC.ui._syncFloatPos();
-    MC.preview.draw();
-  }, 2600);
-  const holder = document.querySelector(".canvas-holder");
-  const r = holder ? holder.getBoundingClientRect() : null;
-  const visible = r && r.height > 0 && r.top >= 0 && r.top < window.innerHeight * 0.5;
-  if (!visible) document.body.classList.add("mz-pin-force");
+  MC.ui._tiltPinned = true;
+  document.body.classList.add("mz-pin-force");
   MC.preview.draw();
 };
-
-/* 未検出のカメラだけ自動で傾きを測る。手で直した値は上書きしない */
-MC.ui._tiltBusy = false;
-MC.ui.autoDetectTilt = async () => {
-  if (MC.ui._tiltBusy || !MC.S.horizonOn) return;
-  const todo = MC.S.clips.filter(c => !c.isAudio && !c.isImage && c.rot == null);
-  if (!todo.length) return;
-  MC.ui._tiltBusy = true;
-  const st = MC.ui.$("#tiltStatus");
-  if (st) st.textContent = "傾きを見ています…";
-  try {
-    for (const c of todo) {
-      try {
-        const sug = await MC.horizon.suggest(c);
-        c.rot = (sug == null) ? 0 : sug;    // 測れなかったら0(=再測定しない印)
-      } catch (_) { c.rot = 0; }
-    }
+MC.ui.wireTiltSec = () => {
+  const $ = MC.ui.$;
+  const cur = () => MC.ui.tiltCams()[MC.ui._tiltIdx];
+  const apply = v => {
+    const c = cur();
+    if (!c) return;
+    c.rot = Math.max(-5, Math.min(5, Math.round(v * 10) / 10));   // 0.1°刻み
+    const val = $("#tiltVal2"); if (val) val.textContent = c.rot.toFixed(1) + "°";
+    const range = $("#tiltRange2"); if (range) range.value = c.rot;
     MC.saveState();
-  } finally {
-    MC.ui._tiltBusy = false;
-    if (st) st.textContent = "";
-    MC.ui.renderPlacement();
     MC.preview.draw();
-  }
+  };
+  const range = $("#tiltRange2");
+  if (range) range.oninput = e => apply(parseFloat(e.target.value));
+  const minus = $("#tiltMinus"), plus = $("#tiltPlus");
+  if (minus) minus.onclick = () => apply((+(cur()?.rot) || 0) - 0.1);
+  if (plus) plus.onclick = () => apply((+(cur()?.rot) || 0) + 0.1);
+  const prev = $("#tiltPrevBtn");
+  if (prev) prev.onclick = () => {
+    if (MC.ui._tiltIdx > 0) { MC.ui._tiltIdx--; MC.ui.renderTiltSec(); }
+  };
+  const ok = $("#tiltOkBtn");
+  if (ok) ok.onclick = () => {
+    const cams = MC.ui.tiltCams();
+    const c = cams[MC.ui._tiltIdx];
+    if (!c) return;
+    c.tiltOk = true;
+    MC.saveState();
+    if (MC.ui._tiltIdx < cams.length - 1) {
+      MC.ui._tiltIdx++;
+      MC.ui.renderTiltSec();
+    } else {
+      /* 全カメラ確認済み → refreshJourney が次の工程(同期)へ運ぶ。
+         固定と単独表示の解除は refreshJourney の tilt 退出フックが行う */
+      MC.ui.refreshJourney();
+    }
+  };
 };
 
 /* おまかせの説明。カット割をするのはスイッチング/ワイプのときだけなので、
@@ -1363,9 +1332,9 @@ MC.ui.applyGuestLocks = () => {
       if (n) n.scrollIntoView({ behavior: "smooth", block: "center" });
     });
   }
-  /* 土台だった #proPane は廃止したので、こだわりの先頭パネル(#syncSec)へ寄せる。
-     null のまま放置すると落ちはしないが、ゲストへの案内が二度と出なくなる */
-  const pane = MC.ui.$("#syncSec");
+  /* 土台は #layoutSec(2026-07-28)。タブは polish から出すため、#syncSec は
+     同期失敗時にしか見えない。polish で必ず見える方に案内を置く */
+  const pane = MC.ui.$("#layoutSec");
   let note = document.getElementById("mzProLockNote");
   if (guest && pane && !note) {
     note = document.createElement("div");
@@ -1407,7 +1376,15 @@ MC.ui.setSetupTab = tab => {
 MC.ui.refreshSetupTabs = () => {
   const tabs = MC.ui.$("#setupTabs");
   if (!tabs) return;
-  tabs.hidden = false;
+  /* タブは仕上げ設定(polish)から出す(2026-07-28 優さん指示)。
+     こだわり3枚のうち2枚(#layoutSec/#finishSec)は polish の画面で、
+     序盤に出しても意味の大半が無かった。こだわり＝「おまかせの結果を直す道具」。
+     例外: 同期に失敗したとき(_tabsForced)は途中でも開く ─ 手動同期(#syncBtn)が
+     唯一の復旧手段のため */
+  const rank = MC.ui.STEP_RANK;
+  tabs.hidden = !MC.ui._tabsForced &&
+    (rank[MC.ui._stepPhase ?? "mat"] ?? 0) < rank.polish;
+  if (tabs.hidden && MC.ui._setupTab === "pro") { MC.ui.setSetupTab("easy"); return; }
   const lead = MC.ui.$("#setupTabsLead");
   if (lead) {
     lead.textContent = MC.ui._setupTab === "pro"
@@ -1833,6 +1810,10 @@ MC.ui.runEasy = async () => {
     console.error(e);
     p.fail("うまくできませんでした", { detail: e.message });
     MC.ui.showErrorLog(e);
+    /* 同期に失敗したら「こだわり」を開放する。タブは通常 polish まで出ないが、
+       手動同期(#syncBtn)が唯一の復旧手段なので、失敗時だけ前倒しで出す */
+    MC.ui._tabsForced = true;
+    MC.ui.refreshSetupTabs();
   } finally {
     MC.ui.setBusy(false);
     MC.ui.renderAll();   // 途中で止まってもタイムライン等の表示を状態に合わせ直す
@@ -1904,12 +1885,8 @@ MC.ui.runEasyFinish = async (pIn, base = 0) => {
         + (trimmed ? `書き出し範囲 ${MC.ui.fmtTime(ti)}〜${MC.ui.fmtTime(to)} を自動設定。` : "")
         + "プレビューを見て、よければ書き出してください",
     });
-    /* 分析後は傾き補正を必ずON+自動調整+チェック(2026-07-24 優さん指示)。
-       旧保存のOFFが残っていても、ここで確実にONへ揃える */
-    MC.S.horizonOn = true;
-    MC.saveState();
-    MC.ui.renderPlacement();     // tiltBoxのチェックと角度表示を描き直す
-    MC.ui.autoDetectTilt();      // 未検出のカメラだけ裏で測って反映
+    /* 傾きの自動検出は全廃(2026-07-28)。傾きは tilt フェーズで本人が確認済み。
+       horizonOn は true 固定(rot=0 なら無効果。手動値の適用だけが残る) */
     /* 分析が終わったことを目立たせて知らせる(2026-07-23 優さん指示)。
        スマホは分析中に別アプリへ切り替えていることが多いので、
        戻ってきたとき/戻る前どちらでも気づけるように出す */
@@ -2183,6 +2160,7 @@ MC.ui.wire = () => {
   fi.onchange = () => { MC.media.addFiles([...fi.files]); fi.value = ""; };
   fiv.onchange = () => { MC.media.addFiles([...fiv.files]); fiv.value = ""; };
   /* 音声を選ぶフェーズ(2026-07-24)。別録り音源の取り込みは廃止(優さん指示) */
+  MC.ui.wireTiltSec();
   $("#audioListenBtn").onclick = () => {
     MC.preview.toggle();
     /* 再生状態はplay()のPromise後に確定するので少し待ってから表示を合わせる */

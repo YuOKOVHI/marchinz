@@ -1117,6 +1117,15 @@ body.mz-interrupt-on #dropSec .mz-stay-hint {
    同期と分析: 見せる編集結果がまだ無いのでプレビューを出さない。
    自動編集設定(polish): モバイルではJSが常時フロート化する(ui.js側) */
 body[data-mzj-phase="sync"] .stage { display: none; }
+/* 音声を選ぶ画面にもプレビューは出さない(2026-07-28 優さん指示)。
+   決めるのは「どの音を使うか」だけ ─ 絵と再生バーとIN/OUTは別の工程の道具。
+   「試聴する」の音は <video> から出るので、絵を隠しても鳴る */
+body[data-mzj-phase="audio"] .stage { display: none; }
+/* 傾きの確認中はプレビューの絵だけ。再生バーとIN/OUTは別の工程の道具で、
+   固定表示のプレビューに重なって見えてもいた(2026-07-28) */
+body[data-mzj-phase="tilt"] .transport,
+body[data-mzj-phase="tilt"] .trim-row,
+body[data-mzj-phase="tilt"] #cutModeBtn { display: none; }
 
 
 /* ============ 書き出しの全画面(案B / 2026-07-24) ============
