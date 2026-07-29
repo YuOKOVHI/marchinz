@@ -45,6 +45,17 @@ MC.PRESETS = {
   "1x1":  { w: 1080, h: 1080, label: "正方形 1:1" },
 };
 
+/* clip.video のシークを直列にする。傾き(horizon)と色そろえ(colormatch)は
+   同じ <video> の onseeked を上書きし合うため、同時に走ると片方が必ず
+   2秒タイムアウトへ落ち、しかも誤った時刻のフレームで統計を取る
+   (2026-07-28 レビュー指摘)。速度の話ではなく、無言で結果が狂う競合 */
+MC._seekLock = Promise.resolve();
+MC.withSeekLock = fn => {
+  const run = MC._seekLock.then(fn, fn);
+  MC._seekLock = run.then(() => {}, () => {});
+  return run;
+};
+
 /* タイマー節流(非表示タブ)の影響を受けないyield */
 MC.yield = () => new Promise(r => {
   const ch = new MessageChannel();

@@ -71,15 +71,20 @@ MC.color.statsAcc = () => {
    ここはキャッシュを返すだけ=動画を開き直さない。
    単独実行(こだわりのカラーマッチ)や解析が seek 方式へ落ちた素材だけ、
    従来のシーク版で8点読む */
-MC.color.sampleStats = async clip => {
+MC.color.sampleStats = async (clip, onFrame) => {
   if (clip.colorStats) return clip.colorStats;
-  const s = await MC.color.sampleStatsSeek(clip);
+  const s = await MC.color.sampleStatsSeek(clip, onFrame);
   clip.colorStats = s;
   return s;
 };
 
-/* 従来経路: video要素を8回シークして統計(WebCodecs解析が使えないときの受け皿) */
-MC.color.sampleStatsSeek = async clip => {
+/* 従来経路: video要素を8回シークして統計(WebCodecs解析が使えないときの受け皿)。
+   縦型/ワイプは director の解析に相乗りできないので、毎回ここへ来る。
+   シークは withSeekLock で直列にする(傾き検出との onseeked 奪い合い防止)。
+   onFrame(i,n): 1シークごとに進捗を返す ─ クリップ単位だと最後の1台で
+   バーが99%のまま8シーク分(最悪16秒)無言で止まって見える(2026-07-28) */
+MC.color.sampleStatsSeek = (clip, onFrame) => MC.withSeekLock(async () => {
+  const _t0 = performance.now();
   const v = clip.video;
   const keep = v.currentTime;
   const cv = document.createElement("canvas");
@@ -90,6 +95,7 @@ MC.color.sampleStatsSeek = async clip => {
   const sum = [0, 0, 0], sq = [0, 0, 0];
   let n = 0;
   for (let i = 0; i < MC.color.STATS_FRAMES; i++) {
+    if (onFrame) onFrame(i, MC.color.STATS_FRAMES);
     const t = clip.duration * (0.1 + 0.8 * i / (MC.color.STATS_FRAMES - 1));
     v.currentTime = t;
     await new Promise((res, rej) => {
@@ -105,10 +111,11 @@ MC.color.sampleStatsSeek = async clip => {
     }
   }
   v.currentTime = keep;
+  MC.log(`色統計 ${clip.name}: ${MC.color.STATS_FRAMES}シーク ${(performance.now() - _t0).toFixed(0)}ms`);
   const mean = sum.map(s => s / n);
   const std = sq.map((s, k) => Math.sqrt(Math.max(s / n - mean[k] * mean[k], 1e-8)));
   return { mean, std };
-};
+});
 
 /* 全カメラの統計→基準(音声カメラ)へのLab変換を計算 */
 /* p: MZPの進捗ハンドル(省略可) */
@@ -121,8 +128,13 @@ MC.color.run = async p => {
   let i = 0;
   for (const c of clips) {
     i++;
-    if (p) p.count(i, clips.length, { unit: "台目", name: c.name });
-    stats.set(c.id, await MC.color.sampleStats(c));
+    const sub = `${i} / ${clips.length} 台目・${MZP.shortName(c.name)}`;
+    if (p) p.set((i - 1) / clips.length, null, { sub });
+    /* 1シークごとにバーを進める(director.run と同じ式)。台単位だと
+       2台なら 50%→99% で各8シークが無言になっていた */
+    stats.set(c.id, await MC.color.sampleStats(c, (k, m) => {
+      if (p) p.set((i - 1 + k / m) / clips.length, null, { sub });
+    }));
   }
   const refS = stats.get(ref.id);
   for (const c of clips) {

@@ -1803,6 +1803,7 @@ MC.ui.initVisibility = () => {
 MC.ui.runEasy = async () => {
   const btn = MC.ui.$("#easyStartBtn");
   if (btn.disabled || MC.ui._busy) return;
+  MC.ui._anaT0 = performance.now();   // 見積り学習は同期込みの全体で測る(2026-07-28)
   MC.ui.setBusy(true);
   MC.ui.clearErrorLog();   // やり直しでは前回の失敗ログを見せない
   MC.preview.pause();
@@ -1866,11 +1867,18 @@ MC.ui.runEasyFinish = async (pIn, base = 0) => {
                                steps: MC.ui.finishSteps(),
                                label: "仕上げています…" });
   let n = base;   // ここまでに済んだ段数
+  /* 残り時間の粗い見積り(開始前の #totalEtaHint と同じ式)。段の境目で
+     eta を更新する ─ 書き出し側は3秒後から残り時間が出るのに、
+     分析側は最後まで一度も出ていなかった(2026-07-28 レビューP0-3) */
+  const _vc = MC.S.clips.filter(c => !c.isAudio && !c.isImage);
+  const _est = _vc.length * Math.max(0, MC.timelineDuration()) * MC.ui.analysisRate();
+  const _steps = Math.max(1, p.steps || MC.ui.finishSteps());
+  const _eta = () => _est > 30 ? { eta: Math.max(0, _est * (1 - n / _steps)) } : undefined;
   try {
     // 開始/終了の自動区切り。演奏の前後(アナウンス・拍手・片付け)を落とす。
     // カット割より先に行う: director は MC.trimRange() の中だけを割るため
     if (MC.S.trimIn === 0 && MC.S.trimOut == null) {
-      p.step(++n, "最初と最後を探しています…").pulse();
+      p.step(++n, "最初と最後を探しています…").pulse(null, _eta());
       await MZP.paint();
       await MC.salute.autoTrim();   // 検出できなければ静かに諦める(トリムなしで続行)
     }
@@ -1882,7 +1890,7 @@ MC.ui.runEasyFinish = async (pIn, base = 0) => {
     let colorFailed = false;
     /* 条件は finishSteps() と必ず揃える(分母と実際に通る段がずれる) */
     if (MC.S.colorOn && MC.S.clips.filter(c => !c.isAudio && !c.isImage).length >= 2) {
-      p.step(++n, "色をそろえています…").pulse();
+      p.step(++n, "色をそろえています…").pulse(null, _eta());
       await MC.color.run(p).catch(() => { colorFailed = true; });
     }
     MC.ui.renderAll();
@@ -1912,8 +1920,10 @@ MC.ui.runEasyFinish = async (pIn, base = 0) => {
     /* 実際にかかった時間を覚えて、次からの見積りを自分の端末に合わせる
        (2段化後は仕上げ段の実測。同期段はsync側で速くなっている) */
     const [eIn, eOut] = MC.trimRange();
+    /* 学習は「分析を開始」からの全体実測で。仕上げ段だけを測って全体の
+       予告(素材の分析におよそ◯分)に使うと、使うほど乖離する(2026-07-28) */
     MC.ui.learnAnalysisRate(
-      (performance.now() - t0) / 1000,
+      (performance.now() - (MC.ui._anaT0 || t0)) / 1000,
       MC.S.clips.filter(c => !c.isAudio && !c.isImage).length,
       Math.max(0, eOut - eIn));
     /* 長すぎて書き出せない場合は、ここで知らせる。

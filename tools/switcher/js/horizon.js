@@ -10,7 +10,9 @@ MC.horizon = { RANGE: 5 };
 
 /* 3フレーム(25/50/75%)で解析し、2つ以上が±0.6°で一致した時だけ提案する。
    真の傾きは時間不変、モアレや被写体由来の誤検出はフレームごとに変わるため分離できる */
-MC.horizon.suggest = async clip => {
+/* withSeekLock: 色そろえと同じ <video> を同時にシークしない(state.js参照) */
+MC.horizon.suggest = clip => MC.withSeekLock(async () => {
+  const _t0 = performance.now();
   const vals = [];
   for (const frac of [0.25, 0.5, 0.75]) {
     const a = await MC.horizon.analyzeFrame(clip, frac);
@@ -21,14 +23,14 @@ MC.horizon.suggest = async clip => {
     for (let j = i + 1; j < vals.length; j++) {
       if (Math.abs(vals[i] - vals[j]) <= 0.6) {
         const m = +( (vals[i] + vals[j]) / 2 ).toFixed(2);
-        MC.log(`horizon ${clip.name}: 多数決一致 [${vals.map(x => x.toFixed(1)).join(", ")}] → ${m}°`);
+        MC.log(`horizon ${clip.name}: 多数決一致 [${vals.map(x => x.toFixed(1)).join(", ")}] → ${m}° (${(performance.now() - _t0).toFixed(0)}ms)`);
         return Math.abs(m) < 0.15 ? 0 : m;
       }
     }
   }
   MC.log(`horizon ${clip.name}: フレーム間で不一致 [${vals.map(x => x.toFixed(1)).join(", ")}] → 提案なし`);
   return null;
-};
+});
 
 MC.horizon.analyzeFrame = async (clip, frac) => {
   const v = clip.video;

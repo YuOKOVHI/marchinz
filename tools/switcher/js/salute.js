@@ -26,7 +26,12 @@ MC.salute.autoTrim = async () => {
 MC.salute.detect = async () => {
   const clip = MC.getClip(MC.S.audioClipId);
   if (!clip) throw new Error("音声クリップがありません");
-  await MC.audio.extract8k(clip);   // 窓キャッシュなら全尺で読み直される(2026-07-24)
+  {
+    const _t0 = performance.now();
+    const hit = clip.audio8k && (clip.audio8kReqStart || 0) === 0;
+    await MC.audio.extract8k(clip);   // 窓キャッシュなら全尺で読み直される(2026-07-24)
+    MC.log(`salute抽出: ${hit ? "キャッシュ命中" : "全尺読み直し"} ${(performance.now() - _t0).toFixed(0)}ms`);
+  }
   const sr = MC.audio.SR, hop = sr / 10;  // 100ms
   const pcm = clip.audio8k;
   const nH = Math.floor(pcm.length / hop);

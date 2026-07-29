@@ -142,9 +142,16 @@ MC.sync.run = async p => {
     return { raw, conf: r.conf };
   };
 
-  /* ステージ1: 真ん中3分 → 2: 先頭3分 → 3: 全体。基準も同じ窓で読み直す */
+  /* ステージ1: 真ん中3分 → 2: 先頭3分 → 3: 全体。基準も同じ窓で読み直す。
+     ただし音声代表(audioClipId)だけは最初から全尺で読む(2026-07-28 レビュー案②)。
+     直後の salute.detect が全尺を要求するため、窓で読むと 180秒+全尺 の
+     二度読みになっていた(8分素材なら690秒分の復号)。全尺は8kHz monoで
+     510秒≒16MB ─ 窓化の目的は「3本同時の総量削減」(下の注記)なので、
+     1本だけ全尺でもその意図は壊れない */
+  const fullWin = () => ({ start: 0, span: MC.audio.MAX_SEC });
+  const isAudioRep = c => c.id === MC.S.audioClipId;
   const STAGES = [
-    { name: "真ん中3分", win: c => MC.audio.midWindow(c), label: "音を分析しています…" },
+    { name: "真ん中3分", win: c => isAudioRep(c) ? fullWin() : MC.audio.midWindow(c), label: "音を分析しています…" },
     { name: "先頭3分",   win: () => ({ start: 0, span: MC.audio.WIN_SEC }), label: "同期をやり直しています(先頭3分)…" },
     { name: "全体",      win: () => ({ start: 0, span: MC.audio.MAX_SEC }), label: "同期をやり直しています(全体)…" },
   ];
