@@ -819,7 +819,30 @@ MC.ui.rigBadge = c => {
 
 /* --- クリップカード --- */
 /* 動画1/2/3の3スロット。空きは選択ボタン、読み込み済みはクリップカード */
+/* 前回のつづきが localStorage に残っているか(素材を1本も入れていないときだけ案内する) */
+MC.ui.renderResumeNote = () => {
+  const el = MC.ui.$("#resumeNote");
+  if (!el) return;
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem("marchcut_project") || "null"); } catch (_) {}
+  const names = (saved && Array.isArray(saved.clips) ? saved.clips : [])
+    .map(c => String(c.key || "").split("|")[0]).filter(Boolean);
+  const synced = (saved && Array.isArray(saved.clips)
+    && saved.clips.some(c => c.syncMethod && c.syncMethod !== "未同期"));
+  if (!names.length || !synced || MC.media.slotClips().length) { el.hidden = true; return; }
+  el.hidden = false;
+  el.innerHTML = '<p class="rn-head"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> '
+    + '<b>前回のつづきがあります</b></p>'
+    + '<p>同期とカット割は残っています。下の動画を<b>この順番で</b>選び直すと、'
+    + '分析をやり直さずに書き出しへ進めます。</p>'
+    + '<ol class="rn-list">' + names.map(nm =>
+        `<li>${MC.ui.esc(nm)}</li>`).join("") + '</ol>'
+    + '<p class="hint">名前・大きさ・撮影日時が同じファイルだけが「同じ動画」になります。'
+    + '送り直したものや書き出し直したものは別あつかいです。</p>';
+};
+
 MC.ui.renderClips = () => {
+  MC.ui.renderResumeNote();
   const box = MC.ui.$("#clipSlots");
   box.innerHTML = "";
   const vertical = MC.S.mode === "vertical";
@@ -1280,10 +1303,16 @@ MC.ui.renderTiltSec = () => {
     const ch = document.querySelector(".canvas-holder");
     const side = document.querySelector(".side");
     if (ch && side) {
+      /* 余白を**一度ゼロに戻してから**素の位置を測る(2026-07-29 優さん報告で修正)。
+         padding-top は要素自身の top を動かさない(中身が下がるだけ)ので、
+         現在の padding を引いて「本来の位置」を出したつもりになっていた前の式は、
+         カメラを送るたびに 111px ずつ余白を積み増していた。
+         removeProperty の直後に getBoundingClientRect を読むとレイアウトが
+         確定するので、その値が素の位置になる */
+      document.documentElement.style.removeProperty("--mz-tilt-pad");
       const r = ch.getBoundingClientRect();
+      const top = side.getBoundingClientRect().top;
       if (r.height >= 1) {                          // 固定が効かない画面幅では何もしない
-        const prev = parseFloat(getComputedStyle(side).paddingTop) || 0;
-        const top = side.getBoundingClientRect().top - prev;   // padding を除いた本来の位置
         const pad = Math.max(0, Math.round(r.bottom - top + 12));
         document.documentElement.style.setProperty("--mz-tilt-pad", pad + "px");
       }
@@ -1770,9 +1799,9 @@ MC.ui.showInterruptNote = (ms, opts = {}) => {
   const body = opts.running
     ? "続きから進めています。終わるまでこの画面のままお待ちください。"
     : (opts.crashed && stalled)
-      ? `同じ動画をもう一度選べば、同期もカット割も残っているので書き出しからやり直せます。`
-        + `（${stalled.k}/${stalled.total}コマ・${stalled.w}x${stalled.h}）`
-      : "同期とカット割は残っています。書き出しだけやり直せます。";
+      ? `同期もカット割も残っています。<b>同じ動画を・前と同じ順番で</b>選び直せば、`
+        + `書き出しからやり直せます（${stalled.k}/${stalled.total}コマ・${stalled.w}x${stalled.h}）。`
+      : "同期とカット割は残っています。<b>同じ動画を・前と同じ順番で</b>選び直してください。";
   el.innerHTML = '<i class="fa-solid fa-circle-pause" aria-hidden="true"></i> '
     + `<span><b>${head}</b>${body}</span>`
     + '<button type="button" class="mz-interrupt-close" aria-label="閉じる">×</button>';
