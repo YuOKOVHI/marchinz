@@ -1271,3 +1271,8 @@ body[data-mzj-phase="tilt"] .tilt-step { width: 52px; min-height: 48px; font-siz
 /* 完成画面の顔の注意(2026-07-29) */
 .eo-faces { color: #7a4a12; }
 .eo-faces a { color: inherit; font-weight: 700; }
+
+/* 書き出し前の注意書き(2026-07-29) */
+.wm-note { color: #4a5568; }
+.save-note { color: #1f6f4a; }
+.wm-note b, .save-note b { font-weight: 700; }

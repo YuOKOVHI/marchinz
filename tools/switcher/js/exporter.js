@@ -891,6 +891,17 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
      古い失敗が残ったまま1コマ目で畳んでしまう */
   MC.exporter._writeFatal = null;
 
+  /* 到達点を sessionStorage に逐次残す。タブごと落ちると画面もログも消えるので、
+     「何コマ目で止まったか」を再読込後に伝える唯一の手段(2026-07-29) */
+  MC.exporter._markProgress = (k, total) => {
+    try {
+      sessionStorage.setItem("mz_switcher_export_at_v1", JSON.stringify({
+        k, total, pct: Math.round((k / Math.max(1, total)) * 100),
+        w, h, fps, ios: !!MC.isIOS, at: Date.now(),
+      }));
+    } catch (_) {}
+  };
+  try { sessionStorage.removeItem("mz_switcher_export_at_v1"); } catch (_) {}
   MC.exporter.cancelFlag = false;
   MC.exporter._pendCount = 0;
   MC.exporter._pendMax = 0;
@@ -1022,7 +1033,13 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
     let audioMs = 0;            // 音声にかかった実時間
     let audioWaitMs = 0;        // そのうち「映像が終わってから待たされた」ぶん
     let videoDone = false;
-    const audioParallel = withAudio && !audioClip.isAudio;
+    /* iOSでは音声を直列に戻す(2026-07-29 優さん実機で「途中で止まる」報告)。
+       並行だと 3本のVideoDecoder + VideoEncoder + AudioDecoder + AudioEncoder の
+       6個のネイティブコーデックが同時に立つ。メモリ増分そのものは小さい
+       (音声は1024フレーム窓しか持たない)が、同時本数がiOSの制約に当たる疑い。
+       直列にすると音声ぶん(実測で数十秒)だけ書き出しが伸びるが、完走を優先する。
+       デスクトップは並行のまま */
+    const audioParallel = withAudio && !audioClip.isAudio && !MC.isIOS;
     /* 映像を作っている間、音声の進捗は画面に出さない。
        0.93 と 0.5 が交互に来ると進捗が行ったり来たりして壊れて見える */
     const onAudioStatus = (st, frac) => {
@@ -1127,6 +1144,7 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
       vf.close();
       prof.encode += performance.now() - _tEnc;
       if (k % 10 === 0) {
+        MC.exporter._markProgress(k, totalFrames);
         const now = performance.now();
         /* 長尺ではデコーダの助走で序盤が遅い。全体平均だと残りを過大に出し
            続けてしまうので、直近60コマ分の速度で見積もる */
@@ -1148,6 +1166,7 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
     }
     await venc.flush();
     if (vencErr) throw vencErr;
+    try { sessionStorage.removeItem("mz_switcher_export_at_v1"); } catch (_) {}
     {
       const tot = (prof.decode + prof.draw + prof.encode + prof.wait) / 1000;
       const pc = v => tot > 0 ? Math.round(v / 10 / tot) : 0;   // v[ms] / tot[s] → %

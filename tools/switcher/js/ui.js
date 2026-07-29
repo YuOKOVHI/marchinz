@@ -1756,14 +1756,23 @@ MC.ui.showInterruptNote = (ms, opts = {}) => {
     el.setAttribute("role", "status");
     document.body.appendChild(el);
   }
-  const head = opts.crashed
-    ? "前回は途中で終わっています。"
-    : opts.running
-      ? "離れていた間は止まっていました。"
-      : "中断されたかもしれません。";
+  /* 書き出しの途中で落ちたときは、どこまで進んだかを具体的に言う。
+     「途中で終わっています」だけでは、原因究明にも次の行動にもつながらない */
+  let stalled = null;
+  try { stalled = JSON.parse(sessionStorage.getItem("mz_switcher_export_at_v1") || "null"); } catch (_) {}
+  const head = (opts.crashed && stalled)
+    ? `書き出しが ${stalled.pct}% で止まりました。`
+    : opts.crashed
+      ? "前回は途中で終わっています。"
+      : opts.running
+        ? "離れていた間は止まっていました。"
+        : "中断されたかもしれません。";
   const body = opts.running
     ? "続きから進めています。終わるまでこの画面のままお待ちください。"
-    : "同期とカット割は残っています。書き出しだけやり直せます。";
+    : (opts.crashed && stalled)
+      ? `同じ動画をもう一度選べば、同期もカット割も残っているので書き出しからやり直せます。`
+        + `（${stalled.k}/${stalled.total}コマ・${stalled.w}x${stalled.h}）`
+      : "同期とカット割は残っています。書き出しだけやり直せます。";
   el.innerHTML = '<i class="fa-solid fa-circle-pause" aria-hidden="true"></i> '
     + `<span><b>${head}</b>${body}</span>`
     + '<button type="button" class="mz-interrupt-close" aria-label="閉じる">×</button>';

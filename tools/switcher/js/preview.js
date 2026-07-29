@@ -34,15 +34,34 @@ MC.preview = {
   },
 
   /* 縦型かどうかでフロートの大きさを変える(縦は高さが出て画面を塞ぐため) */
-  syncFloatShape() {
+  syncFloatShape(override) {
     const holder = document.querySelector(".canvas-holder");
     if (!holder) return;
-    const pr = MC.PRESETS[MC.S.preset];
+    const pr = override || MC.PRESETS[MC.S.preset];
     const tall = !!pr && pr.h > pr.w;
     holder.classList.toggle("float-tall", tall);
   },
 
   applyPreset() {
+    /* 傾きの確認中は、完成の比率(縦9:16など)ではなく**素材そのものの向き**で見せる
+       (2026-07-29 優さん指示「傾き修正は、横向きの動画で」)。
+       横で撮った動画を縦枠に cover-crop すると左右が大きく切れ、
+       いちばん頼りになる水平の手がかり(ヤードライン・フロアライン・壁の境目)が
+       画面の外へ出てしまう。ここだけ素材のアスペクトに合わせる */
+    if (document.body.dataset.mzjPhase === "tilt" && this.soloId != null) {
+      const c = MC.getClip(this.soloId);
+      if (c && c.width && c.height) {
+        const long = 1280;
+        const land = c.width >= c.height;
+        const w2 = land ? long : Math.round(long * c.width / c.height / 2) * 2;
+        const h2 = land ? Math.round(long * c.height / c.width / 2) * 2 : long;
+        if (this.canvas.width !== w2 || this.canvas.height !== h2) {
+          this.canvas.width = w2; this.canvas.height = h2;
+        }
+        this.syncFloatShape(land ? { w: 16, h: 9 } : { w: 9, h: 16 });
+        return;
+      }
+    }
     this.syncFloatShape();
     const { w, h } = MC.PRESETS[MC.S.preset];
     if (this.canvas.width !== w || this.canvas.height !== h) {
