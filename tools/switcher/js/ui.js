@@ -523,6 +523,19 @@ MC.ui.applyLengthChoice = () => {
   return { preset, lenSec, cands, cand };
 };
 
+/* 選び直したら、カット割は作り直さないと合わない。
+   カットリストは**前に選んだ範囲**に対して作られているので、範囲を変えたまま
+   書き出しへ行くと、MC.cutAt が先頭のカットで頭打ちして
+   「新しい区間ぜんぶが1カメラ」になる(黒コマにはならないので気づけない)。
+   lengthDecided を落とすと、ジャーニーがこの工程に留めてくれるので、
+   「この長さで進める」を押さないと先へ進めなくなる */
+MC.ui.invalidateCuts = () => {
+  if (!MC.S.lengthDecided) return;
+  MC.S.lengthDecided = false;
+  MC.saveState();
+  MC.ui.refreshJourney();
+};
+
 MC.ui.renderLengthSec = () => {
   const host = document.getElementById("lengthSec");
   if (!host || host.classList.contains("step-off")) return;
@@ -560,7 +573,9 @@ MC.ui.renderLengthSec = () => {
           : "");
     if (!p.locked) {
       b.onclick = () => {
+        if (p.id === MC.S.exportPreset) return;
         MC.S.exportPreset = p.id;
+        MC.ui.invalidateCuts();     // 範囲が変わる=前のカット割は合わない
         /* 長さが変われば見どころの窓も変わる。始まりは選び直させず、
            同じ性格(startKey)の新しい最適位置へ自動で追従させる */
         MC.ui.renderLengthSec();
@@ -595,14 +610,16 @@ MC.ui.renderLengthSec = () => {
       listen.innerHTML = '<i class="fa-solid fa-play" aria-hidden="true"></i>';
       listen.onclick = e => {
         e.stopPropagation();
-        MC.S.startKey = c.key;
+        if (c.key !== MC.S.startKey) { MC.S.startKey = c.key; MC.ui.invalidateCuts(); }
         MC.ui.renderLengthSec();
         MC.ui.updateTransport();
         MC.preview.seek(MC.S.trimIn);
         MC.preview.play();
       };
       b.onclick = () => {
+        if (c.key === MC.S.startKey) return;
         MC.S.startKey = c.key;
+        MC.ui.invalidateCuts();     // 始まりが変わる=前のカット割は合わない
         MC.ui.renderLengthSec();
         MC.ui.updateTransport();
         MC.preview.seek(MC.S.trimIn);

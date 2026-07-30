@@ -1356,6 +1356,35 @@ async function countSamples(ns, file, fromSec) {
     eq(S.showOut, 510, "選び直しても演奏の範囲は不変");
     return "59秒(終端)→180秒(冒頭) 切り替え可";
   });
+  await test("★決めたあとで選び直したら、カット割を作り直すまで先へ進ませない", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.clips.forEach(c => { c.tiltOk = true; c.syncMethod = "波形"; c.duration = 510; });
+    S.audioDecided = true;
+    S.showIn = 0; S.showOut = 510;
+    Object.assign(w.MC.getClip(1), mkSong(510));
+    S.exportPreset = "short"; S.startKey = "start";
+    /* 「この長さで進める」まで済んだ状態 */
+    S.lengthDecided = true; S.easyDone = true;
+    w.MC.ui.refreshJourney();
+    w.MC.ui._viewPhase = "length";          // ジャーニーから戻って選び直す
+    w.MC.ui.refreshJourney();
+    const cards = [...w.document.querySelectorAll("#lenPresets .len-card:not(.locked)")];
+    const other = cards.find(c => !c.classList.contains("on"));
+    if (!other) throw new Error("選び直せる長さが無い(手元環境で3つ出るはず)");
+    other.click();
+    /* カットリストは前の範囲に対して作られている。作り直さずに書き出すと
+       MC.cutAt が先頭のカットで頭打ちして「新しい区間ぜんぶ1カメラ」になる */
+    if (S.lengthDecided) throw new Error("選び直したのに『決定済み』のまま(古いカット割で書き出せてしまう)");
+    const R = w.MC.ui.STEP_RANK;
+    const reached = w.MC.ui._derivedPhase;
+    if (R[reached] > R.length) throw new Error(`到達点が ${reached} のままで書き出しへ飛べる`);
+    /* 同じものを押し直したときは何も起きない(無駄な作り直しをさせない) */
+    S.lengthDecided = true;
+    w.document.querySelector("#lenPresets .len-card.on").click();
+    if (!S.lengthDecided) throw new Error("同じ長さを押しただけで作り直しになる");
+    return "選び直す→未決定へ / 同じものを押す→そのまま";
+  });
   await test("★工程が7つになっても、現在地がバーからはみ出さない", async () => {
     const w = await compEnv();
     const S = compReset(w);
