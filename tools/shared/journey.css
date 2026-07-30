@@ -25,7 +25,11 @@
   align-items: center;
   /* safe center = 収まるときは中央、溢れたら左端そろえ。
      ただの center だと溢れた分が左へはみ出し、スクロールしても届かない
-     (flexbox の既知の挙動)。Safari 11+ / Chrome 93+ が対応 */
+     (flexbox の既知の挙動)。
+     対応は Chrome 93+ / Safari 15.4+ / Firefox 63+（overflow alignment の
+     safe キーワード）。非対応の端末では素の center に落ち、7工程では
+     左端の工程名が切れる ─ この変更前と同じ見え方に戻るだけで実害は小さい。
+     iOS Safari 16+ を採用基準にしているので本番の対象端末は満たしている */
   justify-content: safe center;
   gap: 6px;
   max-width: 720px;
