@@ -21,7 +21,8 @@ window.MC = {
        だんだん短くなっていく(選び直せなくなる) */
     showIn: null, showOut: null,
     exportPreset: null,   // "short" | "mid" | "full"
-    startKey: null,       // "start" | "climax" | "ballad" | "drumline" | "solo" | "finale"
+    startKey: null,       // "start"|"climax"|"ballad"|"drumline"|"solo"|"finale"|"manual"
+    startAt: null,        // startKey==="manual" のときの開始位置(グローバル秒)
     lengthDecided: false, // 「この長さで進める」を押したか
     /* Phase 2: スイッチング/ワイプ */
     cutList: [],                // [{t, clipId, trans:'cut'|'dissolve', dur}] 昇順・セグメント開始
@@ -168,7 +169,7 @@ MC.saveState = () => {
       /* 長さと始まりの選択(2026-07-31)。trimIn/trimOut と同じく
          「素材が0本のときは書き戻さない」の保護に乗せる(下の keepPrev) */
       showIn: MC.S.showIn, showOut: MC.S.showOut,
-      exportPreset: MC.S.exportPreset, startKey: MC.S.startKey,
+      exportPreset: MC.S.exportPreset, startKey: MC.S.startKey, startAt: MC.S.startAt,
       lengthDecided: MC.S.lengthDecided,
       // クリップidは読込順で変わるためkeyで保存
       clips: keepPrev ? prev.clips : clipsNow,
@@ -178,6 +179,7 @@ MC.saveState = () => {
         trimIn: prev.trimIn ?? 0, trimOut: prev.trimOut ?? null,
         showIn: prev.showIn ?? null, showOut: prev.showOut ?? null,
         exportPreset: prev.exportPreset ?? null, startKey: prev.startKey ?? null,
+        startAt: prev.startAt ?? null,
         lengthDecided: prev.lengthDecided ?? false,
       } : {}),
     }));
@@ -229,6 +231,7 @@ MC.restoreTrim = () => {
     MC.S.showOut = saved.showOut == null ? null : saved.showOut;
     MC.S.exportPreset = saved.exportPreset || null;
     MC.S.startKey = saved.startKey || null;
+    MC.S.startAt = saved.startAt == null ? null : saved.startAt;
     MC.S.lengthDecided = !!saved.lengthDecided;
     MC.restoreInfo.trim = true;
   } catch (e) {}

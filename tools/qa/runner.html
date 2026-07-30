@@ -1356,6 +1356,67 @@ async function countSamples(ns, file, fromSec) {
     eq(S.showOut, 510, "選び直しても演奏の範囲は不変");
     return "59秒(終端)→180秒(冒頭) 切り替え可";
   });
+  await test("★おすすめの5つのほかに「自分で選ぶ」があり、拍にスナップする", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.clips.forEach(c => { c.tiltOk = true; c.syncMethod = "波形"; c.duration = 510; });
+    S.audioDecided = true; S.easyDone = false; S.lengthDecided = false;
+    S.showIn = 0; S.showOut = 510;
+    const song = mkSong(510);
+    // 120BPM = 0.5秒ごとの拍
+    song.beatsData = { beats: Array.from({ length: 1020 }, (_, i) => i * 0.5), bpm: 120, period: 0.5 };
+    Object.assign(w.MC.getClip(1), song);
+    S.exportPreset = "short"; S.startKey = "start"; S.startAt = null;
+    w.MC.ui.refreshJourney();
+    const cards = [...w.document.querySelectorAll("#lenStarts .len-start")];
+    eq(cards.length, 6, "選択肢の数(おすすめ5 + 自分で選ぶ)");
+    const manual = cards.find(c => /自分で選ぶ/.test(c.textContent));
+    if (!manual) throw new Error("「自分で選ぶ」が無い");
+    if (!w.document.getElementById("lenManual").hidden) {
+      throw new Error("選んでいないのにスライダーが出ている(画面が散らかる)");
+    }
+    manual.click();
+    const man = w.document.getElementById("lenManual");
+    if (man.hidden) throw new Error("「自分で選ぶ」を押してもスライダーが出ない");
+    const rng = w.document.getElementById("lenManualRange");
+    eq(Number(rng.min), 0, "スライダーの下限(演奏のはじまり)");
+    eq(Number(rng.max), 451, "スライダーの上限(=演奏の終わり-長さ。はみ出させない)");
+    /* ★ 拍にスナップする。しないと、どこで止めても音楽の途中から始まって
+       頭が欠けたように聞こえる */
+    rng.value = "137.3";
+    rng.dispatchEvent(new w.Event("input"));
+    eq(S.startAt, 137.5, "拍へのスナップ");
+    eq(S.trimIn, 137.5, "書き出しのIN");
+    eq(S.trimOut, 196.5, "書き出しのOUT");
+    /* 上限いっぱいまで動かしても、演奏の終わりを越えない */
+    rng.value = "451";
+    rng.dispatchEvent(new w.Event("input"));
+    if (S.trimOut > 510.01) throw new Error(`演奏の終わりを越えた: ${S.trimOut}`);
+    return "6択・137.3秒→137.5秒(拍)・端でもはみ出さない";
+  });
+  await test("★「自分で選ぶ」は長さを変えても消えず、位置が範囲外に取り残されない", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.clips.forEach(c => { c.tiltOk = true; c.syncMethod = "波形"; c.duration = 510; });
+    S.audioDecided = true; S.easyDone = false; S.lengthDecided = false;
+    S.showIn = 0; S.showOut = 510;
+    const song = mkSong(510);
+    song.beatsData = { beats: Array.from({ length: 1020 }, (_, i) => i * 0.5), bpm: 120, period: 0.5 };
+    Object.assign(w.MC.getClip(1), song);
+    /* 1分で終盤(7:20)を選んでおいて、3分へ伸ばす。
+       そのままだと 440+180=620秒 で演奏(510秒)を60秒も越える */
+    S.exportPreset = "short"; S.startKey = "manual"; S.startAt = 440;
+    w.MC.ui.refreshJourney();
+    eq(S.trimIn, 440, "1分のときのIN");
+    S.exportPreset = "mid";
+    w.MC.ui.renderLengthSec();
+    if (S.trimOut > 510.01) throw new Error(`長さを伸ばしたら演奏をはみ出した: ${S.trimOut}`);
+    eq(S.startKey, "manual", "長さを変えても「自分で選ぶ」のまま");
+    if (Math.abs((S.trimOut - S.trimIn) - 180) > 0.01) {
+      throw new Error(`3分になっていない: ${(S.trimOut - S.trimIn).toFixed(2)}`);
+    }
+    return `IN 440s → ${S.trimIn}s へ引き戻し・OUT ${S.trimOut}s`;
+  });
   await test("★決めたあとで選び直したら、カット割を作り直すまで先へ進ませない", async () => {
     const w = await compEnv();
     const S = compReset(w);

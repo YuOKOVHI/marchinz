@@ -514,13 +514,25 @@ MC.ui.applyLengthChoice = () => {
   const lenSec = MC.highlight.presetSec(preset, s1 - s0);
   const audioClip = MC.getClip(MC.S.audioClipId);
   const cands = MC.highlight.candidates(audioClip, lenSec, s0, s1);
-  const cand = cands.find(c => c.key === MC.S.startKey) || cands[0];
+  /* 選ぶ余地があるか。候補の数ではなく**実際の自由度**で見る ─
+     候補が1つしか作れない曲でも、余地があるなら自分で決められるべき */
+  const room = (s1 - s0) - lenSec;
+  const canChoose = room > 1;
+  let cand;
+  if (MC.S.startKey === "manual" && canChoose) {
+    const base = MC.S.startAt == null ? cands[0].t : MC.S.startAt;
+    const t = MC.highlight.snapToBeat(base, audioClip, s0, s1 - lenSec);
+    MC.S.startAt = t;
+    cand = { ...MC.highlight.MANUAL, t, dur: lenSec, z: 0 };
+  } else {
+    cand = cands.find(c => c.key === MC.S.startKey) || cands[0];
+  }
   MC.S.exportPreset = preset.id;
   MC.S.startKey = cand.key;
   MC.S.trimIn = cand.t;
   MC.S.trimOut = Math.min(s1, cand.t + lenSec);
   MC.saveState();
-  return { preset, lenSec, cands, cand };
+  return { preset, lenSec, cands, cand, canChoose, room, audioClip };
 };
 
 /* 選び直したら、カット割は作り直さないと合わない。
@@ -547,7 +559,7 @@ MC.ui.renderLengthSec = () => {
 
   const applied = MC.ui.applyLengthChoice();
   if (!applied) return;
-  const { preset, lenSec, cands, cand } = applied;
+  const { preset, lenSec, cands, cand, canChoose, audioClip } = applied;
   const [s0, s1] = MC.ui.showRange();
   const list = MZ_LIMITS.exportPresets();
 
@@ -587,11 +599,11 @@ MC.ui.renderLengthSec = () => {
   }
 
   /* --- 始まりのカード --- */
-  const canChoose = cands.length > 1;
   startBox.hidden = !canChoose;
   startHost.innerHTML = "";
   if (canChoose) {
-    for (const c of cands) {
+    /* おすすめの5つ + 「自分で選ぶ」。おすすめで足りない人を行き止まりにしない */
+    for (const c of [...cands, { ...MC.highlight.MANUAL, t: MC.S.startAt == null ? s0 : MC.S.startAt }]) {
       const b = document.createElement("button");
       b.type = "button";
       b.className = "len-start" + (c.key === cand.key ? " on" : "");
@@ -629,11 +641,57 @@ MC.ui.renderLengthSec = () => {
     }
   }
 
+  /* --- 「自分で選ぶ」のスライダー --- */
+  const man = document.getElementById("lenManual");
+  const rng = document.getElementById("lenManualRange");
+  const atEl = document.getElementById("lenManualAt");
+  const hereBtn = document.getElementById("lenManualHere");
+  const hi = Math.max(s0, s1 - lenSec);
+  if (man) {
+    man.hidden = !(canChoose && cand.key === "manual");
+    if (!man.hidden) {
+      rng.min = String(s0);
+      rng.max = String(Math.max(s0 + 0.1, hi));
+      rng.value = String(cand.t);
+      atEl.textContent = MC.ui.fmtClock(cand.t - s0);
+      /* ドラッグ中は**作り直さない**。ここで renderLengthSec を呼ぶと
+         スライダー自身が作り直されて指が離れてしまう。
+         画面の数字と範囲だけ動かし、確定(change)でまとめて反映する */
+      const live = t => {
+        MC.S.startAt = t;
+        MC.S.trimIn = t;
+        MC.S.trimOut = Math.min(s1, t + lenSec);
+        atEl.textContent = MC.ui.fmtClock(t - s0);
+        const chip = startHost.querySelector(".len-start.on .len-at");
+        if (chip) chip.textContent = MC.ui.fmtClock(t - s0);
+        summary.textContent =
+          `${MC.ui.fmtLen(MC.S.trimOut - MC.S.trimIn)}の動画を、`
+          + `演奏がはじまって ${MC.ui.fmtClock(t - s0)} のところから作ります`;
+        MC.ui.updateTransport();
+        MC.preview.seek(t);
+      };
+      rng.oninput = () => live(MC.highlight.snapToBeat(
+        parseFloat(rng.value), audioClip, s0, hi));
+      rng.onchange = () => { MC.ui.invalidateCuts(); MC.saveState(); };
+      /* プレビューで気になる場面を見つけた人の近道。
+         スライダーで8分の中の1点を指で当てるのは、375pxではまず無理 */
+      hereBtn.onclick = () => {
+        const t = MC.highlight.snapToBeat(MC.S.t, audioClip, s0, hi);
+        rng.value = String(t);
+        live(t);
+        MC.ui.invalidateCuts();
+        MC.saveState();
+      };
+    }
+  }
+
   /* --- まとめ --- */
   const [tIn, tOut] = MC.trimRange();
-  summary.textContent = canChoose
-    ? `${MC.ui.fmtLen(tOut - tIn)}の動画を、「${cand.label}」から作ります`
-    : `演奏ぜんぶ（${MC.ui.fmtLen(tOut - tIn)}）を1本にします`;
+  summary.textContent = !canChoose
+    ? `演奏ぜんぶ（${MC.ui.fmtLen(tOut - tIn)}）を1本にします`
+    : cand.key === "manual"
+      ? `${MC.ui.fmtLen(tOut - tIn)}の動画を、演奏がはじまって ${MC.ui.fmtClock(tIn - s0)} のところから作ります`
+      : `${MC.ui.fmtLen(tOut - tIn)}の動画を、「${cand.label}」から作ります`;
 };
 
 /* 演奏のはじまりを0とした位置の表記(0:00形式)。

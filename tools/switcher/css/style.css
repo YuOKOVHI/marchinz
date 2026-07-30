@@ -1370,3 +1370,14 @@ body.mz-diag-noskip #exportSec::before {
 .len-summary:empty { display: none; }
 /* 選ぶ余地が無いとき(演奏まるごとを覆う長さ)は問い自体を出さない */
 #lenStartBox[hidden] { display: none; }
+
+/* 「自分で選ぶ」の位置スライダー(2026-07-31 優さん指示)。
+   おすすめの5つで足りない人の逃げ道。拍にスナップするので、
+   どこで止めても音楽の頭から始まる */
+.len-manual { margin-top: 8px; padding: 12px; border-radius: 12px;
+  background: var(--panel2); border: 1px solid var(--line); }
+.len-manual-range { width: 100%; margin: 0 0 8px; accent-color: var(--acc); height: 28px; }
+.len-manual-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.len-manual-at { font-size: 15px; font-weight: 800; color: var(--acc-deep);
+  font-variant-numeric: tabular-nums; }
+.len-manual-row .btn { margin-left: auto; }

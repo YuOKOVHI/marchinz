@@ -43,6 +43,8 @@ MC.highlight = {
   /* アイコンは旗/チェッカーフラッグの対にする。以前は「スタート」を fa-play に
      していたが、各カード右端の「ここを聴く」も▶なので同じ記号が並んで見えた */
   START:  { key: "start",  label: "スタート",   why: "演奏のはじまりから", icon: "fa-flag" },
+  /* おすすめの5つで足りないとき用。音では探さず、本人が決める(2026-07-31 優さん指示) */
+  MANUAL: { key: "manual", label: "自分で選ぶ", why: "好きな場所から始められます", icon: "fa-hand-pointer" },
   FINALE: { key: "finale", label: "フィナーレ", why: "終わりまで入るところ", icon: "fa-flag-checkered" },
   /* 候補どうしがこれより近ければ同じ場面とみなす。長さに比例させるが、
      曲の長さでも頭を打つ ─ 比例だけにすると、3分×8分30秒の曲では
@@ -161,6 +163,27 @@ MC.highlight.candidates = (audioClip, lenSec, t0, t1) => {
   seat(H.Z_MIN);   // まず「その曲に本当にある」性格だけで埋める
   seat(-Infinity); // 席が余ったら、弱い性格でも埋めて5つに近づける
   return kept.sort((a, b) => a.t - b.t);
+};
+
+/* 自分で決めた位置を「使える位置」へ丸める。
+   ★ 拍にスナップする。0.1秒きざみのスライダーをそのまま使うと、
+     どこで止めても音楽の途中から始まって頭が欠けたように聞こえる。
+     拍が取れていない素材(拍検出に失敗)は素通しする */
+MC.highlight.snapToBeat = (t, audioClip, lo, hi) => {
+  const clamp = x => Math.max(lo, Math.min(hi, x));
+  const B = audioClip && audioClip.beatsData;
+  if (!B || !B.beats || !B.beats.length) return clamp(t);
+  const off = audioClip.offset || 0;
+  let best = null, bd = Infinity;
+  for (const b of B.beats) {
+    const g = b + off;
+    if (g < lo - 1e-6 || g > hi + 1e-6) continue;
+    const d = Math.abs(g - t);
+    if (d < bd) { bd = d; best = g; }
+  }
+  /* 近くに拍が無い(範囲の端など)ときは丸めない。無理に遠くの拍へ飛ばすと
+     スライダーを動かしても位置が変わらないように見える */
+  return (best != null && bd <= 1.0) ? best : clamp(t);
 };
 
 /* 選んだ長さの実尺を決める。
