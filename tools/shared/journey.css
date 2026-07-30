@@ -23,11 +23,26 @@
 .mzj-track {
   display: flex;
   align-items: center;
-  justify-content: center;
+  /* safe center = 収まるときは中央、溢れたら左端そろえ。
+     ただの center だと溢れた分が左へはみ出し、スクロールしても届かない
+     (flexbox の既知の挙動)。Safari 11+ / Chrome 93+ が対応 */
+  justify-content: safe center;
   gap: 6px;
   max-width: 720px;
   margin: 0 auto;
+  /* 工程が増えて並べきれないときは横スクロールへ逃がす(2026-07-31)。
+     工程名を削らずに済ませるため。現在地は journey.js が中央へ寄せる */
+  overflow-x: auto;
+  overscroll-behavior-x: contain;   /* 端まで来てもページごと横に振らせない */
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  scroll-padding-inline: 10px;
+  /* scroll-behavior: smooth は付けない。付けると scrollLeft への代入まで
+     アニメーションになり、工程が続けて変わると途中で捨てられて
+     **どこへも着かない**(実測: 代入直後も 0 のままだった)。
+     現在地の寄せは journey.js が behavior:"instant" で確実に行う */
 }
+.mzj-track::-webkit-scrollbar { display: none; }
 
 /* フェーズ間の細い接続線 */
 .mzj-link {

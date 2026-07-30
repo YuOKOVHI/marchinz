@@ -86,7 +86,32 @@ window.MZJourney = (() => {
       b.disabled = !sel;
       b.setAttribute("aria-current", id === cur ? "step" : "false");
     });
+    centerCurrent();
     refreshActivity();
+  }
+
+  /* 工程が増えると狭い画面(375px)では並べきれない。工程名を削るより
+     横スクロールにして、現在地を必ず真ん中へ寄せる(2026-07-31)。
+     Switcherが7工程になった時点で実測36px溢れ、左端の「動画」が切れ、
+     右端の「書出」は名前ごと画面外に出ていた。
+     scrollIntoView は sticky バーの外側(ページ)まで動かしうるので、
+     scrollLeft を自分で計算する */
+  function centerCurrent() {
+    const track = root && root.querySelector(".mzj-track");
+    if (!track) return;
+    const el = track.querySelector(".mzj-phase.current");
+    if (!el) return;
+    const over = track.scrollWidth - track.clientWidth;
+    if (over <= 1) return;                       // 収まっている=動かさない
+    const want = el.offsetLeft - (track.clientWidth - el.offsetWidth) / 2;
+    const next = Math.max(0, Math.min(over, want));
+    if (Math.abs(track.scrollLeft - next) < 2) return;
+    /* 必ず behavior:"instant" で。smooth にすると(CSSの scroll-behavior 経由でも)
+       工程が続けて変わったとき前のアニメーションが途中で捨てられ、
+       **どこへも着かない**まま終わる ─ 正しい left を渡しているのに
+       scrollLeft が 0 のままになる現象を実測で確認した */
+    try { track.scrollTo({ left: next, behavior: "instant" }); }
+    catch (e) { track.scrollLeft = next; }
   }
 
   /* MZPの現在の進捗を映す。無ければ現在フェーズのヒント */

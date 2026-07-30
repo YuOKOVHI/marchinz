@@ -1,11 +1,22 @@
 "use strict";
 /* ============ クリエイターツール共通: 取り込み・書き出し制限 ============
-   3段階: ゲスト(動画5分・写真1枚) < 登録ユーザー(動画13分・写真5枚)
-        < 管理者ログイン・手元環境(上限なし)。
-   書き出しは別枠: ゲスト5分 / 登録8分30秒 / 上限なし。
-   マーチングのショウが8分なので、登録ユーザーは余裕をみて8分30秒。
-   取り込みが13分あるのは、複数カメラの回し始めのズレ(実測で最大5分超)を
-   吸収したうえでショウ全体が入るようにするため。
+   会員種別(ゲスト/登録/管理者)と**端末(スマホ・タブレット / パソコン)**の
+   2軸で決める(2026-07-31 優さん指示)。
+
+     　　　　　　　　　取り込み1本   書き出し
+     ゲスト(端末問わず)     5分       1分未満
+     登録 × スマホ          5分        3分
+     登録 × パソコン       12分       10分
+     管理者・手元環境      上限なし   上限なし
+
+   端末を軸に入れた理由: スマホは動画を丸ごとメモリに載せるため、長い書き出しが
+   途中で落ちる(iPhone実機で8分12秒が62%で停止)。落ちる長さを許可しておいて
+   「落ちました」と言うより、最初から届く長さだけを見せる方が親切。
+   ゲストは端末に関わらず1分未満(登録の壁を端末でブレさせない。優さん判断)。
+
+   書き出しは3つの長さから選ぶ方式にした(EXPORT_PRESETS)。上限を超える
+   プリセットは鍵つきで見せ、「登録すると/パソコンだと使える」と伝える。
+
    Privacyの動画は作業範囲方式(最大60秒を選ぶ)のため、誰でも10分まで。
 
    本体サイト(auth.js)が管理者ログイン時に localStorage へ印を書き、
@@ -49,24 +60,39 @@ window.MZ_LIMITS = (() => {
     || privateIp;
 
   const unlimited = admin || local;
+
+  /* 端末の種別。スマホ・タブレットか、パソコンか(2026-07-31)。
+     iPadは「デスクトップ用サイトを表示」が既定なので UA では Mac に見える。
+     タッチ点数で見分ける(Privacy/visual.js が SIMD 判定で使っているのと同じ手) */
+  const ua = navigator.userAgent || "";
+  const iPadDesktopUA = navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+  const mobile = /iPhone|iPad|iPod|Android|Mobile/i.test(ua) || iPadDesktopUA;
+  const bigDevice = !mobile;   // パソコン(書き出しを長く許せる)
+
   /* βテスト参加者の特典・上限拡大は**ここで beta を参照して**足す(2026-07-23)。
-     例: maxExportSec: unlimited ? Infinity : beta ? 900 : member ? 510 : 300
+     例: maxExportSec: unlimited ? Infinity : beta ? 900 : ...
      将来の有料会員も同じ型(profileの属性→auth.jsが印→ここで参照)で1箇所に集める */
   const L = {
-    admin, local, member, beta, unlimited,
-    // ReAngle/Switcher: ゲスト5分・登録13分(2026-07-20改定)
-    maxVideoSec: unlimited ? Infinity : member ? 780.5 : 300.5,
-    videoLimitLabel: member ? "13分" : "5分",   // エラーメッセージ用
+    admin, local, member, beta, unlimited, mobile, bigDevice,
+    /* 取り込める1本の長さ。登録 × パソコン だけ12分、それ以外は5分。
+       12分あるのは、複数カメラの回し始めのズレ(実測で最大5分超)を
+       吸収したうえでショウ全体が入るようにするため */
+    maxVideoSec: unlimited ? Infinity : (member && bigDevice) ? 720.5 : 300.5,
+    videoLimitLabel: (member && bigDevice) ? "12分" : "5分",   // エラーメッセージ用
 
     /* 書き出せる長さ(IN〜OUTの範囲)。取り込みとは別枠。
-       ショウ8分 + 前後の余白で 8分30秒。ゲストは取り込みと同じ5分。
+       ゲスト1分未満 / 登録×スマホ 3分 / 登録×パソコン 10分。
        ※端末のメモリ上限(MC.exporter.MEM_HARD_LIMIT)とは別で、
          実際にはどちらか厳しい方が効く */
-    maxExportSec: unlimited ? Infinity : member ? 510 : 300,
-    exportLimitLabel: member ? "8分30秒" : "5分",
+    maxExportSec: unlimited ? Infinity
+      : !member ? 59
+      : bigDevice ? 600 : 180,
+    exportLimitLabel: !member ? "1分未満" : bigDevice ? "10分" : "3分",
     /* 登録ユーザーの完成尺。ゲストに「登録すると何分まで作れるか」を
-       案内するときにも使うため、ロールに依らない定数として持つ */
-    memberExportLabel: "8分30秒",
+       案内するときにも使うため、ロールに依らない定数として持つ。
+       いま使っている端末で登録したらどうなるかを言う(スマホで「10分」と
+       言われても、登録しても3分なので嘘になる) */
+    memberExportLabel: bigDevice ? "10分" : "3分",
     // Privacyの動画は誰でも10分(モザイク作業は選んだ範囲だけのため)
     maxPrivacyVideoSec: unlimited ? Infinity : 600.5,
     maxPhotos: unlimited ? Infinity : member ? 5 : 1,   // 一度に扱える写真の枚数
@@ -87,6 +113,34 @@ window.MZ_LIMITS = (() => {
     vlogMinSec: 181,                                   // MarchinZのYouTube一覧に載せられる下限(3分01秒)
     vlogMaxSec: unlimited ? Infinity : member ? 300 : 180,          // 完成: 登録5分/ゲスト3分
     vlogBitrate: 8e6,                                  // 書き出しビットレート(将来のexporter用)
+  };
+
+  /* ---- 書き出す長さの選択肢(2026-07-31 優さん指示) ----
+     「1分未満 / 3分未満 / 8分30秒前後(おすすめ)」の3つから選ぶ。
+     使えないものは**消さずに鍵つきで見せる**。何をすれば使えるようになるかを
+     その場で言うため(消してしまうと、そもそも存在に気づけない)。
+     full の実尺は「演奏まるごと(最大 maxExportSec)」なので、呼ぶ側が
+     演奏の長さで丸める。ここの sec は上限比較と表示のための代表値 */
+  L.EXPORT_PRESETS = [
+    { id: "short", label: "ショート",   sec: 59,  hint: "SNSに出しやすい長さ" },
+    { id: "mid",   label: "ミドル",     sec: 180, hint: "見どころをまとめた長さ" },
+    { id: "full",  label: "まるごと",   sec: 510, hint: "ショウ1本ぶん", whole: true },
+  ];
+
+  /* いまの人・いまの端末で使えるかを添えて返す。
+     locked のときは「何をすれば使えるか」を1文で持たせる */
+  L.exportPresets = () => {
+    const memberHere = bigDevice ? 600 : 180;   // いまの端末で登録したときの上限
+    return L.EXPORT_PRESETS.map(p => {
+      const locked = p.sec > L.maxExportSec;
+      let unlock = "";
+      if (locked) {
+        if (!member && p.sec <= memberHere) unlock = "無料登録で使えます";
+        else if (!member) unlock = "無料登録して、パソコンで開くと使えます";
+        else unlock = "パソコンで開くと使えます";
+      }
+      return { ...p, locked, unlock };
+    });
   };
 
   /* 上限なし: 上限の文言([data-limit-note])を隠して帯を出す。
@@ -131,8 +185,11 @@ window.MZ_LIMITS = (() => {
       hosts.forEach(el => { el.innerHTML = html; });
       return;
     }
+    /* 素材の上限は端末で変わる。スマホは登録しても5分のままなので、
+       「登録すると素材が12分に」と書くと嘘になる(2026-07-31) */
+    const memberVideoHere = bigDevice ? "12分" : "5分";
     const g = kind === "photo" ? "1枚" : "5分";
-    const m = kind === "photo" ? "5枚" : "13分";
+    const m = kind === "photo" ? "5枚" : memberVideoHere;
     let html;
     if (L.unlimited) {
       html = '<p class="mz-plan">上限なしで使えます。</p>';
@@ -141,14 +198,19 @@ window.MZ_LIMITS = (() => {
          どちらがどれだけ使えるのかを1文で言い切る(2026-07-21 優さん指示) */
       html = kind === "photo"
         ? `<p class="mz-plan">${m}まで使えます。</p>`
-        : `<p class="mz-plan">素材は${m}まで使用でき、完成は${L.exportLimitLabel}までです。</p>`;
+        : `<p class="mz-plan">素材は${L.videoLimitLabel}まで使用でき、完成は${L.exportLimitLabel}までです。`
+          + (mobile ? "パソコンで開くと素材12分・完成10分になります。" : "")
+          + "</p>";
+    } else if (kind === "photo") {
+      html = `<p class="mz-plan">ゲストは${g}まで、登録ユーザーは${m}まで。`
+        + ' <a href="/#signup">無料登録</a></p>';
     } else {
-      html = kind === "photo"
-        ? `<p class="mz-plan">ゲストは${g}まで、登録ユーザーは${m}まで。`
-          + ' <a href="/#signup">無料登録</a></p>'
-        : `<p class="mz-plan">ゲストは素材${g}・完成${L.exportLimitLabel}まで。`
-          + `登録すると素材${m}・完成${L.memberExportLabel}に。`
-          + ' <a href="/#signup">無料登録</a></p>';
+      /* 素材の上限が登録で変わらない端末(スマホ)では、完成の話だけをする */
+      const same = g === m;
+      html = `<p class="mz-plan">ゲストは素材${g}・完成${L.exportLimitLabel}まで。`
+        + (same ? `登録すると完成が${L.memberExportLabel}に。`
+                : `登録すると素材${m}・完成${L.memberExportLabel}に。`)
+        + ' <a href="/#signup">無料登録</a></p>';
     }
     hosts.forEach(el => { el.innerHTML = html; });
   };
@@ -161,16 +223,21 @@ window.MZ_LIMITS = (() => {
     const host = document.querySelector("[data-mz-plan]");
     if (!host || document.getElementById("mzSignupPerks")) return;
     const tool = document.body.getAttribute("data-mz-tool") || "";
+    /* 端末で変わる項目は、いま使っている端末の値で書く(2026-07-31)。
+       スマホで「12分になります」と出しても、登録しても5分のままで嘘になる */
+    const vLine = bigDevice ? "取り込める動画: 5分 → 12分" : null;
+    const eLine = `書き出せる長さ: 1分未満 → ${bigDevice ? "10分(ショウ全体が入ります)" : "3分"}`;
     const per = {
       switcher: [
-        "取り込める動画: 5分 → 13分",
-        "書き出せる長さ: 5分 → 8分30秒(ショウ全体が入ります)",
+        vLine,
+        eLine,
+        bigDevice ? null : "パソコンで開くと、さらに10分まで書き出せます",
         "「こだわり」設定(同期・レイアウト・仕上げの調整)",
-      ],
+      ].filter(Boolean),
       reangle: [
-        "取り込める動画: 5分 → 13分",
-        "書き出せる長さ: 5分 → 8分30秒",
-      ],
+        vLine,
+        eLine,
+      ].filter(Boolean),
       privacy: [
         "一度に扱える写真: 1枚 → 5枚",
       ],

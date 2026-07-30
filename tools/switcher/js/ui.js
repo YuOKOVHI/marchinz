@@ -24,12 +24,20 @@ MC.ui.showExportLimitHelp = (wantSec, lim) => {
     `<span class="warn">書き出せるのは${MC.ui.esc(lim.exportLimitLabel)}までです`
     + `（いまの範囲は${MC.ui.fmtTime(wantSec)}）</span>`;
   const note = $("#doneNote");
-  if (lim.member) {
-    note.textContent = "「ここから書き出す IN」「ここまで OUT」で範囲を狭めてください。";
+  /* 上限は「会員種別 × 端末」で決まる(2026-07-31)。次の一手も相手で変える ─
+     スマホの登録ユーザーに「無料登録すると」と言っても、登録済みなので伸びない */
+  const back = "「長さと始まり」に戻ると、収まる長さを選び直せます。";
+  if (lim.unlimited) {
+    note.textContent = back;
+  } else if (lim.member && lim.mobile) {
+    note.textContent = back + "パソコンで開くと10分まで書き出せます（ショウ全体が入ります）。";
+  } else if (lim.member) {
+    note.textContent = back;
   } else {
-    note.innerHTML = "「ここから書き出す IN」「ここまで OUT」で範囲を狭めてください。"
-      + '無料登録すると8分30秒まで書き出せます（ショウ全体が入ります）。 '
-      + '<a href="/#signup">無料登録</a>';
+    note.innerHTML = MC.ui.esc(back)
+      + `無料登録すると${MC.ui.esc(lim.memberExportLabel)}まで書き出せます。`
+      + (lim.mobile ? "パソコンで開けば10分まで（ショウ全体が入ります）。" : "")
+      + ' <a href="/#signup">無料登録</a>';
   }
 };
 
@@ -328,7 +336,8 @@ MC.ui.checkExportable = () => {
      書き出せる長さを超えたときだけ、ここで知らせて詰める(優さん指示)。
      効く上限は2つあり、厳しい方が効く:
        hardMax … 端末のメモリから来る物理上限(iPhoneで約8分41秒)
-       roleMax … 会員種別の上限(登録8分30秒 / ゲスト5分 / 管理者は無制限) */
+       roleMax … 会員種別と端末の上限(2026-07-31: ゲスト1分未満 /
+                 登録×スマホ3分 / 登録×パソコン10分 / 管理者は無制限) */
   const hardMax = MC.exporter.maxExportableSec();
   const roleMax = (window.MZ_LIMITS && MZ_LIMITS.maxExportSec) || Infinity;
   const limit = Math.min(hardMax, roleMax);
@@ -340,7 +349,9 @@ MC.ui.checkExportable = () => {
   /* 詰める長さは「ショウ1本ぶん」の 8分30秒 を基本にする。
      この数字の根拠は**マーチングのショウが規定8分**であること(2026-07-23 優さん確認)。
      端末のメモリ上限から逆算した数字ではないので、端末が速くなっても変えない。
-     ゲスト等で上限がさらに短ければそちらに従う */
+     ゲスト等で上限がさらに短ければそちらに従う。
+     ※通常はここに来ない ─「長さと始まり」で選べる長さは最初から上限内に
+       丸めてある(highlight.presetSec)。手でIN/OUTを動かしたときの受け皿 */
   const SHOW_SEC = 510;                            // 8分30秒
   const fitSec = Math.min(limit, isFinite(roleMax) ? roleMax : SHOW_SEC);
   const byDevice = hardMax <= roleMax;             // どちらの制限で止まっているか
@@ -372,6 +383,10 @@ MC.ui.checkExportable = () => {
     MC.ui.renderAll();
     MC.preview.seek(i0);
     MC.ui.toast(`INから ${fitLabel} に詰めました`);
+    /* lengthDecided は落とさない。落とすと現在地が「長さと始まり」へ戻り、
+       書き出し画面の警告を押した人がいきなり2工程前へ飛ばされる。
+       手で詰めた範囲はこのまま使い、あの画面を開き直したときだけ
+       選択(exportPreset/startKey)から作り直される */
     MC.ui.checkExportable();
   };
 };
@@ -409,6 +424,11 @@ MC.ui.focusNextAction = () => {
 /* おまかせ完了状態の解除。素材・モードが変わったら準備からやり直し */
 MC.ui.resetEasyDone = () => {
   MC.S.audioDecided = false;   // 素材が変われば音声も選び直し(2026-07-24)
+  /* 素材が変われば演奏の範囲も見どころも変わる。長さの選択もやり直し(2026-07-31)。
+     showIn/showOut を消すのは、古い演奏範囲から作った候補を見せないため */
+  MC.S.lengthDecided = false;
+  MC.S.showIn = null;
+  MC.S.showOut = null;
   if (!MC.S.easyDone) return;
   MC.S.easyDone = false;
   MC.ui.renderEasyButton();
@@ -451,6 +471,161 @@ MC.ui.renderLimitWhy = () => {
   if (badge) badge.hidden = true;
 };
 
+/* ============ 長さと始まりを決める(2026-07-31 優さん指示) ============
+   8分のショウから1分だけ切り出すなら「どこの1分か」を決めないといけない。
+   問いを2つ(何分にするか / どこから始めるか)だけに絞り、選んだ瞬間に
+   書き出し範囲へ反映してプレビューで確かめられるようにする。 */
+
+/* 「分」「分秒」の読みやすい表記。fmtTime(0:59.0)は時計の表記で、
+   長さの表記としては読みにくい */
+MC.ui.fmtLen = sec => {
+  const s = Math.max(0, Math.round(sec));
+  const m = Math.floor(s / 60), r = s % 60;
+  if (!m) return `${r}秒`;
+  return r ? `${m}分${String(r).padStart(2, "0")}秒` : `${m}分`;
+};
+
+/* 演奏そのものの範囲(グローバル秒)。見つかっていなければ素材全体 */
+MC.ui.showRange = () => {
+  const dur = MC.timelineDuration();
+  const a = MC.S.showIn == null ? 0 : Math.max(0, Math.min(MC.S.showIn, dur));
+  const b = MC.S.showOut == null ? dur : Math.max(0, Math.min(MC.S.showOut, dur));
+  return [a, Math.max(a + 1, b)];
+};
+
+/* いま選ばれているプリセット(使えないものを選んでいたら、使える中で一番長いもの)。
+   既定を「使える中で一番長い」にしているのは、これまでの動き(演奏まるごと)に
+   一番近いのが「まるごと」だから ─ 上限が足りる人には今までどおりに見える */
+MC.ui.currentPreset = () => {
+  const list = (window.MZ_LIMITS && MZ_LIMITS.exportPresets) ? MZ_LIMITS.exportPresets() : [];
+  if (!list.length) return null;
+  const open = list.filter(p => !p.locked);
+  const pick = list.find(p => p.id === MC.S.exportPreset && !p.locked);
+  return pick || open[open.length - 1] || list[0];
+};
+
+/* 選択を書き出し範囲(trimIn/trimOut)へ落とす。
+   ★ showIn/showOut は動かさない。ここを潰すと、長さを選び直すたびに
+     元の演奏範囲が短くなっていって選び直せなくなる */
+MC.ui.applyLengthChoice = () => {
+  const [s0, s1] = MC.ui.showRange();
+  const preset = MC.ui.currentPreset();
+  if (!preset) return null;
+  const lenSec = MC.highlight.presetSec(preset, s1 - s0);
+  const audioClip = MC.getClip(MC.S.audioClipId);
+  const cands = MC.highlight.candidates(audioClip, lenSec, s0, s1);
+  const cand = cands.find(c => c.key === MC.S.startKey) || cands[0];
+  MC.S.exportPreset = preset.id;
+  MC.S.startKey = cand.key;
+  MC.S.trimIn = cand.t;
+  MC.S.trimOut = Math.min(s1, cand.t + lenSec);
+  MC.saveState();
+  return { preset, lenSec, cands, cand };
+};
+
+MC.ui.renderLengthSec = () => {
+  const host = document.getElementById("lengthSec");
+  if (!host || host.classList.contains("step-off")) return;
+  const presetHost = document.getElementById("lenPresets");
+  const startBox = document.getElementById("lenStartBox");
+  const startHost = document.getElementById("lenStarts");
+  const summary = document.getElementById("lenSummary");
+  if (!presetHost || !startHost) return;
+
+  const applied = MC.ui.applyLengthChoice();
+  if (!applied) return;
+  const { preset, lenSec, cands, cand } = applied;
+  const [s0, s1] = MC.ui.showRange();
+  const list = MZ_LIMITS.exportPresets();
+
+  /* --- 長さのカード --- */
+  presetHost.innerHTML = "";
+  for (const p of list) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "len-card" + (p.locked ? " locked" : "")
+      + (!p.locked && p.id === preset.id ? " on" : "");
+    b.setAttribute("role", "radio");
+    b.setAttribute("aria-checked", String(!p.locked && p.id === preset.id));
+    if (p.locked) b.setAttribute("aria-disabled", "true");
+    /* 「まるごと」は代表値ではなく演奏の実尺で見せる。
+       8分30秒“前後”という指示は、曲の実際の長さに合わせるという意味 */
+    const shown = p.whole ? Math.min(p.sec, s1 - s0) : p.sec;
+    b.innerHTML =
+      `<span class="len-name">${MC.ui.esc(p.label)}</span>`
+      + `<span class="len-dur">${MC.ui.esc(MC.ui.fmtLen(shown))}</span>`
+      + `<span class="len-why">${MC.ui.esc(p.hint)}</span>`
+      + (p.locked
+          ? `<span class="len-unlock"><i class="fa-solid fa-lock" aria-hidden="true"></i>${MC.ui.esc(p.unlock)}</span>`
+          : "");
+    if (!p.locked) {
+      b.onclick = () => {
+        MC.S.exportPreset = p.id;
+        /* 長さが変われば見どころの窓も変わる。始まりは選び直させず、
+           同じ性格(startKey)の新しい最適位置へ自動で追従させる */
+        MC.ui.renderLengthSec();
+        MC.ui.updateTransport();
+        MC.preview.seek(MC.S.trimIn);
+      };
+    }
+    presetHost.appendChild(b);
+  }
+
+  /* --- 始まりのカード --- */
+  const canChoose = cands.length > 1;
+  startBox.hidden = !canChoose;
+  startHost.innerHTML = "";
+  if (canChoose) {
+    for (const c of cands) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "len-start" + (c.key === cand.key ? " on" : "");
+      b.setAttribute("role", "radio");
+      b.setAttribute("aria-checked", String(c.key === cand.key));
+      b.innerHTML =
+        `<span class="len-ico"><i class="fa-solid ${MC.ui.esc(c.icon)}" aria-hidden="true"></i></span>`
+        + `<span class="len-body"><span class="len-label">${MC.ui.esc(c.label)}</span>`
+        + `<span class="len-reason">${MC.ui.esc(c.why)}</span></span>`
+        + `<span class="len-at">${MC.ui.esc(MC.ui.fmtClock(c.t - s0))}</span>`;
+      const listen = document.createElement("button");
+      listen.type = "button";
+      listen.className = "len-listen";
+      listen.title = "ここから聴いてみる";
+      listen.setAttribute("aria-label", `${c.label}から聴いてみる`);
+      listen.innerHTML = '<i class="fa-solid fa-play" aria-hidden="true"></i>';
+      listen.onclick = e => {
+        e.stopPropagation();
+        MC.S.startKey = c.key;
+        MC.ui.renderLengthSec();
+        MC.ui.updateTransport();
+        MC.preview.seek(MC.S.trimIn);
+        MC.preview.play();
+      };
+      b.onclick = () => {
+        MC.S.startKey = c.key;
+        MC.ui.renderLengthSec();
+        MC.ui.updateTransport();
+        MC.preview.seek(MC.S.trimIn);
+      };
+      b.appendChild(listen);
+      startHost.appendChild(b);
+    }
+  }
+
+  /* --- まとめ --- */
+  const [tIn, tOut] = MC.trimRange();
+  summary.textContent = canChoose
+    ? `${MC.ui.fmtLen(tOut - tIn)}の動画を、「${cand.label}」から作ります`
+    : `演奏ぜんぶ（${MC.ui.fmtLen(tOut - tIn)}）を1本にします`;
+};
+
+/* 演奏のはじまりを0とした位置の表記(0:00形式)。
+   fmtTime は小数第1位まで出すので、場所を指すには細かすぎる */
+MC.ui.fmtClock = sec => {
+  const s = Math.max(0, Math.round(sec));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+};
+
 MC.ui.renderAll = () => {
   MC.ui.applyGuestLocks();
   MC.ui.renderQualityPicker();
@@ -488,7 +663,7 @@ MC.ui.renderAll = () => {
 };
 
 /* ---- ジャーニーバー(どのフェーズにいるかの常時表示) ---- */
-MC.ui.JOURNEY_SECTIONS = { mat: "#dropSec", tilt: "#tiltSec", sync: "#syncSec", audio: "#audioSec", polish: "#layoutSec", export: "#exportSec" };
+MC.ui.JOURNEY_SECTIONS = { mat: "#dropSec", tilt: "#tiltSec", sync: "#syncSec", audio: "#audioSec", length: "#lengthSec", polish: "#layoutSec", export: "#exportSec" };
 
 MC.ui.initJourney = () => {
   MZJourney.init({
@@ -501,6 +676,7 @@ MC.ui.initJourney = () => {
       { id: "tilt",   label: "まっすぐにする", shortLabel: "傾き", hint: "黄色い線を目印に、1本ずつ見てください" },
       { id: "sync",   label: "同期と分析",   shortLabel: "同期", hint: "音のズレ合わせと素材の分析をします" },
       { id: "audio",  label: "音声を選ぶ",   shortLabel: "音声", hint: "試聴して「この音で進める」を押してください" },
+      { id: "length", label: "長さと始まり", shortLabel: "長さ", hint: "何分にするか・どこから始めるかを選んでください" },
       { id: "polish", label: "仕上げ設定", shortLabel: "設定", hint: "そのままでもOK。気になるところだけ直してください" },
       { id: "export", label: "書き出し",     shortLabel: "書出", hint: "「動画を書き出す」で完成です" },
     ],
@@ -668,16 +844,25 @@ MC.ui.refreshJourney = () => {
      (2026-07-28 レビュー指摘) */
   const legacy = synced && vids.some(c => c.tiltOk === undefined);
   const tiltDone = !vids.length || legacy || vids.every(c => c.tiltOk);
+  /* 音楽の解析まで済んだか(2026-07-31)。ここまで来ると「長さと始まり」の
+     候補を作れる。showIn は演奏そのものの範囲なので、書き出し範囲(trimIn)を
+     いくら動かしても消えない ─ 何度でも選び直せる */
+  const scanned = MC.S.showIn != null && MC.S.showOut != null;
+  const lengthDone = !!MC.S.lengthDecided;
   const done = [];
   if (slot.length) done.push("mat");
   if (slot.length && tiltDone) done.push("tilt");
   if (slot.length && synced) done.push("sync");
   if (slot.length && synced && audioDone) done.push("audio");
+  if (slot.length && synced && audioDone && lengthDone) done.push("length");
   if (exported) done.push("polish", "export");
   let current = !slot.length ? "mat"
     : (!tiltDone && !MC.S.easyDone) ? "tilt"
     : (vids.length >= 2 && !synced) ? "sync"
     : !audioDone ? "audio"
+    /* 音楽の解析が済んで、まだ長さを決めていないならここで止める。
+       重い映像解析はこの選択のあとで、選ばれた範囲だけを見る */
+    : (scanned && !lengthDone) ? "length"
     /* 分析が済んだら書き出しへ運ぶ。「仕上げ設定」は“そのままでもOK”な寄り道なので
        自動では現在地にしない。ここを polish にしていたため、初回は #exportSec が
        step-off のままで**書き出しボタンがどこにも出ない**デッドロックだった
@@ -713,7 +898,7 @@ MC.ui.refreshJourney = () => {
        ジャーニーが現在地だと言っている工程の中身が画面に無い状態
    畳み方をいくら調整してもこれは直らないので、出し分けをここに一本化した。
    状態は refreshJourney が導出したものをそのまま使う(新しい状態機械を作らない) */
-MC.ui.STEP_RANK = { mat: 0, tilt: 1, sync: 2, audio: 3, polish: 4, export: 5 };
+MC.ui.STEP_RANK = { mat: 0, tilt: 1, sync: 2, audio: 3, length: 4, polish: 5, export: 6 };
 MC.ui.STEP_GROUPS = [
   { id: "mat",    panels: ["#dropSec"] },
   { id: "tilt",   panels: ["#tiltSec"] },
@@ -722,6 +907,9 @@ MC.ui.STEP_GROUPS = [
      分析が済んだあとも全工程に出続けていた */
   { id: "sync",   panels: ["#syncSec", "#easyPane"] },
   { id: "audio",  panels: ["#audioSec"] },
+  /* 長さと始まりを決める(2026-07-31)。音楽の解析だけ先に済ませてここで止まり、
+     決まった範囲だけを映像解析する */
+  { id: "length", panels: ["#lengthSec"] },
   { id: "polish", panels: ["#placeSec", "#layoutSec", "#finishSec"] },
   { id: "export", panels: ["#exportSec"] },
 ];
@@ -745,6 +933,9 @@ MC.ui.showPhase = id => {
   const target = document.querySelector(MC.ui.JOURNEY_SECTIONS[id]);
   if (target) target.classList.add("phase-current");
   MC.ui.applySteps(id);
+  /* 「長さと始まり」は開いた時点で候補を作り直す。長さ・演奏範囲・上限の
+     どれが変わっていても、画面に出ているものが必ず今の状態を指すようにする */
+  if (id === "length") MC.ui.renderLengthSec();
   if (id === "tilt") {
     MC.ui.renderTiltSec();
   } else if (MC.ui._tiltPinned) {
@@ -1951,8 +2142,10 @@ MC.ui.runEasy = async () => {
      分母は下の分岐と同じ条件で数えること ─ ずれると「4/3」になる */
   const syncSteps = vids.length >= 2 ? 1 : 0;
   const goesOn = !(vids.length >= 2 && !MC.S.audioDecided);   // 音声選択で一度止まるか
+  /* この段で走るのは同期と**音楽の下ごしらえ**まで(2026-07-31)。
+     重い映像解析は「長さと始まり」を決めたあと、選ばれた範囲だけを見る */
   const p = MZP.start({ mount: "#easyStatus", chapter: "同期", delay: 0,
-                        steps: syncSteps + (goesOn ? MC.ui.finishSteps(vids.length >= 2) : 0),
+                        steps: syncSteps + (goesOn ? MC.ui.scanSteps() : 0),
                         label: "音を合わせています…" });
   try {
     if (vids.length >= 2) {
@@ -1969,7 +2162,7 @@ MC.ui.runEasy = async () => {
       MC.ui.gentleScrollTo(document.querySelector("#audioSec"), "start");
       return;
     }
-    await MC.ui.runEasyFinish(p, syncSteps);   // 1本だけ→選ぶフェーズを飛ばして仕上げへ
+    await MC.ui.runEasyScan(p, syncSteps);   // 1本だけ→選ぶフェーズを飛ばして下ごしらえへ
   } catch (e) {
     console.error(e);
     p.fail("うまくできませんでした", { detail: e.message });
@@ -1987,20 +2180,76 @@ MC.ui.runEasy = async () => {
 /* おまかせ 第2段: 「この音で進める」後の仕上げ。
    トリム→(③自動スイッチングのみ)カット割→色そろえ。
    ①縦動画/②ワイプカメラはシーン分析を丸ごと飛ばす(2026-07-24 優さん指示) */
+/* ---- おまかせ 第2段: 音楽の下ごしらえ(2026-07-31 優さん指示) ----
+   ここでやるのは音だけ ─ 演奏そのものの範囲を見つけ、拍とセクションを取る。
+   映像は1コマも見ない(数秒で終わる)。終わったら「長さと始まり」で止まる。
+
+   この段を切り出した理由は速度でもある。8分の素材から1分を書き出すなら、
+   映像解析も1分ぶんで足りる ─ 先に範囲を決めておけば、いちばん重い工程が
+   そのぶん短くなる(director.run は MC.trimRange() の中だけを見る)。
+   分母は常に2で固定(条件分岐で数えないので「4/3」がそもそも起きない) */
+MC.ui.scanSteps = () => 2;
+
+MC.ui.runEasyScan = async (pIn, base = 0) => {
+  if (!pIn && MC.ui._busy) return;
+  if (!pIn) { MC.ui.setBusy(true); MC.ui.clearErrorLog(); MC.preview.pause(); }
+  const p = pIn || MZP.start({ mount: "#easyStatus", chapter: "下ごしらえ", delay: 0,
+                               steps: MC.ui.scanSteps(), label: "音楽を聴いています…" });
+  let n = base;
+  try {
+    // ① 演奏そのものの範囲を音で見つける(アナウンス・拍手・片付けを落とす)
+    p.step(++n, "最初と最後を探しています…").pulse("最初と最後を探しています…");
+    await MZP.paint();
+    const dur = MC.timelineDuration();
+    let s = null;
+    try { s = await MC.salute.detect(); }
+    catch (e) { MC.log("scan: 演奏区間を検出できず →", e.message); }
+    /* director のオープニング判定(サリュート)もここで確定させる。
+       モジュール変数へ入れっぱなしにすると、音声や同期を選び直しても
+       前回の値が残る(2026-07-31 に気づいた既存のキャッシュ漏れ) */
+    MC.director._salute = s;
+    const preEl = document.getElementById("preRoll");
+    const pre = (preEl && parseFloat(preEl.value)) || 8;
+    MC.S.showIn = s ? Math.max(0, s.musicStart - pre) : 0;
+    MC.S.showOut = (s && s.musicEnd != null)
+      ? Math.min(dur, s.musicEnd + MC.salute.OUT_AFTER) : dur;
+
+    // ② 拍とセクション(見どころ候補の材料)
+    p.step(++n, "音楽を聴いています…").pulse("音楽を聴いています…");
+    await MZP.paint();
+    const audioClip = MC.getClip(MC.S.audioClipId);
+    if (audioClip) {
+      await MC.audio.extract8k(audioClip);
+      if (!audioClip.beatsData) audioClip.beatsData = MC.beats.analyze(audioClip.audio8k);
+      await MC.sections.analyze(audioClip);
+    }
+    /* 長さは選び直してもらう。ここで applyLengthChoice を呼ぶのは、
+       画面を出す前に trimIn/trimOut を既定値で埋めておくため
+       (プレビューが「範囲なし」の状態で一瞬映るのを防ぐ) */
+    MC.S.lengthDecided = false;
+    MC.ui.applyLengthChoice();
+    p.done("音楽をひととおり聴きました",
+           { sub: "長さと、どこから始めるかを選んでください" });
+    MC.ui.renderAll();
+    MC.preview.seek(MC.S.trimIn);
+  } catch (e) {
+    console.error(e);
+    p.fail("うまくできませんでした", { detail: e.message });
+    MC.ui.showErrorLog(e);
+  } finally {
+    if (!pIn) { MC.ui.setBusy(false); MC.ui.renderAll(); }
+  }
+};
+
 /* この実行で実際に通る段の数。進捗の分母に使うので、runEasyFinish 本体の
-   分岐と同じ条件で数えること(ずれると「4/3」や「2/5で完了」になる) */
-/* trimWillReset = このあと同期が走るか。sync.run は最後に必ず
-   trimIn=0 / trimOut=null へ戻す(sync.js:207)。分母はその**前**に確定するので、
-   前回の分析でトリムが入ったまま2回目を回すと「最初と最後を探す」を数え落とし、
-   実際には走るので 4/3 のような表示になる(2026-07-28 レビュー指摘) */
-MC.ui.finishSteps = (trimWillReset = false) => {
+   分岐と同じ条件で数えること(ずれると「4/3」や「2/5で完了」になる)。
+   「最初と最後を探す」は runEasyScan へ移した(2026-07-31)ので、ここには無い */
+MC.ui.finishSteps = () => {
   /* 色そろえは2本以上でしか走らない(colormatch.js:117 が throw する)。
      colorOn だけで数えると、動画1本のとき分母が1多く、しかも必ず
      「色そろえだけできませんでした。」が出る ─ 成功しているのに失敗を見せる */
   const vclips = MC.S.clips.filter(c => !c.isAudio && !c.isImage);
-  const trimStep = trimWillReset || (MC.S.trimIn === 0 && MC.S.trimOut == null);
-  return (trimStep ? 1 : 0)                                      // 最初と最後を探す
-    + (MC.S.mode === "switch" ? 3 : 0)                           // director の3段
+  return (MC.S.mode === "switch" ? 3 : 0)                        // director の3段
     + ((MC.S.colorOn && vclips.length >= 2) ? 1 : 0);            // 色をそろえる
 };
 
@@ -2016,17 +2265,17 @@ MC.ui.runEasyFinish = async (pIn, base = 0) => {
      eta を更新する ─ 書き出し側は3秒後から残り時間が出るのに、
      分析側は最後まで一度も出ていなかった(2026-07-28 レビューP0-3) */
   const _vc = MC.S.clips.filter(c => !c.isAudio && !c.isImage);
-  const _est = _vc.length * Math.max(0, MC.timelineDuration()) * MC.ui.analysisRate();
+  /* 見積りの分母は**書き出す範囲**にする(2026-07-31)。映像解析は
+     MC.trimRange() の中しか見ないので、素材全体で見積もると
+     1分を選んだ人に8分ぶんの待ち時間を予告してしまう */
+  const [_ti, _to] = MC.trimRange();
+  const _est = _vc.length * Math.max(0, _to - _ti) * MC.ui.analysisRate();
   const _steps = Math.max(1, p.steps || MC.ui.finishSteps());
   const _eta = () => _est > 30 ? { eta: Math.max(0, _est * (1 - n / _steps)) } : undefined;
   try {
-    // 開始/終了の自動区切り。演奏の前後(アナウンス・拍手・片付け)を落とす。
-    // カット割より先に行う: director は MC.trimRange() の中だけを割るため
-    if (MC.S.trimIn === 0 && MC.S.trimOut == null) {
-      p.step(++n, "最初と最後を探しています…").pulse(null, _eta());
-      await MZP.paint();
-      await MC.salute.autoTrim();   // 検出できなければ静かに諦める(トリムなしで続行)
-    }
+    /* 開始/終了の自動区切りと音楽の解析は runEasyScan へ移した(2026-07-31)。
+       ここへ来る時点で MC.trimRange() は「選ばれた長さと始まり」を指しており、
+       映像解析もカット割もその中だけを見る */
     if (MC.S.mode === "switch") {   // シーン分析は③自動スイッチングだけ
       await MC.director.run(p, n);   // 中で3段ぶん進む(音楽/映像/カット割)
       n += 3;
@@ -2373,8 +2622,27 @@ MC.ui.wire = () => {
       MC.ui.toast("この音で進めます");
       return;
     }
-    if (!MC.S.easyDone) MC.ui.runEasyFinish();
+    /* 音楽の下ごしらえまで走らせて「長さと始まり」で止まる(2026-07-31)。
+       以前はここから仕上げ(映像解析+カット割)まで一気に走っていた */
+    if (!MC.S.easyDone) MC.ui.runEasyScan();
     else MC.ui.refreshJourney();   // 仕上げ済みで選び直しただけなら状態更新のみ
+  };
+
+  /* 「この長さで進める」= ここではじめて重い映像解析へ入る。
+     押した時点の trimIn/trimOut(=選ばれた長さと始まり)だけを見る */
+  $("#lenDecideBtn").onclick = () => {
+    if (MC.ui._busy) return;
+    MC.preview.pause();
+    MC.ui.applyLengthChoice();     // 画面の選択を範囲へ確定させてから走る
+    MC.S.lengthDecided = true;
+    MC.saveState();
+    if (MC.ui._setupTab === "pro") {
+      /* こだわりタブは自走させない(同期→カット割→色を自分の手順で進める人) */
+      MC.ui.refreshJourney();
+      MC.ui.toast("この長さで進めます");
+      return;
+    }
+    MC.ui.runEasyFinish();
   };
   ["dragover", "dragenter"].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add("over"); }));
   ["dragleave", "drop"].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove("over"); }));
@@ -2434,7 +2702,7 @@ MC.ui.wire = () => {
     $("#cancelBtn").style.display = "inline-block";
     const mode = MC.ui.exportMode();
 
-    /* プラン上の書き出し上限(登録8分30秒 / ゲスト5分)。
+    /* プラン上の書き出し上限(会員種別 × 端末。2026-07-31)。
        端末のメモリ上限とは理由が違うので、案内も分ける */
     {
       const lim = window.MZ_LIMITS;

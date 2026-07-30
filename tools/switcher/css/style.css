@@ -1308,3 +1308,65 @@ body.mz-diag-noskip #exportSec::before {
   display: block; margin: 0 0 10px; padding: 7px 10px; border-radius: 8px;
   background: #fff4d6; color: #7a5200; font-size: 12.5px; font-weight: 700;
 }
+
+/* ============ 長さと始まりを決める(2026-07-31 優さん指示) ============
+   1画面に「長さ」と「始まり」の2つの問いだけを置く。
+   選択肢は消さずに鍵つきで見せ、何をすれば使えるかをその場で言う。 */
+.len-head { display: flex; align-items: center; gap: 7px;
+  margin: 18px 0 8px; font-size: 13px; font-weight: 800; color: var(--tx); }
+.len-head:first-of-type { margin-top: 10px; }
+.len-head i { color: var(--acc); font-size: 12px; }
+
+.len-presets { display: grid; gap: 8px; grid-template-columns: 1fr; }
+@media (min-width: 620px) { .len-presets { grid-template-columns: repeat(3, 1fr); } }
+/* flex(1行)ではなく grid にする。flex だと解除の案内(.len-unlock)が同じ行へ
+   割り込み、「8分30秒」が1文字ずつ折り返して3行になった(375px 実測) */
+.len-card { display: grid; width: 100%;
+  grid-template-columns: auto auto 1fr; align-items: baseline;
+  column-gap: 10px; row-gap: 5px;
+  padding: 12px 14px; border: 1.5px solid var(--line); border-radius: 12px;
+  background: #fff; cursor: pointer; text-align: left; font-family: inherit;
+  min-height: 60px; }
+@media (min-width: 620px) { .len-card { grid-template-columns: 1fr; row-gap: 2px; } }
+.len-card.on { border-color: var(--acc); background: #f0f5ff; }
+.len-card.on .len-name { color: var(--acc-deep); }
+.len-name { font-size: 14px; font-weight: 800; color: var(--tx); white-space: nowrap; }
+.len-dur { font-size: 13px; font-weight: 700; color: var(--acc-deep);
+  font-variant-numeric: tabular-nums; white-space: nowrap; }
+.len-why { font-size: 11.5px; color: var(--tx2); text-align: right; min-width: 0; }
+@media (min-width: 620px) { .len-why { text-align: left; } }
+/* 使えない選択肢: 消さずに鍵つきで残す(存在に気づけないと登録動機にならない) */
+.len-card.locked { background: var(--panel2); border-style: dashed; cursor: default; }
+.len-card.locked .len-name, .len-card.locked .len-dur { color: var(--tx2); }
+.len-unlock { grid-column: 1 / -1; font-size: 11px;
+  font-weight: 700; color: var(--acc-deep); }
+.len-unlock i { margin-right: 4px; }
+
+.len-starts { display: flex; flex-direction: column; gap: 6px; }
+.len-start { display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 9px 12px; border: 1.5px solid var(--line); border-radius: 12px;
+  background: #fff; cursor: pointer; text-align: left; font-family: inherit;
+  min-height: 56px; }
+.len-start.on { border-color: var(--acc); background: #f0f5ff; }
+.len-ico { flex-shrink: 0; width: 34px; height: 34px; border-radius: 11px;
+  display: grid; place-items: center; background: var(--panel2); color: var(--tx2); font-size: 14px; }
+.len-start.on .len-ico { background: var(--acc); color: #fff; }
+.len-body { flex: 1; min-width: 0; }
+/* ラベルと理由は必ず行を分ける。inline のままだと
+   「大盛り上がり全員で一番大きく鳴っているところ」と地続きに読めてしまう */
+.len-label { display: block; font-size: 13.5px; font-weight: 800; color: var(--tx); line-height: 1.35; }
+.len-start.on .len-label { color: var(--acc-deep); }
+.len-reason { display: block; font-size: 11.5px; color: var(--tx2); line-height: 1.4; }
+.len-at { flex-shrink: 0; font-size: 12.5px; font-weight: 700; color: var(--tx2);
+  font-variant-numeric: tabular-nums; }
+.len-listen { flex-shrink: 0; width: 38px; height: 38px; border-radius: 50%;
+  border: 1px solid var(--line); background: #fff; color: var(--acc);
+  font-size: 13px; cursor: pointer; }
+.len-listen.playing { background: var(--acc); color: #fff; border-color: var(--acc); }
+
+.len-summary { margin-top: 14px; padding: 10px 12px; border-radius: 10px;
+  background: #f0f5ff; color: var(--acc-deep); font-size: 12.5px; font-weight: 700;
+  line-height: 1.6; }
+.len-summary:empty { display: none; }
+/* 選ぶ余地が無いとき(演奏まるごとを覆う長さ)は問い自体を出さない */
+#lenStartBox[hidden] { display: none; }

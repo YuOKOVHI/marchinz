@@ -1127,6 +1127,256 @@ async function countSamples(ns, file, fromSec) {
     return "確認あり・キャンセルで実行されない";
   });
 
+  /* ===== ⑭ 上限は「会員種別 × 端末」で決まる(2026-07-31 優さん指示) ===== */
+  /* limits.js を隔離ロードする。localStorage / navigator / location / document を
+     引数で差し替えると、1ページの中で4通りの人・端末を同時に再現できる。
+     (IIFE の中でこれらを裸で参照しているので、同名の仮引数が影になる) */
+  async function loadLimits(opt) {
+    const o = opt || {};
+    const src = await (await fetch("../shared/limits.js")).text();
+    const store = {};
+    if (o.admin) store["mz_admin_unlimited_v1"] = JSON.stringify({ admin: true, ts: Date.now() });
+    if (o.member) store["mz_member_v1"] = JSON.stringify({ member: true, ts: Date.now() });
+    const fakeWin = {};
+    const nav = o.mobile
+      ? { userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1",
+          platform: "iPhone", maxTouchPoints: 5 }
+      : { userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+          platform: "MacIntel", maxTouchPoints: 0 };
+    /* readyState:"loading" にして boot() を走らせない(DOM整形はここでは見ない) */
+    const doc = { readyState: "loading", addEventListener: () => {} };
+    new Function("window", "localStorage", "navigator", "location", "document", src)(
+      fakeWin, { getItem: k => (k in store ? store[k] : null) }, nav,
+      { hostname: o.host || "marchinz.netlify.app", protocol: "https:" }, doc);
+    if (!fakeWin.MZ_LIMITS) throw new Error("MZ_LIMITS が生えていない");
+    return fakeWin.MZ_LIMITS;
+  }
+
+  group("⑭ 取り込み・書き出しの上限(会員種別 × 端末)");
+  await test("★4通りの上限が指示どおり(ゲスト1分未満 / 登録スマホ3分 / 登録PC10分)", async () => {
+    const cases = [
+      { name: "ゲスト×スマホ", o: { mobile: true },                video: 300.5, exp: 59 },
+      { name: "ゲスト×PC",     o: { mobile: false },               video: 300.5, exp: 59 },
+      { name: "登録×スマホ",   o: { mobile: true, member: true },  video: 300.5, exp: 180 },
+      { name: "登録×PC",       o: { mobile: false, member: true }, video: 720.5, exp: 600 },
+    ];
+    const got = [];
+    for (const c of cases) {
+      const L = await loadLimits(c.o);
+      eq(L.maxVideoSec, c.video, `${c.name} の取り込み`);
+      eq(L.maxExportSec, c.exp, `${c.name} の書き出し`);
+      eq(L.mobile, !!c.o.mobile, `${c.name} の端末判定`);
+      got.push(`${c.name}=${c.exp}s`);
+    }
+    return got.join(" / ");
+  });
+  await test("★管理者・手元環境は今までどおり上限なし(端末で狭めない)", async () => {
+    for (const o of [{ admin: true, mobile: true }, { host: "localhost", mobile: true }]) {
+      const L = await loadLimits(o);
+      if (isFinite(L.maxExportSec) || isFinite(L.maxVideoSec)) {
+        throw new Error("上限なしのはずが有限: " + L.maxExportSec + "/" + L.maxVideoSec);
+      }
+    }
+    return "admin / localhost ともに Infinity";
+  });
+  await test("★使えないプリセットは消さずに鍵つきで残り、解除の道を書く", async () => {
+    const g = (await loadLimits({ mobile: true })).exportPresets();
+    eq(g.length, 3, "選択肢の数(消していない)");
+    eq(g.filter(p => !p.locked).map(p => p.id).join(","), "short", "ゲストスマホで使えるもの");
+    for (const p of g.filter(p => p.locked)) {
+      if (!p.unlock) throw new Error(`${p.label} に解除の道が書かれていない`);
+    }
+    const m = (await loadLimits({ mobile: true, member: true })).exportPresets();
+    eq(m.filter(p => !p.locked).map(p => p.id).join(","), "short,mid", "登録×スマホ");
+    // スマホの登録ユーザーには「パソコンで」と言う(登録を勧めても伸びないため)
+    const full = m.find(p => p.id === "full");
+    if (!/パソコン/.test(full.unlock)) throw new Error("解除の道が「登録」のままで嘘: " + full.unlock);
+    const pc = (await loadLimits({ mobile: false, member: true })).exportPresets();
+    eq(pc.filter(p => p.locked).length, 0, "登録×PCで鍵の数");
+    return "ゲスト=1 / 登録スマホ=2 / 登録PC=3";
+  });
+
+  /* ===== ⑮ どこから始めるか(見どころ候補) ===== */
+  /* 合成の曲: 導入→大盛り上がり→バラード→ドラムライン→ソロ→フィナーレ。
+     実素材が無くても「性格の違う区間を割合で並べた曲」は作れる */
+  const mkSong = spanSec => {
+    const hop = 0.5, N = Math.round(spanSec / hop);
+    const S = { hop, t: new Float32Array(N), rms: new Float32Array(N),
+                onset: new Float32Array(N), centroid: new Float32Array(N), harm: new Float32Array(N) };
+    for (let i = 0; i < N; i++) {
+      const f = (i * hop) / spanSec;
+      S.t[i] = i * hop + 0.5;
+      let rms, on, cen = 1200, harm;
+      if (f < 0.125)      { rms = 0.35; on = 0.40; harm = 0.50; }
+      else if (f < 0.29)  { rms = 0.95; on = 0.70; harm = 0.60; }
+      else if (f < 0.46)  { rms = 0.10; on = 0.15; harm = 0.85; cen = 800; }
+      else if (f < 0.62)  { rms = 0.55; on = 0.98; harm = 0.08; cen = 2600; }
+      else if (f < 0.79)  { rms = 0.30; on = 0.20; harm = 0.90; cen = 1000; }
+      else                { rms = 0.90 + 0.10 * (f - 0.79) / 0.21; on = 0.75; harm = 0.55; }
+      S.rms[i] = rms; S.onset[i] = on; S.centroid[i] = cen; S.harm[i] = harm;
+    }
+    const pct = (a, q) => { const s = Array.from(a).sort((x, y) => x - y); return s[Math.floor(s.length * q)]; };
+    S.rmsLo = pct(S.rms, 0.15); S.rmsHi = pct(S.rms, 0.90);
+    S.onLo = pct(S.onset, 0.20); S.onHi = pct(S.onset, 0.90);
+    S.cenMed = pct(S.centroid, 0.5); S.cenHi = pct(S.centroid, 0.85);
+    S.bpmT = [0, spanSec / 2, spanSec - 1]; S.bpmV = [120, 132, 140];
+    return { offset: 0, sections: S };
+  };
+  /* sections.js + highlight.js だけを隔離ロード(音声デコードもFFTも要らない) */
+  async function loadHighlight(mutate) {
+    const ns = { log: () => {} };
+    for (const f of ["sections.js", "highlight.js"]) {
+      let src = await (await fetch("../switcher/js/" + f)).text();
+      if (mutate && f === "highlight.js") src = mutate(src);
+      new Function("MC", "window", "document", src)(ns, { MC: ns }, document);
+    }
+    if (!ns.highlight || !ns.highlight.candidates) throw new Error("MC.highlight が生えていない");
+    return ns;
+  }
+  /* 「席の取り方を z の大きい順に戻す」変異。固定順にした意味を見張る */
+  const injectZOrder = src => {
+    const before = "  seat(H.Z_MIN);";
+    if (!src.includes(before)) throw new Error("変異ポイントが見つからない(実装が書き換わった?)");
+    return src.replace(before, "  cand.sort((a, b) => b.z - a.z);\n" + before);
+  };
+
+  group("⑮ どこから始めるか(見どころ候補)");
+  await test("★8分30秒のショウ・1分の切り出しで、単語つきの候補がちょうど5つ出る", async () => {
+    const MCX = await loadHighlight();
+    const c = MCX.highlight.candidates(mkSong(510), 59, 0, 510);
+    eq(c.length, 5, "候補の数");
+    eq(c.map(x => x.label).join("/"), "スタート/大盛り上がり/バラード/ドラムライン/フィナーレ", "並び(時刻順)");
+    for (const x of c) {
+      if (!x.why) throw new Error(`${x.label} に理由が無い`);
+      if (!(x.t >= 0 && x.t <= 510 - 59 + 1e-6)) throw new Error(`${x.label} の位置が範囲外: ${x.t}`);
+    }
+    return c.map(x => `${x.label}@${Math.round(x.t)}s`).join(" ");
+  });
+  await test("★3分の切り出しでも5つ出る(間隔を長さ比例だけにすると2つに潰れる)", async () => {
+    const MCX = await loadHighlight();
+    const c = MCX.highlight.candidates(mkSong(510), 180, 0, 510);
+    ge(c.length, 5, "候補の数");
+    // どの2つも同じ場面ではない
+    for (let i = 1; i < c.length; i++) {
+      if (c[i].t - c[i - 1].t < 1) throw new Error("同じ位置の候補が並んでいる");
+    }
+    return c.map(x => x.label).join("/");
+  });
+  await test("★「まるごと」は選ぶ余地が無いので候補を1つだけ返す", async () => {
+    const MCX = await loadHighlight();
+    const c = MCX.highlight.candidates(mkSong(510), 510, 0, 510);
+    eq(c.length, 1, "候補の数");
+    eq(c[0].key, "start", "残るもの");
+  });
+  await test("★フィナーレは必ず演奏の終わりまで入る(位置で決める)", async () => {
+    const MCX = await loadHighlight();
+    for (const len of [59, 120, 180]) {
+      const f = MCX.highlight.candidates(mkSong(510), len, 0, 510).find(x => x.key === "finale");
+      if (!f) throw new Error(`${len}秒でフィナーレが消えた`);
+      if (Math.abs((f.t + len) - 510) > 0.01) throw new Error(`終わりまで入っていない: ${f.t}+${len}`);
+    }
+    return "59/120/180秒すべてで終端に接している";
+  });
+  await test("★変異: 席を z の大きい順に取ると「大盛り上がり」が落ちる(固定順の意味)", async () => {
+    const bad = await loadHighlight(injectZOrder);
+    const labels = bad.highlight.candidates(mkSong(510), 59, 0, 510).map(x => x.label);
+    if (labels.includes("大盛り上がり")) {
+      throw new Error("変異させても落ちない=この見張りは無意味(条件を見直すこと)");
+    }
+    return "z順にすると " + labels.join("/") + " になる";
+  });
+
+  /* ===== ⑯ 「長さと始まり」フェーズの導線 ===== */
+  group("⑯ 長さと始まりを決める工程");
+  await test("★音楽の下ごしらえが済むと、重い映像解析の前にこの工程で止まる", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    /* 素材は演奏の全長ぶんある(compReset の既定 60 秒のままだと
+       MC.timelineDuration() が 60 になり、1分の切り出しに選ぶ余地が消える) */
+    S.clips.forEach(c => { c.tiltOk = true; c.syncMethod = "波形"; c.duration = 510; });
+    S.easyDone = false; S.audioDecided = true;
+    S.showIn = null; S.showOut = null; S.lengthDecided = false;
+    w.MC.ui.refreshJourney();
+    if (w.document.body.dataset.mzjPhase === "length") {
+      throw new Error("音楽をまだ聴いていないのに長さの工程へ来ている");
+    }
+    // 下ごしらえが済んだ = 演奏の範囲が分かった
+    S.showIn = 0; S.showOut = 510;
+    Object.assign(w.MC.getClip(1), mkSong(510));
+    w.MC.ui.refreshJourney();
+    eq(w.document.body.dataset.mzjPhase, "length", "現在地");
+    // 決めたら次へ進む
+    S.lengthDecided = true; S.easyDone = true;
+    w.MC.ui.refreshJourney();
+    if (w.document.body.dataset.mzjPhase === "length") throw new Error("決めたのに長さの工程から出られない");
+    return "未→length / 済→次の工程";
+  });
+  await test("★この工程で画面に出ている枠は #lengthSec だけ", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    /* 素材は演奏の全長ぶんある(compReset の既定 60 秒のままだと
+       MC.timelineDuration() が 60 になり、1分の切り出しに選ぶ余地が消える) */
+    S.clips.forEach(c => { c.tiltOk = true; c.syncMethod = "波形"; c.duration = 510; });
+    S.easyDone = false; S.audioDecided = true;
+    S.showIn = 0; S.showOut = 510; S.lengthDecided = false;
+    /* 手元環境は上限なしで既定が「まるごと」になる=選ぶ余地が無い。
+       この見張りは選択肢の描画を見るので、明示的に短い方を選んでおく */
+    S.exportPreset = "short"; S.startKey = "start";
+    Object.assign(w.MC.getClip(1), mkSong(510));
+    w.MC.ui.refreshJourney();
+    const shown = [...w.document.querySelectorAll(".side .panel, .easy-pane")]
+      .filter(el => !el.classList.contains("step-off") && el.offsetParent !== null)
+      .map(el => "#" + el.id);
+    eq(shown.join(","), "#lengthSec", "出ている枠");
+    ge(w.document.querySelectorAll("#lenPresets .len-card").length, 3, "長さの選択肢");
+    ge(w.document.querySelectorAll("#lenStarts .len-start").length, 5, "始まりの選択肢");
+    return "1画面1操作を守れている";
+  });
+  await test("★選んだ長さと始まりが、そのまま書き出し範囲になる", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    /* 素材は演奏の全長ぶんある(compReset の既定 60 秒のままだと
+       MC.timelineDuration() が 60 になり、1分の切り出しに選ぶ余地が消える) */
+    S.clips.forEach(c => { c.tiltOk = true; c.syncMethod = "波形"; c.duration = 510; });
+    S.easyDone = false; S.audioDecided = true;
+    S.showIn = 0; S.showOut = 510; S.lengthDecided = false;
+    Object.assign(w.MC.getClip(1), mkSong(510));
+    S.exportPreset = "short"; S.startKey = "finale";
+    w.MC.ui.refreshJourney();
+    const [ti, to] = w.MC.trimRange();
+    if (Math.abs((to - ti) - 59) > 0.01) throw new Error(`長さが59秒でない: ${(to - ti).toFixed(2)}`);
+    if (Math.abs(to - 510) > 0.01) throw new Error(`フィナーレなのに終端で終わっていない: ${to}`);
+    /* ★ 演奏そのものの範囲(showIn/showOut)は絶対に潰さない。
+       潰すと長さを選び直すたびに元が短くなり、選び直せなくなる */
+    eq(S.showIn, 0, "演奏の開始"); eq(S.showOut, 510, "演奏の終了");
+    S.exportPreset = "mid"; S.startKey = "start";
+    w.MC.ui.renderLengthSec();
+    const [ti2, to2] = w.MC.trimRange();
+    if (Math.abs((to2 - ti2) - 180) > 0.01) throw new Error(`選び直しが効かない: ${(to2 - ti2).toFixed(2)}`);
+    eq(S.showOut, 510, "選び直しても演奏の範囲は不変");
+    return "59秒(終端)→180秒(冒頭) 切り替え可";
+  });
+  await test("★工程が7つになっても、現在地がバーからはみ出さない", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    /* 素材は演奏の全長ぶんある(compReset の既定 60 秒のままだと
+       MC.timelineDuration() が 60 になり、1分の切り出しに選ぶ余地が消える) */
+    S.clips.forEach(c => { c.tiltOk = true; c.syncMethod = "波形"; c.duration = 510; });
+    S.easyDone = false; S.audioDecided = true;
+    S.showIn = 0; S.showOut = 510; S.lengthDecided = false;
+    Object.assign(w.MC.getClip(1), mkSong(510));
+    w.MC.ui.refreshJourney();
+    const track = w.document.querySelector(".mzj-track");
+    const cur = w.document.querySelector(".mzj-phase.current");
+    if (!track || !cur) throw new Error("ジャーニーバーが無い");
+    const tr = track.getBoundingClientRect(), cr = cur.getBoundingClientRect();
+    if (cr.left < tr.left - 0.5 || cr.right > tr.right + 0.5) {
+      throw new Error(`現在地がバーの外(バー ${Math.round(tr.left)}〜${Math.round(tr.right)} / `
+        + `現在地 ${Math.round(cr.left)}〜${Math.round(cr.right)})`);
+    }
+    return `幅${Math.round(tr.width)}px に7工程・現在地は内側`;
+  });
+
   if (CF) { CF.remove(); CF = null; CW = null; CD = null; }
 
   /* ===== 集計 ===== */

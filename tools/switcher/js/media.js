@@ -73,10 +73,12 @@ MC.media.addFiles = async files => {
       continue;
     }
     if (v.duration > MZ_LIMITS.maxVideoSec) {
+      /* 上限は「会員種別 × 端末」で決まる(2026-07-31)。スマホは登録しても
+         5分のままなので、「無料登録で12分」と言い切ると嘘になる */
       MC.ui.toast(`⚠ ${f.name} は約${Math.round(v.duration / 60)}分です。`
-        + (MZ_LIMITS.member
-            ? `動画は${MZ_LIMITS.videoLimitLabel}までです。`
-            : `ゲストは${MZ_LIMITS.videoLimitLabel}・無料登録で12分まで使えます。`)
+        + `動画は${MZ_LIMITS.videoLimitLabel}までです。`
+        + (!MZ_LIMITS.member && MZ_LIMITS.bigDevice ? "無料登録すると12分まで使えます。"
+           : MZ_LIMITS.mobile ? "パソコンで開いて無料登録すると12分まで使えます。" : "")
         + "見せたい場面だけ短く切り出してからお試しください");
       URL.revokeObjectURL(clip.url);
       continue;
