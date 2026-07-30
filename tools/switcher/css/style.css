@@ -1343,11 +1343,17 @@ body.mz-diag-noskip #exportSec::before {
 .len-unlock i { margin-right: 4px; }
 
 .len-starts { display: flex; flex-direction: column; gap: 6px; }
-.len-start { display: flex; align-items: center; gap: 10px; width: 100%;
-  padding: 9px 12px; border: 1.5px solid var(--line); border-radius: 12px;
-  background: #fff; cursor: pointer; text-align: left; font-family: inherit;
-  min-height: 56px; }
+/* 枠は div、「選ぶ」と「聴く」は**兄弟のボタン**。
+   以前は枠自体が <button> で、その中へ聴くボタンを appendChild していた ─
+   HTMLとして不正で、読み上げでも入れ子の対話要素は正しく扱われない */
+.len-start { display: flex; align-items: center; gap: 6px; width: 100%;
+  padding: 0 8px 0 0; border: 1.5px solid var(--line); border-radius: 12px;
+  background: #fff; min-height: 56px; }
 .len-start.on { border-color: var(--acc); background: #f0f5ff; }
+.len-pick { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px;
+  padding: 9px 4px 9px 12px; min-height: 54px;
+  background: none; border: 0; border-radius: 11px;
+  cursor: pointer; text-align: left; font-family: inherit; color: inherit; }
 .len-ico { flex-shrink: 0; width: 34px; height: 34px; border-radius: 11px;
   display: grid; place-items: center; background: var(--panel2); color: var(--tx2); font-size: 14px; }
 .len-start.on .len-ico { background: var(--acc); color: #fff; }
@@ -1359,9 +1365,9 @@ body.mz-diag-noskip #exportSec::before {
 .len-reason { display: block; font-size: 11.5px; color: var(--tx2); line-height: 1.4; }
 .len-at { flex-shrink: 0; font-size: 12.5px; font-weight: 700; color: var(--tx2);
   font-variant-numeric: tabular-nums; }
-.len-listen { flex-shrink: 0; width: 38px; height: 38px; border-radius: 50%;
+.len-listen { flex-shrink: 0; width: 44px; height: 44px; border-radius: 50%;
   border: 1px solid var(--line); background: #fff; color: var(--acc);
-  font-size: 13px; cursor: pointer; }
+  font-size: 14px; cursor: pointer; display: grid; place-items: center; }
 .len-listen.playing { background: var(--acc); color: #fff; border-color: var(--acc); }
 
 .len-summary { margin-top: 14px; padding: 10px 12px; border-radius: 10px;
@@ -1376,8 +1382,22 @@ body.mz-diag-noskip #exportSec::before {
    どこで止めても音楽の頭から始まる */
 .len-manual { margin-top: 8px; padding: 12px; border-radius: 12px;
   background: var(--panel2); border: 1px solid var(--line); }
-.len-manual-range { width: 100%; margin: 0 0 8px; accent-color: var(--acc); height: 28px; }
+.len-manual-range { width: 100%; margin: 0 0 8px; accent-color: var(--acc);
+  height: 44px; min-height: 44px; }
 .len-manual-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .len-manual-at { font-size: 15px; font-weight: 800; color: var(--acc-deep);
   font-variant-numeric: tabular-nums; }
 .len-manual-row .btn { margin-left: auto; }
+
+/* 鍵つきの長さを押したときの案内(2026-07-31 UI/UXレビュー P0)。
+   「無料登録で使えます」と書いておきながら押しても無反応で、
+   登録への道がこの画面に1つも無い、という行き止まりを塞ぐ */
+.len-unlock-note { margin-top: 8px; padding: 12px 14px; border-radius: 12px;
+  background: #fff8e6; border: 1px solid #f0d9a0; }
+.lun-title { font-size: 13px; font-weight: 800; color: #7a5200; margin-bottom: 4px; }
+.lun-title i { margin-right: 6px; }
+.lun-body { font-size: 12px; color: var(--tx2); line-height: 1.7; }
+.lun-btn { display: inline-flex; align-items: center; justify-content: center;
+  margin-top: 10px; min-height: 44px; padding: 0 18px; border-radius: 999px;
+  background: var(--acc); color: #fff; font-weight: 800; font-size: 13px;
+  text-decoration: none; }

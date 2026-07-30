@@ -177,11 +177,13 @@
       <p class="sec-lead">どのくらいの長さにするか、どこから始めるかを選んでください。</p>
 
       <p class="len-head"><i class="fa-solid fa-clock" aria-hidden="true"></i> どのくらいの長さにしますか？</p>
-      <div id="lenPresets" class="len-presets" role="radiogroup" aria-label="書き出す長さ"></div>
+      <div id="lenPresets" class="len-presets" aria-label="書き出す長さ"></div>
 
       <div id="lenStartBox">
         <p class="len-head"><i class="fa-solid fa-location-crosshairs" aria-hidden="true"></i> どこから始めますか？</p>
-        <div id="lenStarts" class="len-starts" role="radiogroup" aria-label="始まりの場所"></div>
+        <!-- role="radiogroup" は使わない。矢印キー移動を実装していないので
+             名乗るだけ嘘になる(中の各行が aria-pressed で排他を伝える) -->
+        <div id="lenStarts" class="len-starts"></div>
         <!-- 自分で決める(2026-07-31 優さん指示)。おすすめの5つで足りないときの逃げ道。
              拍にスナップするので、どこで止めても音楽の頭から始まる -->
         <div id="lenManual" class="len-manual" hidden>
@@ -196,7 +198,9 @@
         </div>
       </div>
 
-      <p id="lenSummary" class="len-summary"></p>
+      <!-- 選ぶたびに書き換わる唯一の結果表示。読み上げに届かないと
+           目の見えない人には何も起きていないのと同じになる -->
+      <p id="lenSummary" class="len-summary" aria-live="polite"></p>
       <div class="row" style="margin-top:12px">
         <button id="lenDecideBtn" class="btn primary big" type="button" style="flex:1">
           <i class="fa-solid fa-check" aria-hidden="true"></i> この長さで進める</button>

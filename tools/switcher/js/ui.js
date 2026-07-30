@@ -548,6 +548,31 @@ MC.ui.invalidateCuts = () => {
   MC.ui.refreshJourney();
 };
 
+/* 鍵つきの長さを押したときの案内。**この画面に登録リンクを置くのはここだけ**。
+   「無料登録で使えます」と書いておきながら、押しても無反応で登録への道が
+   画面のどこにも無い、という行き止まりを作らないため */
+MC.ui.showUnlockHelp = p => {
+  const host = document.getElementById("lenPresets");
+  if (!host) return;
+  let el = document.getElementById("lenUnlockNote");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "lenUnlockNote";
+    el.className = "len-unlock-note";
+    el.setAttribute("role", "status");
+    host.insertAdjacentElement("afterend", el);
+  }
+  const L = window.MZ_LIMITS || {};
+  const needsPc = /パソコン/.test(p.unlock || "");
+  el.innerHTML =
+    `<p class="lun-title"><i class="fa-solid fa-lock" aria-hidden="true"></i> `
+    + `「${MC.ui.esc(p.label)}」は、いまはまだ使えません</p>`
+    + `<p class="lun-body">${MC.ui.esc(p.unlock)}。`
+    + (needsPc ? "スマホは動画を丸ごとメモリに載せるため、長い書き出しが途中で止まってしまいます。" : "")
+    + `いまは<b>${MC.ui.esc(L.exportLimitLabel || "")}</b>まで作れます。</p>`
+    + (L.member ? "" : '<a class="lun-btn" href="/#signup">無料登録する</a>');
+};
+
 MC.ui.renderLengthSec = () => {
   const host = document.getElementById("lengthSec");
   if (!host || host.classList.contains("step-off")) return;
@@ -570,12 +595,21 @@ MC.ui.renderLengthSec = () => {
     b.type = "button";
     b.className = "len-card" + (p.locked ? " locked" : "")
       + (!p.locked && p.id === preset.id ? " on" : "");
-    b.setAttribute("role", "radio");
-    b.setAttribute("aria-checked", String(!p.locked && p.id === preset.id));
-    if (p.locked) b.setAttribute("aria-disabled", "true");
-    /* 「まるごと」は代表値ではなく演奏の実尺で見せる。
-       8分30秒“前後”という指示は、曲の実際の長さに合わせるという意味 */
-    const shown = p.whole ? Math.min(p.sec, s1 - s0) : p.sec;
+    /* role="radio" は使わない。矢印キー移動と roving tabindex を実装していない
+       ラジオグループは ARIA に沿わず、読み上げの案内(「1/3」等)も嘘になる。
+       排他の押しボタン(aria-pressed)として正しく名乗る */
+    b.setAttribute("aria-pressed", String(!p.locked && p.id === preset.id));
+    /* 表示する尺は、使えるか使えないかで意味が変わる。
+       ・使える  … **実際に書き出される尺**(presetSec。上限で丸めた後)。
+                  ここを Math.min(p.sec, 演奏尺) にしていたときは、10分のショウを
+                  登録×パソコン(上限10分)で開くとカードに「8分30秒」と出るのに
+                  実際は10分書き出され、同じ画面のまとめ文と数字が食い違った
+       ・使えない … **解除したら得られる尺**。presetSec は今の上限で丸めるので、
+                  ゲスト(59秒)では鍵つきの3枚が全部「59秒」になり、
+                  何が違うのか分からないカードが並んだ(2026-07-31 スクショで発覚) */
+    const shown = p.locked
+      ? (p.whole ? Math.min(p.sec, s1 - s0) : p.sec)
+      : MC.highlight.presetSec(p, s1 - s0);
     b.innerHTML =
       `<span class="len-name">${MC.ui.esc(p.label)}</span>`
       + `<span class="len-dur">${MC.ui.esc(MC.ui.fmtLen(shown))}</span>`
@@ -583,7 +617,14 @@ MC.ui.renderLengthSec = () => {
       + (p.locked
           ? `<span class="len-unlock"><i class="fa-solid fa-lock" aria-hidden="true"></i>${MC.ui.esc(p.unlock)}</span>`
           : "");
-    if (!p.locked) {
+    if (p.locked) {
+      /* 鍵つきカードは押しても無反応、という行き止まりにしない。
+         この画面には登録リンクが1つも無い(#dropSec の data-mz-plan は
+         2026-07-28 に撤去され、limits.js の renderSignupPerks は
+         置き場所が無くて何も出していない)ので、ここが唯一の導線になる */
+      b.setAttribute("aria-disabled", "true");
+      b.onclick = () => MC.ui.showUnlockHelp(p);
+    } else {
       b.onclick = () => {
         if (p.id === MC.S.exportPreset) return;
         MC.S.exportPreset = p.id;
@@ -604,30 +645,21 @@ MC.ui.renderLengthSec = () => {
   if (canChoose) {
     /* おすすめの5つ + 「自分で選ぶ」。おすすめで足りない人を行き止まりにしない */
     for (const c of [...cands, { ...MC.highlight.MANUAL, t: MC.S.startAt == null ? s0 : MC.S.startAt }]) {
+      /* ★ ボタンの中にボタンを入れない。カード自体を <button> にして
+         「ここを聴く」を appendChild していたのは HTML として不正で、
+         読み上げでも入れ子の対話要素は正しく扱われない。
+         枠は <div>、選ぶ本体と聴くボタンは**兄弟**にする */
+      const row = document.createElement("div");
+      row.className = "len-start" + (c.key === cand.key ? " on" : "");
       const b = document.createElement("button");
       b.type = "button";
-      b.className = "len-start" + (c.key === cand.key ? " on" : "");
-      b.setAttribute("role", "radio");
-      b.setAttribute("aria-checked", String(c.key === cand.key));
+      b.className = "len-pick";
+      b.setAttribute("aria-pressed", String(c.key === cand.key));
       b.innerHTML =
         `<span class="len-ico"><i class="fa-solid ${MC.ui.esc(c.icon)}" aria-hidden="true"></i></span>`
         + `<span class="len-body"><span class="len-label">${MC.ui.esc(c.label)}</span>`
         + `<span class="len-reason">${MC.ui.esc(c.why)}</span></span>`
         + `<span class="len-at">${MC.ui.esc(MC.ui.fmtClock(c.t - s0))}</span>`;
-      const listen = document.createElement("button");
-      listen.type = "button";
-      listen.className = "len-listen";
-      listen.title = "ここから聴いてみる";
-      listen.setAttribute("aria-label", `${c.label}から聴いてみる`);
-      listen.innerHTML = '<i class="fa-solid fa-play" aria-hidden="true"></i>';
-      listen.onclick = e => {
-        e.stopPropagation();
-        if (c.key !== MC.S.startKey) { MC.S.startKey = c.key; MC.ui.invalidateCuts(); }
-        MC.ui.renderLengthSec();
-        MC.ui.updateTransport();
-        MC.preview.seek(MC.S.trimIn);
-        MC.preview.play();
-      };
       b.onclick = () => {
         if (c.key === MC.S.startKey) return;
         MC.S.startKey = c.key;
@@ -636,8 +668,26 @@ MC.ui.renderLengthSec = () => {
         MC.ui.updateTransport();
         MC.preview.seek(MC.S.trimIn);
       };
-      b.appendChild(listen);
-      startHost.appendChild(b);
+      const listen = document.createElement("button");
+      listen.type = "button";
+      /* 再生中はこのボタンが停止ボタンになる。押しっぱなしで止め方が
+         画面から消えるのを防ぐ(以前は .playing のCSSだけあって未実装だった) */
+      const playing = MC.S.playing && c.key === cand.key;
+      listen.className = "len-listen" + (playing ? " playing" : "");
+      listen.title = playing ? "止める" : "ここから聴いてみる";
+      listen.setAttribute("aria-label", playing ? "止める" : `${c.label}から聴いてみる`);
+      listen.innerHTML = `<i class="fa-solid ${playing ? "fa-pause" : "fa-play"}" aria-hidden="true"></i>`;
+      listen.onclick = () => {
+        if (playing) { MC.preview.pause(); MC.ui.renderLengthSec(); return; }
+        if (c.key !== MC.S.startKey) { MC.S.startKey = c.key; MC.ui.invalidateCuts(); }
+        MC.ui.renderLengthSec();
+        MC.ui.updateTransport();
+        MC.preview.seek(MC.S.trimIn);
+        MC.preview.play().then(() => MC.ui.renderLengthSec());
+      };
+      row.appendChild(b);
+      row.appendChild(listen);
+      startHost.appendChild(row);
     }
   }
 
@@ -654,6 +704,9 @@ MC.ui.renderLengthSec = () => {
       rng.max = String(Math.max(s0 + 0.1, hi));
       rng.value = String(cand.t);
       atEl.textContent = MC.ui.fmtClock(cand.t - s0);
+      /* min/max/value は素材の頭からの絶対秒だが、画面に出るのは演奏の頭からの
+         位置。valuetext を付けないと、読み上げには画面と違う数字が届く */
+      rng.setAttribute("aria-valuetext", MC.ui.fmtClock(cand.t - s0) + " から");
       /* ドラッグ中は**作り直さない**。ここで renderLengthSec を呼ぶと
          スライダー自身が作り直されて指が離れてしまう。
          画面の数字と範囲だけ動かし、確定(change)でまとめて反映する */
@@ -662,11 +715,13 @@ MC.ui.renderLengthSec = () => {
         MC.S.trimIn = t;
         MC.S.trimOut = Math.min(s1, t + lenSec);
         atEl.textContent = MC.ui.fmtClock(t - s0);
+        rng.setAttribute("aria-valuetext", MC.ui.fmtClock(t - s0) + " から");
         const chip = startHost.querySelector(".len-start.on .len-at");
         if (chip) chip.textContent = MC.ui.fmtClock(t - s0);
         summary.textContent =
           `${MC.ui.fmtLen(MC.S.trimOut - MC.S.trimIn)}の動画を、`
-          + `演奏がはじまって ${MC.ui.fmtClock(t - s0)} のところから作ります`;
+          + `演奏がはじまって ${MC.ui.fmtClock(t - s0)} のところから作ります`
+          + MC.ui.lengthEta(MC.S.trimOut - MC.S.trimIn);
         MC.ui.updateTransport();
         MC.preview.seek(t);
       };
@@ -687,11 +742,27 @@ MC.ui.renderLengthSec = () => {
 
   /* --- まとめ --- */
   const [tIn, tOut] = MC.trimRange();
-  summary.textContent = !canChoose
+  summary.textContent = (!canChoose
     ? `演奏ぜんぶ（${MC.ui.fmtLen(tOut - tIn)}）を1本にします`
     : cand.key === "manual"
       ? `${MC.ui.fmtLen(tOut - tIn)}の動画を、演奏がはじまって ${MC.ui.fmtClock(tIn - s0)} のところから作ります`
-      : `${MC.ui.fmtLen(tOut - tIn)}の動画を、「${cand.label}」から作ります`;
+      : `${MC.ui.fmtLen(tOut - tIn)}の動画を、「${cand.label}」から作ります`)
+    + MC.ui.lengthEta(tOut - tIn);
+};
+
+/* この長さを選んだら、あとどれくらい待つのか(2026-07-31 UI/UXレビュー P1)。
+   「この長さで進める」はいちばん重い映像解析の引き金なので、
+   長さを選ぶ画面にこそ待ち時間が要る ─ 短いほうを選ぶ理由にもなる。
+   式は #totalEtaHint と同じ(2箇所で違う数字を出さない) */
+MC.ui.lengthEta = showSec => {
+  const clips = MC.S.clips.filter(c => !c.isAudio && !c.isImage);
+  if (!clips.length || !(showSec > 1)) return "";
+  const anaSec = clips.length * showSec * MC.ui.analysisRate();
+  let expFactor = MC.ui.exportMode() === "realtime" ? 1.15 : (MC.isIOS ? 1.8 : 0.9);
+  if (MC.exporter.quality() === "light") expFactor *= 0.8;
+  // 1分未満は「1分ほど」に丸める。秒まで出すと正確に見えすぎる
+  const mins = s => Math.max(1, Math.round(s / 60));
+  return `。できるまで、あわせておよそ${mins(anaSec + showSec * expFactor)}分`;
 };
 
 /* 演奏のはじまりを0とした位置の表記(0:00形式)。
@@ -835,6 +906,25 @@ MC.ui.updateActionBar = () => {
         return;
       }
       conf = { label: "この音で進める", icon: "fa-check", act: () => db && db.click() };
+    } else if (cur === "length") {
+      /* 長さと始まり(2026-07-31 UI/UXレビュー P0)。
+         375pxではカードが最大9枚並び、決定ボタンは折り返しのはるか下にある。
+         他の工程は全部この親指バーで受けているのに、ここだけ抜けていた。
+         流儀は音声と同じ ─ 本体のボタンが見えているときは重ねない */
+      const lb = MC.ui.$("#lenDecideBtn");
+      if (!lb) {
+        bar.classList.remove("on");
+        document.body.classList.remove("mz-actionbar-on");
+        return;
+      }
+      const r = lb.getBoundingClientRect();
+      if (r.height > 0 && r.top < window.innerHeight - 70 && r.bottom > 0) {
+        bar.classList.remove("on");
+        document.body.classList.remove("mz-actionbar-on");
+        return;
+      }
+      conf = { label: "この長さで進める", icon: "fa-check",
+        disabled: lb.disabled, act: () => lb.click() };
     } else if ((cur === "sync" || cur === "polish") &&
                MC.ui._setupTab !== "pro" && !MC.S.easyDone) {
       /* おまかせタブでは同期ボタンは隠れている。次の一手は「おまかせで開始」。

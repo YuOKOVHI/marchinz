@@ -123,8 +123,8 @@ window.MZ_LIMITS = (() => {
      演奏の長さで丸める。ここの sec は上限比較と表示のための代表値 */
   L.EXPORT_PRESETS = [
     { id: "short", label: "ショート",   sec: 59,  hint: "SNSに出しやすい長さ" },
-    { id: "mid",   label: "ミドル",     sec: 180, hint: "見どころをまとめた長さ" },
-    { id: "full",  label: "まるごと",   sec: 510, hint: "ショウ1本ぶん", whole: true },
+    { id: "mid",   label: "ミドル",     sec: 180, hint: "3分だけ切り出す長さ" },
+    { id: "full",  label: "まるごと",   sec: 510, hint: "演奏ぜんぶ", whole: true },
   ];
 
   /* いまの人・いまの端末で使えるかを添えて返す。

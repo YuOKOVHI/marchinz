@@ -28,7 +28,7 @@ MC.highlight = {
       icon: "fa-fire", score: c => c.tutti },
     { key: "ballad",   label: "バラード",     why: "静かでゆったりしたところ",
       icon: "fa-moon", score: c => c.quiet },
-    { key: "drumline", label: "ドラムライン", why: "打楽器が手数多く叩いているところ",
+    { key: "drumline", label: "ドラムライン", why: "打楽器がたくさん鳴っているところ",
       icon: "fa-drum", score: c => c.percussion },
     { key: "solo",     label: "ソロ",         why: "誰かが抜かれているところ",
       icon: "fa-star", score: c => c.feature },
@@ -45,7 +45,7 @@ MC.highlight = {
   START:  { key: "start",  label: "スタート",   why: "演奏のはじまりから", icon: "fa-flag" },
   /* おすすめの5つで足りないとき用。音では探さず、本人が決める(2026-07-31 優さん指示) */
   MANUAL: { key: "manual", label: "自分で選ぶ", why: "好きな場所から始められます", icon: "fa-hand-pointer" },
-  FINALE: { key: "finale", label: "フィナーレ", why: "終わりまで入るところ", icon: "fa-flag-checkered" },
+  FINALE: { key: "finale", label: "フィナーレ", why: "演奏の終わりまで入ります", icon: "fa-flag-checkered" },
   /* 候補どうしがこれより近ければ同じ場面とみなす。長さに比例させるが、
      曲の長さでも頭を打つ ─ 比例だけにすると、3分×8分30秒の曲では
      離れた候補が2つしか作れず「5つ出す」が成立しない。
