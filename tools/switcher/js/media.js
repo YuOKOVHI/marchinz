@@ -213,7 +213,10 @@ MC.media.afterChange = () => {
   MC.restoreTrim();
   MC.preview.applyMute();
   MC.saveState();
-  MC.ui.resetEasyDone();   // 素材が変わったら「書き出すだけ」状態を解除
+  /* 前回と同じ動画が戻ってきたなら、演奏の範囲(showIn/showOut)は捨てない。
+     渡さずに呼んでいたため、直前の restoreTrim() が戻した値を
+     この行が消し、次の保存で localStorage ごと壊していた(2026-07-31) */
+  MC.ui.resetEasyDone(MC.restoreInfo.trim || MC.restoreInfo.cuts);
   MC.ui.renderAll();
   MC.ui.focusNextAction();   // 次にすること(おまかせで開始)まで運ぶ
   /* 何がどこまで戻ったかを、実際の結果だけで伝える。

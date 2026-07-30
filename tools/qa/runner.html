@@ -1486,6 +1486,139 @@ async function countSamples(ns, file, fromSec) {
     if (!S.lengthDecided) throw new Error("同じ長さを押しただけで作り直しになる");
     return "選び直す→未決定へ / 同じものを押す→そのまま";
   });
+  /* ===== ⑰ 範囲とカット割の整合(経路を問わない不変条件) =====
+     2026-07-31 シニアエンジニアのレビュー: 「lengthDecided を落とす」テストは
+     .len-card 経由しか見ていなかったため、#trimInBtn 等から入る3本の穴が
+     素通りしていた。**書き込み経路ごとに書かず、不変条件1本で見張る**。
+     今後 trim を書く4本目が生えても、これが落ちる。 */
+  const lenSetup = (w, S, opts) => {
+    const o = opts || {};
+    S.clips.forEach(c => { c.tiltOk = true; c.syncMethod = "波形"; c.duration = 510; });
+    S.audioDecided = true; S.easyDone = o.easyDone !== false;
+    S.showIn = 0; S.showOut = 510;
+    Object.assign(w.MC.getClip(1), mkSong(510));
+    S.exportPreset = "short"; S.startKey = "manual"; S.startAt = 100;
+    S.lengthDecided = true;
+    S.trimIn = 100; S.trimOut = 159;
+    // 決めた範囲に対して作られたカット割(3台が順に出る)
+    S.cutList = [
+      { t: 100, clipId: 1, trans: "cut", dur: 0 },
+      { t: 120, clipId: 2, trans: "cut", dur: 0 },
+      { t: 140, clipId: 3, trans: "cut", dur: 0 },
+    ];
+    w.MC.ui._viewPhase = null;
+    w.MC.ui.refreshJourney();
+  };
+  /* 範囲を等間隔にサンプルして、実際に描かれるカメラの種類を数える */
+  const camsIn = w => {
+    const [a, b] = w.MC.trimRange();
+    const set = new Set();
+    for (let i = 0; i <= 40; i++) set.add(w.MC.cutAt(a + (b - a) * i / 40).cur);
+    return set;
+  };
+
+  group("⑰ 書き出し範囲とカット割の整合(不変条件)");
+  await test("★範囲を手で動かしたら、カット割を作り直すまで先へ進ませない(3経路とも)", async () => {
+    const w = await compEnv();
+    const R = w.MC.ui.STEP_RANK;
+    const routes = [
+      { name: "#trimInBtn（INをここに）", run: () => { w.MC.S.t = 40; w.document.getElementById("trimInBtn").click(); } },
+      { name: "#trimResetBtn（リセット）", run: () => w.document.getElementById("trimResetBtn").click() },
+      { name: "IN反映（演奏の範囲をさがす）", run: () => {
+          w.MC.ui._salute = { musicStart: 48, musicEnd: 500 };
+          w.document.getElementById("preRoll").value = "8";
+          w.document.getElementById("saluteInBtn").click();
+        } },
+    ];
+    const done = [];
+    for (const r of routes) {
+      const S = compReset(w);
+      lenSetup(w, S);
+      /* まず土台の確認: 決めた範囲では3台がちゃんと出ている */
+      if (camsIn(w).size < 2) throw new Error(`${r.name}: 土台が壊れている(最初から1カメラ)`);
+      r.run();
+      /* ★ 不変条件: 範囲を動かしたあと、
+         (a) 作り直し待ちになっている か (b) カメラが潰れていない のどちらか。
+         (a)でも(b)でもないなら、古いカット割のまま書き出しへ行けてしまう */
+      const stale = w.MC.S.lengthDecided;
+      const collapsed = camsIn(w).size < 2;
+      if (stale && collapsed) {
+        throw new Error(`${r.name}: 決定済みのまま ${camsIn(w).size} カメラに潰れた`);
+      }
+      if (stale) throw new Error(`${r.name}: 範囲を動かしたのに『決定済み』のまま`);
+      if (R[w.MC.ui._derivedPhase] > R.length) {
+        throw new Error(`${r.name}: 到達点が ${w.MC.ui._derivedPhase} で書き出しへ飛べる`);
+      }
+      done.push(r.name);
+    }
+    return done.length + "経路とも作り直し待ちへ";
+  });
+  await test("★同じ動画を選び直したとき、演奏の範囲を自分で消さない", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.clips.forEach(c => { c.duration = 510; });
+    S.showIn = 12; S.showOut = 480; S.startAt = 100;
+    S.trimIn = 12; S.trimOut = 71;
+    S.exportPreset = "short"; S.startKey = "start"; S.lengthDecided = true;
+    w.MC.saveState();
+    /* 再読込→同じ動画を選び直した状況を作る。afterChange の中で
+       restoreTrim() が戻した値を resetEasyDone() が消していた(2026-07-31) */
+    S.showIn = null; S.showOut = null; S.trimIn = 0; S.trimOut = null;
+    S.clips.forEach(c => { c.restored = true; });
+    w.MC.restoreTrim();
+    eq(S.showIn, 12, "restoreTrim 直後の演奏の開始");
+    w.MC.ui.resetEasyDone(w.MC.restoreInfo.trim || w.MC.restoreInfo.cuts);
+    eq(S.showIn, 12, "resetEasyDone 後の演奏の開始");
+    eq(S.showOut, 480, "resetEasyDone 後の演奏の終了");
+    if (S.lengthDecided) throw new Error("長さの確認まで引き継いでいる(解析はやり直しになるので確認させる)");
+    /* 別の動画を入れたときは、逆に必ず捨てる */
+    w.MC.ui.resetEasyDone(false);
+    if (S.showIn != null) throw new Error("別素材なのに前の演奏範囲が残っている");
+    return "同じ動画=残す / 別の動画=捨てる";
+  });
+  await test("★進捗の分母(finishSteps)が、実際に通る段と食い違わない", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    const rows = [];
+    for (const mode of ["switch", "vertical"]) {
+      for (const nClip of [1, 2]) {
+        for (const colorOn of [true, false]) {
+          S.mode = mode; S.colorOn = colorOn;
+          S.clips = [1, 2].slice(0, nClip).map(id => ({
+            id, name: `c${id}.mp4`, size: 100 + id, lastModified: 900 + id,
+            isImage: false, isAudio: false, hasAudio: true, duration: 510, offset: 0,
+            syncMethod: "波形", role: "auto", freq: "auto", rig: "auto", rot: 0, tiltOk: true,
+          }));
+          /* 実際に通る段: director は2本未満で throw する(director.js:37)ので0段、
+             色そろえも2本未満では走らない(colormatch.js:117) */
+          const real = (mode === "switch" && nClip >= 2 ? 3 : 0)
+                     + (colorOn && nClip >= 2 ? 1 : 0);
+          const got = w.MC.ui.finishSteps();
+          if (got !== real) {
+            throw new Error(`${mode}/${nClip}本/color=${colorOn}: 分母 ${got} だが実際は ${real} 段`);
+          }
+          rows.push(`${mode.slice(0, 3)}${nClip}${colorOn ? "C" : ""}=${got}`);
+        }
+      }
+    }
+    return rows.join(" ");
+  });
+  await test("★演奏が短いときに、同じ数字のカードを並べない", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.clips.forEach(c => { c.tiltOk = true; c.syncMethod = "波形"; c.duration = 50; });
+    S.audioDecided = true; S.easyDone = false; S.lengthDecided = false;
+    S.showIn = 0; S.showOut = 50;
+    Object.assign(w.MC.getClip(1), mkSong(50));
+    S.exportPreset = null; S.startKey = null;
+    w.MC.ui.refreshJourney();
+    const durs = [...w.document.querySelectorAll("#lenPresets .len-dur")].map(e => e.textContent);
+    if (new Set(durs).size !== durs.length) {
+      throw new Error("同じ長さのカードが並んでいる: " + durs.join(" / "));
+    }
+    ge(durs.length, 1, "選択肢の数");
+    return `50秒の演奏 → ${durs.join(" / ")}`;
+  });
   await test("★工程が7つになっても、現在地がバーからはみ出さない", async () => {
     const w = await compEnv();
     const S = compReset(w);

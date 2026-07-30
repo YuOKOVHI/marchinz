@@ -422,13 +422,23 @@ MC.ui.focusNextAction = () => {
 };
 
 /* おまかせ完了状態の解除。素材・モードが変わったら準備からやり直し */
-MC.ui.resetEasyDone = () => {
+/* 素材が変わったので確認をやり直す。
+   ★ restored=true（前回と同じ動画が戻ってきた）のときは、演奏の範囲まで
+     捨ててはいけない。ここを無条件に null にしていたため、
+     media.js の `restoreTrim() → saveState() → resetEasyDone()` の並びで
+     **復元した showIn/showOut を3行あとに自分で消し、次の保存で
+     localStorage ごと壊していた**（2026-07-31 シニアエンジニアのレビューで
+     実測発覚。復元バナーは「範囲も復元しました」と言いながら中身は空だった）。
+   長さの確認(lengthDecided)は復元でも落とす ─ clip.visual は保存されないので、
+   どのみち映像解析はやり直しになる。範囲だけ引き継いで選び直してもらう */
+MC.ui.resetEasyDone = (restored = false) => {
   MC.S.audioDecided = false;   // 素材が変われば音声も選び直し(2026-07-24)
-  /* 素材が変われば演奏の範囲も見どころも変わる。長さの選択もやり直し(2026-07-31)。
-     showIn/showOut を消すのは、古い演奏範囲から作った候補を見せないため */
   MC.S.lengthDecided = false;
-  MC.S.showIn = null;
-  MC.S.showOut = null;
+  if (!restored) {
+    MC.S.showIn = null;
+    MC.S.showOut = null;
+    MC.S.startAt = null;   // 前の素材の絶対秒が「自分で選ぶ」に残らないように
+  }
   if (!MC.S.easyDone) return;
   MC.S.easyDone = false;
   MC.ui.renderEasyButton();
@@ -496,8 +506,31 @@ MC.ui.showRange = () => {
 /* いま選ばれているプリセット(使えないものを選んでいたら、使える中で一番長いもの)。
    既定を「使える中で一番長い」にしているのは、これまでの動き(演奏まるごと)に
    一番近いのが「まるごと」だから ─ 上限が足りる人には今までどおりに見える */
-MC.ui.currentPreset = () => {
-  const list = (window.MZ_LIMITS && MZ_LIMITS.exportPresets) ? MZ_LIMITS.exportPresets() : [];
+/* いまの演奏で意味のある選択肢だけを返す。
+   ★ 演奏より長いプリセットは出さない。presetSec は演奏尺で頭打ちするので、
+     50秒の演奏では「ショート50秒 / ミドル50秒 / まるごと50秒」と
+     同じ数字のカードが3枚並ぶ(2026-07-31 レビューで実測)。
+   ★ 鍵の判定も**実尺**でやり直す。limits.js は代表値(まるごと=510秒)で
+     比べるので、45秒の演奏でもゲストには「まるごと」が鍵つきに見えていた ─
+     45秒なら上限(59秒)に収まるので、本当は使える。 */
+MC.ui.usablePresets = showLen => {
+  const all = (window.MZ_LIMITS && MZ_LIMITS.exportPresets) ? MZ_LIMITS.exportPresets() : [];
+  if (!all.length) return [];
+  const hard = (MC.exporter && MC.exporter.maxExportableSec)
+    ? MC.exporter.maxExportableSec() : Infinity;
+  const cap = Math.min(MZ_LIMITS.maxExportSec == null ? Infinity : MZ_LIMITS.maxExportSec, hard);
+  const rated = all.map(p => {
+    const want = p.whole ? (showLen || p.sec) : p.sec;
+    const locked = want > cap + 0.01;
+    return { ...p, locked, unlock: locked ? p.unlock : "" };
+  });
+  if (!(showLen > 0)) return rated;
+  const fit = rated.filter(p => p.whole || p.sec < showLen - 1);
+  return fit.length ? fit : rated.filter(p => p.whole);
+};
+
+MC.ui.currentPreset = showLen => {
+  const list = MC.ui.usablePresets(showLen);
   if (!list.length) return null;
   const open = list.filter(p => !p.locked);
   const pick = list.find(p => p.id === MC.S.exportPreset && !p.locked);
@@ -509,7 +542,7 @@ MC.ui.currentPreset = () => {
      元の演奏範囲が短くなっていって選び直せなくなる */
 MC.ui.applyLengthChoice = () => {
   const [s0, s1] = MC.ui.showRange();
-  const preset = MC.ui.currentPreset();
+  const preset = MC.ui.currentPreset(s1 - s0);
   if (!preset) return null;
   const lenSec = MC.highlight.presetSec(preset, s1 - s0);
   const audioClip = MC.getClip(MC.S.audioClipId);
@@ -544,6 +577,12 @@ MC.ui.applyLengthChoice = () => {
 MC.ui.invalidateCuts = () => {
   if (!MC.S.lengthDecided) return;
   MC.S.lengthDecided = false;
+  /* 色統計も捨てる。clip.visual は l0|l1 をキーに持つ(visual.js:451)ので
+     範囲を変えれば解析し直されるが、colorStats は「一度積んだら二度と
+     捨てない」実装(visual.js:489 / colormatch.js:75)だった。
+     バラード(暗い)で決めてから大盛り上がり(明るい)へ選び直すと、
+     明るい区間に暗所基準の補正が当たる ─ エラーは出ない(2026-07-31) */
+  MC.S.clips.forEach(c => { c.colorStats = null; c.colorT = null; });
   MC.saveState();
   MC.ui.refreshJourney();
 };
@@ -586,7 +625,7 @@ MC.ui.renderLengthSec = () => {
   if (!applied) return;
   const { preset, lenSec, cands, cand, canChoose, audioClip } = applied;
   const [s0, s1] = MC.ui.showRange();
-  const list = MZ_LIMITS.exportPresets();
+  const list = MC.ui.usablePresets(s1 - s0);
 
   /* --- 長さのカード --- */
   presetHost.innerHTML = "";
@@ -2414,7 +2453,10 @@ MC.ui.finishSteps = () => {
      colorOn だけで数えると、動画1本のとき分母が1多く、しかも必ず
      「色そろえだけできませんでした。」が出る ─ 成功しているのに失敗を見せる */
   const vclips = MC.S.clips.filter(c => !c.isAudio && !c.isImage);
-  return (MC.S.mode === "switch" ? 3 : 0)                        // director の3段
+  /* director.run(director.js:37) は動画2本未満で throw する。本数を見ずに3を
+     返していたため、動画1本+自動スイッチングでは「全3段」と名乗った直後に
+     1段も進まず必ず失敗を見せていた(色そろえ側は最初からこの条件つき) */
+  return ((MC.S.mode === "switch" && vclips.length >= 2) ? 3 : 0)   // director の3段
     + ((MC.S.colorOn && vclips.length >= 2) ? 1 : 0);            // 色をそろえる
 };
 
@@ -2441,7 +2483,8 @@ MC.ui.runEasyFinish = async (pIn, base = 0) => {
     /* 開始/終了の自動区切りと音楽の解析は runEasyScan へ移した(2026-07-31)。
        ここへ来る時点で MC.trimRange() は「選ばれた長さと始まり」を指しており、
        映像解析もカット割もその中だけを見る */
-    if (MC.S.mode === "switch") {   // シーン分析は③自動スイッチングだけ
+    // 条件は finishSteps() と必ず揃える(分母と実際に通る段がずれる)
+    if (MC.S.mode === "switch" && _vc.length >= 2) {   // シーン分析は③自動スイッチングだけ
       await MC.director.run(p, n);   // 中で3段ぶん進む(音楽/映像/カット割)
       n += 3;
       MC.timeline.render();
@@ -2574,7 +2617,28 @@ MC.ui.exportFailHint = e => {
 };
 
 /* --- トランスポート --- */
+/* 「ここを聴く」の再生/停止表示だけを合わせる。
+   ★ ここで renderLengthSec() を呼んではいけない ─ スライダーのドラッグ中も
+     updateTransport は走るので、枠ごと作り直すと指が離れる。
+     アイコンとラベルだけ差し替える(2026-07-31 レビュー: 範囲の末尾まで
+     再生し切ると⏸のまま固まる、を直すため) */
+MC.ui.syncLenPlayBtns = () => {
+  const host = document.getElementById("lenStarts");
+  if (!host || !host.children.length) return;
+  host.querySelectorAll(".len-start").forEach(row => {
+    const btn = row.querySelector(".len-listen");
+    if (!btn) return;
+    const on = MC.S.playing && row.classList.contains("on");
+    if (btn.classList.contains("playing") === on) return;
+    btn.classList.toggle("playing", on);
+    btn.title = on ? "止める" : "ここから聴いてみる";
+    btn.setAttribute("aria-label", on ? "止める" : "ここから聴いてみる");
+    btn.innerHTML = `<i class="fa-solid ${on ? "fa-pause" : "fa-play"}" aria-hidden="true"></i>`;
+  });
+};
+
 MC.ui.updateTransport = () => {
+  MC.ui.syncLenPlayBtns();
   const dur = MC.timelineDuration();
   const scrub = MC.ui.$("#scrub");
   if (parseFloat(scrub.max) !== dur) scrub.max = dur;
@@ -2851,9 +2915,13 @@ MC.ui.wire = () => {
   scrub.oninput = () => { MC.ui._scrubbing = true; MC.preview.pause(); MC.preview.seek(parseFloat(scrub.value)); MC.ui.updateTransport(); };
   scrub.onchange = () => { MC.ui._scrubbing = false; };
 
-  $("#trimInBtn").onclick = () => { MC.S.trimIn = MC.S.t; if (MC.S.trimOut != null && MC.S.trimOut <= MC.S.trimIn) MC.S.trimOut = null; MC.saveState(); MC.ui.updateTransport(); };
+  /* ★ 手でINを動かす経路も必ず invalidateCuts を通す(2026-07-31)。
+     cutList は「決めたときの範囲」に対して作られているので、INを前へ動かすと
+     MC.cutAt(layout.js:22)が先頭カットで頭打ちし、増えた区間が全部1カメラになる。
+     黒コマにならないので見ても気づけない。lengthDecided が false なら即returnする */
+  $("#trimInBtn").onclick = () => { MC.S.trimIn = MC.S.t; if (MC.S.trimOut != null && MC.S.trimOut <= MC.S.trimIn) MC.S.trimOut = null; MC.saveState(); MC.ui.invalidateCuts(); MC.ui.updateTransport(); };
   $("#trimOutBtn").onclick = () => { if (MC.S.t > MC.S.trimIn + 0.1) { MC.S.trimOut = MC.S.t; MC.saveState(); MC.ui.updateTransport(); } };
-  $("#trimResetBtn").onclick = () => { MC.S.trimIn = 0; MC.S.trimOut = null; MC.saveState(); MC.ui.updateTransport(); };
+  $("#trimResetBtn").onclick = () => { MC.S.trimIn = 0; MC.S.trimOut = null; MC.saveState(); MC.ui.invalidateCuts(); MC.ui.updateTransport(); };
 
   $("#exportBtn").onclick = async () => {
     if (MC.exporter.running) return;
@@ -3109,7 +3177,7 @@ MC.ui.wire = () => {
     const pre = parseFloat($("#preRoll").value) || 0;
     MC.S.trimIn = Math.max(0, s.musicStart - pre);
     if (MC.S.trimOut != null && MC.S.trimOut <= MC.S.trimIn) MC.S.trimOut = null;
-    MC.saveState(); MC.ui.updateTransport(); MC.preview.seek(MC.S.trimIn);
+    MC.saveState(); MC.ui.invalidateCuts(); MC.ui.updateTransport(); MC.preview.seek(MC.S.trimIn);
     MC.ui.toast(`INを ${MC.ui.fmtTime(MC.S.trimIn)} に設定しました(演奏開始の${pre}秒前)`);
   };
   $("#saluteOutBtn").onclick = () => {
