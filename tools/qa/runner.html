@@ -1008,29 +1008,29 @@ async function countSamples(ns, file, fromSec) {
     return "terminate+release+参照クリア";
   });
 
-  group("⑪ 傾きの確認(2026-07-31 カード内タスク化・全確認ゲートは維持)");
-  await test("★全部OKするまで「動画をそろえる」から先へ進まない(ゲート維持)", async () => {
+  group("⑪ 傾きの確認(2026-07-31 単独工程へ戻した・1画面1本・全確認ゲートは維持)");
+  await test("★全部OKするまで傾きの工程から先へ進まない(ゲート維持)", async () => {
     const w = await compEnv();
     const S = compReset(w);
     S.clips.forEach(c => { c.tiltOk = false; c.syncMethod = "未同期"; });
     S.easyDone = false;
     w.MC.ui.renderClips();   // 実物では取り込み時の renderAll が呼ぶ
     w.MC.ui.refreshJourney();
-    /* 傾きは工程ではなくなった。未確認のあいだは mat に留まる */
-    if (w.document.body.dataset.mzjPhase !== "mat") {
-      throw new Error(`現在地が mat でなく ${w.document.body.dataset.mzjPhase}`);
+    /* 傾きは単独の工程に戻した(2026-07-31)。未確認のあいだは tilt に留まる */
+    if (w.document.body.dataset.mzjPhase !== "tilt") {
+      throw new Error(`現在地が tilt でなく ${w.document.body.dataset.mzjPhase}`);
     }
-    /* カードに「かたむきを確認する」のバッジが人数ぶん出る */
+    /* カードに「かたむきを確認する」のバッジが本数ぶん出る(どれが済んだか一目で分かる) */
     const todo = w.document.querySelectorAll("#clipSlots .tilt-badge.todo").length;
     if (todo !== 3) throw new Error(`未確認バッジが ${todo} 個(3個のはず)`);
-    /* 1台OK → まだ mat(3台あるので) */
+    /* 1本OK → まだ tilt(3本あるので) */
     S.clips[0].tiltOk = true;
     w.MC.ui.refreshJourney();
-    if (w.document.body.dataset.mzjPhase !== "mat") throw new Error("1台OKしただけで先へ進んでしまう");
+    if (w.document.body.dataset.mzjPhase !== "tilt") throw new Error("1本OKしただけで先へ進んでしまう");
     S.clips.forEach(c => { c.tiltOk = true; });
     w.MC.ui.refreshJourney();
-    if (w.document.body.dataset.mzjPhase === "mat") throw new Error("全台OKしたのに動画の工程から出られない");
-    return "未OK=matに留まる(バッジ3個) / 全OK=次の工程へ";
+    if (w.document.body.dataset.mzjPhase === "tilt") throw new Error("全部OKしたのに傾きの工程から出られない");
+    return "未OK=tiltに留まる(バッジ3個) / 全OK=次の工程へ";
   });
   await test("★押したカードのかたむきが開く(確認ずみでも)", async () => {
     const w = await compEnv();
@@ -1043,19 +1043,30 @@ async function countSamples(ns, file, fromSec) {
     w.MC.ui.refreshJourney();
     const badges = [...w.document.querySelectorAll("#clipSlots .tilt-badge")];
     eq(badges.length, 3, "バッジの数");
+    /* カードは mat の画面の中にある。傾きが単独工程になった(2026-07-31)ので、
+       押せるかを測るには mat を表示している状態で見る ─ 他の工程を見ている
+       あいだ #dropSec は .step-off(display:none) で、標的の高さが 0 になる */
+    w.MC.ui._viewPhase = "mat";
+    w.MC.ui.refreshJourney();
     for (const [i, b] of badges.entries()) {
+      const h = b.getBoundingClientRect().height;
+      if (h < 43.5) throw new Error(`タップ標的が ${Math.round(h)}px(44pt未満)`);
       b.click();
+      if (w.document.body.dataset.mzjPhase !== "tilt") {
+        throw new Error(`バッジを押しても傾きの画面へ行かない(${w.document.body.dataset.mzjPhase})`);
+      }
       const shown = w.document.getElementById("tiltCamNo").textContent;
       if (!shown.startsWith(`動画${i + 1} `)) {
         throw new Error(`${i + 1}枚目を押したのに「${shown}」が開いた`);
       }
       /* 押せることが見た目で分かるか(iOS Safari は title を読まない) */
       if (!b.querySelector(".tilt-badge-go")) throw new Error("押せる印(›)が無い");
-      const h = b.getBoundingClientRect().height;
-      if (h < 43.5) throw new Error(`タップ標的が ${Math.round(h)}px(44pt未満)`);
+      w.MC.ui._viewPhase = "mat";        // 次のバッジを押すためカードの画面へ戻す
+      w.MC.ui.refreshJourney();
     }
-    w.MC.ui.closeTilt();   // 次のテストへ開いたまま渡さない
-    return "3枚とも押したカードが開く・›あり・44pt";
+    w.MC.ui._viewPhase = null;
+    w.MC.ui.unpinTilt();   // 次のテストへ固定表示を渡さない
+    return "3枚とも押したカードのページが開く・›あり・44pt";
   });
   await test("★かたむき調整中のCSSが生きている(工程からカード内へ移した取り残し)", async () => {
     const w = await compEnv();
@@ -1085,8 +1096,8 @@ async function countSamples(ns, file, fromSec) {
     if (tr && w.getComputedStyle(tr).display !== "none") {
       throw new Error("傾き調整中なのに他の操作が出ている(1画面1操作の破れ)");
     }
-    w.MC.ui.closeTilt();
-    if (w.document.body.classList.contains("mz-pin-force")) throw new Error("閉じても印が残る");
+    w.MC.ui.unpinTilt();
+    if (w.document.body.classList.contains("mz-pin-force")) throw new Error("解いても印が残る");
     w.document.documentElement.style.removeProperty("--mz-tilt-pad");
     return `余白の指定が効く / ↺${Math.round(st.width)}x${Math.round(st.height)} / 他操作は非表示`;
   });
@@ -1113,7 +1124,7 @@ async function countSamples(ns, file, fromSec) {
     w.MC.exporter._resumeSec = 0;
     return `toast(z${zT}) < overlay(z${zO}) なので常設欄へ / 「${pre.textContent.trim()}」`;
   });
-  await test("★傾きの箱はバッジから開き、mat以外の工程では畳まれる", async () => {
+  await test("★傾きの画面は傾きの工程でだけ出る(1画面1操作)", async () => {
     const w = await compEnv();
     const S = compReset(w);
     S.clips.forEach(c => { c.tiltOk = false; c.syncMethod = "未同期"; });
@@ -1121,20 +1132,29 @@ async function countSamples(ns, file, fromSec) {
     w.MC.ui.renderClips();   // 実物では取り込み時の renderAll が呼ぶ
     w.MC.ui.refreshJourney();
     const sec = w.document.getElementById("tiltSec");
-    if (!sec.hidden) throw new Error("開いていないのに傾きの箱が出ている");
-    w.document.querySelector("#clipSlots .tilt-badge.todo").click();
-    if (sec.hidden) throw new Error("バッジを押しても箱が開かない");
-    /* hidden属性がCSSに殺されていないか(過去に権限UIが露出した事故の再発防止) */
-    sec.hidden = true;
-    if (w.getComputedStyle(sec).display !== "none") {
-      throw new Error("hidden なのに computed display が " + w.getComputedStyle(sec).display);
+    const drop = w.document.getElementById("dropSec");
+    const disp = e => w.getComputedStyle(e).display;
+    /* ★ 実測は computed display で。hidden 属性は 2026-07-31 に廃止したので、
+       .hidden を見ると常に false で、この見張りが素通りになる */
+    if (disp(sec) === "none") throw new Error("傾きの工程なのに傾きの画面が出ていない");
+    if (disp(drop) !== "none") {
+      throw new Error("傾きの画面と「動画を選ぶ」枠が同時に出ている(1画面1操作の破れ)");
     }
-    sec.hidden = false;
-    /* 全確認して工程が進んだら箱は畳まれる */
+    /* 全部確認して工程が進んだら、傾きの画面は引っ込む */
     S.clips.forEach(c => { c.tiltOk = true; });
     w.MC.ui.refreshJourney();
-    if (!sec.hidden) throw new Error("工程が進んだのに傾きの箱が開いたまま");
-    return "バッジで開く / hidden実効 / 工程が進むと畳む";
+    if (disp(sec) !== "none") throw new Error("工程が進んだのに傾きの画面が出たまま");
+    if (w.document.body.classList.contains("mz-pin-force")) {
+      throw new Error("工程が進んだのにプレビューが固定されたまま");
+    }
+    /* 工程表から「動画」へ戻ると、今度は傾きが引っ込んでカードが出る */
+    w.MC.ui._viewPhase = "mat";
+    w.MC.ui.refreshJourney();
+    if (disp(sec) !== "none" || disp(drop) === "none") {
+      throw new Error("「動画」へ戻ったのに出し分けが入れ替わらない");
+    }
+    w.MC.ui._viewPhase = null;
+    return "傾きの工程=傾きだけ / 進むと引っ込み固定も解ける / 動画へ戻ると入れ替わる";
   });
 
   group("⑫ 再読込で「前回のつづき」を自分で消さない(2026-07-29 実機で再開できなかった)");

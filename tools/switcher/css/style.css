@@ -1123,10 +1123,10 @@ body[data-mzj-phase="sync"] .stage { display: none; }
 body[data-mzj-phase="audio"] .stage { display: none; }
 /* 傾きの確認中はプレビューの絵だけ。再生バーとIN/OUTは別の工程の道具で、
    固定表示のプレビューに重なって見えてもいた(2026-07-28) */
-/* ★ セレクタは body.mz-pin-force で。data-mzj-phase="tilt" は
-   傾きをカード内タスクへ降ろした 2026-07-31 に**入らなくなった値**で、
-   この3本(と下の2本)が丸ごと死んでいた。mz-pin-force は renderTiltSec が付け
-   closeTilt が外す 1:1 の印なので、傾き調整中と完全に一致する */
+/* ★ セレクタは body.mz-pin-force で。data-mzj-phase="tilt" を前提にすると、
+   工程の名前を変えた日にこの3本が黙って死ぬ(2026-07-31 に一度やった)。
+   mz-pin-force は renderTiltSec が付け unpinTilt が外す 1:1 の印なので、
+   傾きを直している最中と完全に一致する */
 body.mz-pin-force .transport,
 body.mz-pin-force .trim-row,
 body.mz-pin-force #cutModeBtn { display: none; }
@@ -1407,10 +1407,9 @@ body.mz-diag-noskip #exportSec::before {
   text-decoration: none; }
 
 
-/* ============ 傾きのカード内タスク化(2026-07-31 優さん承認) ============ */
-/* hidden 属性を CSS の display 指定に負けさせない(過去に権限UIが全員に
-   露出した事故の再発防止。computed display で実測して確認すること) */
-#tiltSec[hidden] { display: none !important; }
+/* ============ 素材カードのかたむきバッジ ============
+   傾きは単独の工程に戻したが(2026-07-31)、カードの✓/⚠は残す ─
+   どの動画が済んでいるかが一目で分かり、押すとその動画のページへ飛べる */
 .tilt-badge { display: inline-flex; align-items: center; gap: 6px;
   margin-top: 6px; padding: 8px 14px; min-height: 44px;
   border-radius: 999px; font-size: 12px; font-weight: 700;

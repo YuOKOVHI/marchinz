@@ -113,12 +113,11 @@
       <input type="file" id="fileInputV" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v,image/*" multiple hidden>
     </section>
 
-    <!-- 傾きの確認(独立フェーズ 2026-07-28 優さん指示)。
-         自動検出は全廃し、1本ずつ本人の目で確認して手で直す。0.1度きざみ。
-         プレビューはそのカメラを単独表示(soloId)+画面上部に固定(mz-pin-force) -->
-    <!-- 傾きは独立工程からカード内タスクへ(2026-07-31 優さん承認)。
-         この箱はカードの「かたむきを確認する」から開く。既定は hidden -->
-    <section class="panel" id="tiltSec" hidden>
+    <!-- 傾きの確認(単独の工程)。自動検出は全廃し、1本ずつ本人の目で見て手で直す。
+         0.1度きざみ。プレビューはその動画を単独表示(soloId)+画面上部に固定
+         (mz-pin-force)。1画面に1本ぶんだけを出し、動画1 → 動画2 と送る。
+         表示・非表示は applySteps(工程の出し分け)が受け持つので hidden は付けない -->
+    <section class="panel" id="tiltSec">
       <h2>動画をまっすぐにする</h2>
       <p class="sec-lead">黄色い線を目印に、1本ずつ見てください。
         かたむいていたら、まっすぐになるまで動かします。</p>
@@ -138,7 +137,7 @@
         <button type="button" id="tiltSceneBtn" class="btn small ghost" style="margin-top:8px">
           <i class="fa-solid fa-shuffle" aria-hidden="true"></i> べつの場面を見る</button>
         <div class="row" style="margin-top:10px">
-          <button type="button" id="tiltPrevBtn" class="btn small ghost">1つ前のカメラ</button>
+          <button type="button" id="tiltPrevBtn" class="btn small ghost">1つ前の動画</button>
           <button type="button" id="tiltOkBtn" class="btn primary" style="flex:1">
             <i class="fa-solid fa-check"></i> この動画はOK</button>
         </div>
