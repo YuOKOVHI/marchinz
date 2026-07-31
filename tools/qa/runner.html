@@ -1640,6 +1640,133 @@ async function countSamples(ns, file, fromSec) {
     return `幅${Math.round(tr.width)}px に7工程・現在地は内側`;
   });
 
+  /* ===== ⑱ 分割書き出しの結合(2026-07-31 エンジニアレビュー大1) =====
+     本物のH.264を2パートぶん実行時に生成し、addVideoChunkRaw で結合した
+     1本が「全コマ・正しい順番・正しい絵」で読めることを画素レベルで見張る。
+     フレーム番号を輝度に符号化してあるので、順番の入れ替わり・欠落・
+     タイムスタンプずれのどれが起きても輝度の照合で捕まる */
+  group("⑱ 分割書き出しの結合(本物のH.264・画素レベル)");
+  const PW = 320, PH = 180, PFPS = 30, plum = k => 40 + k * 4;
+  const mkPart = async (kA, kB) => {
+    const mx = new Mp4Muxer.Muxer({ target: new Mp4Muxer.ArrayBufferTarget(),
+      video: { codec: "avc", width: PW, height: PH }, fastStart: false });
+    let err = null;
+    const enc = new VideoEncoder({ output: (c, m) => mx.addVideoChunk(c, m), error: e => { err = e; } });
+    enc.configure({ codec: "avc1.42001f", width: PW, height: PH, bitrate: 2e6, framerate: PFPS });
+    const cv = new OffscreenCanvas(PW, PH), ctx = cv.getContext("2d");
+    for (let k = kA; k < kB; k++) {
+      const v = plum(k);
+      ctx.fillStyle = `rgb(${v},${v},${v})`; ctx.fillRect(0, 0, PW, PH);
+      /* タイムスタンプは本番の _exportVideoPart と同じ**パート内0起点** */
+      const f = new VideoFrame(cv, { timestamp: Math.round((k - kA) * 1e6 / PFPS),
+                                     duration: Math.round(1e6 / PFPS) });
+      enc.encode(f, { keyFrame: (k - kA) % (PFPS * 2) === 0 });
+      f.close();
+      while (enc.encodeQueueSize > 4) await new Promise(r => setTimeout(r, 2));
+    }
+    await enc.flush();
+    enc.close();
+    if (err) throw err;
+    mx.finalize();
+    return new File([mx.target.buffer], `part${kA}.mp4`, { type: "video/mp4" });
+  };
+  let PARTS = null;
+  await test("★2パートの avcC(映像の形式)が一致する(結合できる前提)", async () => {
+    if (typeof VideoEncoder === "undefined") return "WebCodecs非対応環境(スキップ)";
+    PARTS = [await mkPart(0, 23), await mkPart(23, 45)];
+    const ns = await loadShared();
+    const descs = [];
+    for (const f of PARTS) {
+      const src = new ns.MP4Source(f);
+      await src.init();
+      const cfg = src.videoDecoderConfig();
+      if (!cfg || !cfg.description) throw new Error("avcCが取れない");
+      descs.push(new Uint8Array(cfg.description));
+    }
+    if (descs[0].length !== descs[1].length || descs[0].some((b, i) => b !== descs[1][i])) {
+      throw new Error("同一設定なのに avcC が一致しない(結合方式の前提が崩れる)");
+    }
+    return `avcC ${descs[0].length}バイト一致`;
+  });
+  await test("★結合した1本が 45コマ・正しい順番・正しい絵で読める", async () => {
+    if (!PARTS) return "前提テストがスキップされた";
+    const ns = await loadShared();
+    /* 本番の結合パスと同じ手順: raw チャンク+コマ番号ぴったりのオフセット */
+    const mx = new Mp4Muxer.Muxer({ target: new Mp4Muxer.ArrayBufferTarget(),
+      video: { codec: "avc", width: PW, height: PH }, fastStart: false });
+    let first = true;
+    const bounds = [0, 23];   // 各パートの開始コマ(オフセットの計算に使う)
+    for (let i = 0; i < PARTS.length; i++) {
+      const src = new ns.MP4Source(PARTS[i]);
+      await src.init();
+      const vt = src.videoTrack();
+      const desc = new Uint8Array(src.videoDecoderConfig().description);
+      const offUs = Math.round(bounds[i] * 1e6 / PFPS);
+      for await (const s of src.samples(vt.id, 0)) {
+        mx.addVideoChunkRaw(s.data, s.is_sync ? "key" : "delta",
+          offUs + Math.round(s.cts * 1e6 / s.timescale),
+          Math.max(1, Math.round(s.duration * 1e6 / s.timescale)),
+          first ? { decoderConfig: { codec: "avc1.42001f", description: desc } } : undefined);
+        first = false;
+      }
+    }
+    mx.finalize();
+    const joined = new File([mx.target.buffer], "joined.mp4", { type: "video/mp4" });
+    /* 結合品をデコードして数える+絵を照合する */
+    const src = new ns.MP4Source(joined);
+    await src.init();
+    const vt = src.videoTrack();
+    if (!vt) throw new Error("結合品に映像トラックが無い");
+    const cfg = src.videoDecoderConfig();
+    const frames = [];
+    let derr = null;
+    const dec = new VideoDecoder({ output: f => frames.push(f), error: e => { derr = e; } });
+    dec.configure(cfg);
+    let lastTs = -1, mono = true;
+    for await (const s of src.samples(vt.id, 0)) {
+      const ts = Math.round(s.cts * 1e6 / s.timescale);
+      if (ts <= lastTs) mono = false;
+      lastTs = ts;
+      dec.decode(new EncodedVideoChunk({ type: s.is_sync ? "key" : "delta",
+        timestamp: ts, duration: Math.round(s.duration * 1e6 / s.timescale), data: s.data }));
+      while (dec.decodeQueueSize > 8) await new Promise(r => setTimeout(r, 2));
+    }
+    await dec.flush().catch(() => {});
+    dec.close();
+    if (derr) throw derr;
+    if (!mono) throw new Error("タイムスタンプが単調増加でない(結合のオフセット計算が壊れている)");
+    eq(frames.length, 45, "コマ数");
+    const cv = new OffscreenCanvas(PW, PH), ctx = cv.getContext("2d", { willReadFrequently: true });
+    frames.sort((a, b) => a.timestamp - b.timestamp);
+    for (let k = 0; k < 45; k += 4) {   // 4コマおきに画素照合(全数は時間の無駄)
+      ctx.drawImage(frames[k], 0, 0);
+      const px = ctx.getImageData(PW >> 1, PH >> 1, 1, 1).data;
+      if (Math.abs(px[0] - plum(k)) > 12) {
+        throw new Error(`コマ${k}: 輝度 期待${plum(k)} 実際${px[0]}(順番か中身が壊れている)`);
+      }
+    }
+    frames.forEach(f => f.close());
+    return "45コマ・単調増加・画素照合OK(4コマおき)";
+  });
+  await test("★ジョブの同一性: 設定が1つでも違えば別ジョブ(古いパートを混ぜない)", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.clips.forEach(c => { c.duration = 510; });
+    S.trimIn = 10; S.trimOut = 300;
+    S.cutList = [{ t: 10, clipId: 1, trans: "cut", dur: 0 }];
+    const base = w.MC.exporter.exportJobId();
+    eq(w.MC.exporter.exportJobId(), base, "同じ状態なら同じid");
+    S.trimOut = 299;                       // 範囲が1秒違う
+    const a = w.MC.exporter.exportJobId();
+    S.trimOut = 300;
+    S.cutList[0].clipId = 2;               // カット割が違う
+    const b = w.MC.exporter.exportJobId();
+    if (a === base || b === base || a === b) {
+      throw new Error("違う設定なのに同じジョブidになる(別ジョブのパートを混ぜてしまう)");
+    }
+    return "範囲・カット割の違いで別idになる";
+  });
+
   if (CF) { CF.remove(); CF = null; CW = null; CD = null; }
 
   /* ===== 集計 ===== */

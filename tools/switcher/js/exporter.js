@@ -862,7 +862,397 @@ MC.exporter._releaseAnalysisWorkers = () => {
   V._ort = null; V._ortP = null;
 };
 
+/* ============ 分割書き出し(2026-07-31 シニアエンジニアレビュー大1・優さん承認) ============
+   8分12秒=14772コマを1本のループで書くと、iPhoneでは62%で全損する(実機)。
+   90秒ずつのパートに分け、**パートごとにデコーダ×3・エンコーダ・muxerを全部
+   作り直す**。H1(flush+reseekの蓄積)・H2(IOSurface解放遅延)・H3(muxerの
+   サンプルテーブル蓄積)のどれが真因でも、蓄積が90秒ごとにリセットされる。
+   作り直しの時間コストは実測でほぼゼロ(600コマ・作り直し5回=109ms vs 連続130ms)。
+
+   パートは映像のみのMP4としてOPFSへ置き、全パート完了後に
+   addVideoChunkRaw で**デコードせずに**1本へ結合し、音声は全尺を1回で
+   エンコードする(AACのプライミング/継ぎ目問題をパート間に持ち込まない)。
+
+   途中で落ちても完了パートとジョブ台帳(mzjob.json)はOPFSに残るので、
+   同じ動画・同じ設定でもう一度書き出せば**完了パートを飛ばして続きから**走る。
+   落ちたパートの番号と秒数が sessionStorage の帯に載るので、
+   実機の切り分けデータ(どの長さなら耐えるか)が運用の中で自動的に集まる。
+
+   殺しスイッチ: URLに ?nopart で従来の一気書きへ固定(切り分け用) */
+MC.exporter.PART_SEC = 90;         // 1パートの長さ(秒)
+MC.exporter.PART_MIN_TOTAL = 135;  // これ未満の書き出しは分割しない(従来どおり1発)
+MC.exporter.partsOff = new URLSearchParams(location.search).has("nopart");
+
+MC.exporter.partsApplicable = (spanSec, saveHandle) =>
+  !MC.exporter.partsOff && !saveHandle &&
+  MC.exporter.opfsSupported() && spanSec > MC.exporter.PART_MIN_TOTAL;
+
+/* ジョブの同一性。素材(clipKey)・範囲・寸法・ビットレート・カット割・
+   見た目の設定が全部同じときだけ「同じ書き出し」とみなして続きから走る。
+   1つでも違えば別ジョブ=最初から(古いパートを混ぜない) */
+MC.exporter.exportJobId = () => {
+  const [tIn, tOut] = MC.trimRange();
+  const { w, h } = MC.exporter.exportDims();
+  const s = [
+    MC.S.clips.map(c => MC.clipKey(c)).join("^"),
+    MC.S.slots.join(","), tIn.toFixed(2), tOut.toFixed(2), w, h,
+    MC.exporter.videoBitrate(), MC.S.layoutId, MC.S.preset,
+    MC.S.filterId, MC.S.colorOn ? 1 : 0, (MC.S.colorStrength || 0).toFixed(2),
+    MC.S.borderOn ? `${MC.S.borderColor}|${MC.S.borderW}` : 0,
+    MC.S.cutList.map(e => `${e.t.toFixed(2)}:${e.clipId}:${e.trans}:${e.dur}`).join(";"),
+    MC.S.clips.map(c => `${c.rot || 0}|${c.pan}`).join(","),
+  ].join("~");
+  let hsh = 5381;                                   // djb2(十分。秘密ではなく照合用)
+  for (let i = 0; i < s.length; i++) hsh = ((hsh * 33) ^ s.charCodeAt(i)) >>> 0;
+  return hsh.toString(36);
+};
+
+/* ジョブ台帳の読み書き。書き込みはOPFSのwriter(Worker)経由 ─ iOSのメインスレッドは
+   createWritable を持たないため。パートの合間(他のファイルが開いていない時)にだけ呼ぶ */
+MC.exporter.JOB_FILE = "mzjob.json";
+MC.exporter.readJob = async () => {
+  try {
+    const root = await navigator.storage.getDirectory();
+    const dir = await root.getDirectoryHandle(MC.exporter.OPFS_DIR, { create: false });
+    const fh = await dir.getFileHandle(MC.exporter.JOB_FILE, { create: false });
+    return JSON.parse(await (await fh.getFile()).text());
+  } catch (_) { return null; }
+};
+MC.exporter.writeJob = async job => {
+  try {
+    const buf = new TextEncoder().encode(JSON.stringify(job)).buffer;
+    await MC.exporter._writerReq({ type: "open", dir: MC.exporter.OPFS_DIR, name: MC.exporter.JOB_FILE });
+    await MC.exporter._writerReq({ type: "write", data: buf, position: 0 }, [buf]);
+    await MC.exporter._writerReq({ type: "finalize" });
+  } catch (e) { MC.log("job台帳の書き込み失敗(再開できないだけで続行): " + e.message); }
+};
+MC.exporter.partName = (jobId, idx) => `mzpart_${jobId}_${idx}.mp4`;
+
+/* 1パートぶんの映像だけを、独立したMP4としてOPFSへ書く。
+   デコーダ・エンコーダ・muxer・パイプはこの関数の中で生まれて中で死ぬ
+   (=蓄積をパート境界で必ずリセットする)。タイムスタンプはパート内0起点。
+   進捗は kA/kB(全体のコマ番号)で親へ報告する */
+MC.exporter._exportVideoPart = async (opt) => {
+  const { name, kA, kB, tIn, fps, w, h, used, onFrame } = opt;
+  const opfs = await MC.exporter.opfsCreate(name);
+  if (!opfs) throw new Error("この端末の保存領域を用意できませんでした。");
+  const pipes = new Map();
+  let venc = null, ok = false;
+  try {
+    const muxer = new Mp4Muxer.Muxer({
+      target: opfs.target,
+      video: { codec: "avc", width: w, height: h },
+      fastStart: false,
+    });
+    let vencErr = null;
+    venc = new VideoEncoder({
+      output: (chunk, meta) => {
+        try { muxer.addVideoChunk(chunk, meta); } catch (err) { vencErr = vencErr || err; }
+      },
+      error: e => { vencErr = e; },
+    });
+    const baseCfg = { codec: "avc1.640028", width: w, height: h,
+                      bitrate: MC.exporter.videoBitrate(), framerate: fps };
+    let vcfg = { ...baseCfg, hardwareAcceleration: "prefer-hardware" };
+    try {
+      const s = await VideoEncoder.isConfigSupported(vcfg);
+      if (!s || !s.supported) vcfg = baseCfg;
+    } catch (err) { vcfg = baseCfg; }
+    venc.configure(vcfg);
+
+    const prof = MC.exporter._prof;   // 集計は全パート通算(帯のskips表示のため)
+    for (const c of used) {
+      if (c.isImage) continue;
+      const pipe = new MC.exporter.VideoPipe(c);
+      pipe.prof = prof;
+      await pipe.init((tIn + kA / fps) - c.offset);
+      pipes.set(c.id, pipe);
+    }
+    const canvas = MC.exporter.makeCanvas(w, h);
+    const ctx = canvas.getContext("2d");
+    ctx.imageSmoothingQuality = "high";
+
+    for (let k = kA; k < kB; k++) {
+      if (MC.exporter.cancelFlag) throw new Error("キャンセルしました");
+      if (vencErr) throw vencErr;
+      if (MC.exporter._writeFatal) {
+        throw new Error("端末の保存領域へ書き込めなくなりました。"
+          + "空き容量を増やすか、書き出す範囲を短くしてお試しください。");
+      }
+      const t = tIn + k / fps;
+      const srcMap = new Map();
+      const need = new Set(MC.neededIds(t));
+      const decodeP = Promise.all([...pipes].map(async ([id, pipe]) => {
+        if (!need.has(id)) return;
+        const clip = pipe.clip;
+        const local = t - clip.offset;
+        if (local < -0.05 || local > clip.duration + 0.05) { srcMap.set(id, null); return; }
+        srcMap.set(id, await pipe.frameAt(Math.max(0, local)));
+      }));
+      decodeP.catch(() => {});
+      const _tW = performance.now();
+      while (venc.encodeQueueSize > 6) await MC.waitDequeue(venc);
+      while ((MC.exporter._pendCount || 0) > 3) {
+        if (MC.exporter.cancelFlag) throw new Error("キャンセルしました");
+        await MC.yield();
+      }
+      prof.wait += performance.now() - _tW;
+      const _tD = performance.now();
+      await decodeP;
+      prof.decode += performance.now() - _tD;
+      const _tDr = performance.now();
+      MC.drawComposite(ctx, w, h, t, id => {
+        const clip = MC.getClip(id);
+        if (clip && clip.isImage) return { source: clip.img, w: clip.width, h: clip.height, rotation: 0 };
+        const f = srcMap.get(id);
+        if (!f) return null;
+        const pipe = pipes.get(id);
+        return { source: f, w: f.displayWidth || f.codedWidth, h: f.displayHeight || f.codedHeight, rotation: pipe.rotation };
+      });
+      /* タイムスタンプは**パート内0起点**(k-kA)。結合時に実位置へずらす。
+         パートの1コマ目は新品エンコーダの1コマ目なので必ずキーフレーム */
+      const vf = new VideoFrame(canvas, {
+        timestamp: Math.round((k - kA) * 1e6 / fps), duration: Math.round(1e6 / fps),
+      });
+      prof.draw += performance.now() - _tDr;
+      const _tE = performance.now();
+      venc.encode(vf, { keyFrame: (k - kA) % (fps * 2) === 0 });
+      vf.close();
+      prof.encode += performance.now() - _tE;
+      if (k % 10 === 0) { await onFrame(k); await MC.yield(); }
+    }
+    await venc.flush();
+    if (vencErr) throw vencErr;
+    muxer.finalize();
+    const file = await MC.exporter.opfsFinalizeWorker(name);
+    if (!file.size) throw new Error("パートの書き込み結果が空です");
+    ok = true;
+    return file;
+  } finally {
+    pipes.forEach(p => p.dispose());
+    if (venc) { try { venc.close(); } catch (e) {} }
+    if (!ok) {
+      await MC.exporter.opfsAbortWorker().catch(() => {});
+      MC.exporter.opfsRemove(name);   // 書きかけの当パートだけ消す(完了パートは残す)
+    }
+  }
+};
+
+/* パート方式の本体: パートを順に書く → 結合 → 音声 → 完成。
+   進捗の配分: 映像(全パート)0〜0.85 / 結合0.85〜0.93 / 音声0.93〜0.97 / 仕上げ〜1 */
+MC.exporter.exportMP4Parts = async (onProgress) => {
+  MC.exporter._releaseAnalysisWorkers();
+  if (MC.exporter._audioTask) {
+    await MC.exporter._audioTask.catch(() => {});
+    MC.exporter._audioTask = null;
+  }
+  await (MC.exporter._pendWrites || Promise.resolve()).catch(() => {});
+  MC.exporter._writeFatal = null;
+  MC.exporter.cancelFlag = false;
+  MC.exporter._pendCount = 0;
+  MC.exporter._pendMax = 0;
+  MC.exporter._audioParallel = false;   // パート方式の音声は常に直列(結合後に1回)
+
+  const { w, h } = MC.exporter.exportDims();
+  const fps = 30;
+  const [tIn, tOut] = MC.trimRange();
+  const totalFrames = Math.max(1, Math.round((tOut - tIn) * fps));
+  const used = MC.activeClips().filter(c => !c.isAudio);
+  if (!used.length) throw new Error("表示するクリップがありません");
+  const audioClip = MC.getClip(MC.S.audioClipId);
+  const withAudio = MC.caps.aac && !!audioClip;
+  const framesPerPart = MC.exporter.PART_SEC * fps;
+  const nParts = Math.max(1, Math.ceil(totalFrames / framesPerPart));
+  const jobId = MC.exporter.exportJobId();
+  const outName = `MarchinZ_Switcher_${MC.S.preset}_${new Date().toISOString().slice(0, 10)}.mp4`;
+
+  /* パート+完成品で一時的に約2倍の容量を使う(完成後にパートを消す) */
+  await MC.exporter.checkQuota(MC.exporter.estimateBytes() * 2);
+  await MC.exporter.preflightFiles(used.filter(c => !c.isImage));
+
+  /* ---- 続きから(前回の完了パートを飛ばす) ---- */
+  const doneSet = new Set();
+  {
+    const job = await MC.exporter.readJob();
+    if (job && job.jobId === jobId && Array.isArray(job.done)) {
+      const root = await navigator.storage.getDirectory().catch(() => null);
+      const dir = root && await root.getDirectoryHandle(MC.exporter.OPFS_DIR, { create: false }).catch(() => null);
+      for (const idx of job.done) {
+        if (idx >= nParts) continue;
+        try {
+          const f = await (await dir.getFileHandle(MC.exporter.partName(jobId, idx))).getFile();
+          if (f.size > 0) doneSet.add(idx);   // 実体があるものだけ信じる(台帳は参考)
+        } catch (_) {}
+      }
+      if (doneSet.size) {
+        MC.ui.toast(`前回のつづきから書き出します（${doneSet.size}/${nParts}パートは完了ずみ）`);
+        MC.log(`export(parts): 再開 done=[${[...doneSet].join(",")}]`);
+      }
+    }
+  }
+
+  const _t0mark = Date.now();
+  MC.exporter._markProgress = (k, total, extra) => {
+    try {
+      sessionStorage.setItem("mz_switcher_export_at_v1", JSON.stringify({
+        k, total, pct: Math.round((k / Math.max(1, total)) * 100),
+        w, h, fps, ios: !!MC.isIOS, at: Date.now(),
+        sec: Math.round((Date.now() - _t0mark) / 1000),
+        route: "OPFS(分割書き出し)",
+        mbps: Math.round(MC.exporter.videoBitrate() / 1e5) / 10,
+        cams: used.length,
+        mb: Math.round((MC.exporter.videoBitrate() + 192e3) / 8 * (k / fps) / 1e6),
+        pend: MC.exporter._pendMax || 0, apar: false,
+        skips: (MC.exporter._prof && MC.exporter._prof.skips) || 0,
+        reseekS: Math.round(((MC.exporter._prof && MC.exporter._prof.reseekMs) || 0) / 1000),
+        noskip: !isFinite(MC.exporter.SKIP_MIN),
+        freeMB: MC.exporter._freeMB ?? null,
+        ...(extra || {}),      // part: いま何パート目か(落ちた帯に載る=切り分けデータ)
+      }));
+    } catch (_) {}
+  };
+  try { sessionStorage.removeItem("mz_switcher_export_at_v1"); } catch (_) {}
+  MC.exporter.running = true;
+  const tStart = performance.now();
+  const prof = { decode: 0, draw: 0, encode: 0, wait: 0, skips: 0, reseekMs: 0 };
+  MC.exporter._prof = prof;
+  MC.log(`export(parts): ${nParts}パート×約${MC.exporter.PART_SEC}秒 全${totalFrames}コマ ${w}x${h}`);
+
+  let finalOpfs = null, finalOk = false;
+  try {
+    /* ---- ① 映像をパートごとに(完了ぶんは飛ばす) ---- */
+    const t0 = performance.now();
+    let kDone = doneSet.size * framesPerPart;   // 進捗の起点(概算でよい)
+    for (let idx = 0; idx < nParts; idx++) {
+      if (doneSet.has(idx)) continue;
+      const kA = idx * framesPerPart;
+      const kB = Math.min(totalFrames, kA + framesPerPart);
+      await MC.exporter._exportVideoPart({
+        name: MC.exporter.partName(jobId, idx),
+        kA, kB, tIn, fps, w, h, used,
+        onFrame: async k => {
+          MC.exporter._markProgress(k, totalFrames, { part: `${idx + 1}/${nParts}` });
+          if (k % 300 === 0 && navigator.storage && navigator.storage.estimate) {
+            navigator.storage.estimate().then(e => {
+              MC.exporter._freeMB = Math.round(((e.quota || 0) - (e.usage || 0)) / 1e6);
+            }).catch(() => {});
+          }
+          const perFrame = (performance.now() - t0) / 1000 / Math.max(1, k - kDone + 1);
+          onProgress((k + 1) / totalFrames * 0.85, "映像を作っています…", {
+            eta: perFrame * (totalFrames - k - 1),
+            sub: `${Math.round((k + 1) / fps)}秒ぶん / 全${Math.round(totalFrames / fps)}秒`
+              + `（パート${idx + 1}/${nParts}）`,
+          });
+        },
+      });
+      doneSet.add(idx);
+      await MC.exporter.writeJob({ jobId, nParts, done: [...doneSet], at: Date.now() });
+    }
+
+    /* ---- ② 結合(デコードなし・raw再mux) ---- */
+    onProgress(0.85, "パートをつないでいます…");
+    finalOpfs = await MC.exporter.opfsCreate(outName);
+    if (!finalOpfs) throw new Error("この端末の保存領域を用意できませんでした。");
+    const muxer = new Mp4Muxer.Muxer({
+      target: finalOpfs.target,
+      video: { codec: "avc", width: w, height: h },
+      audio: withAudio ? { codec: "aac", sampleRate: 48000, numberOfChannels: 2 } : undefined,
+      fastStart: false,
+    });
+    const root = await navigator.storage.getDirectory();
+    const dir = await root.getDirectoryHandle(MC.exporter.OPFS_DIR, { create: false });
+    let desc0 = null, firstChunk = true;
+    for (let idx = 0; idx < nParts; idx++) {
+      const file = await (await dir.getFileHandle(MC.exporter.partName(jobId, idx))).getFile();
+      const src = new MZ_MP4.MP4Source(file);
+      await src.init();
+      const vt = src.videoTrack();
+      if (!vt) throw new Error(`パート${idx + 1}に映像がありません`);
+      const cfg = src.videoDecoderConfig();
+      const desc = cfg && cfg.description ? new Uint8Array(cfg.description) : null;
+      if (idx === 0) desc0 = desc;
+      else if (desc && desc0 && (desc.length !== desc0.length || desc.some((b, i) => b !== desc0[i]))) {
+        /* 同一端末・同一設定なら一致するはず。しない場合に黙って繋ぐと
+           再生が乱れるので、正直に止める(QAが合成素材で一致を見張っている) */
+        throw new Error("パート間で映像の形式が一致しませんでした。もう一度書き出してください");
+      }
+      /* このパートの実位置(コマ番号ぴったり)。サンプル長の合算にしないのは、
+         丸め誤差を後段のパートへ累積させないため */
+      const offUs = Math.round(idx * framesPerPart * 1e6 / fps);
+      let ns = 0;
+      for await (const s of src.samples(vt.id, 0)) {
+        if (MC.exporter.cancelFlag) throw new Error("キャンセルしました");
+        if (MC.exporter._writeFatal) throw new Error("端末の保存領域へ書き込めなくなりました。");
+        const tsUs = offUs + Math.round(s.cts * 1e6 / s.timescale);
+        const durUs = Math.max(1, Math.round(s.duration * 1e6 / s.timescale));
+        muxer.addVideoChunkRaw(s.data, s.is_sync ? "key" : "delta", tsUs, durUs,
+          firstChunk && desc ? { decoderConfig: { codec: "avc1.640028", description: desc } } : undefined);
+        firstChunk = false;
+        if (++ns % 120 === 0) {
+          while ((MC.exporter._pendCount || 0) > 3) await MC.yield();
+          await MC.yield();
+        }
+      }
+      onProgress(0.85 + 0.08 * ((idx + 1) / nParts), "パートをつないでいます…",
+                 { sub: `${idx + 1} / ${nParts}` });
+    }
+
+    /* ---- ③ 音声は全尺を1回で(直列) ---- */
+    let audioOk = false, audioMs = 0;
+    if (withAudio) {
+      const tA0 = performance.now();
+      const enc = audioClip.isAudio ? MC.exporter.encodeAudioFile : MC.exporter.encodeAudio;
+      audioOk = await enc(muxer, audioClip, tIn - audioClip.offset, tOut - tIn,
+        (st, frac) => onProgress(0.93 + 0.04 * Math.max(0, Math.min(1, frac ?? 0.5)), st));
+      audioMs = performance.now() - tA0;
+      if (!audioOk && !MC.exporter.cancelFlag) MC.ui.toast("⚠ 音声を書き出せませんでした(映像のみ出力します)");
+    }
+    if (MC.exporter.cancelFlag) throw new Error("キャンセルしました");
+
+    MC.exporter.lastStats = {
+      totalMs: performance.now() - tStart,
+      decodeMs: prof.decode, drawMs: prof.draw, waitMs: prof.wait, encodeMs: prof.encode,
+      skips: prof.skips, reseekMs: prof.reseekMs,
+      audioMs, audioWaitMs: audioMs, audioParallel: false, audioOk, withAudio,
+      frames: totalFrames, w, h, fps,
+      bitrate: MC.exporter.videoBitrate(), quality: MC.exporter.quality(),
+      cams: used.length, layoutId: MC.S.layoutId, preset: MC.S.preset,
+      filterId: MC.S.filterId, colorOn: !!MC.S.colorOn,
+      spanSec: tOut - tIn, route: `分割書き出し(${nParts}パート)`,
+      parts: nParts,
+    };
+    onProgress(0.97, "ファイルにまとめています…");
+    muxer.finalize();
+    const file = await MC.exporter.opfsFinalizeWorker(outName);
+    MC.exporter._opfsName = outName;
+    finalOk = true;
+    try { sessionStorage.removeItem("mz_switcher_export_at_v1"); } catch (_) {}
+    /* 成功したのでパートと台帳を片付ける(失敗時は残す=次回の再開材料) */
+    for (let idx = 0; idx < nParts; idx++) MC.exporter.opfsRemove(MC.exporter.partName(jobId, idx));
+    MC.exporter.opfsRemove(MC.exporter.JOB_FILE);
+    MC.exporter.download(file, outName);
+    MC.log(`export done(parts): ${outName} bytes=${file.size} frames=${totalFrames}`
+      + ` parts=${nParts} audio=${audioOk}`);
+    return { blob: file, name: outName, opfs: true };
+  } finally {
+    if (!finalOk && finalOpfs) {
+      await MC.exporter.opfsAbortWorker().catch(() => {});
+      MC.exporter.opfsRemove(finalOpfs.name);   // 完成品の書きかけだけ消す。パートは残す
+    }
+    MC.exporter.running = false;
+  }
+};
+
 MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
+  /* 長い書き出しはパート方式へ(上のコメント参照)。従来の一気書きは
+     そのまま残す ─ 短い書き出し・ディスク直書き(PC)・OPFS無し端末が通る */
+  {
+    const [tA, tB] = MC.trimRange();
+    if (MC.exporter.partsApplicable(tB - tA, saveHandle)) {
+      if (!saveHandle) await MC.exporter.probeOpfs().catch(() => {});
+      if (MC.exporter.opfsSupported()) return MC.exporter.exportMP4Parts(onProgress);
+    }
+  }
   MC.exporter._releaseAnalysisWorkers();
   /* OPFSへ本当に書けるかの実測(起動時に走らせてある)を、ここで確定させる。
      未確定のまま進むと opfsSupported() が「入口の有無」だけで暫定 true を返し、
