@@ -1927,17 +1927,70 @@ async function countSamples(ns, file, fromSec) {
        書いていたため、読み込み画面に「3本まで・59秒まで」と出ていた */
     const txt = withRole(w, { unlimited: false, local: false, admin: false, member: false,
       mobile: true, bigDevice: false, maxExportSec: 59, maxVideoSec: 300.5,
+      maxSourceSec: 1200.5, sourceLimitLabel: "20分",
       exportLimitLabel: "1分未満", videoLimitLabel: "5分" }, () => {
       w.MC.ui.renderLimitWhy();
       return w.document.querySelector(".mz-limit-why").textContent;
     });
-    if (!/1本5分まで取り込め/.test(txt)) throw new Error("取り込みの上限を言っていない: " + txt);
+    /* 入口の天井(maxSourceSec)を言う。プランの壁でも書き出しの上限でもない */
+    if (!/1本20分まで取り込め/.test(txt)) throw new Error("取り込める長さを言っていない: " + txt);
     if (/3本まで・1分未満まで|3本まで・59秒/.test(txt)) {
       throw new Error("読み込み画面で書き出しの上限を言っている: " + txt);
     }
-    /* 端数(300.5秒)がそのまま出ていないか ─「1本5分01秒まで」は読みにくい */
+    /* 端数(1200.5秒)がそのまま出ていないか ─「20分01秒まで」は読みにくい */
     if (/分0?1秒/.test(txt)) throw new Error("許容誤差の端数が表に出ている: " + txt);
     return txt.trim();
+  });
+  await test("★長いというだけで門前払いしない(使う範囲はあとで選べる)", async () => {
+    const w = await compEnv();
+    compReset(w);
+    /* ゲスト×スマホ = いちばん厳しい人。以前はここで maxVideoSec(5分)を見ており、
+       8分半のランスルーが「短く切り出してからお試しください」で弾かれていた。
+       切り出す道具はツールの中に無いので、これは行き止まりだった */
+    /* ★ 値は limits.js の**実際の計算**から取る。テスト側で maxSourceSec を
+       与えてしまうと「UIが与えた値に従うか」しか見ておらず、入口を
+       プランの壁へ戻す変異を通してしまう(実測で確認した) */
+    for (const o of [{ mobile: true }, { mobile: true, member: true }, { mobile: false }]) {
+      const L = await loadLimits(o);
+      const who = `${o.member ? "登録" : "ゲスト"}×${o.mobile ? "スマホ" : "PC"}`;
+      if (!(510 <= L.maxSourceSec)) throw new Error(`${who}: 8分30秒のランスルーが入らない`);
+      if (!(600 <= L.maxSourceSec)) throw new Error(`${who}: 10分の回しっぱなしが入らない`);
+      if (1500 <= L.maxSourceSec && o.mobile) throw new Error(`${who}: 25分が通ってしまう`);
+      /* 入口はプランの壁より必ず広いこと ─ 同じなら門前払いに戻っている */
+      if (!(L.maxSourceSec > L.maxVideoSec)) {
+        throw new Error(`${who}: 入口(${L.maxSourceSec}秒)がプランの壁(${L.maxVideoSec}秒)より広くない`);
+      }
+    }
+    /* 読み込み画面は「入る」ことを言い、身構えさせない */
+    withRole(w, { unlimited: false, local: false, admin: false, member: false,
+      mobile: true, bigDevice: false, maxExportSec: 59, maxVideoSec: 300.5,
+      maxSourceSec: 1200.5, sourceLimitLabel: "20分", exportLimitLabel: "1分未満" }, () => {
+      w.MC.ui.renderLimitWhy();
+      const txt = w.document.querySelector(".mz-limit-why").textContent;
+      if (!/20分まで取り込め/.test(txt)) throw new Error("取り込める長さを言っていない: " + txt);
+      if (!/あとで|このあと/.test(txt)) throw new Error("あとで範囲を選べることを言っていない: " + txt);
+    });
+    return "3通りの人で 8分30秒・10分が入る / 入口はプランの壁より広い / 案内も一致";
+  });
+  await test("★10分の素材からでも、長さと始まりを選んで書き出せる", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.clips.forEach(c => { c.tiltOk = true; c.syncMethod = "波形"; c.duration = 600; });
+    S.audioDecided = true; S.easyDone = false; S.lengthDecided = false;
+    /* 演奏は 0:20〜8:50。素材は10分ある(以前なら取り込みで弾かれていた長さ) */
+    S.showIn = 20; S.showOut = 530;
+    Object.assign(w.MC.getClip(1), mkSong(510));
+    S.exportPreset = "short"; S.startKey = "start"; S.startAt = null;
+    w.MC.ui.refreshJourney();
+    eq(w.document.body.dataset.mzjPhase, "length", "現在地");
+    ge(w.document.querySelectorAll("#lenStarts .len-start").length, 5, "始まりの選択肢");
+    const [a, b] = w.MC.trimRange();
+    if (Math.abs((b - a) - 59) > 0.01) throw new Error(`59秒になっていない: ${(b - a).toFixed(1)}`);
+    /* 演奏の範囲の外へはみ出さない */
+    if (a < S.showIn - 0.01 || b > S.showOut + 0.01) {
+      throw new Error(`演奏の範囲(${S.showIn}〜${S.showOut})をはみ出した: ${a}〜${b}`);
+    }
+    return `10分素材 → ${a.toFixed(0)}〜${b.toFixed(0)}秒を切り出せる`;
   });
   await test("★動画として読めないファイルを黙って捨てない", async () => {
     const w = await compEnv();

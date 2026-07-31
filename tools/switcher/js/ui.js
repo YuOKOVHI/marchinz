@@ -482,18 +482,20 @@ MC.ui.renderLimitWhy = () => {
      ここを maxExportSec で書いていたため、ゲストのスマホでは
      読み込み画面に「3本まで・59秒まで」と出ていた ─ 取り込みは5分なのに。
      地区大会レベルの顧問レビューで「意味が通らない」と指摘された(2026-07-31) */
-  const vidMax = (window.MZ_LIMITS && MZ_LIMITS.maxVideoSec) || Infinity;
-  if (isFinite(vidMax)) {
-    /* 数字は limits.js の正式なラベルを使う。maxVideoSec は 300.5 のように
-       許容誤差ぶんの端数を持つので、そのまま出すと「1本5分01秒まで」になる */
+  const srcMax = (window.MZ_LIMITS && MZ_LIMITS.maxSourceSec) || Infinity;
+  if (isFinite(srcMax)) {
+    /* 数字は limits.js の正式なラベルを使う(maxSourceSec は 1200.5 のように
+       許容誤差ぶんの端数を持ち、そのまま出すと「20分01秒」になる)。
+       ★ 言うのは「長くても入る」こと。使う範囲はあとで選べるので、
+         ここで身構えさせない(2026-07-31 4団体レビュー) */
     const L2 = window.MZ_LIMITS;
     el.innerHTML = icon
-      + `<b>3本まで・1本${MC.ui.esc(L2.videoLimitLabel)}まで</b>取り込めます。`
+      + `<b>3本まで・1本${MC.ui.esc(L2.sourceLimitLabel)}まで</b>取り込めます。`
+      + "長い録画でも大丈夫です ─ このあと<b>どこを何分使うか</b>を選べます。"
       /* 端末のメモリで書き出しが頭打ちになる環境だけ、その理由も添える */
       + (isFinite(hardMax) && hardMax <= roleMax
-          ? `この端末で書き出せるのは${mmss(hardMax)}までです`
-            + "（動画を丸ごとメモリに載せて処理するため）。"
-          : isFinite(roleMax) ? `できあがりは${MC.ui.esc(L2.exportLimitLabel)}までです。` : "");
+          ? `（この端末でできあがるのは${mmss(hardMax)}までです）`
+          : isFinite(roleMax) ? `（できあがりは${MC.ui.esc(L2.exportLimitLabel)}までです）` : "");
     return;
   }
   /* 上限が外れている端末(手元の環境・管理者)。ここで「3本まで」と言うと、

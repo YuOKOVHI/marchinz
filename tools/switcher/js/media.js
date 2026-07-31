@@ -77,14 +77,17 @@ MC.media.addFiles = async files => {
       URL.revokeObjectURL(clip.url);
       continue;
     }
-    if (v.duration > MZ_LIMITS.maxVideoSec) {
-      /* 上限は「会員種別 × 端末」で決まる(2026-07-31)。スマホは登録しても
-         5分のままなので、「無料登録で12分」と言い切ると嘘になる */
+    /* ★ 長いという理由で門前払いしない(2026-07-31 マーチング4団体レビュー)。
+       ここで maxVideoSec(プランの壁)を見ていたため、8分半のランスルーを
+       撮った人が「見せたい場面だけ短く切り出してからお試しください」と
+       言われ、その切り出す道具はツールの中に無い、という行き止まりだった。
+       いま断るのは**技術的に持てない長さ**のときだけ。どこを何分使うかは
+       このあとの「長さと始まり」で選べる(窓を選ぶUIは既にある) */
+    if (v.duration > MZ_LIMITS.maxSourceSec) {
       MC.ui.toast(`⚠ ${f.name} は約${Math.round(v.duration / 60)}分です。`
-        + `動画は${MZ_LIMITS.videoLimitLabel}までです。`
-        + (!MZ_LIMITS.member && MZ_LIMITS.bigDevice ? "無料登録すると12分まで使えます。"
-           : MZ_LIMITS.mobile ? "パソコンで開いて無料登録すると12分まで使えます。" : "")
-        + "見せたい場面だけ短く切り出してからお試しください");
+        + `この端末で扱えるのは1本${MZ_LIMITS.sourceLimitLabel}までです。`
+        + (MZ_LIMITS.mobile ? "パソコンで開くと40分まで使えます。" : "")
+        + "長い録画は、先に前半・後半などに分けてからお試しください");
       URL.revokeObjectURL(clip.url);
       continue;
     }
