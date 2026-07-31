@@ -2361,6 +2361,9 @@ MC.ui.showInterruptNote = (ms, opts = {}) => {
         + `${stalled.sec != null ? stalled.sec + "秒で" : ""}約${stalled.mb || "?"}MBまで`
         + `${stalled.apar ? "・音声並行" : "・音声直列"}`
         + (stalled.part ? `・パート${stalled.part}` : "")
+        /* 1コマも書けずに落ちた回は k=0 のまま。どの段で消えたかは
+           _markPhase の足跡だけが知っている(2026-07-31) */
+        + (stalled.phase ? `・${MC.ui.esc(stalled.phase)}` : "")
         + `・再シーク${stalled.skips ?? "?"}回`
         + `${stalled.freeMB != null ? "・空き" + stalled.freeMB + "MB" : ""}`
         + `${stalled.noskip ? "・診断(noskip)中" : ""}</span>`

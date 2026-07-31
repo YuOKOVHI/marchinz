@@ -893,6 +893,44 @@ MC.exporter.partsApplicable = (spanSec, saveHandle) =>
   !MC.exporter.partsOff && !saveHandle &&
   MC.exporter.opfsSupported() && spanSec > MC.exporter.PART_MIN_TOTAL;
 
+/* 分割で失敗したとき、従来の一気書きでやり直してよいか(2026-07-31)。
+   分割は v1.54.0 で入れたばかりの経路で、本番で「書き出しを押して1秒たたずに
+   落ちた」という報告が出ている。原因はまだ特定できていないが、原因が何であれ
+   **まだ1コマも書けていないうちの失敗**なら、従来の経路で試す価値がある
+   (従来経路は分割の前から動いていた実績がある)。
+
+   条件を絞る理由:
+   ・cancelled     … 本人が中止したのにもう一度走り出すのは論外
+   ・donePartCount … 1パートでも書けているなら、その仕事を捨てて最初から
+                     やり直すことになる。次回は「続きから」で拾える
+   ・finalOk       … 完成しているなら失敗ではない
+   判定を関数に切り出したのは、本物の書き出しを QA から走らせられない
+   (iframe内でOPFSのWorkerが応答せずスイート全体が固まる)ため。
+   ここだけは表として試験できる */
+/* 書き出しがどこまで行けたかの足跡(2026-07-31)。
+   タブごと落ちると MC.log もコンソールも消えるが、sessionStorage は残る。
+   1コマ目に届く前に落ちた回は _markProgress が一度も走らないので、
+   これが無いと「押した直後に落ちた」の中身が何も残らない ─
+   本番で1秒たたずに落ちた報告があり、原因がまだ特定できていない。
+   次に起きたとき、どの段で消えたかだけは必ず分かるようにする */
+MC.exporter._markPhase = (phase, extra) => {
+  try {
+    const prev = JSON.parse(sessionStorage.getItem("mz_switcher_export_at_v1") || "null") || {};
+    sessionStorage.setItem("mz_switcher_export_at_v1", JSON.stringify({
+      k: 0, total: 0, pct: 0, ...prev, ...(extra || {}), phase, at: Date.now(),
+    }));
+  } catch (_) {}
+};
+
+MC.exporter.shouldFallbackToLegacy = (err, st) => {
+  const s = st || {};
+  if (s.cancelled || s.finalOk) return false;
+  if ((s.donePartCount || 0) > 0) return false;
+  const msg = (err && err.message) || String(err || "");
+  if (/キャンセル/.test(msg)) return false;   // cancelFlag が既に降りていても拾う
+  return true;
+};
+
 /* ジョブの同一性。素材(clipKey)・範囲・寸法・ビットレート・カット割・
    見た目の設定が全部同じときだけ「同じ書き出し」とみなして続きから走る。
    1つでも違えば別ジョブ=最初から(古いパートを混ぜない) */
@@ -1147,13 +1185,16 @@ MC.exporter.exportMP4Parts = async (onProgress) => {
     } catch (_) {}
   };
   try { sessionStorage.removeItem("mz_switcher_export_at_v1"); } catch (_) {}
+  MC.exporter._markPhase("分割: 準備完了",
+    { total: totalFrames, w, h, fps, cams: used.length, route: "OPFS(分割書き出し)",
+      mbps: Math.round(MC.exporter.videoBitrate() / 1e5) / 10, ios: !!MC.isIOS });
   MC.exporter.running = true;
   const tStart = performance.now();
   const prof = { decode: 0, draw: 0, encode: 0, wait: 0, skips: 0, reseekMs: 0 };
   MC.exporter._prof = prof;
   MC.log(`export(parts): ${nParts}パート×約${MC.exporter.PART_SEC}秒 全${totalFrames}コマ ${w}x${h}`);
 
-  let finalOpfs = null, finalOk = false;
+  let finalOpfs = null, finalOk = false, fallbackErr = null;
   try {
     /* ---- ① 映像をパートごとに(完了ぶんは飛ばす) ---- */
     const t0 = performance.now();
@@ -1163,6 +1204,8 @@ MC.exporter.exportMP4Parts = async (onProgress) => {
       const kA = idx * framesPerPart;
       const kB = Math.min(totalFrames, kA + framesPerPart);
       kDone = kA;   // 見積りの起点。完了パートが先頭から連続である前提を持たない
+      MC.exporter._markPhase(`分割: パート${idx + 1}/${nParts}を開始`,
+        { doneSec: idx * MC.exporter.PART_SEC });
       await MC.exporter._exportVideoPart({
         name: MC.exporter.partName(jobId, idx),
         kA, kB, tIn, fps, w, h, used,
@@ -1290,6 +1333,16 @@ MC.exporter.exportMP4Parts = async (onProgress) => {
     MC.log(`export done(parts): ${outName} bytes=${file.size} frames=${totalFrames}`
       + ` parts=${nParts} audio=${audioOk}`);
     return { blob: file, name: outName, opfs: true };
+  } catch (e) {
+    /* まだ1コマも書けていないうちに落ちたなら、従来の経路で試す。
+       ★ ここで直接 exportMP4 を呼んではいけない。finally の後片づけ
+         (書きかけの完成品を消す・opfsAbortWorker)が終わる前に
+         次の書き出しが同じ OPFS を触りに行くことになる。
+         印だけ立てて、try/finally を抜けきってから呼ぶ */
+    if (!MC.exporter.shouldFallbackToLegacy(e, {
+      cancelled: MC.exporter.cancelFlag, donePartCount: doneSet.size, finalOk,
+    })) throw e;
+    fallbackErr = e;
   } finally {
     if (!finalOk && finalOpfs) {
       await MC.exporter.opfsAbortWorker().catch(() => {});
@@ -1297,14 +1350,29 @@ MC.exporter.exportMP4Parts = async (onProgress) => {
     }
     MC.exporter.running = false;
   }
+
+  /* ここへ来るのは分割が始まりもしなかったときだけ。
+     原因を必ず記録に残す ─ 従来経路で成功してしまうと、本人には何も
+     起きなかったように見え、次の切り分け材料が消える */
+  MC.log("export(parts): 開始できませんでした。従来の方式で試します: "
+    + ((fallbackErr && fallbackErr.message) || fallbackErr));
+  MC.exporter.lastPartsError = (fallbackErr && fallbackErr.message) || String(fallbackErr);
+  /* noParts を渡すので partsApplicable を通らない = ここへは戻ってこない */
+  return MC.exporter.exportMP4(onProgress, null, { noParts: true });
 };
 
 MC.exporter.exportMP4 = async (onProgress, saveHandle, opts) => {
-  /* ★ 分割へ入るかどうかは**引数で渡す**。モジュール変数に持たせていたときは、
-     この関数の冒頭でリセットしていたため、容量不足で分割から降りてきた回に
-     その印が即座に消え、また分割へ入って**無限再帰でタブごと落ちた**
-     (2026-07-31 本番で1秒未満の即死。優さん報告)。
-     状態は呼び出しの間だけ生きればよいので、引数が正しい */
+  /* ★ 分割へ入るかどうかは**引数で渡す**。モジュール変数に持たせると、
+     この関数の冒頭でリセットされる位置にあったため、分割から降りてきた回に
+     その印が消えてまた分割へ入りうる形だった。状態は呼び出しの間だけ
+     生きればよいので、引数が正しい。
+
+     ※ 2026-07-31 の「本番で1秒たたずに落ちた」(優さん報告)を、一度これが
+       原因(無限再帰)だと断定して記録したが、**実測では再帰しなかった**
+       (parts=1 / legacy=1)。原因はまだ分かっていない。
+       ここは再帰を起こしにくい形にしただけで、あの即死の説明にはならない。
+       短い書き出し(135秒以下)はそもそも分割へ入らないので、
+       もし短い尺で落ちているなら原因は下の従来経路の側にある */
   const noParts = !!(opts && opts.noParts);
   /* 長い書き出しはパート方式へ。従来の一気書きはそのまま残す ─
      短い書き出し・ディスク直書き(PC)・OPFS無し端末が通る */
@@ -1390,6 +1458,9 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle, opts) => {
     } catch (_) {}
   };
   try { sessionStorage.removeItem("mz_switcher_export_at_v1"); } catch (_) {}
+  MC.exporter._markPhase("従来: 準備完了",
+    { total: totalFrames, w, h, fps, cams: used.length, route: "従来の一気書き",
+      mbps: Math.round(MC.exporter.videoBitrate() / 1e5) / 10, ios: !!MC.isIOS });
   MC.exporter.cancelFlag = false;
   MC.exporter._pendCount = 0;
   MC.exporter._pendMax = 0;

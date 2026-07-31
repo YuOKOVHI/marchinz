@@ -1934,6 +1934,40 @@ async function countSamples(ns, file, fromSec) {
     }
     return "範囲・カット割の違いで別idになる";
   });
+  /* 本番で「書き出しを押して1秒たたずに落ちた」報告(2026-07-31 優さん)。
+     原因はまだ特定できていない。特定できるまでのあいだ、分割が始まりもせずに
+     落ちたときは従来の一気書きへ落ちる ─ その判定を表として見張る。
+     ★ 本物の exportMP4Parts を runner から走らせるのは断念している
+       (iframe内でOPFSのwriter Workerが応答せずスイート全体が固まる)。
+       ここで守れるのは判定そのものだけで、経路の接続は守れていない ─
+       接続は「呼び出しが1箇所だけ存在すること」で薄く見張る */
+  await test("★分割が始まらず落ちたときだけ従来方式へ落ちる", async () => {
+    const w = await compEnv();
+    const f = w.MC.exporter.shouldFallbackToLegacy;
+    if (typeof f !== "function") throw new Error("判定関数が無い");
+    const err = new Error("なにかで落ちた");
+    const cases = [
+      [true,  err, { cancelled: false, donePartCount: 0, finalOk: false }, "入口で失敗"],
+      [false, err, { cancelled: true,  donePartCount: 0, finalOk: false }, "本人が中止"],
+      [false, err, { cancelled: false, donePartCount: 1, finalOk: false }, "1パート書けている"],
+      [false, err, { cancelled: false, donePartCount: 0, finalOk: true  }, "完成している"],
+      [false, new Error("キャンセルしました"),
+                   { cancelled: false, donePartCount: 0, finalOk: false }, "中止のエラー文"],
+    ];
+    for (const [want, e, st, why] of cases) {
+      const got = !!f(e, st);
+      if (got !== want) throw new Error(`${why}: ${got}(期待 ${want})`);
+    }
+    /* 二重フォールバック防止: 落ちた先は必ず noParts 付きで呼ぶ。
+       ここを外すと partsApplicable を通って無限に往復する */
+    const src = w.MC.exporter.exportMP4Parts.toString();
+    const calls = src.match(/exportMP4\(onProgress[^)]*\)/g) || [];
+    if (!calls.length) throw new Error("従来方式への戻り道が無い");
+    for (const c of calls) {
+      if (!/noParts:\s*true/.test(c)) throw new Error("noParts なしで呼んでいる: " + c);
+    }
+    return `5通りの判定が一致 / 戻り道${calls.length}箇所すべて noParts:true`;
+  });
 
   /* ===== ⑲ ツールが嘘をつかない(2026-07-31 マーチング4団体レビュー) =====
      4名の指導者・代表に実コードを読んでレビューしてもらって出た欠陥のうち、
