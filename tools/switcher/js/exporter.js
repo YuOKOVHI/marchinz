@@ -865,8 +865,11 @@ MC.exporter._releaseAnalysisWorkers = () => {
 /* ============ 分割書き出し(2026-07-31 シニアエンジニアレビュー大1・優さん承認) ============
    8分12秒=14772コマを1本のループで書くと、iPhoneでは62%で全損する(実機)。
    90秒ずつのパートに分け、**パートごとにデコーダ×3・エンコーダ・muxerを全部
-   作り直す**。H1(flush+reseekの蓄積)・H2(IOSurface解放遅延)・H3(muxerの
-   サンプルテーブル蓄積)のどれが真因でも、蓄積が90秒ごとにリセットされる。
+   作り直す**。H1(flush+reseekの蓄積)とH2(IOSurface解放遅延)は90秒ごとに
+   リセットされる。
+   ★H3(muxerのサンプルテーブル蓄積)はリセットされない ─ 最後の結合フェーズが
+     全長ぶんの muxer を1本作り、全サンプルの情報を finalize まで抱えるため。
+     切り分けの消去法からH3を落とさないよう、ここは正確に書いておく。
    作り直しの時間コストは実測でほぼゼロ(600コマ・作り直し5回=109ms vs 連続130ms)。
 
    パートは映像のみのMP4としてOPFSへ置き、全パート完了後に
@@ -878,6 +881,9 @@ MC.exporter._releaseAnalysisWorkers = () => {
    落ちたパートの番号と秒数が sessionStorage の帯に載るので、
    実機の切り分けデータ(どの長さなら耐えるか)が運用の中で自動的に集まる。
 
+   ※適用範囲は広い。saveHandle が取られるのは推定700MB超のときだけなので、
+     8Mbpsなら135〜683秒はパソコンでもこの経路に入る ─ 事実上ほぼ全ユーザの
+     既定になる(「PCは従来経路」ではない)。実機未検証の経路であることに注意。
    殺しスイッチ: URLに ?nopart で従来の一気書きへ固定(切り分け用) */
 MC.exporter.PART_SEC = 90;         // 1パートの長さ(秒)
 MC.exporter.PART_MIN_TOTAL = 135;  // これ未満の書き出しは分割しない(従来どおり1発)
@@ -900,7 +906,14 @@ MC.exporter.exportJobId = () => {
     MC.S.filterId, MC.S.colorOn ? 1 : 0, (MC.S.colorStrength || 0).toFixed(2),
     MC.S.borderOn ? `${MC.S.borderColor}|${MC.S.borderW}` : 0,
     MC.S.cutList.map(e => `${e.t.toFixed(2)}:${e.clipId}:${e.trans}:${e.dur}`).join(";"),
-    MC.S.clips.map(c => `${c.rot || 0}|${c.pan}`).join(","),
+    /* ★ offset(同期ズレ)を必ず入れる。落ちたあと「同期をやり直してから
+       再挑戦」は誰でもやる操作で、これが入っていないと jobId が変わらず
+       **前半だけ旧オフセットの映像**が無言で完成する */
+    MC.S.clips.map(c => `${c.rot || 0}|${c.pan}|${(c.offset || 0).toFixed(3)}`).join(","),
+    /* ワイプの構成も絵を変える(layout.js:163-168)。小窓の位置を変えて
+       再挑戦すると、前半は右下・後半は左下の動画ができていた */
+    [MC.S.wipeMainId, MC.S.wipeClipId, MC.S.wipeClipId2,
+     MC.S.wipePos, MC.S.wipePos2, MC.S.wipeSize].join("|"),
   ].join("~");
   let hsh = 5381;                                   // djb2(十分。秘密ではなく照合用)
   for (let i = 0; i < s.length; i++) hsh = ((hsh * 33) ^ s.charCodeAt(i)) >>> 0;
@@ -1066,8 +1079,6 @@ MC.exporter.exportMP4Parts = async (onProgress) => {
   const jobId = MC.exporter.exportJobId();
   const outName = `MarchinZ_Switcher_${MC.S.preset}_${new Date().toISOString().slice(0, 10)}.mp4`;
 
-  /* パート+完成品で一時的に約2倍の容量を使う(完成後にパートを消す) */
-  await MC.exporter.checkQuota(MC.exporter.estimateBytes() * 2);
   await MC.exporter.preflightFiles(used.filter(c => !c.isImage));
 
   /* ---- 続きから(前回の完了パートを飛ばす) ---- */
@@ -1085,11 +1096,36 @@ MC.exporter.exportMP4Parts = async (onProgress) => {
         } catch (_) {}
       }
       if (doneSet.size) {
-        MC.ui.toast(`前回のつづきから書き出します（${doneSet.size}/${nParts}パートは完了ずみ）`);
+        /* ★ トーストで言ってはいけない。書き出しは全画面(#exportOverlay
+           z-index:120)の下で走り、トーストは z-index:99 ─ **一度も見えない**。
+           しかも3.5秒で消えるので、待っている間ずっと残らない。
+           全画面の常設欄(#eoPreEta)へ置き、単位も「パート」ではなく時間で言う
+           (「パート」は中高生の語彙に無いが「3分ぶん」は誰でも分かる) */
+        MC.exporter._resumeSec = doneSet.size * MC.exporter.PART_SEC;
+        if (MC.ui.showResumeNoteIfAny) MC.ui.showResumeNoteIfAny();
         MC.log(`export(parts): 再開 done=[${[...doneSet].join(",")}]`);
+      } else {
+        MC.exporter._resumeSec = 0;
       }
     }
   }
+
+  /* 容量の確認は**再開の判定より後**にやる(完了パートぶんを差し引くため)。\n     パート+完成品で一時的に約2倍を使う(完成後にパートを消す)。
+     ここで断ると、必要量が半分で済む従来の一気書きすら試されないまま
+     終わってしまう ─ 足りないときは分割をあきらめて従来経路へ落とす */
+  try {
+    /* パート+完成品でピークが約2倍。ただし**再開のときは既に書けたパートが
+       usage に計上済み**なので、そのぶんを二重に要求しない
+       (要求量が減り、空きの少ない端末で再開が通りやすくなる) */
+    const est = MC.exporter.estimateBytes();
+    const already = doneSet.size / Math.max(1, nParts) * est;
+    await MC.exporter.checkQuota(Math.max(est, est * 2 - already));
+  } catch (e) {
+    MC.log("分割書き出しには容量が足りないため、従来の方式で試します: " + e.message);
+    MC.exporter._partsFallback = true;
+    return MC.exporter.exportMP4(onProgress);
+  }
+  await MC.exporter.preflightFiles(used.filter(c => !c.isImage));
 
   const _t0mark = Date.now();
   MC.exporter._markProgress = (k, total, extra) => {
@@ -1107,7 +1143,7 @@ MC.exporter.exportMP4Parts = async (onProgress) => {
         reseekS: Math.round(((MC.exporter._prof && MC.exporter._prof.reseekMs) || 0) / 1000),
         noskip: !isFinite(MC.exporter.SKIP_MIN),
         freeMB: MC.exporter._freeMB ?? null,
-        ...(extra || {}),      // part: いま何パート目か(落ちた帯に載る=切り分けデータ)
+        ...(extra || {}),      // part / doneSec: 落ちた帯に載る(切り分け+再開の案内)
       }));
     } catch (_) {}
   };
@@ -1127,21 +1163,26 @@ MC.exporter.exportMP4Parts = async (onProgress) => {
       if (doneSet.has(idx)) continue;
       const kA = idx * framesPerPart;
       const kB = Math.min(totalFrames, kA + framesPerPart);
+      kDone = kA;   // 見積りの起点。完了パートが先頭から連続である前提を持たない
       await MC.exporter._exportVideoPart({
         name: MC.exporter.partName(jobId, idx),
         kA, kB, tIn, fps, w, h, used,
         onFrame: async k => {
-          MC.exporter._markProgress(k, totalFrames, { part: `${idx + 1}/${nParts}` });
+          /* 帯には残す(開発用の切り分けデータ+再開の案内に使う) */
+          MC.exporter._markProgress(k, totalFrames,
+            { part: `${idx + 1}/${nParts}`, doneSec: idx * MC.exporter.PART_SEC });
           if (k % 300 === 0 && navigator.storage && navigator.storage.estimate) {
             navigator.storage.estimate().then(e => {
               MC.exporter._freeMB = Math.round(((e.quota || 0) - (e.usage || 0)) / 1e6);
             }).catch(() => {});
           }
           const perFrame = (performance.now() - t0) / 1000 / Math.max(1, k - kDone + 1);
+          /* 進捗に「パート」は出さない。分割は端末の都合であってユーザの
+             作業の構造ではなく、選べも変えられもしない内部事情を数えて
+             見せる理由がない。関心は「あと何分か」で、それは eta が言う */
           onProgress((k + 1) / totalFrames * 0.85, "映像を作っています…", {
             eta: perFrame * (totalFrames - k - 1),
-            sub: `${Math.round((k + 1) / fps)}秒ぶん / 全${Math.round(totalFrames / fps)}秒`
-              + `（パート${idx + 1}/${nParts}）`,
+            sub: `${MC.ui.fmtLen((k + 1) / fps)}ぶん / 全${MC.ui.fmtLen(totalFrames / fps)}`,
           });
         },
       });
@@ -1150,7 +1191,10 @@ MC.exporter.exportMP4Parts = async (onProgress) => {
     }
 
     /* ---- ② 結合(デコードなし・raw再mux) ---- */
-    onProgress(0.85, "パートをつないでいます…");
+    /* 「パートをつないでいます」は、85%まで「映像を作っています」で来た人に
+       突然出てくる説明のない内部語。sub を空で渡さないと、直前の
+       「8分12秒ぶん / 全8分12秒」が残って表示が食い違う */
+    onProgress(0.85, "仕上げています…", { sub: "もうすこしです" });
     finalOpfs = await MC.exporter.opfsCreate(outName);
     if (!finalOpfs) throw new Error("この端末の保存領域を用意できませんでした。");
     const muxer = new Mp4Muxer.Muxer({
@@ -1179,6 +1223,10 @@ MC.exporter.exportMP4Parts = async (onProgress) => {
       /* このパートの実位置(コマ番号ぴったり)。サンプル長の合算にしないのは、
          丸め誤差を後段のパートへ累積させないため */
       const offUs = Math.round(idx * framesPerPart * 1e6 / fps);
+      /* このパートに入っているはずのコマ数。読めた数と必ず突き合わせる ─
+         突き合わせないと、90秒まるごと欠けた500MBのMP4が「完走」と
+         見分けがつかない(共有デマックスは過去に「静かな黒抜け」を出している) */
+      const wantN = Math.min(totalFrames, (idx + 1) * framesPerPart) - idx * framesPerPart;
       let ns = 0;
       for await (const s of src.samples(vt.id, 0)) {
         if (MC.exporter.cancelFlag) throw new Error("キャンセルしました");
@@ -1189,12 +1237,21 @@ MC.exporter.exportMP4Parts = async (onProgress) => {
           firstChunk && desc ? { decoderConfig: { codec: "avc1.640028", description: desc } } : undefined);
         firstChunk = false;
         if (++ns % 120 === 0) {
-          while ((MC.exporter._pendCount || 0) > 3) await MC.yield();
+          /* 中止を見る。遅いストレージだと最大30秒「中止」が効かない画面になる
+             (パート書き出し側と legacy 側には既に同じチェックがある) */
+          while ((MC.exporter._pendCount || 0) > 3) {
+            if (MC.exporter.cancelFlag) throw new Error("キャンセルしました");
+            await MC.yield();
+          }
           await MC.yield();
         }
       }
-      onProgress(0.85 + 0.08 * ((idx + 1) / nParts), "パートをつないでいます…",
-                 { sub: `${idx + 1} / ${nParts}` });
+      if (ns !== wantN) {
+        throw new Error(`パート${idx + 1}から${ns}コマしか読めませんでした`
+          + `（${wantN}コマあるはずです）。もう一度書き出してください`);
+      }
+      onProgress(0.85 + 0.08 * ((idx + 1) / nParts), "仕上げています…",
+                 { sub: "もうすこしです" });
     }
 
     /* ---- ③ 音声は全尺を1回で(直列) ---- */
@@ -1244,11 +1301,14 @@ MC.exporter.exportMP4Parts = async (onProgress) => {
 };
 
 MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
+  MC.exporter._partsFallback = false;
   /* 長い書き出しはパート方式へ(上のコメント参照)。従来の一気書きは
      そのまま残す ─ 短い書き出し・ディスク直書き(PC)・OPFS無し端末が通る */
   {
     const [tA, tB] = MC.trimRange();
-    if (MC.exporter.partsApplicable(tB - tA, saveHandle)) {
+    /* _partsFallback: 容量不足で分割から降りてきた回。ここで分割へ戻すと
+       無限に往復する */
+    if (!MC.exporter._partsFallback && MC.exporter.partsApplicable(tB - tA, saveHandle)) {
       if (!saveHandle) await MC.exporter.probeOpfs().catch(() => {});
       if (MC.exporter.opfsSupported()) return MC.exporter.exportMP4Parts(onProgress);
     }

@@ -80,7 +80,20 @@ MC.ui.exportOverlay = {
     if (preEl) {
       preEl.textContent = (pre && pre.textContent) || "";
       preEl.hidden = !preEl.textContent;
+      preEl.classList.remove("eo-resume");
     }
+    /* 分割書き出しの再開を**常設**で知らせる(2026-07-31)。
+       待ち時間が半分になるという、ユーザにとって意味のある事実なので、
+       3.5秒で消えるトーストではなくここに置く(しかもトーストは
+       この全画面の下敷きになって一度も見えなかった) */
+    MC.ui.showResumeNoteIfAny = () => {
+      const sec = MC.exporter._resumeSec || 0;
+      if (!preEl || sec <= 0) return;
+      preEl.innerHTML = '<i class="fa-solid fa-rotate-left" aria-hidden="true"></i> '
+        + `<b>前回のつづきから</b> ─ ${MC.ui.fmtLen(sec)}ぶんは終わっています`;
+      preEl.hidden = false;
+      preEl.classList.add("eo-resume");
+    };
     MC.ui.$("#eoRun").hidden = false;
     MC.ui.$("#eoDone").hidden = true;
     MC.ui.$("#eoClose").hidden = true;
@@ -411,7 +424,7 @@ MC.ui.focusNextAction = () => {
      カード内タスク化(2026-07-31)後も、取り込んだ直後は自動で箱を開いて
      以前と同じ「すぐ確認」の流れを保つ(選ぶ→確認→同期 が途切れない) */
   {
-    const pending = MC.ui.tiltCams().some(c => !c.tiltOk);
+    const pending = MC.ui.tiltPending();
     if (pending) { setTimeout(() => MC.ui.openTilt(), 260); return; }
   }
   setTimeout(() => {
@@ -866,7 +879,7 @@ MC.ui.initJourney = () => {
          「本人の目で1本ずつ確認する」という 2026-07-28 の決定の本質は
          カードのバッジ+全確認ゲートで維持する。工程が1つ減り、
          まっすぐ撮れている最頻ケースの体感が軽くなる */
-      { id: "mat",    label: "動画をそろえる", shortLabel: "動画", hint: "動画を選んで、かたむきを確認します" },
+      { id: "mat",    label: "動画を入れる", shortLabel: "動画", hint: "かたむきも、ここで見ます" },
       { id: "sync",   label: "同期と分析",   shortLabel: "同期", hint: "音のズレ合わせと素材の分析をします" },
       { id: "audio",  label: "音声を選ぶ",   shortLabel: "音声", hint: "試聴して「この音で進める」を押してください" },
       { id: "length", label: "長さと始まり", shortLabel: "長さ", hint: "何分にするか・どこから始めるかを選んでください" },
@@ -926,7 +939,7 @@ MC.ui.updateActionBar = () => {
     if (cur === "mat") {
       /* かたむき未確認の動画があるときの主アクション(2026-07-31 カード内タスク化)。
          傾きの箱が開いていて OK ボタンが見えているなら重ねない(音声と同じ流儀) */
-      const tiltPending = MC.ui.tiltCams().some(c => !c.tiltOk);
+      const tiltPending = MC.ui.tiltPending();
       const tiltBox = document.getElementById("tiltSec");
       if (tiltPending && tiltBox && !tiltBox.hidden) {
         const okBtn = MC.ui.$("#tiltOkBtn");
@@ -938,16 +951,17 @@ MC.ui.updateActionBar = () => {
         }
         conf = { label: "この動画はOK", icon: "fa-check", act: () => okBtn && okBtn.click() };
       } else if (tiltPending && MC.media.slotClips().length) {
-        conf = { label: "かたむきを確認する", icon: "fa-ruler-horizontal",
-          act: () => MC.ui.openTilt() };
+        const cams = MC.ui.tiltCams();
+        const okN = cams.filter(c => c.tiltOk).length;
+        conf = { label: `かたむきを見る（${okN}/${cams.length}台おわり）`,
+          icon: "fa-ruler-horizontal", act: () => MC.ui.openTilt() };
       }
-      if (conf) { /* 傾きの導線が決まったら下の分岐は見ない */ }
       /* 素材を見に戻っているだけ(_viewPhase)なら、進む道を主ボタンにする。
          ここが無いと「動画を選ぶ」画面から先へ戻れない(2026-07-28) */
       const R = MC.ui.STEP_RANK;
       const reached = MC.ui._derivedPhase || "mat";
       if (conf) {
-        /* 上で決定済み */
+        /* 傾きの導線が上で決まっている。以降の分岐は見ない */
       } else if (MC.ui._viewPhase === "mat" && R[reached] > R.mat) {
         conf = { label: "これでOK、つづける", icon: "fa-arrow-right",
           act: () => { MC.ui._viewPhase = null; MC.ui.refreshJourney(); } };
@@ -1325,11 +1339,18 @@ MC.ui.renderClips = () => {
           <span class="clip-spec">${c.isImage ? "写真" : MC.ui.fmtTime(c.duration)}</span>
           ${pro ? "" : '<span class="clip-ok"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> 読み込みました</span>'}
         </div>
-        ${c.isImage ? "" : (c.tiltOk
-          ? `<button type="button" class="tilt-badge done" data-tilt title="タップでいつでも直せます">
-               <i class="fa-solid fa-circle-check" aria-hidden="true"></i> まっすぐ（確認ずみ）</button>`
+${c.isImage ? "" : (c.tiltOk
+          /* 状態は名詞で言う(動詞は行動バーに集約)。直した実感が残るように
+             何度なおしたかを添える。`›` は「押せる」ことを iPhone に伝える
+             唯一の手段 ─ title 属性は iOS Safari では永久に読まれない */
+          ? `<button type="button" class="tilt-badge done" data-tilt aria-label="かたむきを見直す">
+               <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+               <span>かたむき OK（${c.rot ? `${c.rot > 0 ? "+" : ""}${c.rot.toFixed(1)}°なおした` : "そのまま"}）</span>
+               <span class="tilt-badge-go" aria-hidden="true">›</span></button>`
           : `<button type="button" class="tilt-badge todo" data-tilt>
-               <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> かたむきを確認する</button>`)}
+               <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+               <span>かたむき まだ見ていません</span>
+               <span class="tilt-badge-go" aria-hidden="true">›</span></button>`)}
         ${(!pro || c.isImage) ? "" : `
         <div class="clip-sync">
           <span class="sync-badge ${badgeCls}">${c.syncMethod}</span>
@@ -1678,12 +1699,38 @@ MC.ui._tiltIdx = 0;
 MC.ui._tiltPinned = false;
 MC.ui.tiltCams = () => MC.S.clips.filter(c => !c.isAudio && !c.isImage);
 
+/* かたむきの確認が要るか。refreshJourney の免除(legacy)と**同じ物差し**を使う。
+   ここを素の !tiltOk で判定していたため、免除でゲートは通っているのに
+   カードは⚠のまま・行動バーが「かたむきを確認する」に乗っ取られ、
+   素材画面から先へ戻る「これでOK、つづける」が出なくなっていた */
+MC.ui.tiltPending = () => {
+  const cams = MC.ui.tiltCams();
+  if (!cams.length || MC.S.easyDone) return false;
+  if (MC.ui.isSynced() && cams.some(c => c.tiltOk === undefined)) return false;  // 旧データは対象外
+  return cams.some(c => !c.tiltOk);
+};
+
 /* 傾きの箱の開閉(2026-07-31 カード内タスク化)。
    idx を渡すとそのカメラから、渡さなければ最初の未確認から見る */
 MC.ui.openTilt = idx => {
   const sec = document.getElementById("tiltSec");
   if (!sec || !MC.ui.tiltCams().length) return;
+  /* 明示指定は renderTiltSec の「未確認から始める」再探索より強い。
+     この印が無かったときは、確認ずみカードの✓を押すと
+     **押したのと別のカメラ**(全部確認ずみなら常に最後の1台)が開いていた */
+  MC.ui._tiltPick = idx != null;
   if (idx != null) MC.ui._tiltIdx = idx;
+  /* ★ 必ず mat の画面へ移ってから開く。#tiltSec は mat のパネルなので、
+     他の工程を見ているあいだは applySteps が .step-off
+     (display:none !important) を付けており、hidden を外しても開かない ─
+     見えない箱に対して固定プレビュー(mz-pin-force)と soloId だけが掛かり、
+     次の操作までプレビューが画面上部に貼り付いたまま残っていた。
+     動画1本のときは tiltDone が常に true で現在地が polish になるため、
+     この経路が唯一の入口になる(実測: display:none / offsetParent:null) */
+  if (document.body.dataset.mzjPhase !== "mat") {
+    MC.ui._viewPhase = "mat";
+    MC.ui.refreshJourney();
+  }
   sec.hidden = false;
   MC.ui.renderTiltSec();
   MC.ui.gentleScrollTo(sec, "start");
@@ -1714,14 +1761,18 @@ MC.ui.renderTiltSec = () => {
   if (!cams.length) return;
   /* まだ確認していないカメラから始める(全部OKなら最後の1台)。
      入れ直しのたびに確認済みの分まで押させない */
-  if (MC.ui._tiltIdx == null || !cams[MC.ui._tiltIdx] || cams[MC.ui._tiltIdx].tiltOk) {
+  if (MC.ui._tiltPick) {
+    MC.ui._tiltPick = false;              // 明示指定は一度だけ効く
+  } else if (MC.ui._tiltIdx == null || !cams[MC.ui._tiltIdx] || cams[MC.ui._tiltIdx].tiltOk) {
     const i = cams.findIndex(c => !c.tiltOk);
     MC.ui._tiltIdx = i >= 0 ? i : cams.length - 1;
   }
   MC.ui._tiltIdx = Math.max(0, Math.min(MC.ui._tiltIdx, cams.length - 1));
   const c = cams[MC.ui._tiltIdx];
   const no = MC.ui.$("#tiltCamNo");
-  if (no) no.textContent = `カメラ${MC.ui._tiltIdx + 1} / ${cams.length}`;
+  /* 呼び名は「動画N」に統一(2026-07-31)。スロットは「動画1/2/3」なのに
+     ここだけ「カメラN」で、カード内タスク化で両者が同じ画面に並んだ */
+  if (no) no.textContent = `動画${MC.ui._tiltIdx + 1} / ${cams.length}`;
   const fileEl = MC.ui.$("#tiltFile");
   if (fileEl) fileEl.textContent = MC.ui.shortName(c.name, 14);
   const th = MC.ui.$("#tiltThumb");
@@ -1830,6 +1881,10 @@ MC.ui.wireTiltSec = () => {
     if (next >= 0) {
       MC.ui._tiltIdx = next;
       MC.ui.renderTiltSec();
+      /* いま確認した動画のバッジを✓へ。ここを呼ばないと、上へスクロールした
+         とき「さっきOKしたはずの動画」が⚠のまま出ている(renderClips に
+         定期実行は無く、呼び出し元は6箇所だけ) */
+      MC.ui.renderClips();
     } else {
       /* 全カメラ確認済み → 箱を畳み、カードのバッジを✓へ。
          refreshJourney が「動画をそろえる」を完了にして次(同期)へ運ぶ */
@@ -2257,11 +2312,16 @@ MC.ui.showInterruptNote = (ms, opts = {}) => {
     : (opts.crashed && stalled)
       ? `同期もカット割も残っています。<b>同じ動画を・前と同じ順番で</b>選び直せば、`
         + `書き出しからやり直せます。`
+        /* 分割書き出しでは完了ぶんが端末に残る(2026-07-31)。これを言わないと
+           「また最初から待つのか」と思われ、再開機能は一度も使われない */
+        + (stalled.doneSec ? `<br><b>${MC.ui.fmtLen(stalled.doneSec)}ぶんは書けています。`
+             + `もう一度押すと、そこから続きます。</b>` : "")
         + `<br><span class="mz-stall-detail">${stalled.k}/${stalled.total}コマ・`
         + `${stalled.w}x${stalled.h}・${stalled.mbps || "?"}Mbps・`
         + `カメラ${stalled.cams || "?"}本・${stalled.route || "?"}・`
         + `${stalled.sec != null ? stalled.sec + "秒で" : ""}約${stalled.mb || "?"}MBまで`
         + `${stalled.apar ? "・音声並行" : "・音声直列"}`
+        + (stalled.part ? `・パート${stalled.part}` : "")
         + `・再シーク${stalled.skips ?? "?"}回`
         + `${stalled.freeMB != null ? "・空き" + stalled.freeMB + "MB" : ""}`
         + `${stalled.noskip ? "・診断(noskip)中" : ""}</span>`

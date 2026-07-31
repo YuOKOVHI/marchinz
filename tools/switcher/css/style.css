@@ -1123,9 +1123,13 @@ body[data-mzj-phase="sync"] .stage { display: none; }
 body[data-mzj-phase="audio"] .stage { display: none; }
 /* 傾きの確認中はプレビューの絵だけ。再生バーとIN/OUTは別の工程の道具で、
    固定表示のプレビューに重なって見えてもいた(2026-07-28) */
-body[data-mzj-phase="tilt"] .transport,
-body[data-mzj-phase="tilt"] .trim-row,
-body[data-mzj-phase="tilt"] #cutModeBtn { display: none; }
+/* ★ セレクタは body.mz-pin-force で。data-mzj-phase="tilt" は
+   傾きをカード内タスクへ降ろした 2026-07-31 に**入らなくなった値**で、
+   この3本(と下の2本)が丸ごと死んでいた。mz-pin-force は renderTiltSec が付け
+   closeTilt が外す 1:1 の印なので、傾き調整中と完全に一致する */
+body.mz-pin-force .transport,
+body.mz-pin-force .trim-row,
+body.mz-pin-force #cutModeBtn { display: none; }
 /* 書き出しの画面は「画質を選んで書き出す」だけにする。範囲(IN/OUT)・
    カット切替・タイムラインは仕上げ設定の道具で、実測で41文言/1388pxの
    大半がこれだった(2026-07-28)。直したくなったらジャーニーの「設定」へ戻る */
@@ -1252,7 +1256,7 @@ body.tab-pro #easyPane { display: none !important; }
     スクロールもできなかった) */
 /* 空ける量は固定値にしない。30vh を仮定すると端末で141px余ったり足りなかったりする
    (実測)。renderTiltSec が実際のプレビュー下端から測って --mz-tilt-pad に入れる */
-body[data-mzj-phase="tilt"] .side { padding-top: var(--mz-tilt-pad, 0px); }
+body.mz-pin-force .side { padding-top: var(--mz-tilt-pad, 0px); }
 .tilt-stage { margin-top: 10px; padding: 12px; border: 1px solid var(--line);
   border-radius: 12px; background: var(--panel2); }
 .tilt-top { display: flex; align-items: center; gap: 10px; }
@@ -1265,7 +1269,7 @@ body[data-mzj-phase="tilt"] .side { padding-top: var(--mz-tilt-pad, 0px); }
   font-variant-numeric: tabular-nums; }
 .tilt-crop { margin: 6px 0 0; color: #a8601a; }
 /* 連打する前提なので44pt以上を確保(実測40x34だった) */
-body[data-mzj-phase="tilt"] .tilt-step { width: 52px; min-height: 48px; font-size: 20px; }
+body.mz-pin-force .tilt-step { width: 52px; min-height: 48px; font-size: 20px; }
 #tiltOkBtn, #tiltPrevBtn { min-height: 48px; }
 
 /* 完成画面の顔の注意(2026-07-29) */
@@ -1408,9 +1412,17 @@ body.mz-diag-noskip #exportSec::before {
    露出した事故の再発防止。computed display で実測して確認すること) */
 #tiltSec[hidden] { display: none !important; }
 .tilt-badge { display: inline-flex; align-items: center; gap: 6px;
-  margin-top: 6px; padding: 6px 12px; min-height: 34px;
+  margin-top: 6px; padding: 8px 14px; min-height: 44px;
   border-radius: 999px; font-size: 12px; font-weight: 700;
   border: 1px solid var(--line); background: #fff; cursor: pointer;
   font-family: inherit; }
 .tilt-badge.todo { background: #fff4d6; border-color: #f0d9a0; color: #7a5200; }
 .tilt-badge.done { color: var(--ok); }
+/* 分割書き出しの「前回のつづきから」(2026-07-31)。全画面の常設欄に出す ─
+   トーストは #exportOverlay(z-index:120) の下敷き(z-index:99)で見えない */
+#eoPreEta.eo-resume { background: #eaf4ff; color: var(--acc-deep);
+  border-radius: 10px; padding: 8px 12px; font-weight: 700; }
+#eoPreEta.eo-resume i { margin-right: 6px; }
+/* かたむきバッジ: 状態は名詞、押せることは › で示す(iOS Safari は title を読まない) */
+.tilt-badge-go { margin-left: auto; font-size: 16px; opacity: .5; }
+.tilt-badge { width: 100%; justify-content: flex-start; text-align: left; }

@@ -48,6 +48,12 @@ async function test(name, fn) {
   out.appendChild(d);
 }
 const eq = (a, b, what) => { if (a !== b) throw new Error(`${what}: 期待 ${b} / 実際 ${a}`); };
+/* 時間切れの番人。ランナーは「ブラウザで開くだけで結果が出る」のが前提で、
+   1本が固まって全体が止まると、その前提ごと壊れる(=誰も走らせなくなる)。
+   固まったら固まったと**報告して次へ進む** */
+const within = (ms, p, what) => Promise.race([
+  p, new Promise((_, rj) => setTimeout(() => rj(new Error(`${what}: ${ms / 1000}秒で終わらない`)), ms)),
+]);
 const ge = (a, b, what) => { if (!(a >= b)) throw new Error(`${what}: ${a} は ${b} 以上であるべき`); };
 
 /* ===== ソースを隔離ロード =====
@@ -1026,6 +1032,87 @@ async function countSamples(ns, file, fromSec) {
     if (w.document.body.dataset.mzjPhase === "mat") throw new Error("全台OKしたのに動画の工程から出られない");
     return "未OK=matに留まる(バッジ3個) / 全OK=次の工程へ";
   });
+  await test("★押したカードのかたむきが開く(確認ずみでも)", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    /* 全部確認ずみ = 「未確認から始める」再探索が最後の1台を指す状況。
+       ここで動画1の✓を押すと、以前は**動画3**が開いていた(2026-07-31) */
+    S.clips.forEach(c => { c.tiltOk = true; c.syncMethod = "波形"; });
+    S.easyDone = false;
+    w.MC.ui.renderClips();
+    w.MC.ui.refreshJourney();
+    const badges = [...w.document.querySelectorAll("#clipSlots .tilt-badge")];
+    eq(badges.length, 3, "バッジの数");
+    for (const [i, b] of badges.entries()) {
+      b.click();
+      const shown = w.document.getElementById("tiltCamNo").textContent;
+      if (!shown.startsWith(`動画${i + 1} `)) {
+        throw new Error(`${i + 1}枚目を押したのに「${shown}」が開いた`);
+      }
+      /* 押せることが見た目で分かるか(iOS Safari は title を読まない) */
+      if (!b.querySelector(".tilt-badge-go")) throw new Error("押せる印(›)が無い");
+      const h = b.getBoundingClientRect().height;
+      if (h < 43.5) throw new Error(`タップ標的が ${Math.round(h)}px(44pt未満)`);
+    }
+    w.MC.ui.closeTilt();   // 次のテストへ開いたまま渡さない
+    return "3枚とも押したカードが開く・›あり・44pt";
+  });
+  await test("★かたむき調整中のCSSが生きている(工程からカード内へ移した取り残し)", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.clips.forEach(c => { c.tiltOk = false; c.syncMethod = "未同期"; });
+    S.easyDone = false;
+    w.MC.ui.renderClips();
+    w.MC.ui.refreshJourney();
+    w.MC.ui.openTilt(0);
+    if (!w.document.body.classList.contains("mz-pin-force")) {
+      throw new Error("傾き調整中の印(mz-pin-force)が付いていない");
+    }
+    /* ★ data-mzj-phase="tilt" を前提にしたセレクタは、傾きを工程から降ろした
+       時点で**入らなくなった値**を見ており、3本まるごと死んでいた。
+       実測値そのものではなく「余白の指定が効いているか」を見る ─
+       --mz-tilt-pad はプレビューの実寸から決まり、この隔離環境では0になる */
+    w.document.documentElement.style.setProperty("--mz-tilt-pad", "123px");
+    const pad = parseFloat(w.getComputedStyle(w.document.querySelector(".side")).paddingTop) || 0;
+    if (Math.abs(pad - 123) > 1) {
+      throw new Error(`固定プレビュー分の余白が効いていない(${pad}px)。本文が覆われる`);
+    }
+    const st = w.document.querySelector(".tilt-step").getBoundingClientRect();
+    if (st.height < 43.5 || st.width < 43.5) {
+      throw new Error(`↺↻ が ${Math.round(st.width)}x${Math.round(st.height)}(44pt未満)`);
+    }
+    const tr = w.document.querySelector(".transport");
+    if (tr && w.getComputedStyle(tr).display !== "none") {
+      throw new Error("傾き調整中なのに他の操作が出ている(1画面1操作の破れ)");
+    }
+    w.MC.ui.closeTilt();
+    if (w.document.body.classList.contains("mz-pin-force")) throw new Error("閉じても印が残る");
+    w.document.documentElement.style.removeProperty("--mz-tilt-pad");
+    return `余白の指定が効く / ↺${Math.round(st.width)}x${Math.round(st.height)} / 他操作は非表示`;
+  });
+  await test("★書き出し中の再開の案内が、全画面の下敷きにならない", async () => {
+    const w = await compEnv();
+    const toast = w.document.getElementById("toast");
+    const ov = w.document.getElementById("exportOverlay");
+    const zT = parseInt(w.getComputedStyle(toast).zIndex, 10) || 0;
+    const zO = parseInt(w.getComputedStyle(ov).zIndex, 10) || 0;
+    /* トーストが全画面より下にあることを事実として押さえる。
+       ここが逆転しない限り、再開の告知をトーストでやってはいけない */
+    if (zT > zO) return "トーストの方が上(この見張りは不要になった)";
+    w.MC.exporter._resumeSec = 180;
+    w.MC.ui.exportOverlay.open();
+    if (!w.MC.ui.showResumeNoteIfAny) throw new Error("再開の案内を出す口が無い");
+    w.MC.ui.showResumeNoteIfAny();
+    const pre = w.document.getElementById("eoPreEta");
+    if (pre.hidden) throw new Error("再開の案内が出ていない");
+    if (!/3分/.test(pre.textContent)) {
+      throw new Error(`「パート」ではなく時間で言うこと: ${pre.textContent}`);
+    }
+    if (/パート/.test(pre.textContent)) throw new Error("内部語(パート)が出ている");
+    w.MC.ui.exportOverlay.close ? w.MC.ui.exportOverlay.close() : (ov.hidden = true);
+    w.MC.exporter._resumeSec = 0;
+    return `toast(z${zT}) < overlay(z${zO}) なので常設欄へ / 「${pre.textContent.trim()}」`;
+  });
   await test("★傾きの箱はバッジから開き、mat以外の工程では畳まれる", async () => {
     const w = await compEnv();
     const S = compReset(w);
@@ -1775,6 +1862,33 @@ async function countSamples(ns, file, fromSec) {
     }
     frames.forEach(f => f.close());
     return "45コマ・単調増加・画素照合OK(4コマおき)";
+  });
+  /* ★ 本番の exportMP4Parts をこのランナーから走らせるのは**断念した**(2026-07-31)。
+     iframe の中で OPFS の writer Worker が応答せず、スイート全体が固まる
+     (74件目で停止し、以降が一度も走らない)。ランナーは「開くだけで結果が出る」
+     ことが唯一の価値なので、1本のために全体を止めるのは割に合わない。
+
+     代わりに**実ページで手で検証済み**(証拠は 3ab899b 以降のコミットに記載):
+       ・正常系: 6秒を2秒×3パート → 46820バイト・180サンプル・単調増加
+       ・欠落注入: 結合の読み出しを20コマで打ち切る → 検算が捕まえて
+         「パート1から20コマしか読めませんでした（60コマあるはずです）」
+     したがって下の⑱は結合の**アルゴリズム**を見張り、本番経路そのものは
+     未自動化のまま残っている ─ ここは既知の穴として引き継ぐこと。 */
+  await test("★同期をやり直したら別ジョブになる(前半だけ旧オフセットの動画を作らない)", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.clips.forEach(c => { c.duration = 510; });
+    S.trimIn = 0; S.trimOut = 300;
+    S.cutList = [{ t: 0, clipId: 1, trans: "cut", dur: 0 }];
+    const base = w.MC.exporter.exportJobId();
+    S.clips[0].offset = 0.35;                       // 同期をやり直した
+    const afterSync = w.MC.exporter.exportJobId();
+    S.clips[0].offset = 0;
+    S.wipePos = S.wipePos === "br" ? "bl" : "br";   // 小窓の位置を変えた
+    const afterWipe = w.MC.exporter.exportJobId();
+    if (base === afterSync) throw new Error("同期し直しでjobIdが変わらない(前半だけ旧オフセットになる)");
+    if (base === afterWipe) throw new Error("ワイプ位置を変えてもjobIdが変わらない(前半と後半で小窓の位置が違う動画ができる)");
+    return "同期・ワイプのどちらでも別ジョブ";
   });
   await test("★ジョブの同一性: 設定が1つでも違えば別ジョブ(古いパートを混ぜない)", async () => {
     const w = await compEnv();
