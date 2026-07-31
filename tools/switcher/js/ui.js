@@ -464,6 +464,7 @@ MC.ui.resetEasyDone = (restored = false) => {
        「同じ動画を選び直した」ときは鍵まで一致してしまう ─
        素材をやり直したなら計算もやり直す */
     if (MC.salute && MC.salute.clearCache) MC.salute.clearCache();
+    MC.S.tiltSkipped = false;   // 素材が変われば傾きの確認もやり直し
   }
   if (!MC.S.easyDone) return;
   MC.S.easyDone = false;
@@ -1119,7 +1120,14 @@ MC.ui.refreshJourney = () => {
      同期もレイアウトも済んでいるのに毎回傾きへ引き戻されていた
      (2026-07-28 レビュー指摘) */
   const legacy = synced && vids.some(c => c.tiltOk === undefined);
-  const tiltDone = !vids.length || legacy || vids.every(c => c.tiltOk);
+  /* 「全部確認した」= 工程の完了印 */
+  const tiltConfirmed = !vids.length || legacy || vids.every(c => c.tiltOk);
+  /* 「先へ進めてよい」= 確認したか、本人が「このまま進む」を選んだか。
+     ★ ゲートと完了印を分ける(2026-08-01)。まっすぐ撮れているのが最頻ケースで、
+       そこに毎回N回のタップを強いるのは順序が逆だった。
+       ただし飛ばした回を「確認ずみ」とは記録しない ─ 工程表の丸は
+       未確認のまま残り、いつでも戻って直せる。嘘の✓を付けない */
+  const tiltDone = tiltConfirmed || !!MC.S.tiltSkipped;
   /* 音楽の解析まで済んだか(2026-07-31)。ここまで来ると「長さと開始位置」の
      候補を作れる。showIn は演奏そのものの範囲なので、書き出し範囲(trimIn)を
      いくら動かしても消えない ─ 何度でも選び直せる */
@@ -1129,7 +1137,7 @@ MC.ui.refreshJourney = () => {
   /* 傾きが単独工程に戻ったので(2026-07-31)、素材の完了は「入っている」だけ。
      かたむきの確認ずみは tilt 工程の完了として別に立てる */
   if (slot.length) done.push("mat");
-  if (slot.length && tiltDone) done.push("tilt");
+  if (slot.length && tiltConfirmed) done.push("tilt");   // 飛ばした回は✓にしない
   /* 同期の完了に「音声を決めた」を含める(2026-08-01 工程統合)。
      音声の決定は同期と分析の中の一手になった */
   if (slot.length && synced && audioDone) done.push("sync");
@@ -1906,6 +1914,15 @@ MC.ui.wireTiltSec = () => {
        つまりこのボタンは本来の使い道でだけ壊れていた */
     MC.ui._tiltPick = true;
     MC.ui.renderTiltSec();
+  };
+  /* このまま進む(2026-08-01)。確認ずみの印は付けない ─ 工程表の丸は
+     未確認のまま残り、いつでも戻れる。嘘の✓を付けないのが要点 */
+  const skip = $("#tiltSkipBtn");
+  if (skip) skip.onclick = () => {
+    MC.S.tiltSkipped = true;
+    MC.ui._viewPhase = null;
+    MC.ui.renderClips();        // カードのバッジは⚠のまま(飛ばしただけなので)
+    MC.ui.refreshJourney();     // showPhase が固定プレビューを解いて次の工程へ
   };
   /* #tiltAddBtn は撤去(2026-07-31)。動画を足しに戻るのは工程表の「動画」から */
   const ok = $("#tiltOkBtn");

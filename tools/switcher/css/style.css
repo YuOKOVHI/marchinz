@@ -1268,6 +1268,14 @@ body.tab-easy #layoutSec { display: none !important; }
    #syncSec(手動同期) と #layoutSec(レイアウト調整)は こだわり のまま */
 body.tab-pro #easyPane { display: none !important; }
 
+/* 傾きを飛ばす道(2026-08-01)。主ボタン(この動画はOK)より明らかに弱く。
+   ただしタップ標的は44pt を割らない ─ 弱く見せることと押しにくくすることは違う */
+.tilt-skip { display: block; width: 100%; min-height: 44px; margin-top: 12px;
+  border: none; background: none; color: var(--tx2); font: inherit; font-size: 13px;
+  text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.tilt-skip:active { color: var(--tx); }
+.tilt-skip-note { margin: 2px 0 0; text-align: center; font-size: 11px; }
+
 /* 傾きの微調整の格納(2026-07-28) */
 .tilt-fine > summary {
   cursor: pointer; font-size: 12.5px; color: var(--tx2);

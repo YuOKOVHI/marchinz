@@ -1171,6 +1171,47 @@ async function countSamples(ns, file, fromSec) {
     if (w.document.querySelector(".save-note")) throw new Error("保存済みの details が残っている");
     return "4つの言い回しと details すべて無し";
   });
+  /* 2026-08-01 品質改修。まっすぐ撮れているのが最頻ケースなのに、
+     そこへ毎回N回のタップを強いていた。ページと1本ずつの送りは残し、
+     押したくない人だけが抜けられるようにする */
+  await test("★傾きは飛ばせる。ただし飛ばした回に嘘の✓を付けない", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.clips.forEach(c => { c.tiltOk = false; c.syncMethod = "未同期"; });
+    S.easyDone = false; S.tiltSkipped = false;
+    w.MC.ui._tiltIdx = null;
+    w.MC.ui.renderClips(); w.MC.ui.refreshJourney();
+    if (w.document.body.dataset.mzjPhase !== "tilt") throw new Error("傾きの工程で始まらない");
+    const b = w.document.getElementById("tiltSkipBtn");
+    if (!b) throw new Error("飛ばす道が無い");
+    /* 弱く見せることと、押しにくくすることは違う */
+    const h = b.getBoundingClientRect().height;
+    if (h < 43.5) throw new Error(`タップ標的が ${Math.round(h)}px(44pt未満)`);
+    b.click();
+    if (w.document.body.dataset.mzjPhase === "tilt") throw new Error("押しても進まない");
+    /* ★ ここが要。飛ばした=確認したではない。工程表に✓を付けたら嘘になる */
+    const dot = w.document.querySelector('.mzj-phase[data-id="tilt"]');
+    if (dot.classList.contains("done")) throw new Error("飛ばしただけで✓が付いた(嘘)");
+    if (S.clips.some(c => c.tiltOk)) throw new Error("確認していないのに tiltOk が立った");
+    const badge = w.document.querySelector("#clipSlots .tilt-badge");
+    if (badge && !badge.classList.contains("todo")) throw new Error("カードのバッジが済みになった");
+    /* 固定プレビューが解けること・戻れること */
+    if (w.document.body.classList.contains("mz-pin-force")) throw new Error("固定プレビューが残る");
+    w.MC.ui._viewPhase = "tilt"; w.MC.ui.refreshJourney();
+    if (w.document.body.dataset.mzjPhase !== "tilt") throw new Error("あとから戻れない");
+    w.MC.ui._viewPhase = null; S.tiltSkipped = false;
+    return "飛ばせる / ✓は付かない / 戻れる / 44pt";
+  });
+  await test("★素材を入れ替えたら「このまま進む」は取り消される", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.tiltSkipped = true;
+    /* 素材が変わったら確認のやり直し。飛ばした記憶を持ち越すと、
+       別の動画の傾きを一度も見ないまま書き出しへ行ける */
+    w.MC.ui.resetEasyDone(false);
+    if (S.tiltSkipped) throw new Error("素材を入れ替えても飛ばした記憶が残る");
+    return "素材の入れ替えで取り消される";
+  });
   await test("★「1つ前の動画」で本当に1つ戻る(確認ずみでも)", async () => {
     const w = await compEnv();
     const S = compReset(w);
