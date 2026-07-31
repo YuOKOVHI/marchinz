@@ -1412,6 +1412,71 @@ async function countSamples(ns, file, fromSec) {
     if (bands.length > 20) throw new Error(`区間が ${bands.length} 本に割れている(縞模様)`);
     return `4区間とも一致 / まとまり ${bands.length} 本`;
   });
+  /* 2026-08-01 品質改修。候補カード(スタート/大盛り上がり/…)と色帯は、
+     同じ「どこから始めるか」を2つの見せ方で別々に語っていた。
+     ★ 候補は消さない(優さんの指示で作った機能)。重複を消すのであって
+       機能を消すのではない ─ 帯の上に印として重ね、押せば選べるようにする */
+  await test("★開始位置の候補が帯の上に出て、押すとその候補が選ばれる", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    const sr = w.MC.audio.SR, DUR = 400, N = sr * DUR;
+    const pcm = new Float32Array(N);
+    let sd = 1;
+    const rnd = () => { sd ^= sd << 13; sd ^= sd >>> 17; sd ^= sd << 5;
+                        return (sd >>> 0) / 4294967295 * 2 - 1; };
+    for (let i = 0; i < N; i++) { const t = i / sr;
+      pcm[i] = t < 40  ? 0.01 * Math.sin(i / 40)
+             : t < 120 ? 0.5 * (Math.sin(i/12) + Math.sin(i/25) + Math.sin(i/9)) / 3
+             : t < 200 ? (i % 900 < 60 ? 0.55 : 0.04) * rnd()
+             : t < 300 ? 0.06 * Math.sin(i / 45)
+             : t < 370 ? 0.6 * (Math.sin(i/11) + Math.sin(i/23) + Math.sin(i/8)) / 3
+             :           0.01 * Math.sin(i / 50); }
+    const c = w.MC.getClip(1);
+    Object.assign(c, { audio8k: pcm, audio8kStart: 0, audio8kReqStart: 0, duration: DUR });
+    S.clips.forEach(x => { x.duration = DUR; x.tiltOk = true; x.syncMethod = "波形"; });
+    S.audioClipId = 1; S.audioDecided = true;
+    S.showIn = 40; S.showOut = 380; S.lengthDecided = false;
+    S.exportPreset = "short"; S.startKey = null;
+    const orig = w.MC.audio.extract8k;
+    w.MC.audio.extract8k = async () => {};
+    try { await w.MC.sections.analyze(c); } finally { w.MC.audio.extract8k = orig; }
+    w.MC.ui.renderAll(); w.MC.ui.refreshJourney();
+    if (w.document.body.dataset.mzjPhase !== "length") {
+      throw new Error("長さの工程にならない: " + w.document.body.dataset.mzjPhase);
+    }
+    const bc = w.MC.ui._bandCands();
+    if (bc.list.length < 3) throw new Error(`候補が ${bc.list.length} 件しか出ない`);
+    /* 印の位置を押すと、その候補が選ばれること */
+    const cv = w.document.getElementById("secBand");
+    const r = cv.getBoundingClientRect();
+    const dur = w.MC.timelineDuration();
+    for (const cand of bc.list) {
+      const x = r.left + (cand.t / dur) * r.width;
+      cv.dispatchEvent(new w.MouseEvent("click",
+        { clientX: x, clientY: r.top + 5, bubbles: true }));
+      if (S.startKey !== cand.key) {
+        throw new Error(`「${cand.label}」の印を押したのに ${S.startKey} が選ばれた`);
+      }
+      if (Math.abs(S.trimIn - cand.t) > 1) {
+        throw new Error(`INが候補の位置(${cand.t.toFixed(0)}s)と違う: ${S.trimIn.toFixed(0)}s`);
+      }
+    }
+    return `候補${bc.list.length}件すべて、帯の印から選べる`;
+  });
+  await test("★色帯と書き出し範囲の帯が同じ行に重ならない", async () => {
+    const w = await compEnv();
+    const cv = w.document.getElementById("secBand");
+    const tb = w.document.getElementById("trimBand");
+    if (!cv || !tb) throw new Error("帯が無い");
+    /* 実測で 範囲バンド448px / 色帯449px と重なり、IN/OUTの旗が色帯を隠していた。
+       位置を数値で見張る ─ 見た目の話は見た目で確かめられないと守れない */
+    const a = w.getComputedStyle(cv).bottom, b = w.getComputedStyle(tb).bottom;
+    const na = parseFloat(a), nb = parseFloat(b);
+    if (isFinite(na) && isFinite(nb) && Math.abs(na - nb) < 8) {
+      throw new Error(`色帯(${a})と範囲バンド(${b})が同じ行にある`);
+    }
+    return `色帯 ${a} / 範囲バンド ${b}`;
+  });
   await test("★解析前は帯を出さない（空の灰色帯は情報ゼロ）", async () => {
     const w = await compEnv();
     const S = compReset(w);

@@ -731,6 +731,7 @@ MC.ui.renderLengthSec = () => {
         /* 長さが変われば見どころの窓も変わる。始まりは選び直させず、
            同じ性格(startKey)の新しい最適位置へ自動で追従させる */
         MC.ui.renderLengthSec();
+        MC.ui.renderSectionBand();   // 帯の印も選択に追従させる
         MC.ui.updateTransport();
         MC.preview.seek(MC.S.trimIn);
       };
@@ -764,6 +765,7 @@ MC.ui.renderLengthSec = () => {
         MC.S.startKey = c.key;
         MC.ui.invalidateCuts();     // 始まりが変わる=前のカット割は合わない
         MC.ui.renderLengthSec();
+        MC.ui.renderSectionBand();   // 帯の印も選択に追従させる
         MC.ui.updateTransport();
         MC.preview.seek(MC.S.trimIn);
       };
@@ -780,6 +782,7 @@ MC.ui.renderLengthSec = () => {
         if (playing) { MC.preview.pause(); MC.ui.renderLengthSec(); return; }
         if (c.key !== MC.S.startKey) { MC.S.startKey = c.key; MC.ui.invalidateCuts(); }
         MC.ui.renderLengthSec();
+        MC.ui.renderSectionBand();   // 帯の印も選択に追従させる
         MC.ui.updateTransport();
         MC.preview.seek(MC.S.trimIn);
         MC.preview.play().then(() => MC.ui.renderLengthSec());
@@ -3419,6 +3422,21 @@ MC.ui.sectionBands = () => {
   return out;
 };
 
+/* 帯の上に「開始位置の候補」を印として重ねる(2026-08-01)。
+   候補カード(スタート/大盛り上がり/バラード…)と帯は、同じ「どこから始めるか」を
+   2つの見せ方で別々に語っていた。カードは名前を、帯は音の性格を出すのに、
+   両者がどこにも繋がっていない ─ 「大盛り上がり」がどの色の上にあるのか
+   分からなかった。印で結び、押せば選べるようにする。
+
+   ★ 候補そのものは消さない(優さんの指示で作った機能)。重複を消すのであって、
+     機能を消すのではない */
+MC.ui._bandCands = () => {
+  if (document.body.dataset.mzjPhase !== "length") return { list: [], cur: null };
+  const a = MC.ui.applyLengthChoice && MC.ui.applyLengthChoice();
+  if (!a || !a.canChoose) return { list: [], cur: null };
+  return { list: a.cands || [], cur: a.cand ? a.cand.key : null };
+};
+
 MC.ui.renderSectionBand = () => {
   const cv = MC.ui.$("#secBand");
   const lg = MC.ui.$("#secLegend");
@@ -3447,6 +3465,16 @@ MC.ui.renderSectionBand = () => {
     ctx.fillStyle = b.color;
     ctx.fillRect(x0, 0, Math.max(1, x1 - x0), h);
   }
+  /* 開始位置の候補を印で重ねる。選ばれているものは濃く・太く */
+  {
+    const { list, cur } = MC.ui._bandCands();
+    for (const c of list) {
+      const x = (c.t / dur) * w;
+      const on = c.key === cur;
+      ctx.fillStyle = on ? "#0c0f14" : "rgba(12,15,20,0.45)";
+      ctx.fillRect(Math.max(0, Math.min(w - (on ? 3 : 2), x - (on ? 1.5 : 1))), 0, on ? 3 : 2, h);
+    }
+  }
   /* 凡例は「実際にこの曲に出てきた性格」だけ。出ていない色を並べない */
   if (lg) {
     const seen = [];
@@ -3467,6 +3495,20 @@ MC.ui.wireSectionBand = () => {
     const r = cv.getBoundingClientRect();
     const x = (e.clientX ?? (e.touches && e.touches[0] && e.touches[0].clientX) ?? 0) - r.left;
     const t = Math.max(0, Math.min(dur, (x / Math.max(1, r.width)) * dur));
+    /* 候補の印の近く(帯の幅で4%以内)を押したら、その候補を選ぶ。
+       ただ頭出しするだけでなく「そこから書き出す」まで一手で決まる */
+    const { list } = MC.ui._bandCands();
+    const near = list.find(c => Math.abs(c.t - t) <= dur * 0.04);
+    if (near) {
+      MC.S.startKey = near.key;
+      if (near.key !== "manual") MC.S.startAt = null;
+      MC.ui.renderLengthSec();
+      MC.preview.seek(near.t);
+      MC.ui.updateTransport();
+      MC.ui.renderSectionBand();
+      MC.ui.toast(`${near.label}（${MC.ui.fmtTime(near.t)}）から`);
+      return;
+    }
     MC.preview.seek(t);
     MC.ui.updateTransport();
     const b = MC.ui.sectionBands().find(z => t >= z.t0 && t < z.t1);
