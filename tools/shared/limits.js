@@ -85,7 +85,7 @@ window.MZ_LIMITS = (() => {
        12分あるのは、複数カメラの回し始めのズレ(実測で最大5分超)を
        吸収したうえでショウ全体が入るようにするため */
     maxVideoSec: unlimited ? Infinity : (member && bigDevice) ? 720.5 : 300.5,
-    videoLimitLabel: (member && bigDevice) ? "12分" : "5分",   // エラーメッセージ用
+    videoLimitLabel: unlimited ? "上限なし" : (member && bigDevice) ? "12分" : "5分",   // エラーメッセージ用
 
     /* ---- 取り込みの「技術的な天井」(2026-07-31 マーチング4団体レビュー) ----
        ★ maxVideoSec は**プランの壁**で、Switcher ではもう入口に置かない。
@@ -105,7 +105,7 @@ window.MZ_LIMITS = (() => {
        素材が長いこと自体は重くならない(実測でこの3経路を確認済み)。
        ReAngle には窓を選ぶ工程が無いので、あちらは maxVideoSec のまま */
     maxSourceSec: unlimited ? Infinity : (mobile ? 1200.5 : 2400.5),
-    sourceLimitLabel: mobile ? "20分" : "40分",
+    sourceLimitLabel: unlimited ? "上限なし" : mobile ? "20分" : "40分",
 
     /* 書き出せる長さ(IN〜OUTの範囲)。取り込みとは別枠。
        ゲスト1分未満 / 登録×スマホ 3分 / 登録×パソコン 10分。
@@ -114,12 +114,14 @@ window.MZ_LIMITS = (() => {
     maxExportSec: unlimited ? Infinity
       : !member ? 59
       : bigDevice ? 600 : 180,
-    exportLimitLabel: !member ? "1分未満" : bigDevice ? "10分" : "3分",
+    /* ラベルも unlimited を見る。数値は Infinity なのにラベルだけ
+       「1分未満」と出ていた(管理者は member の印を持たないため。2026-07-31) */
+    exportLimitLabel: unlimited ? "上限なし" : !member ? "1分未満" : bigDevice ? "10分" : "3分",
     /* 登録ユーザーの完成尺。ゲストに「登録すると何分まで作れるか」を
        案内するときにも使うため、ロールに依らない定数として持つ。
        いま使っている端末で登録したらどうなるかを言う(スマホで「10分」と
        言われても、登録しても3分なので嘘になる) */
-    memberExportLabel: bigDevice ? "10分" : "3分",
+    memberExportLabel: bigDevice ? "10分" : "3分",   // 「登録すると」の案内用(unlimitedでは使わない)
     // Privacyの動画は誰でも10分(モザイク作業は選んだ範囲だけのため)
     maxPrivacyVideoSec: unlimited ? Infinity : 600.5,
     maxPhotos: unlimited ? Infinity : member ? 5 : 1,   // 一度に扱える写真の枚数

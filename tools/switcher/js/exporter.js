@@ -1122,8 +1122,7 @@ MC.exporter.exportMP4Parts = async (onProgress) => {
     await MC.exporter.checkQuota(Math.max(est, est * 2 - already));
   } catch (e) {
     MC.log("分割書き出しには容量が足りないため、従来の方式で試します: " + e.message);
-    MC.exporter._partsFallback = true;
-    return MC.exporter.exportMP4(onProgress);
+    return MC.exporter.exportMP4(onProgress, null, { noParts: true });
   }
   await MC.exporter.preflightFiles(used.filter(c => !c.isImage));
 
@@ -1300,15 +1299,18 @@ MC.exporter.exportMP4Parts = async (onProgress) => {
   }
 };
 
-MC.exporter.exportMP4 = async (onProgress, saveHandle) => {
-  MC.exporter._partsFallback = false;
-  /* 長い書き出しはパート方式へ(上のコメント参照)。従来の一気書きは
-     そのまま残す ─ 短い書き出し・ディスク直書き(PC)・OPFS無し端末が通る */
+MC.exporter.exportMP4 = async (onProgress, saveHandle, opts) => {
+  /* ★ 分割へ入るかどうかは**引数で渡す**。モジュール変数に持たせていたときは、
+     この関数の冒頭でリセットしていたため、容量不足で分割から降りてきた回に
+     その印が即座に消え、また分割へ入って**無限再帰でタブごと落ちた**
+     (2026-07-31 本番で1秒未満の即死。優さん報告)。
+     状態は呼び出しの間だけ生きればよいので、引数が正しい */
+  const noParts = !!(opts && opts.noParts);
+  /* 長い書き出しはパート方式へ。従来の一気書きはそのまま残す ─
+     短い書き出し・ディスク直書き(PC)・OPFS無し端末が通る */
   {
     const [tA, tB] = MC.trimRange();
-    /* _partsFallback: 容量不足で分割から降りてきた回。ここで分割へ戻すと
-       無限に往復する */
-    if (!MC.exporter._partsFallback && MC.exporter.partsApplicable(tB - tA, saveHandle)) {
+    if (!noParts && MC.exporter.partsApplicable(tB - tA, saveHandle)) {
       if (!saveHandle) await MC.exporter.probeOpfs().catch(() => {});
       if (MC.exporter.opfsSupported()) return MC.exporter.exportMP4Parts(onProgress);
     }

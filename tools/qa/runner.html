@@ -1890,6 +1890,12 @@ async function countSamples(ns, file, fromSec) {
     if (base === afterWipe) throw new Error("ワイプ位置を変えてもjobIdが変わらない(前半と後半で小窓の位置が違う動画ができる)");
     return "同期・ワイプのどちらでも別ジョブ";
   });
+  /* ★ ここに「容量不足で分割から降りても無限再帰しない」の見張りを置こうとして
+     断念した(2026-07-31)。exportMP4Parts と従来の exportMP4 は
+     _releaseAnalysisWorkers / preflightFiles / exportDims を**共有**しており、
+     どれを目印にしても分割経路の先頭で先に発火する ─ フォールバック経路だけを
+     通す試験が組めなかった。3度書いて3度とも、変異を入れても素通りした。
+     見張れていない穴として引き継ぐ(共有の3つを経路ごとに分ける改修が要る)。 */
   await test("★ジョブの同一性: 設定が1つでも違えば別ジョブ(古いパートを混ぜない)", async () => {
     const w = await compEnv();
     const S = compReset(w);
