@@ -151,9 +151,9 @@ window.MZ_LIMITS = (() => {
      full の実尺は「演奏まるごと(最大 maxExportSec)」なので、呼ぶ側が
      演奏の長さで丸める。ここの sec は上限比較と表示のための代表値 */
   L.EXPORT_PRESETS = [
-    { id: "short", label: "ショート",   sec: 59,  hint: "SNSに出しやすい長さ" },
-    { id: "mid",   label: "ミドル",     sec: 180, hint: "3分だけ切り出す長さ" },
-    { id: "full",  label: "まるごと",   sec: 510, hint: "演奏ぜんぶ", whole: true },
+    { id: "short", label: "ショート",   sec: 59,  hint: "SNSに投稿しやすい長さ" },
+    { id: "mid",   label: "ミドル",     sec: 180, hint: "3分に収める長さ" },
+    { id: "full",  label: "まるごと",   sec: 510, hint: "演奏全体", whole: true },
   ];
 
   /* いまの人・いまの端末で使えるかを添えて返す。

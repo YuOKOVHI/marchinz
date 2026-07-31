@@ -24,13 +24,13 @@
 MC.highlight = {
   /* 音で探す性格。表示順ではなく定義順(並びは最後に時刻順へ並べ替える) */
   KINDS: [
-    { key: "climax",   label: "大盛り上がり", why: "全員で一番大きく鳴っているところ",
+    { key: "climax",   label: "大盛り上がり", why: "全員が最も大きく鳴っている位置",
       icon: "fa-fire", score: c => c.tutti },
-    { key: "ballad",   label: "バラード",     why: "静かでゆったりしたところ",
+    { key: "ballad",   label: "バラード",     why: "静かでゆったりした位置",
       icon: "fa-moon", score: c => c.quiet },
-    { key: "drumline", label: "ドラムライン", why: "打楽器がたくさん鳴っているところ",
+    { key: "drumline", label: "ドラムライン", why: "打楽器が多く鳴っている位置",
       icon: "fa-drum", score: c => c.percussion },
-    { key: "solo",     label: "ソロ",         why: "誰かが抜かれているところ",
+    { key: "solo",     label: "ソロ",         why: "特定の奏者が抜かれている位置",
       icon: "fa-star", score: c => c.feature },
   ],
   /* 位置で決まる2つ。音で探さない ─ 探すと必ず他の性格と場所を取り合う。
@@ -42,7 +42,7 @@ MC.highlight = {
      終わりが入ることこそがフィナーレなので、位置で定義するのが正しい */
   /* アイコンは旗/チェッカーフラッグの対にする。以前は「スタート」を fa-play に
      していたが、各カード右端の「ここを聴く」も▶なので同じ記号が並んで見えた */
-  START:  { key: "start",  label: "スタート",   why: "演奏のはじまりから", icon: "fa-flag" },
+  START:  { key: "start",  label: "スタート",   why: "演奏の開始から", icon: "fa-flag" },
   /* おすすめの5つで足りないとき用。音では探さず、本人が決める(2026-07-31 優さん指示) */
   MANUAL: { key: "manual", label: "自分で選ぶ", why: "好きな場所から始められます", icon: "fa-hand-pointer" },
   FINALE: { key: "finale", label: "フィナーレ", why: "演奏の終わりまで入ります", icon: "fa-flag-checkered" },

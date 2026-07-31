@@ -514,8 +514,8 @@ MC.exporter.encodeAudioFile = async (muxer, clip, fromLocalSec, durSec, onStatus
 /* 書き出しの画質は2択(2026-07-23 優さん指示)。
    端末で分けない: OPFSでメモリ制約が消えたので、iPhoneでもフルHD 12Mbpsを出す */
 MC.exporter.QUALITIES = {
-  full:  { label: "きれい", scale: 1 },      // 1080p / 12Mbps(高画質・時間かかる)
-  light: { label: "はやい", scale: 2 / 3 },  // 720p / 8Mbps(速度重視・既定)
+  full:  { label: "高画質", scale: 1 },      // 1080p / 12Mbps(高画質・時間かかる)
+  light: { label: "標準", scale: 2 / 3 },  // 720p / 8Mbps(速度重視・既定)
 };
 /* 旧IDからの移行(sns=720p→light / hd,pro=1080p→full) */
 MC.exporter.QUALITY_ALIAS = { sns: "light", hd: "full", pro: "full" };
@@ -1193,7 +1193,7 @@ MC.exporter.exportMP4Parts = async (onProgress) => {
     /* 「パートをつないでいます」は、85%まで「映像を作っています」で来た人に
        突然出てくる説明のない内部語。sub を空で渡さないと、直前の
        「8分12秒ぶん / 全8分12秒」が残って表示が食い違う */
-    onProgress(0.85, "仕上げています…", { sub: "もうすこしです" });
+    onProgress(0.85, "仕上げています…", { sub: "まもなく完了します" });
     finalOpfs = await MC.exporter.opfsCreate(outName);
     if (!finalOpfs) throw new Error("この端末の保存領域を用意できませんでした。");
     const muxer = new Mp4Muxer.Muxer({
@@ -1250,7 +1250,7 @@ MC.exporter.exportMP4Parts = async (onProgress) => {
           + `（${wantN}コマあるはずです）。もう一度書き出してください`);
       }
       onProgress(0.85 + 0.08 * ((idx + 1) / nParts), "仕上げています…",
-                 { sub: "もうすこしです" });
+                 { sub: "まもなく完了します" });
     }
 
     /* ---- ③ 音声は全尺を1回で(直列) ---- */

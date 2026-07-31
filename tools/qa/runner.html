@@ -1994,7 +1994,10 @@ async function countSamples(ns, file, fromSec) {
       w.MC.ui.renderLimitWhy();
       const txt = w.document.querySelector(".mz-limit-why").textContent;
       if (!/20分まで取り込め/.test(txt)) throw new Error("取り込める長さを言っていない: " + txt);
-      if (!/あとで|このあと/.test(txt)) throw new Error("あとで範囲を選べることを言っていない: " + txt);
+      /* 「使う範囲は後で選べる」と言えているか。言い回しは変わりうるので、
+         語そのものではなく「後」+「選ぶ」の組で見る(2026-07-31 文言刷新で
+         「このあと」→「この後」に変えたら、この見張りが落ちた) */
+      if (!/(あと|後)で?[^。]*選/.test(txt)) throw new Error("あとで範囲を選べることを言っていない: " + txt);
     });
     return "3通りの人で 8分30秒・10分が入る / 入口はプランの壁より広い / 案内も一致";
   });

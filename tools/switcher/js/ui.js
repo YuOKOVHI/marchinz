@@ -483,7 +483,7 @@ MC.ui.renderLimitWhy = () => {
     return ss ? `${m}分${String(ss).padStart(2, "0")}秒` : `${m}分`;
   };
   const icon = '<i class="fa-solid fa-circle-info" aria-hidden="true"></i> ';
-  /* ★ この文はいちばん最初の「動画を読み込む」画面に出る(index.html:101)。
+  /* ★ この文はいちばん最初の「動画を選ぶ」画面に出る(index.html:101)。
      だから言うべきは**取り込める長さ**であって、書き出しの上限ではない。
      ここを maxExportSec で書いていたため、ゲストのスマホでは
      読み込み画面に「3本まで・59秒まで」と出ていた ─ 取り込みは5分なのに。
@@ -497,11 +497,11 @@ MC.ui.renderLimitWhy = () => {
     const L2 = window.MZ_LIMITS;
     el.innerHTML = icon
       + `<b>3本まで・1本${MC.ui.esc(L2.sourceLimitLabel)}まで</b>取り込めます。`
-      + "長い録画でも大丈夫です ─ このあと<b>どこを何分使うか</b>を選べます。"
+      + "長い録画でも構いません。<b>どこを何分使うか</b>は、この後で選びます。"
       /* 端末のメモリで書き出しが頭打ちになる環境だけ、その理由も添える */
       + (isFinite(hardMax) && hardMax <= roleMax
-          ? `（この端末でできあがるのは${mmss(hardMax)}までです）`
-          : isFinite(roleMax) ? `（できあがりは${MC.ui.esc(L2.exportLimitLabel)}までです）` : "");
+          ? `（この端末で書き出せるのは${mmss(hardMax)}までです）`
+          : isFinite(roleMax) ? `（書き出せるのは${MC.ui.esc(L2.exportLimitLabel)}までです）` : "");
     return;
   }
   /* 上限が外れている端末(手元の環境・管理者)。ここで「3本まで」と言うと、
@@ -525,7 +525,7 @@ MC.ui.renderFaceNote = () => {
   const L = window.MZ_LIMITS || {};
   const videoOK = !!L.privacyVideoAllowed;   // 正本はlimits.js(条件のコピーをやめた 2026-07-31)
   el.innerHTML = '<i class="fa-solid fa-user-shield" aria-hidden="true"></i> '
-    + "みんなの顔が写っています。SNSや外部へ出すときは、"
+    + "多くの人の顔が写っています。SNSや外部へ公開するときは、"
     + "写っている人（未成年なら保護者）の同意をご確認ください。"
     + (videoOK
         ? '<br><a href="/tools/privacy/">顔モザイク（Privacy）</a>で隠せます。'
@@ -771,8 +771,8 @@ MC.ui.renderLengthSec = () => {
          画面から消えるのを防ぐ(以前は .playing のCSSだけあって未実装だった) */
       const playing = MC.S.playing && c.key === cand.key;
       listen.className = "len-listen" + (playing ? " playing" : "");
-      listen.title = playing ? "止める" : "ここから聴いてみる";
-      listen.setAttribute("aria-label", playing ? "止める" : `${c.label}から聴いてみる`);
+      listen.title = playing ? "止める" : "ここから試聴";
+      listen.setAttribute("aria-label", playing ? "止める" : `${c.label}から試聴`);
       listen.innerHTML = `<i class="fa-solid ${playing ? "fa-pause" : "fa-play"}" aria-hidden="true"></i>`;
       listen.onclick = () => {
         if (playing) { MC.preview.pause(); MC.ui.renderLengthSec(); return; }
@@ -817,7 +817,7 @@ MC.ui.renderLengthSec = () => {
         if (chip) chip.textContent = MC.ui.fmtClock(t - s0);
         summary.textContent =
           `${MC.ui.fmtLen(MC.S.trimOut - MC.S.trimIn)}の動画を、`
-          + `演奏がはじまって ${MC.ui.fmtClock(t - s0)} のところから作ります`
+          + `演奏の開始から ${MC.ui.fmtClock(t - s0)} の位置で作ります`
           + MC.ui.lengthEta(MC.S.trimOut - MC.S.trimIn);
         MC.ui.updateTransport();
         MC.preview.seek(t);
@@ -840,9 +840,9 @@ MC.ui.renderLengthSec = () => {
   /* --- まとめ --- */
   const [tIn, tOut] = MC.trimRange();
   summary.textContent = (!canChoose
-    ? `演奏ぜんぶ（${MC.ui.fmtLen(tOut - tIn)}）を1本にします`
+    ? `演奏全体（${MC.ui.fmtLen(tOut - tIn)}）を1本にします`
     : cand.key === "manual"
-      ? `${MC.ui.fmtLen(tOut - tIn)}の動画を、演奏がはじまって ${MC.ui.fmtClock(tIn - s0)} のところから作ります`
+      ? `${MC.ui.fmtLen(tOut - tIn)}の動画を、演奏の開始から ${MC.ui.fmtClock(tIn - s0)} の位置で作ります`
       : `${MC.ui.fmtLen(tOut - tIn)}の動画を、「${cand.label}」から作ります`)
     + MC.ui.lengthEta(tOut - tIn);
 };
@@ -916,13 +916,13 @@ MC.ui.initJourney = () => {
          先の工程のパネルを画面から消した以上、ここが「何が残っているか」を
          知る唯一の場所になったので、名前を消してはいけない(2026-07-26) */
       /* 傾きは単独の工程(2026-07-31 優さん指示)。1画面に1本ぶんだけ出す */
-      { id: "mat",    label: "動画を入れる", shortLabel: "動画", hint: "使う動画を選んでください" },
-      { id: "tilt",   label: "まっすぐにする", shortLabel: "傾き", hint: "1本ずつ見て、まっすぐに直してください" },
-      { id: "sync",   label: "同期と分析",   shortLabel: "同期", hint: "音のズレ合わせと素材の分析をします" },
-      { id: "audio",  label: "音声を選ぶ",   shortLabel: "音声", hint: "試聴して「この音で進める」を押してください" },
-      { id: "length", label: "長さと始まり", shortLabel: "長さ", hint: "何分にするか・どこから始めるかを選んでください" },
-      { id: "polish", label: "仕上げ設定", shortLabel: "設定", hint: "そのままでもOK。気になるところだけ直してください" },
-      { id: "export", label: "書き出し",     shortLabel: "書出", hint: "「動画を書き出す」で完成です" },
+      { id: "mat",    label: "動画を選ぶ", shortLabel: "動画", hint: "使う動画を選びます" },
+      { id: "tilt",   label: "傾きを直す", shortLabel: "傾き", hint: "1本ずつ傾きを直します" },
+      { id: "sync",   label: "同期と分析",   shortLabel: "同期", hint: "音のズレを合わせ、素材を分析します" },
+      { id: "audio",  label: "音声を選ぶ",   shortLabel: "音声", hint: "試聴して、使う音声を決めます" },
+      { id: "length", label: "長さと開始位置", shortLabel: "長さ", hint: "長さと開始位置を選びます" },
+      { id: "polish", label: "仕上げ設定", shortLabel: "設定", hint: "そのままでも仕上がります。気になる箇所だけ調整します" },
+      { id: "export", label: "書き出し",     shortLabel: "書出", hint: "「動画を書き出す」で完成します" },
     ],
     doneHint: "書き出し完了。調整して書き出し直すこともできます",
     /* 1画面1操作(デッキ式)になってから、画面に出ているパネルは常に1枚だけ。
@@ -991,7 +991,7 @@ MC.ui.updateActionBar = () => {
       const R = MC.ui.STEP_RANK;
       const reached = MC.ui._derivedPhase || "mat";
       if (MC.ui._viewPhase === "mat" && R[reached] > R.mat) {
-        conf = { label: "これでOK、つづける", icon: "fa-arrow-right",
+        conf = { label: "これでOK、続ける", icon: "fa-arrow-right",
           act: () => { MC.ui._viewPhase = null; MC.ui.refreshJourney(); } };
       } else {
         conf = { label: MC.S.mode === "vertical" ? "動画・写真を選ぶ" : "動画を選ぶ",
@@ -1201,7 +1201,7 @@ MC.ui.stepSummary = sel => {
     const n = MC.media.slotClips().length;
     if (n) return `${n}本`;
   }
-  return "すみ";
+  return "済";
 };
 
 /* 表示する工程を切り替える唯一の入口。dataset(CSSの出し分け)・強調・
@@ -1324,7 +1324,7 @@ MC.ui.renderClips = () => {
      h2にはステップのチップが付くので、専用spanだけを書き換える */
   {
     const t = document.querySelector("#dropSec .drop-title");
-    if (t) t.textContent = vertical ? "動画・写真を読み込む" : "動画を読み込む";
+    if (t) t.textContent = vertical ? "動画・写真を選ぶ" : "動画を選ぶ";
   }
   const slotClips = MC.media.slotClips();   // 音声のみを除く(動画+画像)
   /* 空き枠の補足を出す最初の1枠。3枠すべてに同じ説明を繰り返さない */
@@ -1378,13 +1378,13 @@ ${c.isImage ? "" : (c.tiltOk
           /* 状態は名詞で言う(動詞は行動バーに集約)。直した実感が残るように
              何度なおしたかを添える。`›` は「押せる」ことを iPhone に伝える
              唯一の手段 ─ title 属性は iOS Safari では永久に読まれない */
-          ? `<button type="button" class="tilt-badge done" data-tilt aria-label="かたむきを見直す">
+          ? `<button type="button" class="tilt-badge done" data-tilt aria-label="傾きを見直す">
                <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
-               <span>かたむき OK（${c.rot ? `${c.rot > 0 ? "+" : ""}${c.rot.toFixed(1)}°なおした` : "そのまま"}）</span>
+               <span>傾き OK（${c.rot ? `${c.rot > 0 ? "+" : ""}${c.rot.toFixed(1)}°を修正` : "そのまま"}）</span>
                <span class="tilt-badge-go" aria-hidden="true">›</span></button>`
           : `<button type="button" class="tilt-badge todo" data-tilt>
                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
-               <span>かたむき まだ見ていません</span>
+               <span>傾き 未確認</span>
                <span class="tilt-badge-go" aria-hidden="true">›</span></button>`)}
         ${(!pro || c.isImage) ? "" : `
         <div class="clip-sync">
@@ -1469,7 +1469,7 @@ MC.ui.renderAudio = () => {
     label.className = "audio-choice" + (MC.S.audioClipId === c.id ? " selected" : "");
     /* dB表記はやめた(2026-07-28 文言見直し)。「音量-14dB」は中高生に通じない。
        rms を3段の言葉に割る(-20dB相当=0.1 / -34dB相当=0.02 が境目) */
-    const loud = r => r >= 0.1 ? "音が大きい" : r >= 0.02 ? "音はふつう" : "音が小さめ";
+    const loud = r => r >= 0.1 ? "音が大きい" : r >= 0.02 ? "音は標準" : "音が小さめ";
     const stat = c.stats
       ? `${loud(c.stats.rms || 0)}${c.stats.clipRatio > 0.001 ? "・音がわれています⚠" : ""}`
       : (c.hasAudio === false ? "音声なし" : "まだ聞いていません");
@@ -1629,10 +1629,10 @@ MC.ui.renderQualityPicker = () => {
   /* 「ライトモード(720p)」等はやめた(2026-07-28)。「モード」はこのツールで
      3つの意味に使われ、p表記は通じない。速いか・きれいか、だけを言う */
   const defs = [
-    { id: "light", name: "はやい", tag: "おすすめ",
-      desc: "SNSに出すのに十分な画質。時間が2割みじかい" },
-    { id: "full", name: "きれい", tag: "",
-      desc: "大きな画面で見る用。そのぶん時間がかかります" },
+    { id: "light", name: "標準", tag: "おすすめ",
+      desc: "SNSに投稿するのに十分な画質。書き出しが約2割速い" },
+    { id: "full", name: "高画質", tag: "",
+      desc: "大きな画面で見る場合に。書き出しに時間がかかります" },
   ];
   host.innerHTML = defs.map(d => `
     <button type="button" class="q-card${d.id === cur ? " on" : ""}" role="radio"
@@ -2270,7 +2270,7 @@ MC.ui.renderFullLabel = on => {
   if (ph !== "polish" && ph !== "export") {
     const sc0 = MC.getClip(MC.preview.soloId);
     el.innerHTML = '<i class="fa-solid fa-ruler-horizontal" aria-hidden="true"></i> '
-      + '<span><b>まっすぐか見ています</b>'
+      + '<span><b>傾きを確認しています</b>'
       + (sc0 ? `${MC.ui.esc(MC.ui.shortName(sc0.name))} ${(+sc0.rot || 0).toFixed(1)}°` : "")
       + "</span>";
     return;
@@ -2345,7 +2345,7 @@ MC.ui.showInterruptNote = (ms, opts = {}) => {
       ? "前回は途中で終わっています。"
       : opts.running
         ? "離れていた間は止まっていました。"
-        : "中断されたかもしれません。";
+        : "中断された可能性があります。";
   const body = opts.running
     ? "続きから進めています。終わるまでこの画面のままお待ちください。"
     : (opts.crashed && stalled)
@@ -2520,7 +2520,7 @@ MC.ui.runEasy = async () => {
     await MC.ui.runEasyScan(p, syncSteps);   // 1本だけ→選ぶフェーズを飛ばして下ごしらえへ
   } catch (e) {
     console.error(e);
-    p.fail("うまくできませんでした", { detail: e.message });
+    p.fail("処理に失敗しました", { detail: e.message });
     MC.ui.showErrorLog(e);
     /* 同期に失敗したら「こだわり」を開放する。タブは通常 polish まで出ないが、
        手動同期(#syncBtn)が唯一の復旧手段なので、失敗時だけ前倒しで出す */
@@ -2600,7 +2600,7 @@ MC.ui.runEasyScan = async (pIn, base = 0) => {
     MC.preview.seek(MC.S.trimIn);
   } catch (e) {
     console.error(e);
-    p.fail("うまくできませんでした", { detail: e.message });
+    p.fail("処理に失敗しました", { detail: e.message });
     MC.ui.showErrorLog(e);
   } finally {
     if (!pIn) { MC.ui.setBusy(false); MC.ui.renderAll(); }
@@ -2654,7 +2654,7 @@ MC.ui.runEasyFinish = async (pIn, base = 0) => {
     let colorFailed = false;
     /* 条件は finishSteps() と必ず揃える(分母と実際に通る段がずれる) */
     if (MC.S.colorOn && MC.S.clips.filter(c => !c.isAudio && !c.isImage).length >= 2) {
-      p.step(++n, "色をそろえています…").pulse(null, _eta());
+      p.step(++n, "色を合わせています…").pulse(null, _eta());
       await MC.color.run(p).catch(() => { colorFailed = true; });
     }
     MC.ui.renderAll();
@@ -2664,7 +2664,7 @@ MC.ui.runEasyFinish = async (pIn, base = 0) => {
     /* ドックは「結果の詳細(範囲・色)」に徹する。「終わった」の気づきは下の
        バナー(notifyAnalysisDone)に一本化し、同じ文言を2箇所に出さない(G-4) */
     p.done("整いました", {
-      sub: (colorFailed ? "色そろえだけできませんでした。" : "")
+      sub: (colorFailed ? "色合わせだけできませんでした。" : "")
         + (trimmed ? `書き出し範囲 ${MC.ui.fmtTime(ti)}〜${MC.ui.fmtTime(to)} を自動設定。` : "")
         + "プレビューを見て、よければ書き出してください",
     });
@@ -2692,7 +2692,7 @@ MC.ui.runEasyFinish = async (pIn, base = 0) => {
     MC.ui.checkExportable();
   } catch (e) {
     console.error(e);
-    p.fail("うまくできませんでした", { detail: e.message });
+    p.fail("処理に失敗しました", { detail: e.message });
     MC.ui.showErrorLog(e);
   } finally {
     if (!pIn) { MC.ui.setBusy(false); MC.ui.renderAll(); }
@@ -2736,7 +2736,7 @@ MC.ui._showErrorLog = err => {
   host.hidden = false;
   host.innerHTML = `
     <details open>
-      <summary><i class="fa-solid fa-triangle-exclamation"></i> 詳しいログ（うまくいかないときは、これをコピーしてお知らせください）</summary>
+      <summary><i class="fa-solid fa-triangle-exclamation"></i> 詳しいログ（不具合の報告に使います。コピーしてお送りください）</summary>
       <pre id="errorLogText"></pre>
       <div class="row">
         <button type="button" id="errorLogCopy" class="btn small"><i class="fa-regular fa-copy"></i> コピー</button>
@@ -2793,8 +2793,8 @@ MC.ui.syncLenPlayBtns = () => {
     const on = MC.S.playing && row.classList.contains("on");
     if (btn.classList.contains("playing") === on) return;
     btn.classList.toggle("playing", on);
-    btn.title = on ? "止める" : "ここから聴いてみる";
-    btn.setAttribute("aria-label", on ? "止める" : "ここから聴いてみる");
+    btn.title = on ? "止める" : "ここから試聴";
+    btn.setAttribute("aria-label", on ? "止める" : "ここから試聴");
     btn.innerHTML = `<i class="fa-solid ${on ? "fa-pause" : "fa-play"}" aria-hidden="true"></i>`;
   });
 };
@@ -3049,7 +3049,7 @@ MC.ui.wire = () => {
       // カラー自動マッチ(初期ON)。失敗しても同期は成功扱い
       const vclips = MC.S.clips.filter(c => !c.isAudio && !c.isImage);
       if (MC.S.colorOn && vclips.length >= 2 && !vclips.some(c => c.colorT)) {
-        p.step(3, "色をそろえています…");
+        p.step(3, "色を合わせています…");
         try { await MC.color.run(p); MC.ui.renderFinish(); }
         catch (e) { MC.log("自動カラーマッチ失敗:", e.message); }
       }
@@ -3302,11 +3302,11 @@ MC.ui.wire = () => {
                           label: "色を見比べています…" });
     try {
       await MC.color.run(p);
-      p.done("色をそろえました", { sub: "音声に使うカメラに合わせています" });
+      p.done("色を合わせました", { sub: "音声に使うカメラに合わせています" });
       MC.ui.renderFinish(); MC.preview.draw();
     } catch (e) {
       console.error(e);
-      p.fail("色をそろえられませんでした", { detail: e.message });
+      p.fail("色を合わせられませんでした", { detail: e.message });
     } finally { $("#colorMatchBtn").disabled = false; }
   };
   $("#colorClearBtn").onclick = () => {
@@ -3321,7 +3321,7 @@ MC.ui.wire = () => {
   $("#saluteBtn").onclick = async () => {
     $("#saluteBtn").disabled = true;
     const p = MZP.start({ mount: "#finishStatus", chapter: "仕上げ", delay: 0 });
-    p.frozen("演奏のはじまりを探しています…");
+    p.frozen("演奏の開始位置を探しています…");
     await MZP.paint();   // 画面が止まる前に、必ず表示を描いてから解析へ入る
     try {
       MC.ui._salute = await MC.salute.detect();
@@ -3329,10 +3329,10 @@ MC.ui.wire = () => {
       $("#saluteRow").style.display = "flex";
       $("#saluteInfo").textContent =
         `演奏 ${MC.ui.fmtTime(s.musicStart)} 〜 ${s.musicEnd ? MC.ui.fmtTime(s.musicEnd) : "?"}`;
-      p.done(`演奏のはじまりは ${MC.ui.fmtTime(s.musicStart)} でした`);
+      p.done(`演奏の開始位置は ${MC.ui.fmtTime(s.musicStart)} です`);
       MC.ui.renderScrubTicks();
     } catch (e) {
-      p.fail("演奏のはじまりを見つけられませんでした", { detail: e.message });
+      p.fail("演奏の開始位置を見つけられませんでした", { detail: e.message });
     } finally { $("#saluteBtn").disabled = false; }
   };
   $("#saluteInBtn").onclick = () => {
