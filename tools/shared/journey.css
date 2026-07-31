@@ -123,18 +123,8 @@
 .mzj.alldone .mzj-phase.current { background: var(--ok, #1e7a43); box-shadow: 0 2px 10px rgba(30, 122, 67, 0.28); }
 
 /* 下段: いま何をしているか */
-.mzj-activity {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  margin-top: 7px;
-  min-height: 18px;
-  font-size: 12.5px;
-  color: var(--mzj-sub);
-}
-.mzj.busy .mzj-activity { color: var(--mzj-acc); font-weight: 600; }
-.mzj.alldone .mzj-activity { color: var(--ok, #1e7a43); font-weight: 600; }
+/* .mzj-activity 一式は廃止(2026-07-31)。下の行動バーと同じことを
+   上にも書いていたため。詳細は journey.js の同日コメント */
 
 /* 作業中だけ脈打つドット(意味のある動きだけ) */
 .mzj-pulse {

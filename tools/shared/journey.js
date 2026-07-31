@@ -52,12 +52,12 @@ window.MZJourney = (() => {
       track.appendChild(b);
     });
     root.appendChild(track);
-    const act = h("div", "mzj-activity");
-    actDot = h("span", "mzj-pulse");
-    actText = h("span", "mzj-activity-text");
-    act.appendChild(actDot);
-    act.appendChild(actText);
-    root.appendChild(act);
+    /* 活動テキストの行は廃止(2026-07-31 優さん指示)。
+       いま何をしているかは画面の下（行動バー・進捗ドック）に出ており、
+       上にも同じことを書くと画面の上下で同じ文を2度読ませることになる。
+       1行ぶん(実測46px)を返して、プレビューをそのぶん上へ。
+       setActivity/refreshActivity は呼び出し側の都合で残し、要素が無ければ
+       黙って何もしない(他ツールが同じ journey.js を使っている) */
     conf.container.insertBefore(root, conf.container.firstChild);
   }
 
@@ -133,6 +133,7 @@ window.MZJourney = (() => {
 
   let lastMsg = "", lastMode = "";
   function setActivity(msg, mode) {
+    if (!actText) return;                     // 活動テキストの行は廃止済み
     if (msg === lastMsg && mode === lastMode) return;
     lastMsg = msg; lastMode = mode;
     actText.textContent = msg;
