@@ -435,7 +435,7 @@ MZ.ui.loadFile = async file => {
    ——「上限なし」の判定(MZ_LIMITS.unlimited)には手元環境が含まれるため、
      それを使うと管理者でない人にも動画が見えてしまう。
    (動画のコード一式は残してあり、精度が実用に達したらこの関門を外すだけで戻る) */
-MZ.ui.videoAllowed = () => MZ_LIMITS.admin;
+MZ.ui.videoAllowed = () => !!MZ_LIMITS.privacyVideoAllowed;   // 正本はlimits.js(2026-07-31)
 
 /* 複数ファイルの取り込み: 写真は上限枚数まで(ゲスト1/登録5)。
    動画は管理者テスト用の隠し機能(一般はお断りする) */

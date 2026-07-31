@@ -45,11 +45,7 @@ MC.media.addFiles = async files => {
        ドラッグ&ドロップは accept 属性を通らないので実際に起きる */
     if (!/^video\//.test(f.type) && !/\.(mp4|mov|m4v)$/i.test(f.name)) { skipped.push(f.name); continue; }
     const sniff = await MC.media.sniffContainer(f);
-    if (!sniff.ok) {
-      MC.ui.toast(`⚠ ${f.name} は${sniff.kind}のため使えません。`
-        + "iPhoneやカメラで撮ったMP4/MOVをお使いください");
-      continue;
-    }
+    if (!sniff.ok) { skipped.push(`${f.name}（${sniff.kind}）`); continue; }
     const key = `${f.name}|${f.size}|${f.lastModified}`;
     if (MC.S.clips.some(c => MC.clipKey(c) === key)) { MC.ui.toast(`${f.name} は読み込み済みです`); continue; }
     if (MC.media.slotClips().length >= 3) { MC.ui.toast("素材は3つまでです"); break; }
@@ -83,7 +79,7 @@ MC.media.addFiles = async files => {
        言われ、その切り出す道具はツールの中に無い、という行き止まりだった。
        いま断るのは**技術的に持てない長さ**のときだけ。どこを何分使うかは
        このあとの「長さと始まり」で選べる(窓を選ぶUIは既にある) */
-    if (v.duration > MZ_LIMITS.maxSourceSec) {
+    if (MC.media.tooLong(v.duration)) {
       MC.ui.toast(`⚠ ${f.name} は約${Math.round(v.duration / 60)}分です。`
         + `この端末で扱えるのは1本${MZ_LIMITS.sourceLimitLabel}までです。`
         + (MZ_LIMITS.mobile ? "パソコンで開くと40分まで使えます。" : "")
@@ -109,6 +105,12 @@ MC.media.addFiles = async files => {
   }
   if (added) MC.media.afterChange();
 };
+
+/* 入口の門番。**技術的な天井(maxSourceSec)**だけを見る ─ プランの壁
+   (maxVideoSec)を見てはいけない(門前払いに戻る)。1つの関数にしてあるのは、
+   QAがこの判定を直接叩いて、Drive巻き戻りで1行だけ旧版に戻る事故を
+   捕まえられるようにするため(2026-07-31 5巡目P1) */
+MC.media.tooLong = sec => sec > MZ_LIMITS.maxSourceSec;
 
 /* スロット(動画1/2/3)に入る素材 = 音声のみ以外 */
 MC.media.slotClips = () => MC.S.clips.filter(c => !c.isAudio);

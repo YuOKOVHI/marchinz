@@ -1,7 +1,10 @@
 "use strict";
 /* ============ 音声抽出(8kHzモノラル)+音質統計 ============ */
 
-MC.audio = { SR: 8000, MAX_SEC: 1800 };
+/* MAX_SEC は入口の天井(limits.js maxSourceSec: PC40分)と揃える(2026-07-31)。
+   30分のままだと、40分の回しっぱなし(PCなら入口を通る)の後半10分を
+   salute/beats/sections が一切見ず、演奏が後半にあると検出が静かに外れる */
+MC.audio = { SR: 8000, MAX_SEC: 2400 };
 
 /* 線形補間のストリーミングリサンプラ(チャンクをまたいで連続) */
 MC.audio.LinearResampler = class {

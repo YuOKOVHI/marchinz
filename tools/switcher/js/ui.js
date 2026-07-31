@@ -453,6 +453,7 @@ MC.ui.focusNextAction = () => {
 MC.ui.resetEasyDone = (restored = false) => {
   MC.S.audioDecided = false;   // 素材が変われば音声も選び直し(2026-07-24)
   MC.S.lengthDecided = false;
+  MC.ui._tabsForced = false;   // 同期失敗の前倒し開放は素材が変われば解除(2026-07-31)
   if (!restored) {
     MC.S.showIn = null;
     MC.S.showOut = null;
@@ -522,7 +523,7 @@ MC.ui.renderFaceNote = () => {
   const el = document.getElementById("eoFaces");
   if (!el) return;
   const L = window.MZ_LIMITS || {};
-  const videoOK = !!L.admin;   // privacy/js/ui.js:438 と同じ条件
+  const videoOK = !!L.privacyVideoAllowed;   // 正本はlimits.js(条件のコピーをやめた 2026-07-31)
   el.innerHTML = '<i class="fa-solid fa-user-shield" aria-hidden="true"></i> '
     + "みんなの顔が写っています。SNSや外部へ出すときは、"
     + "写っている人（未成年なら保護者）の同意をご確認ください。"
@@ -658,7 +659,11 @@ MC.ui.showUnlockHelp = p => {
     `<p class="lun-title"><i class="fa-solid fa-lock" aria-hidden="true"></i> `
     + `「${MC.ui.esc(p.label)}」は、いまはまだ使えません</p>`
     + `<p class="lun-body">${MC.ui.esc(p.unlock)}。`
-    + (needsPc ? "スマホは動画を丸ごとメモリに載せるため、長い書き出しが途中で止まってしまいます。" : "")
+    /* メモリの説明は OPFS の無い端末だけ(2026-07-31 5巡目P1)。
+       採用基準の iOS16+ はOPFS対応=ストリーム書き出しでメモリ上限は外れており、
+       登録×スマホが3分止まりの本当の理由はプランの壁。嘘をつかない */
+    + (needsPc && !(MC.exporter && MC.exporter.opfsSupported && MC.exporter.opfsSupported())
+        ? "この端末は動画を丸ごとメモリに載せるため、長い書き出しが途中で止まってしまいます。" : "")
     + `いまは<b>${MC.ui.esc(L.exportLimitLabel || "")}</b>まで作れます。</p>`
     + (L.member ? "" : '<a class="lun-btn" href="/#signup">無料登録する</a>');
 };
@@ -698,7 +703,9 @@ MC.ui.renderLengthSec = () => {
                   ゲスト(59秒)では鍵つきの3枚が全部「59秒」になり、
                   何が違うのか分からないカードが並んだ(2026-07-31 スクショで発覚) */
     const shown = p.locked
-      ? (p.whole ? Math.min(p.sec, s1 - s0) : p.sec)
+      /* 解除したら得られる尺。whole の上限は登録×PCの600秒(limits.js)。
+         代表値510で見せると、20分のショウでは解除後(10分)より短く出て嘘になる */
+      ? (p.whole ? Math.min(s1 - s0, 600) : p.sec)
       : MC.highlight.presetSec(p, s1 - s0);
     b.innerHTML =
       `<span class="len-name">${MC.ui.esc(p.label)}</span>`
@@ -2169,8 +2176,19 @@ MC.ui.renderTotalEta = (dur, tIn, tOut) => {
      同じ内容を2箇所に出さない(2026-07-23 表示すっきり) */
   if (MC.S.easyDone) { el.hidden = true; return; }
   const clips = MC.S.clips.filter(c => !c.isAudio && !c.isImage);
-  const showSec = Math.max(0, (tOut ?? 0) - (tIn ?? 0));
+  let showSec = Math.max(0, (tOut ?? 0) - (tIn ?? 0));
   if (!dur || !clips.length || showSec < 1) { el.hidden = true; return; }
+  /* ★ 長さを決める前は素材の全長で見積もらない(2026-07-31 5巡目P0)。
+     入口を20分に開いた直後、ここが全長を分母にしていたため、
+     「長い録画でも大丈夫です」の同じ画面で「分析に20分・書き出しに36分」と
+     予告していた ─ 実際に解析も書き出しも見るのは選んだ範囲だけ。
+     使える最長プリセット(ゲスト59秒/登録3分/PC10分)を分母の上限にする */
+  if (!MC.S.lengthDecided && MC.ui.usablePresets) {
+    const open = MC.ui.usablePresets(showSec).filter(p => !p.locked);
+    if (open.length) {
+      showSec = Math.min(showSec, MC.highlight.presetSec(open[open.length - 1], showSec));
+    }
+  }
 
   const anaSec = clips.length * showSec * MC.ui.analysisRate();
   let expFactor = MC.ui.exportMode() === "realtime" ? 1.15 : (MC.isIOS ? 1.8 : 0.9);
@@ -2578,6 +2596,17 @@ MC.ui.runEasyScan = async (pIn, base = 0) => {
       if (!audioClip.beatsData) audioClip.beatsData = MC.beats.analyze(audioClip.audio8k);
       await MC.sections.analyze(audioClip);
     }
+    /* 音声で使わないクリップの 8kHz バッファを返す(2026-07-31 5巡目P1)。
+       audio8k は 32KB/秒 ─ 入口を20分に開いたので、窓ラダーが「全体」まで
+       落ちた最悪ケースでは3本で約115MBを**誰も解放せず**保持し続けていた。
+       必要になれば extract8k が読み直す(キャッシュ判定が既にその設計) */
+    MC.S.clips.forEach(c => {
+      if (c.id !== MC.S.audioClipId && c.audio8k) {
+        c.audio8k = null;
+        c.audio8kReqStart = 0;
+        c.audio8kReqSpan = 0;
+      }
+    });
     /* 長さは選び直してもらう。ここで applyLengthChoice を呼ぶのは、
        画面を出す前に trimIn/trimOut を既定値で埋めておくため
        (プレビューが「範囲なし」の状態で一瞬映るのを防ぐ) */
@@ -3034,6 +3063,7 @@ MC.ui.wire = () => {
                           label: "音を分析しています…" });
     try {
       const r = await MC.sync.run(p);
+      MC.ui._tabsForced = false;   // 同期に成功したら失敗時の前倒し開放を解除(2026-07-31)
       // カラー自動マッチ(初期ON)。失敗しても同期は成功扱い
       const vclips = MC.S.clips.filter(c => !c.isAudio && !c.isImage);
       if (MC.S.colorOn && vclips.length >= 2 && !vclips.some(c => c.colorT)) {

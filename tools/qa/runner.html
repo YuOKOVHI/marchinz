@@ -1992,6 +1992,29 @@ async function countSamples(ns, file, fromSec) {
     }
     return `10分素材 → ${a.toFixed(0)}〜${b.toFixed(0)}秒を切り出せる`;
   });
+  await test("★入口の門番(media.js)が、技術的な天井だけを見ている", async () => {
+    const w = await compEnv();
+    /* ★ limits.js の値のテストだけでは、media.js の判定行が maxVideoSec へ
+       巻き戻る事故(Drive巻き戻りの実績あり)を捕まえられない。
+       判定関数そのものを、実際の MZ_LIMITS 越しに叩く */
+    return withRole(w, { unlimited: false, local: false, admin: false, member: false,
+      mobile: true, bigDevice: false, maxVideoSec: 300.5, maxSourceSec: 1200.5 }, () => {
+      if (w.MC.media.tooLong(510)) throw new Error("8分30秒が門前払いされる");
+      if (w.MC.media.tooLong(1190)) throw new Error("20分弱が門前払いされる");
+      if (!w.MC.media.tooLong(1210)) throw new Error("天井(20分)を超えても通る");
+      return "門番は maxSourceSec だけを見る(510/1190=入る・1210=断る)";
+    });
+  });
+  await test("★取り込みの本体が、その門番を使っている(直書きへの巻き戻り検知)", async () => {
+    const src = await (await fetch("../switcher/js/media.js")).text();
+    if (!/if \(MC\.media\.tooLong\(v\.duration\)\)/.test(src)) {
+      throw new Error("addFiles が tooLong を通っていない(判定の直書きへ巻き戻った?)");
+    }
+    if (/v\.duration > MZ_LIMITS\.maxVideoSec/.test(src)) {
+      throw new Error("プランの壁(maxVideoSec)での門前払いが復活している");
+    }
+    return "addFiles → tooLong → maxSourceSec の配線を確認";
+  });
   await test("★動画として読めないファイルを黙って捨てない", async () => {
     const w = await compEnv();
     compReset(w);
@@ -2015,12 +2038,15 @@ async function countSamples(ns, file, fromSec) {
     /* Privacy の動画モザイクは管理者限定(privacy/js/ui.js:438 videoAllowed)。
        ここを固定文で「顔モザイクで隠せます」と書いていたため、
        一般の人がリンクを踏むと「いまは写真のみ対応」と断られていた */
-    const guest = withRole(w, { admin: false, member: false, unlimited: false, local: false },
+    /* 判定の正本は limits.js の privacyVideoAllowed(条件のコピーをやめた 2026-07-31)。
+       このテストも正本を切り替える ─ admin フラグを直接見るテストのままだと、
+       正本化そのものを検知できない */
+    const guest = withRole(w, { privacyVideoAllowed: false },
       () => { w.MC.ui.renderFaceNote(); return w.document.getElementById("eoFaces").textContent; });
     if (!/準備中/.test(guest)) {
       throw new Error("動画のモザイクが使えないのに、使えると読める: " + guest);
     }
-    const admin = withRole(w, { admin: true }, () => {
+    const admin = withRole(w, { privacyVideoAllowed: true }, () => {
       w.MC.ui.renderFaceNote(); return w.document.getElementById("eoFaces").textContent;
     });
     if (/準備中/.test(admin)) throw new Error("管理者には使えるのに準備中と出ている");
