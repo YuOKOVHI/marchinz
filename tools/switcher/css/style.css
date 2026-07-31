@@ -1271,6 +1271,14 @@ body.tab-easy #layoutSec { display: none !important; }
    #syncSec(手動同期) と #layoutSec(レイアウト調整)は こだわり のまま */
 body.tab-pro #easyPane { display: none !important; }
 
+/* 選択画面 2段目の「種類を選び直す」(2026-08-01)。
+   見出しの上に置く小さな戻り道。44ptは割らない */
+.mode-step-back { display: inline-flex; align-items: center; min-height: 44px;
+  padding: 0 4px; margin-bottom: 2px; border: none; background: none;
+  color: var(--acc); font: inherit; font-size: 14px; cursor: pointer; }
+.mode-step-back:active { opacity: .6; }
+#modeStepKind[hidden], #modeStepFlow[hidden] { display: none; }
+
 /* 傾きを飛ばす道(2026-08-01)。主ボタン(この動画はOK)より明らかに弱く。
    ただしタップ標的は44pt を割らない ─ 弱く見せることと押しにくくすることは違う */
 .tilt-skip { display: block; width: 100%; min-height: 44px; margin-top: 12px;

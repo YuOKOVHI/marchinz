@@ -520,9 +520,6 @@ MC.exporter.QUALITIES = {
 /* 旧IDからの移行(sns=720p→light / hd,pro=1080p→full) */
 MC.exporter.QUALITY_ALIAS = { sns: "light", hd: "full", pro: "full" };
 
-MC.exporter.isPC = () =>
-  !MC.isIOS && !/Android/i.test(navigator.userAgent);
-
 MC.exporter.quality = () => {
   /* 既定はライト(720p/8Mbps)。多くの人はSNSへ出すので、速く軽い方を初期値にする。
      きれいに残したい人はフルHDへ1タップで切り替えられる(2026-07-23 優さん指示) */

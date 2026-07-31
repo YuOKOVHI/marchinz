@@ -51,8 +51,10 @@ window.MV = {
   /* 端末の対応状況(exporterの経路分岐に使う) */
   caps: { h264: false, aac: false, recMime: "", webcodecs: false },
 
-  isIOS: /iPad|iPhone|iPod/.test(navigator.userAgent)
-    || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1),
+  /* 端末の判定は shared/limits.js の MZDevice が唯一の正本(2026-08-01) */
+  isIOS: window.MZDevice ? MZDevice.ios
+    : (/iPad|iPhone|iPod/.test(navigator.userAgent)
+       || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)),
 
   /* 重い同期処理の合間に制御を返す。ブラウザペインは setTimeout を強く絞るため
      MessageChannel を使う(Switcherで確立した作法) */

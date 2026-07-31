@@ -96,10 +96,9 @@ MC.visual.initFaceWorker = () => {
     };
     w.onerror = e => { clearTimeout(tm); rej(new Error("workerを起動できません")); };
     const base = new URL("../privacy/vendor/", location.href).href;
-    const mm = navigator.userAgent.match(/(?:iPhone|iPad).*OS (\d+)_(\d+)/);
-    const iPadDesktopUA = navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
-    w.postMessage({ type: "init", base,
-      noSimd: (mm && +mm[1] === 16 && +mm[2] === 4) || iPadDesktopUA });
+    /* SIMDの誤答判定は MZDevice 1箇所に集約(2026-08-01)。
+       同じ式がここと下の ORT 初期化に二重にあった */
+    w.postMessage({ type: "init", base, noSimd: !!(window.MZDevice && MZDevice.simdBroken) });
   }).catch(e => { MC.visual._fwReadyP = null; MC.visual._fwDead = true; throw e; });
   return MC.visual._fwReadyP;
 };
@@ -157,10 +156,8 @@ MC.visual.initYuNet = async () => {
     }
     ort.env.wasm.wasmPaths = base;
     ort.env.wasm.numThreads = 1;
-    // iOS/Safari 16.4 のSIMD誤答バグ回避(Privacyと同じ判定)
-    const m = navigator.userAgent.match(/(?:iPhone|iPad).*OS (\d+)_(\d+)/);
-    const iPadDesktopUA = navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
-    if ((m && +m[1] === 16 && +m[2] === 4) || iPadDesktopUA) ort.env.wasm.simd = false;
+    // iOS/Safari 16.4 のSIMD誤答バグ回避。判定は MZDevice 1箇所(2026-08-01)
+    if (window.MZDevice && MZDevice.simdBroken) ort.env.wasm.simd = false;
     /* 推論をORT付属のproxy Workerへ(Phase 3 / 2026-07-23)。
        wasm推論はメインスレッドを止めるため、デコードと直列になっていた
        (顔61% vs デコード39%の実測)。Workerなら2つが重なり合計≒max(両者)。

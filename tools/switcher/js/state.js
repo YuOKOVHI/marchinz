@@ -49,8 +49,12 @@ window.MC = {
 };
 
 /* 端末判定(iPhone/iPad実機とタッチ環境) */
-MC.isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) ||
-  (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+/* 端末の判定は shared/limits.js の MZDevice が唯一の正本(2026-08-01)。
+   MC.isIOS という名前は呼び出しが多いので残し、中身だけ寄せる。
+   ★ limits.js は index.html でこれより先に読まれる(script順) */
+MC.isIOS = window.MZDevice ? MZDevice.ios
+  : (/iP(hone|ad|od)/.test(navigator.userAgent) ||
+     (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
 MC.isTouch = MC.isIOS || navigator.maxTouchPoints > 0;
 
 MC.PRESETS = {

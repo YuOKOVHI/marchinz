@@ -35,12 +35,13 @@ MZ.yunet = {
     }
     ort.env.wasm.wasmPaths = new URL("vendor/", location.href).href;  // 末尾スラッシュ必須
     ort.env.wasm.numThreads = 1;   // COOP/COEP不要のシングルスレッド
-    // iOS/Safari 16.4: SIMDが結果を黙って壊すWebKitバグ → SIMDを無効化
-    const m = navigator.userAgent.match(/(?:iPhone|iPad).*OS (\d+)_(\d+)/);
-    // iPadは既定でMac用UAを名乗りOSバージョンが取れないため、安全側でSIMDを切る
-    // (非SIMDでも結果は同じで速度が落ちるだけ。誤答バグを踏むよりよい)
-    const iPadDesktopUA = navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
-    if ((m && +m[1] === 16 && +m[2] === 4) || iPadDesktopUA) ort.env.wasm.simd = false;
+    /* iOS/Safari 16.4: SIMDが結果を黙って壊すWebKitバグ → SIMDを無効化。
+       iPadは既定でMac用UAを名乗りOSバージョンが取れないため、安全側で切る
+       (非SIMDでも結果は同じで速度が落ちるだけ。誤答バグを踏むよりよい)。
+       判定は shared/limits.js の MZDevice が唯一の正本(2026-08-01)。
+       同じ式が4ツールに散っており、UAの書式が変わったら直し漏れた所だけ
+       別の答えを返す ─ しかも「黙って結果が壊れる」側に倒れる */
+    if (window.MZDevice && MZDevice.simdBroken) ort.env.wasm.simd = false;
     this.session = await ort.InferenceSession.create(
       new URL("vendor/face_detection_yunet_2023mar.onnx", location.href).href,
       { executionProviders: ["wasm"], graphOptimizationLevel: "all" });

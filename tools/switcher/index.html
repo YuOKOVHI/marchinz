@@ -36,10 +36,14 @@
   <details class="disc-more"><summary>ベータ版の注意</summary>ベータ版のため動作は保証されず、生成結果・不具合について当方は責任を負いません。</details>
 </div>
 
+<!-- 最初に「種類」、次に「進め方」の2段(2026-08-01 優さん指示)。
+     順序を逆にしていたのを直した ─ 何を作るかが決まらないと、
+     おまかせが何をおまかせされるのか決まらない -->
 <section id="modeSelect" class="mode-select">
-  <div class="mode-inner">
+  <!-- 1段目: 何を作るか -->
+  <div class="mode-inner" id="modeStepKind">
     <h2 class="mode-title">作る動画を選ぶ</h2>
-    <p class="mode-lead">後から細かく調整できます</p>
+    <p class="mode-lead">あとから切り替えられます</p>
     <div class="mode-cards">
       <button type="button" class="mode-card" data-mode="vertical">
         <span class="mode-card-icon" aria-hidden="true">
@@ -72,6 +76,35 @@
         </span>
         <span class="mode-card-name">自動スイッチング動画</span>
         <span class="mode-card-desc">複数カメラを音で同期し、自動で切り替え／ワイプ。横型（16:9）で1本に</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- 2段目: どう進めるか。種類を選んでから出す -->
+  <div class="mode-inner" id="modeStepFlow" hidden>
+    <button type="button" id="flowBackBtn" class="mode-step-back">← 種類を選び直す</button>
+    <h2 class="mode-title">どちらで作りますか</h2>
+    <p class="mode-lead" id="flowLead"></p>
+    <div class="mode-cards">
+      <button type="button" class="mode-card mode-card--easy" data-flow="easy">
+        <span class="mode-card-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 3v4M3 5h4M6 17v4M4 19h4M13 3l2.5 6.5L22 12l-6.5 2.5L13 21l-2.5-6.5L4 12l6.5-2.5z"></path>
+          </svg>
+        </span>
+        <span class="mode-card-name">おまかせ</span>
+        <span class="mode-card-desc">動画を選ぶだけ。<b>60秒</b>の見どころを、傾きも色も整えて自動で書き出します</span>
+      </button>
+      <button type="button" class="mode-card" data-flow="pro">
+        <span class="mode-card-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="4" y1="7" x2="20" y2="7"></line><circle cx="9" cy="7" r="2.2"></circle>
+            <line x1="4" y1="13" x2="20" y2="13"></line><circle cx="15" cy="13" r="2.2"></circle>
+            <line x1="4" y1="19" x2="20" y2="19"></line><circle cx="8" cy="19" r="2.2"></circle>
+          </svg>
+        </span>
+        <span class="mode-card-name">こだわり</span>
+        <span class="mode-card-desc">長さ・開始位置・カメラの切り替わり方・色を自分で決めます</span>
       </button>
     </div>
   </div>
@@ -506,7 +539,11 @@
 <script src="js/visual.js?v=1.62.0"></script>
 <script src="js/director.js?v=1.62.0"></script>
 <script src="js/colormatch.js?v=1.62.0"></script>
-<!-- horizon.js(自動傾き検出)は読み込まない(2026-07-28 検知全廃。ファイルは残置) -->
+<!-- horizon.js(自動傾き検出)を読み込みに戻した(2026-08-01 優さん指示
+     「おまかせは傾き補正も自動で行う」)。2026-07-28 に外したのは
+     **こだわりで自動提案をやめた**ためで、実装自体は生きていた。
+     こだわりでは今も提案しない ─ 使うのは おまかせ の自走だけ -->
+<script src="js/horizon.js?v=1.62.0"></script>
 <script src="js/salute.js?v=1.62.0"></script>
 <script src="js/preview.js?v=1.62.0"></script>
 <script src="js/timeline.js?v=1.62.0"></script>

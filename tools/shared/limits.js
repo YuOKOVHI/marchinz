@@ -1,4 +1,25 @@
 "use strict";
+/* ============ 端末の見分け（唯一の正本 2026-08-01） ============
+   同じ規則が4箇所に散っていた ─ state.js(MC.isIOS) / visual.js×2(SIMD回避) /
+   このファイル(上限の判定)。UAの書式が変わったとき、直し漏れた場所だけが
+   別の答えを返す。このセッションだけで「規則が2実装に割れて静かに壊れる」を
+   何度も踏んでいるので、ここに1つだけ置く。
+
+   ★ limits.js は全ツールで最初に読まれる(index.html の script 順)。
+     だから端末判定はここに置ける ─ 逆に state.js へ置くと共有側から見えない */
+window.MZDevice = (() => {
+  const ua = navigator.userAgent || "";
+  /* iPadは「デスクトップ用サイトを表示」が既定なので UA では Mac に見える。
+     タッチ点数で見分ける */
+  const iPadDesktopUA = navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+  const ios = /iP(hone|ad|od)/.test(ua) || iPadDesktopUA;
+  const mobile = /iPhone|iPad|iPod|Android|Mobile/i.test(ua) || iPadDesktopUA;
+  /* iOS/Safari 16.4 の SIMD 誤答バグ。顔検出(ONNX)で誤った結果を返す */
+  const m = ua.match(/(?:iPhone|iPad).*OS (\d+)_(\d+)/);
+  const simdBroken = (!!m && +m[1] === 16 && +m[2] === 4) || iPadDesktopUA;
+  return { ua, iPadDesktopUA, ios, mobile, bigDevice: !mobile, simdBroken };
+})();
+
 /* ============ クリエイターツール共通: 取り込み・書き出し制限 ============
    会員種別(ゲスト/登録/管理者)と**端末(スマホ・タブレット / パソコン)**の
    2軸で決める(2026-07-31 優さん指示)。
@@ -67,10 +88,7 @@ window.MZ_LIMITS = (() => {
   /* 端末の種別。スマホ・タブレットか、パソコンか(2026-07-31)。
      iPadは「デスクトップ用サイトを表示」が既定なので UA では Mac に見える。
      タッチ点数で見分ける(Privacy/visual.js が SIMD 判定で使っているのと同じ手) */
-  const ua = navigator.userAgent || "";
-  const iPadDesktopUA = navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
-  const mobile = /iPhone|iPad|iPod|Android|Mobile/i.test(ua) || iPadDesktopUA;
-  const bigDevice = !mobile;   // パソコン(書き出しを長く許せる)
+  const { mobile, bigDevice } = window.MZDevice;   // 判定は上の1箇所だけ
 
   /* βテスト参加者の特典・上限拡大は**ここで beta を参照して**足す(2026-07-23)。
      例: maxExportSec: unlimited ? Infinity : beta ? 900 : ...

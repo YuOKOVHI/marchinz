@@ -417,9 +417,16 @@ MC.ui.gentleScrollTo = (el, block = "nearest") => {
 
 MC.ui.focusNextAction = () => {
   if (!MC.S.clips.length) return;
-  /* 傾きの自動検出は全廃(2026-07-28)。確認は本人の目で1本ずつ ─
-     カード内タスク化(2026-07-31)後も、取り込んだ直後は自動で箱を開いて
-     以前と同じ「すぐ確認」の流れを保つ(選ぶ→確認→同期 が途切れない) */
+  /* ★ おまかせを選んでいるなら、ここから先は一度も止まらない(2026-08-01 優さん指示)。
+     取り込みが終わった時点で自走を始める ─ これが「タップせずに最後まで」の入口。
+     二重に走らないよう、実行中と書き出し済みは弾く */
+  if (MC.ui._autoFlow && !MC.ui._busy && !(MC.exporter && MC.exporter.running)
+      && !MC.S.easyDone) {
+    setTimeout(() => MC.ui.runAuto(), 260);
+    return;
+  }
+  /* こだわり: 傾きの確認は本人の目で1本ずつ(2026-07-28)。
+     取り込んだ直後は自動でその画面へ運び、選ぶ→確認→同期 を途切れさせない */
   {
     const pending = MC.ui.tiltPending();
     if (pending) { setTimeout(() => MC.ui.openTilt(), 260); return; }
@@ -2531,9 +2538,107 @@ MC.ui.initVisibility = () => {
 /* おまかせ 第1段(2026-07-24 優さん指示で2段化):
    「分析を開始」= 同期(窓ラダー)だけ。終わったら「音声を選ぶ」フェーズへ。
    動画1本(選ぶ余地なし)ならそのまま第2段へ直行する */
-MC.ui.runEasy = async () => {
+/* ============ おまかせ: 取り込んだら書き出しまで自走(2026-08-01 優さん指示) ============
+   「できるだけタップやクリックせずに最後までやってほしい」。
+   決め打ちにするのは4つ:
+     完成60秒 / 盛り上がるシーン / 音はおすすめ / 傾き自動 / 色は MarchinZカラー
+
+   ★ 途中で一度も止まらないので、**止まるべき所で止まらない**のがいちばん怖い。
+     ・上限を超える長さは選ばない(ゲストは59秒までなので presetSec が丸める)
+     ・失敗したらそこで止めて、こだわりへ逃がす(黙って続けない)
+     ・すでに書き出し済みなら走らせない(二重書き出し) */
+MC.ui.AUTO = {
+  preset: "short",        // 完成60秒(実尺は上限で丸まる)
+  startKey: "climax",     // 盛り上がるシーン
+  filterId: "marchinz",   // MarchinZカラー
+};
+
+/* おまかせで決め打ちにする設定を当てる。呼ぶのは自走の入口だけ */
+MC.ui.applyAutoChoices = () => {
+  MC.S.exportPreset = MC.ui.AUTO.preset;
+  MC.S.startKey = MC.ui.AUTO.startKey;
+  MC.S.startAt = null;
+  MC.S.filterId = MC.ui.AUTO.filterId;
+  MC.S.colorOn = true;
+  MC.S.horizonOn = true;
+};
+
+/* 傾きを自動で当てる。検出できた本だけ回し、できなかった本は0のまま。
+   ★ 本人の確認は求めない(おまかせなので)が、「確認ずみ」の印も付けない ─
+     こだわりへ切り替えたときに、見ていないものが✓になっていては嘘になる */
+MC.ui.autoHorizon = async p => {
+  const cams = MC.ui.tiltCams();
+  if (!cams.length || !MC.horizon || !MC.horizon.suggest) return 0;
+  let fixed = 0;
+  for (const c of cams) {
+    if (MC.ui._autoCancel) break;
+    try {
+      const deg = await MC.horizon.suggest(c);
+      if (deg != null && Math.abs(deg) >= 0.15) { c.rot = Math.max(-3, Math.min(3, deg)); fixed++; }
+    } catch (e) { MC.log("horizon 自動: " + c.name + " → " + e.message); }
+  }
+  MC.S.tiltSkipped = true;    // ゲートは通す。ただし tiltOk は立てない(嘘の✓を付けない)
+  MC.saveState();
+  return fixed;
+};
+
+/* 音声を自動で決める。stats が取れていれば recommend、無ければ先頭の動画 */
+MC.ui.autoPickAudio = () => {
+  const reco = MC.audio.recommend && MC.audio.recommend();
+  const fallback = MC.S.clips.find(c => !c.isImage && c.hasAudio !== false);
+  const pick = reco || fallback;
+  if (pick) MC.S.audioClipId = pick.id;
+  MC.S.audioPickedByUser = false;   // 手で選んでいない=以後もおすすめに追従
+  MC.S.audioDecided = true;
+  MC.saveState();
+  return pick;
+};
+
+MC.ui.runAuto = async () => {
+  if (MC.ui._busy || (MC.exporter && MC.exporter.running)) return;
+  if (!MC.media.slotClips().length) return;
+  MC.ui._autoCancel = false;
+  MC.ui.applyAutoChoices();
+  try {
+    /* ① 傾き(自動) → ② 同期 → ③ 音声(おすすめ) → ④ 音楽の解析 */
+    await MC.ui.runEasy({ auto: true });
+    if (MC.ui._autoCancel || !MC.S.showIn == null) { /* 進捗は runEasy 側が出す */ }
+    /* runEasy が音声で止まる分岐は auto では通らない(先に決めてあるため)。
+       ここまで来て showIn が無い= 解析に失敗している */
+    if (MC.S.showIn == null || MC.S.showOut == null) return;
+    /* ⑤ 長さと開始位置を決め打ちで確定 → ⑥ 映像解析とカット割 → ⑦ 書き出し
+       ★ ここで当て直すのが要。applyLengthChoice は
+         `cands.find(key===startKey) || cands[0]` で決めたうえ、
+         **選んだ結果を MC.S.startKey へ書き戻す**。解析が終わる前に一度でも
+         走ると、そのとき候補は「スタート」しか無いので startKey が
+         "start" に固定され、あとから盛り上がりが見つかっても戻らない
+         (実測: 候補に climax があるのに start が選ばれていた) */
+    MC.ui.applyAutoChoices();
+    MC.ui.applyLengthChoice();
+    MC.S.lengthDecided = true;
+    MC.saveState();
+    MC.ui.refreshJourney();
+    await MC.ui.runEasyFinish();
+    if (MC.ui._autoCancel || !MC.S.easyDone) return;
+    MC.ui.refreshJourney();
+    const btn = MC.ui.$("#exportBtn");
+    if (btn && !btn.disabled) btn.click();
+  } catch (e) {
+    console.error(e);
+    MC.ui.showErrorLog(e);
+    /* 失敗したら、こだわりへ逃がす。自走が黙って止まるのがいちばん困る */
+    MC.ui.setSetupTab("pro");
+    MC.ui._tabsForced = true;
+    MC.ui.refreshSetupTabs();
+    MC.ui.toast("自動でできませんでした。こだわりで続けられます");
+  }
+};
+
+MC.ui.runEasy = async (opt) => {
+  const auto = !!(opt && opt.auto);
   const btn = MC.ui.$("#easyStartBtn");
-  if (btn.disabled || MC.ui._busy) return;
+  /* 自走のときはボタンの状態を見ない ─ 取り込み直後は disabled のことがある */
+  if ((!auto && btn.disabled) || MC.ui._busy) return;
   MC.ui._anaT0 = performance.now();   // 見積り学習は同期込みの全体で測る(2026-07-28)
   MC.ui.setBusy(true);
   MC.ui.clearErrorLog();   // やり直しでは前回の失敗ログを見せない
@@ -2543,19 +2648,40 @@ MC.ui.runEasy = async () => {
      あと何が残っているのか分からず体感が倍になる(2026-07-26)。
      分母は下の分岐と同じ条件で数えること ─ ずれると「4/3」になる */
   const syncSteps = vids.length >= 2 ? 1 : 0;
-  const goesOn = !(vids.length >= 2 && !MC.S.audioDecided);   // 音声選択で一度止まるか
+  /* おまかせは傾きを自動で当てる段が1つ増える(2026-08-01)。
+     ★ 数え忘れると「3/2」になる。分母は下の分岐と必ず揃えること */
+  const tiltSteps = auto ? 1 : 0;
+  /* 音声選択で一度止まるか。おまかせは止まらない(先に自動で決める)ので、
+     解析の段まで必ず走る ─ ここを auto で見ないと分母が足りなくなる */
+  const goesOn = auto || !(vids.length >= 2 && !MC.S.audioDecided);
   /* この段で走るのは同期と**音楽の解析**まで(2026-07-31)。
      重い映像解析は「長さと開始位置」を決めたあと、選ばれた範囲だけを見る */
-  const p = MZP.start({ mount: "#easyStatus", chapter: "同期", delay: 0,
-                        steps: syncSteps + (goesOn ? MC.ui.scanSteps() : 0),
-                        label: "音を合わせています…" });
+  const p = MZP.start({ mount: "#easyStatus",
+                        chapter: auto ? "おまかせ" : "同期", delay: 0,
+                        steps: tiltSteps + syncSteps + (goesOn ? MC.ui.scanSteps() : 0),
+                        label: auto ? "傾きを直しています…" : "音を合わせています…" });
   try {
+    if (auto) {
+      /* 傾きは同期より先に当てる。同期は音だけを見るので順序はどちらでもよいが、
+         先に映像を触っておくと、あとの映像解析でデコーダが温まっている */
+      p.step(1, "傾きを直しています…").pulse("傾きを直しています…");
+      await MZP.paint();
+      const fixed = await MC.ui.autoHorizon(p);
+      MC.log("auto: 傾きを直した本数=" + fixed);
+      MC.ui.renderClips();
+    }
     if (vids.length >= 2) {
-      p.step(1, "音を合わせています…").pulse("音を合わせています…");
+      p.step(tiltSteps + 1, "音を合わせています…").pulse("音を合わせています…");
       await MC.sync.run(p);
       /* 同期に成功したら、失敗時に前倒しで開いたタブを本来の条件へ戻す
          (立てっぱなしだと以後ずっと序盤からタブが出る) */
       MC.ui._tabsForced = false;
+    }
+    if (auto) {
+      /* おまかせは止まらない。音声はここで自動採用する ─
+         同期のあとなら stats が揃っていて recommend が使える */
+      const pick = MC.ui.autoPickAudio();
+      MC.log("auto: 音声=" + (pick ? pick.name : "(なし)"));
     }
     if (vids.length >= 2 && !MC.S.audioDecided) {
       /* ここで一度手を止める: 音声を選んでから仕上げへ */
@@ -2564,7 +2690,7 @@ MC.ui.runEasy = async () => {
       MC.ui.gentleScrollTo(document.querySelector("#audioSec"), "start");
       return;
     }
-    await MC.ui.runEasyScan(p, syncSteps);   // 1本だけ→選ぶフェーズを飛ばして音楽の解析へ
+    await MC.ui.runEasyScan(p, tiltSteps + syncSteps);   // 続きの段番号から
   } catch (e) {
     console.error(e);
     p.fail("処理に失敗しました", { detail: e.message });
@@ -2942,6 +3068,10 @@ MC.ui.chooseMode = (mode, { silent = false } = {}) => {
   MC.ui.normalizeForMode();
   if (!silent) MC.saveState();
   MC.ui.$("#modeSelect").hidden = true;
+  /* 中の段も畳んでおく(2026-08-01)。親が hidden なので見えはしないが、
+     開いたまま残すと次に showModeSelect で戻ったとき2段目から始まる ─
+     「種類を選び直す」つもりで戻ったのに進め方の画面が出ることになる */
+  MC.ui.showModeStep("kind");
   MC.ui.$("#workspace").hidden = false;
   /* 工程に入ったらサイト共通の外枠を下げる(1画面1操作。2026-07-28 優さん指示)。
      実測で最初の工程に押せるものが40個あり、24個がツールと無関係なサイトナビだった */
@@ -2952,10 +3082,26 @@ MC.ui.chooseMode = (mode, { silent = false } = {}) => {
   MC.ui.renderAll();
 };
 
+/* 選択画面の段の出し分け(2026-08-01)。
+   1段目=何を作るか(種類) → 2段目=どう進めるか(おまかせ/こだわり)。
+   何を作るかが決まらないと、おまかせが何をおまかせされるのかも決まらない */
+MC.ui.showModeStep = step => {
+  const kind = MC.ui.$("#modeStepKind"), flow = MC.ui.$("#modeStepFlow");
+  if (!kind || !flow) return;
+  kind.hidden = step !== "kind";
+  flow.hidden = step !== "flow";
+  if (step === "flow") {
+    const lead = MC.ui.$("#flowLead");
+    const m = MC.ui.MODES[MC.ui._pendingMode] || MC.ui.modeConf();
+    if (lead) lead.textContent = `${m.label}を作ります`;
+  }
+};
+
 MC.ui.showModeSelect = () => {
   MC.preview.pause();  // 選択画面の裏で音が鳴り続けないように
   MC.ui.$("#workspace").hidden = true;
   MC.ui.$("#modeSelect").hidden = false;
+  MC.ui.showModeStep("kind");   // 戻ったら必ず1段目から
   document.body.classList.remove("mz-focus");   // 工程を抜けたらサイトの外枠を戻す
 };
 
@@ -2963,8 +3109,15 @@ MC.ui.showModeSelect = () => {
 MC.ui.wire = () => {
   const $ = MC.ui.$;
 
-  document.querySelectorAll(".mode-card").forEach(card =>
-    card.onclick = () => MC.ui.chooseMode(card.dataset.mode));
+  /* 種類カード。**ここでは作業画面へ進まない**(2026-08-01)。
+     選んだ種類を覚えて、2段目の「どちらで作りますか」へ送る */
+  document.querySelectorAll("#modeSelect .mode-card[data-mode]").forEach(card =>
+    card.onclick = () => {
+      MC.ui._pendingMode = card.dataset.mode;
+      MC.ui.showModeStep("flow");
+    });
+  { const b = MC.ui.$("#flowBackBtn");
+    if (b) b.onclick = () => MC.ui.showModeStep("kind"); }
   document.querySelectorAll("#setupTabs .tab").forEach(b =>
     b.onclick = () => MC.ui.setSetupTab(b.dataset.tab));
   $("#easyStartBtn").onclick = () => {
@@ -2972,6 +3125,22 @@ MC.ui.wire = () => {
     MC.ui.runEasy();
   };
   $("#modeBackBtn").onclick = () => MC.ui.showModeSelect();
+  /* 最初の2択(2026-08-01)。おまかせは、動画を入れた時点で自走が始まる */
+  document.querySelectorAll("#modeSelect .mode-card[data-flow]").forEach(card => {
+    card.onclick = () => {
+      const flow = card.dataset.flow;
+      MC.ui._autoFlow = flow === "easy";
+      /* 1段目で選んだ種類をここで確定する。種類が未選択のまま
+         2段目へ来ることは無いが、保険で switch に落とす */
+      MC.ui.chooseMode(MC.ui._pendingMode || MC.S.mode || "switch");
+      MC.ui.setSetupTab(flow === "easy" ? "easy" : "pro");
+      if (flow === "pro") MC.ui._tabsForced = true;   // こだわりを選んだ人にはタブを出す
+      MC.ui.refreshSetupTabs();
+      MC.ui.refreshJourney();
+      /* すでに素材が入っている(前回の続き)なら、その場で走り出す */
+      if (MC.ui._autoFlow && MC.media.slotClips().length) MC.ui.runAuto();
+    };
+  });
 
   if (MC.cutmode) MC.cutmode.init();
   const prb = $("#projectResetBtn");

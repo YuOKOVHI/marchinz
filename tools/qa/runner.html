@@ -1283,6 +1283,160 @@ async function countSamples(ns, file, fromSec) {
      見せていないのに出力形式を先に決めさせられていた */
   /* 2026-08-01 品質改修。375px に7工程は入りきらなかった(実測59pxはみ出し)。
      入りきらないのはモデルが大きすぎる合図なので、決定を伴わない2つを畳んだ */
+  /* 2026-08-01 品質改修。端末の見分けが4箇所に散っていた
+     (state.js / visual.js×2 / limits.js / privacy・vlog)。UAの書式が変われば
+     直し漏れた所だけ別の答えを返す ─ しかも SIMD 判定は「黙って結果が壊れる」側 */
+  /* 2026-08-01 優さん指示。「おまかせは、できるだけタップやクリックせずに
+     最後までやってほしい。完成60秒・盛り上がるシーン・音はおすすめ・
+     傾き補正も自動・色は MarchinZカラー。取り込んだら書き出しまで」 */
+  group("㉖ おまかせは取り込んだら書き出しまで自走する");
+  await test("★おまかせ: 傾き→同期→音声→解析→仕上げ→書き出し を一度も止まらず通る", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    const sr = w.MC.audio.SR, DUR = 400, N = sr * DUR;
+    const pcm = new Float32Array(N);
+    let sd = 1;
+    const rnd = () => { sd ^= sd << 13; sd ^= sd >>> 17; sd ^= sd << 5;
+                        return (sd >>> 0) / 4294967295 * 2 - 1; };
+    for (let i = 0; i < N; i++) { const t = i / sr;
+      pcm[i] = t < 40  ? 0.01 * Math.sin(i / 40)
+             : t < 120 ? 0.30 * (Math.sin(i/12) + Math.sin(i/25)) / 2
+             : t < 200 ? (i % 900 < 60 ? 0.5 : 0.04) * rnd()
+             : t < 280 ? 0.05 * Math.sin(i / 45)
+             : t < 360 ? 0.95 * (Math.sin(i/11) + Math.sin(i/23) + Math.sin(i/8)) / 3
+             :           0.01 * Math.sin(i / 50); }
+    S.clips.forEach((c, i) => Object.assign(c, {
+      duration: DUR, audio8k: pcm, audio8kStart: 0, audio8kReqStart: 0,
+      stats: { rms: 0.05 + (i + 1) * 0.02, clipRatio: 0 }, tiltOk: false, rot: 0,
+    }));
+    S.audioClipId = 1; S.audioDecided = false; S.easyDone = false;
+    S.lengthDecided = false; S.showIn = null; S.showOut = null;
+
+    const log = [];
+    const keep = { h: w.MC.horizon && w.MC.horizon.suggest, s: w.MC.sync.run,
+                   sc: w.MC.ui.runEasyScan, f: w.MC.ui.runEasyFinish,
+                   x: w.MC.audio.extract8k };
+    if (!w.MC.horizon) throw new Error("horizon.js が読み込まれていない(自動傾きが動かない)");
+    w.MC.horizon.suggest = async () => { log.push("horizon"); return 0.8; };
+    w.MC.sync.run = async () => { log.push("sync");
+      S.clips.forEach(c => { c.syncMethod = "波形"; }); return {}; };
+    /* 実物と同じく「選ばれている音声クリップ」を解析する */
+    w.MC.ui.runEasyScan = async () => { log.push("scan");
+      w.MC.audio.extract8k = async () => {};
+      await w.MC.sections.analyze(w.MC.getClip(S.audioClipId));
+      S.showIn = 40; S.showOut = 380; };
+    w.MC.ui.runEasyFinish = async () => { log.push("finish"); S.easyDone = true; };
+    const eb = w.document.getElementById("exportBtn");
+    const ebOld = eb.onclick;
+    eb.onclick = () => log.push("export");
+    eb.disabled = false;
+    w.MC.ui._autoFlow = true;
+    try {
+      await w.MC.ui.runAuto();
+    } finally {
+      if (w.MC.horizon) w.MC.horizon.suggest = keep.h;
+      w.MC.sync.run = keep.s; w.MC.ui.runEasyScan = keep.sc;
+      w.MC.ui.runEasyFinish = keep.f; w.MC.audio.extract8k = keep.x;
+      eb.onclick = ebOld; w.MC.ui._autoFlow = false;
+    }
+    /* ① 一度も止まらず書き出しまで到達したか */
+    const want = ["horizon", "horizon", "horizon", "sync", "scan", "finish", "export"];
+    if (log.join(",") !== want.join(",")) throw new Error("通った順番が違う: " + log.join(","));
+    /* ② 優さんが決めた4つが当たっているか */
+    if (S.filterId !== "marchinz") throw new Error("色が MarchinZカラー でない: " + S.filterId);
+    if (S.startKey !== "climax") throw new Error("盛り上がりから始まらない: " + S.startKey);
+    const len = S.trimOut - S.trimIn;
+    if (!(len > 50 && len <= 60)) throw new Error(`完成が60秒前後でない: ${len.toFixed(0)}秒`);
+    if (!S.clips.every(c => Math.abs(c.rot - 0.8) < 0.01)) throw new Error("傾きが自動で当たっていない");
+    /* おすすめ = rms 最大の3番 */
+    if (S.audioClipId !== 3) throw new Error("おすすめの音声が選ばれていない: " + S.audioClipId);
+    /* ③ ★ 自動で直しただけの傾きに「確認ずみ」の印を付けない
+       (こだわりへ切り替えたとき、見ていないものが✓では嘘になる) */
+    if (S.clips.some(c => c.tiltOk)) throw new Error("見ていない傾きに確認ずみの印が付いた");
+    return `7段を無停止で通過 / 60秒(${len.toFixed(0)}s) / climax / 音声3 / 傾き0.8° / marchinz`;
+  });
+  await test("★選択は2段: 種類を決めてから、おまかせ／こだわり", async () => {
+    const w = await compEnv();
+    const D = w.document;
+    const kind = D.getElementById("modeStepKind"), flow = D.getElementById("modeStepFlow");
+    if (!kind || !flow) throw new Error("2段の入れ物が無い");
+    if ([...D.querySelectorAll("#modeStepKind .mode-card[data-mode]")].length !== 3) {
+      throw new Error("1段目の種類が3枚でない");
+    }
+    if ([...D.querySelectorAll("#modeStepFlow .mode-card[data-flow]")].length !== 2) {
+      throw new Error("2段目の進め方が2枚でない");
+    }
+    /* 選択画面へ戻したうえで、1段目から始まること */
+    w.MC.ui.showModeSelect();
+    if (kind.hidden || !flow.hidden) throw new Error("戻ったのに1段目から始まらない");
+    if (!D.getElementById("workspace").hidden) throw new Error("作業画面が出たまま");
+    /* 種類を選んでも、まだ作業画面へは進まない ─ 進め方を聞いてから */
+    D.querySelector('.mode-card[data-mode="wipeCam"]').click();
+    if (!kind.hidden || flow.hidden) throw new Error("2段目へ進まない");
+    if (!D.getElementById("workspace").hidden) {
+      throw new Error("種類を選んだだけで作業画面へ入った(進め方を聞いていない)");
+    }
+    /* 2段目には、選んだ種類が出る */
+    const lead = D.getElementById("flowLead");
+    if (!lead || !/ワイプ/.test(lead.textContent)) {
+      throw new Error("2段目に選んだ種類が出ない: " + (lead && lead.textContent));
+    }
+    /* 進め方を選んで初めて作業画面。種類は1段目の選択が効くこと */
+    D.querySelector('.mode-card[data-flow="pro"]').click();
+    if (D.getElementById("workspace").hidden) throw new Error("進め方を選んでも入れない");
+    if (w.MC.S.mode !== "wipeCam") throw new Error("1段目の種類が効いていない: " + w.MC.S.mode);
+    /* ★ 中の段も畳んでおくこと。開いたまま残すと、次に「種類を変える」で
+       戻ったときに**2段目から**始まる(選び直すつもりが進め方の画面) */
+    if (!flow.hidden || kind.hidden) throw new Error("作業画面へ入った後、段が畳まれていない");
+    w.MC.ui.showModeSelect();
+    if (kind.hidden) throw new Error("「種類を変える」で戻っても1段目にならない");
+    w.MC.ui.chooseMode("switch", { silent: true });   // 次のテストへ選択画面を渡さない
+    return "種類3枚 → 進め方2枚 → 作業画面 / 戻りは必ず1段目";
+  });
+
+  group("㉕ 端末の見分けは1箇所（MZDevice）");
+  await test("★MZDevice があり、旧来の式と同じ答えを返す", async () => {
+    const w = await compEnv();
+    const D = w.MZDevice;
+    if (!D) throw new Error("MZDevice が無い");
+    const ua = w.navigator.userAgent || "";
+    const iPad = w.navigator.platform === "MacIntel" && w.navigator.maxTouchPoints > 1;
+    const m = ua.match(/(?:iPhone|iPad).*OS (\d+)_(\d+)/);
+    const want = {
+      ios: /iP(hone|ad|od)/.test(ua) || iPad,
+      mobile: /iPhone|iPad|iPod|Android|Mobile/i.test(ua) || iPad,
+      simdBroken: (!!m && +m[1] === 16 && +m[2] === 4) || iPad,
+    };
+    for (const k of Object.keys(want)) {
+      if (D[k] !== want[k]) throw new Error(`${k}: MZDevice=${D[k]} 旧式=${want[k]}`);
+    }
+    if (D.bigDevice !== !D.mobile) throw new Error("bigDevice が mobile の逆でない");
+    /* MC.isIOS は呼び出しが多いので名前を残したが、中身は MZDevice を指すこと */
+    if (w.MC.isIOS !== D.ios) throw new Error("MC.isIOS が MZDevice と食い違う");
+    return `ios=${D.ios} mobile=${D.mobile} simd壊れ=${D.simdBroken}`;
+  });
+  await test("★端末の見分けを、各ファイルが自前で書き直していない", async () => {
+    const w = await compEnv();
+    /* ソースを取って、判定式が散っていないか見る。
+       ★ この試験は「1箇所に集めた」という設計そのものを守る。
+         コピーが戻ると、UAの書式が変わった日に静かに壊れる */
+    const files = ["js/state.js", "js/visual.js", "js/exporter.js"];
+    const found = [];
+    for (const f of files) {
+      const t = await (await fetch("/tools/switcher/" + f)).text();
+      const body = t.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+      /* state.js は MZDevice が無い環境への保険として1つだけ持つ(三項の右辺) */
+      const n = (body.match(/maxTouchPoints > 1/g) || []).length;
+      const limit = f.endsWith("state.js") ? 1 : 0;
+      if (n > limit) found.push(`${f}: ${n}箇所(上限${limit})`);
+    }
+    if (found.length) throw new Error("判定式のコピーが残っている: " + found.join(" / "));
+    /* 上限の計算も MZDevice を使っていること */
+    const lim = await (await fetch("/tools/shared/limits.js")).text();
+    if (!/MZDevice/.test(lim)) throw new Error("limits.js が MZDevice を使っていない");
+    return "コピーなし / limits も MZDevice 経由";
+  });
+
   group("㉔ 工程は5つ（バーが画面に収まる）");
   await test("★工程が5つで、消した工程名がどこにも残っていない", async () => {
     const w = await compEnv();
