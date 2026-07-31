@@ -204,7 +204,7 @@ MC.drawComposite = (ctx, W, H, t, resolveSrc) => {
       ctx.fillStyle = "#4a5060";
       ctx.font = `${Math.round(Math.min(rw, rh) * 0.08)}px sans-serif`;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText(clip ? "（範囲外）" : `カメラ ${i + 1}`, rx + rw / 2, ry + rh / 2);
+      ctx.fillText(clip ? "（範囲外）" : `動画 ${i + 1}`, rx + rw / 2, ry + rh / 2);
       ctx.fillStyle = "#000";
     }
   });

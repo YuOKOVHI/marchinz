@@ -272,7 +272,9 @@ MC.preview = {
     const W = this.canvas.width, H = this.canvas.height, ctx = this.ctx;
     const base = Math.min(W, H);
     const fs = Math.round(base * 0.05);   // 小さいプレビューでも読める大きさ
-    const label = armedId != null ? `カメラ${idx + 1}（まだ確定していません）` : `カメラ${idx + 1}`;
+    /* 呼び名は「動画N」に統一(2026-08-01)。素材カード・傾き・音声の選択が
+       すべて「動画N」なのに、プレビューのバッジだけ「カメラN」だった */
+    const label = armedId != null ? `動画${idx + 1}（まだ確定していません）` : `動画${idx + 1}`;
     ctx.save();
     ctx.font = `700 ${fs}px -apple-system, sans-serif`;
     const padX = fs * 0.62, padY = fs * 0.42;

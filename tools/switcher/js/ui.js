@@ -864,7 +864,10 @@ MC.ui.lengthEta = showSec => {
   if (MC.exporter.quality() === "light") expFactor *= 0.8;
   // 1分未満は「1分ほど」に丸める。秒まで出すと正確に見えすぎる
   const mins = s => Math.max(1, Math.round(s / 60));
-  return `。できるまで、あわせておよそ${mins(anaSec + showSec * expFactor)}分`;
+  /* 「できるまで、あわせておよそ◯分」→「完成までおよそ◯分」(2026-08-01)。
+     「あわせて」は分析と書き出しの内訳を指していたが、待つ側に内訳は要らない。
+     知りたいのは合計で、それはこの数字そのもの */
+  return `。完成までおよそ${mins(anaSec + showSec * expFactor)}分`;
 };
 
 /* 演奏のはじまりを0とした位置の表記(0:00形式)。
@@ -1357,7 +1360,10 @@ MC.ui.renderClips = () => {
     const lb = document.createElement("div");
     lb.className = "clip-slot-label";
     const noun = vertical ? "素材" : "動画";
-    lb.innerHTML = `<i class="fa-solid fa-video"></i> ${noun}${slotIdx + 1}${slotIdx === 2 ? "（なくてもOK）" : ""}`;
+    /* 2本目から先は任意(1本でも成立する)。3本目だけに但し書きを付けると、
+       2本目は必須のように読める(2026-08-01) */
+    lb.innerHTML = `<i class="fa-solid fa-video"></i> ${noun}${slotIdx + 1}`
+      + (slotIdx >= 1 ? ` <span class="hint">任意</span>` : "");
     slot.appendChild(lb);
     if (!c) {
       const btn = document.createElement("button");
@@ -1399,7 +1405,7 @@ ${c.isImage ? "" : (c.tiltOk
              唯一の手段 ─ title 属性は iOS Safari では永久に読まれない */
           ? `<button type="button" class="tilt-badge done" data-tilt aria-label="傾きを見直す">
                <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
-               <span>傾き OK（${c.rot ? `${c.rot > 0 ? "+" : ""}${c.rot.toFixed(1)}°を修正` : "そのまま"}）</span>
+               <span>傾き 確認ずみ${c.rot ? `（${c.rot > 0 ? "+" : ""}${c.rot.toFixed(1)}°を修正）` : "（修正なし）"}</span>
                <span class="tilt-badge-go" aria-hidden="true">›</span></button>`
           : `<button type="button" class="tilt-badge todo" data-tilt>
                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
@@ -1491,12 +1497,13 @@ MC.ui.renderAudio = () => {
     const loud = r => r >= 0.1 ? "音が大きい" : r >= 0.02 ? "音は標準" : "音が小さめ";
     const stat = c.stats
       ? `${loud(c.stats.rms || 0)}${c.stats.clipRatio > 0.001 ? "・音がわれています⚠" : ""}`
-      : (c.hasAudio === false ? "音声なし" : "まだ聞いていません");
-    /* 名前はプレビューの左下と同じ「カメラN」に統一する。選択肢だけ
-       IMG_0001.MOV だと、同じものに2つの名前がある状態だった */
+      : (c.hasAudio === false ? "音声なし" : "分析するとここに音量が出ます");
+    /* 呼び名は「動画N」に統一(2026-08-01)。素材カードも傾きの画面も「動画N」なのに、
+       ここだけ「カメラN」で、同じものを2つの名前で呼んでいた。
+       プレビュー左下のバッジも同じ日に「動画N」へ揃えた */
     const slotIdx = MC.S.slots.indexOf(c.id);
     const dispName = c.isAudio ? "音声ファイル"
-      : slotIdx >= 0 ? `カメラ${slotIdx + 1}` : MC.ui.shortName(c.name);
+      : slotIdx >= 0 ? `動画${slotIdx + 1}` : MC.ui.shortName(c.name);
     label.innerHTML = `
       <input type="radio" name="audioClip" ${MC.S.audioClipId === c.id ? "checked" : ""} ${c.hasAudio === false ? "disabled" : ""}>
       ${c.isAudio ? '<i class="fa-solid fa-file-audio" title="取り込んだ音声ファイル"></i> ' : ""}<span>${MC.ui.esc(dispName)}${!c.isAudio && slotIdx >= 0 ? ` <span class="hint">${MC.ui.esc(MC.ui.shortName(c.name, 12))}</span>` : ""}</span>
