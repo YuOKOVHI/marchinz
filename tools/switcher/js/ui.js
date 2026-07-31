@@ -457,6 +457,11 @@ MC.ui.resetEasyDone = (restored = false) => {
     MC.S.showIn = null;
     MC.S.showOut = null;
     MC.S.startAt = null;   // 前の素材の絶対秒が「自分で選ぶ」に残らないように
+    /* 演奏開始(サリュート)の検出結果も捨てる。director.js:47 は
+       「まだ無ければ検出する」なので、捨てないと前の素材の値が残る。
+       おまかせは runEasyScan が毎回上書きするが、#autocutBtn を直接押す
+       経路はここを通らない(引き継ぎ書③の最後の1件) */
+    if (MC.director) MC.director._salute = null;
   }
   if (!MC.S.easyDone) return;
   MC.S.easyDone = false;
