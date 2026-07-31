@@ -55,11 +55,27 @@ MC.beats.analyze = (pcm, sr = 8000) => {
   // テンポ: オンセット包絡の自己相関(60〜200BPM)
   const minLag = Math.round(60 / 200 / hopSec), maxLag = Math.round(60 / 60 / hopSec);
   let bestLag = minLag, bestR = -1;
+  const acf = new Float32Array(maxLag + 2);
   for (let lag = minLag; lag <= maxLag; lag++) {
     let r = 0;
     for (let i = 0; i + lag < nF; i++) r += env[i] * env[i + lag];
     r /= (nF - lag);
+    acf[lag] = r;
     if (r > bestR) { bestR = r; bestLag = lag; }
+  }
+  /* ★ 整数のラグのままだと8分で数秒ずれる(2026-07-31 実測)。
+     ホップは16msなので、120BPM(0.5秒=31.25ホップ)は31か32にしか丸まらない。
+     128.7BPMの正確なクリックで測ると、検出は129.31BPM・**8分で2.27秒**の
+     累積ドリフト、拍の最大ズレは0.233秒だった。小節頭で切るツールとしては
+     半拍ぶん外れることになる(引き継ぎ書③の「拍グリッドが一定テンポ・
+     整数ラグ固定」)。自己相関のピークを放物線で結んで頂点を求め、
+     ラグを小数にする ─ 追加コストは配列1本ぶん */
+  let lagF = bestLag;
+  if (bestLag > minLag && bestLag < maxLag) {
+    const m = acf[bestLag - 1], c = acf[bestLag], p = acf[bestLag + 1];
+    const den = m - 2 * c + p;
+    // 山(上に凸)のときだけ補間。谷や平坦なら整数のまま
+    if (den < 0) lagF = bestLag + Math.max(-0.5, Math.min(0.5, 0.5 * (m - p) / den));
   }
   // 位相: グリッド上のオンセット合計が最大になるオフセット
   let bestPhase = 0, bestS = -1;
@@ -68,19 +84,35 @@ MC.beats.analyze = (pcm, sr = 8000) => {
     for (let i = p; i < nF; i += bestLag) s += env[i];
     if (s > bestS) { bestS = s; bestPhase = p; }
   }
-  // 拍列生成+近傍オンセットへスナップ(±80ms、テンポ揺れの吸収)
+  /* 拍列生成+近傍オンセットへスナップ(±80ms、テンポ揺れの吸収)。
+     ★ グリッドは小数のラグで進める。整数で進めると、上のドリフトが
+       そのまま積み上がって snapW(±80ms)の窓から本当の拍が出ていき、
+       途中から別の場所を拾い続ける。
+     ★ さらに、拾えた拍が強いオンセットだったときだけグリッドを引き寄せる
+       (ALPHA)。ショウは1曲1テンポではない(sections.js は局所BPMを持って
+       いるのに使っていなかった)ので、テンポの変化に追従する必要がある。
+       静かな区間ではノイズの山を拾って暴れるため、**オンセットの強さが
+       中央値を超えたときだけ**寄せる ─ これが無いと拍が乱歩する */
   const snapW = Math.round(0.08 / hopSec);
+  const ALPHA = 0.5;                       // 引き寄せの強さ(1.0で完全追従)
+  const envMed = (() => {
+    const pos = Array.from(env).filter(v => v > 0).sort((a, b) => a - b);
+    return pos.length ? pos[pos.length >> 1] : 0;
+  })();
   const beats = [];
-  for (let i = bestPhase; i < nF; i += bestLag) {
-    let k = i, best = env[i];
-    for (let j = Math.max(0, i - snapW); j <= Math.min(nF - 1, i + snapW); j++) {
+  for (let pos = bestPhase; pos < nF; ) {
+    const c = Math.round(pos);
+    let k = c, best = env[c] || 0;
+    for (let j = Math.max(0, c - snapW); j <= Math.min(nF - 1, c + snapW); j++) {
       if (env[j] > best) { best = env[j]; k = j; }
     }
     beats.push((k * HOP + FR / 2) / sr);
+    // 本物のオンセットを拾えたときだけ追従する(静かな区間では素通り)
+    pos += lagF + ((best > envMed && envMed > 0) ? ALPHA * (k - pos) : 0);
   }
-  const bpm = 60 / (bestLag * hopSec);
+  const bpm = 60 / (lagF * hopSec);
   MC.log(`beats: bpm=${bpm.toFixed(1)} beats=${beats.length}`);
-  return { bpm, period: bestLag * hopSec, beats, env, hopSec };
+  return { bpm, period: lagF * hopSec, beats, env, hopSec };
 };
 
 /* tGlobal近傍のRMS(音声クリップの8kHz PCMから、±winSec) */

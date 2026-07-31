@@ -2060,6 +2060,106 @@ async function countSamples(ns, file, fromSec) {
     });
   });
 
+  /* ===== ⑳ 自動カット割の判定ロジック(引き継ぎ書③・2026-07-31 に修正) =====
+     裏取り済みのまま長く残っていた3件。DCI常連団体のレビューでも独立に
+     「3.2秒のショットを0.12秒の1点で決めている」と指摘された箇所 */
+  group("⑳ 自動カット割の判定ロジック");
+  /* 実映像に近い非周期パターン(ノイズを平滑化)。周期パターンだと
+     ブロックマッチングが偽の一致を起こし、測定そのものが嘘になる */
+  const mkShifted = (w, h, shift) => {
+    let sd = 12345;
+    const rnd = () => (sd = (sd * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+    const P = w + 8;
+    const base = new Float32Array(P * h);
+    for (let i = 0; i < base.length; i++) base[i] = rnd() * 255;
+    const sm = new Float32Array(P * h);
+    for (let y = 1; y < h - 1; y++) for (let x = 1; x < P - 1; x++) {
+      let s = 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) s += base[(y + dy) * P + x + dx];
+      sm[y * P + x] = s / 9;
+    }
+    const g = new Float32Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const sx = x + 4 + shift, i0 = Math.floor(sx), f = sx - i0;
+      g[y * w + x] = sm[y * P + i0] * (1 - f) + sm[y * P + i0 + 1] * f;   // 線形補間
+    }
+    return { g, w, h };
+  };
+  await test("★ブレ判定が1px刻みに量子化されない(手持ちカメラが構造的に全滅しない)", async () => {
+    const w = await compEnv();
+    const V = w.MC.visual, W = V.MOTION_W, H = 72;
+    const A = mkShifted(W, H, 0);
+    const shakes = [0, 0.5, 1, 1.5, 2, 2.5, 3].map(s => {
+      const gm = V.globalMotion(A, mkShifted(W, H, s));
+      if (gm.fdx == null) throw new Error("サブピクセル値(fdx)が返っていない");
+      return { s, v: Math.hypot(gm.fdx, gm.fdy) / W / V.PAIR_DT, px: gm.fdx };
+    });
+    /* ★ 実際のずれに比例していること。整数だけだと 0.5px と 1px が同値になり、
+       静止から失格までの段階が実質2つしかなかった(実測で確認した症状) */
+    const uniq = new Set(shakes.map(x => x.v.toFixed(3))).size;
+    if (uniq < 6) throw new Error(`7点中${uniq}種類しか値が出ない(量子化されている)`);
+    /* サブピクセルの推定精度: 実際のずれと0.2px以内 */
+    for (const x of shakes) {
+      if (Math.abs(Math.abs(x.px) - x.s) > 0.2) {
+        throw new Error(`ずれ${x.s}pxの推定が${Math.abs(x.px).toFixed(2)}px`);
+      }
+    }
+    /* 1.5px(軽い手ブレ)が失格にならないこと ─ ここが救済の本体 */
+    const at15 = shakes.find(x => x.s === 1.5).v;
+    if (at15 > V.TH_SHAKE) throw new Error(`1.5pxのずれが失格になる(${at15.toFixed(3)})`);
+    /* 2px以上はこれまでどおり失格のまま(緩めすぎていないこと) */
+    if (shakes.find(x => x.s === 2).v <= V.TH_SHAKE) throw new Error("2pxまで通してしまう");
+    return `7点すべて別の値 / 1.5px=${at15.toFixed(3)}はOK / 2px以上は失格`;
+  });
+  await test("★隊形が決まって静止した瞬間を「人が写っていない」で捨てない", async () => {
+    const w = await compEnv();
+    const mkClip = pattern => {
+      const V = { key: "0.0|100.0", t: [], shake: [], dxs: [], sharp: [], moE: [],
+                  act: [], nF: [], maxF: [], faceOK: true };
+      for (let i = 0; i < 100; i++) {
+        V.t.push(i); V.shake.push(0.01); V.dxs.push(0); V.sharp.push(100);
+        V.moE.push(0.05); V.act.push(pattern(i));
+        V.nF.push(0); V.maxF.push(0);   // 引きの画は顔が数pxで検出できない
+      }
+      V.sharpMed = 100; V.movingFrac = 0; V.operated = false;
+      return { id: 1, offset: 0, duration: 100, visual: V };
+    };
+    /* どちらも区間内の動きは同じ(act=0.02)。違うのは前後だけ */
+    const formation = mkClip(t => (t >= 50 && t <= 53) ? 0.02 : 0.45);  // 隊形が決まった瞬間
+    const empty = mkClip(() => 0.02);                                    // 空の舞台
+    const why = c => w.MC.visual.dqReason(w.MC.visual.seg(c, 50, 53), "auto");
+    if (why(formation) === "人が写っていない") {
+      throw new Error("隊形が決まった瞬間を捨てている(マーチングで一番見せたい絵)");
+    }
+    if (why(empty) !== "人が写っていない") {
+      throw new Error("空の舞台まで通してしまう(判定が効いていない)");
+    }
+    return "同じ静けさでも、前後を見て隊形と空舞台を分けられる";
+  });
+  await test("★拍グリッドが8分でドリフトしない(小節頭で切れる)", async () => {
+    const w = await compEnv();
+    /* 128.7BPM = 16msホップの整数倍に乗らないテンポ。
+       整数ラグのままだと8分で2.27秒ずれ、最大0.233秒外れていた(実測) */
+    const SR = 8000, BPM = 128.7, sec = 480, period = 60 / BPM;
+    const pcm = new Float32Array(SR * sec);
+    for (let k = 0; k * period < sec; k++) {
+      const at = Math.round(k * period * SR);
+      for (let i = 0; i < 400 && at + i < pcm.length; i++) {
+        pcm[at + i] += Math.sin(i * 0.35) * Math.exp(-i / 90);
+      }
+    }
+    const B = w.MC.beats.analyze(pcm, SR);
+    const err = B.beats.map(b => Math.abs(b - Math.round(b / period) * period));
+    const worst = Math.max(...err);
+    /* 半拍(0.23秒)外れると小節頭で切れない。0.08秒はスナップ窓の幅 */
+    if (worst > 0.08) throw new Error(`拍が最大${worst.toFixed(3)}秒ずれている`);
+    if (Math.abs(B.bpm - BPM) > 1.0) {
+      throw new Error(`BPMが ${B.bpm.toFixed(2)}(正解 ${BPM})`);
+    }
+    ge(B.beats.length, 900, "拍の数");
+    return `検出${B.bpm.toFixed(2)}BPM / 最大ズレ${worst.toFixed(3)}秒`;
+  });
+
   if (CF) { CF.remove(); CF = null; CW = null; CD = null; }
 
   /* ===== 集計 ===== */

@@ -31,6 +31,9 @@ MC.visual = {
   TH_CAM_RESID: 0.55,
   // 被写体がいない画(誰もいないピット等)の判定
   TH_EMPTY: 0.12,    // 顔が取れず、動いている領域もこれ未満なら人がいない
+  /* 「誰もいない」を判定するときに前後どれだけ見るか(秒)。
+     空の舞台はずっと静かだが、隊形が決まって止まる瞬間は前後が動いている */
+  NEAR_SEC: 8,
   /* WebCodecs解析でサンプル点の間がこれ(秒)より空くときだけシークで飛ぶ。
      続行 = 空白秒ぶんのフレームをデコード
      飛び = 平均 GOP長/2 ぶんの再デコード + reset + 読み直し
@@ -349,12 +352,26 @@ MC.visual.sharpness = A => {
   return sq / n - mean * mean;
 };
 
-/* グローバル動き推定: 中央領域のSAD最小探索(±8px、2px格子) */
+/* グローバル動き推定: 中央領域のSAD最小探索(±8px、1px格子)＋サブピクセル補間。
+   戻り値 { dx, dy }        … 整数(残差補償のシフトに使う。補間値では画素をずらせない)
+           { fdx, fdy }     … サブピクセル(ブレ量の計算に使う)
+
+   ★ 補間が要る理由(2026-07-31 実測)。整数だけだと、128px幅・dt=0.12秒では
+     1px = ブレ量0.065 の階段になり、手ブレのしきい値 0.11 は 1px と 2px の
+     あいだに落ちる ─ つまり**静止から失格までに段階が実質2つしかない**。
+     実測: ずれ0.5px→0.065 / 1px→0.065 / 1.5px→0.130 / 2px→0.130
+     1.5px と 2px が同じ値になり、手持ちカメラは構造的に全滅していた
+     (引き継ぎ書③の「ブレ判定が1px量子化」。DCI団体のレビューでも
+      「3.2秒のショットを0.12秒の1点で決めている」と独立に指摘された)。
+     SAD最小点の両隣を放物線で結んで頂点を求めれば、実際のずれに比例した
+     連続値が得られる ─ 追加コストは最小点まわりの3点を覚えておくだけ */
 MC.visual.globalMotion = (A, B) => {
   const { g: a, w, h } = A;
   const b = B.g;
   const R = 8;
   const x0 = R + 2, x1 = w - R - 2, y0 = R + 2, y1 = h - R - 2;
+  const N = 2 * R + 1;
+  const sad = new Float32Array(N * N);
   let bestDx = 0, bestDy = 0, bestS = Infinity;
   for (let dy = -R; dy <= R; dy++) {
     for (let dx = -R; dx <= R; dx++) {
@@ -363,10 +380,24 @@ MC.visual.globalMotion = (A, B) => {
         const ra = y * w, rb = (y + dy) * w + dx;
         for (let x = x0; x < x1; x += 2) s += Math.abs(a[ra + x] - b[rb + x]);
       }
+      sad[(dy + R) * N + (dx + R)] = s;
       if (s < bestS) { bestS = s; bestDx = dx; bestDy = dy; }
     }
   }
-  return { dx: bestDx, dy: bestDy };
+  /* 放物線フィットで頂点を求める。両隣が探索範囲の外なら補間しない。
+     分母は下に凸(谷)のとき正。0以下なら谷になっていないので補間を捨てる。
+     ずれは±0.5pxに収める(隣の格子を越えるのは、そもそも最小点が違う) */
+  const sub = (c, m, p) => {
+    const den = m - 2 * c + p;
+    if (!(den > 0)) return 0;
+    return Math.max(-0.5, Math.min(0.5, 0.5 * (m - p) / den));
+  };
+  const ix = bestDx + R, iy = bestDy + R;
+  const fdx = bestDx + ((ix > 0 && ix < N - 1)
+    ? sub(sad[iy * N + ix], sad[iy * N + ix - 1], sad[iy * N + ix + 1]) : 0);
+  const fdy = bestDy + ((iy > 0 && iy < N - 1)
+    ? sub(sad[iy * N + ix], sad[(iy - 1) * N + ix], sad[(iy + 1) * N + ix]) : 0);
+  return { dx: bestDx, dy: bestDy, fdx, fdy };
 };
 
 /* グローバル動き補償後の残差をグリッド集計 → 動いている領域の割合と強さ */
@@ -407,8 +438,10 @@ MC.visual._samplePoint = (V, A, B, faces, t, dt) => {
   const gm = MC.visual.globalMotion(A, B);
   const res = MC.visual.residualGrid(A, B, gm.dx, gm.dy);
   V.t.push(t);
-  V.shake.push(Math.hypot(gm.dx, gm.dy) / A.w / dt);   // 画面幅比/秒
-  V.dxs.push(gm.dx);
+  /* ブレ量はサブピクセル値で。整数だと 1px=0.065 の階段になり、
+     しきい値0.11 が 1px と 2px のあいだに落ちて段階が2つしかなくなる */
+  V.shake.push(Math.hypot(gm.fdx ?? gm.dx, gm.fdy ?? gm.dy) / A.w / dt);   // 画面幅比/秒
+  V.dxs.push(gm.fdx ?? gm.dx);
   V.sharp.push(MC.visual.sharpness(A));
   V.moE.push(res.moE);
   V.act.push(res.act);
@@ -735,7 +768,18 @@ MC.visual.seg = (clip, g0, g1) => {
      (act >= TH_CAM_RESID)ときは、動いたのはカメラではなく被写体なので数えない。
      panRatio(:722)と operated(:439)は同じ考えで既に除外していた(2026-07-29) */
   const shakesCam = idx.filter(i => V.act[i] < MC.visual.TH_CAM_RESID).map(i => V.shake[i]);
+  /* この区間の前後(±NEAR秒)も含めた動きの量。
+     「誰もいない」の判定に使う ─ 区間内だけを見ると、隊形が決まって
+     全員が静止した一瞬が「動いていない=人がいない」になる(下の noSubject 参照) */
+  let nearSum = 0, nearN = 0;
+  {
+    const c0 = (l0 + l1) / 2, R = MC.visual.NEAR_SEC;
+    for (let i = 0; i < V.t.length; i++) {
+      if (Math.abs(V.t[i] - c0) <= R) { nearSum += V.act[i]; nearN++; }
+    }
+  }
   return {
+    actNear: nearN ? nearSum / nearN : null,
     n: idx.length,
     shakeP75: p(shakes, 0.75),
     shakeCamP75: shakesCam.length ? p(shakesCam, 0.75) : null,
@@ -777,7 +821,15 @@ MC.visual.noSubject = (m, role) => {
   if (m.nF > 0) return false;                      // 顔が取れている=人がいる
   // ピット用カメラは寄り気味で、人がいれば顔が取れるはず。空舞台の可能性が高い
   if (role === "pit") return true;
-  return m.act < MC.visual.TH_EMPTY;
+  if (m.act >= MC.visual.TH_EMPTY) return false;
+  /* ★ 前後(±NEAR_SEC秒)も静かなときだけ「誰もいない」とみなす。
+     引きの画では顔は640²入力で数pxしかなく検出できない(nF=0)ので、
+     残る手がかりは動きの量だけになる。ところが**隊形が決まって全員が
+     静止した瞬間**は act がほぼ0で、マーチングでいちばん見せたい絵が
+     「人が写っていない」で失格していた(引き継ぎ書③・裏取り済み)。
+     空の舞台は前後もずっと静かなので、これで両者を分けられる */
+  if (m.actNear != null && m.actNear >= MC.visual.TH_EMPTY) return false;
+  return true;
 };
 
 /* 採用してはいけない画の理由を返す(null=問題なし)。
