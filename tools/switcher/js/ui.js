@@ -82,18 +82,11 @@ MC.ui.exportOverlay = {
       preEl.hidden = !preEl.textContent;
       preEl.classList.remove("eo-resume");
     }
-    /* 分割書き出しの再開を**常設**で知らせる(2026-07-31)。
-       待ち時間が半分になるという、ユーザにとって意味のある事実なので、
-       3.5秒で消えるトーストではなくここに置く(しかもトーストは
-       この全画面の下敷きになって一度も見えなかった) */
-    MC.ui.showResumeNoteIfAny = () => {
-      const sec = MC.exporter._resumeSec || 0;
-      if (!preEl || sec <= 0) return;
-      preEl.innerHTML = '<i class="fa-solid fa-rotate-left" aria-hidden="true"></i> '
-        + `<b>前回のつづきから</b> ─ ${MC.ui.fmtLen(sec)}ぶんは終わっています`;
-      preEl.hidden = false;
-      preEl.classList.add("eo-resume");
-    };
+    /* 「前回のつづきから ─ ◯分ぶんは終わっています」の常設案内は廃止
+       (2026-07-31 優さん指示「落ちたら結局戻れないからその案内けして」)。
+       戻れると書いておいて戻れないのは、黙っているより悪い。
+       中の仕組み(完了パートの再利用)は残す ─ 効いたときは黙って速くなる */
+    MC.ui.showResumeNoteIfAny = () => {};
     MC.ui.$("#eoRun").hidden = false;
     MC.ui.$("#eoDone").hidden = true;
     MC.ui.$("#eoClose").hidden = true;
@@ -463,6 +456,11 @@ MC.ui.resetEasyDone = (restored = false) => {
        おまかせは runEasyScan が毎回上書きするが、#autocutBtn を直接押す
        経路はここを通らない(引き継ぎ書③の最後の1件) */
     if (MC.director) MC.director._salute = null;
+    /* 検出そのもののキャッシュも捨てる(2026-07-31)。鍵は音声クリップの
+       id/名前/大きさ/ズレなので、別素材なら自然に外れるが、
+       「同じ動画を選び直した」ときは鍵まで一致してしまう ─
+       素材をやり直したなら計算もやり直す */
+    if (MC.salute && MC.salute.clearCache) MC.salute.clearCache();
   }
   if (!MC.S.easyDone) return;
   MC.S.easyDone = false;
@@ -2357,13 +2355,10 @@ MC.ui.showInterruptNote = (ms, opts = {}) => {
   const body = opts.running
     ? "続きから進めています。終わるまでこの画面のままお待ちください。"
     : (opts.crashed && stalled)
-      ? `同期もカット割も残っています。<b>同じ動画を・前と同じ順番で</b>選び直せば、`
-        + `書き出しからやり直せます。`
-        /* 分割書き出しでは完了ぶんが端末に残る(2026-07-31)。これを言わないと
-           「また最初から待つのか」と思われ、再開機能は一度も使われない */
-        + (stalled.doneSec ? `<br><b>${MC.ui.fmtLen(stalled.doneSec)}ぶんは書けています。`
-             + `もう一度押すと、そこから続きます。</b>` : "")
-        + `<br><span class="mz-stall-detail">${stalled.k}/${stalled.total}コマ・`
+      /* 「選び直せば書き出しからやり直せます」「◯分ぶんは書けています。
+         もう一度押すと、そこから続きます」を削除(2026-07-31 優さん指示)。
+         実際には戻れなかった。残すのは起きた事実と、次を追うための診断だけ */
+      ? `<span class="mz-stall-detail">${stalled.k}/${stalled.total}コマ・`
         + `${stalled.w}x${stalled.h}・${stalled.mbps || "?"}Mbps・`
         + `カメラ${stalled.cams || "?"}本・${stalled.route || "?"}・`
         + `${stalled.sec != null ? stalled.sec + "秒で" : ""}約${stalled.mb || "?"}MBまで`
@@ -2375,7 +2370,7 @@ MC.ui.showInterruptNote = (ms, opts = {}) => {
         + `・再シーク${stalled.skips ?? "?"}回`
         + `${stalled.freeMB != null ? "・空き" + stalled.freeMB + "MB" : ""}`
         + `${stalled.noskip ? "・診断(noskip)中" : ""}</span>`
-      : "同期とカット割は残っています。<b>同じ動画を・前と同じ順番で</b>選び直してください。";
+      : "";
   el.innerHTML = '<i class="fa-solid fa-circle-pause" aria-hidden="true"></i> '
     + `<span><b>${head}</b>${body}</span>`
     + '<button type="button" class="mz-interrupt-close" aria-label="閉じる">×</button>';
@@ -2508,7 +2503,7 @@ MC.ui.runEasy = async () => {
      分母は下の分岐と同じ条件で数えること ─ ずれると「4/3」になる */
   const syncSteps = vids.length >= 2 ? 1 : 0;
   const goesOn = !(vids.length >= 2 && !MC.S.audioDecided);   // 音声選択で一度止まるか
-  /* この段で走るのは同期と**音楽の下ごしらえ**まで(2026-07-31)。
+  /* この段で走るのは同期と**音楽の解析**まで(2026-07-31)。
      重い映像解析は「長さと始まり」を決めたあと、選ばれた範囲だけを見る */
   const p = MZP.start({ mount: "#easyStatus", chapter: "同期", delay: 0,
                         steps: syncSteps + (goesOn ? MC.ui.scanSteps() : 0),
@@ -2528,7 +2523,7 @@ MC.ui.runEasy = async () => {
       MC.ui.gentleScrollTo(document.querySelector("#audioSec"), "start");
       return;
     }
-    await MC.ui.runEasyScan(p, syncSteps);   // 1本だけ→選ぶフェーズを飛ばして下ごしらえへ
+    await MC.ui.runEasyScan(p, syncSteps);   // 1本だけ→選ぶフェーズを飛ばして音楽の解析へ
   } catch (e) {
     console.error(e);
     p.fail("処理に失敗しました", { detail: e.message });
@@ -2546,7 +2541,7 @@ MC.ui.runEasy = async () => {
 /* おまかせ 第2段: 「この音で進める」後の仕上げ。
    トリム→(③自動スイッチングのみ)カット割→色そろえ。
    ①縦動画/②ワイプカメラはシーン分析を丸ごと飛ばす(2026-07-24 優さん指示) */
-/* ---- おまかせ 第2段: 音楽の下ごしらえ(2026-07-31 優さん指示) ----
+/* ---- おまかせ 第2段: 音楽の解析(2026-07-31 優さん指示) ----
    ここでやるのは音だけ ─ 演奏そのものの範囲を見つけ、拍とセクションを取る。
    映像は1コマも見ない(数秒で終わる)。終わったら「長さと始まり」で止まる。
 
@@ -2559,12 +2554,12 @@ MC.ui.scanSteps = () => 2;
 MC.ui.runEasyScan = async (pIn, base = 0) => {
   if (!pIn && MC.ui._busy) return;
   if (!pIn) { MC.ui.setBusy(true); MC.ui.clearErrorLog(); MC.preview.pause(); }
-  const p = pIn || MZP.start({ mount: "#easyStatus", chapter: "下ごしらえ", delay: 0,
-                               steps: MC.ui.scanSteps(), label: "音楽を聴いています…" });
+  const p = pIn || MZP.start({ mount: "#easyStatus", chapter: "音楽の解析", delay: 0,
+                               steps: MC.ui.scanSteps(), label: "音楽を解析しています…" });
   let n = base;
   try {
     // ① 演奏そのものの範囲を音で見つける(アナウンス・拍手・片付けを落とす)
-    p.step(++n, "最初と最後を探しています…").pulse("最初と最後を探しています…");
+    p.step(++n, "演奏の始まりと終わりを調べています…").pulse("演奏の始まりと終わりを調べています…");
     await MZP.paint();
     const dur = MC.timelineDuration();
     let s = null;
@@ -2581,7 +2576,7 @@ MC.ui.runEasyScan = async (pIn, base = 0) => {
       ? Math.min(dur, s.musicEnd + MC.salute.OUT_AFTER) : dur;
 
     // ② 拍とセクション(見どころ候補の材料)
-    p.step(++n, "音楽を聴いています…").pulse("音楽を聴いています…");
+    p.step(++n, "音楽を解析しています…").pulse("音楽を解析しています…");
     await MZP.paint();
     const audioClip = MC.getClip(MC.S.audioClipId);
     if (audioClip) {
@@ -2605,7 +2600,7 @@ MC.ui.runEasyScan = async (pIn, base = 0) => {
        (プレビューが「範囲なし」の状態で一瞬映るのを防ぐ) */
     MC.S.lengthDecided = false;
     MC.ui.applyLengthChoice();
-    p.done("音楽をひととおり聴きました",
+    p.done("音楽の解析が終わりました",
            { sub: "長さと、どこから始めるかを選んでください" });
     MC.ui.renderAll();
     MC.preview.seek(MC.S.trimIn);
@@ -2674,7 +2669,7 @@ MC.ui.runEasyFinish = async (pIn, base = 0) => {
     const trimmed = MC.S.trimIn > 0 || MC.S.trimOut != null;
     /* ドックは「結果の詳細(範囲・色)」に徹する。「終わった」の気づきは下の
        バナー(notifyAnalysisDone)に一本化し、同じ文言を2箇所に出さない(G-4) */
-    p.done("整いました", {
+    p.done("分析が終わりました", {
       sub: (colorFailed ? "色合わせだけできませんでした。" : "")
         + (trimmed ? `書き出し範囲 ${MC.ui.fmtTime(ti)}〜${MC.ui.fmtTime(to)} を自動設定。` : "")
         + "プレビューを見て、よければ書き出してください",
@@ -3027,7 +3022,7 @@ MC.ui.wire = () => {
       MC.ui.toast("この音で進めます");
       return;
     }
-    /* 音楽の下ごしらえまで走らせて「長さと始まり」で止まる(2026-07-31)。
+    /* 音楽の解析まで走らせて「長さと開始位置」で止まる(2026-07-31)。
        以前はここから仕上げ(映像解析+カット割)まで一気に走っていた */
     if (!MC.S.easyDone) MC.ui.runEasyScan();
     else MC.ui.refreshJourney();   // 仕上げ済みで選び直しただけなら状態更新のみ
@@ -3069,7 +3064,7 @@ MC.ui.wire = () => {
       }
       // 最初と最後の自動カット(初期ON)。ユーザーがトリム済みなら触らない
       if (MC.S.autoTrim && MC.S.trimIn === 0 && MC.S.trimOut == null) {
-        p.step(4, "最初と最後を探しています…");
+        p.step(4, "演奏の始まりと終わりを調べています…");
         await MZP.paint();
         await MC.salute.autoTrim();
         MC.preview.seek(MC.trimRange()[0]);
@@ -3329,40 +3324,9 @@ MC.ui.wire = () => {
     MC.saveState(); MC.ui.renderFinish(); MC.preview.draw();
     $("#finishStatus").textContent = "";
   };
-  const att = $("#autoTrimToggle");
-  att.checked = MC.S.autoTrim;
-  att.onchange = e => { MC.S.autoTrim = e.target.checked; MC.saveState(); };
-  $("#saluteBtn").onclick = async () => {
-    $("#saluteBtn").disabled = true;
-    const p = MZP.start({ mount: "#finishStatus", chapter: "仕上げ", delay: 0 });
-    p.frozen("演奏の開始位置を探しています…");
-    await MZP.paint();   // 画面が止まる前に、必ず表示を描いてから解析へ入る
-    try {
-      MC.ui._salute = await MC.salute.detect();
-      const s = MC.ui._salute;
-      $("#saluteRow").style.display = "flex";
-      $("#saluteInfo").textContent =
-        `演奏 ${MC.ui.fmtTime(s.musicStart)} 〜 ${s.musicEnd ? MC.ui.fmtTime(s.musicEnd) : "?"}`;
-      p.done(`演奏の開始位置は ${MC.ui.fmtTime(s.musicStart)} です`);
-      MC.ui.renderScrubTicks();
-    } catch (e) {
-      p.fail("演奏の開始位置を見つけられませんでした", { detail: e.message });
-    } finally { $("#saluteBtn").disabled = false; }
-  };
-  $("#saluteInBtn").onclick = () => {
-    const s = MC.ui._salute; if (!s) return;
-    const pre = parseFloat($("#preRoll").value) || 0;
-    MC.S.trimIn = Math.max(0, s.musicStart - pre);
-    if (MC.S.trimOut != null && MC.S.trimOut <= MC.S.trimIn) MC.S.trimOut = null;
-    MC.saveState(); MC.ui.invalidateCuts(); MC.ui.updateTransport(); MC.preview.seek(MC.S.trimIn);
-    MC.ui.toast(`INを ${MC.ui.fmtTime(MC.S.trimIn)} に設定しました(演奏開始の${pre}秒前)`);
-  };
-  $("#saluteOutBtn").onclick = () => {
-    const s = MC.ui._salute; if (!s || s.musicEnd == null) { MC.ui.toast("終了位置は検出できていません"); return; }
-    MC.S.trimOut = Math.min(MC.timelineDuration(), s.musicEnd + MC.salute.OUT_AFTER);
-    MC.saveState(); MC.ui.updateTransport();
-    MC.ui.toast(`OUTを ${MC.ui.fmtTime(MC.S.trimOut)} に設定しました(演奏終了+${MC.salute.OUT_AFTER}秒)`);
-  };
+  /* 自動トリムのスイッチ・「演奏の範囲を探す」・前振り/INに反映/OUTに反映 の
+     配線をまとめて削除(2026-07-31)。UIごと撤去したため($ が null を返す)。
+     MC.S.autoTrim は既定ONのまま内部で生き、おまかせの中で1回だけ走る */
 };
 
 /* 切替頻度(少なめ/おすすめ/多め)のセグメントコントロール */

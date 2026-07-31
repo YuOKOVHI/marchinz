@@ -1101,28 +1101,64 @@ async function countSamples(ns, file, fromSec) {
     w.document.documentElement.style.removeProperty("--mz-tilt-pad");
     return `余白の指定が効く / ↺${Math.round(st.width)}x${Math.round(st.height)} / 他操作は非表示`;
   });
-  await test("★書き出し中の再開の案内が、全画面の下敷きにならない", async () => {
+  /* 「書き出し中の再開の案内が、全画面の下敷きにならない」を削除(2026-07-31)。
+     案内そのものを廃止したため（優さん指示「落ちたら結局戻れないから
+     その案内けして」）。下の「案内が画面に無い」が対になる見張り */
+  await test("★演奏区間の検出は、同じ音声なら1回しか読み直さない", async () => {
     const w = await compEnv();
-    const toast = w.document.getElementById("toast");
-    const ov = w.document.getElementById("exportOverlay");
-    const zT = parseInt(w.getComputedStyle(toast).zIndex, 10) || 0;
-    const zO = parseInt(w.getComputedStyle(ov).zIndex, 10) || 0;
-    /* トーストが全画面より下にあることを事実として押さえる。
-       ここが逆転しない限り、再開の告知をトーストでやってはいけない */
-    if (zT > zO) return "トーストの方が上(この見張りは不要になった)";
-    w.MC.exporter._resumeSec = 180;
-    w.MC.ui.exportOverlay.open();
-    if (!w.MC.ui.showResumeNoteIfAny) throw new Error("再開の案内を出す口が無い");
-    w.MC.ui.showResumeNoteIfAny();
-    const pre = w.document.getElementById("eoPreEta");
-    if (pre.hidden) throw new Error("再開の案内が出ていない");
-    if (!/3分/.test(pre.textContent)) {
-      throw new Error(`「パート」ではなく時間で言うこと: ${pre.textContent}`);
+    const S = compReset(w);
+    let reads = 0;
+    const orig = w.MC.audio.extract8k;
+    w.MC.audio.extract8k = async () => { reads++; };   // 実読みはせず回数だけ数える
+    try {
+      const sr = w.MC.audio.SR, N = sr * 30;
+      const pcm = new Float32Array(N);
+      for (let i = sr * 8; i < N; i++) pcm[i] = Math.sin(i / 20) * 0.4;
+      Object.assign(w.MC.getClip(1), { audio8k: pcm, audio8kStart: 0, audio8kReqStart: 0 });
+      S.audioClipId = 1;
+      w.MC.salute.clearCache();
+      const a = await w.MC.salute.detect();
+      const b = await w.MC.salute.detect();
+      const c = await w.MC.salute.detect();
+      if (reads !== 1) throw new Error(`3回呼んで ${reads} 回読み直している(1回のはず)`);
+      if (a.musicStart !== b.musicStart || b.musicStart !== c.musicStart) {
+        throw new Error("同じ音声なのに答えが変わる");
+      }
+      /* 素材をやり直したら計算もやり直す(古い答えを使い回さない) */
+      w.MC.salute.clearCache();
+      await w.MC.salute.detect();
+      if (reads !== 2) throw new Error(`キャッシュを捨てたのに読み直さない(${reads})`);
+      return `3回で読み直し1回 / 捨てれば読み直す / start=${a.musicStart.toFixed(1)}s`;
+    } finally { w.MC.audio.extract8k = orig; }
+  });
+  /* 撤去したUIを、コードがまだ触っていないか。触っていると null 参照で
+     その先の配線がまるごと死ぬ(過去に同種の事故を出している) */
+  await test("★撤去した「演奏の範囲を探す」一式が、どこにも残っていない", async () => {
+    const w = await compEnv();
+    const gone = ["saluteBtn", "saluteRow", "saluteInfo", "saluteInBtn",
+                  "saluteOutBtn", "preRoll", "autoTrimToggle"];
+    const left = gone.filter(id => w.document.getElementById(id));
+    if (left.length) throw new Error("要素が残っている: " + left.join(","));
+    /* 自動トリム自体は内部で生きている(おまかせが使う) */
+    if (typeof w.MC.S.autoTrim !== "boolean") throw new Error("autoTrim の状態が消えている");
+    if (typeof w.MC.salute.autoTrim !== "function") throw new Error("autoTrim の実装が消えている");
+    /* 撤去後に仕上げの描画・配線が例外を投げないか */
+    w.MC.ui.renderFinish();
+    return `7要素すべて撤去 / autoTrim は内部で健在(${w.MC.S.autoTrim})`;
+  });
+  /* 「落ちても続きから戻れます」の案内は撤去済み(2026-07-31 優さん指示)。
+     戻れないものを戻れると書かない */
+  await test("★「続きから再開できます」の案内が画面に無い", async () => {
+    const w = await compEnv();
+    /* コメントは画面に出ない。除いてから見る ─ さもないと
+       「なぜ消したか」を書いた注記そのものに反応して落ちる */
+    const html = w.document.body.innerHTML.replace(/<!--[\s\S]*?-->/g, "");
+    for (const bad of ["中断しても続きから再開できます", "続きから再開する手順",
+                       "前回のつづきから", "そこから続きます"]) {
+      if (html.includes(bad)) throw new Error(`「${bad}」が残っている`);
     }
-    if (/パート/.test(pre.textContent)) throw new Error("内部語(パート)が出ている");
-    w.MC.ui.exportOverlay.close ? w.MC.ui.exportOverlay.close() : (ov.hidden = true);
-    w.MC.exporter._resumeSec = 0;
-    return `toast(z${zT}) < overlay(z${zO}) なので常設欄へ / 「${pre.textContent.trim()}」`;
+    if (w.document.querySelector(".save-note")) throw new Error("保存済みの details が残っている");
+    return "4つの言い回しと details すべて無し";
   });
   await test("★「1つ前の動画」で本当に1つ戻る(確認ずみでも)", async () => {
     const w = await compEnv();
@@ -1681,17 +1717,15 @@ async function countSamples(ns, file, fromSec) {
   };
 
   group("⑰ 書き出し範囲とカット割の整合(不変条件)");
-  await test("★範囲を手で動かしたら、カット割を作り直すまで先へ進ませない(3経路とも)", async () => {
+  await test("★範囲を手で動かしたら、カット割を作り直すまで先へ進ませない(2経路とも)", async () => {
     const w = await compEnv();
     const R = w.MC.ui.STEP_RANK;
     const routes = [
       { name: "#trimInBtn（INをここに）", run: () => { w.MC.S.t = 40; w.document.getElementById("trimInBtn").click(); } },
       { name: "#trimResetBtn（リセット）", run: () => w.document.getElementById("trimResetBtn").click() },
-      { name: "IN反映（演奏の範囲をさがす）", run: () => {
-          w.MC.ui._salute = { musicStart: 48, musicEnd: 500 };
-          w.document.getElementById("preRoll").value = "8";
-          w.document.getElementById("saluteInBtn").click();
-        } },
+      /* 「IN反映（演奏の範囲を探す）」の経路は 2026-07-31 にUIごと撤去した
+         （優さん指示「いみわからん・進捗もわからん・ずっと進まず」）。
+         範囲を直接動かす経路が無くなったので、この試験も2経路になる */
     ];
     const done = [];
     for (const r of routes) {

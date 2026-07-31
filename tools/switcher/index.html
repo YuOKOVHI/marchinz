@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-app-v="1.55.0">
+<html lang="ja" data-mz-app-v="1.56.0">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -17,7 +17,7 @@
 <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
 <link rel="stylesheet" href="/tools/shared/progress.css">
 <link rel="stylesheet" href="/tools/shared/journey.css">
-<link rel="stylesheet" href="css/style.css?v=1.55.0">
+<link rel="stylesheet" href="css/style.css?v=1.56.0">
 <link rel="stylesheet" href="/tools/shared/sitechrome.css">
 </head>
 <body data-mz-tool="switcher">
@@ -288,9 +288,9 @@
     </section>
 
     <section class="panel" id="finishSec">
-      <h2>仕上げ <span class="hint">色・水平・トリム提案</span></h2>
+      <h2>仕上げ <span class="hint">色とフィルター</span></h2>
       <div class="row">
-        <button id="colorMatchBtn" class="btn"><i class="fa-solid fa-palette"></i> 自動カラーマッチ</button>
+        <button id="colorMatchBtn" class="btn"><i class="fa-solid fa-palette"></i> カメラの色を合わせる</button>
         <button id="colorClearBtn" class="btn small ghost" style="display:none">解除</button>
       </div>
       <div class="row" id="colorStrengthRow" style="display:none">
@@ -302,21 +302,14 @@
         <select id="filterSelect" class="select" style="width:auto; margin:0"></select>
       </div>
       <!-- 自動水平補正のUIは「カメラの配置と傾き」(tiltBox)に一本化(2026-07-24) -->
-      <label class="row" style="gap:8px; cursor:pointer; align-items:center; margin-top:10px">
-        <input type="checkbox" id="autoTrimToggle">
-        <span>最初と最後を自動カット</span>
-        <span class="hint">演奏の開始直前から、終了10秒後までを自動で選びます</span>
-      </label>
-      <div class="row">
-        <button id="saluteBtn" class="btn"><i class="fa-solid fa-music"></i> 演奏の範囲を探す</button>
-      </div>
-      <div class="row" id="saluteRow" style="display:none">
-        <span id="saluteInfo"></span>
-        <label class="hint">前振り</label>
-        <input id="preRoll" type="number" value="8" min="0" max="30" style="width:52px; background:var(--panel2); color:var(--tx); border:1px solid var(--line); border-radius:6px; padding:4px">秒
-        <button id="saluteInBtn" class="btn small">INに反映</button>
-        <button id="saluteOutBtn" class="btn small">OUTに反映</button>
-      </div>
+      <!-- 「最初と最後を自動カット」「演奏の範囲を探す」「前振り/INに反映/OUTに反映」を
+           まるごと撤去(2026-07-31 優さん指示「いみわからん・進捗もわからん・ずっと進まず」)。
+           理由は3つとも本当だった:
+             ・演奏の範囲は「長さと開始位置」の工程がすでに決めている(showIn/showOut)。
+               ここは同じ検出をもう一度走らせるだけの重複だった
+             ・進捗は p.frozen で固定表示。音声を全尺で読み直すので長尺では数分無音になる
+             ・押しても何が起きるのか名前から分からない
+           自動トリム自体は残す(おまかせの中で走る)。設定として見せる必要が無い -->
       <div id="finishStatus" class="status"></div>
     </section>
 
@@ -336,26 +329,11 @@
            6分待ったあとで気づくと、学校の公式アカウントでは出し直しになる -->
       <p class="sec-lead wm-note"><i class="fa-solid fa-circle-info" aria-hidden="true"></i>
         完成した動画の<b>右上に MarchinZ のロゴ</b>が薄く入ります（消せません）。</p>
-      <!-- 状態は clipKey で localStorage に保存済み(state.js:126)。同じ動画を
-           選び直せば同期もカット割も戻るのに、それがどこにも書かれておらず
-           「止まったら最初から」と思わせていた(2026-07-29 優さん報告) -->
-      <details class="save-note">
-        <summary><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
-          同期とカット割は<b>保存済み</b>（中断しても続きから再開できます）</summary>
-        <p>途中で止まっても、やり直すのは<b>書き出しだけ</b>です。
-          同期・カット割・傾き・色・書き出す範囲は残っています。</p>
-        <p><b>続きから再開する手順</b></p>
-        <ol>
-          <li><b>同じ動画</b>をもう一度選ぶ<br>
-            <span class="hint">ファイル名・サイズ・撮影日時で見分けます。
-              LINEで送り直したもの、別の端末にコピーしたもの、
-              書き出し直したものは<b>別の動画</b>として扱われ、続きからになりません</span></li>
-          <li><b>選ぶ順番も前と同じに</b><br>
-            <span class="hint">どのカメラがどの枠に入るかは、選んだ順で決まります</span></li>
-          <li>あとは自動で復元します。「分析を開始」を押す必要はありません</li>
-        </ol>
-        <p class="hint">動画本体はブラウザに保存できないため、選び直しだけは必要です。</p>
-      </details>
+      <!-- 「同期とカット割は保存済み(中断しても続きから再開できます)」と
+           その手順3つを撤去(2026-07-31 優さん指示「落ちたら結局戻れないから
+           その案内けして」)。実際に戻れないものを戻れると書くのは、
+           待たせたうえで裏切ることになる。復元が**実際に起きた**ときだけ、
+           起きた事実を素材の画面に出す(renderRestoreNote) -->
       <div id="qualityPicker" class="quality-picker" role="radiogroup" aria-label="書き出し画質"></div>
       <div id="exportMode" class="status"></div>
       <div class="row">
@@ -498,24 +476,24 @@
 <script src="vendor/mp4box.all.min.js"></script>
 <script src="vendor/mp4-muxer.min.js"></script>
 <script src="vendor/fft.js"></script>
-<script src="js/state.js?v=1.55.0"></script>
-<script src="js/layout.js?v=1.55.0"></script>
-<script src="js/media.js?v=1.55.0"></script>
-<script src="js/audio.js?v=1.55.0"></script>
-<script src="js/sync.js?v=1.55.0"></script>
-<script src="js/beats.js?v=1.55.0"></script>
-<script src="js/sections.js?v=1.55.0"></script>
-<script src="js/highlight.js?v=1.55.0"></script>
-<script src="js/visual.js?v=1.55.0"></script>
-<script src="js/director.js?v=1.55.0"></script>
-<script src="js/colormatch.js?v=1.55.0"></script>
+<script src="js/state.js?v=1.56.0"></script>
+<script src="js/layout.js?v=1.56.0"></script>
+<script src="js/media.js?v=1.56.0"></script>
+<script src="js/audio.js?v=1.56.0"></script>
+<script src="js/sync.js?v=1.56.0"></script>
+<script src="js/beats.js?v=1.56.0"></script>
+<script src="js/sections.js?v=1.56.0"></script>
+<script src="js/highlight.js?v=1.56.0"></script>
+<script src="js/visual.js?v=1.56.0"></script>
+<script src="js/director.js?v=1.56.0"></script>
+<script src="js/colormatch.js?v=1.56.0"></script>
 <!-- horizon.js(自動傾き検出)は読み込まない(2026-07-28 検知全廃。ファイルは残置) -->
-<script src="js/salute.js?v=1.55.0"></script>
-<script src="js/preview.js?v=1.55.0"></script>
-<script src="js/timeline.js?v=1.55.0"></script>
-<script src="js/cutmode.js?v=1.55.0"></script>
-<script src="js/exporter.js?v=1.55.0"></script>
-<script src="js/ui.js?v=1.55.0"></script>
-<script src="js/app.js?v=1.55.0"></script>
+<script src="js/salute.js?v=1.56.0"></script>
+<script src="js/preview.js?v=1.56.0"></script>
+<script src="js/timeline.js?v=1.56.0"></script>
+<script src="js/cutmode.js?v=1.56.0"></script>
+<script src="js/exporter.js?v=1.56.0"></script>
+<script src="js/ui.js?v=1.56.0"></script>
+<script src="js/app.js?v=1.56.0"></script>
 </body>
 </html>

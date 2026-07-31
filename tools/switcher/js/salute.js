@@ -13,7 +13,10 @@ MC.salute.autoTrim = async () => {
   let s;
   try { s = await MC.salute.detect(); } catch (e) { MC.log("autoTrim: 検出できず →", e.message); return false; }
   MC.ui._salute = s;
-  const pre = parseFloat(document.getElementById("preRoll").value) || 8;
+  /* 前振りの入力欄は撤去した(2026-07-31)。既定の8秒で固定する ─
+     残っている環境(旧HTMLのキャッシュ)でも壊れないよう、あくまで任意扱い */
+  const preEl = document.getElementById("preRoll");
+  const pre = (preEl && parseFloat(preEl.value)) || 8;
   MC.S.trimIn = Math.max(0, s.musicStart - pre);
   MC.S.trimOut = s.musicEnd != null
     ? Math.min(MC.timelineDuration(), s.musicEnd + MC.salute.OUT_AFTER) : null;
@@ -23,9 +26,25 @@ MC.salute.autoTrim = async () => {
   return true;
 };
 
+/* 検出結果を音声クリップごとに覚える(2026-07-31 優さん報告
+   「その進捗もわからんし、そこでずっと進まず」)。
+   detect() は音声を**全尺で読み直す**うえ、おまかせの中だけでも
+   ①音楽の解析(ui.js) ②自動トリム(autoTrim) の2回、さらに仕上げの
+   「演奏の範囲を探す」で3回目が走っていた。長尺ほど無言で待たされる。
+   同じ音声・同じズレなら答えは変わらないので、1回で済ませる。
+   音声を選び直す/同期し直すと offset が変わり、鍵が変わって計算し直す */
+MC.salute._cacheKey = null;
+MC.salute._cache = null;
+MC.salute.clearCache = () => { MC.salute._cacheKey = null; MC.salute._cache = null; };
+
 MC.salute.detect = async () => {
   const clip = MC.getClip(MC.S.audioClipId);
   if (!clip) throw new Error("音声クリップがありません");
+  const key = `${clip.id}|${clip.name}|${clip.size}|${clip.offset}`;
+  if (MC.salute._cacheKey === key && MC.salute._cache) {
+    MC.log("salute: 前回の結果を使う(読み直さない)");
+    return MC.salute._cache;
+  }
   {
     const _t0 = performance.now();
     const hit = clip.audio8k && (clip.audio8kReqStart || 0) === 0;
@@ -87,5 +106,7 @@ MC.salute.detect = async () => {
     musicEnd: endH > startH ? endH * 0.1 + (clip.audio8kStart || 0) + clip.offset : null,
   };
   MC.log(`salute: start=${res.musicStart.toFixed(1)}s end=${res.musicEnd ? res.musicEnd.toFixed(1) : "?"}s`);
+  MC.salute._cacheKey = key;   // 次からは読み直さない
+  MC.salute._cache = res;
   return res;
 };
