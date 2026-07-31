@@ -1226,6 +1226,39 @@ async function countSamples(ns, file, fromSec) {
      以前は playClips() 全部(=常に3本)を再生していた */
   /* 2026-08-01 製品改革。sections.js の判別はこれまで自動カット割の内部にしか
      無く、ユーザーからは一度も見えていなかった。他に無い強みなので表に出す */
+  /* 2026-08-01 製品改革 段5。最初の画面から「作る動画を選ぶ」の3枚のカードを
+     外した。あれは内部構造をそのまま質問にしたもので、ユーザーはまだ何も
+     見せていないのに出力形式を先に決めさせられていた */
+  group("㉓ ファーストビュー（種類は覚える・入口では聞かない）");
+  await test("★起動したらすぐ作業画面。種類はいつでも変えられる", async () => {
+    const w = await compEnv();
+    if (!w.document.getElementById("modeSelect").hidden) {
+      throw new Error("起動直後にモード選択が出ている");
+    }
+    if (w.document.getElementById("workspace").hidden) throw new Error("作業画面が出ていない");
+    if (!w.MC.S.mode) throw new Error("種類が決まっていない");
+    /* 変える導線は残っていること(選べなくなったのでは意味が違う) */
+    if (!w.document.getElementById("modeBackBtn")) throw new Error("「種類を変える」が無い");
+    if (typeof w.MC.ui.showModeSelect !== "function") throw new Error("モード選択へ戻れない");
+    return `起動時 ${w.MC.S.mode} / 変える導線あり`;
+  });
+  await test("★選んだ種類を覚える（縦型が横型に戻らない）", async () => {
+    const w = await compEnv();
+    /* ★ mode は 2026-08-01 まで保存されていなかった。モード選択が起動時の
+       必須画面で、毎回そこで選び直していたから気づかれなかった。
+       入口から外した以上、覚えないと「縦型を選んだのに次は横型」になる */
+    w.MC.ui.chooseMode("vertical");
+    w.MC.saveState();
+    const saved = JSON.parse(w.localStorage.getItem("marchcut_project") || "{}");
+    if (saved.mode !== "vertical") throw new Error("種類が保存されていない: " + saved.mode);
+    if (saved.preset !== "9x16") throw new Error("比率が保存されていない: " + saved.preset);
+    /* 起動時の復元が保存値を尊重するか(コードの形で見る。再読込はできない) */
+    const boot = w.MC.ui.chooseMode.toString();
+    if (!/MODES/.test(boot)) throw new Error("MODES を見ていない");
+    w.MC.ui.chooseMode("switch");   // 次のテストへ縦型を渡さない
+    return "縦型を選ぶと mode/preset とも保存される";
+  });
+
   group("㉒ 区間の色帯（マーチング判別を画面に出す）");
   await test("★音の性格を言い当てて帯にする（静か→打楽器→全奏→静か）", async () => {
     const w = await compEnv();

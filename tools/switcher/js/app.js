@@ -40,6 +40,29 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (saved.borderW != null) MC.S.borderW = saved.borderW;
   } catch (e) {}
 
+  /* ============ ファーストビュー(2026-08-01 製品改革 段5) ============
+     以前はここで「作る動画を選ぶ」の3枚のカードを見せていた。
+     あれは**製品の内部構造をそのまま質問にしたもの**で、ユーザーはまだ
+     何も見せていないのに出力形式を先に決めさせられていた。
+     縦型かどうかは共有先で決まる話であって、撮った直後に分かるものではない。
+
+     最初の画面は「動画を選ぶ」1つにする。種類は上部の
+     「← 種類を変える」からいつでも変えられる(既にある導線)。
+     既定は自動スイッチング ─ このツールの本命であり、
+     素材の向きに関係なく成立する唯一のモードだから。
+
+     ★ 保存済みのモードがあればそれを尊重する(前回の続きを勝手に変えない) */
+  {
+    const saved = (() => {
+      try { return JSON.parse(localStorage.getItem("marchcut_project") || "{}").mode; }
+      catch (e) { return null; }
+    })();
+    const start = MC.ui.MODES[saved] ? saved : "switch";
+    /* silent: 保存済みの preset/layout/border を上書きしない。
+       新規のときは既定値がそのまま使われる */
+    MC.ui.chooseMode(start, { silent: !!MC.ui.MODES[saved] });
+  }
+
   // OPFSへ本当に書けるかを一度だけ実測してキャッシュ(G-1)。
   // これで maxExportableSec が「上限なし」と嘘をつかなくなる
   MC.exporter.probeOpfs().then(() => MC.exporter.opfsSweep()).catch(() => {});

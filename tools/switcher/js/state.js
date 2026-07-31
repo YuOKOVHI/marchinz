@@ -158,6 +158,11 @@ MC.saveState = () => {
     const keepPrev = !clipsNow.length && prev
       && Array.isArray(prev.clips) && prev.clips.length > 0;
     localStorage.setItem("marchcut_project", JSON.stringify({
+      /* 作るものの種類(2026-08-01)。それまで保存していなかった ─
+         モード選択が起動時の必須画面だったので、毎回そこで選び直していたから。
+         入口からその画面を外した以上、覚えていないと
+         「縦型を選んだのに次に開いたら横型に戻る」ことになる */
+      mode: MC.S.mode,
       layoutId: MC.S.layoutId, preset: MC.S.preset, exportQuality: MC.S.exportQuality,
       trimIn: MC.S.trimIn, trimOut: MC.S.trimOut,
       beatsPerBar: MC.S.beatsPerBar, cutLevel: MC.S.cutLevel,

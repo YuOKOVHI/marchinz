@@ -307,7 +307,10 @@ MC.ui.renderRestoreNote = () => {
   el.id = "mzRestoreNote";
   el.className = "mz-restore-note";
   el.innerHTML = '<i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> '
-    + `前回の続きから始められます（${got.join("・")}を復元しました）`;
+    /* 起きた事実だけを言う(2026-08-01)。「前回の続きから始められます」は
+       これから何ができるかの約束で、消した案内と同じ系統だった。
+       ここは**もう起きたこと**を報告する場所なので、そう書く */
+    + `${got.join("・")}を復元しました`;
   const slots = MC.ui.$("#clipSlots");
   if (slots) host.insertBefore(el, slots); else host.appendChild(el);
 };
@@ -1301,26 +1304,20 @@ MC.ui.rigBadge = c => {
 
 /* --- クリップカード --- */
 /* 動画1/2/3の3スロット。空きは選択ボタン、読み込み済みはクリップカード */
-/* 前回のつづきが localStorage に残っているか(素材を1本も入れていないときだけ案内する) */
+/* 「前回のつづきがあります ─ この順番で選び直すと、分析をやり直さずに
+   書き出しへ進めます」の案内は廃止(2026-08-01 優さん指示
+   「落ちたら結局戻れないからその案内けして」)。
+
+   2026-07-31 に同じ系統の案内を3つ消したとき、この1つだけ言い回しが違って
+   生き残っていた。しかも入口の画面から「作る動画を選ぶ」を外した結果、
+   **新しい第一画面でいちばん目立つ塊**になっていた ─ 戻れると約束する文が、
+   最初に目に入る場所へ繰り上がっていたことになる。
+
+   復元そのものは残す。実際に起きたときだけ、起きた事実を
+   renderRestoreNote が「◯◯を復元しました」と報告する(約束ではなく結果) */
 MC.ui.renderResumeNote = () => {
   const el = MC.ui.$("#resumeNote");
-  if (!el) return;
-  let saved = null;
-  try { saved = JSON.parse(localStorage.getItem("marchcut_project") || "null"); } catch (_) {}
-  const names = (saved && Array.isArray(saved.clips) ? saved.clips : [])
-    .map(c => String(c.key || "").split("|")[0]).filter(Boolean);
-  const synced = (saved && Array.isArray(saved.clips)
-    && saved.clips.some(c => c.syncMethod && c.syncMethod !== "未同期"));
-  if (!names.length || !synced || MC.media.slotClips().length) { el.hidden = true; return; }
-  el.hidden = false;
-  el.innerHTML = '<p class="rn-head"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> '
-    + '<b>前回のつづきがあります</b></p>'
-    + '<p>同期とカット割は残っています。下の動画を<b>この順番で</b>選び直すと、'
-    + '分析をやり直さずに書き出しへ進めます。</p>'
-    + '<ol class="rn-list">' + names.map(nm =>
-        `<li>${MC.ui.esc(nm)}</li>`).join("") + '</ol>'
-    + '<p class="hint">名前・大きさ・撮影日時が同じファイルだけが「同じ動画」になります。'
-    + '送り直したものや書き出し直したものは別あつかいです。</p>';
+  if (el) { el.hidden = true; el.innerHTML = ""; }
 };
 
 MC.ui.renderClips = () => {
