@@ -1221,6 +1221,69 @@ async function countSamples(ns, file, fromSec) {
     return "傾きの工程=傾きだけ / 進むと引っ込み固定も解ける / 動画へ戻ると入れ替わる";
   });
 
+  /* 2026-08-01 製品改革の段0。再生を製品の中心に据えるなら、
+     裏で回り続ける本を減らさないとiPhoneが10分持たない。
+     以前は playClips() 全部(=常に3本)を再生していた */
+  group("㉑ 見えていないカメラを再生しない");
+  await test("★自動スイッチングでは、出番のカメラ＋次のカット＋音声担当だけ回す", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.layoutId = "switch"; S.audioClipId = 1;
+    S.cutList = [];
+    for (let i = 0; i < 20; i++) S.cutList.push({ t: i * 6, clipId: (i % 3) + 1, trans: "cut", dur: 0 });
+    const P = w.MC.preview;
+    const at = t => { S.t = t; return P.visibleClips().map(c => c.id).sort().join(","); };
+    const all = P.playClips().map(c => c.id).sort().join(",");
+    if (all !== "1,2,3") throw new Error("前提が作れていない(候補=" + all + ")");
+    /* 切替のはざま: 出番の1台だけ(=音声担当と同じ) */
+    if (at(3) !== "1") throw new Error(`t=3 で ${at(3)} 本を回している(1のはず)`);
+    /* 先読み: 切替の2秒前から次のカメラも回す(切替時のコマ飛び防止) */
+    if (at(5.5) !== "1,2") throw new Error(`t=5.5 の先読みが効いていない(${at(5.5)})`);
+    /* 切替直後: 出番=2、音声担当=1 */
+    if (at(6) !== "1,2") throw new Error(`t=6 で ${at(6)}`);
+    /* ★ 3本すべてを回し続けていないこと。ここが本題 */
+    let worst = 0;
+    for (let t = 0; t < 60; t += 0.5) worst = Math.max(worst, at(t).split(",").length);
+    if (worst > 3) throw new Error("3本を超えている");
+    const avg = (() => { let n = 0, k = 0;
+      for (let t = 0; t < 60; t += 0.5) { n += at(t).split(",").length; k++; }
+      return n / k; })();
+    if (avg >= 3) throw new Error(`平均 ${avg.toFixed(2)} 本(3本のままで減っていない)`);
+    return `平均 ${avg.toFixed(2)} 本 / 最大 ${worst} 本(以前は常に3本)`;
+  });
+  await test("★解析前でも再生できる（カット割が無ければ1本）", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.layoutId = "switch"; S.audioClipId = 1; S.cutList = []; S.t = 100;
+    /* 改革の中心: 同期しただけで見られること。cutAt はカット割が無ければ
+       音声担当を返す(layout.js:18)ので、再生は成立する */
+    const vis = w.MC.preview.visibleClips().map(c => c.id);
+    if (vis.length !== 1 || vis[0] !== 1) throw new Error("解析前に回る本が " + vis.join(","));
+    return "カット割なし = 1本だけ回る";
+  });
+  await test("★ワイプ・分割では全員が映るので減らさない", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    const P = w.MC.preview;
+    S.layoutId = "wipe"; S.wipeMainId = 1; S.wipeClipId = 2; S.wipeClipId2 = 3; S.t = 10;
+    const a = P.visibleClips().map(c => c.id).sort().join(",");
+    if (a !== "1,2,3") throw new Error("ワイプで " + a + " しか回していない(全員映る)");
+    S.layoutId = "v3"; S.slots = [1, 2, 3];
+    const b = P.visibleClips().map(c => c.id).sort().join(",");
+    if (b !== "1,2,3") throw new Error("分割で " + b + " しか回していない(全員映る)");
+    return "ワイプ・分割はどちらも3本(映るものは止めない)";
+  });
+  await test("★音声担当は画面に出ていなくても必ず回す（時計そのものだから）", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.layoutId = "switch"; S.audioClipId = 3;      // 3番が音声担当
+    S.cutList = [{ t: 0, clipId: 1, trans: "cut", dur: 0 }];   // 画面は1番だけ
+    S.t = 10;
+    const vis = w.MC.preview.visibleClips().map(c => c.id);
+    if (!vis.includes(3)) throw new Error("音声担当が止まる(tick が currentTime を読めず時計が死ぬ)");
+    return "画面外でも音声担当は回る";
+  });
+
   group("⑫ 再読込で「前回のつづき」を自分で消さない(2026-07-29 実機で再開できなかった)");
   await test("★素材が0本のとき、保存済みの同期・カット割を空で上書きしない", async () => {
     const w = await compEnv();

@@ -325,10 +325,11 @@
 
     <section class="panel" id="exportSec">
       <h2>書き出し</h2>
-      <!-- ロゴが入ることは、待つ前に知らせる(2026-07-29 優さん指示)。
-           6分待ったあとで気づくと、学校の公式アカウントでは出し直しになる -->
-      <p class="sec-lead wm-note"><i class="fa-solid fa-circle-info" aria-hidden="true"></i>
-        完成した動画の<b>右上に MarchinZ のロゴ</b>が薄く入ります（消せません）。</p>
+      <!-- ロゴの説明はプレビューの下へ移した(2026-08-01)。
+           layout.js:170,181,210 はプレビューと書き出しで**同じ関数**を呼んでおり、
+           ロゴは工程3の時点から画面に出ている。見えているものの説明を
+           工程7で初めてするのは順序が違った。文言も「消せません」という
+           禁止の言い方をやめ、事実(プレビュー=完成形)を述べる形にした -->
       <!-- 「同期とカット割は保存済み(中断しても続きから再開できます)」と
            その手順3つを撤去(2026-07-31 優さん指示「落ちたら結局戻れないから
            その案内けして」)。実際に戻れないものを戻れると書くのは、
@@ -371,6 +372,11 @@
   </aside>
 
   <section class="stage">
+    <!-- ロゴの説明はここ。プレビューにロゴが見えた瞬間に、その正体が分かる。
+         「完成した動画にも入ります」= プレビューがそのまま完成形だという約束でもある -->
+    <p class="wm-note" id="wmNote" hidden>
+      <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+      右上の <b>MarchinZ ロゴ</b>は、完成した動画にも入ります。</p>
     <div class="canvas-holder"><canvas id="cv" width="1080" height="1920"></canvas><button type="button" id="floatClose" class="float-close" aria-label="プレビューを小さくする"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div>
     <div class="transport">
       <button id="playBtn" class="btn round" title="再生/停止"><i class="fa-solid fa-play"></i></button>

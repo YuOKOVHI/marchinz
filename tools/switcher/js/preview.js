@@ -74,11 +74,46 @@ MC.preview = {
     return MC.getClip(MC.S.audioClipId) || MC.activeClips()[0] || MC.S.clips[0] || null;
   },
 
-  /* 再生・シークの対象: 表示中の素材(静止画以外)+音声のみクリップ */
+  /* 再生・シークの候補すべて(静止画以外)+音声のみクリップ。
+     ★これは「回しうる全部」であって「いま回すべきもの」ではない。
+       いま回すべきものは visibleClips() が決める */
   playClips() {
     const set = new Set(MC.activeClips().filter(c => !c.isImage));
     const a = MC.getClip(MC.S.audioClipId);
     if (a && a.isAudio) set.add(a);
+    return [...set];
+  },
+
+  /* 先読みの秒数。切替のこれだけ前から、次のカメラを回しておく */
+  PREROLL: 2.0,
+
+  /* いま実際に回すべきクリップ(2026-08-01)。
+     それまでは playClips() 全部を再生していた ─ 自動スイッチングでは
+     画面に出るのは1台なのに、**裏で3本が回り続けていた**。
+     iPhoneで10分再生し続ける前提に立つなら、この無駄は許容できない。
+
+     ★ 何が画面に出るかは MC.neededIds(t) が唯一の正本。書き出しが
+       「出番のないカメラをデコードしない」判定に使っているのと同じ関数を使う。
+       ここで独自に条件を書くと、drawComposite と規則が2実装に割れて
+       黒コマになる(layout.js の警告と同じ理由)。 */
+  visibleClips() {
+    const set = new Set();
+    /* ★ ここで .video の有無を条件にしない。playClips() と**同じ物差し**で
+       集合を作り、要素が無い場合の守りは参照する側(play/driftFix)に置く。
+       物差しが2つあると、片方だけ空になって静かに壊れる */
+    const add = id => {
+      if (id == null) return;
+      const c = MC.getClip(id);
+      if (c && !c.isImage) set.add(c);
+    };
+    MC.neededIds(MC.S.t).forEach(add);
+    /* 次のカットのカメラを先に回しておく。止まった状態から seek すると
+       切替の瞬間にコマが飛ぶ(実測ではなく既知の挙動としての予防) */
+    const nx = MC.nextCutAt && MC.nextCutAt(MC.S.t);
+    if (nx && nx.t - MC.S.t <= this.PREROLL) add(nx.clipId);
+    /* 音声担当は時計そのもの(tick が currentTime を読む)。必ず回す */
+    const m = MC.getClip(MC.S.audioClipId);
+    if (m) set.add(m);
     return [...set];
   },
 
@@ -104,7 +139,10 @@ MC.preview = {
     if (MC.S.t < tIn || MC.S.t >= tOut - 0.05) this.seek(tIn);
     this.applyMute();
     MC.S.playing = true;
-    for (const c of this.playClips()) {
+    /* 回すのは「いま画面に出るもの＋次のカット＋音声担当」だけ(2026-08-01)。
+       残りは driftFix が必要になった時点で起こす */
+    for (const c of this.visibleClips()) {
+      if (!c.video) continue;
       const local = MC.S.t - c.offset;
       if (local >= 0 && local < c.duration) {
         c.video.currentTime = local;
@@ -173,9 +211,16 @@ MC.preview = {
   /* マスター(音声担当)基準のドリフト補正 */
   driftFix() {
     const m = this.masterClip();
+    /* ★ ここが要。以前は playClips() 全部を見て、止まっている本を
+       片っ端から起こしていた ─ つまり「見えていない本を止める」だけでは
+       0.5秒後にこの関数が全部起こし直してしまう。
+       いま回すべき集合を先に決め、そこに居ない本は止める(2026-08-01) */
+    const vis = new Set(this.visibleClips());
     for (const c of this.playClips()) {
-      if (c === m) continue;
       const v = c.video;
+      if (!v) continue;
+      if (!vis.has(c)) { if (!v.paused) v.pause(); continue; }   // 出番が無い=止める
+      if (c === m) continue;
       const want = MC.S.t - c.offset;
       if (want < 0 || want > c.duration) { if (!v.paused) v.pause(); continue; }
       if (v.paused && MC.S.playing) { v.currentTime = want; v.play().catch(() => {}); continue; }

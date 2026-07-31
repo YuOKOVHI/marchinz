@@ -878,6 +878,12 @@ MC.ui.renderAll = () => {
   }
   /* スマホのフロートプレビューは素材があるときだけ(空の黒枠を浮かせない) */
   document.body.classList.toggle("mz-has-clips", MC.S.clips.length > 0);
+  /* ロゴの説明は、ロゴが実際に見えているときだけ出す(2026-08-01)。
+     素材が無い=プレビューが黒いだけの画面で先に断りを入れても意味が無い */
+  {
+    const wm = MC.ui.$("#wmNote");
+    if (wm) wm.hidden = !MC.S.clips.length;
+  }
   /* カット切替モードの入口はカットがあるときだけ */
   {
     const cmb = MC.ui.$("#cutModeBtn");

@@ -115,6 +115,42 @@ MC.sections.analyze = async audioClip => {
 };
 
 /* クリップローカル→インデックス(クランプ) */
+/* 区間の代表ラベル(2026-08-01)。classify() は7つのスコアを返すが、
+   シークバーの色帯には**その区間を一言で言うと何か**が要る。
+
+   ★ この関数は sections.js に置く。UI側で独自にスコアを比べ始めると、
+     カット割の判断と色帯の見た目がずれて「帯は全奏なのに引きの絵が出ない」
+     という説明不能な状態になる。判断の規則は音の側に1本だけ持つ。
+
+   スコアは互いに尺度が違う(積で出るものと差で出るものが混在する)ので、
+   単純な argmax にはしない。しきい値を超えたものの中から競わせる。
+
+   ★ しきい値の出どころを正直に書く:
+     feature 0.45 / pit 0.45 / quiet 0.55 は director.js が実際に使っている値
+     (director.js:126,199 / :133 / :272)。カット割の判断と帯の見た目を揃えるため。
+     percussion と tutti は director では**しきい値を持たず重みとして使う**ので、
+     ここの 0.40 / 0.60 は帯のための独自の値。実素材で調整すること。 */
+MC.sections.LABELS = [
+  { key: "percussion", label: "バッテリー", color: "#e8a15c", th: 0.40 },  // 独自
+  { key: "pit",        label: "ピット",     color: "#78bf90", th: 0.45 },  // director準拠
+  { key: "feature",    label: "ソロ・ソリ", color: "#a892d8", th: 0.45 },  // director準拠
+  { key: "tutti",      label: "全奏",       color: "#5b8fe0", th: 0.60 },  // 独自
+  { key: "quiet",      label: "静か",       color: "#b9c4d4", th: 0.55 },  // director準拠
+];
+MC.sections.label = cls => {
+  if (!cls) return null;
+  let best = null;
+  for (const L of MC.sections.LABELS) {
+    const v = cls[L.key];
+    if (!(v >= L.th)) continue;
+    /* しきい値をどれだけ上回っているかで競う(素のスコアだと
+       しきい値の低い性格が常に勝つ) */
+    const margin = (v - L.th) / Math.max(0.05, 1 - L.th);
+    if (!best || margin > best.margin) best = { ...L, value: v, margin };
+  }
+  return best;   // どれも届かなければ null(帯は描かない=無色)
+};
+
 MC.sections._idx = (S, tLocal) =>
   Math.max(0, Math.min(S.t.length - 1, Math.round((tLocal - MC.sections.WIN / 2) / S.hop)));
 

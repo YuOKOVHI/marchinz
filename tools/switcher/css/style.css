@@ -1277,7 +1277,12 @@ body.mz-pin-force .tilt-step { width: 52px; min-height: 48px; font-size: 20px; }
 .eo-faces a { color: inherit; font-weight: 700; }
 
 /* 書き出し前の注意書き(2026-07-29) */
-.wm-note { color: #4a5568; }
+/* ロゴの説明。プレビューの真上に1行だけ。主張しすぎない小さな文字で、
+   プレビューを押し下げないよう余白を詰める(2026-08-01) */
+.wm-note { color: #4a5568; margin: 0 0 6px; font-size: 12px; line-height: 1.4;
+  text-align: center; width: 100%; max-width: 720px; }
+.wm-note[hidden] { display: none; }
+.wm-note i { opacity: .6; margin-right: 4px; }
 .save-note { color: #1f6f4a; }
 .wm-note b, .save-note b { font-weight: 700; }
 

@@ -28,6 +28,15 @@ MC.cutAt = t => {
   return { cur: e.clipId, prev: null, blend: 1 };
 };
 
+/* 時刻tの「次のカット」。無ければ null(2026-08-01)。
+   再生側が、切り替わる少し前からそのカメラを回しておくために使う ─
+   切替の瞬間に seek すると iOS で数百ミリ秒止まって見える */
+MC.nextCutAt = t => {
+  const cl = MC.S.cutList;
+  for (let i = 0; i < cl.length; i++) if (cl[i].t > t) return cl[i];
+  return null;
+};
+
 /* 時刻tに drawComposite が実際に描くカメラid集合。
    書き出しで「出番のないカメラをデコードしない」判定に使う。
    **drawComposite が resolveSrc を呼ぶ id と完全に一致させること**。
