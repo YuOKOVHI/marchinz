@@ -1909,6 +1909,104 @@ async function countSamples(ns, file, fromSec) {
     return "範囲・カット割の違いで別idになる";
   });
 
+  /* ===== ⑲ ツールが嘘をつかない(2026-07-31 マーチング4団体レビュー) =====
+     4名の指導者・代表に実コードを読んでレビューしてもらって出た欠陥のうち、
+     「表示と実態が食い違っている」ものだけを集めた群。機能の good/bad ではなく
+     **書いてあることが本当か**を見張る。持ち込んだ人の信用に直結するため */
+  group("⑲ 表示と実態が食い違わない");
+  const withRole = (w, o, fn) => {
+    const L = w.MZ_LIMITS;
+    const keep = { ...L };
+    Object.assign(L, o);
+    try { return fn(); } finally { Object.assign(L, keep); }
+  };
+  await test("★読み込みの画面が言うのは『取り込める長さ』(書き出しの上限ではない)", async () => {
+    const w = await compEnv();
+    compReset(w);
+    /* ゲスト×スマホ: 取り込み5分 / 書き出し59秒。ここを maxExportSec で
+       書いていたため、読み込み画面に「3本まで・59秒まで」と出ていた */
+    const txt = withRole(w, { unlimited: false, local: false, admin: false, member: false,
+      mobile: true, bigDevice: false, maxExportSec: 59, maxVideoSec: 300.5,
+      exportLimitLabel: "1分未満", videoLimitLabel: "5分" }, () => {
+      w.MC.ui.renderLimitWhy();
+      return w.document.querySelector(".mz-limit-why").textContent;
+    });
+    if (!/1本5分まで取り込め/.test(txt)) throw new Error("取り込みの上限を言っていない: " + txt);
+    if (/3本まで・1分未満まで|3本まで・59秒/.test(txt)) {
+      throw new Error("読み込み画面で書き出しの上限を言っている: " + txt);
+    }
+    /* 端数(300.5秒)がそのまま出ていないか ─「1本5分01秒まで」は読みにくい */
+    if (/分0?1秒/.test(txt)) throw new Error("許容誤差の端数が表に出ている: " + txt);
+    return txt.trim();
+  });
+  await test("★動画として読めないファイルを黙って捨てない", async () => {
+    const w = await compEnv();
+    compReset(w);
+    const said = [];
+    const orig = w.MC.ui.toast;
+    w.MC.ui.toast = m => said.push(m);
+    try {
+      /* 学校のビデオカメラの AVCHD。ドラッグ&ドロップは accept を通らないので
+         実際に届く。ここを黙って continue していたため「壊れている」と
+         判断されて二度と開かれなかった */
+      await w.MC.media.addFiles([new w.File([new Uint8Array(32)], "00000.MTS", { type: "" })]);
+    } finally { w.MC.ui.toast = orig; }
+    if (!said.length) throw new Error("何も言わずに消えた(利用者には壊れて見える)");
+    if (!/読み込めませんでした|使えません/.test(said.join(""))) {
+      throw new Error("理由になっていない: " + said.join(" / "));
+    }
+    return said[said.length - 1].slice(0, 46) + "…";
+  });
+  await test("★顔モザイクの案内が、Privacyで本当にできることと一致する", async () => {
+    const w = await compEnv();
+    /* Privacy の動画モザイクは管理者限定(privacy/js/ui.js:438 videoAllowed)。
+       ここを固定文で「顔モザイクで隠せます」と書いていたため、
+       一般の人がリンクを踏むと「いまは写真のみ対応」と断られていた */
+    const guest = withRole(w, { admin: false, member: false, unlimited: false, local: false },
+      () => { w.MC.ui.renderFaceNote(); return w.document.getElementById("eoFaces").textContent; });
+    if (!/準備中/.test(guest)) {
+      throw new Error("動画のモザイクが使えないのに、使えると読める: " + guest);
+    }
+    const admin = withRole(w, { admin: true }, () => {
+      w.MC.ui.renderFaceNote(); return w.document.getElementById("eoFaces").textContent;
+    });
+    if (/準備中/.test(admin)) throw new Error("管理者には使えるのに準備中と出ている");
+    return "一般=準備中と正直に / 管理者=案内する";
+  });
+  await test("★選べない比率(1:1)を、選べるかのように書かない", async () => {
+    const w = await compEnv();
+    const desc = w.document.querySelector('[data-mode="vertical"] .mode-card-desc').textContent;
+    const presets = w.MC.ui.MODES ? (w.MC.ui.MODES.vertical || {}).presets : null;
+    /* 実際に選べる比率(ui.js の presets)と、説明文が一致していること */
+    if (/1:1/.test(desc) && !(presets || []).includes("1x1")) {
+      throw new Error("1:1 と書いてあるが選べない: " + desc);
+    }
+    return desc.trim();
+  });
+  await test("★同期に失敗したゲストが、唯一の復旧手段を押せる", async () => {
+    const w = await compEnv();
+    compReset(w);
+    return withRole(w, { member: false, unlimited: false, admin: false, local: false }, () => {
+      /* 通常はロックされている(こだわり設定は登録者向け) */
+      w.MC.ui._tabsForced = false;
+      w.MC.ui.applyGuestLocks();
+      const locked = w.document.getElementById("syncSec").classList.contains("mz-locked");
+      if (!locked) return "ゲストロック自体が無い(この見張りは不要)";
+      /* 同期に失敗すると「唯一の復旧手段だから」とタブを前倒しで開放する。
+         そこがロックされたままだと、失敗した本人だけが詰む */
+      w.MC.ui._tabsForced = true;
+      w.MC.ui.applyGuestLocks();
+      if (w.document.getElementById("syncSec").classList.contains("mz-locked")) {
+        throw new Error("復旧手段が本人に閉じている(同期失敗のゲストが詰む)");
+      }
+      const pe = w.getComputedStyle(w.document.getElementById("syncBtn")).pointerEvents;
+      if (pe === "none") throw new Error("ロックは外れたがボタンが押せない");
+      w.MC.ui._tabsForced = false;
+      w.MC.ui.applyGuestLocks();
+      return "通常=ロック / 同期失敗後=押せる";
+    });
+  });
+
   if (CF) { CF.remove(); CF = null; CW = null; CD = null; }
 
   /* ===== 集計 ===== */

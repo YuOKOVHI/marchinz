@@ -104,6 +104,7 @@ MC.ui.exportOverlay = {
   done() {
     const el = MC.ui.$("#exportOverlay");
     if (!el || el.hidden) return;
+    MC.ui.renderFaceNote();   // Privacy の実態から組み立てる(固定文にしない)
     MC.ui.showExportStats();
     MC.ui.$("#eoTitleText").textContent = "できあがりました";
     MC.ui.$("#eoTitleIcon").className = "fa-solid fa-circle-check eo-check";
@@ -476,19 +477,23 @@ MC.ui.renderLimitWhy = () => {
     return ss ? `${m}分${String(ss).padStart(2, "0")}秒` : `${m}分`;
   };
   const icon = '<i class="fa-solid fa-circle-info" aria-hidden="true"></i> ';
-  if (isFinite(hardMax) && hardMax <= roleMax) {
-    // 端末のメモリで頭打ちになる環境(OPFS非対応の古いブラウザ等)
+  /* ★ この文はいちばん最初の「動画を読み込む」画面に出る(index.html:101)。
+     だから言うべきは**取り込める長さ**であって、書き出しの上限ではない。
+     ここを maxExportSec で書いていたため、ゲストのスマホでは
+     読み込み画面に「3本まで・59秒まで」と出ていた ─ 取り込みは5分なのに。
+     地区大会レベルの顧問レビューで「意味が通らない」と指摘された(2026-07-31) */
+  const vidMax = (window.MZ_LIMITS && MZ_LIMITS.maxVideoSec) || Infinity;
+  if (isFinite(vidMax)) {
+    /* 数字は limits.js の正式なラベルを使う。maxVideoSec は 300.5 のように
+       許容誤差ぶんの端数を持つので、そのまま出すと「1本5分01秒まで」になる */
+    const L2 = window.MZ_LIMITS;
     el.innerHTML = icon
-      + `<b>3本まで・${mmss(hardMax)}まで</b>なのは、この端末では動画を丸ごとメモリに`
-      + "載せて処理するためです。これを超えると書き出しの途中で止まってしまいます。"
-      + "長いときはINとOUTで区切ってお使いください。";
-    return;
-  }
-  if (isFinite(roleMax)) {
-    // 端末側の制限は無い。残るのはプランの上限だけ
-    el.innerHTML = icon
-      + `<b>3本まで・${mmss(roleMax)}まで</b>お使いいただけます。`
-      + "長いときはINとOUTで区切ってください。";
+      + `<b>3本まで・1本${MC.ui.esc(L2.videoLimitLabel)}まで</b>取り込めます。`
+      /* 端末のメモリで書き出しが頭打ちになる環境だけ、その理由も添える */
+      + (isFinite(hardMax) && hardMax <= roleMax
+          ? `この端末で書き出せるのは${mmss(hardMax)}までです`
+            + "（動画を丸ごとメモリに載せて処理するため）。"
+          : isFinite(roleMax) ? `できあがりは${MC.ui.esc(L2.exportLimitLabel)}までです。` : "");
     return;
   }
   /* 上限が外れている端末(手元の環境・管理者)。ここで「3本まで」と言うと、
@@ -497,6 +502,27 @@ MC.ui.renderLimitWhy = () => {
   el.innerHTML = icon + "<b>本数・長さの上限なし</b>で取り込めます。";
   const badge = document.getElementById("adminLimitBadge");
   if (badge) badge.hidden = true;
+};
+
+/* 書き出し完了画面の顔の注意。**Privacy でいま本当にできること**から組み立てる。
+   以前は「顔モザイク(Privacy)で隠せます」と固定文で書いていたが、
+   Privacy の動画モザイクは管理者限定(privacy/js/ui.js:438 videoAllowed)で、
+   一般の人がリンクを踏むと「いまは写真のみ対応しています」と断られていた。
+   学校へ持ち込む顧問がこれを職員に説明できない ─ 案内した先に機能が無いのは、
+   機能が無いことより悪い(2026-07-31 全国常連校の顧問レビュー P0)。
+   Privacy 側が動画に対応したら、ここは自動で本来の案内に戻る */
+MC.ui.renderFaceNote = () => {
+  const el = document.getElementById("eoFaces");
+  if (!el) return;
+  const L = window.MZ_LIMITS || {};
+  const videoOK = !!L.admin;   // privacy/js/ui.js:438 と同じ条件
+  el.innerHTML = '<i class="fa-solid fa-user-shield" aria-hidden="true"></i> '
+    + "みんなの顔が写っています。SNSや外部へ出すときは、"
+    + "写っている人（未成年なら保護者）の同意をご確認ください。"
+    + (videoOK
+        ? '<br><a href="/tools/privacy/">顔モザイク（Privacy）</a>で隠せます。'
+        : '<br><span class="hint">動画の顔モザイクは準備中です。'
+          + '写真なら <a href="/tools/privacy/">Privacy</a> で隠せます。</span>');
 };
 
 /* ============ 長さと始まりを決める(2026-07-31 優さん指示) ============
@@ -1951,7 +1977,13 @@ MC.ui.applyGuestLocks = () => {
   document.body.classList.toggle("mz-guest", guest);
   ["#syncSec", "#layoutSec", "#finishSec"].forEach(sel => {
     const el = MC.ui.$(sel);
-    if (el) el.classList.toggle("mz-locked", guest);
+    if (!el) return;
+    /* ★ 同期に失敗したゲストを詰ませない。失敗時は「唯一の復旧手段だから」と
+       こだわりタブを前倒しで開放している(_tabsForced)のに、その先の
+       「波形で同期する」がロックされていて押せなかった ─ ツールが自分で
+       唯一の復旧手段と呼んだものが、失敗した本人に閉じていた(2026-07-31) */
+    const rescue = sel === "#syncSec" && MC.ui._tabsForced;
+    el.classList.toggle("mz-locked", guest && !rescue);
   });
   /* ロックされた欄をタップしたら、黙って無視せず理由を返す(2026-07-23 A-2)。
      操作の抑止は CSS(子要素の pointer-events を切る)側で行い、

@@ -30,6 +30,7 @@ MC.media.sniffContainer = async f => {
 
 MC.media.addFiles = async files => {
   let added = 0;
+  const skipped = [];   // 動画として扱えず見送ったファイル(最後にまとめて知らせる)
   for (const f of files) {
     const isImage = /^image\//.test(f.type) || /\.(jpe?g|png|webp|heic|heif|gif)$/i.test(f.name);
     if (isImage) {
@@ -38,7 +39,11 @@ MC.media.addFiles = async files => {
       if (await MC.media.addImageFile(f)) added++;
       continue;
     }
-    if (!/^video\//.test(f.type) && !/\.(mp4|mov|m4v)$/i.test(f.name)) continue;
+    /* ★ 黙って捨てない。ここを素通りさせていたため、学校のビデオカメラの
+       AVCHD(.MTS)などをドロップすると**エラーも出ずに何も起きず**、
+       「壊れている」と判断されて二度と開かれない(2026-07-31 顧問レビュー)。
+       ドラッグ&ドロップは accept 属性を通らないので実際に起きる */
+    if (!/^video\//.test(f.type) && !/\.(mp4|mov|m4v)$/i.test(f.name)) { skipped.push(f.name); continue; }
     const sniff = await MC.media.sniffContainer(f);
     if (!sniff.ok) {
       MC.ui.toast(`⚠ ${f.name} は${sniff.kind}のため使えません。`
@@ -90,6 +95,14 @@ MC.media.addFiles = async files => {
     MC.S.clips.push(clip);
     added++;
     MC.media.makeThumb(clip);  // 非同期・完了後にカード再描画
+  }
+  /* まとめて1回だけ知らせる(1本ごとにトーストを出すと、まとめて選んだ人の
+     画面が流れて何も読めない) */
+  if (skipped.length) {
+    const head = skipped.length === 1 ? skipped[0] : `${skipped[0]} ほか${skipped.length - 1}件`;
+    MC.ui.toast(`⚠ ${head} は動画として読み込めませんでした。`
+      + "iPhoneやカメラで撮った MP4 / MOV をお使いください"
+      + "（ビデオカメラのAVCHD(.MTS)は、カメラの設定をMP4記録に変えると使えます）");
   }
   if (added) MC.media.afterChange();
 };
