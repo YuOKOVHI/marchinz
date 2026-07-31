@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-app-v="1.53.1">
+<html lang="ja" data-mz-app-v="1.53.2">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -17,7 +17,7 @@
 <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
 <link rel="stylesheet" href="/tools/shared/progress.css">
 <link rel="stylesheet" href="/tools/shared/journey.css">
-<link rel="stylesheet" href="css/style.css?v=1.53.1">
+<link rel="stylesheet" href="css/style.css?v=1.53.2">
 <link rel="stylesheet" href="/tools/shared/sitechrome.css">
 </head>
 <body data-mz-tool="switcher">
@@ -115,7 +115,9 @@
     <!-- 傾きの確認(独立フェーズ 2026-07-28 優さん指示)。
          自動検出は全廃し、1本ずつ本人の目で確認して手で直す。0.1度きざみ。
          プレビューはそのカメラを単独表示(soloId)+画面上部に固定(mz-pin-force) -->
-    <section class="panel" id="tiltSec">
+    <!-- 傾きは独立工程からカード内タスクへ(2026-07-31 優さん承認)。
+         この箱はカードの「かたむきを確認する」から開く。既定は hidden -->
+    <section class="panel" id="tiltSec" hidden>
       <h2>動画をまっすぐにする</h2>
       <p class="sec-lead">黄色い線を目印に、1本ずつ見てください。
         かたむいていたら、まっすぐになるまで動かします。</p>
@@ -139,11 +141,8 @@
           <button type="button" id="tiltOkBtn" class="btn primary" style="flex:1">
             <i class="fa-solid fa-check"></i> この動画はOK</button>
         </div>
-        <!-- 1画面1操作にしてから、動画を選ぶ枠は他の工程では消える。
-             2台目を足す・入れ違いを消すのはたいていこの直後なので、
-             ここに戻り道を明示する(2026-07-28 レビューP0) -->
-        <button type="button" id="tiltAddBtn" class="btn small ghost" style="margin-top:8px">
-          <i class="fa-solid fa-plus" aria-hidden="true"></i> 動画を追加・削除する</button>
+        <!-- #tiltAddBtn は撤去(2026-07-31)。カード内タスク化で
+             「動画を選ぶ」枠が同じ画面の上にあるため -->
       </div>
     </section>
 
@@ -496,24 +495,24 @@
 <script src="vendor/mp4box.all.min.js"></script>
 <script src="vendor/mp4-muxer.min.js"></script>
 <script src="vendor/fft.js"></script>
-<script src="js/state.js?v=1.53.1"></script>
-<script src="js/layout.js?v=1.53.1"></script>
-<script src="js/media.js?v=1.53.1"></script>
-<script src="js/audio.js?v=1.53.1"></script>
-<script src="js/sync.js?v=1.53.1"></script>
-<script src="js/beats.js?v=1.53.1"></script>
-<script src="js/sections.js?v=1.53.1"></script>
-<script src="js/highlight.js?v=1.53.1"></script>
-<script src="js/visual.js?v=1.53.1"></script>
-<script src="js/director.js?v=1.53.1"></script>
-<script src="js/colormatch.js?v=1.53.1"></script>
+<script src="js/state.js?v=1.53.2"></script>
+<script src="js/layout.js?v=1.53.2"></script>
+<script src="js/media.js?v=1.53.2"></script>
+<script src="js/audio.js?v=1.53.2"></script>
+<script src="js/sync.js?v=1.53.2"></script>
+<script src="js/beats.js?v=1.53.2"></script>
+<script src="js/sections.js?v=1.53.2"></script>
+<script src="js/highlight.js?v=1.53.2"></script>
+<script src="js/visual.js?v=1.53.2"></script>
+<script src="js/director.js?v=1.53.2"></script>
+<script src="js/colormatch.js?v=1.53.2"></script>
 <!-- horizon.js(自動傾き検出)は読み込まない(2026-07-28 検知全廃。ファイルは残置) -->
-<script src="js/salute.js?v=1.53.1"></script>
-<script src="js/preview.js?v=1.53.1"></script>
-<script src="js/timeline.js?v=1.53.1"></script>
-<script src="js/cutmode.js?v=1.53.1"></script>
-<script src="js/exporter.js?v=1.53.1"></script>
-<script src="js/ui.js?v=1.53.1"></script>
-<script src="js/app.js?v=1.53.1"></script>
+<script src="js/salute.js?v=1.53.2"></script>
+<script src="js/preview.js?v=1.53.2"></script>
+<script src="js/timeline.js?v=1.53.2"></script>
+<script src="js/cutmode.js?v=1.53.2"></script>
+<script src="js/exporter.js?v=1.53.2"></script>
+<script src="js/ui.js?v=1.53.2"></script>
+<script src="js/app.js?v=1.53.2"></script>
 </body>
 </html>

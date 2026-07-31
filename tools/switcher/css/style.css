@@ -1401,3 +1401,16 @@ body.mz-diag-noskip #exportSec::before {
   margin-top: 10px; min-height: 44px; padding: 0 18px; border-radius: 999px;
   background: var(--acc); color: #fff; font-weight: 800; font-size: 13px;
   text-decoration: none; }
+
+
+/* ============ 傾きのカード内タスク化(2026-07-31 優さん承認) ============ */
+/* hidden 属性を CSS の display 指定に負けさせない(過去に権限UIが全員に
+   露出した事故の再発防止。computed display で実測して確認すること) */
+#tiltSec[hidden] { display: none !important; }
+.tilt-badge { display: inline-flex; align-items: center; gap: 6px;
+  margin-top: 6px; padding: 6px 12px; min-height: 34px;
+  border-radius: 999px; font-size: 12px; font-weight: 700;
+  border: 1px solid var(--line); background: #fff; cursor: pointer;
+  font-family: inherit; }
+.tilt-badge.todo { background: #fff4d6; border-color: #f0d9a0; color: #7a5200; }
+.tilt-badge.done { color: var(--ok); }

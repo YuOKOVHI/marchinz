@@ -407,8 +407,13 @@ MC.ui.gentleScrollTo = (el, block = "nearest") => {
 
 MC.ui.focusNextAction = () => {
   if (!MC.S.clips.length) return;
-  /* 傾きの自動検出は全廃した(2026-07-28 優さん指示)。
-     取り込み後の tilt フェーズで、1本ずつ本人が確認して手で直す */
+  /* 傾きの自動検出は全廃(2026-07-28)。確認は本人の目で1本ずつ ─
+     カード内タスク化(2026-07-31)後も、取り込んだ直後は自動で箱を開いて
+     以前と同じ「すぐ確認」の流れを保つ(選ぶ→確認→同期 が途切れない) */
+  {
+    const pending = MC.ui.tiltCams().some(c => !c.tiltOk);
+    if (pending) { setTimeout(() => MC.ui.openTilt(), 260); return; }
+  }
   setTimeout(() => {
     const btn = MC.ui.$("#easyStartBtn");
     if (!btn || btn.offsetParent === null) return;
@@ -848,7 +853,7 @@ MC.ui.renderAll = () => {
 };
 
 /* ---- ジャーニーバー(どのフェーズにいるかの常時表示) ---- */
-MC.ui.JOURNEY_SECTIONS = { mat: "#dropSec", tilt: "#tiltSec", sync: "#syncSec", audio: "#audioSec", length: "#lengthSec", polish: "#layoutSec", export: "#exportSec" };
+MC.ui.JOURNEY_SECTIONS = { mat: "#dropSec", sync: "#syncSec", audio: "#audioSec", length: "#lengthSec", polish: "#layoutSec", export: "#exportSec" };
 
 MC.ui.initJourney = () => {
   MZJourney.init({
@@ -857,8 +862,11 @@ MC.ui.initJourney = () => {
       /* shortLabel は狭い画面(iPhone)で現在地以外に出す短縮名。
          先の工程のパネルを画面から消した以上、ここが「何が残っているか」を
          知る唯一の場所になったので、名前を消してはいけない(2026-07-26) */
-      { id: "mat",    label: "動画を選ぶ",   shortLabel: "動画", hint: "1本でも作れます" },
-      { id: "tilt",   label: "まっすぐにする", shortLabel: "傾き", hint: "黄色い線を目印に、1本ずつ見てください" },
+      /* 傾きは独立工程からカード内タスクへ(2026-07-31 優さん承認)。
+         「本人の目で1本ずつ確認する」という 2026-07-28 の決定の本質は
+         カードのバッジ+全確認ゲートで維持する。工程が1つ減り、
+         まっすぐ撮れている最頻ケースの体感が軽くなる */
+      { id: "mat",    label: "動画をそろえる", shortLabel: "動画", hint: "動画を選んで、かたむきを確認します" },
       { id: "sync",   label: "同期と分析",   shortLabel: "同期", hint: "音のズレ合わせと素材の分析をします" },
       { id: "audio",  label: "音声を選ぶ",   shortLabel: "音声", hint: "試聴して「この音で進める」を押してください" },
       { id: "length", label: "長さと始まり", shortLabel: "長さ", hint: "何分にするか・どこから始めるかを選んでください" },
@@ -916,11 +924,31 @@ MC.ui.updateActionBar = () => {
   if (!ws.hidden && !busy) {
     const cur = MZJourney.current;
     if (cur === "mat") {
+      /* かたむき未確認の動画があるときの主アクション(2026-07-31 カード内タスク化)。
+         傾きの箱が開いていて OK ボタンが見えているなら重ねない(音声と同じ流儀) */
+      const tiltPending = MC.ui.tiltCams().some(c => !c.tiltOk);
+      const tiltBox = document.getElementById("tiltSec");
+      if (tiltPending && tiltBox && !tiltBox.hidden) {
+        const okBtn = MC.ui.$("#tiltOkBtn");
+        const r = okBtn ? okBtn.getBoundingClientRect() : null;
+        if (r && r.height > 0 && r.top < window.innerHeight - 70 && r.bottom > 0) {
+          bar.classList.remove("on");
+          document.body.classList.remove("mz-actionbar-on");
+          return;
+        }
+        conf = { label: "この動画はOK", icon: "fa-check", act: () => okBtn && okBtn.click() };
+      } else if (tiltPending && MC.media.slotClips().length) {
+        conf = { label: "かたむきを確認する", icon: "fa-ruler-horizontal",
+          act: () => MC.ui.openTilt() };
+      }
+      if (conf) { /* 傾きの導線が決まったら下の分岐は見ない */ }
       /* 素材を見に戻っているだけ(_viewPhase)なら、進む道を主ボタンにする。
          ここが無いと「動画を選ぶ」画面から先へ戻れない(2026-07-28) */
       const R = MC.ui.STEP_RANK;
       const reached = MC.ui._derivedPhase || "mat";
-      if (MC.ui._viewPhase === "mat" && R[reached] > R.mat) {
+      if (conf) {
+        /* 上で決定済み */
+      } else if (MC.ui._viewPhase === "mat" && R[reached] > R.mat) {
         conf = { label: "これでOK、つづける", icon: "fa-arrow-right",
           act: () => { MC.ui._viewPhase = null; MC.ui.refreshJourney(); } };
       } else {
@@ -1054,14 +1082,13 @@ MC.ui.refreshJourney = () => {
   const scanned = MC.S.showIn != null && MC.S.showOut != null;
   const lengthDone = !!MC.S.lengthDecided;
   const done = [];
-  if (slot.length) done.push("mat");
-  if (slot.length && tiltDone) done.push("tilt");
+  /* 「動画をそろえる」の完了 = 素材があり、かたむきも全部確認ずみ */
+  if (slot.length && tiltDone) done.push("mat");
   if (slot.length && synced) done.push("sync");
   if (slot.length && synced && audioDone) done.push("audio");
   if (slot.length && synced && audioDone && lengthDone) done.push("length");
   if (exported) done.push("polish", "export");
-  let current = !slot.length ? "mat"
-    : (!tiltDone && !MC.S.easyDone) ? "tilt"
+  let current = (!slot.length || (!tiltDone && !MC.S.easyDone)) ? "mat"
     : (vids.length >= 2 && !synced) ? "sync"
     : !audioDone ? "audio"
     /* 音楽の解析が済んで、まだ長さを決めていないならここで止める。
@@ -1102,10 +1129,10 @@ MC.ui.refreshJourney = () => {
        ジャーニーが現在地だと言っている工程の中身が画面に無い状態
    畳み方をいくら調整してもこれは直らないので、出し分けをここに一本化した。
    状態は refreshJourney が導出したものをそのまま使う(新しい状態機械を作らない) */
-MC.ui.STEP_RANK = { mat: 0, tilt: 1, sync: 2, audio: 3, length: 4, polish: 5, export: 6 };
+MC.ui.STEP_RANK = { mat: 0, sync: 1, audio: 2, length: 3, polish: 4, export: 5 };
 MC.ui.STEP_GROUPS = [
-  { id: "mat",    panels: ["#dropSec"] },
-  { id: "tilt",   panels: ["#tiltSec"] },
+  /* #tiltSec は mat の一部(カード内タスク)。開閉は hidden 属性で別管理 */
+  { id: "mat",    panels: ["#dropSec", "#tiltSec"] },
   /* #easyPane を sync に載せる(2026-07-28)。おまかせの実際の操作＝「分析を開始」は
      この枠にあるのに、工程表に載っていなかったため applySteps が一切触れられず、
      分析が済んだあとも全工程に出続けていた */
@@ -1140,15 +1167,9 @@ MC.ui.showPhase = id => {
   /* 「長さと始まり」は開いた時点で候補を作り直す。長さ・演奏範囲・上限の
      どれが変わっていても、画面に出ているものが必ず今の状態を指すようにする */
   if (id === "length") MC.ui.renderLengthSec();
-  if (id === "tilt") {
-    MC.ui.renderTiltSec();
-  } else if (MC.ui._tiltPinned) {
-    MC.ui._tiltPinned = false;
-    document.body.classList.remove("mz-pin-force");
-    document.documentElement.style.removeProperty("--mz-tilt-pad");
-    MC.preview.soloId = null;
-    MC.preview.draw();
-  }
+  /* 傾きは工程ではなくカード内タスク(2026-07-31)。素材の画面を離れるときに
+     開いていた傾きの箱と固定表示をまとめて畳む */
+  if (id !== "mat") MC.ui.closeTilt();
   MC.ui.refreshSetupTabs();   // タブの表示条件は現在工程に依存する(polish以降)
 };
 
@@ -1304,6 +1325,11 @@ MC.ui.renderClips = () => {
           <span class="clip-spec">${c.isImage ? "写真" : MC.ui.fmtTime(c.duration)}</span>
           ${pro ? "" : '<span class="clip-ok"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> 読み込みました</span>'}
         </div>
+        ${c.isImage ? "" : (c.tiltOk
+          ? `<button type="button" class="tilt-badge done" data-tilt title="タップでいつでも直せます">
+               <i class="fa-solid fa-circle-check" aria-hidden="true"></i> まっすぐ（確認ずみ）</button>`
+          : `<button type="button" class="tilt-badge todo" data-tilt>
+               <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> かたむきを確認する</button>`)}
         ${(!pro || c.isImage) ? "" : `
         <div class="clip-sync">
           <span class="sync-badge ${badgeCls}">${c.syncMethod}</span>
@@ -1357,6 +1383,12 @@ MC.ui.renderClips = () => {
       if (MC.S.cutList.length) MC.ui.toast("撮り方を変えました。「自動カット割」で割り直せます");
     };
     card.querySelector(".clip-remove").onclick = () => MC.media.removeClip(c.id);
+    /* 傾きバッジ → その動画から確認/再調整(2026-07-31 カード内タスク化) */
+    const tb = card.querySelector("[data-tilt]");
+    if (tb) tb.onclick = () => {
+      const i = MC.ui.tiltCams().findIndex(x => x.id === c.id);
+      MC.ui.openTilt(i >= 0 ? i : null);
+    };
     slot.appendChild(card);
     box.appendChild(slot);
   }
@@ -1645,6 +1677,28 @@ MC.ui.renderPlacement = () => {
 MC.ui._tiltIdx = 0;
 MC.ui._tiltPinned = false;
 MC.ui.tiltCams = () => MC.S.clips.filter(c => !c.isAudio && !c.isImage);
+
+/* 傾きの箱の開閉(2026-07-31 カード内タスク化)。
+   idx を渡すとそのカメラから、渡さなければ最初の未確認から見る */
+MC.ui.openTilt = idx => {
+  const sec = document.getElementById("tiltSec");
+  if (!sec || !MC.ui.tiltCams().length) return;
+  if (idx != null) MC.ui._tiltIdx = idx;
+  sec.hidden = false;
+  MC.ui.renderTiltSec();
+  MC.ui.gentleScrollTo(sec, "start");
+};
+MC.ui.closeTilt = () => {
+  const sec = document.getElementById("tiltSec");
+  if (sec) sec.hidden = true;
+  if (MC.ui._tiltPinned) {
+    MC.ui._tiltPinned = false;
+    document.body.classList.remove("mz-pin-force");
+    document.documentElement.style.removeProperty("--mz-tilt-pad");
+    MC.preview.soloId = null;
+    MC.preview.draw();
+  }
+};
 /* 傾きの補正は隅が出ないようにズームするので、まわりが切れる(layout.js の z と同式)。
    何%切れるかを言わないと、5度も回して「なんか小さくなった」になる */
 MC.ui.tiltCropPct = deg => {
@@ -1763,12 +1817,8 @@ MC.ui.wireTiltSec = () => {
   if (prev) prev.onclick = () => {
     if (MC.ui._tiltIdx > 0) { MC.ui._tiltIdx--; MC.ui.renderTiltSec(); }
   };
-  const add = $("#tiltAddBtn");
-  if (add) add.onclick = () => {
-    MC.ui._viewPhase = "mat";
-    MC.ui.refreshJourney();
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
+  /* #tiltAddBtn は撤去(2026-07-31)。カード内タスク化で「動画を選ぶ」枠が
+     同じ画面にあるので、戻るためのボタンは要らなくなった */
   const ok = $("#tiltOkBtn");
   if (ok) ok.onclick = () => {
     const cams = MC.ui.tiltCams();
@@ -1781,8 +1831,10 @@ MC.ui.wireTiltSec = () => {
       MC.ui._tiltIdx = next;
       MC.ui.renderTiltSec();
     } else {
-      /* 全カメラ確認済み → refreshJourney が次の工程(同期)へ運ぶ。
-         固定と単独表示の解除は refreshJourney の tilt 退出フックが行う */
+      /* 全カメラ確認済み → 箱を畳み、カードのバッジを✓へ。
+         refreshJourney が「動画をそろえる」を完了にして次(同期)へ運ぶ */
+      MC.ui.closeTilt();
+      MC.ui.renderClips();
       MC.ui.refreshJourney();
     }
   };

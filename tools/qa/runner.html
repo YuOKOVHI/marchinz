@@ -1002,24 +1002,52 @@ async function countSamples(ns, file, fromSec) {
     return "terminate+release+参照クリア";
   });
 
-  group("⑪ 傾きフェーズ(2026-07-28 手動確認制へ)");
-  await test("★動画を入れた直後は傾きフェーズで、全部OKするまで先へ進まない", async () => {
+  group("⑪ 傾きの確認(2026-07-31 カード内タスク化・全確認ゲートは維持)");
+  await test("★全部OKするまで「動画をそろえる」から先へ進まない(ゲート維持)", async () => {
     const w = await compEnv();
     const S = compReset(w);
     S.clips.forEach(c => { c.tiltOk = false; c.syncMethod = "未同期"; });
     S.easyDone = false;
+    w.MC.ui.renderClips();   // 実物では取り込み時の renderAll が呼ぶ
     w.MC.ui.refreshJourney();
-    if (w.document.body.dataset.mzjPhase !== "tilt") {
-      throw new Error(`現在地が tilt でなく ${w.document.body.dataset.mzjPhase}`);
+    /* 傾きは工程ではなくなった。未確認のあいだは mat に留まる */
+    if (w.document.body.dataset.mzjPhase !== "mat") {
+      throw new Error(`現在地が mat でなく ${w.document.body.dataset.mzjPhase}`);
     }
-    /* 1台OK → まだ tilt(3台あるので) */
+    /* カードに「かたむきを確認する」のバッジが人数ぶん出る */
+    const todo = w.document.querySelectorAll("#clipSlots .tilt-badge.todo").length;
+    if (todo !== 3) throw new Error(`未確認バッジが ${todo} 個(3個のはず)`);
+    /* 1台OK → まだ mat(3台あるので) */
     S.clips[0].tiltOk = true;
     w.MC.ui.refreshJourney();
-    if (w.document.body.dataset.mzjPhase !== "tilt") throw new Error("1台OKしただけで先へ進んでしまう");
+    if (w.document.body.dataset.mzjPhase !== "mat") throw new Error("1台OKしただけで先へ進んでしまう");
     S.clips.forEach(c => { c.tiltOk = true; });
     w.MC.ui.refreshJourney();
-    if (w.document.body.dataset.mzjPhase === "tilt") throw new Error("全台OKしたのに傾きから出られない");
-    return "未OK=tilt / 全OK=次の工程へ";
+    if (w.document.body.dataset.mzjPhase === "mat") throw new Error("全台OKしたのに動画の工程から出られない");
+    return "未OK=matに留まる(バッジ3個) / 全OK=次の工程へ";
+  });
+  await test("★傾きの箱はバッジから開き、mat以外の工程では畳まれる", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.clips.forEach(c => { c.tiltOk = false; c.syncMethod = "未同期"; });
+    S.easyDone = false;
+    w.MC.ui.renderClips();   // 実物では取り込み時の renderAll が呼ぶ
+    w.MC.ui.refreshJourney();
+    const sec = w.document.getElementById("tiltSec");
+    if (!sec.hidden) throw new Error("開いていないのに傾きの箱が出ている");
+    w.document.querySelector("#clipSlots .tilt-badge.todo").click();
+    if (sec.hidden) throw new Error("バッジを押しても箱が開かない");
+    /* hidden属性がCSSに殺されていないか(過去に権限UIが露出した事故の再発防止) */
+    sec.hidden = true;
+    if (w.getComputedStyle(sec).display !== "none") {
+      throw new Error("hidden なのに computed display が " + w.getComputedStyle(sec).display);
+    }
+    sec.hidden = false;
+    /* 全確認して工程が進んだら箱は畳まれる */
+    S.clips.forEach(c => { c.tiltOk = true; });
+    w.MC.ui.refreshJourney();
+    if (!sec.hidden) throw new Error("工程が進んだのに傾きの箱が開いたまま");
+    return "バッジで開く / hidden実効 / 工程が進むと畳む";
   });
 
   group("⑫ 再読込で「前回のつづき」を自分で消さない(2026-07-29 実機で再開できなかった)");
@@ -1619,7 +1647,7 @@ async function countSamples(ns, file, fromSec) {
     ge(durs.length, 1, "選択肢の数");
     return `50秒の演奏 → ${durs.join(" / ")}`;
   });
-  await test("★工程が7つになっても、現在地がバーからはみ出さない", async () => {
+  await test("★工程が増えても、現在地がバーからはみ出さない", async () => {
     const w = await compEnv();
     const S = compReset(w);
     /* 素材は演奏の全長ぶんある(compReset の既定 60 秒のままだと
