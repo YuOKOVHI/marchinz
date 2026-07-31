@@ -1355,6 +1355,55 @@ async function countSamples(ns, file, fromSec) {
     if (S.clips.some(c => c.tiltOk)) throw new Error("見ていない傾きに確認ずみの印が付いた");
     return `7段を無停止で通過 / 60秒(${len.toFixed(0)}s) / climax / 音声3 / 傾き0.8° / marchinz`;
   });
+  await test("★自走は最後まで鍵が掛かったまま・残り時間が出る", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.clips.forEach((c, i) => Object.assign(c, {
+      duration: 400, stats: { rms: 0.05 + (i + 1) * 0.02, clipRatio: 0 },
+      tiltOk: false, rot: 0, syncMethod: "未同期" }));
+    S.audioClipId = 1; S.audioDecided = false; S.easyDone = false;
+    S.lengthDecided = false; S.showIn = null; S.showOut = null;
+
+    const seen = [];
+    const keep = { h: w.MC.horizon && w.MC.horizon.suggest, s: w.MC.sync.run,
+                   sc: w.MC.ui.runEasyScan, f: w.MC.ui.runEasyFinish,
+                   r: w.MC.ui.analysisRate };
+    w.MC.ui.analysisRate = () => 0.5;   // iPhone相当。見積りが30秒を超えるように
+    const mark = tag => seen.push({ tag, busy: w.MC.ui._busy,
+      sub: (w.document.getElementById("easyStatus") || {}).innerText || "" });
+    w.MC.horizon.suggest = async () => { mark("tilt"); return 0.8; };
+    w.MC.sync.run = async () => { mark("sync");
+      S.clips.forEach(c => { c.syncMethod = "波形"; }); return {}; };
+    w.MC.ui.runEasyScan = async () => { mark("scan"); S.showIn = 40; S.showOut = 380; };
+    w.MC.ui.runEasyFinish = async () => { mark("finish"); S.easyDone = true; };
+    const eb = w.document.getElementById("exportBtn");
+    const ebOld = eb.onclick; eb.onclick = () => mark("export"); eb.disabled = false;
+    w.MC.ui._autoFlow = true;
+    try { await w.MC.ui.runAuto(); }
+    finally {
+      if (w.MC.horizon) w.MC.horizon.suggest = keep.h;
+      w.MC.sync.run = keep.s; w.MC.ui.runEasyScan = keep.sc;
+      w.MC.ui.runEasyFinish = keep.f; w.MC.ui.analysisRate = keep.r;
+      eb.onclick = ebOld; w.MC.ui._autoFlow = false;
+    }
+    /* ① 1段も走らない事故の再発防止。
+       ★ runAuto は先に setBusy(true) してから runEasy を呼ぶ。runEasy が
+         _busy を見て弾くと、**自分が掛けた鍵で自分が止まる**(実測で発生) */
+    const tags = seen.map(x => x.tag).join(",");
+    if (!/tilt.*sync.*scan.*finish.*export/.test(tags)) {
+      throw new Error("自走が最後まで行かない: " + tags);
+    }
+    /* ② 段の切れ目で鍵が外れない(走行中に別のボタンを押せてしまう) */
+    const open = seen.filter(x => !x.busy).map(x => x.tag);
+    if (open.length) throw new Error("走行中に鍵が外れた段: " + open.join(","));
+    /* ③ 3〜9分待たせるのだから、残り時間を出す */
+    if (!seen.some(x => /完成まで|まもなく/.test(x.sub))) {
+      throw new Error("待ち時間がどこにも出ていない");
+    }
+    /* ④ 終わったら鍵は返す(押せないままにしない) */
+    if (w.MC.ui._busy) throw new Error("終わっても鍵が掛かったまま");
+    return `${seen.length}段すべて施錠 / 残り時間あり / 終了後は解錠`;
+  });
   await test("★選択は2段: 種類を決めてから、おまかせ／こだわり", async () => {
     const w = await compEnv();
     const D = w.document;

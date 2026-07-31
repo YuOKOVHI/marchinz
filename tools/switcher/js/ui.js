@@ -2115,6 +2115,13 @@ MC.ui.refreshSetupTabs = () => {
 /* 長い処理の間、競合する操作をまとめて止める(二重実行でcutList/offsetが壊れるのを防ぐ) */
 MC.ui.BUSY_FLAG_KEY = "mz_switcher_busy_v1";
 MC.ui.setBusy = busy => {
+  /* ★ おまかせの自走が終わるまで鍵を外さない(2026-08-01)。
+     自走は runEasy → runEasyFinish → 書き出し と**複数の処理をまたぐ**が、
+     それぞれの finally が setBusy(false) を呼ぶ。そのままだと段の切れ目で
+     操作が開き、走っている最中に別のボタンを押せてしまう
+     (実測: 仕上げに入った時点で押せるものが 0個 → 14個 に戻っていた)。
+     解放は runAuto が最後に一度だけ行う */
+  if (!busy && MC.ui._autoRunning) return;
   MC.ui._busy = !!busy;
   /* 「作業中」の印を sessionStorage に置く(2026-07-23 E-3 / F-1で修正)。
      _hiddenAt はメモリ上なので、iOSがタブごと捨てて再読込になると消える。
@@ -2594,11 +2601,39 @@ MC.ui.autoPickAudio = () => {
   return pick;
 };
 
+/* 自走の残り時間。3〜9分ほど何もできないので、**あと何分か**が唯一の情報になる。
+   式は「長さと開始位置」の案内(lengthEta)と同じものを使う ─
+   同じ待ちについて2箇所で違う数字を出さない */
+MC.ui.autoEtaSec = () => {
+  const clips = MC.S.clips.filter(c => !c.isAudio && !c.isImage);
+  if (!clips.length) return 0;
+  /* 長さは決め打ち(60秒)。上限で丸まるので実尺を使う */
+  const lenSec = MC.highlight && MC.highlight.presetSec
+    ? MC.highlight.presetSec({ id: MC.ui.AUTO.preset, sec: 59 }, 1e9) : 59;
+  const ana = clips.length * lenSec * MC.ui.analysisRate();
+  let exp = MC.ui.exportMode() === "realtime" ? 1.15 : (MC.isIOS ? 1.8 : 0.9);
+  if (MC.exporter.quality() === "light") exp *= 0.8;
+  return ana + lenSec * exp;
+};
+
+/* 自走の残り時間の一言。経過ぶんを引いて出す。
+   1分未満は「まもなく」— 秒まで出すと正確に見えすぎる */
+MC.ui.autoSub = () => {
+  const total = MC.ui._autoEtaSec || 0;
+  if (!(total > 30)) return "";
+  const left = total - (performance.now() - (MC.ui._autoT0 || performance.now())) / 1000;
+  if (left <= 45) return "まもなく完成します";
+  return `完成まで およそ${Math.max(1, Math.round(left / 60))}分・このままお待ちください`;
+};
+
 MC.ui.runAuto = async () => {
   if (MC.ui._busy || (MC.exporter && MC.exporter.running)) return;
   if (!MC.media.slotClips().length) return;
   MC.ui._autoCancel = false;
+  MC.ui._autoRunning = true;      // 段の切れ目で鍵が外れないようにする
+  MC.ui._autoEtaSec = MC.ui.autoEtaSec();   // 総所要は入口で1回だけ見積もる
   MC.ui.applyAutoChoices();
+  MC.ui.setBusy(true);
   try {
     /* ① 傾き(自動) → ② 同期 → ③ 音声(おすすめ) → ④ 音楽の解析 */
     await MC.ui.runEasy({ auto: true });
@@ -2631,14 +2666,23 @@ MC.ui.runAuto = async () => {
     MC.ui._tabsForced = true;
     MC.ui.refreshSetupTabs();
     MC.ui.toast("自動でできませんでした。こだわりで続けられます");
+  } finally {
+    MC.ui._autoRunning = false;   // ここで初めて鍵を返す
+    MC.ui.setBusy(false);
+    MC.ui.renderAll();
+    MC.ui.refreshJourney();
   }
 };
 
 MC.ui.runEasy = async (opt) => {
   const auto = !!(opt && opt.auto);
   const btn = MC.ui.$("#easyStartBtn");
-  /* 自走のときはボタンの状態を見ない ─ 取り込み直後は disabled のことがある */
-  if ((!auto && btn.disabled) || MC.ui._busy) return;
+  /* 自走のときはボタンの状態を見ない ─ 取り込み直後は disabled のことがある。
+     ★ _busy も見ない。runAuto は段の切れ目で鍵が外れないよう**先に**
+       setBusy(true) してから呼ぶので、ここで _busy を見ると自分が掛けた鍵で
+       自分が弾かれる(実測: runEasy に入って即 return し、1段も走らなかった)。
+       二重起動の防止は runAuto の入口が受け持つ */
+  if (auto ? MC.ui._autoCancel : (btn.disabled || MC.ui._busy)) return;
   MC.ui._anaT0 = performance.now();   // 見積り学習は同期込みの全体で測る(2026-07-28)
   MC.ui.setBusy(true);
   MC.ui.clearErrorLog();   // やり直しでは前回の失敗ログを見せない
@@ -2660,18 +2704,26 @@ MC.ui.runEasy = async (opt) => {
                         chapter: auto ? "おまかせ" : "同期", delay: 0,
                         steps: tiltSteps + syncSteps + (goesOn ? MC.ui.scanSteps() : 0),
                         label: auto ? "傾きを直しています…" : "音を合わせています…" });
+  /* おまかせは書き出しまで一度も止まらない。あと何分かを出さないと
+     「進んでいるのか固まったのか」が分からない(2026-08-01)。
+
+     ★ MZP の eta は `state === "run"`(確定進捗)のときしか描かれない
+       (progress.js の _etaVisible)。自走は pulse なので eta では出せず、
+       副文言(sub)に載せる。sub は状態を問わず描かれる */
+  if (auto) MC.ui._autoT0 = performance.now();
   try {
     if (auto) {
       /* 傾きは同期より先に当てる。同期は音だけを見るので順序はどちらでもよいが、
          先に映像を触っておくと、あとの映像解析でデコーダが温まっている */
-      p.step(1, "傾きを直しています…").pulse("傾きを直しています…");
+      p.step(1, "傾きを直しています…").pulse("傾きを直しています…", { sub: MC.ui.autoSub() });
       await MZP.paint();
       const fixed = await MC.ui.autoHorizon(p);
       MC.log("auto: 傾きを直した本数=" + fixed);
       MC.ui.renderClips();
     }
     if (vids.length >= 2) {
-      p.step(tiltSteps + 1, "音を合わせています…").pulse("音を合わせています…");
+      p.step(tiltSteps + 1, "音を合わせています…")
+        .pulse("音を合わせています…", auto ? { sub: MC.ui.autoSub() } : undefined);
       await MC.sync.run(p);
       /* 同期に成功したら、失敗時に前倒しで開いたタブを本来の条件へ戻す
          (立てっぱなしだと以後ずっと序盤からタブが出る) */
