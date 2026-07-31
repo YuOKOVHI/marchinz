@@ -14,7 +14,7 @@ window.MC = {
     slots: [null, null, null],  // スロットi に表示するクリップid
     trimIn: 0, trimOut: null,   // 書き出し範囲(グローバル秒)。null=末尾まで
     t: 0, playing: false,
-    /* 長さと始まりを選ぶフェーズ(2026-07-31 優さん指示)。
+    /* 長さと開始位置を選ぶフェーズ(2026-07-31 優さん指示)。
        showIn/showOut = 音で見つけた「演奏そのもの」の範囲(グローバル秒)。
        trimIn/trimOut は**そこから切り出した書き出し範囲**なので別に持つ。
        これを分けないと、長さを選び直すたびに元の演奏範囲が失われて
@@ -166,7 +166,7 @@ MC.saveState = () => {
       borderOn: MC.S.borderOn, borderColor: MC.S.borderColor, borderW: MC.S.borderW,
       colorOn: MC.S.colorOn, colorStrength: MC.S.colorStrength, filterId: MC.S.filterId,
       horizonOn: MC.S.horizonOn,
-      /* 長さと始まりの選択(2026-07-31)。trimIn/trimOut と同じく
+      /* 長さと開始位置の選択(2026-07-31)。trimIn/trimOut と同じく
          「素材が0本のときは書き戻さない」の保護に乗せる(下の keepPrev) */
       showIn: MC.S.showIn, showOut: MC.S.showOut,
       exportPreset: MC.S.exportPreset, startKey: MC.S.startKey, startAt: MC.S.startAt,
@@ -225,7 +225,7 @@ MC.restoreTrim = () => {
     MC.S.trimIn = saved.trimIn || 0;
     MC.S.trimOut = saved.trimOut == null ? null : saved.trimOut;
     /* 演奏そのものの範囲と、選んだ長さ・始まりも一緒に戻す。
-       これが戻らないと、再開したときに「長さと始まり」の画面が
+       これが戻らないと、再開したときに「長さと開始位置」の画面が
        候補を作れず(showIn/showOut が無い)、選び直しができない */
     MC.S.showIn = saved.showIn == null ? null : saved.showIn;
     MC.S.showOut = saved.showOut == null ? null : saved.showOut;

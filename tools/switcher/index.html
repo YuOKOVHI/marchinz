@@ -169,12 +169,12 @@
         先に分析を実行してください。完了すると、最も良い音声に「おすすめ」が付きます。</p>
     </section>
 
-    <!-- 長さと始まりを決める(独立フェーズ 2026-07-31 優さん指示)。
+    <!-- 長さと開始位置を決める(独立フェーズ 2026-07-31 優さん指示)。
          音楽の解析だけ先に済ませ、「何分にするか」と「どこから始めるか」を
          選んでもらう。重い映像解析はここで決まった範囲だけを見るので、
          1分を選べば分析も書き出しも1分ぶんで済む -->
     <section class="panel" id="lengthSec">
-      <h2>長さと始まりを決める</h2>
+      <h2>長さと開始位置を決める</h2>
       <p class="sec-lead">長さと開始位置を選びます。</p>
 
       <p class="len-head"><i class="fa-solid fa-clock" aria-hidden="true"></i> 長さ</p>
@@ -350,9 +350,9 @@
           <input type="checkbox" id="noSkipToggle">
           <span><b>ゆっくり書き出す</b>（原因の切り分け用）</span>
         </label>
-        <p class="hint">カメラを切り替えるときの内部の巻き戻しをやめます。
+        <p class="hint">カメラを切り替えるたびに映像を読み直します。
           そのぶん<b>時間はかかります</b>が、これで最後まで書き出せたら
-          原因がそこだと分かります。次に開いたときは元に戻ります。</p>
+          原因を特定できます。次に開いたときは元に戻ります。</p>
       </details>
       <div id="exportProgress" class="progress" style="display:none">
         <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>

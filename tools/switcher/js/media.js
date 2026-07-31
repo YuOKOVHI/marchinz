@@ -78,7 +78,7 @@ MC.media.addFiles = async files => {
        撮った人が「見せたい場面だけ短く切り出してからお試しください」と
        言われ、その切り出す道具はツールの中に無い、という行き止まりだった。
        いま断るのは**技術的に持てない長さ**のときだけ。どこを何分使うかは
-       このあとの「長さと始まり」で選べる(窓を選ぶUIは既にある) */
+       このあとの「長さと開始位置」で選べる(窓を選ぶUIは既にある) */
     if (MC.media.tooLong(v.duration)) {
       MC.ui.toast(`⚠ ${f.name} は約${Math.round(v.duration / 60)}分です。`
         + `この端末で扱えるのは1本${MZ_LIMITS.sourceLimitLabel}までです。`

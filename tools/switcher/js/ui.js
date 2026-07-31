@@ -26,7 +26,7 @@ MC.ui.showExportLimitHelp = (wantSec, lim) => {
   const note = $("#doneNote");
   /* 上限は「会員種別 × 端末」で決まる(2026-07-31)。次の一手も相手で変える ─
      スマホの登録ユーザーに「無料登録すると」と言っても、登録済みなので伸びない */
-  const back = "「長さと始まり」に戻ると、収まる長さを選び直せます。";
+  const back = "「長さと開始位置」に戻ると、収まる長さを選び直せます。";
   if (lim.unlimited) {
     note.textContent = back;
   } else if (lim.member && lim.mobile) {
@@ -357,7 +357,7 @@ MC.ui.checkExportable = () => {
      この数字の根拠は**マーチングのショウが規定8分**であること(2026-07-23 優さん確認)。
      端末のメモリ上限から逆算した数字ではないので、端末が速くなっても変えない。
      ゲスト等で上限がさらに短ければそちらに従う。
-     ※通常はここに来ない ─「長さと始まり」で選べる長さは最初から上限内に
+     ※通常はここに来ない ─「長さと開始位置」で選べる長さは最初から上限内に
        丸めてある(highlight.presetSec)。手でIN/OUTを動かしたときの受け皿 */
   const SHOW_SEC = 510;                            // 8分30秒
   const fitSec = Math.min(limit, isFinite(roleMax) ? roleMax : SHOW_SEC);
@@ -390,7 +390,7 @@ MC.ui.checkExportable = () => {
     MC.ui.renderAll();
     MC.preview.seek(i0);
     MC.ui.toast(`INから ${fitLabel} に詰めました`);
-    /* lengthDecided は落とさない。落とすと現在地が「長さと始まり」へ戻り、
+    /* lengthDecided は落とさない。落とすと現在地が「長さと開始位置」へ戻り、
        書き出し画面の警告を押した人がいきなり2工程前へ飛ばされる。
        手で詰めた範囲はこのまま使い、あの画面を開き直したときだけ
        選択(exportPreset/startKey)から作り直される */
@@ -531,7 +531,7 @@ MC.ui.renderFaceNote = () => {
           + '写真なら <a href="/tools/privacy/">Privacy</a> で隠せます。</span>');
 };
 
-/* ============ 長さと始まりを決める(2026-07-31 優さん指示) ============
+/* ============ 長さと開始位置を決める(2026-07-31 優さん指示) ============
    8分のショウから1分だけ切り出すなら「どこの1分か」を決めないといけない。
    問いを2つ(何分にするか / どこから始めるか)だけに絞り、選んだ瞬間に
    書き出し範囲へ反映してプレビューで確かめられるようにする。 */
@@ -1014,7 +1014,7 @@ MC.ui.updateActionBar = () => {
       }
       conf = { label: "この音で進める", icon: "fa-check", act: () => db && db.click() };
     } else if (cur === "length") {
-      /* 長さと始まり(2026-07-31 UI/UXレビュー P0)。
+      /* 長さと開始位置(2026-07-31 UI/UXレビュー P0)。
          375pxではカードが最大9枚並び、決定ボタンは折り返しのはるか下にある。
          他の工程は全部この親指バーで受けているのに、ここだけ抜けていた。
          流儀は音声と同じ ─ 本体のボタンが見えているときは重ねない */
@@ -1116,7 +1116,7 @@ MC.ui.refreshJourney = () => {
      (2026-07-28 レビュー指摘) */
   const legacy = synced && vids.some(c => c.tiltOk === undefined);
   const tiltDone = !vids.length || legacy || vids.every(c => c.tiltOk);
-  /* 音楽の解析まで済んだか(2026-07-31)。ここまで来ると「長さと始まり」の
+  /* 音楽の解析まで済んだか(2026-07-31)。ここまで来ると「長さと開始位置」の
      候補を作れる。showIn は演奏そのものの範囲なので、書き出し範囲(trimIn)を
      いくら動かしても消えない ─ 何度でも選び直せる */
   const scanned = MC.S.showIn != null && MC.S.showOut != null;
@@ -1184,7 +1184,7 @@ MC.ui.STEP_GROUPS = [
      分析が済んだあとも全工程に出続けていた */
   { id: "sync",   panels: ["#syncSec", "#easyPane"] },
   { id: "audio",  panels: ["#audioSec"] },
-  /* 長さと始まりを決める(2026-07-31)。音楽の解析だけ先に済ませてここで止まり、
+  /* 長さと開始位置を決める(2026-07-31)。音楽の解析だけ先に済ませてここで止まり、
      決まった範囲だけを映像解析する */
   { id: "length", panels: ["#lengthSec"] },
   { id: "polish", panels: ["#placeSec", "#layoutSec", "#finishSec"] },
@@ -1210,7 +1210,7 @@ MC.ui.showPhase = id => {
   const target = document.querySelector(MC.ui.JOURNEY_SECTIONS[id]);
   if (target) target.classList.add("phase-current");
   MC.ui.applySteps(id);
-  /* 「長さと始まり」は開いた時点で候補を作り直す。長さ・演奏範囲・上限の
+  /* 「長さと開始位置」は開いた時点で候補を作り直す。長さ・演奏範囲・上限の
      どれが変わっていても、画面に出ているものが必ず今の状態を指すようにする */
   if (id === "length") MC.ui.renderLengthSec();
   /* 傾きは単独工程(2026-07-31)。この画面に入ったら対象の1本を描き、
@@ -2504,7 +2504,7 @@ MC.ui.runEasy = async () => {
   const syncSteps = vids.length >= 2 ? 1 : 0;
   const goesOn = !(vids.length >= 2 && !MC.S.audioDecided);   // 音声選択で一度止まるか
   /* この段で走るのは同期と**音楽の解析**まで(2026-07-31)。
-     重い映像解析は「長さと始まり」を決めたあと、選ばれた範囲だけを見る */
+     重い映像解析は「長さと開始位置」を決めたあと、選ばれた範囲だけを見る */
   const p = MZP.start({ mount: "#easyStatus", chapter: "同期", delay: 0,
                         steps: syncSteps + (goesOn ? MC.ui.scanSteps() : 0),
                         label: "音を合わせています…" });
@@ -2543,7 +2543,7 @@ MC.ui.runEasy = async () => {
    ①縦動画/②ワイプカメラはシーン分析を丸ごと飛ばす(2026-07-24 優さん指示) */
 /* ---- おまかせ 第2段: 音楽の解析(2026-07-31 優さん指示) ----
    ここでやるのは音だけ ─ 演奏そのものの範囲を見つけ、拍とセクションを取る。
-   映像は1コマも見ない(数秒で終わる)。終わったら「長さと始まり」で止まる。
+   映像は1コマも見ない(数秒で終わる)。終わったら「長さと開始位置」で止まる。
 
    この段を切り出した理由は速度でもある。8分の素材から1分を書き出すなら、
    映像解析も1分ぶんで足りる ─ 先に範囲を決めておけば、いちばん重い工程が
@@ -2649,7 +2649,7 @@ MC.ui.runEasyFinish = async (pIn, base = 0) => {
   const _eta = () => _est > 30 ? { eta: Math.max(0, _est * (1 - n / _steps)) } : undefined;
   try {
     /* 開始/終了の自動区切りと音楽の解析は runEasyScan へ移した(2026-07-31)。
-       ここへ来る時点で MC.trimRange() は「選ばれた長さと始まり」を指しており、
+       ここへ来る時点で MC.trimRange() は「選ばれた長さと開始位置」を指しており、
        映像解析もカット割もその中だけを見る */
     // 条件は finishSteps() と必ず揃える(分母と実際に通る段がずれる)
     if (MC.S.mode === "switch" && _vc.length >= 2) {   // シーン分析は③自動スイッチングだけ
@@ -3029,7 +3029,7 @@ MC.ui.wire = () => {
   };
 
   /* 「この長さで進める」= ここではじめて重い映像解析へ入る。
-     押した時点の trimIn/trimOut(=選ばれた長さと始まり)だけを見る */
+     押した時点の trimIn/trimOut(=選ばれた長さと開始位置)だけを見る */
   $("#lenDecideBtn").onclick = () => {
     if (MC.ui._busy) return;
     MC.preview.pause();
@@ -3308,7 +3308,7 @@ MC.ui.wire = () => {
   $("#colorMatchBtn").onclick = async () => {
     $("#colorMatchBtn").disabled = true;
     const p = MZP.start({ mount: "#finishStatus", chapter: "仕上げ",
-                          label: "色を見比べています…" });
+                          label: "色を調べています…" });
     try {
       await MC.color.run(p);
       p.done("色を合わせました", { sub: "音声に使うカメラに合わせています" });
