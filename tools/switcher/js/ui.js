@@ -1889,7 +1889,15 @@ MC.ui.wireTiltSec = () => {
   };
   const prev = $("#tiltPrevBtn");
   if (prev) prev.onclick = () => {
-    if (MC.ui._tiltIdx > 0) { MC.ui._tiltIdx--; MC.ui.renderTiltSec(); }
+    if (MC.ui._tiltIdx <= 0) return;
+    MC.ui._tiltIdx--;
+    /* ★ 明示の指定であることを伝える。これが無いと renderTiltSec の
+       「未確認の動画から始める」再探索に即座に上書きされ、**ボタンを押しても
+       画面が1つも戻らない**(2026-07-31 実測: 動画3で押しても動画3のまま)。
+       傾きが単独の工程になって順に送る形になったため、1つ前は必ず確認ずみ ─
+       つまりこのボタンは本来の使い道でだけ壊れていた */
+    MC.ui._tiltPick = true;
+    MC.ui.renderTiltSec();
   };
   /* #tiltAddBtn は撤去(2026-07-31)。動画を足しに戻るのは工程表の「動画」から */
   const ok = $("#tiltOkBtn");
@@ -2733,6 +2741,9 @@ MC.ui._showErrorLog = err => {
     // メタデータ未確定のクリップでも落ちないよう、数値は必ず正規化する
     `素材: ${MC.S.clips.map(c => `${c.name} ${c.width | 0}x${c.height | 0} ${Number(c.duration || 0).toFixed(1)}s`).join(" / ") || "なし"}`,
     `レイアウト: ${MC.S.layoutId} / 比率: ${MC.S.preset} / カット: ${MC.S.cutList.length}`,
+    /* 分割から降りた回は、たとえ書き出しが成功していてもここに残す */
+    ...(MC.exporter.lastPartsError
+        ? [`分割書き出しを断念: ${MC.exporter.lastPartsError}`] : []),
     `エラー: ${(err && err.stack) || (err && err.message) || err}`,
   ].join("\n");
   const text = `${env}\n---- ログ ----\n${MC.debug.slice(-120).join("\n")}`;

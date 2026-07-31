@@ -1124,6 +1124,34 @@ async function countSamples(ns, file, fromSec) {
     w.MC.exporter._resumeSec = 0;
     return `toast(z${zT}) < overlay(z${zO}) なので常設欄へ / 「${pre.textContent.trim()}」`;
   });
+  await test("★「1つ前の動画」で本当に1つ戻る(確認ずみでも)", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.clips.forEach(c => { c.tiltOk = false; c.syncMethod = "未同期"; });
+    S.easyDone = false;
+    w.MC.ui._tiltIdx = null;
+    w.MC.ui.renderClips();
+    w.MC.ui.refreshJourney();
+    const who = () => w.document.getElementById("tiltCamNo").textContent;
+    const ok = w.document.getElementById("tiltOkBtn");
+    const prev = w.document.getElementById("tiltPrevBtn");
+    if (!who().startsWith("動画1 ")) throw new Error("最初が動画1でない: " + who());
+    ok.click(); ok.click();                    // 動画1・動画2をOK → 動画3を見ている
+    if (!who().startsWith("動画3 ")) throw new Error("2回OKして動画3にならない: " + who());
+    /* ★ ここが 2026-07-31 に壊れていた。1つ前は必ず確認ずみなので、
+       renderTiltSec の「未確認から始める」再探索に上書きされ、押しても
+       動画3のまま動かなかった。押せるのに何も起きないボタンだった */
+    prev.click();
+    if (!who().startsWith("動画2 ")) throw new Error(`1つ前を押したのに「${who()}」`);
+    prev.click();
+    if (!who().startsWith("動画1 ")) throw new Error(`もう1つ前を押したのに「${who()}」`);
+    if (!prev.disabled) throw new Error("先頭なのに「1つ前」がまだ押せる");
+    /* 戻った先でOKすると、未確認の続き(動画3)へ進む */
+    ok.click();
+    if (!who().startsWith("動画3 ")) throw new Error(`戻り先でOKした後が「${who()}」`);
+    w.MC.ui.unpinTilt();
+    return "3→2→1と戻り、先頭で止まり、OKで未確認へ復帰";
+  });
   await test("★傾きの画面は傾きの工程でだけ出る(1画面1操作)", async () => {
     const w = await compEnv();
     const S = compReset(w);

@@ -1354,9 +1354,14 @@ MC.exporter.exportMP4Parts = async (onProgress) => {
   /* ここへ来るのは分割が始まりもしなかったときだけ。
      原因を必ず記録に残す ─ 従来経路で成功してしまうと、本人には何も
      起きなかったように見え、次の切り分け材料が消える */
-  MC.log("export(parts): 開始できませんでした。従来の方式で試します: "
-    + ((fallbackErr && fallbackErr.message) || fallbackErr));
-  MC.exporter.lastPartsError = (fallbackErr && fallbackErr.message) || String(fallbackErr);
+  const why = (fallbackErr && fallbackErr.message) || String(fallbackErr);
+  MC.log("export(parts): 開始できませんでした。従来の方式で試します: " + why);
+  /* ★ MC.log だけでは足りない。詳しいログは**失敗したときにしか出ない**ので、
+     従来経路で書き出しが成功すると、この理由は誰の目にも触れずに消える ─
+     いちばん知りたい回にいちばん残らない。報告に必ず載る2か所へ置く:
+     ①診断の見出し(showErrorLog の env) ②落ちても残る足跡(sessionStorage) */
+  MC.exporter.lastPartsError = why;
+  MC.exporter._markPhase("分割から従来へ降りた: " + why);
   /* noParts を渡すので partsApplicable を通らない = ここへは戻ってこない */
   return MC.exporter.exportMP4(onProgress, null, { noParts: true });
 };

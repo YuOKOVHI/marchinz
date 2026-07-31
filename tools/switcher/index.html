@@ -123,7 +123,11 @@
       <div class="tilt-stage">
         <div class="tilt-top">
           <img id="tiltThumb" class="tilt-thumb" alt="">
-          <span class="tilt-who"><span id="tiltCamNo" class="tilt-count"></span>
+          <!-- OKを押すと中身だけが動画1→動画2と変わる。焦点は動いていないので、
+               読み上げの人には何も起きていないように聞こえる。role="status" で
+               変化そのものを読ませる(2026-07-31 レビュー) -->
+          <span class="tilt-who" role="status">
+            <span id="tiltCamNo" class="tilt-count"></span>
             <span id="tiltFile" class="hint"></span></span>
           <span id="tiltVal2" class="tilt-val">0.0°</span>
         </div>
@@ -134,7 +138,7 @@
           <button type="button" class="tilt-step" id="tiltPlus" aria-label="右へ0.5度まわす">↻</button>
         </div>
         <button type="button" id="tiltSceneBtn" class="btn small ghost" style="margin-top:8px">
-          <i class="fa-solid fa-shuffle" aria-hidden="true"></i> 別の場面</button>
+          <i class="fa-solid fa-shuffle" aria-hidden="true"></i> 別の場面を見る</button>
         <div class="row" style="margin-top:10px">
           <button type="button" id="tiltPrevBtn" class="btn small ghost">1つ前の動画</button>
           <button type="button" id="tiltOkBtn" class="btn primary" style="flex:1">
