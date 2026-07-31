@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-app-v="1.56.0">
+<html lang="ja" data-mz-app-v="1.57.0">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -17,7 +17,7 @@
 <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
 <link rel="stylesheet" href="/tools/shared/progress.css">
 <link rel="stylesheet" href="/tools/shared/journey.css">
-<link rel="stylesheet" href="css/style.css?v=1.56.0">
+<link rel="stylesheet" href="css/style.css?v=1.57.0">
 <link rel="stylesheet" href="/tools/shared/sitechrome.css">
 </head>
 <body data-mz-tool="switcher">
@@ -381,12 +381,19 @@
     <div class="transport">
       <button id="playBtn" class="btn round" title="再生/停止"><i class="fa-solid fa-play"></i></button>
       <div class="scrub-wrap">
+        <!-- 区間の色帯(2026-08-01)。音から分かる「いま何が鳴っているか」を
+             シークバーそのものに描く。マーチング特化の判別(sections.js)は
+             これまで自動カット割の内部にしか無く、ユーザーからは見えなかった。
+             タップでその場面へ飛べるので、書き出しを一度もせずに価値が出る -->
+        <canvas id="secBand" class="sec-band" hidden></canvas>
         <div id="scrubTicks"></div>
         <div id="trimBand" hidden><span class="tb-flag tb-in">IN</span><span class="tb-flag tb-out">OUT</span></div>
         <input type="range" id="scrub" min="0" max="0" step="0.01" value="0">
       </div>
       <span id="timeLabel" class="time-label">0:00.0 / 0:00.0</span>
     </div>
+    <!-- 帯の凡例。解析が済んで帯が出たときだけ -->
+    <p id="secLegend" class="sec-legend" hidden></p>
     <div class="trim-row">
       <button id="trimInBtn" class="btn small trim-btn trim-btn--in" title="いま見ている位置から書き出します"><span class="trim-tri" aria-hidden="true">🔻</span><i class="fa-solid fa-flag"></i> <b>IN</b></button>
       <button id="trimOutBtn" class="btn small trim-btn trim-btn--out" title="いま見ている位置まで書き出します"><span class="trim-tri" aria-hidden="true">🔻</span><i class="fa-solid fa-flag-checkered"></i> <b>OUT</b></button>
@@ -482,24 +489,24 @@
 <script src="vendor/mp4box.all.min.js"></script>
 <script src="vendor/mp4-muxer.min.js"></script>
 <script src="vendor/fft.js"></script>
-<script src="js/state.js?v=1.56.0"></script>
-<script src="js/layout.js?v=1.56.0"></script>
-<script src="js/media.js?v=1.56.0"></script>
-<script src="js/audio.js?v=1.56.0"></script>
-<script src="js/sync.js?v=1.56.0"></script>
-<script src="js/beats.js?v=1.56.0"></script>
-<script src="js/sections.js?v=1.56.0"></script>
-<script src="js/highlight.js?v=1.56.0"></script>
-<script src="js/visual.js?v=1.56.0"></script>
-<script src="js/director.js?v=1.56.0"></script>
-<script src="js/colormatch.js?v=1.56.0"></script>
+<script src="js/state.js?v=1.57.0"></script>
+<script src="js/layout.js?v=1.57.0"></script>
+<script src="js/media.js?v=1.57.0"></script>
+<script src="js/audio.js?v=1.57.0"></script>
+<script src="js/sync.js?v=1.57.0"></script>
+<script src="js/beats.js?v=1.57.0"></script>
+<script src="js/sections.js?v=1.57.0"></script>
+<script src="js/highlight.js?v=1.57.0"></script>
+<script src="js/visual.js?v=1.57.0"></script>
+<script src="js/director.js?v=1.57.0"></script>
+<script src="js/colormatch.js?v=1.57.0"></script>
 <!-- horizon.js(自動傾き検出)は読み込まない(2026-07-28 検知全廃。ファイルは残置) -->
-<script src="js/salute.js?v=1.56.0"></script>
-<script src="js/preview.js?v=1.56.0"></script>
-<script src="js/timeline.js?v=1.56.0"></script>
-<script src="js/cutmode.js?v=1.56.0"></script>
-<script src="js/exporter.js?v=1.56.0"></script>
-<script src="js/ui.js?v=1.56.0"></script>
-<script src="js/app.js?v=1.56.0"></script>
+<script src="js/salute.js?v=1.57.0"></script>
+<script src="js/preview.js?v=1.57.0"></script>
+<script src="js/timeline.js?v=1.57.0"></script>
+<script src="js/cutmode.js?v=1.57.0"></script>
+<script src="js/exporter.js?v=1.57.0"></script>
+<script src="js/ui.js?v=1.57.0"></script>
+<script src="js/app.js?v=1.57.0"></script>
 </body>
 </html>

@@ -869,6 +869,10 @@ MC.ui.fmtClock = sec => {
 
 MC.ui.renderAll = () => {
   MC.ui.applyGuestLocks();
+  /* 区間の色帯。音の解析が済んだ素材なら描く(2026-08-01)。
+     renderAll は素材・音声・解析のどれが変わっても通るので、ここに置けば
+     「音声を選び直したら帯が前の素材のまま」を避けられる */
+  if (MC.ui.renderSectionBand) MC.ui.renderSectionBand();
   MC.ui.renderQualityPicker();
   MC.ui.renderPlacement();
   if (MC.ui._syncFloatPos) MC.ui._syncFloatPos();   // 素材の増減で位置が変わる
@@ -3006,6 +3010,7 @@ MC.ui.wire = () => {
     }, true);
   }
   MC.ui.wireTiltSec();
+  MC.ui.wireSectionBand();
   $("#audioListenBtn").onclick = () => {
     MC.preview.toggle();
     /* 再生状態はplay()のPromise後に確定するので少し待ってから表示を合わせる */
@@ -3364,6 +3369,91 @@ MC.ui.renderFinish = () => {
 };
 
 /* サリュート検出結果をスクラブバー上のマーカーで表示 */
+/* ============ 区間の色帯(2026-08-01 製品改革) ============
+   音から分かる「いま何が鳴っているか」をシークバーに描く。
+   sections.js の判別はこれまで自動カット割の内部にしか無く、
+   ユーザーからは一度も見えていなかった ─ 他に無い強みなのに。
+
+   帯があると、書き出しを一度もしないまま
+   「反省会でバッテリーのここを見たい」が1タップで済む。 */
+MC.ui.SEC_BIN = 1.0;   // 帯の刻み(秒)。細かすぎると模様になり、粗いと嘘になる
+
+/* 帯に描く区間の配列を作る。[{t0,t1,label,color}] */
+MC.ui.sectionBands = () => {
+  const a = MC.getClip(MC.S.audioClipId);
+  if (!a || !a.sections || !MC.sections.label) return [];
+  const [tIn, tOut] = [0, MC.timelineDuration()];
+  if (!(tOut > tIn)) return [];
+  const bin = MC.ui.SEC_BIN;
+  const out = [];
+  for (let t = tIn; t < tOut; t += bin) {
+    const t1 = Math.min(tOut, t + bin);
+    const L = MC.sections.label(MC.sections.classify(a, t, t1));
+    const key = L ? L.key : null;
+    const last = out[out.length - 1];
+    /* 同じ性格が続くなら1本にまとめる。細切れの縞にしない */
+    if (last && last.key === key) last.t1 = t1;
+    else out.push({ t0: t, t1, key, label: L ? L.label : null, color: L ? L.color : null });
+  }
+  return out;
+};
+
+MC.ui.renderSectionBand = () => {
+  const cv = MC.ui.$("#secBand");
+  const lg = MC.ui.$("#secLegend");
+  if (!cv) return;
+  const bands = MC.ui.sectionBands();
+  const dur = MC.timelineDuration();
+  const painted = bands.filter(b => b.key);
+  /* 解析前・分類が1つも立たない素材では、帯を出さない(空の灰色帯は情報ゼロ) */
+  if (!dur || !painted.length) {
+    cv.hidden = true;
+    if (lg) { lg.hidden = true; lg.innerHTML = ""; }
+    return;
+  }
+  cv.hidden = false;
+  const w = Math.max(1, Math.round(cv.clientWidth || cv.parentElement.clientWidth || 300));
+  const h = 10, dpr = Math.min(3, window.devicePixelRatio || 1);
+  if (cv.width !== w * dpr || cv.height !== h * dpr) { cv.width = w * dpr; cv.height = h * dpr; }
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "rgba(15,33,56,0.06)";   // 下地(分類が立たない区間)
+  ctx.fillRect(0, 0, w, h);
+  for (const b of bands) {
+    if (!b.color) continue;
+    const x0 = (b.t0 / dur) * w, x1 = (b.t1 / dur) * w;
+    ctx.fillStyle = b.color;
+    ctx.fillRect(x0, 0, Math.max(1, x1 - x0), h);
+  }
+  /* 凡例は「実際にこの曲に出てきた性格」だけ。出ていない色を並べない */
+  if (lg) {
+    const seen = [];
+    for (const b of painted) if (!seen.some(x => x.key === b.key)) seen.push(b);
+    lg.innerHTML = seen.map(b =>
+      `<span><i style="background:${b.color}"></i>${MC.ui.esc(b.label)}</span>`).join("");
+    lg.hidden = false;
+  }
+};
+
+/* 帯をタップしたらそこへ飛ぶ。押せるのに何も起きない帯にしない */
+MC.ui.wireSectionBand = () => {
+  const cv = MC.ui.$("#secBand");
+  if (!cv) return;
+  const jump = e => {
+    const dur = MC.timelineDuration();
+    if (!dur) return;
+    const r = cv.getBoundingClientRect();
+    const x = (e.clientX ?? (e.touches && e.touches[0] && e.touches[0].clientX) ?? 0) - r.left;
+    const t = Math.max(0, Math.min(dur, (x / Math.max(1, r.width)) * dur));
+    MC.preview.seek(t);
+    MC.ui.updateTransport();
+    const b = MC.ui.sectionBands().find(z => t >= z.t0 && t < z.t1);
+    if (b && b.label) MC.ui.toast(`${b.label}（${MC.ui.fmtTime(t)}）`);
+  };
+  cv.addEventListener("click", jump);
+};
+
 MC.ui.renderScrubTicks = () => {
   const box = MC.ui.$("#scrubTicks");
   box.innerHTML = "";

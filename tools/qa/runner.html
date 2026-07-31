@@ -1224,6 +1224,78 @@ async function countSamples(ns, file, fromSec) {
   /* 2026-08-01 製品改革の段0。再生を製品の中心に据えるなら、
      裏で回り続ける本を減らさないとiPhoneが10分持たない。
      以前は playClips() 全部(=常に3本)を再生していた */
+  /* 2026-08-01 製品改革。sections.js の判別はこれまで自動カット割の内部にしか
+     無く、ユーザーからは一度も見えていなかった。他に無い強みなので表に出す */
+  group("㉒ 区間の色帯（マーチング判別を画面に出す）");
+  await test("★音の性格を言い当てて帯にする（静か→打楽器→全奏→静か）", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    const sr = w.MC.audio.SR, DUR = 240, N = sr * DUR;
+    const pcm = new Float32Array(N);
+    /* ★ 打楽器の区間は**本物の雑音**でないと成立しない。
+       最初 `(i*9301+49297) % 233280` の素朴なLCGで作ったところ、これは
+       連続する i に対してほぼ鋸波になり、調波性 harm が 0.529 まで上がって
+       percussion = dens*(1-harm)*… が 0.309 に落ち、判定が「静か」になった。
+       コードではなく試験データの欠陥だった(実測: Math.random は harm 0.136 /
+       percussion 0.558、xorshift32 は 0.111 / 0.586)。
+       Math.random は QA の再現性を壊すので、決定的な xorshift32 を使う */
+    let sd = 1;
+    const rnd = () => { sd ^= sd << 13; sd ^= sd >>> 17; sd ^= sd << 5;
+                        return (sd >>> 0) / 4294967295 * 2 - 1; };
+    for (let i = 0; i < N; i++) {
+      const t = i / sr;
+      pcm[i] = t < 60  ? 0.02 * Math.sin(i / 40)
+             : t < 120 ? (i % 900 < 60 ? 0.55 : 0.04) * rnd()
+             : t < 180 ? 0.5 * (Math.sin(i / 12) + Math.sin(i / 25) + Math.sin(i / 9)) / 3
+             :           0.03 * Math.sin(i / 45);
+    }
+    const c = w.MC.getClip(1);
+    Object.assign(c, { audio8k: pcm, audio8kStart: 0, audio8kReqStart: 0, duration: DUR });
+    S.clips.forEach(x => { x.duration = DUR; });
+    S.audioClipId = 1;
+    const orig = w.MC.audio.extract8k;
+    w.MC.audio.extract8k = async () => {};
+    try { await w.MC.sections.analyze(c); } finally { w.MC.audio.extract8k = orig; }
+
+    const bands = w.MC.ui.sectionBands().filter(b => b.key);
+    if (!bands.length) throw new Error("帯が1本も出ない");
+    const at = t => { const b = bands.find(z => t >= z.t0 && t < z.t1); return b ? b.label : "(無色)"; };
+    /* 合成した性格を言い当てているか。境目の±5秒は判定が揺れるので避ける */
+    const want = [[30, "静か"], [90, "バッテリー"], [150, "全奏"], [210, "静か"]];
+    for (const [t, lbl] of want) {
+      if (at(t) !== lbl) throw new Error(`${t}秒 は「${lbl}」のはずが「${at(t)}」`);
+    }
+    /* 細切れの縞にしない(同じ性格は1本にまとまる) */
+    if (bands.length > 20) throw new Error(`区間が ${bands.length} 本に割れている(縞模様)`);
+    return `4区間とも一致 / まとまり ${bands.length} 本`;
+  });
+  await test("★解析前は帯を出さない（空の灰色帯は情報ゼロ）", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.clips.forEach(c => { c.sections = null; });
+    w.MC.ui.renderSectionBand();
+    const cv = w.document.getElementById("secBand");
+    const lg = w.document.getElementById("secLegend");
+    if (!cv.hidden) throw new Error("解析前なのに帯が出ている");
+    if (lg && !lg.hidden) throw new Error("解析前なのに凡例が出ている");
+    return "解析前は帯も凡例も出ない";
+  });
+  await test("★帯の色と名前は sections.js の1箇所で決まる（UIが独自判定しない）", async () => {
+    const w = await compEnv();
+    /* 判断の規則が2実装に割れると、帯は「全奏」なのにカット割は引きを選ばない、
+       という説明不能な状態になる。UI側は sections.label を呼ぶだけであること */
+    if (typeof w.MC.sections.label !== "function") throw new Error("sections.label が無い");
+    if (!Array.isArray(w.MC.sections.LABELS) || w.MC.sections.LABELS.length !== 5) {
+      throw new Error("LABELS が5種でない");
+    }
+    const src = w.MC.ui.sectionBands.toString();
+    if (!/MC\.sections\.label/.test(src)) throw new Error("UIが sections.label を使っていない");
+    for (const k of ["percussion", "pit", "tutti", "quiet"]) {
+      if (new RegExp("cls\\." + k).test(src)) throw new Error(`UI側で ${k} を直接見ている`);
+    }
+    return "5種 / UIは sections.label を呼ぶだけ";
+  });
+
   group("㉑ 見えていないカメラを再生しない");
   await test("★自動スイッチングでは、出番のカメラ＋次のカット＋音声担当だけ回す", async () => {
     const w = await compEnv();
