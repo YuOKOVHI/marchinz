@@ -1476,3 +1476,81 @@ body.mz-diag-noskip #exportSec::before {
 /* かたむきバッジ: 状態は名詞、押せることは › で示す(iOS Safari は title を読まない) */
 .tilt-badge-go { margin-left: auto; font-size: 16px; opacity: .5; }
 .tilt-badge { width: 100%; justify-content: flex-start; text-align: left; }
+
+/* ============ おまかせ専用の1画面(2026-08-01 優さん指示) ============
+   こだわりの設定は一切見せない。出すのは
+   「大きなプレビュー / 進み具合 / いま何をしているか / あと何分」の4つだけ。
+   段が1つ済むたびにチェックが点く ─ これが「できていってる！」の手触り */
+.auto-stage {
+  position: fixed; inset: 0; z-index: 130;   /* 書き出しの全画面(120)より上 */
+  background: linear-gradient(180deg, #f7f9fc 0%, #eef2f8 100%);
+  display: flex; align-items: center; justify-content: center;
+  padding: calc(16px + env(safe-area-inset-top, 0px)) 16px
+           calc(16px + env(safe-area-inset-bottom, 0px));
+  overflow-y: auto;
+}
+.auto-stage[hidden] { display: none; }
+/* 全画面の裏で本体がスクロールしないように固定する。
+   ★ 実測でページ高967px(画面812)だったが、内訳を見ると全画面自体は
+     562pxで収まっており、溢れていたのは**背後の作業画面**だった。
+     全画面を削るのではなく、背後を止めるのが正しい対処 */
+/* ★ body だけでは効かない。実測で 155px スクロールできた ─
+   ルート要素(html)にも当てて初めて止まる。
+   高さも 100% に固定しないと、中身の高い作業画面が土台を押し広げる */
+html:has(body.mz-auto-stage), body.mz-auto-stage {
+  overflow: hidden !important; height: 100%;
+}
+.as-inner { width: 100%; max-width: 520px; display: flex; flex-direction: column; gap: 10px; }
+
+.as-title { display: flex; align-items: center; gap: 10px; margin: 0;
+  font-size: 17px; font-weight: 800; color: var(--tx); }
+.as-badge { flex: none; padding: 4px 10px; border-radius: 999px;
+  background: rgba(30, 79, 214, .12); color: var(--acc); font-size: 12px; font-weight: 800; }
+
+/* プレビュー。ここが主役なので大きく取る */
+.as-preview { width: 100%; display: flex; justify-content: center;
+  background: #000; border-radius: 14px; overflow: hidden;
+  box-shadow: 0 8px 30px rgba(15, 33, 56, .16); }
+/* ★ 画面に収める(2026-08-01 レビューP2)。実測でページ高967px対画面812pxと
+   155px溢れ、初期表示で中止ボタンが見えなかった。
+   プレビューは主役なので削りすぎない ─ 溢れていた分だけ詰める */
+.as-preview canvas { display: block; width: 100%; height: auto;
+  max-height: min(34vh, 320px); object-fit: contain; }
+
+/* 進み具合 */
+.as-bar { height: 8px; border-radius: 999px; background: rgba(15, 33, 56, .10); overflow: hidden; }
+.as-bar-fill { height: 100%; width: 0%; border-radius: 999px;
+  background: linear-gradient(90deg, var(--acc), #4b7bff);
+  transition: width .45s cubic-bezier(.22, .8, .3, 1); }
+.as-meta { display: flex; align-items: baseline; justify-content: space-between;
+  margin: 0; font-size: 13px; color: var(--tx2); }
+.as-pct { font-size: 22px; font-weight: 800; color: var(--tx);
+  font-variant-numeric: tabular-nums; }
+
+/* 段のチェックリスト */
+.as-steps { list-style: none; margin: 0; padding: 0; display: flex;
+  flex-direction: column; gap: 2px; }
+.as-step { display: flex; align-items: center; gap: 10px; padding: 6px 4px;
+  font-size: 14px; color: var(--tx2); transition: color .25s ease; }
+.as-step i { width: 22px; height: 22px; flex: none; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; background: rgba(15, 33, 56, .07); color: var(--tx2);
+  transition: background .3s ease, color .3s ease, transform .3s ease; }
+/* いま動いている段: 濃く + 脈打つ */
+.as-step.now { color: var(--tx); font-weight: 700; }
+.as-step.now i { background: var(--acc); color: #fff; animation: asPulse 1.3s ease-in-out infinite; }
+/* 済んだ段: 緑のチェック。ここが点く瞬間が「できていってる！」 */
+.as-step.done { color: var(--tx); }
+.as-step.done i { background: rgba(30, 122, 67, .16); color: var(--ok);
+  animation: asPop .35s cubic-bezier(.2, 1.4, .4, 1); }
+.as-step-sub { margin-left: auto; font-size: 12px; color: var(--tx2); font-weight: 500; }
+
+@keyframes asPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(.86); } }
+@keyframes asPop { 0% { transform: scale(.5); } 60% { transform: scale(1.15); } 100% { transform: scale(1); } }
+
+.as-cancel { align-self: center; min-height: 44px; color: var(--tx2); }
+
+@media (prefers-reduced-motion: reduce) {
+  .as-bar-fill { transition: none; }
+  .as-step i { animation: none !important; }
+}

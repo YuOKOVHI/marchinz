@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-app-v="1.64.0">
+<html lang="ja" data-mz-app-v="1.65.0">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -17,7 +17,7 @@
 <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
 <link rel="stylesheet" href="/tools/shared/progress.css">
 <link rel="stylesheet" href="/tools/shared/journey.css">
-<link rel="stylesheet" href="css/style.css?v=1.64.0">
+<link rel="stylesheet" href="css/style.css?v=1.65.0">
 <link rel="stylesheet" href="/tools/shared/sitechrome.css">
 </head>
 <body data-mz-tool="switcher">
@@ -453,6 +453,34 @@
 
 <!-- 書き出しの全画面(案B: 2026-07-24)。ジャーニーは4ドットのまま、
      書き出し中→保存 はこのオーバーレイ内で画面が切り替わる -->
+<!-- ============ おまかせ専用の1画面(2026-08-01 優さん指示) ============
+     「完全にUIを分けて。どんどん自動で進んでるのがわかるように。1つの画面だけに。
+      何をしてるかがわかる。プレビューがわかるように。できていってる！がわかる」
+
+     こだわりの画面(配置・タイムライン・仕上げ)は一切見せない。
+     出すのは4つだけ: 大きなプレビュー / 進み具合 / いま何をしているか / あと何分。
+     段が1つ済むたびにチェックが点いていくのが「できていってる！」の手触り -->
+<div id="autoStage" class="auto-stage" hidden role="dialog" aria-modal="true" aria-labelledby="asTitle">
+  <div class="as-inner">
+    <p id="asTitle" class="as-title">
+      <span class="as-badge">おまかせ</span><span id="asHead">動画を作っています</span></p>
+
+    <!-- プレビュー。処理中の絵がそのまま見える(ここへ #cv を移す) -->
+    <div id="asPreview" class="as-preview"></div>
+
+    <!-- 全体の進み具合 -->
+    <div class="as-bar"><div id="asBarFill" class="as-bar-fill"></div></div>
+    <p class="as-meta"><span id="asPct" class="as-pct">0%</span><span id="asEta" class="as-eta"></span></p>
+
+    <!-- 段のチェックリスト。済んだものに✓が点いていく -->
+    <!-- 段が進んだことを読み上げにも伝える。3分間、視覚以外の手がかりが
+         これしか無い(2026-08-01 レビューP0) -->
+    <ol id="asSteps" class="as-steps" aria-live="polite" aria-atomic="false"></ol>
+
+    <button type="button" id="asCancel" class="btn ghost as-cancel">中止する</button>
+  </div>
+</div>
+
 <div id="exportOverlay" class="export-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="eoTitle">
   <div class="eo-inner">
     <p id="eoTitle" class="eo-title"><i id="eoTitleIcon" class="fa-solid fa-file-export" aria-hidden="true"></i> <span id="eoTitleText">書き出し中…</span></p>
@@ -528,28 +556,28 @@
 <script src="vendor/mp4box.all.min.js"></script>
 <script src="vendor/mp4-muxer.min.js"></script>
 <script src="vendor/fft.js"></script>
-<script src="js/state.js?v=1.64.0"></script>
-<script src="js/layout.js?v=1.64.0"></script>
-<script src="js/media.js?v=1.64.0"></script>
-<script src="js/audio.js?v=1.64.0"></script>
-<script src="js/sync.js?v=1.64.0"></script>
-<script src="js/beats.js?v=1.64.0"></script>
-<script src="js/sections.js?v=1.64.0"></script>
-<script src="js/highlight.js?v=1.64.0"></script>
-<script src="js/visual.js?v=1.64.0"></script>
-<script src="js/director.js?v=1.64.0"></script>
-<script src="js/colormatch.js?v=1.64.0"></script>
+<script src="js/state.js?v=1.65.0"></script>
+<script src="js/layout.js?v=1.65.0"></script>
+<script src="js/media.js?v=1.65.0"></script>
+<script src="js/audio.js?v=1.65.0"></script>
+<script src="js/sync.js?v=1.65.0"></script>
+<script src="js/beats.js?v=1.65.0"></script>
+<script src="js/sections.js?v=1.65.0"></script>
+<script src="js/highlight.js?v=1.65.0"></script>
+<script src="js/visual.js?v=1.65.0"></script>
+<script src="js/director.js?v=1.65.0"></script>
+<script src="js/colormatch.js?v=1.65.0"></script>
 <!-- horizon.js(自動傾き検出)を読み込みに戻した(2026-08-01 優さん指示
      「おまかせは傾き補正も自動で行う」)。2026-07-28 に外したのは
      **こだわりで自動提案をやめた**ためで、実装自体は生きていた。
      こだわりでは今も提案しない ─ 使うのは おまかせ の自走だけ -->
-<script src="js/horizon.js?v=1.64.0"></script>
-<script src="js/salute.js?v=1.64.0"></script>
-<script src="js/preview.js?v=1.64.0"></script>
-<script src="js/timeline.js?v=1.64.0"></script>
-<script src="js/cutmode.js?v=1.64.0"></script>
-<script src="js/exporter.js?v=1.64.0"></script>
-<script src="js/ui.js?v=1.64.0"></script>
-<script src="js/app.js?v=1.64.0"></script>
+<script src="js/horizon.js?v=1.65.0"></script>
+<script src="js/salute.js?v=1.65.0"></script>
+<script src="js/preview.js?v=1.65.0"></script>
+<script src="js/timeline.js?v=1.65.0"></script>
+<script src="js/cutmode.js?v=1.65.0"></script>
+<script src="js/exporter.js?v=1.65.0"></script>
+<script src="js/ui.js?v=1.65.0"></script>
+<script src="js/app.js?v=1.65.0"></script>
 </body>
 </html>

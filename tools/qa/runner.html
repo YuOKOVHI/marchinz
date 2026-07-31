@@ -1355,6 +1355,63 @@ async function countSamples(ns, file, fromSec) {
     if (S.clips.some(c => c.tiltOk)) throw new Error("見ていない傾きに確認ずみの印が付いた");
     return `7段を無停止で通過 / 60秒(${len.toFixed(0)}s) / climax / 音声3 / 傾き0.8° / marchinz`;
   });
+  /* 2026-08-01 優さん指示「おまかせは完全にUIを分けて。1つの画面だけに。
+     何をしてるかがわかる。プレビューがわかるように。できていってる！がわかる」 */
+  await test("★おまかせ専用の1画面: プレビューが動き、段が点いていく", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.clips.forEach(c => { c.tiltOk = true; c.syncMethod = "波形"; });
+    S.audioClipId = 1;
+    w.MC.ui.renderAll();
+    const A = w.MC.ui.autoStage;
+    w.MC.ui._autoT0 = w.performance.now();
+    w.MC.ui._autoEtaSec = 180;
+    A.open();
+    try {
+      const el = w.document.getElementById("autoStage");
+      if (!el || el.hidden) throw new Error("専用画面が出ない");
+      /* ① プレビューが**中身ごと**来ていること。枠だけでは黒い箱 */
+      const cv = w.document.getElementById("cv");
+      if (cv.parentElement.id !== "asPreview") throw new Error("プレビューが来ていない");
+      if (!S.playing) throw new Error("プレビューが止まっている(黒い箱になる)");
+      /* 解析中に音だけ鳴ると驚く。この画面では全部消音
+         ★ play() の中の applyMute が「音声担当だけ鳴らす」で上書きするので、
+           消音は play() の後で当てないと戻る(実測で clip1 だけ戻っていた) */
+      if (!S.clips.every(c => !c.video || c.video.muted)) throw new Error("音が鳴る");
+      /* ② 段が1つずつ点いていく。済んだ段は「何ができたか」で言う */
+      A.step("scan");
+      const done = [...w.document.querySelectorAll(".as-step.done")].map(li => li.innerText.trim());
+      if (done.length !== 3) throw new Error(`済んだ段が ${done.length} 個(3個のはず)`);
+      if (!done.some(t => /ました/.test(t))) throw new Error("済んだ段が成果の言い方になっていない");
+      const now = w.document.querySelectorAll(".as-step.now").length;
+      if (now !== 1) throw new Error(`いま動いている段が ${now} 個`);
+      /* ③ 進み具合が読み上げに伝わること */
+      const bar = el.querySelector(".as-bar");
+      if (bar.getAttribute("role") !== "progressbar") throw new Error("進捗バーに role が無い");
+      const v = +bar.getAttribute("aria-valuenow");
+      if (!(v > 0 && v < 100)) throw new Error("aria-valuenow が " + v);
+      const steps = w.document.getElementById("asSteps");
+      if (steps.getAttribute("aria-live") !== "polite") throw new Error("段の変化が読み上げに乗らない");
+      /* ④ こだわりの設定を見せないこと(これが「完全にUIを分けて」の中身) */
+      for (const id of ["placeSec", "layoutSec", "finishSec", "lengthSec"]) {
+        const p2 = w.document.getElementById(id);
+        if (p2 && p2.getClientRects().length && el.compareDocumentPosition(p2) & 16) {
+          throw new Error(id + " が専用画面の中に出ている");
+        }
+      }
+      /* ⑤ 背後がスクロールしないこと。body だけでは効かず html にも要る */
+      const de = w.document.documentElement;
+      if (de.scrollHeight > de.clientHeight + 1) {
+        throw new Error(`背後がスクロールできる(${de.scrollHeight} > ${de.clientHeight})`);
+      }
+    } finally { A.close(); }
+    /* ⑥ 閉じたら canvas を元へ返し、音の割り当ても戻すこと。
+       返し忘れるとプレビューが画面から消える */
+    const cv2 = w.document.getElementById("cv");
+    if (!cv2.closest(".canvas-holder")) throw new Error("canvas が元へ戻っていない");
+    if (S.playing) throw new Error("閉じても再生が続いている");
+    return "プレビュー再生 / 段3つ完了 / progressbar / 背後固定 / canvas往復";
+  });
   await test("★自走は最後まで鍵が掛かったまま・残り時間が出る", async () => {
     const w = await compEnv();
     const S = compReset(w);

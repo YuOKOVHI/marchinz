@@ -2616,6 +2616,127 @@ MC.ui.autoEtaSec = () => {
   return ana + lenSec * exp;
 };
 
+/* ============ おまかせ専用の1画面(2026-08-01 優さん指示) ============
+   「完全にUIを分けて。1つの画面だけに。何をしてるかがわかる。
+     プレビューがわかるように。できていってる！がわかる楽しいUI」
+
+   ★ プレビューは**同じ canvas を移す**(複製しない)。preview.js は
+     this.canvas の参照で描き続けるので、DOM上の親が変わっても絵は流れる。
+     複製すると2枚を毎フレーム描くことになり、iPhoneでは倍の負荷になる。
+     終わったら必ず元の場所へ戻す ─ 戻し忘れるとプレビューが消える */
+MC.ui.autoStage = {
+  /* 段の重み。実測の所要に近い比率にしておくと、バーが等速に見える */
+  /* 段の名前は2つ持つ。いま動いている間は「何をしているか」、
+     済んだら「何ができたか」。できた実感は動詞ではなく成果から出る */
+  STEPS: [
+    { key: "tilt",   label: "傾きを直す",         done: "傾きを直しました",     w: 12 },
+    { key: "sync",   label: "音を合わせる",       done: "音がそろいました",     w: 10 },
+    { key: "audio",  label: "いちばん良い音を選ぶ", done: "いちばん良い音にしました", w: 2 },
+    { key: "scan",   label: "見どころを探す",      done: "見どころが決まりました", w: 16 },
+    { key: "finish", label: "カメラを切り替える",   done: "カメラ割りができました", w: 30 },
+    { key: "export", label: "動画を書き出す",      done: "書き出しました",       w: 30 },
+  ],
+  _done: [], _now: null, _home: null,
+
+  open() {
+    const el = MC.ui.$("#autoStage");
+    if (!el || !el.hidden) return;
+    this._done = []; this._now = null;
+    /* canvas を全画面のプレビュー枠へ移す。戻す場所を覚えておく */
+    const cv = document.getElementById("cv");
+    const host = MC.ui.$("#asPreview");
+    if (cv && host) { this._home = cv.parentElement; host.appendChild(cv); }
+    el.hidden = false;
+    document.body.classList.add("mz-auto-stage");
+    /* ★ プレビューを実際に動かす(2026-08-01 レビューP0)。
+       枠だけ移しても再生していなければ黒い箱で、
+       「できていってる！」がいちばん伝わらない。
+       音は鳴らす必要が無いので消す ─ 解析中に音だけ流れると驚く */
+    try {
+      MC.preview.play();
+      /* ★ 消音は play() の**後**で当てる。play() の中の applyMute が
+         「音声担当だけ鳴らす」で上書きするため、先に消しても戻る
+         (実測: clip1 だけ muted=false に戻っていた)。
+         解析中に音だけ流れると驚くので、この画面では全部消す */
+      MC.S.clips.forEach(c => { if (c.video) c.video.muted = true; });
+    } catch (e) { MC.log("autoStage: プレビュー再生に失敗 " + e.message); }
+    this.render();
+  },
+
+  close() {
+    const el = MC.ui.$("#autoStage");
+    if (!el || el.hidden) return;
+    try { MC.preview.pause(); MC.preview.applyMute(); } catch (e) {}   // 音の割り当てを元へ
+    const cv = document.getElementById("cv");
+    if (cv && this._home) this._home.appendChild(cv);   // 必ず戻す
+    this._home = null;
+    el.hidden = true;
+    document.body.classList.remove("mz-auto-stage");
+  },
+
+  /* いま動いている段を伝える。済んだ段は自動でチェックが点く */
+  step(key, sub) {
+    const i = this.STEPS.findIndex(s => s.key === key);
+    if (i < 0) return;
+    for (let k = 0; k < i; k++) {
+      const kk = this.STEPS[k].key;
+      if (!this._done.includes(kk)) this._done.push(kk);
+    }
+    this._now = key;
+    if (sub !== undefined) this._sub = sub;
+    this.render();
+  },
+  finishAll() { this._done = this.STEPS.map(s => s.key); this._now = null; this.render(); },
+
+  /* 進み具合(0..1)。重み付きなので、重い段の途中でもバーが進んで見える */
+  ratio() {
+    const total = this.STEPS.reduce((a, s) => a + s.w, 0);
+    let got = 0;
+    for (const s of this.STEPS) {
+      if (this._done.includes(s.key)) got += s.w;
+      else if (s.key === this._now) got += s.w * 0.35;   // 途中の段も少し進める
+    }
+    return Math.max(0, Math.min(1, got / total));
+  },
+
+  render() {
+    const el = MC.ui.$("#autoStage");
+    if (!el || el.hidden) return;
+    const r = this.ratio();
+    const fill = MC.ui.$("#asBarFill"); if (fill) fill.style.width = (r * 100).toFixed(0) + "%";
+    /* 読み上げに「いま何%か」を伝える(2026-08-01 レビューP1)。
+       role が無いと、ただの装飾された div でしかなかった */
+    const bar = el.querySelector(".as-bar");
+    if (bar) {
+      bar.setAttribute("role", "progressbar");
+      bar.setAttribute("aria-valuemin", "0");
+      bar.setAttribute("aria-valuemax", "100");
+      bar.setAttribute("aria-valuenow", String(Math.round(r * 100)));
+      bar.setAttribute("aria-label", "できあがりの進み具合");
+    }
+    const pct = MC.ui.$("#asPct"); if (pct) pct.textContent = Math.round(r * 100) + "%";
+    const eta = MC.ui.$("#asEta");
+    if (eta) eta.textContent = MC.ui.autoSub ? MC.ui.autoSub() : "";
+    const head = MC.ui.$("#asHead");
+    if (head) {
+      const cur = this.STEPS.find(s => s.key === this._now);
+      head.textContent = this._now ? cur.label + "…" : "できました";
+    }
+    const host = MC.ui.$("#asSteps");
+    if (!host) return;
+    host.innerHTML = this.STEPS.map(s => {
+      const done = this._done.includes(s.key), now = s.key === this._now;
+      const icon = done ? '<i class="fa-solid fa-check"></i>'
+        : now ? '<i class="fa-solid fa-circle"></i>' : "<i></i>";
+      const sub = (now && this._sub) ? `<span class="as-step-sub">${MC.ui.esc(this._sub)}</span>` : "";
+      /* 済んだ段は「何ができたか」で言う(2026-08-01 レビューP1) */
+      const text = done ? (s.done || s.label) : s.label;
+      return `<li class="as-step${done ? " done" : now ? " now" : ""}">${icon}`
+        + `<span>${MC.ui.esc(text)}</span>${sub}</li>`;
+    }).join("");
+  },
+};
+
 /* 自走の残り時間の一言。経過ぶんを引いて出す。
    1分未満は「まもなく」— 秒まで出すと正確に見えすぎる */
 MC.ui.autoSub = () => {
@@ -2631,9 +2752,12 @@ MC.ui.runAuto = async () => {
   if (!MC.media.slotClips().length) return;
   MC.ui._autoCancel = false;
   MC.ui._autoRunning = true;      // 段の切れ目で鍵が外れないようにする
+  MC.ui._autoT0 = performance.now();
   MC.ui._autoEtaSec = MC.ui.autoEtaSec();   // 総所要は入口で1回だけ見積もる
   MC.ui.applyAutoChoices();
   MC.ui.setBusy(true);
+  MC.ui.autoStage.open();          // ここから先はおまかせ専用の1画面だけ
+  const tick = setInterval(() => MC.ui.autoStage.render(), 500);   // 残り時間を減らす
   try {
     /* ① 傾き(自動) → ② 同期 → ③ 音声(おすすめ) → ④ 音楽の解析 */
     await MC.ui.runEasy({ auto: true });
@@ -2641,6 +2765,7 @@ MC.ui.runAuto = async () => {
     /* runEasy が音声で止まる分岐は auto では通らない(先に決めてあるため)。
        ここまで来て showIn が無い= 解析に失敗している */
     if (MC.S.showIn == null || MC.S.showOut == null) return;
+    MC.ui.autoStage.step("finish");
     /* ⑤ 長さと開始位置を決め打ちで確定 → ⑥ 映像解析とカット割 → ⑦ 書き出し
        ★ ここで当て直すのが要。applyLengthChoice は
          `cands.find(key===startKey) || cands[0]` で決めたうえ、
@@ -2656,6 +2781,10 @@ MC.ui.runAuto = async () => {
     await MC.ui.runEasyFinish();
     if (MC.ui._autoCancel || !MC.S.easyDone) return;
     MC.ui.refreshJourney();
+    MC.ui.autoStage.step("export");
+    /* 書き出しは専用の全画面(#exportOverlay)が受け持つ。
+       そちらが出るので、おまかせの画面はここで畳む ─ 2枚重ねない */
+    MC.ui.autoStage.close();
     const btn = MC.ui.$("#exportBtn");
     if (btn && !btn.disabled) btn.click();
   } catch (e) {
@@ -2667,6 +2796,8 @@ MC.ui.runAuto = async () => {
     MC.ui.refreshSetupTabs();
     MC.ui.toast("自動でできませんでした。こだわりで続けられます");
   } finally {
+    clearInterval(tick);
+    MC.ui.autoStage.close();      // 途中で失敗しても必ず畳む(canvas を元へ戻す)
     MC.ui._autoRunning = false;   // ここで初めて鍵を返す
     MC.ui.setBusy(false);
     MC.ui.renderAll();
@@ -2716,6 +2847,7 @@ MC.ui.runEasy = async (opt) => {
       /* 傾きは同期より先に当てる。同期は音だけを見るので順序はどちらでもよいが、
          先に映像を触っておくと、あとの映像解析でデコーダが温まっている */
       p.step(1, "傾きを直しています…").pulse("傾きを直しています…", { sub: MC.ui.autoSub() });
+      MC.ui.autoStage.step("tilt", `${vids.length}本`);
       await MZP.paint();
       const fixed = await MC.ui.autoHorizon(p);
       MC.log("auto: 傾きを直した本数=" + fixed);
@@ -2724,6 +2856,7 @@ MC.ui.runEasy = async (opt) => {
     if (vids.length >= 2) {
       p.step(tiltSteps + 1, "音を合わせています…")
         .pulse("音を合わせています…", auto ? { sub: MC.ui.autoSub() } : undefined);
+      if (auto) MC.ui.autoStage.step("sync");
       await MC.sync.run(p);
       /* 同期に成功したら、失敗時に前倒しで開いたタブを本来の条件へ戻す
          (立てっぱなしだと以後ずっと序盤からタブが出る) */
@@ -2732,8 +2865,10 @@ MC.ui.runEasy = async (opt) => {
     if (auto) {
       /* おまかせは止まらない。音声はここで自動採用する ─
          同期のあとなら stats が揃っていて recommend が使える */
+      MC.ui.autoStage.step("audio");
       const pick = MC.ui.autoPickAudio();
       MC.log("auto: 音声=" + (pick ? pick.name : "(なし)"));
+      MC.ui.autoStage.step("scan");
     }
     if (vids.length >= 2 && !MC.S.audioDecided) {
       /* ここで一度手を止める: 音声を選んでから仕上げへ */
@@ -3170,6 +3305,18 @@ MC.ui.wire = () => {
     });
   { const b = MC.ui.$("#flowBackBtn");
     if (b) b.onclick = () => MC.ui.showModeStep("kind"); }
+  /* おまかせ全画面の中止。走っている処理にも止まれと伝える */
+  { const c = MC.ui.$("#asCancel");
+    if (c) c.onclick = () => {
+      MC.ui._autoCancel = true;
+      if (MC.exporter) MC.exporter.cancelFlag = true;
+      if (MC.sync && MC.sync.cancel) MC.sync.cancel();
+      MC.ui.autoStage.close();
+      MC.ui.toast("中止しました。こだわりで続けられます");
+      MC.ui.setSetupTab("pro");
+      MC.ui._tabsForced = true;
+      MC.ui.refreshSetupTabs();
+    }; }
   document.querySelectorAll("#setupTabs .tab").forEach(b =>
     b.onclick = () => MC.ui.setSetupTab(b.dataset.tab));
   $("#easyStartBtn").onclick = () => {
