@@ -917,7 +917,7 @@ MC.ui.renderAll = () => {
 };
 
 /* ---- ジャーニーバー(どのフェーズにいるかの常時表示) ---- */
-MC.ui.JOURNEY_SECTIONS = { mat: "#dropSec", tilt: "#tiltSec", sync: "#syncSec", audio: "#audioSec", length: "#lengthSec", polish: "#layoutSec", export: "#exportSec" };
+MC.ui.JOURNEY_SECTIONS = { mat: "#dropSec", tilt: "#tiltSec", sync: "#syncSec", length: "#lengthSec", export: "#exportSec" };
 
 MC.ui.initJourney = () => {
   MZJourney.init({
@@ -930,10 +930,8 @@ MC.ui.initJourney = () => {
       { id: "mat",    label: "動画を選ぶ", shortLabel: "動画", hint: "使う動画を選びます" },
       { id: "tilt",   label: "傾きを直す", shortLabel: "傾き", hint: "1本ずつ傾きを直します" },
       { id: "sync",   label: "同期と分析",   shortLabel: "同期", hint: "音のズレを合わせ、素材を分析します" },
-      { id: "audio",  label: "音声を選ぶ",   shortLabel: "音声", hint: "試聴して、使う音声を決めます" },
       { id: "length", label: "長さと開始位置", shortLabel: "長さ", hint: "長さと開始位置を選びます" },
-      { id: "polish", label: "仕上げ設定", shortLabel: "設定", hint: "そのままでも仕上がります。気になる箇所だけ調整します" },
-      { id: "export", label: "書き出し",     shortLabel: "書出", hint: "「動画を書き出す」で完成します" },
+      { id: "export", label: "書き出し",     shortLabel: "書出", hint: "画質を選んで書き出します。色は気になるときだけ" },
     ],
     doneHint: "書き出し完了。調整して書き出し直すこともできます",
     /* 1画面1操作(デッキ式)になってから、画面に出ているパネルは常に1枚だけ。
@@ -1009,23 +1007,6 @@ MC.ui.updateActionBar = () => {
           icon: "fa-folder-open",
           act: () => MC.ui.$(MC.S.mode === "vertical" ? "#fileInputV" : "#fileInput").click() };
       }
-    } else if (cur === "audio") {
-      /* 音声を選ぶ: 本体の決定ボタンが見えているなら重ねない(書き出しと同じ流儀) */
-      const db = MC.ui.$("#audioDecideBtn");
-      /* まだ分析していない＝本体のボタンが押せない状態なら、行動バーにも出さない。
-         出したままだと「押せそうなのに何も起きない」になる(2026-07-25) */
-      if (!db || db.disabled) {
-        bar.classList.remove("on");
-        document.body.classList.remove("mz-actionbar-on");
-        return;
-      }
-      const r = db.getBoundingClientRect();
-      if (r.height > 0 && r.top < window.innerHeight - 70 && r.bottom > 0) {
-        bar.classList.remove("on");
-        document.body.classList.remove("mz-actionbar-on");
-        return;
-      }
-      conf = { label: "この音で進める", icon: "fa-check", act: () => db && db.click() };
     } else if (cur === "length") {
       /* 長さと開始位置(2026-07-31 UI/UXレビュー P0)。
          375pxではカードが最大9枚並び、決定ボタンは折り返しのはるか下にある。
@@ -1045,23 +1026,33 @@ MC.ui.updateActionBar = () => {
       }
       conf = { label: "この長さで進める", icon: "fa-check",
         disabled: lb.disabled, act: () => lb.click() };
-    } else if ((cur === "sync" || cur === "polish") &&
-               MC.ui._setupTab !== "pro" && !MC.S.easyDone) {
-      /* おまかせタブでは同期ボタンは隠れている。次の一手は「おまかせで開始」。
-         本体の同じボタンが画面に見えているときは重ねない(2026-07-23) */
-      const eb = MC.ui.$("#easyStartBtn");
-      const r = eb.getBoundingClientRect();
-      if (r.height > 0 && r.top < window.innerHeight - 70 && r.bottom > 0) {
-        bar.classList.remove("on");
-        document.body.classList.remove("mz-actionbar-on");
-        return;
-      }
-      conf = { label: "分析を開始", icon: "fa-wand-magic-sparkles",
-        disabled: eb.disabled, act: () => eb.click() };
     } else if (cur === "sync") {
-      conf = { label: "波形で同期する", icon: "fa-wave-square",
-        disabled: MC.ui.$("#syncBtn").disabled, act: () => MC.ui.$("#syncBtn").click() };
-    } else if (cur === "polish") {
+      /* 同期の工程は2段になった(2026-08-01 工程統合)。
+         ①まだ分析していない → 分析を開始
+         ②分析は済んだが音声が未決 → この音で進める
+         音声を選ぶ工程を畳んだので、その一手をここで受ける */
+      const db = MC.ui.$("#audioDecideBtn");
+      const audioTurn = db && !db.disabled && !MC.S.audioDecided;
+      const near = el => {
+        if (!el) return false;
+        const r = el.getBoundingClientRect();
+        return r.height > 0 && r.top < window.innerHeight - 70 && r.bottom > 0;
+      };
+      if (audioTurn) {
+        /* 本体の決定ボタンが見えているなら重ねない(書き出しと同じ流儀) */
+        if (near(db)) { bar.classList.remove("on"); document.body.classList.remove("mz-actionbar-on"); return; }
+        conf = { label: "この音で進める", icon: "fa-check", act: () => db.click() };
+      } else if (MC.ui._setupTab !== "pro" && !MC.S.easyDone) {
+        /* おまかせタブでは同期ボタンは隠れている。次の一手は「おまかせで開始」 */
+        const eb = MC.ui.$("#easyStartBtn");
+        if (near(eb)) { bar.classList.remove("on"); document.body.classList.remove("mz-actionbar-on"); return; }
+        conf = { label: "分析を開始", icon: "fa-wand-magic-sparkles",
+          disabled: eb.disabled, act: () => eb.click() };
+      } else {
+        conf = { label: "波形で同期する", icon: "fa-wave-square",
+          disabled: MC.ui.$("#syncBtn").disabled, act: () => MC.ui.$("#syncBtn").click() };
+      }
+    } else if (cur === "export" && !MC.exporter.lastResult) {
       const cutMode = MC.S.mode === "switch";   // カット割は③自動スイッチングだけ(2026-07-24)
       if (cutMode && !MC.S.cutList.length) {
         conf = { label: "自動カット割", icon: "fa-clapperboard",
@@ -1139,23 +1130,22 @@ MC.ui.refreshJourney = () => {
      かたむきの確認ずみは tilt 工程の完了として別に立てる */
   if (slot.length) done.push("mat");
   if (slot.length && tiltDone) done.push("tilt");
-  if (slot.length && synced) done.push("sync");
-  if (slot.length && synced && audioDone) done.push("audio");
+  /* 同期の完了に「音声を決めた」を含める(2026-08-01 工程統合)。
+     音声の決定は同期と分析の中の一手になった */
+  if (slot.length && synced && audioDone) done.push("sync");
   if (slot.length && synced && audioDone && lengthDone) done.push("length");
-  if (exported) done.push("polish", "export");
+  if (exported) done.push("export");
   let current = !slot.length ? "mat"
     : (!tiltDone && !MC.S.easyDone) ? "tilt"
-    : (vids.length >= 2 && !synced) ? "sync"
-    : !audioDone ? "audio"
+    /* 同期と音声の決定は同じ工程(2026-08-01)。どちらか未了なら sync に留まる */
+    : ((vids.length >= 2 && !synced) || !audioDone) ? "sync"
     /* 音楽の解析が済んで、まだ長さを決めていないならここで止める。
        重い映像解析はこの選択のあとで、選ばれた範囲だけを見る */
     : (scanned && !lengthDone) ? "length"
-    /* 分析が済んだら書き出しへ運ぶ。「仕上げ設定」は“そのままでもOK”な寄り道なので
-       自動では現在地にしない。ここを polish にしていたため、初回は #exportSec が
-       step-off のままで**書き出しボタンがどこにも出ない**デッドロックだった
-       (2026-07-28に直したと報告したが、一括スクリプトが手前で中断しており
-        実際には適用されていなかった。2026-07-30 に実測で発覚し再適用) */
-    : (MC.S.easyDone || exported) ? "export" : "polish";
+    /* 仕上げ設定は工程ではなくなり、書き出しの画面へ入った(2026-08-01)。
+       以前ここを polish にしていたため、初回は #exportSec が step-off のままで
+       **書き出しボタンがどこにも出ない**デッドロックだった */
+    : "export";
   /* 分析の実行中は「同期と分析」を見せる。進捗(#easyStatus)は #easyPane の中にあり、
      これは sync 工程のパネルなので、他の工程を見せると進捗と中止ボタンが
      画面から消える。書き出し中は専用の全画面があるので対象外 */
@@ -1185,23 +1175,36 @@ MC.ui.refreshJourney = () => {
        ジャーニーが現在地だと言っている工程の中身が画面に無い状態
    畳み方をいくら調整してもこれは直らないので、出し分けをここに一本化した。
    状態は refreshJourney が導出したものをそのまま使う(新しい状態機械を作らない) */
-MC.ui.STEP_RANK = { mat: 0, tilt: 1, sync: 2, audio: 3, length: 4, polish: 5, export: 6 };
+/* 工程は5つ(2026-08-01 品質改修で 7→5)。
+   375px に7つは**入りきらなかった**(実測 59px はみ出し)。
+   入りきらないのは装飾の問題ではなく、モデルが大きすぎる合図。
+   減らしたのは「決定を伴わない2つ」:
+
+   ・仕上げ設定(polish) … 本人が「そのままでもOK」と言われる任意の調整。
+     工程として1枚立てると「通らねばならない関門」に見える。
+     書き出しの画面へ吸収し、出す直前に触れるようにした
+   ・音声を選ぶ(audio) … 決定は1つだけ(どのカメラの音を使うか)。
+     しかも音のある動画が2本以上のときしか出ない。同期と分析の中へ入れる
+
+   残した3つ(素材・傾き・長さと開始位置)は、どれも**本人が決めないと
+   先が決まらない**もの。ここを削ると、ツールが勝手に決めたことになる */
+MC.ui.STEP_RANK = { mat: 0, tilt: 1, sync: 2, length: 3, export: 4 };
 MC.ui.STEP_GROUPS = [
   { id: "mat",    panels: ["#dropSec"] },
-  /* 傾きは単独の工程に戻した(2026-07-31 優さん指示)。カード内の箱にしていた間は
-     「動画を選ぶ」枠と同じ画面に並び、どちらを操作しているのか分からなかった。
-     1画面に1本ぶんだけを出し、動画1 → 動画2 → 動画3 と送る */
+  /* 傾きは単独の工程(2026-07-31 優さん指示)。1画面に1本ぶんだけを出し、
+     動画1 → 動画2 → 動画3 と送る */
   { id: "tilt",   panels: ["#tiltSec"] },
   /* #easyPane を sync に載せる(2026-07-28)。おまかせの実際の操作＝「分析を開始」は
      この枠にあるのに、工程表に載っていなかったため applySteps が一切触れられず、
-     分析が済んだあとも全工程に出続けていた */
-  { id: "sync",   panels: ["#syncSec", "#easyPane"] },
-  { id: "audio",  panels: ["#audioSec"] },
+     分析が済んだあとも全工程に出続けていた。
+     #audioSec もここへ(2026-08-01) ─ 「この音で進める」は分析の続きの一手 */
+  { id: "sync",   panels: ["#syncSec", "#easyPane", "#audioSec"] },
   /* 長さと開始位置を決める(2026-07-31)。音楽の解析だけ先に済ませてここで止まり、
      決まった範囲だけを映像解析する */
   { id: "length", panels: ["#lengthSec"] },
-  { id: "polish", panels: ["#placeSec", "#layoutSec", "#finishSec"] },
-  { id: "export", panels: ["#exportSec"] },
+  /* 仕上げの3枠を書き出しへ吸収(2026-08-01)。任意の調整は、
+     出す直前に「気になるところだけ」触るのが自然な順序 */
+  { id: "export", panels: ["#exportSec", "#placeSec", "#layoutSec", "#finishSec"] },
 ];
 MC.ui._stepOpen = new Set();   // 手で開いた「すみ」パネル(フェーズが進むと畳み直す)
 MC.ui._stepPhase = null;
@@ -2052,14 +2055,18 @@ MC.ui.setSetupTab = tab => {
 MC.ui.refreshSetupTabs = () => {
   const tabs = MC.ui.$("#setupTabs");
   if (!tabs) return;
-  /* タブは仕上げ設定(polish)から出す(2026-07-28 優さん指示)。
-     こだわり3枚のうち2枚(#layoutSec/#finishSec)は polish の画面で、
-     序盤に出しても意味の大半が無かった。こだわり＝「おまかせの結果を直す道具」。
+  /* タブは同期の工程から出す(2026-08-01)。こだわり＝「おまかせの結果を直す道具」で、
+     素材を選んでいる段では押しても何も起きない。
      例外: 同期に失敗したとき(_tabsForced)は途中でも開く ─ 手動同期(#syncBtn)が
-     唯一の復旧手段のため */
+     唯一の復旧手段のため。
+
+     ★ ここは rank.polish を見ていた。工程を7→5へ畳んで polish を消したとき、
+       rank.polish が undefined になり `数値 < undefined` が常に false ─
+       つまり**タブが最初の画面から出っぱなし**になっていた。
+       消した工程の名前が条件に残ると、こうして静かに壊れる */
   const rank = MC.ui.STEP_RANK;
   tabs.hidden = !MC.ui._tabsForced &&
-    (rank[MC.ui._stepPhase ?? "mat"] ?? 0) < rank.polish;
+    (rank[MC.ui._stepPhase ?? "mat"] ?? 0) < rank.sync;
   if (tabs.hidden && MC.ui._setupTab === "pro") { MC.ui.setSetupTab("easy"); return; }
   const lead = MC.ui.$("#setupTabsLead");
   if (lead) {
@@ -2280,7 +2287,7 @@ MC.ui.renderFullLabel = on => {
   /* 傾きの確認中に見えているのは1台のソロ表示で、完成品ではない
      (2026-07-28 レビューP1)。工程に合わない断言をしない */
   const ph = document.body.dataset.mzjPhase;
-  if (ph !== "polish" && ph !== "export") {
+  if (ph !== "export") {   // 仕上げは書き出しの画面へ吸収(2026-08-01)
     const sc0 = MC.getClip(MC.preview.soloId);
     el.innerHTML = '<i class="fa-solid fa-ruler-horizontal" aria-hidden="true"></i> '
       + '<span><b>傾きを確認しています</b>'

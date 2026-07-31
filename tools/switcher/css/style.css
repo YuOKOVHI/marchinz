@@ -1142,11 +1142,21 @@ body[data-mzj-phase="audio"] .stage { display: none; }
 body.mz-pin-force .transport,
 body.mz-pin-force .trim-row,
 body.mz-pin-force #cutModeBtn { display: none; }
-/* 書き出しの画面は「画質を選んで書き出す」だけにする。範囲(IN/OUT)・
-   カット切替・タイムラインは仕上げ設定の道具で、実測で41文言/1388pxの
-   大半がこれだった(2026-07-28)。直したくなったらジャーニーの「設定」へ戻る */
+/* 範囲(IN/OUT)・カット切替・タイムラインは**範囲が決まってから**の道具。
+   素材を選んでいる段・傾きを直している段では、押しても意味が無い
+   (実測 2026-08-01: 素材の画面に押せるものが16個あり、IN/OUT/リセットは
+   まだ何も同期していない状態で並んでいた)。
+   出すのは「長さと開始位置」の工程だけにする。
+   書き出しの画面も「画質を選んで書き出す」だけに保つ(2026-07-28) */
+body[data-mzj-phase="mat"] .trim-row,
+body[data-mzj-phase="tilt"] .trim-row,
+body[data-mzj-phase="sync"] .trim-row,
 body[data-mzj-phase="export"] .trim-row,
+body[data-mzj-phase="mat"] #cutModeBtn,
+body[data-mzj-phase="tilt"] #cutModeBtn,
 body[data-mzj-phase="export"] #cutModeBtn,
+body[data-mzj-phase="mat"] #timelineWrap,
+body[data-mzj-phase="tilt"] #timelineWrap,
 body[data-mzj-phase="export"] #timelineWrap { display: none !important; }
 
 
@@ -1249,8 +1259,13 @@ body:not(.mz-has-clips) #easyPane { display: none; }
 /* おまかせ/こだわりの出し分け。工程の出し分け(.step-off)とは別の軸なので、
    両方が「出す」と言ったときだけ出る(ラッパで隠すと工程の画面ごと消えた) */
 body.tab-easy #syncSec,
-body.tab-easy #layoutSec,
-body.tab-easy #finishSec { display: none !important; }
+body.tab-easy #layoutSec { display: none !important; }
+/* ★ #finishSec(色とフィルター)は おまかせ でも出す(2026-08-01)。
+   工程「仕上げ設定」を畳んで書き出しの画面へ入れたのに、この1行が
+   おまかせのまま使う人から**色を永久に隠していた** ─
+   こだわりタブへ切り替えないと触れない。色を変えたいのは、
+   むしろ細かい設定を触らない人のほうで、順序が逆だった。
+   #syncSec(手動同期) と #layoutSec(レイアウト調整)は こだわり のまま */
 body.tab-pro #easyPane { display: none !important; }
 
 /* 傾きの微調整の格納(2026-07-28) */

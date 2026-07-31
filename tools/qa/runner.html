@@ -838,6 +838,17 @@ async function countSamples(ns, file, fromSec) {
     S.audioClipId = 1;
     S.wipeMainId = 1; S.wipeClipId = 2; S.wipeClipId2 = null;
     S.wipePos = "br"; S.wipePos2 = "bl"; S.wipeSize = 0.32;
+    /* ★ 工程の進み具合を必ず戻す(2026-08-01)。ここが抜けていたため、
+       showIn/showOut を立てた試験のあとに走る試験が「長さは未決定なのに
+       演奏範囲は分かっている」状態を引き継ぎ、現在地が length に居座って
+       落ちていた ─ 製品ではなく**試験どうしの状態漏れ**。
+       compReset を名乗る以上、導出に効く状態は全部戻す */
+    S.showIn = null; S.showOut = null;
+    S.exportPreset = null; S.startKey = null; S.startAt = null;
+    S.lengthDecided = false; S.audioDecided = false; S.easyDone = false;
+    S.trimIn = 0; S.trimOut = null;
+    w.MC.exporter.lastResult = null;
+    w.MC.ui._viewPhase = null;
     w.MZWM = null;
     return S;
   };
@@ -1229,6 +1240,64 @@ async function countSamples(ns, file, fromSec) {
   /* 2026-08-01 製品改革 段5。最初の画面から「作る動画を選ぶ」の3枚のカードを
      外した。あれは内部構造をそのまま質問にしたもので、ユーザーはまだ何も
      見せていないのに出力形式を先に決めさせられていた */
+  /* 2026-08-01 品質改修。375px に7工程は入りきらなかった(実測59pxはみ出し)。
+     入りきらないのはモデルが大きすぎる合図なので、決定を伴わない2つを畳んだ */
+  group("㉔ 工程は5つ（バーが画面に収まる）");
+  await test("★工程が5つで、消した工程名がどこにも残っていない", async () => {
+    const w = await compEnv();
+    const ids = [...w.document.querySelectorAll(".mzj-phase")].map(b => b.dataset.id);
+    const want = ["mat", "tilt", "sync", "length", "export"];
+    if (ids.join(",") !== want.join(",")) throw new Error("工程が " + ids.join(","));
+    const R = w.MC.ui.STEP_RANK;
+    if ("polish" in R || "audio" in R) throw new Error("STEP_RANK に消した工程が残っている");
+    /* ★ 消した工程名が条件に残ると静かに壊れる ─ 実際 refreshSetupTabs が
+       rank.polish を見ており、undefined との比較が常に false になって
+       タブが最初の画面から出っぱなしになっていた */
+    /* ★ toString() はコメントも返す。素で正規表現を当てると、
+       「なぜ直したか」を書いた注記そのものに反応して落ちる
+       (HTMLコメントで同じ失敗を一度している)。コメントを除いてから見る */
+    const src = w.MC.ui.refreshSetupTabs.toString()
+      .replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    if (/rank\.polish|rank\.audio/.test(src)) throw new Error("タブの条件が消した工程を見ている");
+    return "5工程 / 消した工程名の残りなし";
+  });
+  await test("★仕上げ（色とフィルター）は書き出しの画面で、おまかせでも触れる", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.clips.forEach(c => { c.tiltOk = true; c.syncMethod = "波形"; });
+    S.audioDecided = true; S.lengthDecided = true; S.easyDone = true;
+    w.MC.ui.setSetupTab("easy");
+    w.MC.ui.renderAll(); w.MC.ui.refreshJourney();
+    const disp = id => w.getComputedStyle(w.document.getElementById(id)).display;
+    if (w.document.body.dataset.mzjPhase !== "export") {
+      throw new Error("書き出しの工程にならない: " + w.document.body.dataset.mzjPhase);
+    }
+    /* ★ body.tab-easy #finishSec { display:none!important } が
+       おまかせのまま使う人から色を永久に隠していた。工程を畳んだだけでは直らない */
+    if (disp("finishSec") === "none") throw new Error("おまかせだと色に触れない");
+    if (disp("exportSec") === "none") throw new Error("書き出し枠が出ない");
+    return "おまかせでも #finishSec が出る";
+  });
+  await test("★まだ範囲を決めていない画面に IN/OUT を出さない", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.clips.forEach(c => { c.tiltOk = false; c.syncMethod = "未同期"; });
+    S.easyDone = false;
+    w.MC.ui.renderAll(); w.MC.ui.refreshJourney();
+    w.MC.ui._viewPhase = "mat"; w.MC.ui.refreshJourney();
+    const tr = w.document.querySelector(".trim-row");
+    if (w.getComputedStyle(tr).display !== "none") {
+      throw new Error("素材の画面に IN/OUT が出ている（同期前で押しても意味が無い）");
+    }
+    S.clips.forEach(c => { c.tiltOk = true; c.syncMethod = "波形"; });
+    S.audioDecided = true; S.showIn = 10; S.showOut = 200; S.lengthDecided = false;
+    w.MC.ui.refreshJourney();
+    w.MC.ui._viewPhase = "length"; w.MC.ui.refreshJourney();
+    if (w.getComputedStyle(tr).display === "none") throw new Error("長さの工程でも IN/OUT が出ない");
+    w.MC.ui._viewPhase = null;
+    return "素材=出ない / 長さ=出る";
+  });
+
   group("㉓ ファーストビュー（種類は覚える・入口では聞かない）");
   await test("★起動したらすぐ作業画面。種類はいつでも変えられる", async () => {
     const w = await compEnv();
