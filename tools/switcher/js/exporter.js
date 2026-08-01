@@ -280,14 +280,28 @@ MC.exporter.addAacChunk = (muxer, chunk, meta, st) => {
     const cfg = (meta && meta.decoderConfig) || {};
     const d = cfg.description;
     const hasDesc = d && (d.byteLength || d.length);
+    /* ★ 設計図(AudioSpecificConfig)は**必ず自分で作る**(2026-08-02 実機)。
+       v1.72.0 では「エンコーダが返したものをそのまま渡す」形にしていたが、
+       実機の出来上がりは `mp4a.40`（プロファイル番号の無い不正なコーデック名）で、
+       どの再生アプリも音を復号できなかった＝これが「音が入っていない」の正体。
+       補完のログが出ていないので description 自体は返ってきており、
+       中身か型（ArrayBuffer と ArrayBufferView の違い等）で落ちている。
+       こちらの設定は常に AAC-LC / 48kHz / 2ch と分かっているので、
+       受け取ったものを信じずに自分で組む方が確実。2バイトで済む */
+    const sr0 = cfg.sampleRate || 48000, ch0 = cfg.numberOfChannels || 2;
+    const asc = MC.exporter.aacAsc(sr0, ch0);
+    /* 受け取ったものは記録だけ残す（次の実機で食い違いが見える） */
+    try {
+      const u = hasDesc ? new Uint8Array(d.buffer || d) : null;
+      MC.log("音声の設計図: 自前=" + Array.from(asc).map(x => x.toString(16)).join(" ")
+        + " / エンコーダ=" + (u ? Array.from(u.subarray(0, 4)).map(x => x.toString(16)).join(" ") : "(無し)"));
+    } catch (err) {}
     st.meta = { decoderConfig: {
-      codec: cfg.codec || "mp4a.40.2",
-      sampleRate: cfg.sampleRate || 48000,
-      numberOfChannels: cfg.numberOfChannels || 2,
-      description: hasDesc ? d
-        : MC.exporter.aacAsc(cfg.sampleRate || 48000, cfg.numberOfChannels || 2),
+      codec: "mp4a.40.2",
+      sampleRate: sr0,
+      numberOfChannels: ch0,
+      description: asc,
     } };
-    if (!hasDesc) MC.log("音声: エンコーダが設計図(description)を返さないため自前で補いました");
   }
   if (st.adts === undefined) {
     const b = new Uint8Array(chunk.byteLength);

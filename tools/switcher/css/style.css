@@ -1703,6 +1703,11 @@ html:has(body.mz-auto-stage), body.mz-auto-stage {
 .as-fail-det { font-size: 12px; color: var(--tx2); }
 .as-fail-det summary { min-height: 32px; display: flex; align-items: center; cursor: pointer; }
 .as-fail-copy { min-height: 44px; width: 100%; margin: 6px 0 0; }
+/* ★ 文字が読めなかった(2026-08-02 実機。白地に白)。
+   .btn の既定色を継がずに、この場で必ず読める色を指定する */
+.as-fail-copy, #audioWarnCopy, .mzp-retry {
+  background: #fff !important; color: var(--acc) !important;
+  border: 1px solid rgba(30, 79, 214, .35) !important; font-weight: 700; }
 .as-fail-log { margin: 6px 0 0; padding: 8px; max-height: 200px; overflow: auto;
   background: rgba(15, 33, 56, .05); border-radius: 8px;
   font-size: 11px; line-height: 1.5; white-space: pre-wrap; word-break: break-all;

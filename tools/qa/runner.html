@@ -522,11 +522,15 @@ async function countSamples(ns, file, fromSec) {
     if (!(r.rms >= META["lpcm_tail.mov"].toneRms * 0.5)) throw new Error("音も鳴っていない: " + r.rms);
     return `設計図 ${n}バイト / RMS ${r.rms.toFixed(3)}`;
   });
-  await test("変異: 自前の補いを外すと設計図が空になる(=この見張りの歯)", async () => {
+  await test("変異: 自前で作るのをやめると設計図が空になる(=この見張りの歯)", async () => {
     const mut = src => {
-      const before = ": MC.exporter.aacAsc(cfg.sampleRate || 48000, cfg.numberOfChannels || 2),";
+      /* ★ 2026-08-02: 実装を「常に自前で作る」へ変えたので、変異も
+         「自前をやめてエンコーダの値をそのまま使う」形にする。
+         v1.72.0 の実機はまさにこれで、出来上がりが mp4a.40（不正）になり
+         どの再生アプリも音を復号できなかった */
+      const before = "      description: asc,";
       if (!src.includes(before)) throw new Error("変異ポイントが見つからない");
-      return src.split(before).join(": undefined,");
+      return src.split(before).join("      description: (hasDesc ? d : undefined),");
     };
     const ns = await loadAudioExporter(mut, stripDescEnc);
     /* 壊れたファイルは読み戻し(デコード)自体が失敗しうる。ファイルは
