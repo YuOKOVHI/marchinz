@@ -3796,6 +3796,45 @@ async function countSamples(ns, file, fromSec) {
   });
 
 
+  group("㉖-b こだわりの手動ボタンは作業中の鍵を掛ける(2026-08-01 交差レビュー)");
+  await test("★同期の最中は書き出しボタンが押せない(黙って壊れる経路の封鎖)", async () => {
+    const w = await compEnv();
+    compReset(w);
+    const S = w.MC.S;
+    /* 3つのハンドラが鍵を掛けて返す形になっていること(コメントは除いて見る)。
+       この形の検査が変異の歯: setBusy を1つ外すとここで落ちる */
+    const bare = fn => String(fn).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    for (const id of ["syncBtn", "autocutBtn", "colorMatchBtn"]) {
+      const h = w.document.getElementById(id) && w.document.getElementById(id).onclick;
+      if (!h) throw new Error(id + " のハンドラが無い");
+      const src = bare(h);
+      if (!src.includes("setBusy(true)")) throw new Error(id + " が作業中の鍵を掛けない");
+      if (!src.includes("setBusy(false)")) throw new Error(id + " が鍵を返さない(finally漏れ)");
+    }
+    /* 実挙動: 同期が走っている間、_busy が立ち #exportBtn が止まる */
+    S.colorOn = false; S.autoTrim = false; S.trimOut = 1;   // 同期後の重い後続を通らない
+    let release;
+    const gate = new Promise(r => { release = r; });
+    const keep = w.MC.sync.run;
+    w.MC.sync.run = async () => { await gate; return {}; };
+    const eb = w.document.getElementById("exportBtn");
+    const sb = w.document.getElementById("syncBtn");
+    eb.disabled = false; sb.disabled = false;
+    delete eb.dataset.mzWasDisabled;
+    const running = sb.onclick();
+    await new Promise(r => setTimeout(r, 30));
+    try {
+      if (!w.MC.ui._busy) throw new Error("同期中なのに作業中になっていない");
+      if (!eb.disabled) throw new Error("同期中に書き出しボタンが押せる(ズレたまま1本になる経路)");
+    } finally {
+      release();
+      w.MC.sync.run = keep;
+      await running.catch(() => {});
+    }
+    if (w.MC.ui._busy) throw new Error("同期が終わっても鍵が返らない");
+    return "同期中: busy+書き出し不可 / 終了後: 鍵が返る / 3ハンドラとも形もOK";
+  });
+
   /* ============ 別のシーンも作る(2026-08-01 優さん指示) ============ */
   group("㉗ 完成後の「別のシーンも作る」");
   const sceneAudioSetup = async (w, S) => {

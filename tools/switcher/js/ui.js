@@ -156,7 +156,10 @@ MC.ui.showExportStats = () => {
     `書き出し ${sec(s.totalMs)}秒`,
     `素材 ${mmss(s.spanSec)} → 実時間の${speed}倍速`,
     `${s.w}x${s.h} ${(s.bitrate / 1e6).toFixed(0)}Mbps ${s.frames}コマ`,
-    `カメラ${s.cams}台 / ${s.layoutId} / 画質 ${s.quality}`,
+    /* 内部ID(light/full)を人の言葉(標準/高画質)で出す(2026-08-01 1080p統一)。
+       中高生がコピーして送る診断ログに「light」では、720pだった頃の名残と
+       読み違える(いまはどちらも1080p) */
+    `カメラ${s.cams}台 / ${s.layoutId} / 画質 ${(MC.exporter.QUALITIES[s.quality] || {}).label || s.quality}`,
     "",
     "── 何に時間がかかったか ──",
     bucket("デコード待ち", s.decodeMs),
@@ -209,7 +212,10 @@ MC.ui.showExportStats = () => {
 MC.ui.failHint = m => {
   m = String(m || "");
   if (/読み込めませんでした|デコード/.test(m)) {
-    return "カメラが3本あると、iPhoneでは重すぎて止まることがあります。1本減らすか、画質を軽いほうにしてお試しください。";
+    /* ★「画質を軽いほうに」は削除(2026-08-01 1080p統一のUI/UXレビュー)。
+       標準/高画質の差はビットレートだけになり、デコードの重さは変わらない ─
+       効かない対処を勧めると、試して失敗した人が次の手を失う */
+    return "カメラが3本あると、iPhoneでは重すぎて止まることがあります。1本減らすか、短い範囲でお試しください。";
   }
   if (/演奏している場所/.test(m)) {
     return "拍手やアナウンスだけの場所だと、演奏の始まりを見つけられないことがあります。演奏が入っているところから取り込み直してください。";
@@ -317,6 +323,14 @@ MC.ui.showDone = res => {
      成功のときだけ言う(取り消したのに「保存できました」は嘘になる)
    ・<a download> は完了イベントが取れないが、blob は手元にあり書き込みは
      即時なので「ダウンロードに保存しました」で実態と合う */
+/* ★ 正確さの注記(2026-08-01 交差レビュー): Web Share の resolve は
+   「共有シートの操作が完了した」ことまでしか保証しない。写真/ファイルへの
+   実際の書き込み完了イベントは Web からは取れない。それでも
+   ・AbortError(取り消し)は確実に区別できる
+   ・主導線の文言が「写真(カメラロール)やファイルへ保存」で、
+     圧倒的多数の共有先が写真アプリ
+   なので「保存しました」と言う。共有先のアプリ側で失敗する稀な場合に
+   限り、この言葉が実態より先に出る ─ Webの制約として受け入れる */
 MC.ui.notifySaved = (r, how) => {
   const size = r.blob ? `（${(r.blob.size / 1e6).toFixed(1)}MB）` : "";
   const line = how === "share"
@@ -3992,7 +4006,12 @@ MC.ui.wire = () => {
   dz.addEventListener("drop", e => MC.media.addFiles([...e.dataTransfer.files]));
 
   $("#syncBtn").onclick = async () => {
-    $("#syncBtn").disabled = true;
+    /* ★ こだわりの手動ボタン3つ(同期・カット割・色合わせ)は自分しか
+       止めていなかった(2026-08-01 交差レビュー)。同期の最中に書き出しを
+       押せる ─ ズレたままの3本が黙って1本の動画になる経路。
+       setBusy で作業領域を丸ごと止め、必ず finally で返す */
+    if (MC.ui._busy) return;
+    MC.ui.setBusy(true);
     const p = MZP.start({ mount: "#syncStatus", chapter: "同期", steps: 4,
                           label: "音を分析しています…" });
     try {
@@ -4022,7 +4041,10 @@ MC.ui.wire = () => {
       MC.ui.toast("⚠ 同期に失敗: " + e.message); console.error(e);
       p.fail("ズレを合わせられませんでした", { detail: e.message,
         retry: () => $("#syncBtn").click() });
-    } finally { $("#syncBtn").disabled = MC.S.clips.length < 2; }
+    } finally {
+      MC.ui.setBusy(false);
+      $("#syncBtn").disabled = MC.S.clips.filter(c => !c.isImage).length < 2;
+    }
   };
 
   $("#playBtn").onclick = () => MC.preview.toggle();
@@ -4206,7 +4228,8 @@ MC.ui.wire = () => {
   $("#bpbSelect").onchange = e => { MC.S.beatsPerBar = parseInt(e.target.value); MC.saveState(); };
   MC.ui.renderLevel();
   $("#autocutBtn").onclick = async () => {
-    $("#autocutBtn").disabled = true;
+    if (MC.ui._busy) return;          // ★ 他の作業中は始めない(2026-08-01 交差レビュー)
+    MC.ui.setBusy(true);              //    解析中に書き出しを押される経路を塞ぐ
     MC.preview.pause();   // 解析中はvideo要素をシークで専有する
     const p = MZP.start({ mount: "#autocutStatus", chapter: "レイアウト",
                           delay: 0, steps: 3 });
@@ -4222,7 +4245,7 @@ MC.ui.wire = () => {
       console.error(e);
       p.fail("カット割を作れませんでした", { detail: e.message });
       MC.ui.showErrorLog(e);
-    } finally { $("#autocutBtn").disabled = false; }
+    } finally { MC.ui.setBusy(false); $("#autocutBtn").disabled = false; }
   };
   $("#wipeMainSelect").onchange = e => { MC.S.wipeMainId = parseInt(e.target.value); MC.ui.renderLayout(); MC.saveState(); MC.preview.draw(); };
   $("#wipeCamSelect").onchange = e => { MC.S.wipeClipId = parseInt(e.target.value); MC.saveState(); MC.preview.draw(); };
@@ -4245,7 +4268,8 @@ MC.ui.wire = () => {
   $("#filterSelect").onchange = e => { MC.S.filterId = e.target.value; MC.saveState(); MC.preview.draw(); };
   $("#colorStrength").oninput = e => { MC.S.colorStrength = parseFloat(e.target.value); MC.saveState(); MC.preview.draw(); };
   $("#colorMatchBtn").onclick = async () => {
-    $("#colorMatchBtn").disabled = true;
+    if (MC.ui._busy) return;          // ★ 他の作業中は始めない(2026-08-01 交差レビュー)
+    MC.ui.setBusy(true);              //    色解析は<video>のシークを専有する
     const p = MZP.start({ mount: "#finishStatus", chapter: "仕上げ",
                           label: "色を調べています…" });
     try {
@@ -4255,7 +4279,7 @@ MC.ui.wire = () => {
     } catch (e) {
       console.error(e);
       p.fail("色を合わせられませんでした", { detail: e.message });
-    } finally { $("#colorMatchBtn").disabled = false; }
+    } finally { MC.ui.setBusy(false); $("#colorMatchBtn").disabled = false; }
   };
   $("#colorClearBtn").onclick = () => {
     MC.S.colorOn = false;
