@@ -2917,7 +2917,14 @@ MC.ui.runEasyScan = async (pIn, base = 0) => {
     await MZP.paint();
     const dur = MC.timelineDuration();
     let s = null;
-    try { s = await MC.salute.detect(); }
+    /* 音声の読み込みは全尺ぶん。ここが長尺でいちばん長く無言になるので、
+       %を画面へ流す(2026-08-01)。おまかせ専用画面にも同じ数字を出す */
+    const onProg = fr => {
+      const pctTxt = `音を読み込み中 ${Math.round(Math.max(0, Math.min(1, fr)) * 100)}%`;
+      p.pulse("演奏の始まりと終わりを調べています…", { sub: pctTxt });
+      if (MC.ui.autoStage) { MC.ui.autoStage._sub = pctTxt; MC.ui.autoStage.render(); }
+    };
+    try { s = await MC.salute.detect(onProg); }
     catch (e) { MC.log("scan: 演奏区間を検出できず →", e.message); }
     /* director のオープニング判定(サリュート)もここで確定させる。
        モジュール変数へ入れっぱなしにすると、音声や同期を選び直しても

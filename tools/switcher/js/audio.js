@@ -50,7 +50,7 @@ MC.audio.extract8k = async (clip, maxSec = MC.audio.MAX_SEC, onProg = null, star
   let r = null, err1 = null;
   try {
     r = await MC.audio.viaRawPcm(clip, maxSec, onProg, startSec);   // リニアPCM(Resolve等のMOV)は生読みが最速・最軽量
-    if (!r) r = await MC.audio.viaWebCodecs(clip, maxSec, startSec);
+    if (!r) r = await MC.audio.viaWebCodecs(clip, maxSec, onProg, startSec);
   } catch (e) {
     err1 = e;
     console.warn("[MC] WebCodecs音声抽出失敗→decodeAudioDataへ:", e.message);
@@ -131,7 +131,9 @@ MC.audio.viaRawPcm = async (clip, maxSec, onProg = null, startSec = 0) => {
 /* 主経路: mp4boxデマックス + AudioDecoder(大きいファイルでもメモリ軽量)。
    startSec 指定時はそこからデコード。AACはフレーム境界が要求秒に一致しないため、
    最初に出てきた AudioData の実タイムスタンプを開始秒として返す(同期精度を守る) */
-MC.audio.viaWebCodecs = async (clip, maxSec, startSec = 0) => {
+/* onProg(0..1) を受け取る(2026-08-01)。iPhoneのMOVはこの経路を通ることが多く、
+   長尺だと数分かかるのに、進捗を出せる作りなのに渡していなかった */
+MC.audio.viaWebCodecs = async (clip, maxSec, onProg = null, startSec = 0) => {
   const src = new MZ_MP4.MP4Source(clip.file);
   await src.init();
   const at = src.audioTrack();
@@ -173,9 +175,11 @@ MC.audio.viaWebCodecs = async (clip, maxSec, startSec = 0) => {
       duration: Math.round(s.duration * 1e6 / s.timescale),
       data: s.data,
     }));
+    if (onProg) onProg(Math.min(1, decodedSec / Math.max(1, Math.min(maxSec, clip.duration || maxSec))));
     if (decodedSec >= maxSec) break;
     if (decoder.decodeQueueSize > 32) await MC.waitDequeue(decoder);
   }
+  if (onProg) onProg(1);
   if (!error) await decoder.flush().catch(() => {});
   try { decoder.close(); } catch (e) {}
   if (error) throw error;

@@ -37,7 +37,12 @@ MC.salute._cacheKey = null;
 MC.salute._cache = null;
 MC.salute.clearCache = () => { MC.salute._cacheKey = null; MC.salute._cache = null; };
 
-MC.salute.detect = async () => {
+/* onProg(0..1) を渡せる。★ここは長尺でいちばん長く無言になる場所。
+   同期は「真ん中3分」の窓しか読まないのに、この検出は**全尺を読み直す**ため、
+   8分の素材なら窓の倍以上を読むことになる。それを黙って待たせていた
+   (2026-08-01 優さん報告「この画面から進まない、進捗もわからない」)。
+   extract8k は元から進捗を返せるのに、呼び出し側が受け取っていなかった */
+MC.salute.detect = async (onProg = null) => {
   const clip = MC.getClip(MC.S.audioClipId);
   if (!clip) throw new Error("音声クリップがありません");
   const key = `${clip.id}|${clip.name}|${clip.size}|${clip.offset}`;
@@ -48,7 +53,7 @@ MC.salute.detect = async () => {
   {
     const _t0 = performance.now();
     const hit = clip.audio8k && (clip.audio8kReqStart || 0) === 0;
-    await MC.audio.extract8k(clip);   // 窓キャッシュなら全尺で読み直される(2026-07-24)
+    await MC.audio.extract8k(clip, MC.audio.MAX_SEC, onProg);   // 窓キャッシュなら全尺で読み直される
     MC.log(`salute抽出: ${hit ? "キャッシュ命中" : "全尺読み直し"} ${(performance.now() - _t0).toFixed(0)}ms`);
   }
   const sr = MC.audio.SR, hop = sr / 10;  // 100ms

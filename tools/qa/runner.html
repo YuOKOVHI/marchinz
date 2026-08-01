@@ -1357,6 +1357,48 @@ async function countSamples(ns, file, fromSec) {
   });
   /* 2026-08-01 優さん指示「おまかせは完全にUIを分けて。1つの画面だけに。
      何をしてるかがわかる。プレビューがわかるように。できていってる！がわかる」 */
+  /* 2026-08-01 優さん報告「この画面から進まない、進捗もわからない」。
+     写っていたのは「演奏の始まりと終わりを調べています…」の段。
+     同期は真ん中3分の窓しか読まないのに、この検出は**全尺を読み直す**ため
+     長尺でいちばん長く無言になる。extract8k は元から進捗を返せるのに、
+     salute.detect が受け取っていなかった */
+  await test("★音の読み込みが無言にならない（%が画面へ流れる）", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.audioClipId = 1;
+    /* detect が進捗を受け取れること（引数の穴が塞がっているか）。
+       ★ Function.length は**既定値つきの引数を数えない**ので使えない
+         (onProg = null は 0 と数えられる)。ソースの形で見る */
+    const argsOf = fn => (String(fn).match(/^[^(]*\(([^)]*)\)/) || [, ""])[1];
+    if (!/onProg/.test(argsOf(w.MC.salute.detect))) {
+      throw new Error("detect が onProg を受け取らない: (" + argsOf(w.MC.salute.detect) + ")");
+    }
+    const seen = [];
+    const keep = w.MC.audio.extract8k;
+    const sr = w.MC.audio.SR, N = sr * 60;
+    const pcm = new Float32Array(N);
+    for (let i = 0; i < N; i++) pcm[i] = (i / sr) < 10 ? 0.01 * Math.sin(i / 40) : 0.5 * Math.sin(i / 12);
+    w.MC.audio.extract8k = async (clip, maxSec, onProg) => {
+      for (let k = 0; k <= 4; k++) { if (onProg) onProg(k / 4); }
+      Object.assign(clip, { audio8k: pcm, audio8kStart: 0, audio8kReqStart: 0, audio8kReqSpan: maxSec });
+      return pcm;
+    };
+    try {
+      w.MC.salute.clearCache();
+      w.MC.getClip(1).duration = 60;
+      await w.MC.salute.detect(fr => seen.push(Math.round(fr * 100)));
+    } finally { w.MC.audio.extract8k = keep; w.MC.salute.clearCache(); }
+    if (seen.length < 3) throw new Error(`進捗が ${seen.length} 回しか来ない`);
+    if (seen[0] !== 0 || seen[seen.length - 1] !== 100) {
+      throw new Error("0%から100%まで来ない: " + seen.join(","));
+    }
+    /* WebCodecs 経路（iPhoneのMOVが通る）も進捗を受け取る形になっているか。
+       ここが抜けていると、実機だけ無言に戻る */
+    if (!/onProg/.test(argsOf(w.MC.audio.viaWebCodecs))) {
+      throw new Error("viaWebCodecs が onProg を受け取らない(実機だけ無言に戻る)");
+    }
+    return `進捗 ${seen.length} 回 (${seen[0]}%→100%) / WebCodecs経路も対応`;
+  });
   await test("★おまかせ専用の1画面: プレビューが動き、段が点いていく", async () => {
     const w = await compEnv();
     const S = compReset(w);
