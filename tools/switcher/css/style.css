@@ -284,6 +284,15 @@ body.mz-busy-lock #errorLog button { pointer-events: auto; opacity: 1; }
 .mode-back:hover { color: var(--acc-deep); text-decoration: underline; }
 .mode-current { font-size: 12px; color: var(--tx2); font-weight: 700; }
 
+/* いま2段のどちらにいるか。2枚続けて選ばせるのに、
+   何枚目なのかを言う場所が画面のどこにも無かった(2026-08-01) */
+.mode-step-no {
+  display: inline-block; margin-bottom: 10px; padding: 3px 11px;
+  border-radius: 999px; background: rgba(30, 79, 214, .10);
+  color: var(--acc); font-size: 11.5px; font-weight: 800;
+  font-variant-numeric: tabular-nums; letter-spacing: .04em;
+}
+
 @media (max-width: 560px) {
   .mode-cards { grid-template-columns: 1fr; }
   .mode-select { padding: 24px 12px; }
@@ -915,6 +924,29 @@ body[data-mzj-phase="export"] .clip-slot.empty { display: none; }
 .mode-card-name { font-size: 16.5px; font-weight: 800; }
 .mode-card-desc { font-size: 12px; color: var(--tx2); }
 
+/* ★ 縦積みのカードを「アイコン左・文字右」へ組み替える(2026-08-01 実測)。
+   実測 375px でカード1枚が 179px あり、1枚目の上端が 247px。
+   3枚目は下タブの裏に落ち、**選択肢が3つあること自体が初見で分からなかった**。
+   アイコンを見出しの上に積むのをやめるだけで 179px → 約110px になり、
+   スクロールせずに3枚とも見える＝「何が選べるのか」が最初の一目で伝わる。
+   ここに置くのは上の `.mode-card { padding: 22px 18px }` より後に来る必要が
+   あるため(メディアクエリは詳細度を足さないので、先に書くと負ける) */
+@media (max-width: 560px) {
+  .mode-card {
+    display: grid; grid-template-columns: 44px minmax(0, 1fr);
+    column-gap: 14px; row-gap: 3px; align-items: center;
+    padding: 15px 16px;
+  }
+  .mode-card-icon {
+    grid-row: 1 / span 2; grid-column: 1;
+    width: 44px; height: 44px; margin-bottom: 0;
+    border-radius: 12px; align-self: center;
+  }
+  .mode-card-icon svg { width: 24px; height: 24px; }
+  .mode-card-name { grid-column: 2; align-self: end; }
+  .mode-card-desc { grid-column: 2; align-self: start; line-height: 1.5; }
+}
+
 /* スマホ: 端まで気持ちよく使う */
 @media (max-width: 860px) {
   .wrap { padding: 10px 12px 90px; }
@@ -1491,8 +1523,13 @@ body.mz-diag-noskip #exportSec::before {
      二度と見えなかった(320x460 でも -105px)。
      flex-start + margin:auto なら、中央寄せを保ったまま両端に必ず届く */
   display: flex; align-items: flex-start; justify-content: flex-start;
-  padding: calc(16px + env(safe-area-inset-top, 0px)) 16px
-           calc(16px + env(safe-area-inset-bottom, 0px));
+  /* ★ 左右にもノッチぶんを足す(2026-08-01)。iPhone を横に倒すと、
+     どちらか一方の端 44px がノッチとカメラに食われる。上下だけ見ていたため、
+     横向きでは「おまかせ」バッジや「やめる」がその下へ潜っていた */
+  padding: calc(16px + env(safe-area-inset-top, 0px))
+           calc(16px + env(safe-area-inset-right, 0px))
+           calc(16px + env(safe-area-inset-bottom, 0px))
+           calc(16px + env(safe-area-inset-left, 0px));
   overflow-y: auto;
 }
 .auto-stage[hidden] { display: none; }
@@ -1533,7 +1570,15 @@ html:has(body.mz-auto-stage), body.mz-auto-stage {
    155px溢れ、初期表示で中止ボタンが見えなかった。
    プレビューは主役なので削りすぎない ─ 溢れていた分だけ詰める */
 .as-preview canvas { display: block; width: auto; height: auto;
-  max-width: 100%; max-height: min(40vh, 340px); object-fit: contain; }
+  max-width: 100%; object-fit: contain; }
+/* ★ 高さの上限は **ID を含めて** 名乗る(2026-08-01 実測)。
+   `#cv { max-height: 35vh }`(スマホ用・style.css:313)は詳細度 (1,0,0) で、
+   `.as-preview canvas` の (0,1,1) を無条件に上回る。つまり
+   「主役なので大きく取る」と書いてあったこの枠は一度も効いておらず、
+   実測で max-height が 131.25px(=35vh) に潰されていた ─
+   横向きでは主役のプレビューが 75x131 しかなかった。
+   `.auto-stage #cv` なら (1,1,0) で勝てる */
+.auto-stage #cv { max-height: min(40vh, 340px); }
 
 /* 進み具合 */
 .as-bar { height: 8px; border-radius: 999px; background: rgba(15, 33, 56, .10); overflow: hidden; }
@@ -1561,22 +1606,41 @@ html:has(body.mz-auto-stage), body.mz-auto-stage {
 .as-step.done { color: var(--tx); }
 .as-step.done i { background: rgba(30, 122, 67, .16); color: var(--ok);
   animation: asPop .35s cubic-bezier(.2, 1.4, .4, 1); }
-.as-step-t { min-width: 0; }
-/* 空のときに幅を取らないよう、中身が無ければ余白も出さない */
-/* ★ 1行に固定する(2026-08-01 レビュー実測)。長い成果文が2行に折れると
-   行の高さが 34px → 54px に膨らみ、左のテキストと視覚的にぶつかっていた */
-.as-step-sub { margin-left: auto; padding-left: 8px; text-align: right;
-  max-width: 45%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  font-size: 12px; color: var(--tx2); font-weight: 500; }
+/* ★ 左の段名も1行に固定する(2026-08-01 実測)。前は .as-step-sub にだけ
+   nowrap を当てていたため、**左側**が折れて行が 34px → 54px に膨らんでいた。
+   実測: 375px で1行、320px では6行中3行が2行に折れ、全体が 143px 溢れていた。
+   行の高さが揃わないと、済んだ✓が下から順に点いていく気持ちよさが消える */
+.as-step-t { flex: 1 1 auto; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 右は「その段で分かった事実(値)」だけを置く列。
+   ★ 動詞を繰り返さない(ui.js の mark() 側で値だけを渡すようにした)。
+     前は左が「傾きを直しました」右が「2本の傾きを直しました」と同じことを
+     二度言い、しかも右が幅に収まらず「ズレ 0.42秒 を合わせま…」と
+     肝心の数字の隣で切れていた(実測 161px > 枠 151px)。
+     値だけなら 320px でも切れない */
+.as-step-sub { flex: 0 1 auto; margin-left: auto; padding-left: 10px; text-align: right;
+  max-width: 48%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: 12px; color: var(--tx2); font-weight: 600;
+  font-variant-numeric: tabular-nums; }
 .as-step-sub:empty { padding-left: 0; }
 
 /* うまくいかなかったときの顔。畳まずにこの画面のまま出す */
 .as-fail { border: 1px solid rgba(197, 48, 48, .25); border-radius: 14px;
   background: rgba(197, 48, 48, .05); padding: 14px; display: flex;
   flex-direction: column; gap: 8px; }
-.as-fail-h { margin: 0; font-size: 15px; font-weight: 800; color: var(--tx); }
-.as-fail-h i { color: #c53030; margin-right: 6px; }
-.as-fail-msg { margin: 0; font-size: 14px; color: var(--tx); }
+/* ★ 「うまくいきませんでした」を2回言わない(2026-08-01 実測)。
+   fail() が上の見出し(#asHead)を「うまくいきませんでした」に書き替えるので、
+   この箱の中の同じ文言と、375px の画面で 500px と離れずに並んでいた ─
+   同じ文が二度出るのは、それだけで壊れて見える。
+   箱は赤い枠と背景で既に「まずいこと」を伝えているので、
+   見出しは落として、いちばん知りたい**止まった場所と理由**から始める */
+.as-fail-h { display: none; }
+.as-fail-msg { margin: 0; font-size: 14px; font-weight: 700; color: var(--tx); }
+.as-fail-msg::before {                 /* 見出しを消したぶん、印だけ残す */
+  content: "\f06a";                    /* fa-circle-exclamation */
+  font-family: "Font Awesome 6 Free"; font-weight: 900;
+  color: #c53030; margin-right: 7px;
+}
 .as-fail-hint { margin: 0; font-size: 12px; color: var(--tx2); }
 .as-fail-btns { display: flex; flex-direction: column; gap: 8px; margin-top: 2px; }
 .as-fail-btns .btn { min-height: 44px; }
@@ -1610,6 +1674,76 @@ html:has(body.mz-auto-stage), body.mz-auto-stage {
 @keyframes asPop { 0% { transform: scale(.5); } 60% { transform: scale(1.15); } 100% { transform: scale(1); } }
 
 .as-cancel { align-self: center; min-height: 44px; color: var(--tx2); }
+
+/* ============ 完成の瞬間(2026-08-01) ============
+   finishAll() のあと 700ms だけ映る、5〜9分かけた仕事の顔。
+   青い進行中の色のまま畳まれると「途中で消えた」としか見えないので、
+   ここだけは色を変えて「終わった」と言い切る。
+   待ち方の案内と「やめる」は、もう用が無いので引っ込める */
+.auto-stage.as-complete .as-bar-fill {
+  background: linear-gradient(90deg, var(--ok), #35b97a);
+  transition: width .3s ease, background .3s ease;
+}
+.auto-stage.as-complete .as-pct { color: var(--ok); }
+.auto-stage.as-complete .as-wait,
+.auto-stage.as-complete .as-cancel,
+.auto-stage.as-complete #asEta { display: none; }
+.auto-stage.as-complete #asHead { color: var(--ok); }
+
+/* ============ 縦向きの小さい画面(2026-08-01 実測) ============
+   実測 320x568 で 119px はみ出し、「やめる」と最後の段が画面の外にあった
+   (iPhone SE も browser chrome を引くと 553px でここに入る)。
+   スクロールできるとはいえ、3〜9分ずっと見ている画面で
+   「できていってる」の下半分を毎回スクロールさせるのは違う。
+   プレビューは主役なので最後に削り、まず余白と装飾から詰める */
+@media (max-height: 660px) and (max-width: 699px) {
+  .as-step { padding: 3px 4px; }        /* 34px → 28px ×6段 = 36px 節約 */
+  #asWhat { display: none; }            /* 何を頼んだかは開始前の画面で読んでいる */
+  .as-inner { gap: 6px; }
+  .auto-stage #cv { max-height: 27vh; }   /* ID込みで名乗る(上の注記と同じ理由) */
+  .as-title { font-size: 16px; }
+  .as-wait { font-size: 11px; line-height: 1.45; }
+}
+
+/* ============ 横向き・低い画面(2026-08-01 実測) ============
+   実測 812x375 で中身が 584px あり、**209px はみ出していた**。
+   「やめる」は画面の 193px 下、段のチェックも下半分が見えない ─
+   いちばん見せたい「できていってる」が視野の外にあった。
+   一方で幅は 812px あるのに中身は 520px で止まり、292px を捨てていた。
+   縦に積むのをやめ、左=プレビュー / 右=進み具合 の2列にする */
+@media (max-height: 560px) and (min-width: 700px) {
+  /* ★ row-gap は 0 にして、行の間隔は右の列の margin で作る(2026-08-01 実測)。
+     プレビューを縦に通すため grid-row を span で伸ばすが、暗黙の行には
+     -1 が使えないので多めに span する。このとき row-gap を持たせると
+     **中身が無い行にも隙間が入る** ─ span 99 + row-gap 8px で
+     実測 725px の空白が生まれた(直前の 209px 溢れより悪化した)。
+     row-gap 0 なら空の行は高さも隙間も 0 で消える */
+  .as-inner { max-width: 940px;
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-auto-rows: min-content;
+    align-items: start; column-gap: 22px; row-gap: 0; }
+  .as-preview { grid-column: 1; grid-row: 1 / span 20; align-self: center; width: 100%; }
+  /* 横向きは高さがすべて。左の列は画面の高さいっぱいまで使う
+     (ID込みで名乗る ─ でないと #cv の 35vh=131px に潰される) */
+  .auto-stage #cv { max-height: calc(100vh - 34px); }
+  /* 右の列: 見出しから「やめる」までを、書いてある順に積む */
+  .as-title, #asWhat, #asWake, .as-bar, .as-meta, .as-steps, .as-wait, .as-cancel,
+  .as-fail { grid-column: 2; margin-top: 0; margin-bottom: 8px; }
+  /* grid では align-self は縦方向なので、素の .as-cancel の align-self:center が
+     効かず「やめる」が右の列いっぱいに伸びていた。控えめな脇役に戻す */
+  .as-cancel { margin-bottom: 0; justify-self: center; min-width: 140px; }
+  /* 高さが足りないぶんは余白と文字寸法から削る。
+     削るのは装飾であって、段の名前と値は削らない */
+  .as-step { padding: 3px 4px; font-size: 13px; }
+  .as-title { font-size: 15px; }
+  .as-pct { font-size: 19px; }
+  #asWhat { display: none; }   /* 何をおまかせしたかは縦向きで読めている */
+  .as-wait { font-size: 11px; }
+  .auto-stage { padding-top: calc(10px + env(safe-area-inset-top, 0px));
+                padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
+  /* 失敗したら2列は要らない(プレビューは用済み) */
+  .auto-stage.as-failed .as-inner { display: flex; flex-direction: column; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .as-bar-fill { transition: none; }

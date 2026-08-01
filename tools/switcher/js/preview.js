@@ -305,7 +305,20 @@ MC.preview = {
     if (!cur || cur.closed || !["run", "pulse", "frozen"].includes(cur.state)) return null;
     const ch = String((cur.opt && cur.opt.chapter) || "");
     const label = ch.indexOf("書き出し") >= 0 ? "書き出し中" : "映像分析中";
-    return { label, dots: ".".repeat(Math.floor(Date.now() / 400) % 4) };
+    /* ★ 補足と進み具合を返す(2026-08-01)。drawRangeNotice は前から busy.sub を
+       渡していたが、ここが返していなかったので**常に undefined**＝
+       主役のプレビューには「映像分析中…」としか出ず、いま何をしているかは
+       画面の別の場所を探さないと分からなかった。
+       MZP が持っている「いま何をしているか」をそのまま借りる */
+    const sub = String(cur.sub || cur.label || "");
+    /* 円の進捗に渡す割合。確定進捗(run)ならそれを使う。
+       おまかせ/こだわりの音の読み込みは MZP 側が pulse(不確定)で回っており
+       ratio を持たないので、段の中の実測(_innerRaw)を借りる ─
+       いちばん長く無言になるのがこの区間で、%が出せる唯一の場所 */
+    let ratio = (cur.state === "run" && cur.ratio > 0) ? cur.ratio : null;
+    const as = MC.ui && MC.ui.autoStage;
+    if (ratio == null && as && as._innerRaw > 0) ratio = as._innerRaw;
+    return { label, sub, ratio, dots: ".".repeat(Math.floor(Date.now() / 400) % 4) };
   },
 
   /* 作業中は再生ループが回らないため、オーバーレイが静止して固まって見える。
@@ -334,7 +347,11 @@ MC.preview = {
     if (!dur) return;
     /* 作業中は書き出し範囲の話をしても仕方がないので、いま何をしているかだけ出す */
     const busy = this.busyLabel();
-    if (busy) { this.drawOverlayMessage(busy.label + busy.dots, busy.sub, { spinner: true }); return; }
+    if (busy) {
+      this.drawOverlayMessage(busy.label + busy.dots, busy.sub,
+        { spinner: true, ratio: busy.ratio });
+      return;
+    }
     const [tIn, tOut] = MC.trimRange();
     if (MC.S.t >= tIn - 0.01 && MC.S.t <= tOut + 0.01) return;
     this.drawOverlayMessage(
@@ -360,26 +377,62 @@ MC.preview = {
     if (sub) {
       ctx.fillStyle = "rgba(255,255,255,0.75)";
       ctx.font = `500 ${Math.round(base * 0.034)}px -apple-system, sans-serif`;
-      ctx.fillText(sub, W / 2, cy + base * 0.03);
+      /* 幅を超える補足は切る。溢れると左右が枠の外へ消えて、
+         真ん中だけが読める意味不明な行になる */
+      ctx.fillText(this.fitText(ctx, sub, W * 0.86), W / 2, cy + base * 0.03);
     }
     if (spin) {
-      /* canvas は 1080〜1920px、表示は 375px 幅まで縮むので、
+      /* ============ 円の進捗(2026-08-01 優さん指示) ============
+         **始点と終点を真上(12時)にそろえる**。canvas の角度0は3時なので
+         -π/2 を基準にする。以前は弧をぐるぐる回していたため、始点も終点も
+         毎フレーム動き、どこから始まってどこで終わるのかが無かった。
+
+         ・進み具合が分かるとき(確定): 12時から時計回りに ratio ぶん伸ばす。
+           100%でちょうど12時へ戻る＝一周した形が「終わり」になる
+         ・分からないとき(不確定): 始点は12時に固定したまま、終点だけが
+           12時から一周して12時へ戻る(sin なので折り返しでも飛ばない)。
+           回転させると始点まで動いてしまうので、伸縮で見せる
+
+         canvas は 1080〜1920px、表示は 375px 幅まで縮むので、
          見た目で分かる大きさにするには canvas 上でかなり大きく描く必要がある */
-      const r = base * 0.09, a = (Date.now() / 1000) * 2.4;
+      const TOP = -Math.PI / 2;              // 真上(12時)
+      const r = base * 0.09;
       const cx = W / 2, cyS = H / 2 - base * 0.115;
+      const lw = Math.max(3, base * 0.013);
+      const det = (opts.ratio != null && isFinite(opts.ratio) && opts.ratio > 0);
+      const pct = det ? Math.max(0, Math.min(1, opts.ratio)) : 0;
+      const t = (Date.now() % 2600) / 2600;
+      const sweep = det ? pct * Math.PI * 2
+                        : Math.max(0.12, Math.sin(t * Math.PI)) * Math.PI * 2;
       ctx.lineCap = "round";
-      ctx.beginPath();                       // 下地の輪(回転が分かりやすくなる)
+      ctx.beginPath();                       // 下地の輪(残りがどれだけかが分かる)
       ctx.arc(cx, cyS, r, 0, Math.PI * 2);
       ctx.strokeStyle = "rgba(255,255,255,0.18)";
-      ctx.lineWidth = Math.max(3, base * 0.013);
+      ctx.lineWidth = lw;
       ctx.stroke();
       ctx.beginPath();
-      ctx.arc(cx, cyS, r, a, a + Math.PI * 0.7);
+      ctx.arc(cx, cyS, r, TOP, TOP + sweep);
       ctx.strokeStyle = "rgba(255,255,255,0.95)";
-      ctx.lineWidth = Math.max(3, base * 0.013);
+      ctx.lineWidth = lw;
       ctx.stroke();
+      if (det) {                             // 輪の中に%。12時が始点だと一目で分かる
+        ctx.fillStyle = "rgba(255,255,255,0.95)";
+        ctx.font = `700 ${Math.round(base * 0.038)}px -apple-system, sans-serif`;
+        ctx.fillText(`${Math.round(pct * 100)}%`, cx, cyS);
+      }
     }
     ctx.restore();
+  },
+
+  /* 与えた幅に収まるところまで縮めて「…」を付ける */
+  fitText(ctx, s, maxW) {
+    s = String(s || "");
+    if (!s || ctx.measureText(s).width <= maxW) return s;
+    for (let n = s.length - 1; n > 0; n--) {
+      const t = s.slice(0, n) + "…";
+      if (ctx.measureText(t).width <= maxW) return t;
+    }
+    return s;
   },
 
   draw() {

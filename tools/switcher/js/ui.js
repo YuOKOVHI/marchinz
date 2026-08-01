@@ -2708,7 +2708,7 @@ MC.ui.autoStage = {
   STEPS: [
     { key: "tilt",   label: "傾きを直す",         done: "傾きを直しました",     w: 12 },
     { key: "sync",   label: "音を合わせる",       done: "音がそろいました",     w: 10 },
-    { key: "audio",  label: "いちばん良い音を選ぶ", done: "いちばん良い音にしました", w: 2 },
+    { key: "audio",  label: "良い音を選ぶ",       done: "良い音を選びました",     w: 2 },
     { key: "scan",   label: "見どころを探す",      done: "見どころが決まりました", w: 16 },
     { key: "finish", label: "カメラを切り替える",   done: "カメラ割りができました", w: 30 },
     { key: "export", label: "動画を書き出す",      done: "書き出しました",       w: 30 },
@@ -2716,7 +2716,10 @@ MC.ui.autoStage = {
   _done: [], _now: null, _home: null,
   /* _sub=いま動いている段の補足 / _doneSub=済んだ段の成果 / _inner=段の中の進み具合
      _fail=失敗の顔を出しているか / _prevFocus=開く前にフォーカスがあった要素 */
-  _sub: null, _doneSub: {}, _inner: 0, _fail: null, _prevFocus: null,
+  /* _innerRaw=段の中の**素の**割合(0..1)。_inner は全体バーの見え方を整えるため
+     0.8 で頭打ちにしてあるので、%として出すと嘘になる。プレビューの円の進捗
+     (preview.js の busyLabel)はこちらを見る(2026-08-01 優さん指示の12時の輪) */
+  _sub: null, _doneSub: {}, _inner: 0, _innerRaw: 0, _fail: null, _prevFocus: null,
   /* _failedStep=どの段で止まったか / _wakeWarn=消灯の警告(0=無 1=断られた 2=非対応) */
   _failedStep: null, _wakeWarn: 0,
 
@@ -2727,9 +2730,9 @@ MC.ui.autoStage = {
        _sub を戻していなかったため、前の段の文字が次の段に居座っていた
        (「カメラを切り替える  音を読み込み中 100%」のような表示) */
     this._done = []; this._now = null;
-    this._sub = null; this._doneSub = {}; this._inner = 0; this._fail = null;
+    this._sub = null; this._doneSub = {}; this._inner = 0; this._innerRaw = 0; this._fail = null;
     this._failedStep = null; this._wakeWarn = 0;
-    el.classList.remove("as-failed");
+    el.classList.remove("as-failed", "as-complete");
     const wt0 = el.querySelector(".as-wait"); if (wt0) wt0.hidden = false;
     const fb = MC.ui.$("#asFail"); if (fb) fb.hidden = true;
     const cb = MC.ui.$("#asCancel");
@@ -2769,7 +2772,7 @@ MC.ui.autoStage = {
     this._home = null;
     el.hidden = true;
     document.body.classList.remove("mz-auto-stage");
-    el.classList.remove("as-failed");
+    el.classList.remove("as-failed", "as-complete");
     this._fail = null; this._failedStep = null;
     try { if (this._prevFocus && this._prevFocus.focus) this._prevFocus.focus({ preventScroll: true }); }
     catch (e) {}
@@ -2789,6 +2792,7 @@ MC.ui.autoStage = {
        「傾きを直す」で入れた "3本" が、そのあとの段にずっと居座っていた */
     this._sub = (sub === undefined ? null : sub);
     this._inner = 0;
+    this._innerRaw = 0;   // 段が変われば「段の中の%」も 0 から数え直す
     this.render();
   },
   /* 済んだ段に「実際に何ができたか」を残す。チェックが点くだけでは
@@ -2855,7 +2859,15 @@ MC.ui.autoStage = {
     this.render();
     try { el.scrollTop = 0; } catch (e) {}   // 失敗の顔を必ず視野へ
   },
-  finishAll() { this._done = this.STEPS.map(s => s.key); this._now = null; this._sub = null; this.render(); },
+  /* 全部済んだ瞬間。ここが 5〜9分かけた仕事の**完成の顔**で、
+     このあと 700ms だけ見せてから畳まれる。バーを緑へ変え、%を100で止める ─
+     青いまま消えると「途中で畳まれた」ようにしか見えない(2026-08-01) */
+  finishAll() {
+    this._done = this.STEPS.map(s => s.key);
+    this._now = null; this._sub = null; this._inner = 0; this._innerRaw = 0;
+    const el = MC.ui.$("#autoStage"); if (el) el.classList.add("as-complete");
+    this.render();
+  },
 
   /* 進み具合(0..1)。重み付きなので、重い段の途中でもバーが進んで見える */
   ratio() {
@@ -3020,7 +3032,7 @@ MC.ui.runAuto = async () => {
     if (MC.ui._autoCancel) throw new MC.ui.AutoCancelled();
     MC.ui.autoStage.mark("scan",
       (MC.S.showIn != null && MC.S.showOut != null)
-        ? `演奏している ${Math.max(1, Math.round((MC.S.showOut - MC.S.showIn) / 60))}分を見つけました` : "");
+        ? `演奏 ${Math.max(1, Math.round((MC.S.showOut - MC.S.showIn) / 60))}分` : "");
     /* runEasy が音声で止まる分岐は auto では通らない(先に決めてあるため)。
        ここまで来て showIn が無い= 解析に失敗している。
        ★ 黙って return してはいけない(2026-08-01 レビュー14件)。finally が全画面を畳むので、
@@ -3047,7 +3059,7 @@ MC.ui.runAuto = async () => {
     if (MC.ui._autoCancel) throw new MC.ui.AutoCancelled();
     if (!MC.S.easyDone) throw new Error("カメラの切り替えを決められませんでした");
     MC.ui.autoStage.mark("finish",
-      `カットを ${((MC.S.cutList || []).length) || 0} 個 作りました`);
+      `${((MC.S.cutList || []).length) || 0}カット`);
     MC.ui.refreshJourney();
     /* ★ 6段目のチェックを点け、「できました」を一拍だけ見せてから畳む
        (2026-08-01 レビュー14件)。ここが無いと finishAll() が一度も呼ばれず、
@@ -3145,7 +3157,7 @@ MC.ui.runEasy = async (opt) => {
       const fixed = await MC.ui.autoHorizon(p);
       MC.log("auto: 傾きを直した本数=" + fixed);
       MC.ui.renderClips();
-      MC.ui.autoStage.mark("tilt", fixed ? `${fixed}本の傾きを直しました` : "傾きは大丈夫でした");
+      MC.ui.autoStage.mark("tilt", fixed ? `${fixed}本` : "そのままでOK");
       /* ★ ここでプレビューを実際に流す(2026-08-01 レビュー14件)。autoStage.open() の
          play() は、この直後に走る runEasy 先頭の pause() が**同期的に**
          打ち消していた(最初の await より前)ので、主役のプレビューは
@@ -3163,7 +3175,7 @@ MC.ui.runEasy = async (opt) => {
       await MC.sync.run(p);
       {
         const off = Math.max(0, ...vids.map(c => Math.abs(c.offset || 0)));
-        if (auto) MC.ui.autoStage.mark("sync", `ズレ ${off.toFixed(2)}秒 を合わせました`);
+        if (auto) MC.ui.autoStage.mark("sync", `ズレ ${off.toFixed(2)}秒`);
       }
       /* 同期に成功したら、失敗時に前倒しで開いたタブを本来の条件へ戻す
          (立てっぱなしだと以後ずっと序盤からタブが出る) */
@@ -3177,9 +3189,8 @@ MC.ui.runEasy = async (opt) => {
       MC.log("auto: 音声=" + (pick ? pick.name : "(なし)"));
       /* 音を整えたことは、新しい行を足さずに既にある成果の枠で言う。
          ★ 測れているときだけ言う ─ していないことを言わない */
-      MC.ui.autoStage.mark("audio", pick
-        ? (MZP.shortName(pick.name) + ((pick.stats && pick.stats.peak > 0) ? "・音も整えます" : ""))
-        : "");
+      /* 右は値だけ。「音も整えます」は動詞で、左の段名と役割がぶつかる */
+      MC.ui.autoStage.mark("audio", pick ? MZP.shortName(pick.name) : "");
       MC.ui.autoStage.step("scan");
     }
     if (vids.length >= 2 && !MC.S.audioDecided) {
@@ -3244,11 +3255,19 @@ MC.ui.runEasyScan = async (pIn, base = 0) => {
       if (MC.ui.autoStage) {
         MC.ui.autoStage._sub = pctTxt;
         MC.ui.autoStage._inner = Math.max(0, Math.min(0.8, (fr || 0) * 0.8));
+        /* 素の割合も残す。プレビューに重ねる円の進捗はこちらを使う ─
+           0.8 で頭打ちにした値を%として出すと、100%読み終わっても
+           「80%」と表示されてしまう(2026-08-01) */
+        MC.ui.autoStage._innerRaw = Math.max(0, Math.min(1, fr || 0));
         MC.ui.autoStage.render();
       }
     };
     try { s = await MC.salute.detect(onProg); }
     catch (e) { MC.log("scan: 演奏区間を検出できず →", e.message); }
+    /* 読み終わったら「段の中の%」を必ず戻す。残したままだと、このあとの
+       解析の間ずっとプレビューの円が100%で止まって見える ─
+       進んでいないのではなく、終わった数字が居座っているだけなのに */
+    if (MC.ui.autoStage) MC.ui.autoStage._innerRaw = 0;
     /* director のオープニング判定(サリュート)もここで確定させる。
        モジュール変数へ入れっぱなしにすると、音声や同期を選び直しても
        前回の値が残る(2026-07-31 に気づいた既存のキャッシュ漏れ) */
