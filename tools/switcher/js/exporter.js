@@ -415,7 +415,7 @@ MC.exporter.encodeAudioPcm = async (muxer, src, fromLocalSec, durSec, onStatus) 
     ? new MC.audio.Polish((MC.getClip(MC.S.audioClipId) || {}).stats, OUT_SR) : null;
   if (_pol) {
     MC.log(_pol.measured
-      ? `音を整えます: 音量 ×${_pol.gain.toFixed(2)} / 沈める境目 ${_pol.thr.toFixed(4)}`
+      ? `音を整えます: 音量 ×${_pol.gain.toFixed(2)}`
       : "音の高さを測れていないので、音はそのまま入れます");
   }
   const primingSec = (await MC.exporter.measureAacDelay()) / 48000;
@@ -552,36 +552,35 @@ MC.exporter.encodeAudioFile = async (muxer, clip, fromLocalSec, durSec, onStatus
    30秒かけてから落ちるより、最初に分かった方がよい。 */
 /* 書き出しの推定バイト数。保存方法の判断に使う。
    映像ビットレートは exportMP4 の venc.configure と揃えること */
-/* ---------- 画質モード(2026-07-23 優さん指示) ----------
-   sns: 720p。iPhoneの画質を縛るのは解像度ではなくメモリ260MB(→3.88Mbps固定)。
-        720pなら同じビットレートで1画素あたり2.25倍=実質きれいで、22%速い(実測)。
-        SNS(Instagram/TikTok/X)は先方で再圧縮されるので720pで十分
-   hd:  1080p。YouTubeへ上げる人向け。時間がかかる(パソコン推奨)
-   pro: 1080p高ビットレート。ディスクへ直接書けるパソコン限定
-        (スマホはメモリ上限があり高ビットレートは尺が入らない) */
-/* 書き出しの画質は2択(2026-07-23 優さん指示)。
-   端末で分けない: OPFSでメモリ制約が消えたので、iPhoneでもフルHD 12Mbpsを出す */
+/* ---------- 画質は1080pのみ(2026-08-01 優さん指示) ----------
+   720pの分岐を廃止し、出力は常にプリセットの実寸(9x16なら1080x1920)。
+   「標準/高画質」の違いは**ビットレートだけ**(8Mbps / 12Mbps)にする。
+
+   正直な注記(iOSへの影響): 1080は720の2.25倍の画素。優さんのiPhone実機
+   (v1.70.0)では 59秒の書き出し52.3秒のうち合成(draw)が40.6秒=91%を占めて
+   いた。合成は画素数にほぼ比例するので、同じ端末なら**書き出しはおよそ2倍**
+   (推定100秒前後)になる。VideoFrame(IOSurface)のメモリも2.25倍。
+   これで落ちるようなら、戻すのは QUALITIES に scale を復活させるのではなく
+   PART_SEC を絞る方向で(90秒→45秒)。解像度は優さんの決定なので触らない */
 MC.exporter.QUALITIES = {
-  full:  { label: "高画質", scale: 1 },      // 1080p / 12Mbps(高画質・時間かかる)
-  light: { label: "標準", scale: 2 / 3 },  // 720p / 8Mbps(速度重視・既定)
+  full:  { label: "高画質" },   // 1080p / 12Mbps
+  light: { label: "標準" },     // 1080p / 8Mbps(既定。ファイルが軽い)
 };
-/* 旧IDからの移行(sns=720p→light / hd,pro=1080p→full) */
+/* 旧IDからの移行(sns,light=旧720p→light / hd,pro=1080p→full) */
 MC.exporter.QUALITY_ALIAS = { sns: "light", hd: "full", pro: "full" };
 
 MC.exporter.quality = () => {
-  /* 既定はライト(720p/8Mbps)。多くの人はSNSへ出すので、速く軽い方を初期値にする。
-     きれいに残したい人はフルHDへ1タップで切り替えられる(2026-07-23 優さん指示) */
+  /* 既定は標準(1080p/8Mbps)。ファイルが軽く、SNSはどうせ再圧縮される。
+     きれいに残したい人は高画質(12Mbps)へ1タップで切り替えられる */
   let q = MC.S.exportQuality || "light";
   q = MC.exporter.QUALITY_ALIAS[q] || q;              // 旧IDの保存値を寄せる
   return MC.exporter.QUALITIES[q] ? q : "light";
 };
 
-/* 書き出しの出力サイズ。プレビューはプリセットのまま、出力だけ変える */
+/* 書き出しの出力サイズ = プリセットの実寸(常に1080系。2026-08-01 優さん指示) */
 MC.exporter.exportDims = () => {
   const { w, h } = MC.PRESETS[MC.S.preset];
-  const s = MC.exporter.QUALITIES[MC.exporter.quality()].scale;
-  const even = x => Math.round(x * s / 2) * 2;
-  return { w: even(w / 1), h: even(h / 1) };
+  return { w, h };
 };
 
 MC.exporter.videoBitrate = () => {
@@ -1596,7 +1595,7 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle, opts) => {
     writable = null;
     try { w.abort().catch(() => {}); } catch (err) {}
   };
-  const { w, h } = MC.exporter.exportDims();   // 画質モードで720p/1080pが変わる
+  const { w, h } = MC.exporter.exportDims();   // 常にプリセット実寸(1080系)
   const fps = 30;
   const [tIn, tOut] = MC.trimRange();
   const totalFrames = Math.max(1, Math.round((tOut - tIn) * fps));
@@ -1991,7 +1990,9 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle, opts) => {
       if (!audioOk && !MC.exporter.cancelFlag) MC.ui.toast("⚠ 音声を書き出せませんでした(映像のみ出力します)");
       const hidden = Math.max(0, audioMs - audioWaitMs);
       MC.log(`音声: 合計${(audioMs / 1000).toFixed(1)}秒 / `
-        + `${audioParallel ? `映像と並行で${(hidden / 1000).toFixed(1)}秒ぶん隠れた・` : "直列(音声ファイル取り込み)・"}`
+        + `${audioParallel ? `映像と並行で${(hidden / 1000).toFixed(1)}秒ぶん隠れた・`
+                            : audioClip.isAudio ? "直列(音声ファイル取り込み)・"
+                            : "直列(iPhoneは同時に開けるコーデック数を抑える)・"}`
         + `待たされた${(audioWaitMs / 1000).toFixed(1)}秒`);
     }
     if (MC.exporter.cancelFlag) throw new Error("キャンセルしました");

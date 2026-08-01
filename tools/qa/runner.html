@@ -3628,7 +3628,7 @@ async function countSamples(ns, file, fromSec) {
     return "きれいな②を選ぶ / 旧基準はざわついた①を選んでいた";
   });
 
-  await test("★音を整える: 打楽器を潰さず、天井を超えず、左右がずれない", async () => {
+  await test("★音を整える: 打楽器を潰さず、天井を超えず、左右がずれない(2機能のみ)", async () => {
     const w = await compEnv();
     const SR = 48000, N = 24000;
     const peakOf = (b, o, n) => { let p = 0; for (let i = 0; i < n; i++) p = Math.max(p, Math.abs(b[o+i])); return p; };
@@ -3661,16 +3661,16 @@ async function countSamples(ns, file, fromSec) {
       if (flat > N * 0.01) throw new Error(`平らに潰れている(${flat}/${N} サンプルが天井に貼りつき)`);
     }
 
-    /* ③ 低い唸り(風・空調・足音)は落ちる。同じ大きさの1kHzと比べる */
+    /* ③ 帯域は触らない(2026-08-01 優さん決定: 整音は「音量+音割れ防止」の
+       2つだけ。70Hzハイパスは削除した ─ スーザフォンやバスドラの最低域まで
+       削りうるため)。30Hzも1kHzも同じ扱いになることを見張る */
     {
       const lo = tone(0.5, 30), hi = tone(0.5, 1000);
-      const st = { rms: 0.1, noise: 0, peak: 0.5 };
+      const st = { rms: 0.05, noise: 0, peak: 0.5 };   // gain=2 が掛かる条件
       new w.MC.audio.Polish(st, SR).runStereo(lo, 0, N, N);
       new w.MC.audio.Polish(st, SR).runStereo(hi, 0, N, N);
       const ratio = peakOf(lo, 0, N) / Math.max(1e-9, peakOf(hi, 0, N));
-      if (!(ratio < 0.75)) throw new Error("低い唸りが落ちていない(比 " + ratio.toFixed(2) + ")");
-      /* 対照: 演奏の帯域まで削っていないこと */
-      if (!(peakOf(hi, 0, N) > 0.3)) throw new Error("1kHzまで削っている");
+      if (Math.abs(ratio - 1) > 0.05) throw new Error("帯域で差をつけている(比 " + ratio.toFixed(2) + ")");
     }
 
     /* ④ 左右がずれない。片チャンネルだけ下げると音の位置が動く */
@@ -3684,7 +3684,7 @@ async function countSamples(ns, file, fromSec) {
       const r = peakOf(b, 0, N) / Math.max(1e-9, peakOf(b, N, N));
       if (Math.abs(r - 3) > 0.15) throw new Error("左右の釣り合いが崩れた(比 " + r.toFixed(2) + ")");
     }
-    return "素通し/潰れない/低域は落ちる/左右そのまま の4点";
+    return "素通し/潰れない/帯域は触らない/左右そのまま の4点";
   });
 
   await test("★古い錠前の解放通知で、新しい錠前まで捨てない", async () => {
@@ -3795,6 +3795,125 @@ async function countSamples(ns, file, fromSec) {
     return "手放す→戻る / 二度押しに耐える / 2経路とも入口と後始末に入っている";
   });
 
+
+  /* ============ 別のシーンも作る(2026-08-01 優さん指示) ============ */
+  group("㉗ 完成後の「別のシーンも作る」");
+  const sceneAudioSetup = async (w, S) => {
+    const sr = w.MC.audio.SR, DUR = 400, N = sr * DUR;
+    const pcm = new Float32Array(N);
+    let sd = 1;
+    const rnd = () => { sd ^= sd << 13; sd ^= sd >>> 17; sd ^= sd << 5;
+                        return (sd >>> 0) / 4294967295 * 2 - 1; };
+    for (let i = 0; i < N; i++) { const t = i / sr;
+      pcm[i] = t < 40  ? 0.01 * Math.sin(i / 40)
+             : t < 120 ? 0.30 * (Math.sin(i/12) + Math.sin(i/25)) / 2
+             : t < 200 ? (i % 900 < 60 ? 0.5 : 0.04) * rnd()
+             : t < 280 ? 0.05 * Math.sin(i / 45)
+             : t < 360 ? 0.95 * (Math.sin(i/11) + Math.sin(i/23) + Math.sin(i/8)) / 3
+             :           0.01 * Math.sin(i / 50); }
+    S.clips.forEach((c, i) => Object.assign(c, {
+      duration: DUR, audio8k: pcm, audio8kStart: 0, audio8kReqStart: 0, audio8kReqSpan: 4000,
+      stats: { rms: 0.05 + (i + 1) * 0.02, clipRatio: 0 },
+    }));
+    S.audioClipId = 1;
+    await w.MC.sections.analyze(w.MC.getClip(1));
+    S.showIn = 40; S.showOut = 380;
+  };
+  await test("★候補は前回と同じ場面を出さず、候補どうしも重ならない(最大5個)", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    await sceneAudioSetup(w, S);
+    S.exportPreset = "short"; S.startKey = "climax";
+    if (!w.MC.ui.applyLengthChoice()) throw new Error("範囲を決められない");
+    S.lengthDecided = true;
+    const offers = w.MC.ui.sceneOffers();
+    ge(offers.length, 1, "候補の数");
+    if (offers.length > 5) throw new Error("候補が5個を超えた: " + offers.length);
+    const pIn = S.trimIn, pOut = S.trimOut;
+    for (const o of offers) {
+      const ov = Math.min(o.t + o.dur, pOut) - Math.max(o.t, pIn);
+      if (!(ov < o.dur * 0.5)) throw new Error(`前回と同じ場面が候補に出ている: ${o.label}`);
+      if (!o.label) throw new Error("候補に人が分かる名前が無い");
+    }
+    for (let i = 0; i < offers.length; i++) for (let j = i + 1; j < offers.length; j++) {
+      const a = offers[i], b = offers[j];
+      const ov = Math.min(a.t + a.dur, b.t + b.dur) - Math.max(a.t, b.t);
+      if (ov >= a.dur * 0.9) throw new Error(`候補どうしがほぼ同じ場面: ${a.label} / ${b.label}`);
+    }
+    /* 短い素材(演奏70秒): 候補は自然に絞られる。前回と同じ場面しか残らなければ0個 */
+    S.showIn = 40; S.showOut = 110; S.startKey = "start";
+    w.MC.ui.applyLengthChoice();
+    const few = w.MC.ui.sceneOffers();
+    if (few.length > 1) throw new Error("短い素材で候補が出すぎる: " + few.length);
+    return `長い素材=${offers.length}個(${offers.map(o => o.label).join("/")}) / 短い素材=${few.length}個`;
+  });
+  await test("★2回目は解析を使い回し、仕上げと書き出しだけが走る", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    await sceneAudioSetup(w, S);
+    S.audioDecided = true; S.easyDone = true; S.lengthDecided = true;
+    S.exportPreset = "short";
+    S.filterId = "none";                 // こだわりで選んだ設定を潰さないことの見張り
+    S.clips.forEach(c => { c.colorStats = { probe: 1 }; c.colorT = 1; c.tiltOk = true; c.syncMethod = "波形"; });
+    const log = [];
+    const keep = { h: w.MC.horizon.suggest, s: w.MC.sync.run,
+                   sc: w.MC.ui.runEasyScan, f: w.MC.ui.runEasyFinish };
+    w.MC.horizon.suggest = async () => { log.push("horizon"); return 0; };
+    w.MC.sync.run = async () => { log.push("sync"); return {}; };
+    w.MC.ui.runEasyScan = async () => { log.push("scan"); };
+    w.MC.ui.runEasyFinish = async () => { log.push("finish"); S.easyDone = true; };
+    const eb = w.document.getElementById("exportBtn");
+    const ebOld = eb.onclick;
+    eb.onclick = () => log.push("export");
+    eb.disabled = false;
+    try {
+      await w.MC.ui.runAuto({ scene: { key: "finale", t: 0 } });
+    } finally {
+      w.MC.horizon.suggest = keep.h; w.MC.sync.run = keep.s;
+      w.MC.ui.runEasyScan = keep.sc; w.MC.ui.runEasyFinish = keep.f;
+      eb.onclick = ebOld;
+    }
+    if (log.join(",") !== "finish,export") {
+      throw new Error("2回目なのに1回目と同じ道を通っている: " + log.join(","));
+    }
+    if (S.filterId !== "none") throw new Error("シーン選び直しが色の設定を潰した: " + S.filterId);
+    if (S.startKey !== "finale") throw new Error("選んだシーンが反映されていない: " + S.startKey);
+    if (S.clips.some(c => c.colorStats)) throw new Error("前の範囲の色統計が捨てられていない");
+    if (!S.lengthDecided) throw new Error("範囲が確定していない");
+    return "傾き・同期・音楽解析はスキップ / 色統計は捨て直し / 設定は保持";
+  });
+  await test("2回目でも解析が消えていれば(再読込後)ふつうの自走に落ちる", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    await sceneAudioSetup(w, S);
+    const a = w.MC.getClip(1);
+    const keepSec = a.sections;
+    a.sections = null;                    // 再読込で消えた状態(メモリにしか無い)
+    S.audioDecided = false; S.easyDone = false; S.lengthDecided = false;
+    const log = [];
+    const keep = { h: w.MC.horizon.suggest, s: w.MC.sync.run,
+                   sc: w.MC.ui.runEasyScan, f: w.MC.ui.runEasyFinish };
+    w.MC.horizon.suggest = async () => { log.push("horizon"); return 0; };
+    w.MC.sync.run = async () => { log.push("sync");
+      S.clips.forEach(c => { c.syncMethod = "波形"; }); return {}; };
+    w.MC.ui.runEasyScan = async () => { log.push("scan"); a.sections = keepSec; };
+    w.MC.ui.runEasyFinish = async () => { log.push("finish"); S.easyDone = true; };
+    const eb = w.document.getElementById("exportBtn");
+    const ebOld = eb.onclick;
+    eb.onclick = () => log.push("export");
+    eb.disabled = false;
+    try {
+      await w.MC.ui.runAuto({ scene: { key: "start", t: 0 } });
+    } finally {
+      w.MC.horizon.suggest = keep.h; w.MC.sync.run = keep.s;
+      w.MC.ui.runEasyScan = keep.sc; w.MC.ui.runEasyFinish = keep.f;
+      eb.onclick = ebOld;
+    }
+    if (!log.includes("sync") || !log.includes("finish") || !log.includes("export")) {
+      throw new Error("通常の自走に落ちていない: " + log.join(","));
+    }
+    return "近道は使わず、黙って最初からやり直す: " + log.join(",");
+  });
 
   await test("★書き出しは、無言で固まらずに必ず名前つきで止まる", async () => {
     const w = await compEnv();

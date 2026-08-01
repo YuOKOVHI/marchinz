@@ -1043,7 +1043,8 @@ MC.ui.lengthEta = showSec => {
   if (!clips.length || !(showSec > 1)) return "";
   const anaSec = clips.length * showSec * MC.ui.analysisRate();
   let expFactor = MC.ui.exportMode() === "realtime" ? 1.15 : (MC.isIOS ? 1.8 : 0.9);
-  if (MC.exporter.quality() === "light") expFactor *= 0.8;
+  /* 720pの2割引き(×0.8)は廃止(2026-08-01 1080p統一)。解像度が同じになったので
+     画質の差はビットレートだけ=書き出し時間はほぼ変わらない */
   // 1分未満は「1分ほど」に丸める。秒まで出すと正確に見えすぎる
   const mins = s => Math.max(1, Math.round(s / 60));
   /* 「できるまで、あわせておよそ◯分」→「完成までおよそ◯分」(2026-08-01)。
@@ -1823,9 +1824,8 @@ MC.ui.renderExportMode = () => {
   }
 };
 
-/* ---------- 書き出し画質の選択(2026-07-23 優さん指示) ----------
-   sns(720p)が既定。1080pは時間がかかる旨+パソコン推奨を明記。
-   高画質はパソコン(ディスク直書きできる環境)限定で、スマホには出さない */
+/* ---------- 書き出し画質の選択 ----------
+   1080pのみ(2026-08-01 優さん指示)。標準/高画質の差はビットレートだけ */
 MC.ui.renderQualityPicker = () => {
   const host = MC.ui.$("#qualityPicker");
   if (!host) return;
@@ -1838,9 +1838,9 @@ MC.ui.renderQualityPicker = () => {
      3つの意味に使われ、p表記は通じない。速いか・きれいか、だけを言う */
   const defs = [
     { id: "light", name: "標準", tag: "おすすめ",
-      desc: "SNSに投稿するのに十分な画質。書き出しが約2割速い" },
+      desc: "フルHD。ファイルが軽く、SNSへの投稿に十分な画質" },
     { id: "full", name: "高画質", tag: "",
-      desc: "大きな画面で見る場合に。書き出しに時間がかかります" },
+      desc: "フルHDのままデータ量を増やし、細かい動きに強くする" },
   ];
   host.innerHTML = defs.map(d => `
     <button type="button" class="q-card${d.id === cur ? " on" : ""}" role="radio"
@@ -2410,7 +2410,8 @@ MC.ui.renderTotalEta = (dur, tIn, tOut) => {
 
   const anaSec = clips.length * showSec * MC.ui.analysisRate();
   let expFactor = MC.ui.exportMode() === "realtime" ? 1.15 : (MC.isIOS ? 1.8 : 0.9);
-  if (MC.exporter.quality() === "light") expFactor *= 0.8;
+  /* 720pの2割引き(×0.8)は廃止(2026-08-01 1080p統一)。解像度が同じになったので
+     画質の差はビットレートだけ=書き出し時間はほぼ変わらない */
   const expSec = showSec * expFactor;
 
   /* 1分未満は「1分ほど」に丸める。秒まで出すと正確に見えすぎる */
@@ -2804,7 +2805,6 @@ MC.ui.autoEtaSec = () => {
     ? MC.highlight.presetSec({ id: MC.ui.AUTO.preset, sec: 59 }, 1e9) : 59;
   const ana = clips.length * lenSec * MC.ui.analysisRate();
   let exp = MC.ui.exportMode() === "realtime" ? 1.15 : (MC.isIOS ? 1.8 : 0.9);
-  if (MC.exporter.quality() === "light") exp *= 0.8;
   return ana + lenSec * exp;
 };
 
@@ -3121,9 +3121,29 @@ MC.ui.AutoCancelled = class extends Error {
   constructor() { super("やめました"); this.name = "AutoCancelled"; }
 };
 
-MC.ui.runAuto = async () => {
+MC.ui.runAuto = async (opt) => {
   if (MC.ui._busy || (MC.exporter && MC.exporter.running)) return;
   if (!MC.media.slotClips().length) return;
+  /* ============ 別のシーンも作る(2026-08-01 優さん指示) ============
+     完成後に scene:{key,t} 付きで呼ばれたら「2回目」。
+     傾き・同期・音声選択・音楽解析は前回のものが生きているので飛ばし、
+     新しい範囲の映像解析+カット割+書き出しだけをやる。
+     ★ 前回の解析(clip.sections / stats / showIn)は**メモリにしか無く、
+       再読込で消える**。消えていたら黙って通常の自走に落ちる ─
+       これは速いだけの近道であって、通行判定には使わない(過去の教訓:
+       「UIの通行判定に消える値を使わない」) */
+  const scene = opt && opt.scene;
+  const sceneCached = !!(scene && MC.S.showIn != null && MC.S.showOut != null
+    && (() => { const a = MC.getClip(MC.S.audioClipId); return !!(a && a.sections); })());
+  /* シーン選び直しでは AUTO の決め打ちを当て直さない ─ こだわりで作った人の
+     長さ・色の設定を潰さないため。変えるのは開始位置(startKey/startAt)だけ */
+  const applyChoices = () => {
+    if (!scene) MC.ui.applyAutoChoices();
+    else {
+      MC.S.startKey = scene.key;
+      MC.S.startAt = scene.key === "manual" ? scene.t : null;
+    }
+  };
   let tick = null;
   try {
     /* ★ _autoRunning は try の**中**で立てる(2026-08-01 レビュー14件)。外で立てると、
@@ -3134,13 +3154,28 @@ MC.ui.runAuto = async () => {
     MC.ui._autoCancel = false;
     MC.ui._autoRunning = true;      // 段の切れ目で鍵が外れないようにする
     MC.ui._autoT0 = performance.now();
-    MC.ui._autoEtaSec = MC.ui.autoEtaSec();   // 総所要は入口で1回だけ見積もる
-    MC.ui.applyAutoChoices();
+    /* 2回目は同期までを飛ばすので、見積りもそのぶん縮める。
+       学習済みの analysisRate は「同期込みの全体」で測っているため、
+       仕上げ(映像解析)だけならおよそ半分になる(実測: 同期と音の読み込みが
+       全体の5〜6割を占める) */
+    MC.ui._autoEtaSec = MC.ui.autoEtaSec() * (sceneCached ? 0.5 : 1);
+    applyChoices();
     MC.ui.setBusy(true);
     MC.ui.autoStage.open();          // ここから先はおまかせ専用の1画面だけ
     tick = setInterval(() => MC.ui.autoStage.render(), 500);   // 残り時間を減らす
-    /* ① 傾き(自動) → ② 同期 → ③ 音声(おすすめ) → ④ 音楽の解析 */
-    await MC.ui.runEasy({ auto: true });
+    if (sceneCached) {
+      /* 前回の解析を使い回す。飛ばした段は「前回のまま」と正直に言う */
+      MC.ui.autoStage.step("scan");
+      ["tilt", "sync", "audio"].forEach(k => MC.ui.autoStage.mark(k, "前回のまま"));
+      /* 見積り学習の起点をここへ引き直す。runEasy を飛ばすと _anaT0 が
+         前回のままで、完成画面で放置していた時間まで「解析にかかった時間」として
+         学習に混ざる(learnAnalysisRate は runEasyFinish が呼ぶ) */
+      MC.ui._anaT0 = performance.now();
+      MC.ui.autoPreviewPlay();
+    } else {
+      /* ① 傾き(自動) → ② 同期 → ③ 音声(おすすめ) → ④ 音楽の解析 */
+      await MC.ui.runEasy({ auto: true });
+    }
     /* ★ `!MC.S.showIn == null` は `(boolean) == null` で**常に false**、
        しかも本体が空だった。この製品で一度事故った型そのもの(消した工程名が
        条件に残り `数値 < undefined` が常に false になった件)なので撤去する */
@@ -3165,7 +3200,11 @@ MC.ui.runAuto = async () => {
          走ると、そのとき候補は「スタート」しか無いので startKey が
          "start" に固定され、あとから盛り上がりが見つかっても戻らない
          (実測: 候補に climax があるのに start が選ばれていた) */
-    MC.ui.applyAutoChoices();
+    applyChoices();
+    /* 2回目は範囲が変わる。前の範囲に対するカット割と色統計を必ず捨てる ─
+       捨てないと「新しい区間ぜんぶが1カメラ」「暗所基準の色補正」が
+       黙って混ざる(invalidateCuts の注記) */
+    if (scene) MC.ui.invalidateCuts();
     MC.ui.applyLengthChoice();
     MC.S.lengthDecided = true;
     MC.saveState();
@@ -3666,7 +3705,7 @@ MC.ui.updateTransport = () => {
       /* iPhone/iPadは実時間の約1.8倍。パソコンは同じ処理でもずっと速いので
          過大な数字を見せない(レビュー指摘)。実時間録画は尺そのもの+仕上げ */
       let factor = MC.ui.exportMode() === "realtime" ? 1.15 : (MC.isIOS ? 1.8 : 0.9);
-      if (MC.exporter.quality() === "light") factor *= 0.8;   // 720pは実測22%速い
+      /* 720pの2割引きは廃止(2026-08-01 1080p統一) */
       const estMin = Math.max(1, Math.round(sec * factor / 60));
       const end = new Date(Date.now() + sec * factor * 1000);
       const endTxt = `${end.getHours()}:${String(end.getMinutes()).padStart(2, "0")}頃`;

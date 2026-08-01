@@ -58,5 +58,13 @@
       2732,
       2828
     ]
+  },
+  "lpcm_tail.mov": {
+    "bytes": 580126,
+    "sr": 48000,
+    "sec": 2.0,
+    "silSec": 0.5,
+    "frames": 96000,
+    "toneRms": 0.45
   }
 }

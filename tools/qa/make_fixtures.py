@@ -188,6 +188,98 @@ def build_tmcd():
     return f + md + moov(vid_off, with_tmcd=True, tmcd_off=tmcd_off), tmcd_off, vid_off
 
 
+# ---- リニアPCM(lpcm v2)音声トラック入りMOV ----
+# Resolve書き出しMOVと同じ形: 48kHz/2ch/24bit LE(formatFlags 0xC)。
+# 中身は「前半0.5秒=無音 → 残り1.5秒=440Hzにトレモロ」の音楽的な信号。
+# encodeAudioPcm(書き出しの音経路)へそのまま食わせて、
+# 出てくる音が無音になっていないかを実測するための素材。
+AUD_SR = 48000
+AUD_SEC = 2.0
+AUD_SIL = 0.5          # 先頭の無音(秒)。途中からの切り出し検証にも使う
+
+
+def lpcm_signal():
+    import math
+    n = int(AUD_SR * AUD_SEC)
+    out = []
+    for i in range(n):
+        t = i / AUD_SR
+        if t < AUD_SIL:
+            out.append(0.0)
+        else:
+            trem = 0.6 + 0.3 * math.sin(2 * math.pi * 4 * (t - AUD_SIL))   # 0.3..0.9
+            out.append(trem * math.sin(2 * math.pi * 440 * t))
+    return out
+
+
+def lpcm_bytes(sig):
+    b = bytearray()
+    for v in sig:
+        x = max(-8388608, min(8388607, int(round(v * 8388607))))
+        if x < 0:
+            x += 0x1000000
+        le3 = bytes([x & 0xFF, (x >> 8) & 0xFF, (x >> 16) & 0xFF])
+        b += le3 + le3      # L, R 同一
+    return bytes(b)
+
+
+def lpcm_stsd():
+    # QuickTime SoundDescription v2(lpcm)。読み手(_parsePcmEntry)が見る位置:
+    # base=version(u16), rate f64 @base+24, ch u32 @base+32, bits u32 @base+40, flags u32 @base+44
+    e = b"\x00" * 6 + struct.pack(">H", 1)          # reserved + data_ref_index
+    e += struct.pack(">HH", 2, 0)                     # version=2, revision
+    e += b"\x00" * 4                                  # vendor
+    e += struct.pack(">HHhH", 3, 16, -2, 0)           # always3/16/-2/0
+    e += struct.pack(">I", 65536)                     # always65536
+    e += struct.pack(">I", 72)                        # sizeOfStructOnly
+    e += struct.pack(">d", float(AUD_SR))             # rate
+    e += struct.pack(">I", 2)                         # channels
+    e += struct.pack(">I", 0x7F000000)                # always7F000000
+    e += struct.pack(">I", 24)                        # constBitsPerChannel
+    e += struct.pack(">I", 0xC)                       # formatFlags(LE/packed/int)
+    e += struct.pack(">II", 6, 1)                     # bytesPerPacket, framesPerPacket
+    return fullbox(b"stsd", 0, 0, struct.pack(">I", 1) + box(b"lpcm", e))
+
+
+def lpcm_trak(chunk_offs, frames_per_chunk, total_frames):
+    stbl_ = box(b"stbl",
+                lpcm_stsd()
+                + fullbox(b"stts", 0, 0, struct.pack(">III", 1, total_frames, 1))
+                + fullbox(b"stsc", 0, 0, struct.pack(">IIII", 1, 1, frames_per_chunk, 1))
+                + fullbox(b"stsz", 0, 0, struct.pack(">II", 6, total_frames))
+                + fullbox(b"stco", 0, 0, struct.pack(">I", len(chunk_offs))
+                          + b"".join(struct.pack(">I", o) for o in chunk_offs)))
+    smhd = fullbox(b"smhd", 0, 0, struct.pack(">HH", 0, 0))
+    minf_ = box(b"minf", smhd + dinf() + stbl_)
+    mdhd_a = fullbox(b"mdhd", 0, 0, struct.pack(">IIIIHH", 0, 0, AUD_SR, total_frames, 0x55C4, 0))
+    hdlr_a = fullbox(b"hdlr", 0, 0, struct.pack(">I", 0) + b"soun" + b"\x00" * 12 + b"SoundHandler\x00")
+    mdia_ = box(b"mdia", mdhd_a + hdlr_a + minf_)
+    return box(b"trak", tkhd(2) + mdia_)
+
+
+def build_lpcm():
+    """ftyp + mdat(映像NSサンプル → PCM 4チャンク) + moov(映像 + lpcm音声)"""
+    import math
+    f = ftyp()
+    sig = lpcm_signal()
+    pcm = lpcm_bytes(sig)
+    total = len(sig)
+    fpc = total // 4                     # 4チャンク
+    vid_bytes = b"".join(struct.pack(">I", i) + bytes([(i * 7 + j) & 0xFF for j in range(SAMPLE_SZ - 4)])
+                         for i in range(NS))
+    body = vid_bytes + pcm
+    md = box(b"mdat", body)
+    vid_off = len(f) + 8
+    aud0 = vid_off + len(vid_bytes)
+    chunk_offs = [aud0 + k * fpc * 6 for k in range(4)]
+    moov_body = mvhd(NS * SAMPLE_DUR) + trak(vid_off) + lpcm_trak(chunk_offs, fpc, total)
+    out = f + md + box(b"moov", moov_body)
+    tone = [v for i, v in enumerate(sig) if i / AUD_SR >= AUD_SIL]
+    rms = math.sqrt(sum(v * v for v in tone) / len(tone))
+    return out, {"sr": AUD_SR, "sec": AUD_SEC, "silSec": AUD_SIL,
+                 "frames": total, "toneRms": round(rms, 4)}
+
+
 def build(moov_at_tail):
     f = ftyp()
     md = mdat_bytes()
@@ -243,5 +335,10 @@ if __name__ == "__main__":
         "videoSampleOffset": [vid_off + i * SAMPLE_SZ for i in range(NS)],
     }
     print(f"tmcd_tail.mp4    {len(b):6d} bytes  tmcd@{tmcd_off} video0@{vid_off} OK")
+    # ---- lpcm音声入り(書き出しの音経路の実測用) ----
+    b, am = build_lpcm()
+    open(os.path.join(d, "lpcm_tail.mov"), "wb").write(b)
+    meta["lpcm_tail.mov"] = {"bytes": len(b), **am}
+    print(f"lpcm_tail.mov    {len(b):6d} bytes  {am['frames']}frames toneRms={am['toneRms']} OK")
     open(os.path.join(d, "meta.json"), "w").write(json.dumps(meta, indent=2))
     print("meta.json written")
