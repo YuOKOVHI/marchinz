@@ -122,6 +122,52 @@ window.MZ_MP4 = (() => {
     } catch (e) { return 0; }
   };
 
+  /* ============ 再シークの前に「配り途中の束」を捨てる ============
+     (2026-08-02: 自動スイッチングの書き出しが「映像を作っています」で落ちる件)
+
+     mp4box は抽出したサンプルを extractedTracks[i].samples へ貯め、
+     **64個たまるか、トラックの最後まで行ったとき**にだけ onSamples で配る:
+
+         if (r.nextSample % a.nb_samples == 0 || r.nextSample >= r.samples.length) {
+           this.onSamples(a.id, a.user, a.samples); a.samples = [];
+         }
+
+     読み手(cursor.next)は4MBずつ渡すので、渡したぶんで作れるサンプルを
+     作り切ったところで processSamples は break する。つまり**ほぼ常に、
+     配られないまま残っている作りかけの束(最大63個)がある**。
+
+     ここで cursor.seek() を呼ぶと、mp4box 側は trak.nextSample を新しい RAP へ
+     移すだけで、**この作りかけの束はそのまま**。次に64個たまった瞬間、
+     配列の先頭に「前の位置のサンプル(ほぼデルタフレーム)」が並んだまま
+     onSamples が飛んでくる。
+
+     受け取った側は先頭から VideoDecoder.decode() へ食わせるので、
+     シーク直後(flush/reset 済み=キーフレーム必須の状態)にデルタが入り、
+     decode() が同期例外を投げる:
+         Safari "Key frame is required" / Chrome DataError
+     ─ これが書き出しの即死("decode@[native code]" ← exporter.js pump)と、
+     解析の "WebCodecs解析不可→シーク方式へ" の両方の正体。
+
+     縦型(3分割)は3本とも毎コマ描くので再シークが起きず、踏まない。
+     自動スイッチングはカットごとに先へ跳ぶ(skipTo)ので必ず踏む。
+
+     捨てたサンプルの data は trak.samples 側に残るが、次に配られた時の
+     releaseUsedSamples(id, 最新番号) が「それより前」を全部解放するので
+     前進シークでは回収される。 */
+  const dropPendingBatch = (mp4, trackId) => {
+    try {
+      const ex = (mp4.extractedTracks || []).filter(e => e.id === trackId);
+      let n = 0;
+      for (const e of ex) {
+        if (!e.samples || !e.samples.length) continue;
+        n += e.samples.length;
+        e.samples.length = 0;      // 参照を持たれていても効くよう length で消す
+      }
+      if (n) log(`再シーク: 配り途中の ${n} サンプルを捨てました(前の位置のもの)`);
+      return n;
+    } catch (e) { return 0; }
+  };
+
   /* ============ mp4box.js ラッパ: MP4/MOVのデマックス ============
      1インスタンス=1回の抽出用途で使う(状態を単純に保つ)。
 
@@ -570,6 +616,10 @@ window.MZ_MP4 = (() => {
         } else {
           try { mp4.stop(); } catch (e) {}
         }
+        /* ★ mp4box が抱えている「配り途中の束」を捨てる(2026-08-02)。
+           これをやらないと、シーク後の1本目にデルタフレームが混ざって
+           decode() が即例外を投げる(上の長い注記) */
+        dropPendingBatch(mp4, trackId);
         /* ★ 位置は seekOffsetFor が決める(このトラックだけを見る)。
            全トラック最小の mp4.seek() に戻すと、tmcd トラック入りの実素材で
            毎回ファイル先頭から読み直しになる(0コマのまま無言で固まる) */

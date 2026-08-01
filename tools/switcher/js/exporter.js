@@ -74,6 +74,14 @@ MC.exporter.VideoPipe = class {
     this.lastReqUs = null; // 直前に要求された時刻(前方ジャンプ検知用)
     this.noSkip = false;   // 再シークに失敗したパイプは以後直列デコードへ
     this.prof = null;      // exportMP4 が挿す(skips/reseekMs)
+    /* ★ キーフレーム待ち(2026-08-02)。configure/flush の直後、デコーダは
+       「次はキーフレーム(RAP)しか受け取らない」状態にある。ここへデルタを
+       食わせると decode() が**その場で例外を投げる**
+       (Safari "Key frame is required" / Chrome DataError)。
+       正しい供給元(cursor)は必ず RAP から返すので、本来ここは通らない。
+       通ったということは供給側が壊れているので、握り潰さず数と場所を記録する */
+    this.needKey = true;
+    this.droppedDelta = 0;   // 通算(帯とログに出す)
   }
 
   async init(fromLocalSec) {
@@ -108,6 +116,7 @@ MC.exporter.VideoPipe = class {
       },
     });
     this.decoder.configure(cfg);
+    this.needKey = true;             // 設定直後はキーフレーム必須
     this.cursor = this.src.cursor(vt.id);
     /* cursor はコンテナ時刻で探すので、補正ぶんを足し戻してから探す */
     this.cursor.seek(Math.max(0, fromLocalSec + this.tsOff));
@@ -133,6 +142,18 @@ MC.exporter.VideoPipe = class {
         this.flushed = true;
         return;
       }
+      /* キーフレーム待ちのあいだデルタは捨てる(上のコンストラクタの注記)。
+         捨てた枚数は必ず記録に残す ─ ここが1枚でも動いたら供給側の不具合 */
+      if (this.needKey && !s.is_sync) {
+        this.droppedDelta++;
+        continue;
+      }
+      if (this.needKey) {
+        this.needKey = false;
+        if (this.droppedDelta) {
+          MC.log(`キーフレーム待ちで ${this.droppedDelta}枚捨てました(通算): ${this.clip.name}`);
+        }
+      }
       this.decoder.decode(new EncodedVideoChunk({
         type: s.is_sync ? "key" : "delta",
         timestamp: Math.round((s.cts / s.timescale - this.tsOff) * 1e6),   // elst補正
@@ -148,11 +169,17 @@ MC.exporter.VideoPipe = class {
     const t0 = performance.now();
     try {
       await this.decoder.flush().catch(() => {});
+      /* flush 後のデコーダは「次はキーフレーム」しか受け取らない。
+         cursor.seek は RAP から返すので普段は素通りするが、供給側が
+         壊れた時にここで例外を出さないための鍵(2026-08-02) */
+      this.needKey = true;
       this.frames.forEach(f => { try { f.close(); } catch (e) {} });
       this.frames = [];
       // 末尾ぎりぎりへ飛ぶと RAP 以降にフレームが無く黒コマ化するためクランプ
-      const target = Math.min(tLocalSec, Math.max(0, this.clip.duration - 0.3));
-      this.cursor.seek(target);
+      /* cursor はコンテナ時刻で探す(init と同じ)。tsOff を足さずに渡していたため、
+         elst を持つ素材では init と skipTo で基準がずれていた(2026-08-02) */
+      const target = Math.min(tLocalSec + this.tsOff, Math.max(0, this.clip.duration - 0.3));
+      this.cursor.seek(Math.max(0, target));
       this.eof = false;
       this.flushed = false;
       if (this.prof) { this.prof.skips++; this.prof.reseekMs += performance.now() - t0; }

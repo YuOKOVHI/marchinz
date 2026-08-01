@@ -549,6 +549,13 @@ MC.visual.analyzeClipWC = async (clip, l0, l1, prog) => {
   let sampleDone = 0;
   let lastTs = -Infinity;  // 直近で出したフレームの秒(HOP判定)
   let srcEof = false, flushed = false, drained = false;
+  /* ★ キーフレーム待ち(2026-08-02)。configure/reset の直後のデコーダは
+     RAP しか受け取らず、デルタを食わせると decode() が即例外を投げる
+     ("Key frame is required")。この解析は catch してシーク方式へ落ちるので
+     実害は速度だけだったが、同じ根っこで**書き出しは即死していた**。
+     供給元(cursor)は必ず RAP から返すので普段ここは動かない。
+     動いたら供給側の不具合なので、枚数を記録に残す */
+  let needKey = true, droppedDelta = 0;
 
   const closeAll = () => { outQ.forEach(f => { try { f.close(); } catch (e) {} }); outQ.length = 0; };
 
@@ -568,6 +575,7 @@ MC.visual.analyzeClipWC = async (clip, l0, l1, prog) => {
         catch (e) { await dec.flush().catch(() => {}); }   // reset非対応環境は従来どおり
         closeAll();
         cur.seek(wt.t);
+        needKey = true;                    // reset/flush 後はキーフレーム必須
         srcEof = false; flushed = false;
         lastTs = -Infinity;
       }
@@ -591,12 +599,17 @@ MC.visual.analyzeClipWC = async (clip, l0, l1, prog) => {
             flushed = true;
             continue;
           }
-          dec.decode(new EncodedVideoChunk({
-            type: s.is_sync ? "key" : "delta",
-            timestamp: Math.round(s.cts * 1e6 / s.timescale),
-            duration: Math.max(1, Math.round(s.duration * 1e6 / s.timescale)),
-            data: s.data,
-          }));
+          if (needKey && !s.is_sync) {
+            droppedDelta++;                // キーフレームが来るまで食わせない
+          } else {
+            needKey = false;
+            dec.decode(new EncodedVideoChunk({
+              type: s.is_sync ? "key" : "delta",
+              timestamp: Math.round(s.cts * 1e6 / s.timescale),
+              duration: Math.max(1, Math.round(s.duration * 1e6 / s.timescale)),
+              data: s.data,
+            }));
+          }
         } else {
           await MC.waitDequeue(dec, 50);   // 出力待ち(イベント駆動)
         }
@@ -656,7 +669,8 @@ MC.visual.analyzeClipWC = async (clip, l0, l1, prog) => {
   if (V.t.length < 2) throw new Error("解析サンプルが取れません");
   MC.visual._finalize(V);
   if (colorAcc && colorAcc.count() > 0) clip.colorStats = colorAcc.finish();
-  MC.log(`visual: WC解析 ${clip.name} 点${V.t.length}/${pts}` + (clip.colorStats ? " +色統計" : ""));
+  MC.log(`visual: WC解析 ${clip.name} 点${V.t.length}/${pts}` + (clip.colorStats ? " +色統計" : "")
+         + (droppedDelta ? ` /キーフレーム待ちで${droppedDelta}枚捨てた` : ""));
   return V;
 };
 

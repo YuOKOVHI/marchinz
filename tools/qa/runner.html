@@ -4269,6 +4269,237 @@ async function countSamples(ns, file, fromSec) {
     return "既定=走らない / 明示すれば手放して戻る";
   });
 
+  /* ============ ㉑ 再シーク直後の1本目がキーフレームであること ============
+     (2026-08-02: 自動スイッチングの書き出しが「映像を作っています」で即死した件)
+
+     mp4box は抽出サンプルを64個ためてから配る。読み手は4MBずつ渡すので、
+     渡したぶんを使い切ったところで処理が止まり、**配られないまま残った
+     作りかけの束**がほぼ常にある。そこで再シークすると mp4box は
+     nextSample を新しいRAPへ動かすだけで束は残り、次に配られた配列の先頭に
+     「前の位置のデルタフレーム」が並ぶ。
+
+     シーク直後のデコーダは flush/reset 済みでキーフレーム必須。デルタを
+     食わせると decode() が**同期例外**を投げる(Safari "Key frame is required")。
+       ・書き出し(exporter.js pump) → その場で失敗。"decode@[native code]"
+       ・解析(visual.js)        → catch してシーク方式へ(遅くなるだけ)
+     縦型は3本とも毎コマ描くので再シークが起きず、踏まなかった。 */
+  group("㉑ 再シーク直後の1本目がキーフレームであること(自動スイッチング即死)");
+
+  /* mp4box の nb_samples(64)を跨ぐ長さが要る。45コマの synth では
+     「最後まで読み切って全部配る」だけで、作りかけの束が生まれない */
+  let synth100 = null;
+  const S1W = 320, S1H = 180, S1FPS = 30, S1N = 100, S1GOP = 15;
+  await test("100コマ・GOP15 の H.264(moov末尾)を実行時に作れる", async () => {
+    if (typeof VideoEncoder === "undefined") throw new Error("WebCodecs非対応環境");
+    const mx = new Mp4Muxer.Muxer({ target: new Mp4Muxer.ArrayBufferTarget(),
+      video: { codec: "avc", width: S1W, height: S1H }, fastStart: false });
+    let err = null;
+    const enc = new VideoEncoder({ output: (c, m) => mx.addVideoChunk(c, m), error: e => { err = e; } });
+    enc.configure({ codec: "avc1.42001f", width: S1W, height: S1H, bitrate: 2e6, framerate: S1FPS });
+    const cv = new OffscreenCanvas(S1W, S1H), ctx = cv.getContext("2d");
+    for (let k = 0; k < S1N; k++) {
+      const v = 20 + (k * 2) % 200;
+      ctx.fillStyle = `rgb(${v},${v},${v})`; ctx.fillRect(0, 0, S1W, S1H);
+      ctx.fillStyle = "white"; ctx.fillRect((k * 3) % S1W, 10, 24, 24);   // 動きを作る(デルタを太らせる)
+      const f = new VideoFrame(cv, { timestamp: Math.round(k * 1e6 / S1FPS),
+                                     duration: Math.round(1e6 / S1FPS) });
+      enc.encode(f, { keyFrame: k % S1GOP === 0 }); f.close();
+      while (enc.encodeQueueSize > 6) await new Promise(r => setTimeout(r, 4));
+    }
+    await enc.flush(); enc.close(); if (err) throw err;
+    mx.finalize();
+    synth100 = new File([mx.target.buffer], "synth100_moov_tail.mp4", { type: "video/mp4" });
+    return `${synth100.size} bytes / ${S1N}コマ / キーフレーム間隔${S1GOP}`;
+  });
+
+  /* 本番の「4MBずつ渡す」を小さくして再現する。読みを刻むと mp4box の
+     処理が途中で止まり、作りかけの束が残る(= 実素材と同じ状態) */
+  function chunkFile(file, limit) {
+    const w = {
+      name: file.name, size: file.size, type: file.type, limit: Infinity,
+      slice(a, b) { return file.slice(a, Math.min(b, a + w.limit)); },
+    };
+    return w;
+  }
+  /* 作りかけの束が残るところまで読み進める。戻り値: {src, cur, pend, read} */
+  const runUntilPendingAt = async (M, limit) => {
+    const cf = chunkFile(synth100, limit);
+    const src = new M.MP4Source(cf);
+    await src.init();                 // init は moov を丸ごと読む必要があるので刻まない
+    cf.limit = limit;
+    const vt = src.videoTrack();
+    const cur = src.cursor(vt.id);
+    const pend = () => {
+      const e = (src.mp4.extractedTracks || []).find(x => x.id === vt.id);
+      return (e && e.samples) || [];
+    };
+    cur.seek(0);
+    let read = 0, guard = 0;
+    while (pend().length === 0 && guard++ < 4000) {
+      const r = await cur.next();
+      if (r.done) break;
+      read++;
+    }
+    return { src, cur, pend, read, limit };
+  };
+  /* 1回の読みで何コマぶん渡すか。64個の境目をまたいだ回に端数が残るので、
+     素材の平均サンプル長から見当をつける(コマの大きさは素材で変わるため、
+     当たるまで何通りか試す。当たらなければ前提テストが落ちる) */
+  const runUntilPending = async M => {
+    const avg = synth100.size / S1N;
+    let last = null;
+    for (const per of [12, 18, 8, 25, 5, 40]) {
+      const r = await runUntilPendingAt(M, Math.max(512, Math.round(avg * per)));
+      if (r.pend().length) return r;
+      r.cur.stop();
+      last = r;
+    }
+    return last;
+  };
+
+  await test("★前提: 再シークの直前に mp4box が「配り途中の束」を抱えている", async () => {
+    if (!synth100) throw new Error("素材が作れていない");
+    const M = await loadShared();
+    const { cur, pend, read, limit } = await runUntilPending(M);
+    const n = pend().length;
+    cur.stop();
+    if (!n) throw new Error("束が残らない= この試験は事故を再現できない(mp4boxの配り方が変わった?)");
+    return `1回${limit}バイト読み・${read}コマ読んだ時点で ${n} サンプルが配り待ち`;
+  });
+
+  await test("★再シーク後の1本目はキーフレーム(デルタを混ぜない)", async () => {
+    const M = await loadShared();
+    const { cur, pend } = await runUntilPending(M);
+    cur.seek(2.0);                                   // コマ60(=RAP)へ
+    if (pend().length) throw new Error("シーク後も束が残っている(捨てていない)");
+    const first = await cur.next();
+    cur.stop();
+    if (first.done) throw new Error("再シーク後に1件も返らない");
+    if (!first.value.is_sync) {
+      throw new Error(`1本目がデルタ(cts=${first.value.cts})= decode() がその場で落ちる`);
+    }
+    const cts = first.value.cts, ts = first.value.timescale;
+    if (!(cts / ts <= 2.0 + 1e-6)) throw new Error(`要求(2.0秒)より後ろのRAPから始まった: ${cts / ts}`);
+    return `cts=${cts}(${(cts / ts).toFixed(3)}秒)のキーフレームから`;
+  });
+
+  /* 変異: 束を捨てる処理を外すと本当に落ちるか(この試験に歯があるか) */
+  const injectStaleBatchBug = src => {
+    const before = "        dropPendingBatch(mp4, trackId);\n";
+    if (!src.includes(before)) throw new Error("変異ポイントが見つからない(修正が別の形に書き換わった?)");
+    if (src.split(before).length !== 2) throw new Error("変異ポイントが1箇所でない");
+    return src.split(before).join("");
+  };
+  await test("変異: 束を捨てないと、1本目に前の位置のデルタが出る", async () => {
+    const M = await loadShared(injectStaleBatchBug);
+    const { cur, pend } = await runUntilPending(M);
+    const stale = pend().length;
+    cur.seek(2.0);
+    const first = await cur.next();
+    cur.stop();
+    if (first.done) throw new Error("1件も返らない");
+    if (first.value.is_sync) {
+      throw new Error("バグを戻しても1本目がキーフレーム= この試験は事故を検知できない");
+    }
+    return `配り待ち${stale}件がそのまま先頭に(cts=${first.value.cts}・デルタ)`;
+  });
+
+  /* ---- 受け取る側の鍵: デルタから始まる供給でも decode を落とさない ---- */
+  const loadExporterMut = async mutate => {
+    const doc = { visibilityState: "visible", addEventListener: () => {} };
+    const ns = { log: () => {}, caps: {}, isIOS: false, exporter: {}, _doc: doc };
+    let src = await (await fetch("../switcher/js/exporter.js")).text();
+    if (mutate) src = mutate(src);
+    new Function("MC", "window", "document", src)(ns, { MC: ns, addEventListener: () => {} }, doc);
+    if (!ns.exporter || !ns.exporter.VideoPipe) throw new Error("VideoPipe が生えていない");
+    return ns;
+  };
+  const dropKeyGuard = src => {
+    const before = "      if (this.needKey && !s.is_sync) {\n"
+                 + "        this.droppedDelta++;\n"
+                 + "        continue;\n"
+                 + "      }\n";
+    if (!src.includes(before)) throw new Error("変異ポイントが見つからない(ガードが別の形に書き換わった?)");
+    if (src.split(before).length !== 2) throw new Error("変異ポイントが1箇所でない");
+    return src.split(before).join("");
+  };
+  /* 素材のサンプルを配列で持っておく(供給の順番を自由に作るため) */
+  let SEQ = null;
+  await test("★供給列を用意(先頭をデルタにできる形)", async () => {
+    const M = await loadShared();
+    const src = new M.MP4Source(synth100);
+    await src.init();
+    const vt = src.videoTrack();
+    const arr = [];
+    for await (const s of src.samples(vt.id, 0)) {
+      arr.push({ data: s.data.slice(), is_sync: s.is_sync,
+                 cts: s.cts, duration: s.duration, timescale: s.timescale });
+    }
+    eq(arr.length, S1N, "サンプル数");
+    if (arr[5].is_sync) throw new Error("index 5 がキーフレーム(デルタ始まりを作れない)");
+    SEQ = { cfg: src.videoDecoderConfig(), arr };
+    return `${arr.length}件 / キーフレーム ${arr.filter(s => s.is_sync).length}枚`;
+  });
+  /* 本物の VideoDecoder に、デルタ始まりの供給を渡して pump() を回す */
+  const runPipe = async (MCns, from) => {
+    const pipe = new MCns.exporter.VideoPipe({ name: "synth100", duration: S1N / S1FPS });
+    let decoded = 0, derr = null;
+    pipe.decoder = new VideoDecoder({ output: f => { decoded++; f.close(); },
+                                      error: e => { derr = e; } });
+    pipe.decoder.configure(SEQ.cfg);
+    pipe.tsOff = 0;
+    let i = from;
+    pipe.cursor = { next: async () => (i < SEQ.arr.length
+      ? { value: SEQ.arr[i++], done: false } : { value: undefined, done: true }) };
+    try {
+      let spins = 0;
+      while (!pipe.eof && spins++ < 400) {
+        await pipe.pump();
+        pipe.frames.length = 0;                 // output は数えて閉じ済み
+        await new Promise(r => setTimeout(r, 2));
+      }
+      await pipe.decoder.flush().catch(() => {});
+    } finally { try { pipe.decoder.close(); } catch (e) {} }
+    return { pipe, decoded, derr };
+  };
+  await test("★デルタから始まる供給でも落ちない(捨てた枚数を数える)", async () => {
+    if (!SEQ) throw new Error("供給列が無い");
+    const MCns = await loadExporterMut();
+    const { pipe, decoded, derr } = await runPipe(MCns, 5);
+    if (derr) throw new Error("デコーダがエラーを返した: " + (derr.message || derr));
+    eq(pipe.droppedDelta, S1GOP - 5, "捨てたデルタの枚数");
+    ge(decoded, S1N - S1GOP, "デコードできたコマ数");
+    return `${pipe.droppedDelta}枚捨てて、${decoded}コマ decode(記録に残る)`;
+  });
+  await test("変異: 鍵を外すと decode() がその場で例外を投げる(本番の即死)", async () => {
+    if (!SEQ) throw new Error("供給列が無い");
+    const MCns = await loadExporterMut(dropKeyGuard);
+    let msg = "";
+    try { await runPipe(MCns, 5); }
+    catch (e) { msg = (e && (e.message || e.name)) || String(e); }
+    if (!msg) throw new Error("ガードを外しても落ちない= この試験は事故を検知できない");
+    return "例外: " + msg.slice(0, 80);
+  });
+  await test("★キーフレームから始まる供給は今までどおり(捨てない)", async () => {
+    if (!SEQ) throw new Error("供給列が無い");
+    const MCns = await loadExporterMut();
+    const { pipe, decoded, derr } = await runPipe(MCns, 0);
+    if (derr) throw new Error("デコーダがエラーを返した: " + (derr.message || derr));
+    eq(pipe.droppedDelta, 0, "捨てたデルタの枚数");
+    eq(decoded, S1N, "デコードできたコマ数");
+    return "100コマ全部 decode / 1枚も捨てない";
+  });
+  await test("★解析(visual.js)も同じ鍵を持っている", async () => {
+    const src = await (await fetch("../switcher/js/visual.js")).text();
+    if (!/needKey\s*&&\s*!s\.is_sync/.test(src)) {
+      throw new Error("visual.js にキーフレーム待ちの鍵が無い(同じ根っこで解析が遅くなる)");
+    }
+    if (!/needKey = true;\s*\/\/ reset/.test(src) && !/cur\.seek\(wt\.t\);[\s\S]{0,120}needKey = true/.test(src)) {
+      throw new Error("再シークの後に鍵を立て直していない");
+    }
+    return "reset+再シークの後にキーフレーム待ちへ戻る";
+  });
+
   if (CF) { CF.remove(); CF = null; CW = null; CD = null; }
 
   /* ===== 集計 ===== */
