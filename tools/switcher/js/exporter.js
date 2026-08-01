@@ -900,7 +900,15 @@ MC.exporter.preflightFiles = async clips => {
    ★ 戻すのを忘れるとプレビューが二度と映らない。必ず finally で戻すこと。
      clip.url は取り込み時に作った objectURL がそのまま生きている(media.js) */
 MC.exporter._videoParked = false;
+/* ★ 既定で止めた(2026-08-01 実機で 0% から進まなくなった)。
+   Decoder failure を狙って入れたが、症状が「エラーで止まる」から
+   「無言で固まる」へ悪化した。原因が確かめられるまで既定では走らせない。
+   試すときだけ URL に ?park=1 を付ける */
+MC.exporter.parkEnabled = () => {
+  try { return new URLSearchParams(location.search).has("park"); } catch (e) { return false; }
+};
 MC.exporter.parkVideoElements = () => {
+  if (!MC.exporter.parkEnabled()) return;
   if (MC.exporter._videoParked) return;
   let n = 0;
   for (const c of MC.S.clips) {
@@ -934,6 +942,52 @@ MC.exporter.unparkVideoElements = () => {
    顔検出Worker+ONNX RuntimeのWASMヒープは、分析が終わっても居座り続けていた。
    書き出しは 3本のVideoDecoder+VideoEncoder+GL でメモリを詰めるので、
    関与しない死荷重を先に下ろす。再分析すれば遅延生成で立ち直る */
+/* ★ 返ってこない await を、無言のまま放置しない(2026-08-01 実機)。
+   0%のまま固まると、画面にも記録にも何ひとつ残らず、実機で何が起きたのかを
+   誰も再現できない。時間で見切りをつけて、**どこで止まったか**を名前で残す */
+/* ★ いまどこを通っているかを常に1つ残す(2026-08-01 実機で0%から進まなくなった)。
+   固まったとき、画面にも記録にも何ひとつ残らないのがいちばん困る。
+   ここを更新しておけば「最後に通ったところ」を必ず名指しできる */
+MC.exporter._stage = "";
+MC.exporter.stage = s => {
+  MC.exporter._stage = s;
+  MC.exporter._lastProgAt = Date.now();   // 進んでいる証拠。見張りの空振りを防ぐ
+  MC.log("export: " + s);
+};
+
+/* ★ 書き出し全体の見張り(2026-08-01)。個別に時間切れを足していく形だと、
+   次に別の場所で固まったら同じことの繰り返しになる。
+   「一定時間まったく進まなければ、最後に通ったところの名前をつけて必ず止まる」
+   を1箇所で保証する。止まれば失敗の顔が出て、記録もコピーできる */
+MC.exporter.STALL_MS = 120000;
+MC.exporter.runWatched = async (fn) => {
+  MC.exporter._lastProgAt = Date.now();
+  MC.exporter._stage = "書き出しの準備";
+  let done = false, timer = null;
+  const stall = new Promise((_, rej) => {
+    timer = setInterval(() => {
+      if (done) return;
+      const idle = Date.now() - (MC.exporter._lastProgAt || Date.now());
+      if (idle >= MC.exporter.STALL_MS) {
+        rej(new Error(`${Math.round(idle / 1000)}秒のあいだ書き出しが進みませんでした`
+          + `（最後に通ったところ: ${MC.exporter._stage || "開始直後"}）`));
+      }
+    }, 5000);
+  });
+  try { return await Promise.race([fn(), stall]); }
+  finally { done = true; if (timer) clearInterval(timer); }
+};
+
+MC.exporter.withTimeout = (promise, ms, what) => {
+  let t = null;
+  return Promise.race([
+    promise.finally(() => { if (t) clearTimeout(t); }),
+    new Promise((_, rej) => {
+      t = setTimeout(() => rej(new Error(`${what} が ${Math.round(ms / 1000)}秒たっても終わりませんでした`)), ms);
+    }),
+  ]);
+};
+
 MC.exporter._releaseAnalysisWorkers = () => {
   const V = window.MC && MC.visual;
   if (!V) return;
@@ -1096,7 +1150,9 @@ MC.exporter._exportVideoPart = async (opt) => {
        まずそれだけを試す ─ 一度に2つ動かすと、どちらが効いたか判らない */
     let vcfg = { ...baseCfg, hardwareAcceleration: "prefer-hardware" };
     try {
-      const s = await VideoEncoder.isConfigSupported(vcfg);
+      MC.exporter.stage("書き出しの形を決めています");
+      const s = await MC.exporter.withTimeout(
+        VideoEncoder.isConfigSupported(vcfg), 15000, "書き出しの形を決める処理");
       if (!s || !s.supported) vcfg = baseCfg;
     } catch (err) { vcfg = baseCfg; }
     venc.configure(vcfg);
@@ -1106,7 +1162,8 @@ MC.exporter._exportVideoPart = async (opt) => {
       if (c.isImage) continue;
       const pipe = new MC.exporter.VideoPipe(c);
       pipe.prof = prof;
-      await pipe.init((tIn + kA / fps) - c.offset);
+      await MC.exporter.withTimeout(pipe.init((tIn + kA / fps) - c.offset), 30000,
+        `${c.name} を開く処理`);
       pipes.set(c.id, pipe);
     }
     const canvas = MC.exporter.makeCanvas(w, h);
@@ -1207,7 +1264,9 @@ MC.exporter.exportMP4Parts = async (onProgress) => {
   const jobId = MC.exporter.exportJobId();
   const outName = `MarchinZ_Switcher_${MC.S.preset}_${new Date().toISOString().slice(0, 10)}.mp4`;
 
-  await MC.exporter.preflightFiles(used.filter(c => !c.isImage));
+  MC.exporter.stage("素材が読めるかの下見");
+  await MC.exporter.withTimeout(
+    MC.exporter.preflightFiles(used.filter(c => !c.isImage)), 30000, "素材の下見");
 
   /* ---- 続きから(前回の完了パートを飛ばす) ---- */
   const doneSet = new Set();
@@ -1252,9 +1311,12 @@ MC.exporter.exportMP4Parts = async (onProgress) => {
     MC.log("分割書き出しには容量が足りないため、従来の方式で試します: " + e.message);
     return MC.exporter.exportMP4(onProgress, null, { noParts: true });
   }
-  await MC.exporter.preflightFiles(used.filter(c => !c.isImage));
+  MC.exporter.stage("素材が読めるかの下見");
+  await MC.exporter.withTimeout(
+    MC.exporter.preflightFiles(used.filter(c => !c.isImage)), 30000, "素材の下見");
 
   const _t0mark = Date.now();
+  MC.exporter._lastProgAt = Date.now();
   MC.exporter._markProgress = (k, total, extra) => {
     try {
       sessionStorage.setItem("mz_switcher_export_at_v1", JSON.stringify({
@@ -1535,6 +1597,7 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle, opts) => {
   /* 到達点を sessionStorage に逐次残す。タブごと落ちると画面もログも消えるので、
      「何コマ目で止まったか」を再読込後に伝える唯一の手段(2026-07-29) */
   const _t0mark = Date.now();
+  MC.exporter._lastProgAt = Date.now();
   MC.exporter._markProgress = (k, total) => {
     try {
       sessionStorage.setItem("mz_switcher_export_at_v1", JSON.stringify({
@@ -1665,7 +1728,9 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle, opts) => {
        まずそれだけを試す ─ 一度に2つ動かすと、どちらが効いたか判らない */
     let vcfg = { ...baseCfg, hardwareAcceleration: "prefer-hardware" };
     try {
-      const s = await VideoEncoder.isConfigSupported(vcfg);
+      MC.exporter.stage("書き出しの形を決めています");
+      const s = await MC.exporter.withTimeout(
+        VideoEncoder.isConfigSupported(vcfg), 15000, "書き出しの形を決める処理");
       if (!s || !s.supported) vcfg = baseCfg;
     } catch (err) { vcfg = baseCfg; }
     venc.configure(vcfg);
@@ -1673,14 +1738,18 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle, opts) => {
 
     // 素材が今も読めるかを先に確かめる(途中で落ちるより早く知らせる)
 
-    await MC.exporter.preflightFiles(used.filter(c => !c.isImage));
+    MC.exporter.stage("素材が読めるかの下見");
+  await MC.exporter.withTimeout(
+    MC.exporter.preflightFiles(used.filter(c => !c.isImage)), 30000, "素材の下見");
 
     const prof = { decode: 0, draw: 0, encode: 0, wait: 0, skips: 0, reseekMs: 0 };
     for (const c of used) {
       if (c.isImage) continue;   // 静止画はデコード不要(そのまま描く)
       const pipe = new MC.exporter.VideoPipe(c);
       pipe.prof = prof;
-      await pipe.init(tIn - c.offset);
+      MC.exporter.stage(`${c.name} を開いています`);
+      await MC.exporter.withTimeout(pipe.init(tIn - c.offset), 30000, `${c.name} を開く処理`);
+      MC.log(`export: ${c.name} を開けました`);
       pipes.set(c.id, pipe);
     }
 

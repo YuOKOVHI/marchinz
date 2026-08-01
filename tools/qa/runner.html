@@ -3401,6 +3401,10 @@ async function countSamples(ns, file, fromSec) {
       c.video.setAttribute("src", c.url);
     });
     X._videoParked = false;
+    /* ★ 既定オフになった(実機で0%から進まなくなったため)。
+       ここで見たいのは「手放す→戻る」の中身なので、明示的に有効にして試す。
+       既定で走らないことの確認は、すぐ下の別の試験が受け持つ */
+    const _pk = X.parkEnabled; X.parkEnabled = () => true;
     try {
       X.parkVideoElements();
       const held = S.clips.filter(c => c.video.getAttribute("src"));
@@ -3417,7 +3421,7 @@ async function countSamples(ns, file, fromSec) {
       if (S.clips.some(c => c.video.getAttribute("src") !== c.url)) {
         throw new Error("二度呼ぶと戻らなくなる");
       }
-    } finally { X._videoParked = false; }
+    } finally { X._videoParked = false; X.parkEnabled = _pk; }
 
     /* 書き出しの2経路とも、入口で手放し、finally で戻していること。
        ★ 経路が増えたときに片方だけ直す事故を止める見張り。
@@ -3431,6 +3435,76 @@ async function countSamples(ns, file, fromSec) {
       }
     }
     return "手放す→戻る / 二度押しに耐える / 2経路とも入口と後始末に入っている";
+  });
+
+
+  await test("★書き出しは、無言で固まらずに必ず名前つきで止まる", async () => {
+    const w = await compEnv();
+    const X = w.MC.exporter;
+    const keep = X.STALL_MS;
+    try {
+      /* ① 返ってこない処理を渡すと、見張りが「最後に通ったところ」を付けて止める。
+         実機で 0/1770コマ のまま固まり、画面にも記録にも何も残らなかった */
+      X.STALL_MS = 300;
+      let msg = "";
+      /* runWatched は開始時に区間名を初期化する（書き出しごとに新しく数える）ので、
+         名乗るのは走り出してから。実際の書き出しもこの順で通る */
+      try {
+        await X.runWatched(() => { X.stage("素材を開いています"); return new Promise(() => {}); });
+      }   // 永久に返らない
+      catch (e) { msg = e.message; }
+      if (!msg) throw new Error("固まったまま止まらない(無言で待ち続ける)");
+      if (!/進みませんでした/.test(msg)) throw new Error("止まった理由が伝わらない: " + msg);
+      if (!/素材を開いています/.test(msg)) throw new Error("どこで止まったか名指ししていない: " + msg);
+
+      /* ② 対照: 進んでいる限りは止めない。ここが甘いと、遅いだけの端末で
+         正常な書き出しを打ち切ってしまう(=いちばんやってはいけない誤作動) */
+      const slow = async () => {
+        for (let i = 0; i < 6; i++) {
+          await new Promise(r => setTimeout(r, 100));
+          X._lastProgAt = Date.now();     // コマが進んだ印(本番は _markProgress が置く)
+        }
+        return "ok";
+      };
+      if (await X.runWatched(slow) !== "ok") throw new Error("進んでいるのに打ち切った");
+
+      /* ③ 見張りを外したあと、時計が残って次の書き出しを誤爆させない */
+      X.STALL_MS = 50;
+      await new Promise(r => setTimeout(r, 200));
+      if (await X.runWatched(async () => "ok2") !== "ok2") throw new Error("前回の見張りが残っている");
+    } finally { X.STALL_MS = keep; }
+    return "固まれば名前つきで止まる / 進んでいれば止めない / 後を引かない";
+  });
+
+  await test("★<video>を手放す処理は、既定では走らない", async () => {
+    const w = await compEnv();
+    const X = w.MC.exporter;
+    const S = compReset(w);
+    S.clips.forEach((c, i) => {
+      if (!c.video) c.video = w.document.createElement("video");
+      c.url = c.url || ("blob:qa-" + i);
+      c.video.setAttribute("src", c.url);
+    });
+    X._videoParked = false;
+    try {
+      /* 実機で 0% から進まなくなったため既定で止めた。
+         ?park を付けたときだけ試せる */
+      X.parkVideoElements();
+      if (S.clips.some(c => !c.video.getAttribute("src"))) {
+        throw new Error("既定なのに手放している(実機で固まった処理が走っている)");
+      }
+      /* 対照: 明示的に有効にすれば、ちゃんと手放して戻せること
+         (機能ごと消したのではなく、既定を止めただけであることの確認) */
+      const real = X.parkEnabled;
+      X.parkEnabled = () => true;
+      try {
+        X.parkVideoElements();
+        if (S.clips.some(c => c.video.getAttribute("src"))) throw new Error("有効にしても手放さない");
+        X.unparkVideoElements();
+        if (S.clips.some(c => c.video.getAttribute("src") !== c.url)) throw new Error("戻らない");
+      } finally { X.parkEnabled = real; }
+    } finally { X._videoParked = false; }
+    return "既定=走らない / 明示すれば手放して戻る";
   });
 
   if (CF) { CF.remove(); CF = null; CW = null; CD = null; }

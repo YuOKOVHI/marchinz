@@ -235,10 +235,11 @@ MC.ui.buildReport = () => {
   const f = MC.ui.autoStage && MC.ui.autoStage._fail;
   /* 生の原因(ブラウザが返す英語)は画面には出さないが、記録には必ず残す */
   const raw = (f && f.raw) ? `\n原因(そのまま): ${f.raw}` : "";
+  const st = (MC.exporter && MC.exporter._stage) ? `\n最後に通ったところ: ${MC.exporter._stage}` : "";
   return `MarchinZ Switcher ${ver}\n${navigator.userAgent}\n`
     + `比率: ${MC.S.preset || "?"} / レイアウト: ${MC.S.layoutId || "?"}\n`
     + `素材: ${mats}\n`
-    + `エラー: ${f ? (f.message || String(f)) : "(なし)"}${raw}\n`
+    + `エラー: ${f ? (f.message || String(f)) : "(なし)"}${raw}${st}\n`
     + `---- ログ ----\n${(MC.debug || []).slice(-60).join("\n")}`;
 };
 
@@ -3988,7 +3989,7 @@ MC.ui.wire = () => {
       if (mode === "none") throw new Error("この環境では書き出しできません");
       const res = mode === "realtime"
         ? await MC.exporter.exportRealtime(p.legacy())
-        : await MC.exporter.exportMP4(p.legacy(), saveHandle);
+        : await MC.exporter.runWatched(() => MC.exporter.exportMP4(p.legacy(), saveHandle));
       p.done("書き出しました", { chip: false });
       MC.ui.showDone(res);
     } catch (e) {
