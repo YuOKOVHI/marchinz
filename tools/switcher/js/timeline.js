@@ -114,7 +114,7 @@ MC.timeline.renderToolbar = () => {
   const start = cl[i].t;
   const end = i + 1 < cl.length ? cl[i + 1].t : MC.trimRange()[1];
   bar.querySelector(".tl-info").innerHTML =
-    `<strong>いま映っているカット</strong>`
+    `<strong>今映っているカット</strong>`
     + `<span class="tl-info-sub">${MC.ui.fmtTime(start)} 〜 ${MC.ui.fmtTime(end)}</span>`
     + `<span class="tl-info-help">タップでそのカメラを表示、もう一度タップでそのカメラに変更確定</span>`;
 

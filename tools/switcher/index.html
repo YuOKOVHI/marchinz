@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-app-v="1.71.0">
+<html lang="ja" data-mz-app-v="1.72.0">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -15,10 +15,10 @@
 <meta property="og:image" content="https://marchinz.netlify.app/ogp-card.png">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
-<link rel="stylesheet" href="/tools/shared/progress.css?v=1.71.0">
-<link rel="stylesheet" href="/tools/shared/journey.css?v=1.71.0">
-<link rel="stylesheet" href="css/style.css?v=1.71.0">
-<link rel="stylesheet" href="/tools/shared/sitechrome.css?v=1.71.0">
+<link rel="stylesheet" href="/tools/shared/progress.css?v=1.72.0">
+<link rel="stylesheet" href="/tools/shared/journey.css?v=1.72.0">
+<link rel="stylesheet" href="css/style.css?v=1.72.0">
+<link rel="stylesheet" href="/tools/shared/sitechrome.css?v=1.72.0">
 </head>
 <body data-mz-tool="switcher">
 <header class="topbar">
@@ -218,7 +218,7 @@
          1分を選べば分析も書き出しも1分ぶんで済む -->
     <section class="panel" id="lengthSec">
       <h2>長さと開始位置</h2>
-      <p class="sec-lead">どこから何秒ぶんを書き出すか決めます。</p>
+      <p class="sec-lead">どこから何秒分を書き出すか決めます。</p>
 
       <p class="len-head"><i class="fa-solid fa-clock" aria-hidden="true"></i> 長さ</p>
       <div id="lenPresets" class="len-presets" aria-label="書き出す長さ"></div>
@@ -438,8 +438,8 @@
     <!-- 帯の凡例。解析が済んで帯が出たときだけ -->
     <p id="secLegend" class="sec-legend" hidden></p>
     <div class="trim-row">
-      <button id="trimInBtn" class="btn small trim-btn trim-btn--in" title="いま見ている位置から書き出します"><span class="trim-tri" aria-hidden="true">🔻</span><i class="fa-solid fa-flag"></i> <b>IN</b></button>
-      <button id="trimOutBtn" class="btn small trim-btn trim-btn--out" title="いま見ている位置まで書き出します"><span class="trim-tri" aria-hidden="true">🔻</span><i class="fa-solid fa-flag-checkered"></i> <b>OUT</b></button>
+      <button id="trimInBtn" class="btn small trim-btn trim-btn--in" title="今見ている位置から書き出します"><span class="trim-tri" aria-hidden="true">🔻</span><i class="fa-solid fa-flag"></i> <b>IN</b></button>
+      <button id="trimOutBtn" class="btn small trim-btn trim-btn--out" title="今見ている位置まで書き出します"><span class="trim-tri" aria-hidden="true">🔻</span><i class="fa-solid fa-flag-checkered"></i> <b>OUT</b></button>
       <span id="trimLabel" class="hint"></span>
       <button id="trimResetBtn" class="btn small ghost">リセット</button>
     </div>
@@ -528,7 +528,9 @@
       <!-- 開始前に読めていた見積り(#exportEtaHint)をここへ引き継ぐ。全画面が
            不透明で元の行を覆うため、残り時間が実測で出るまでの数十秒、
            画面上のどこにも時間の手がかりが無くなっていた(2026-07-26) -->
-      <p id="eoPreEta" class="eo-note"></p>
+      <!-- #eoPreEta(開始前の見積りの引き継ぎ)は撤去(2026-08-01 優さん指示
+           「文字が多い」)。カード内の実測(残り時間)と数字が食い違っていた -->
+
       <div id="eoProgress"></div>
       <p class="eo-note"><i class="fa-solid fa-mug-hot" aria-hidden="true"></i>
         この画面のままお待ちください。ほかのアプリを開いている間は停止します。</p>
@@ -542,12 +544,11 @@
       </div>
       <p id="eoDoneNote" class="eo-note"></p>
       <p id="eoOneLine" class="eo-note eo-oneline" hidden></p>
-      <!-- 顔の注意(同意の確認)は、いちばん思い出すべきこの瞬間に出す
-           (2026-07-29 広報レビューP0)。中身は MC.ui.renderFaceNote() が書く。
-           ★ Privacy（顔モザイク）の案内は一般には出さない(2026-08-01 優さん指示
-           「プライバシーは画像だけだから、案内消して」)。管理者にだけ、
-           実在する動画モザイクへのリンクを出す(正本は limits.js) -->
-      <p class="eo-note eo-faces" id="eoFaces"></p>
+      <!-- #eoFaces(顔の注意 + Privacy案内)は丸ごと撤去(2026-08-01 優さん指示
+           「プライバシーのソフトの話は消せ」+「文字が多い」)。
+           前回「管理者にだけ残す」としたが、優さん自身が管理者で消えていなかった。
+           同意の注意文も削除(必要になったら優さんの判断で戻す) -->
+
       <!-- 何にどれだけ掛かったか。普段は畳んでおき、知りたい人だけ開く -->
       <details id="eoStats" class="eo-stats" hidden>
         <summary>診断ログ（開発者への報告用）</summary>
@@ -587,38 +588,38 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="/tools/shared/limits.js?v=1.71.0"></script>
-<script src="/tools/shared/sitechrome.js?v=1.71.0"></script>
-<script src="/tools/shared/progress.js?v=1.71.0"></script>
-<script src="/tools/shared/journey.js?v=1.71.0"></script>
-<script src="/tools/shared/watermark.js?v=1.71.0"></script>
-<script src="/tools/shared/mp4source.js?v=1.71.0"></script>
-<script src="/tools/shared/session.js?v=1.71.0"></script>
+<script src="/tools/shared/limits.js?v=1.72.0"></script>
+<script src="/tools/shared/sitechrome.js?v=1.72.0"></script>
+<script src="/tools/shared/progress.js?v=1.72.0"></script>
+<script src="/tools/shared/journey.js?v=1.72.0"></script>
+<script src="/tools/shared/watermark.js?v=1.72.0"></script>
+<script src="/tools/shared/mp4source.js?v=1.72.0"></script>
+<script src="/tools/shared/session.js?v=1.72.0"></script>
 <script src="vendor/mp4box.all.min.js"></script>
 <script src="vendor/mp4-muxer.min.js"></script>
 <script src="vendor/fft.js"></script>
-<script src="js/state.js?v=1.71.0"></script>
-<script src="js/layout.js?v=1.71.0"></script>
-<script src="js/media.js?v=1.71.0"></script>
-<script src="js/audio.js?v=1.71.0"></script>
-<script src="js/sync.js?v=1.71.0"></script>
-<script src="js/beats.js?v=1.71.0"></script>
-<script src="js/sections.js?v=1.71.0"></script>
-<script src="js/highlight.js?v=1.71.0"></script>
-<script src="js/visual.js?v=1.71.0"></script>
-<script src="js/director.js?v=1.71.0"></script>
-<script src="js/colormatch.js?v=1.71.0"></script>
+<script src="js/state.js?v=1.72.0"></script>
+<script src="js/layout.js?v=1.72.0"></script>
+<script src="js/media.js?v=1.72.0"></script>
+<script src="js/audio.js?v=1.72.0"></script>
+<script src="js/sync.js?v=1.72.0"></script>
+<script src="js/beats.js?v=1.72.0"></script>
+<script src="js/sections.js?v=1.72.0"></script>
+<script src="js/highlight.js?v=1.72.0"></script>
+<script src="js/visual.js?v=1.72.0"></script>
+<script src="js/director.js?v=1.72.0"></script>
+<script src="js/colormatch.js?v=1.72.0"></script>
 <!-- horizon.js(自動傾き検出)を読み込みに戻した(2026-08-01 優さん指示
      「おまかせは傾き補正も自動で行う」)。2026-07-28 に外したのは
      **こだわりで自動提案をやめた**ためで、実装自体は生きていた。
      こだわりでは今も提案しない ─ 使うのは おまかせ の自走だけ -->
-<script src="js/horizon.js?v=1.71.0"></script>
-<script src="js/salute.js?v=1.71.0"></script>
-<script src="js/preview.js?v=1.71.0"></script>
-<script src="js/timeline.js?v=1.71.0"></script>
-<script src="js/cutmode.js?v=1.71.0"></script>
-<script src="js/exporter.js?v=1.71.0"></script>
-<script src="js/ui.js?v=1.71.0"></script>
-<script src="js/app.js?v=1.71.0"></script>
+<script src="js/horizon.js?v=1.72.0"></script>
+<script src="js/salute.js?v=1.72.0"></script>
+<script src="js/preview.js?v=1.72.0"></script>
+<script src="js/timeline.js?v=1.72.0"></script>
+<script src="js/cutmode.js?v=1.72.0"></script>
+<script src="js/exporter.js?v=1.72.0"></script>
+<script src="js/ui.js?v=1.72.0"></script>
+<script src="js/app.js?v=1.72.0"></script>
 </body>
 </html>

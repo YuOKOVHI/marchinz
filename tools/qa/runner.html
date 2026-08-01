@@ -384,8 +384,8 @@ async function countSamples(ns, file, fromSec) {
      audio=true は「エンコードが完走した」ことしか言わない ─ 全サンプルが
      無音でも true になる。聞こえるかどうかは、ここで数字にして見張る */
   group("③-d 書き出した音が無音になっていないこと(実AAC往復)");
-  const loadAudioExporter = async (mutateExp) => {
-    const ns = { log: () => {}, caps: { aacDelay: null }, isIOS: false,
+  const loadAudioExporter = async (mutateExp, encCls) => {
+    const ns = { log: () => {}, caps: { aacDelay: 2124 }, isIOS: false,
                  S: { audioClipId: 1 },
                  getClip: () => ({ stats: { rms: 0.10, noise: 0.024 } }),   // iPhone実機ログと同じ形
                  yield: () => new Promise(r => setTimeout(r, 0)),
@@ -398,7 +398,8 @@ async function countSamples(ns, file, fromSec) {
     new Function("MC", "window", "document", srcA)(ns, win, doc);
     let srcE = await (await fetch("../switcher/js/exporter.js")).text();
     if (mutateExp) srcE = mutateExp(srcE);
-    new Function("MC", "window", "document", "MZ_MP4", srcE)(ns, win, doc, win.MZ_MP4);
+    new Function("MC", "window", "document", "MZ_MP4", "AudioEncoder", srcE)(
+      ns, win, doc, win.MZ_MP4, encCls || AudioEncoder);
     ns._MZ_MP4 = win.MZ_MP4;
     return ns;
   };
@@ -420,6 +421,7 @@ async function countSamples(ns, file, fromSec) {
     if (!ok) throw new Error("encodeAudio が false(書き出し失敗の扱い)");
     mx.finalize();
     const out = new File([mx.target.buffer], "out.m4a", { type: "video/mp4" });
+    ns._lastOut = out;
     /* 出てきたMP4を読み戻して、実際に鳴っているかを測る */
     const M = ns._MZ_MP4;
     const src2 = new M.MP4Source(out);
@@ -478,6 +480,189 @@ async function countSamples(ns, file, fromSec) {
       throw new Error("無音の変異を入れても通ってしまう(見張りに歯が無い)");
     }
     return `無音を検知: RMS ${r.rms.toFixed(4)}(audio=trueでも鳴っていない)`;
+  });
+
+  /* ============ v1.71.0でも音が入らなかった件(2026-08-01) ============
+     同梱 mp4-muxer は esds を new Uint8Array(decoderConfig.description) と
+     無検査で作る。description が無いと空(0バイト)の設計図を持つMP4が
+     黙って完成する ─ 映像は普通に再生でき、音声トラックもあるのに音だけ
+     出ない。Chrome のエンコーダは description を必ず付けるので QA の往復は
+     通ってしまう。Safari が付けない場合に備えて exporter が自前で補う */
+  group("③-e 音の設計図(esds)・ADTS・自己点検・書き込みワーカー");
+  const tag5len = async (M, file) => {
+    const src2 = new M.MP4Source(file);
+    await src2.init();
+    const at = src2.audioTrack();
+    if (!at) return -1;
+    let t5 = null;
+    try { t5 = M.MP4Source.findTag5(src2.sampleEntry(at.id).esds.esd); } catch (e) {}
+    return t5 ? t5.length : 0;
+  };
+  /* Safariを模す: 出力メタから description を剥がすエンコーダ */
+  const stripDescEnc = class extends AudioEncoder {
+    constructor(init) {
+      super({ output: (c, m) => {
+        if (m && m.decoderConfig) {
+          const d = { ...m.decoderConfig };
+          delete d.description;
+          m = { decoderConfig: d };
+        }
+        init.output(c, m);
+      }, error: init.error });
+    }
+  };
+  await test("★エンコーダが設計図(description)を返さなくても、esds に必ず入る", async () => {
+    const ns = await loadAudioExporter(null, stripDescEnc);
+    const r = await aacRoundTrip(ns);
+    if (r === null) return "この環境はAACエンコード非対応のため未実施";
+    const file = ns._lastOut;
+    if (!file) throw new Error("往復の出力を取り出せない");
+    const n = await tag5len(ns._MZ_MP4, file);
+    if (n < 2) throw new Error(`esds の設計図が空(${n}バイト) = iPhoneでは無音のMP4になる`);
+    if (!(r.rms >= META["lpcm_tail.mov"].toneRms * 0.5)) throw new Error("音も鳴っていない: " + r.rms);
+    return `設計図 ${n}バイト / RMS ${r.rms.toFixed(3)}`;
+  });
+  await test("変異: 自前の補いを外すと設計図が空になる(=この見張りの歯)", async () => {
+    const mut = src => {
+      const before = ": MC.exporter.aacAsc(cfg.sampleRate || 48000, cfg.numberOfChannels || 2),";
+      if (!src.includes(before)) throw new Error("変異ポイントが見つからない");
+      return src.split(before).join(": undefined,");
+    };
+    const ns = await loadAudioExporter(mut, stripDescEnc);
+    /* 壊れたファイルは読み戻し(デコード)自体が失敗しうる。ファイルは
+       finalize 直後に ns._lastOut へ入るので、失敗しても検査は続けられる */
+    let readable = true, note = "";
+    try {
+      const r = await aacRoundTrip(ns);
+      if (r === null) return "この環境はAACエンコード非対応のため未実施";
+    } catch (e) { readable = false; note = e.message; }
+    if (!ns._lastOut) return "この環境はAACエンコード非対応のため未実施";
+    const n = await tag5len(ns._MZ_MP4, ns._lastOut);
+    if (n >= 2) throw new Error("補いを外しても設計図が入ってしまう(見張りに歯が無い)");
+    return `補い無しでは設計図 ${n}バイト`
+      + (readable ? "" : ` / 読み戻しも失敗(${note})`) + " ─ これがiPhone無音の形";
+  });
+  await test("★ADTS形式のチャンクはヘッダを剥がして生AACで積む", async () => {
+    const ns = await loadAudioExporter();
+    const payload = Uint8Array.from({ length: 64 }, (_, i) => (i * 5 + 3) & 0xFF);
+    const adts = new Uint8Array(7 + payload.length);
+    adts[0] = 0xFF; adts[1] = 0xF1;                 // MPEG-4 / protection_absent=1
+    adts.set(payload, 7);
+    const calls = [];
+    const mx = {
+      addAudioChunk: (c, m) => calls.push({ kind: "chunk", m }),
+      addAudioChunkRaw: (d, ty, ts, du, m) => calls.push({ kind: "raw", d: Array.from(d), ty, ts, m }),
+    };
+    const fake = { byteLength: adts.length, timestamp: 12345, duration: null, type: "key",
+                   copyTo: d => d.set(adts) };
+    const st = {};
+    ns.exporter.addAacChunk(mx, fake, { decoderConfig: { codec: "mp4a.40.2" } }, st);
+    eq(calls.length, 1, "呼び出し数");
+    eq(calls[0].kind, "raw", "ADTSはRaw経路");
+    eq(calls[0].d.join(","), Array.from(payload).join(","), "ヘッダ7バイトが剥がれている");
+    eq(calls[0].ts, 12345, "時刻");
+    ge(calls[0].m.decoderConfig.description.byteLength || calls[0].m.decoderConfig.description.length, 2, "設計図");
+    /* 対照: 生AACはそのまま addAudioChunk */
+    const raw = Uint8Array.from([0x21, 0x10, 5, 6]);   // 0xFFF で始まらない
+    const st2 = {}, calls2 = [];
+    const mx2 = { addAudioChunk: (c, m) => calls2.push({ kind: "chunk", m }),
+                  addAudioChunkRaw: () => calls2.push({ kind: "raw" }) };
+    ns.exporter.addAacChunk(mx2,
+      { byteLength: raw.length, timestamp: 0, duration: 21333, type: "key", copyTo: d => d.set(raw) },
+      null, st2);
+    eq(calls2[0].kind, "chunk", "生AACはそのまま");
+    ge(calls2[0].m.decoderConfig.description.byteLength || calls2[0].m.decoderConfig.description.length, 2, "meta無しでも設計図");
+    return "ADTS→剥がしてRaw / 生AAC→そのまま / どちらも設計図つき";
+  });
+  await test("★自己点検: 鳴っている・無音・トラック無しを数字で見分ける", async () => {
+    const ns = await loadAudioExporter();
+    const sup = await AudioEncoder.isConfigSupported({
+      codec: "mp4a.40.2", sampleRate: 48000, numberOfChannels: 2, bitrate: 192000,
+    }).catch(() => ({ supported: false }));
+    if (!sup.supported) return "この環境はAACエンコード非対応のため未実施";
+    /* ① 鳴っているファイル(往復の出力) */
+    await aacRoundTrip(ns);
+    const good = await ns.exporter.verifyAudio(ns._lastOut);
+    if (!good.ok) throw new Error("鳴っているのにNG扱い: " + JSON.stringify(good));
+    ge(good.rms, 0.2, "実測RMS");
+    /* ② 無音の音声トラック(=実機で起きた「audio=trueなのに聞こえない」の形) */
+    const mx = new Mp4Muxer.Muxer({ target: new Mp4Muxer.ArrayBufferTarget(),
+      audio: { codec: "aac", sampleRate: 48000, numberOfChannels: 2 }, fastStart: false });
+    let err = null;
+    const st = {};
+    const enc = new AudioEncoder({
+      output: (c, m) => ns.exporter.addAacChunk(mx, c, m, st),
+      error: e => { err = e; } });
+    enc.configure({ codec: "mp4a.40.2", sampleRate: 48000, numberOfChannels: 2, bitrate: 192000 });
+    const N = 48000 * 2;
+    enc.encode(new AudioData({ format: "f32-planar", sampleRate: 48000, numberOfFrames: N,
+      numberOfChannels: 2, timestamp: 0, data: new Float32Array(N * 2) }));
+    await enc.flush(); enc.close();
+    if (err) throw err;
+    mx.finalize();
+    const silent = await ns.exporter.verifyAudio(
+      new File([mx.target.buffer], "s.mp4", { type: "video/mp4" }));
+    if (silent.ok) throw new Error("無音なのに合格にしている(警告が出ない)");
+    /* ③ 音声トラックが無いファイル */
+    const noTrack = await ns.exporter.verifyAudio(await fixture("moov_head.mp4"));
+    if (noTrack.ok || !/トラック/.test(noTrack.why || "")) {
+      throw new Error("トラック無しを見分けられない: " + JSON.stringify(noTrack));
+    }
+    return `鳴る=RMS${good.rms.toFixed(3)} / 無音=NG(${silent.why}) / トラック無し=NG`;
+  });
+  await test("★書き込みワーカー: 位置指定と巻き戻し書き込みが正しい", async () => {
+    const loadWriter = async mutate => {
+      let src = await (await fetch("../switcher/js/exportwriter.js")).text();
+      if (mutate) src = mutate(src);
+      const posts = [];
+      const H = {
+        data: new Uint8Array(0),
+        write(view, opts) {
+          const at = opts && opts.at != null ? opts.at : this.data.length;
+          if (at + view.length > this.data.length) {
+            const nd = new Uint8Array(at + view.length); nd.set(this.data); this.data = nd;
+          }
+          this.data.set(view, at);
+          return view.length;
+        },
+        truncate(n) { this.data = this.data.slice(0, n); },
+        flush() {}, getSize() { return this.data.length; }, close() {},
+      };
+      const nav = { storage: { getDirectory: async () => ({
+        getDirectoryHandle: async () => ({
+          getFileHandle: async () => ({ createSyncAccessHandle: async () => H }),
+          removeEntry: async () => {},
+        }),
+      }) } };
+      const selfObj = { postMessage: m => posts.push(m) };
+      new Function("self", "navigator", src)(selfObj, nav);
+      return { selfObj, posts, H };
+    };
+    const run = async w => {
+      const send = m => w.selfObj.onmessage({ data: m });
+      await send({ type: "open", dir: "d", name: "n" });
+      await send({ type: "write", data: Uint8Array.from([1, 2, 3, 4]).buffer, position: 0 });
+      await send({ type: "write", data: Uint8Array.from([9, 9]).buffer, position: 8 });   // 先へ飛ぶ
+      await send({ type: "write", data: Uint8Array.from([7, 7]).buffer, position: 2 });   // ★巻き戻し(moovやmdatサイズの後追い書き)
+      await send({ type: "finalize" });
+      return w;
+    };
+    const w = await run(await loadWriter());
+    const want = [1, 2, 7, 7, 0, 0, 0, 0, 9, 9].join(",");
+    eq(Array.from(w.H.data).join(","), want, "最終バイト列");
+    const fin = w.posts.find(m => m.type === "finalized");
+    if (!fin || fin.size !== 10) throw new Error("finalize の大きさが違う: " + JSON.stringify(fin));
+    if (w.posts.some(m => m.type === "error")) throw new Error("エラーが出ている");
+    /* 変異: 位置指定を外して常に追記にすると、巻き戻しが壊れる */
+    const mutated = await run(await loadWriter(src => {
+      const before = "handle.write(view, { at: m.position });   // 任意位置に同期書き込み";
+      if (!src.includes(before)) throw new Error("変異ポイントが見つからない");
+      return src.split(before).join("handle.write(view);");
+    }));
+    if (Array.from(mutated.H.data).join(",") === want) {
+      throw new Error("位置指定を外しても同じ結果になる(この試験は位置書きを見張れていない)");
+    }
+    return "0→8→2(巻き戻し)の順で書いて正しいバイト列 / 変異は検知";
   });
 
   group("④ 通知タップ誤中断(79acfee): shared/session.js の回帰テスト");
@@ -3117,34 +3302,38 @@ async function countSamples(ns, file, fromSec) {
     }
     return said[said.length - 1].slice(0, 46) + "…";
   });
-  await test("★顔モザイクの案内は、一般には出さない（Privacyは画像のみ）", async () => {
+  await test("★顔モザイク/Privacyの話は、誰にも出ない（管理者含む）", async () => {
     const w = await compEnv();
-    /* ★ 意図を書き換えた(2026-08-01 優さん指示「プライバシーは画像だけだから、
-       案内消して」)。前は「一般=準備中と正直に言う」を固定していたが、
-       手元にあるのは動画で、使えない機能の話も写真なら使えるという話も
-       この画面の用事の答えではない ─ 一般には**案内自体を出さない**。
-       同意の注意(広報レビューP0)は機能と無関係に必要なので、消えたら落とす */
-    const guest = withRole(w, { privacyVideoAllowed: false },
-      () => { w.MC.ui.renderFaceNote(); return w.document.getElementById("eoFaces"); });
-    const gTxt = guest.textContent;
-    if (/モザイク|Privacy|準備中/.test(gTxt)) {
-      throw new Error("一般に顔モザイクの案内が出ている: " + gTxt.slice(0, 60));
+    /* ★ 意図を再度書き換えた(2026-08-01 優さん指示
+       「プライバシーのソフトの話は消せっていっただろ」)。
+       前版は「管理者にだけ残す」としたが、**優さん自身が管理者**なので
+       消えていなかった ─ 誰にも出さないのが指示の意味だった。
+       同意の注意文も「文字が多い」で同時に削除(戻すなら優さんの判断で)。
+       関数・要素ごと消えていることを見る ─ 空にしただけだと、
+       いつか誰かが中身を書き戻す */
+    if (w.document.getElementById("eoFaces")) {
+      throw new Error("#eoFaces が残っている(中身を書けば案内が復活する)");
     }
-    if (guest.querySelector('a[href*="privacy"]')) {
-      throw new Error("一般に Privacy への導線が残っている");
+    if (w.MC.ui.renderFaceNote) {
+      throw new Error("renderFaceNote が残っている(呼べば案内が復活する)");
     }
-    if (!/同意/.test(gTxt)) throw new Error("同意の注意まで消えている(これは残す)");
-    /* 管理者の動画モザイクは実在する機能なので、案内は残す(正本は limits.js) */
-    const admin = withRole(w, { privacyVideoAllowed: true }, () => {
-      w.MC.ui.renderFaceNote(); return w.document.getElementById("eoFaces").textContent;
-    });
-    if (!/モザイク/.test(admin)) throw new Error("管理者には使えるのに案内が無い");
-    /* 本文フッターの「続けて使う」からも Privacy を外したこと(静的HTML) */
+    /* 完了画面(パネル側+全画面側)のどこにも案内の言葉が無いこと。
+       管理者相当のフラグを立てても同じ */
+    const check = () => {
+      const txt = (w.document.getElementById("doneCard").textContent || "")
+        + (w.document.getElementById("eoDone").textContent || "");
+      if (/モザイク|Privacy|準備中|同意/.test(txt)) {
+        throw new Error("完了画面に案内が残っている: " + txt.slice(0, 60));
+      }
+    };
+    check();
+    withRole(w, { privacyVideoAllowed: true }, check);   // 管理者でも出ない
+    /* 本文フッターの「続けて使う」にも Privacy への導線が無いこと(静的HTML) */
     const foot = w.document.querySelector(".foot-tools");
     if (foot && foot.querySelector('a[href*="privacy"]')) {
       throw new Error("フッターに Privacy（顔モザイク）の導線が残っている");
     }
-    return "一般=案内なし(同意の注意は残る) / 管理者=案内する / フッターからも撤去";
+    return "誰にも出ない(要素も関数も無い) / フッターにも導線なし";
   });
   await test("★保存は端末で出し分ける — スマホ=保存1つ / PC=ダウンロード。成功のときだけ言う", async () => {
     /* 2026-08-01 優さん実機指示「スマホは『動画を保存』だけでいい。
@@ -3170,12 +3359,29 @@ async function countSamples(ns, file, fromSec) {
       w.MC.ui._share = () => Promise.reject(Object.assign(new Error("abort"), { name: "AbortError" }));
       if (await w.MC.ui.saveResult() !== "cancelled") throw new Error("取り消しを区別できない");
       if ($("#doneNote").textContent !== before) throw new Error("取り消したのに保存できたと言う");
-      /* ③ 成功したら完了画面に名前とサイズで残る */
+      /* ③ 成功したら画面の主役が変わる(2026-08-01 優さん指示
+         「保存完了ももっとわかりやすく」): 主ボタンが「✓ 保存しました」(緑)に
+         変わり、緑の帯にサイズが残る。ファイル名は出さない(「文字が多い」) */
       w.MC.ui._share = () => Promise.resolve();
       if (await w.MC.ui.saveResult() !== "saved") throw new Error("成功が返らない");
-      if (!/qa\.mp4.*保存しました.*MB/.test($("#doneNote").textContent)) {
+      if (!/保存しました.*MB/.test($("#doneNote").textContent)) {
         throw new Error("成功したのに完了画面に出ない: " + $("#doneNote").textContent);
       }
+      if (!$("#doneNote").classList.contains("save-ok")) {
+        throw new Error("成功の帯(save-ok)が付かない");
+      }
+      if (!$("#saveBtn").classList.contains("saved")
+          || !/保存しました/.test($("#saveBtn").textContent)) {
+        throw new Error("主ボタンが「✓ 保存しました」に変わらない");
+      }
+      /* もう一度 showDone(次の書き出し)が来たら、平常の顔に戻ること */
+      w.MC.ui.showDone({ blob, name: "qa.mp4" });
+      if ($("#saveBtn").classList.contains("saved")
+          || !/動画を保存/.test($("#saveBtn").textContent)) {
+        throw new Error("2回目の書き出しで保存済みの顔が残る");
+      }
+      w.MC.ui._share = () => Promise.resolve();
+      await w.MC.ui.saveResult();   // ④のPC検査の前に成功状態へ戻しておく
       /* ④ PC相当: ダウンロードを出し、共有の保存は出さない */
       X._shareMode = false;
       w.MC.ui.showDone({ blob, name: "qa.mp4" });

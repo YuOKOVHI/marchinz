@@ -22,7 +22,7 @@ MC.ui.showExportLimitHelp = (wantSec, lim) => {
   const dl = $("#downloadBtn"); if (dl) dl.style.display = "none";
   $("#doneText").innerHTML =
     `<span class="warn">書き出せるのは${MC.ui.esc(lim.exportLimitLabel)}までです`
-    + `（いまの範囲は${MC.ui.fmtTime(wantSec)}）</span>`;
+    + `（今の範囲は${MC.ui.fmtTime(wantSec)}）</span>`;
   const note = $("#doneNote");
   /* 上限は「会員種別 × 端末」で決まる(2026-07-31)。次の一手も相手で変える ─
      スマホの登録ユーザーに「無料登録すると」と言っても、登録済みなので伸びない */
@@ -73,15 +73,11 @@ MC.ui.exportOverlay = {
     MC.ui.$("#eoTitleText").textContent = "書き出し中…";
     MC.ui.$("#eoTitleIcon").className = "fa-solid fa-file-export";
     el.classList.remove("eo-failed");   // 前回の失敗表示を引きずらない
-    /* 開始前の見積りを引き継ぐ。実測の残り時間が出るまでの間、
-       ここだけが「あと何分か」の手がかりになる */
-    const pre = MC.ui.$("#exportEtaHint");
-    const preEl = MC.ui.$("#eoPreEta");
-    if (preEl) {
-      preEl.textContent = (pre && pre.textContent) || "";
-      preEl.hidden = !preEl.textContent;
-      preEl.classList.remove("eo-resume");
-    }
+    /* ★ 開始前の見積り(#exportEtaHint)の引き継ぎは廃止(2026-08-01 優さん指示
+       「文字が多い」)。実機スクショで、上に「およそ2分」(開始前の静的見積り)、
+       カード内に「残り約3分」(実測)と、**同じ待ちに2つの違う数字**が
+       並んでいた。実測が出るまでの数十秒を埋めるために、その後ずっと
+       食い違い続ける行を置くのは割に合わない ─ カード内の実測だけにする */
     /* 「前回のつづきから ─ ◯分ぶんは終わっています」の常設案内は廃止
        (2026-07-31 優さん指示「落ちたら結局戻れないからその案内けして」)。
        戻れると書いておいて戻れないのは、黙っているより悪い。
@@ -97,9 +93,8 @@ MC.ui.exportOverlay = {
   done() {
     const el = MC.ui.$("#exportOverlay");
     if (!el || el.hidden) return;
-    MC.ui.renderFaceNote();   // Privacy の実態から組み立てる(固定文にしない)
     MC.ui.showExportStats();
-    MC.ui.$("#eoTitleText").textContent = "できあがりました";
+    MC.ui.$("#eoTitleText").textContent = "完成しました";
     MC.ui.$("#eoTitleIcon").className = "fa-solid fa-circle-check eo-check";
     MC.ui.$("#eoRun").hidden = true;
     MC.ui.$("#eoDone").hidden = false;
@@ -270,6 +265,7 @@ MC.ui.copyReport = async () => {
 MC.ui.showDone = res => {
   const share = MC.exporter.shareMode();
   const $ = MC.ui.$;
+  MC.ui._audioWarnLine = null;   // 新しい完成では前回の音の警告を持ち越さない
   $("#doneCard").hidden = false;
   /* オーバーレイの保存画面にも同じ内容を映す(2026-07-24 案B)。
      文言はパネル側(doneText/doneNote)を組み立ててからコピーする */
@@ -293,8 +289,10 @@ MC.ui.showDone = res => {
     MC.ui.toast("✔ 書き出しが完了しました");
     mirror();
     MC.ui.renderSceneOffers();   // 別のシーンも作る(2026-08-01)
-    return;
+    return;   // ディスク直書きは blob を持たないため音の自己点検はできない
   }
+  /* 前回の「✓保存しました」の顔が残っていたら平常へ戻す(2回目の書き出し) */
+  MC.ui.resetSaveUi();
   if (share) {
     /* ★ スマホは「動画を保存」1つだけ(2026-08-01 優さん指示「スマホは
        『動画を保存』だけでいい」)。前はダウンロードも並べていたが、
@@ -302,19 +300,80 @@ MC.ui.showDone = res => {
        選択肢が2つあること自体が迷いの種だった。共有シート(Web Share)が唯一の正道 */
     $("#saveBtn").style.display = "inline-flex";
     const dl = $("#downloadBtn"); if (dl) dl.style.display = "none";
-    $("#doneText").innerHTML = `<span class="ok">✓ 準備できました(${(res.blob.size / 1e6).toFixed(1)}MB)</span>`;
-    $("#doneNote").textContent = "「動画を保存」で写真(カメラロール)やファイルへ保存できます。";
-    MC.ui.toast("✔ 準備できました。保存を押してください");
+    /* ★ 説明の行は両方削除(2026-08-01 優さん指示「文字が多い」)。
+       「準備できました」は見出しの「完成しました」と同じことの言い直しで、
+       「写真(カメラロール)やファイルへ…」はボタン名「動画を保存」が
+       すべて言っている。サイズだけ1語で残す(送れる大きさかの判断材料) */
+    $("#doneText").innerHTML = `<span class="ok">${(res.blob.size / 1e6).toFixed(1)}MB</span>`;
+    $("#doneNote").textContent = "";
+    MC.ui.toast("✔ 完成しました。保存を押してください");
   } else {
     // PC/Mac: 自動ダウンロード済み。再ダウンロードだけ出す
     $("#saveBtn").style.display = "none";
     const dl = $("#downloadBtn"); if (dl) dl.style.display = "";
     $("#doneText").innerHTML = `<span class="ok">✓ 「${MC.ui.esc(res.name)}」を保存しました(${(res.blob.size / 1e6).toFixed(1)}MB)</span>`;
-    $("#doneNote").textContent = "ダウンロードに保存されています(もう一度保存するには「ダウンロード」)。";
+    $("#doneNote").textContent = "";   // 「(もう一度…)」は削除。ボタン名が言っている
     MC.ui.toast("✔ 書き出しが完了しました");
   }
   mirror();
   MC.ui.renderSceneOffers();   // 別のシーンも作る(2026-08-01)
+  MC.ui.verifyAudioAfterExport(res);   // 音の自己点検(裏で。結果が出たら追記)
+};
+
+/* ============ 完成直後の音の自己点検(2026-08-01) ============
+   実機で「音が入ってない」が audio=true のまま2度起きた。もう
+   「エンコードが完走したか」ではなく「実際に鳴るか」を、出来上がった
+   ファイルそのもので確かめる。問題があれば完了画面に明示して、
+   数値(RMS)を記録に残す ─ 次の報告から原因が数字で見える */
+MC.ui.verifyAudioAfterExport = async res => {
+  try {
+    if (!res || !res.blob) return;
+    const st = MC.exporter.lastStats;
+    if (st && st.withAudio === false) return;   // 音なしの書き出しは点検しない
+    const v = await MC.exporter.verifyAudio(res.blob);
+    MC.log(`音の自己点検: ${v.ok ? "OK" : "NG"}`
+      + ` rms=${v.rms == null ? "?" : v.rms.toFixed(4)}${v.why ? " / " + v.why : ""}`);
+    if (v.ok) return;
+    const line = "⚠ 出来上がった動画に<b>音が入っていない可能性</b>があります"
+      + (v.rms != null ? `（実測 ${v.rms.toFixed(4)}）` : "")
+      + `。${MC.ui.esc(v.why || "")} `
+      + '<button type="button" class="mzp-retry" id="audioWarnCopy">記録をコピー</button>';
+    MC.ui._audioWarnLine = line;
+    MC.ui._appendAudioWarn();
+    MC.ui.toast("⚠ 音の確認で問題が見つかりました", 6000);
+  } catch (e) {
+    MC.log("音の自己点検に失敗(完成の扱いは変えない): " + ((e && e.message) || e));
+  }
+};
+/* 警告行を #doneNote / #eoDoneNote へ実らせる。notifySaved が innerHTML を
+   書き換えた後にも呼び直す(書き換えで警告が消えるため) */
+MC.ui._appendAudioWarn = () => {
+  if (!MC.ui._audioWarnLine) return;
+  for (const id of ["doneNote", "eoDoneNote"]) {
+    const el = MC.ui.$("#" + id);
+    if (!el || el.querySelector(".mz-audio-warn")) continue;
+    const sp = document.createElement("span");
+    sp.className = "mz-audio-warn";
+    sp.setAttribute("role", "alert");
+    sp.innerHTML = MC.ui._audioWarnLine;
+    el.appendChild(document.createElement("br"));
+    el.appendChild(sp);
+    const b = sp.querySelector("#audioWarnCopy");
+    if (b) { b.removeAttribute("id"); b.onclick = () => MC.ui.copyReport(); }
+  }
+};
+
+/* 保存の顔を平常へ戻す(showDone の入口で呼ぶ) */
+MC.ui.resetSaveUi = () => {
+  ["#saveBtn", "#eoSaveBtn"].forEach(sel => {
+    const b = MC.ui.$(sel);
+    if (!b) return;
+    b.classList.remove("saved");
+    b.innerHTML = '<i class="fa-solid fa-arrow-up-from-bracket"></i> 動画を保存';
+  });
+  ["#doneNote", "#eoDoneNote"].forEach(sel => {
+    const n = MC.ui.$(sel); if (n) n.classList.remove("save-ok");
+  });
 };
 
 /* 保存できたことを、完了画面とトーストの両方で言う(2026-08-01 優さん指摘
@@ -331,14 +390,28 @@ MC.ui.showDone = res => {
      圧倒的多数の共有先が写真アプリ
    なので「保存しました」と言う。共有先のアプリ側で失敗する稀な場合に
    限り、この言葉が実態より先に出る ─ Webの制約として受け入れる */
+/* ★ 成功したら画面の主役が変わる(2026-08-01 優さん指示「保存完了ももっと
+   わかりやすく」)。文字を足すのではなく、いちばん大きい物(主ボタン)が
+   「✓ 保存しました」(緑)に変わり、下に緑の帯が1本入る。ファイル名は
+   出さない(「文字が多い」。名前は保存先のアプリが見せる) */
 MC.ui.notifySaved = (r, how) => {
   const size = r.blob ? `（${(r.blob.size / 1e6).toFixed(1)}MB）` : "";
   const line = how === "share"
-    ? `✓ 「${MC.ui.esc(r.name)}」を保存しました${size}`
-    : `✓ 「${MC.ui.esc(r.name)}」をダウンロードに保存しました${size}`;
-  const n1 = MC.ui.$("#doneNote"); if (n1) n1.innerHTML = `<span class="ok">${line}</span>`;
-  const n2 = MC.ui.$("#eoDoneNote"); if (n2) n2.innerHTML = `<span class="ok">${line}</span>`;
-  MC.ui.toast(how === "share" ? "✔ 保存できました" : "✔ ダウンロードに保存しました");
+    ? `✓ 保存しました${size}`
+    : `✓ ダウンロードに保存しました${size}`;
+  ["#doneNote", "#eoDoneNote"].forEach(sel => {
+    const n = MC.ui.$(sel);
+    if (n) { n.textContent = line; n.classList.add("save-ok"); }
+  });
+  if (how === "share") {
+    ["#saveBtn", "#eoSaveBtn"].forEach(sel => {
+      const b = MC.ui.$(sel);
+      if (b) { b.classList.add("saved");
+               b.innerHTML = '<i class="fa-solid fa-check"></i> 保存しました'; }
+    });
+  }
+  MC.ui._appendAudioWarn();   // 保存の言葉で音の警告を消さない(2026-08-01)
+  MC.ui.toast(how === "share" ? "✔ 保存しました" : "✔ ダウンロードに保存しました");
 };
 
 /* 共有シートを開く。QAが成功/取り消しを差し替えられるように1枚だけ挟む
@@ -431,7 +504,7 @@ MC.ui.renderSceneOffers = () => {
     const [s0] = MC.ui.showRange();
     el.innerHTML =
       '<p class="mzso-title"><i class="fa-solid fa-clapperboard" aria-hidden="true"></i> '
-      + '別のシーンも作れます<span class="mzso-note">(前回の解析を使うので速く終わります)</span></p>'
+      + '別のシーンも作れます<span class="mzso-note">前回の解析を使うため速い</span></p>'
       + '<div class="mzso-list" role="group" aria-label="別のシーンの候補">'
       + offers.map((c, i) =>
           `<button type="button" class="mzso-btn" data-scene="${i}">`
@@ -558,7 +631,7 @@ MC.ui.checkExportable = () => {
   box.className = "mz-export-warn";
   box.innerHTML =
     '<p class="mzw-title"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> '
-    + `いまの範囲(${MC.ui.fmtTime(sec)})は、この端末では書き出せません</p>`
+    + `今の範囲(${MC.ui.fmtTime(sec)})は、この端末では書き出せません</p>`
     + '<p class="mzw-body">'
     + (byDevice
         ? `スマホ・タブレットは動画を丸ごとメモリに載せるため、${fitLabel}までです。`
@@ -706,30 +779,12 @@ MC.ui.renderLimitWhy = () => {
   if (badge) badge.hidden = true;
 };
 
-/* 書き出し完了画面の顔の注意。
-   ★ 一般には Privacy（顔モザイク）の話を**一切しない**(2026-08-01 優さん指示
-   「プライバシーは画像だけだから、案内消して」)。
-   前は「準備中です・写真なら Privacy で隠せます」と正直に断っていたが、
-   いま手元にあるのは**動画**であって写真ではない ─ 使えない機能の話も、
-   別の物なら使えるという話も、この画面の用事(動画をどうするか)の答えではない。
-   同意の注意そのものは残す(2026-07-29 広報レビュー P0。これは機能の話ではなく
-   公開する本人への注意なので、Privacy の状態と無関係に必要)。
-   管理者にだけは案内を残す ─ 管理者の動画モザイクは実在する機能で、
-   案内した先に機能が無い問題(2026-07-31 顧問レビュー P0)が起きない。
-   Privacy 側が一般にも動画対応したら、limits.js の privacyVideoAllowed が
-   正本のまま、ここは自動で本来の案内に戻る */
-MC.ui.renderFaceNote = () => {
-  const el = document.getElementById("eoFaces");
-  if (!el) return;
-  const L = window.MZ_LIMITS || {};
-  const videoOK = !!L.privacyVideoAllowed;   // 正本はlimits.js(条件のコピーをやめた 2026-07-31)
-  el.innerHTML = '<i class="fa-solid fa-user-shield" aria-hidden="true"></i> '
-    + "多くの人の顔が写っています。SNSや外部へ公開するときは、"
-    + "写っている人（未成年なら保護者）の同意をご確認ください。"
-    + (videoOK
-        ? '<br><a href="/tools/privacy/">顔モザイク（Privacy）</a>で隠せます。'
-        : "");
-};
+/* renderFaceNote(顔の注意 + Privacy案内)は**丸ごと撤去**(2026-08-01 優さん指示
+   「プライバシーのソフトの話は消せ」+「文字が多い」)。
+   前回「管理者にだけ残す」と判断したが、優さん自身が管理者なので
+   消えていなかった ─ 誰にも出さないのが指示の意味だった。
+   同意の注意文も同時に削除(必要になったら優さんの判断で戻す)。
+   関数ごと消す ─ 空関数で残すと、いつか誰かが中身を書き戻す */
 
 /* ============ 長さと開始位置を決める(2026-07-31 優さん指示) ============
    8分のショウから1分だけ切り出すなら「どこの1分か」を決めないといけない。
@@ -2437,7 +2492,7 @@ MC.ui.renderTotalEta = (dur, tIn, tOut) => {
   el.hidden = false;
   el.innerHTML = `<i class="fa-solid fa-hourglass-half" aria-hidden="true"></i> `
     + `素材の分析におよそ<b>${anaMin}分</b>、書き出しにおよそ<b>${expMin}分</b>かかりそうです。`
-    + `<span class="total-eta-sub">いま始めると${endTxt}に終わる見込みです</span>`;   // 本数・尺は非表示(2026-07-24 優さん指示)
+    + `<span class="total-eta-sub">今始めると${endTxt}に終わる見込みです</span>`;   // 本数・尺は非表示(2026-07-24 優さん指示)
 };
 
 /* ---------- フロートプレビューはスクロール時だけ ----------
@@ -2939,7 +2994,7 @@ MC.ui.autoStage = {
     if (c) { c.disabled = true; c.textContent = "やめています…"; }
     const head = MC.ui.$("#asHead"); if (head) head.textContent = "やめています…";
     const eta = MC.ui.$("#asEta");
-    if (eta) eta.textContent = "いま動いている処理が止まるまで少し待ちます";
+    if (eta) eta.textContent = "今動いている処理が止まるまで少し待ちます";
   },
   /* 失敗の顔。畳まずに、この画面のまま理由と次の一手を出す。
      畳んで裏へ逃がすと、エラーの描画先がこの全画面の下なので何も見えない */
@@ -3034,13 +3089,13 @@ MC.ui.autoStage = {
     if (eta && !this._fail) eta.textContent = MC.ui.autoSub ? MC.ui.autoSub() : "";
     const cur = this.STEPS.find(s => s.key === this._now);
     const head = MC.ui.$("#asHead");
-    if (head && !this._fail) head.textContent = this._now ? cur.label + "…" : "できました";
+    if (head && !this._fail) head.textContent = this._now ? cur.label + "…" : "完成しました";
     /* 段が変わったときだけ1行読み上げる。リスト全体に aria-live を張ると、
        0.5秒ごとの再描画で6項目を延々と読み直す(沈黙より悪い) */
     const say = MC.ui.$("#asSay");
     if (say) {
       const line = this._fail ? "うまくいきませんでした"
-        : this._now ? cur.label : "できました";
+        : this._now ? cur.label : "完成しました";
       if (say.textContent !== line) say.textContent = line;
     }
     /* ★ 画面が消えると自走ごと落ちる(2026-08-01 実機)。
@@ -3724,7 +3779,7 @@ MC.ui.updateTransport = () => {
       const end = new Date(Date.now() + sec * factor * 1000);
       const endTxt = `${end.getHours()}:${String(end.getMinutes()).padStart(2, "0")}頃`;
       etaHint.textContent = `${mm}分${ss ? String(ss).padStart(2, "0") + "秒" : ""}の動画で、`
-        + `書き出しにはおよそ${estMin}分（いま始めると${endTxt}に終わります）`;
+        + `書き出しにはおよそ${estMin}分（今始めると${endTxt}に終わります）`;
     }
   }
   MC.ui.renderTotalEta(dur, tIn, tOut);

@@ -256,6 +256,105 @@ MC.exporter.measureAacDelay = async () => {
   return MC.caps.aacDelay;
 };
 
+/* ============ AACチャンクを muxer へ入れる唯一の入口(2026-08-01) ============
+   v1.71.0 でも iPhone の完成動画に音が入らなかった件の防御。
+   同梱の mp4-muxer は esds(音声の設計図)を
+     new Uint8Array(e.info.decoderConfig.description)
+   と**無検査**で作る。description が無いと new Uint8Array(undefined) は
+   例外を投げず**空(0バイト)**になり、AudioSpecificConfig が空の esds を持つ
+   MP4 が黙って完成する ─ 映像は普通に再生でき、音声トラックも存在するのに
+   音だけが出ない。QAの往復(Chrome)が通るのは Chrome のエンコーダが
+   description を必ず付けるからで、Safari のエンコーダが付けているかは
+   仕様上の保証が無い。ここで必ず補う:
+     ① description が無ければ AudioSpecificConfig(2バイト)を自前で組む
+     ② チャンクが ADTS 形(ヘッダ付き)ならヘッダを剥がして生AACで積む
+        (ADTSのままMP4へ入れると、これも「トラックはあるのに無音」になる) */
+MC.exporter.aacAsc = (sampleRate, ch) => {
+  const FREQ = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350];
+  const fi = Math.max(0, FREQ.indexOf(sampleRate));
+  const bits = (2 << 11) | (fi << 7) | (Math.max(1, Math.min(7, ch)) << 3);   // AAC-LC
+  return new Uint8Array([bits >> 8, bits & 0xff]);
+};
+MC.exporter.addAacChunk = (muxer, chunk, meta, st) => {
+  if (!st.meta) {
+    const cfg = (meta && meta.decoderConfig) || {};
+    const d = cfg.description;
+    const hasDesc = d && (d.byteLength || d.length);
+    st.meta = { decoderConfig: {
+      codec: cfg.codec || "mp4a.40.2",
+      sampleRate: cfg.sampleRate || 48000,
+      numberOfChannels: cfg.numberOfChannels || 2,
+      description: hasDesc ? d
+        : MC.exporter.aacAsc(cfg.sampleRate || 48000, cfg.numberOfChannels || 2),
+    } };
+    if (!hasDesc) MC.log("音声: エンコーダが設計図(description)を返さないため自前で補いました");
+  }
+  if (st.adts === undefined) {
+    const b = new Uint8Array(chunk.byteLength);
+    chunk.copyTo(b);
+    st.adts = b.length > 7 && b[0] === 0xFF && (b[1] & 0xF6) === 0xF0;
+    if (st.adts) MC.log("音声: ADTS形式で来ているのでヘッダを剥がして入れます");
+    st._first = b;
+  }
+  if (!st.adts) {
+    muxer.addAudioChunk(chunk, st.meta);
+    return;
+  }
+  /* ADTS → 生AAC。protection_absent(bit0)=1ならヘッダ7バイト、0なら9バイト */
+  const b = st._first || (() => { const x = new Uint8Array(chunk.byteLength); chunk.copyTo(x); return x; })();
+  st._first = null;
+  const hdr = (b[1] & 0x01) ? 7 : 9;
+  const sr = st.meta.decoderConfig.sampleRate || 48000;
+  muxer.addAudioChunkRaw(b.subarray(Math.min(hdr, b.length)), "key",
+    chunk.timestamp, chunk.duration || Math.round(1024 * 1e6 / sr), st.meta);
+};
+
+/* ============ 完成ファイルの音の自己点検(2026-08-01) ============
+   audio=true は「エンコードが完走した」ことしか言わない。実機で「音が
+   入ってない」が2度出たのに、こちらには数字が何も残らなかった。
+   出来上がったMP4を端末上で読み戻し、音声トラックの有無と先頭数秒の
+   実音量(RMS)を測って返す。点検自体の失敗は完成を汚さない(ok:true扱いは
+   しない ─ why に残して呼び出し側が「点検できなかった」と言えるようにする) */
+MC.exporter.verifyAudio = async (blob, maxSec = 5) => {
+  const src = new MZ_MP4.MP4Source(blob);
+  await src.init();
+  const at = src.audioTrack();
+  if (!at) return { ok: false, rms: null, why: "音声トラックがありません" };
+  if (typeof AudioDecoder === "undefined") return { ok: true, rms: null, why: "この環境では点検できません" };
+  const cfg = src.audioDecoderConfig();
+  const sup = await AudioDecoder.isConfigSupported(cfg).catch(() => ({ supported: false }));
+  if (!sup.supported) return { ok: false, rms: null, why: `音声の形式を読めません(${cfg.codec})` };
+  let sum = 0, cnt = 0, derr = null;
+  const dec = new AudioDecoder({
+    output: ad => {
+      try {
+        const b = new Float32Array(ad.numberOfFrames);
+        ad.copyTo(b, { planeIndex: 0, format: "f32-planar" });
+        for (let i = 0; i < b.length; i++) sum += b[i] * b[i];
+        cnt += b.length;
+      } finally { ad.close(); }
+    },
+    error: e => { derr = e; },
+  });
+  dec.configure(cfg);
+  const limit = maxSec * (cfg.sampleRate || 48000);
+  for await (const smp of src.samples(at.id, 0)) {
+    if (derr || cnt >= limit) break;
+    dec.decode(new EncodedAudioChunk({
+      type: "key", timestamp: Math.round(smp.cts * 1e6 / smp.timescale), data: smp.data,
+    }));
+    if (dec.decodeQueueSize > 16) await MC.waitDequeue(dec);
+  }
+  if (!derr) await dec.flush().catch(() => {});
+  try { dec.close(); } catch (_) {}
+  if (derr) return { ok: false, rms: null, why: "音声を再生できません: " + (derr.message || derr.name) };
+  if (!cnt) return { ok: false, rms: 0, why: "音声のデータが空です" };
+  const rms = Math.sqrt(sum / cnt);
+  /* -60dBFS。書き出しの音は素通しでも実測RMS 0.1級なので、これを下回るのは
+     「壊れて無音」だけ。静かな曲の頭でも 0.001 は上回る */
+  return { ok: rms > 1e-3, rms, why: rms > 1e-3 ? "" : `先頭${maxSec}秒がほぼ無音です` };
+};
+
 /* ---- 音声: 選択クリップの範囲をデコード→48kHzステレオ→AAC ---- */
 MC.exporter.encodeAudio = async (muxer, clip, fromLocalSec, durSec, onStatus) => {
   const src = new MZ_MP4.MP4Source(clip.file);
@@ -290,9 +389,10 @@ MC.exporter.encodeAudio = async (muxer, clip, fromLocalSec, durSec, onStatus) =>
   let outCount = 0;         // リサンプル出力の通し位置
 
   let encErr = null;
+  const aacSt = {};   // 設計図の補いとADTS判定の状態(この書き出し1本ぶん)
   const encoder = new AudioEncoder({
     output: (chunk, meta) => {
-      try { muxer.addAudioChunk(chunk, meta); } catch (err) { encErr = encErr || err; }
+      try { MC.exporter.addAacChunk(muxer, chunk, meta, aacSt); } catch (err) { encErr = encErr || err; }
     },
     error: e => { encErr = e; },
   });
@@ -423,9 +523,10 @@ MC.exporter.encodeAudioPcm = async (muxer, src, fromLocalSec, durSec, onStatus) 
 
   onStatus("音を入れています…");
   let encErr = null;
+  const aacSt = {};   // 設計図の補いとADTS判定の状態(この書き出し1本ぶん)
   const encoder = new AudioEncoder({
     output: (chunk, meta) => {
-      try { muxer.addAudioChunk(chunk, meta); } catch (err) { encErr = encErr || err; }
+      try { MC.exporter.addAacChunk(muxer, chunk, meta, aacSt); } catch (err) { encErr = encErr || err; }
     },
     error: e => { encErr = e; },
   });
@@ -515,9 +616,10 @@ MC.exporter.encodeAudioFile = async (muxer, clip, fromLocalSec, durSec, onStatus
      (2026-07-23 Phase 1 項目4。encodeAudioPcm と同じ理由) */
   onStatus("音を入れています…");
   let encErr = null;
+  const aacSt = {};   // 設計図の補いとADTS判定の状態(この書き出し1本ぶん)
   const encoder = new AudioEncoder({
     output: (chunk, meta) => {
-      try { muxer.addAudioChunk(chunk, meta); } catch (err) { encErr = encErr || err; }
+      try { MC.exporter.addAacChunk(muxer, chunk, meta, aacSt); } catch (err) { encErr = encErr || err; }
     },
     error: e => { encErr = e; },
   });
@@ -1408,7 +1510,7 @@ MC.exporter.exportMP4Parts = async (onProgress) => {
              見せる理由がない。関心は「あと何分か」で、それは eta が言う */
           onProgress((k + 1) / totalFrames * 0.85, "映像を作っています…", {
             eta: perFrame * (totalFrames - k - 1),
-            sub: `${MC.ui.fmtLen((k + 1) / fps)}ぶん / 全${MC.ui.fmtLen(totalFrames / fps)}`,
+            sub: `${MC.ui.fmtLen((k + 1) / fps)}分 / 全${MC.ui.fmtLen(totalFrames / fps)}`,
           });
         },
       });
@@ -1419,7 +1521,7 @@ MC.exporter.exportMP4Parts = async (onProgress) => {
     /* ---- ② 結合(デコードなし・raw再mux) ---- */
     /* 「パートをつないでいます」は、85%まで「映像を作っています」で来た人に
        突然出てくる説明のない内部語。sub を空で渡さないと、直前の
-       「8分12秒ぶん / 全8分12秒」が残って表示が食い違う */
+       「8分12秒分 / 全8分12秒」が残って表示が食い違う */
     onProgress(0.85, "仕上げています…", { sub: "まもなく完了します" });
     finalOpfs = await MC.exporter.opfsCreate(outName);
     if (!finalOpfs) throw new Error("この端末の保存領域を用意できませんでした。");
@@ -1945,7 +2047,7 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle, opts) => {
            数字は右隣の % と重複していた(2026-07-26)。細かい数字は副文言へ */
         onProgress((k + 1) / totalFrames * 0.93, "映像を作っています…", {
           eta,
-          sub: `${Math.round((k + 1) / fps)}秒ぶん / 全${Math.round(totalFrames / fps)}秒`,
+          sub: `${Math.round((k + 1) / fps)}秒分 / 全${Math.round(totalFrames / fps)}秒`,
         });
         await MC.yield();  // UI息継ぎ(非表示タブでも節流されない)
       }
@@ -1990,7 +2092,7 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle, opts) => {
       if (!audioOk && !MC.exporter.cancelFlag) MC.ui.toast("⚠ 音声を書き出せませんでした(映像のみ出力します)");
       const hidden = Math.max(0, audioMs - audioWaitMs);
       MC.log(`音声: 合計${(audioMs / 1000).toFixed(1)}秒 / `
-        + `${audioParallel ? `映像と並行で${(hidden / 1000).toFixed(1)}秒ぶん隠れた・`
+        + `${audioParallel ? `映像と並行で${(hidden / 1000).toFixed(1)}秒分隠れた・`
                             : audioClip.isAudio ? "直列(音声ファイル取り込み)・"
                             : "直列(iPhoneは同時に開けるコーデック数を抑える)・"}`
         + `待たされた${(audioWaitMs / 1000).toFixed(1)}秒`);

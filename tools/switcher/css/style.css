@@ -778,6 +778,20 @@ html, body { max-width: 100%; overflow-x: clip; }
 #doneCard .row .btn { width: 100%; }
 /* 副ボタンは全画面側の「ダウンロード」(.eo-dl=ghost)と同じ静かな顔に */
 #downloadBtn { font-size: 13px; opacity: .85; background: none; padding: 11px 15px; }
+/* ★ 保存ボタンの中身はアイコン込みで中央(2026-08-01 優さん指摘
+   「保存するのテキストは中央そろえ」)。showDone が display:inline-flex を
+   インラインで当てるため、justify-content が無いと左端に寄っていた */
+.eo-actions .btn, #doneCard .row .btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+}
+/* ★ 保存できた顔(2026-08-01 優さん指示「保存完了ももっとわかりやすく」)。
+   主ボタンが緑の「✓ 保存しました」に変わり、下に緑の帯が入る ─
+   文字を足さずに、画面の主役の色で言う */
+.btn.primary.saved { background: var(--ok); }
+.eo-note.save-ok, .status.save-ok {
+  background: rgba(30, 122, 67, .12); color: var(--ok);
+  font-weight: 700; padding: 10px 12px; border-radius: 10px;
+}
 
 /* ============ 別のシーンも作る(2026-08-01 UI/UXレビュー) ============
    エンジニアが構造だけ置いた部分(mzso-*)の整え。実測375pxで素のUAボタン
@@ -1398,8 +1412,7 @@ body.mz-pin-force .tilt-step { width: 52px; min-height: 48px; font-size: 20px; }
 #tiltOkBtn, #tiltPrevBtn { min-height: 48px; }
 
 /* 完成画面の顔の注意(2026-07-29) */
-.eo-faces { color: #7a4a12; }
-.eo-faces a { color: inherit; font-weight: 700; }
+/* .eo-faces は撤去(2026-08-01 優さん指示。#eoFaces ごと消した) */
 
 /* 書き出し前の注意書き(2026-07-29) */
 /* ロゴの説明。プレビューの真上に1行だけ。主張しすぎない小さな文字で、
@@ -1547,11 +1560,7 @@ body.mz-diag-noskip #exportSec::before {
   font-family: inherit; }
 .tilt-badge.todo { background: #fff4d6; border-color: #f0d9a0; color: #7a5200; }
 .tilt-badge.done { color: var(--ok); }
-/* 分割書き出しの「前回のつづきから」(2026-07-31)。全画面の常設欄に出す ─
-   トーストは #exportOverlay(z-index:120) の下敷き(z-index:99)で見えない */
-#eoPreEta.eo-resume { background: #eaf4ff; color: var(--acc-deep);
-  border-radius: 10px; padding: 8px 12px; font-weight: 700; }
-#eoPreEta.eo-resume i { margin-right: 6px; }
+/* #eoPreEta は撤去(2026-08-01 優さん指示「文字が多い」。要素ごと消した) */
 /* かたむきバッジ: 状態は名詞、押せることは › で示す(iOS Safari は title を読まない) */
 .tilt-badge-go { margin-left: auto; font-size: 16px; opacity: .5; }
 .tilt-badge { width: 100%; justify-content: flex-start; text-align: left; }

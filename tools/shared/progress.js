@@ -104,7 +104,7 @@ window.MZP = (function () {
   function fmtEndAt(sec) {
     if (!isFinite(sec) || sec < 60) return "";
     const d = new Date(Date.now() + sec * 1000);
-    return `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}頃おわり`;
+    return `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}頃終わり`;
   }
 
   class Handle {
