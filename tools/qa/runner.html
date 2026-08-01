@@ -1432,8 +1432,14 @@ async function countSamples(ns, file, fromSec) {
       if (bar.getAttribute("role") !== "progressbar") throw new Error("進捗バーに role が無い");
       const v = +bar.getAttribute("aria-valuenow");
       if (!(v > 0 && v < 100)) throw new Error("aria-valuenow が " + v);
+      /* ★ リスト全体に aria-live を張るのをやめた(2026-08-01 レビュー14件)。
+         0.5秒ごとの再描画で6項目を延々と読み直しており、沈黙より悪かった。
+         いま伝えるべきは「いまどの段か」の1行だけ */
       const steps = w.document.getElementById("asSteps");
-      if (steps.getAttribute("aria-live") !== "polite") throw new Error("段の変化が読み上げに乗らない");
+      if (steps.getAttribute("aria-live")) throw new Error("リスト全体がまた読み上げ対象になっている");
+      const say = w.document.getElementById("asSay");
+      if (!say || say.getAttribute("aria-live") !== "polite") throw new Error("段の変化が読み上げに乗らない");
+      if (!/見どころ/.test(say.textContent)) throw new Error("読み上げ行がいまの段を指していない: " + say.textContent);
       /* ④ こだわりの設定を見せないこと(これが「完全にUIを分けて」の中身) */
       for (const id of ["placeSec", "layoutSec", "finishSec", "lengthSec"]) {
         const p2 = w.document.getElementById(id);
@@ -1492,11 +1498,19 @@ async function countSamples(ns, file, fromSec) {
     if (!/tilt.*sync.*scan.*finish.*export/.test(tags)) {
       throw new Error("自走が最後まで行かない: " + tags);
     }
-    /* ② 段の切れ目で鍵が外れない(走行中に別のボタンを押せてしまう) */
-    const open = seen.filter(x => !x.busy).map(x => x.tag);
-    if (open.length) throw new Error("走行中に鍵が外れた段: " + open.join(","));
+    /* ② 解析の段では鍵が外れない(走行中に別のボタンを押せてしまう)。
+       ★ ただし書き出しの段は**外れていなければならない**(2026-08-01 レビュー14件)。
+         #exportBtn のハンドラは1行目で `if (MC.ui._busy) return;` を通る。
+         setBusy(false) は _autoRunning が立っている間ずっと握り潰されるので、
+         押す前に鍵を返さないと click が即 return し、書き出しが1バイトも
+         始まらないまま全画面が畳まれる ─ 自走が最後に無言で死ぬ経路だった */
+    const open = seen.filter(x => !x.busy && x.tag !== "export").map(x => x.tag);
+    if (open.length) throw new Error("解析中に鍵が外れた段: " + open.join(","));
+    const ex = seen.find(x => x.tag === "export");
+    if (!ex) throw new Error("書き出しの段まで来ていない");
+    if (ex.busy) throw new Error("鍵を掛けたまま書き出しを押している(本物のハンドラは即returnする)");
     /* ③ 3〜9分待たせるのだから、残り時間を出す */
-    if (!seen.some(x => /完成まで|まもなく/.test(x.sub))) {
+    if (!seen.some(x => /あと およそ|まもなく|もう少し/.test(x.sub))) {
       throw new Error("待ち時間がどこにも出ていない");
     }
     /* ④ 終わったら鍵は返す(押せないままにしない) */
@@ -2954,6 +2968,276 @@ async function countSamples(ns, file, fromSec) {
     }
     ge(B.beats.length, 900, "拍の数");
     return `検出${B.bpm.toFixed(2)}BPM / 最大ズレ${worst.toFixed(3)}秒`;
+  });
+
+
+  group("㉚ おまかせが黙って死なない(2026-08-01 レビュー14件 レビュー14件の見張り)");
+
+  await test("★書き出しは自走から本当に起動できる(鍵を返してから押す)", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.clips.forEach((c, i) => Object.assign(c, {
+      duration: 400, stats: { rms: 0.05 + (i + 1) * 0.02, clipRatio: 0 },
+      tiltOk: false, rot: 0, syncMethod: "未同期" }));
+    S.audioClipId = 1; S.audioDecided = false; S.easyDone = false;
+    S.lengthDecided = false; S.showIn = null; S.showOut = null;
+
+    const keep = { h: w.MC.horizon && w.MC.horizon.suggest, s: w.MC.sync.run,
+                   sc: w.MC.ui.runEasyScan, f: w.MC.ui.runEasyFinish,
+                   r: w.MC.ui.analysisRate, set: w.MC.ui.setBusy };
+    const eb = w.document.getElementById("exportBtn");
+    const ebOld = eb.onclick;
+    let fired = 0;
+    const arm = () => {
+      S.audioDecided = false; S.easyDone = false;
+      S.showIn = null; S.showOut = null; S.lengthDecided = false;
+      S.clips.forEach(c => { c.syncMethod = "未同期"; });
+      w.MC.ui._autoRunning = false;
+      eb.disabled = false;
+    };
+    try {
+      w.MC.ui.analysisRate = () => 0.5;
+      w.MC.horizon.suggest = async () => 0.8;
+      w.MC.sync.run = async () => { S.clips.forEach(c => { c.syncMethod = "波形"; }); return {}; };
+      w.MC.ui.runEasyScan = async () => { S.showIn = 40; S.showOut = 380; };
+      w.MC.ui.runEasyFinish = async () => { S.easyDone = true; };
+      /* ★ 本物と同じ門を持つハンドラ。ここが要 ─ 門の無い偽物で試すと、
+         鍵を返し忘れていても素通りしてしまい、テストが何も見張らない */
+      eb.onclick = () => { if (w.MC.ui._busy) return; fired++; };
+
+      arm(); await w.MC.ui.runAuto();
+      if (fired !== 1) throw new Error("直っている版で書き出しが起動しない(fired=" + fired + ")");
+
+      /* ── 変異: 鍵を返さない版へ戻す。setBusy(false) を握り潰せば、
+         修正前とまったく同じ状態(_busy が立ちっぱなし)になる ── */
+      w.MC.ui.setBusy = b => { if (!b) return; keep.set(b); };
+      arm(); await w.MC.ui.runAuto();
+      if (fired !== 1) throw new Error("バグを戻したのに書き出しが起動した(=この試験に歯が無い)");
+    } finally {
+      w.MC.ui.setBusy = keep.set;
+      if (w.MC.horizon) w.MC.horizon.suggest = keep.h;
+      w.MC.sync.run = keep.s; w.MC.ui.runEasyScan = keep.sc;
+      w.MC.ui.runEasyFinish = keep.f; w.MC.ui.analysisRate = keep.r;
+      eb.onclick = ebOld;
+      w.MC.ui._autoRunning = false; w.MC.ui.setBusy(false);
+    }
+    return "直った版=起動する / 鍵を返さない版=起動しない(変異で確認)";
+  });
+
+  await test("★仕上げと解析は、自走なら自分の鍵に弾かれない", async () => {
+    const w = await compEnv();
+    compReset(w);
+    const keepStart = w.MZP.start;
+    const SENT = "__QA_GUARD_PASSED__";
+    /* 門を抜けた直後に必ず通る場所で目印を投げる。
+       抜けていれば reject、弾かれていれば undefined で resolve ─
+       「戻り値が無い」と「途中で止まった」を取り違えない形にする */
+    w.MZP.start = () => { throw new Error(SENT); };
+    const probe = async fn => {
+      try { await fn(); return false; } catch (e) { return e.message === SENT; }
+    };
+    try {
+      for (const [name, fn] of [["runEasyFinish", w.MC.ui.runEasyFinish],
+                                ["runEasyScan", w.MC.ui.runEasyScan]]) {
+        /* 自走中(=鍵は自分で掛けたもの)なら通る */
+        w.MC.ui._autoRunning = true; w.MC.ui._busy = true;
+        if (!await probe(() => fn())) {
+          throw new Error(name + " が自分の掛けた鍵に弾かれる(おまかせがここで黙って終わる)");
+        }
+        /* ── 変異: 自走でなければ、今までどおり鍵で弾かれる ── */
+        w.MC.ui._autoRunning = false; w.MC.ui._busy = true;
+        if (await probe(() => fn())) {
+          throw new Error(name + " が普通の操作でも鍵を無視する(二重実行の防止が壊れる)");
+        }
+      }
+    } finally {
+      w.MZP.start = keepStart;
+      w.MC.ui._autoRunning = false; w.MC.ui._busy = false;
+    }
+    return "自走=通る / 通常=弾かれる を2関数で確認";
+  });
+
+  await test("★失敗しても画面は畳まず、理由と次の一手が出る", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.clips.forEach(c => { c.tiltOk = true; c.syncMethod = "波形"; });
+    S.audioClipId = 1;
+    const keep = { e: w.MC.ui.runEasy, f: w.MC.ui.runEasyFinish };
+    const el = w.document.getElementById("autoStage");
+    const box = w.document.getElementById("asFail");
+    try {
+      /* ① 途中で落ちたとき: 畳まずに、この画面のまま理由を出す。
+         #easyStatus も #errorLog もこの全画面(z-index 130)の下にあるので、
+         畳んで裏へ逃がすと「画面がふっと消えた」だけになる */
+      w.MC.ui.runEasy = async () => { throw new Error("QAのわざとの失敗"); };
+      await w.MC.ui.runAuto();
+      if (el.hidden) throw new Error("失敗したのに画面が消えた(理由が誰にも見えない)");
+      if (box.hidden) throw new Error("失敗の説明が出ていない");
+      const msg = w.document.getElementById("asFailMsg").textContent || "";
+      if (!/QAのわざとの失敗/.test(msg)) throw new Error("何が起きたか書いていない: " + msg);
+      for (const id of ["asRetry", "asManual"]) {
+        const b = w.document.getElementById(id);
+        if (!b || b.getClientRects().length === 0) throw new Error(id + " が出ていない");
+        if (b.getBoundingClientRect().height < 44) throw new Error(id + " が44pt未満");
+      }
+      w.MC.ui.autoStage.close();
+
+      /* ② 対照: 落ちなければ失敗の顔は出ないし、画面はちゃんと畳まれる
+         (どちらの側も確かめないと「常に失敗の顔を出す」実装でも通ってしまう) */
+      w.MC.ui.runEasy = async () => { S.showIn = 10; S.showOut = 200; };
+      w.MC.ui.runEasyFinish = async () => { S.easyDone = true; };
+      await w.MC.ui.runAuto();
+      if (!el.hidden) throw new Error("成功したのに画面が畳まれない");
+      if (!box.hidden) throw new Error("成功したのに失敗の説明が出ている");
+    } finally {
+      w.MC.ui.runEasy = keep.e; w.MC.ui.runEasyFinish = keep.f;
+      w.MC.ui.autoStage.close();
+      w.MC.ui._autoRunning = false; w.MC.ui.setBusy(false);
+    }
+    return "失敗=畳まず理由+2択(44pt) / 成功=畳む";
+  });
+
+  await test("★「やめる」で映像解析が実際に止まる", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.audioClipId = 1;
+    const keep = { e8: w.MC.audio.extract8k, ba: w.MC.beats.analyze,
+                   sa: w.MC.sections.analyze, sd: w.MC.salute.detect,
+                   va: w.MC.visual.analyzeClip, sal: w.MC.director._salute };
+    let looked = 0;
+    const p = { step() { return p; }, pulse() { return p; }, set() { return p; }, done() {}, fail() {} };
+    try {
+      w.MC.audio.extract8k = async () => {};
+      w.MC.beats.analyze = () => ({ bpm: 120, beats: [0, .5, 1] });
+      w.MC.sections.analyze = async () => {};
+      w.MC.salute.detect = async () => null;
+      w.MC.director._salute = null;
+      w.MC.visual.analyzeClip = async () => { looked++; };
+
+      /* ① やめると言ったら、重い映像解析へは1本も入らない */
+      w.MC.ui._autoCancel = true;
+      let msg = "";
+      try { await w.MC.director.run(p, 0); } catch (e) { msg = e.message; }
+      if (looked !== 0) throw new Error("やめると言ったのに " + looked + "本を解析した");
+      if (!/やめました/.test(msg)) throw new Error("止まった理由が伝わらない: " + msg);
+
+      /* ── 変異: やめると言っていなければ、ちゃんと解析へ進む ──
+         (常に throw する実装でも通ってしまわないように) */
+      w.MC.ui._autoCancel = false;
+      try { await w.MC.director.run(p, 0); } catch (e) {}
+      if (looked === 0) throw new Error("やめていないのに解析へ進まない(=この試験に歯が無い)");
+    } finally {
+      w.MC.audio.extract8k = keep.e8; w.MC.beats.analyze = keep.ba;
+      w.MC.sections.analyze = keep.sa; w.MC.salute.detect = keep.sd;
+      w.MC.visual.analyzeClip = keep.va; w.MC.director._salute = keep.sal;
+      w.MC.ui._autoCancel = false;
+    }
+    return `やめる=0本で停止 / やめない=${looked}本を解析(変異で確認)`;
+  });
+
+  await test("★段の補足は、次の段へ居座らない", async () => {
+    const w = await compEnv();
+    compReset(w);
+    const A = w.MC.ui.autoStage;
+    A.open();
+    try {
+      const subOf = k => {
+        const li = w.document.querySelector(`.as-step[data-k="${k}"] .as-step-sub`);
+        return li ? li.textContent : "(無)";
+      };
+      A.step("tilt", "3本");
+      if (subOf("tilt") !== "3本") throw new Error("いまの段の補足が出ない: " + subOf("tilt"));
+      /* ★ 補足を指定せずに次の段へ進んだら、前の値は消えること。
+         残っていたため「カメラを切り替える  音を読み込み中 100%」のような
+         行が、いちばん長い段のあいだずっと出ていた */
+      A.step("sync");
+      if (subOf("sync")) throw new Error("前の段の補足が居座っている: " + subOf("sync"));
+      /* 済んだ段には「何ができたか」の成果を残せること */
+      A.mark("tilt", "2本の傾きを直しました");
+      if (!/2本の傾きを直しました/.test(subOf("tilt"))) throw new Error("成果が残らない");
+    } finally { A.close(); }
+    return "指定した段だけに出て、次の段へは残らない / 成果は残る";
+  });
+
+  await test("★0.5秒ごとの再描画で、段のDOMを作り直さない", async () => {
+    const w = await compEnv();
+    compReset(w);
+    const A = w.MC.ui.autoStage;
+    A.open();
+    try {
+      A.step("scan");
+      const host = w.document.getElementById("asSteps");
+      const nodes = [...host.children];
+      const cls = nodes.map(n => n.className);
+      /* 自走中は 0.5秒ごとに render() が走る。ここで innerHTML を全置換すると
+         ・済んだ✓の asPop(.35s) が5〜9分ずっと跳ね続ける
+         ・now の asPulse(1.3s) が周期の38%でワープする
+         同じ値でも className を代入し直すだけでアニメは再生されるので、
+         「ノードが同一」かつ「classNameを書き換えていない」の両方を見る */
+      for (let i = 0; i < 6; i++) A.render();
+      if (host.children.length !== nodes.length) throw new Error("段の数が変わった");
+      for (let i = 0; i < nodes.length; i++) {
+        if (host.children[i] !== nodes[i]) throw new Error(`${i}番目のノードが作り直された(アニメが再生され続ける)`);
+        if (host.children[i].className !== cls[i]) throw new Error(`${i}番目の class が書き換わった`);
+      }
+      /* ── 対照: 中身が本当に変わったときは、ちゃんと反映されること ── */
+      A.step("finish");
+      if (!host.children[3].className.includes("done")) throw new Error("段が進んでも反映されない");
+    } finally { A.close(); }
+    return "6回の再描画でノード同一・class据え置き / 段が進めば反映";
+  });
+
+  await test("★中央寄せの溢れで、画面上端へ戻れなくならない", async () => {
+    const w = await compEnv();
+    compReset(w);
+    const A = w.MC.ui.autoStage;
+    A.open();
+    const el = w.document.getElementById("autoStage");
+    const inner = el.querySelector(".as-inner");
+    const keep = { h: el.style.height, mh: el.style.maxHeight,
+                   ai: el.style.alignItems, m: inner.style.margin };
+    try {
+      /* iPhone を横にしたときのように、中身が入りきらない高さにする */
+      el.style.height = "240px"; el.style.maxHeight = "240px";
+      const top = () => inner.getBoundingClientRect().top - el.getBoundingClientRect().top;
+      if (top() < -1) throw new Error(`上端が ${Math.round(top())}px 上に消えている`);
+
+      /* ── 変異: align-items:center へ戻すと、はみ出した分は上へ消えて
+         スクロールでも戻せない(scrollTop が負にならないため)。
+         実測で iPhone横向き 812x375 のとき -62px、最大スクロールで -141px ── */
+      el.style.alignItems = "center"; inner.style.margin = "0";
+      if (top() >= -1) throw new Error("中央寄せへ戻しても上端が消えない(=この試験に歯が無い)");
+    } finally {
+      el.style.height = keep.h; el.style.maxHeight = keep.mh;
+      el.style.alignItems = keep.ai; inner.style.margin = keep.m;
+      A.close();
+    }
+    return "flex-start+margin:auto=上端に届く / center=消える(変異で確認)";
+  });
+
+  await test("★おまかせの最中に「分析完了」の嘘の通知を出さない", async () => {
+    const w = await compEnv();
+    compReset(w);
+    const t0 = w.document.title;
+    const clean = () => {
+      const b = w.document.getElementById("mzAnalysisDone");
+      if (b) b.remove();
+      w.document.title = t0;
+    };
+    try {
+      /* おまかせ中はここで終わりではない ─ このあと書き出しが数分続く。
+         完了バナー自体は全画面(z-index 130)の下に隠れるが、
+         バイブとタブのタイトルは端末に届いてしまい、別アプリへ行っていた人を
+         「もう書き出せる」と勘違いさせて呼び戻していた */
+      w.MC.ui.notifyAnalysisDone({ silent: true });
+      if (w.document.title !== t0) throw new Error("おまかせ中なのにタブの題が変わった: " + w.document.title);
+      if (w.document.getElementById("mzAnalysisDone")) throw new Error("おまかせ中なのに完了バナーが出た");
+      /* ── 対照: こだわりのときは今までどおり知らせる ── */
+      clean();
+      w.MC.ui.notifyAnalysisDone();
+      if (w.document.title === t0) throw new Error("こだわりでも知らせなくなった(=黙らせすぎ)");
+    } finally { clean(); }
+    return "おまかせ=黙る / こだわり=知らせる";
   });
 
   if (CF) { CF.remove(); CF = null; CW = null; CD = null; }

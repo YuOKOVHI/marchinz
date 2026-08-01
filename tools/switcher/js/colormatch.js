@@ -127,6 +127,7 @@ MC.color.run = async p => {
   const stats = new Map();
   let i = 0;
   for (const c of clips) {
+    if (MC.ui && MC.ui._autoCancel) throw new Error("やめました");   // ★ 中断点(2026-08-01 レビュー14件)
     i++;
     const sub = `${i} / ${clips.length} 台目・${MZP.shortName(c.name)}`;
     if (p) p.set((i - 1) / clips.length, null, { sub });

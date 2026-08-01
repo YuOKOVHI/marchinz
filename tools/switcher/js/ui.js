@@ -2445,7 +2445,14 @@ MC.ui.clearInterruptNote = () => {
 /* ============ 分析完了の目立つ通知(2026-07-23 優さん指示) ============
    ①バイブ ②タブのタイトルを一時的に変える(裏で待っている人向け)
    ③画面内の大きな完了バナー(タップで消える)。三重にして見逃しを防ぐ */
-MC.ui.notifyAnalysisDone = () => {
+MC.ui.notifyAnalysisDone = (opt) => {
+  /* ★ おまかせの最中は黙る(2026-08-01 レビュー14件)。ここは分析が済んだだけで、このあと
+     書き出しが数分続く。完了バナー自体は全画面(z-index 130)の下に隠れるが、
+     **バイブとタブのタイトルは端末に届いてしまう**ので、別アプリへ行っていた
+     人を「もう終わった・書き出せます」と勘違いさせて呼び戻していた。
+     しかも押すべきボタンはおまかせが自分で押す。
+     おまかせ本来の完了は、書き出しが終わった時に1回だけ出る */
+  if (opt && opt.silent) return;
   // iOS Safari は vibrate 非対応(効かない)。Android等では鳴る。害はないので残す(G-5)
   try { if (navigator.vibrate) navigator.vibrate([80, 40, 80]); } catch (_) {}
   /* タブ裏で待つ人向け: タイトルを点滅風に。操作が戻ったら元へ */
@@ -2589,6 +2596,16 @@ MC.ui.autoHorizon = async p => {
   return fixed;
 };
 
+/* おまかせ画面でプレビューを流す。音は鳴らさない ─ 解析中に音だけ流れると驚く。
+   ★ 消音は play() の**後**で当てる。play() の中の applyMute が
+     「音声担当だけ鳴らす」で上書きするため、先に消しても戻る */
+MC.ui.autoPreviewPlay = () => {
+  try {
+    MC.preview.play();
+    MC.S.clips.forEach(c => { if (c.video) c.video.muted = true; });
+  } catch (e) { MC.log("autoStage: プレビュー再生に失敗 " + e.message); }
+};
+
 /* 音声を自動で決める。stats が取れていれば recommend、無ければ先頭の動画 */
 MC.ui.autoPickAudio = () => {
   const reco = MC.audio.recommend && MC.audio.recommend();
@@ -2637,17 +2654,32 @@ MC.ui.autoStage = {
     { key: "export", label: "動画を書き出す",      done: "書き出しました",       w: 30 },
   ],
   _done: [], _now: null, _home: null,
+  /* _sub=いま動いている段の補足 / _doneSub=済んだ段の成果 / _inner=段の中の進み具合
+     _fail=失敗の顔を出しているか / _prevFocus=開く前にフォーカスがあった要素 */
+  _sub: null, _doneSub: {}, _inner: 0, _fail: null, _prevFocus: null,
 
   open() {
     const el = MC.ui.$("#autoStage");
     if (!el || !el.hidden) return;
+    /* ★ _sub / _doneSub / _inner / _fail も戻す(2026-08-01 レビュー14件)。
+       _sub を戻していなかったため、前の段の文字が次の段に居座っていた
+       (「カメラを切り替える  音を読み込み中 100%」のような表示) */
     this._done = []; this._now = null;
+    this._sub = null; this._doneSub = {}; this._inner = 0; this._fail = null;
+    const fb = MC.ui.$("#asFail"); if (fb) fb.hidden = true;
+    const cb = MC.ui.$("#asCancel");
+    if (cb) { cb.hidden = false; cb.disabled = false; cb.textContent = "やめる"; }
     /* canvas を全画面のプレビュー枠へ移す。戻す場所を覚えておく */
     const cv = document.getElementById("cv");
     const host = MC.ui.$("#asPreview");
     if (cv && host) { this._home = cv.parentElement; host.appendChild(cv); }
     el.hidden = false;
     document.body.classList.add("mz-auto-stage");
+    /* role="dialog" aria-modal を名乗る以上、フォーカスも中へ移す。
+       aria-modal は読み上げには効くが、Tab の順番は止めない ─
+       移さないと背後のこだわり画面のボタンへ Tab で入れてしまう */
+    this._prevFocus = document.activeElement;
+    try { const c = MC.ui.$("#asCancel"); if (c) c.focus({ preventScroll: true }); } catch (e) {}
     /* ★ プレビューを実際に動かす(2026-08-01 レビューP0)。
        枠だけ移しても再生していなければ黒い箱で、
        「できていってる！」がいちばん伝わらない。
@@ -2672,6 +2704,10 @@ MC.ui.autoStage = {
     this._home = null;
     el.hidden = true;
     document.body.classList.remove("mz-auto-stage");
+    this._fail = null;
+    try { if (this._prevFocus && this._prevFocus.focus) this._prevFocus.focus({ preventScroll: true }); }
+    catch (e) {}
+    this._prevFocus = null;
   },
 
   /* いま動いている段を伝える。済んだ段は自動でチェックが点く */
@@ -2683,10 +2719,46 @@ MC.ui.autoStage = {
       if (!this._done.includes(kk)) this._done.push(kk);
     }
     this._now = key;
-    if (sub !== undefined) this._sub = sub;
+    /* ★ 未指定なら**消す**(2026-08-01 レビュー14件)。前は前の値が残る実装だったため、
+       「傾きを直す」で入れた "3本" が、そのあとの段にずっと居座っていた */
+    this._sub = (sub === undefined ? null : sub);
+    this._inner = 0;
     this.render();
   },
-  finishAll() { this._done = this.STEPS.map(s => s.key); this._now = null; this.render(); },
+  /* 済んだ段に「実際に何ができたか」を残す。チェックが点くだけでは
+     何が起きたのか分からない ─ ここが「できていってる！」のいちばん安い実装 */
+  mark(key, text) { this._doneSub[key] = text || ""; this.render(); },
+  /* いま動いている段の中での進み具合(0..1) */
+  progress(fr) {
+    const v = Math.max(0, Math.min(1, fr || 0));
+    if (Math.abs(v - (this._inner || 0)) < 0.01) return;
+    this._inner = v; this.render();
+  },
+  /* 中止を押されてから、実際に止まるまでの間の顔 */
+  cancelling() {
+    const c = MC.ui.$("#asCancel");
+    if (c) { c.disabled = true; c.textContent = "やめています…"; }
+    const head = MC.ui.$("#asHead"); if (head) head.textContent = "やめています…";
+    const eta = MC.ui.$("#asEta");
+    if (eta) eta.textContent = "いま動いている処理が止まるまで少し待ちます";
+  },
+  /* 失敗の顔。畳まずに、この画面のまま理由と次の一手を出す。
+     畳んで裏へ逃がすと、エラーの描画先がこの全画面の下なので何も見えない */
+  fail(err) {
+    const el = MC.ui.$("#autoStage");
+    if (!el || el.hidden) return;
+    this._fail = err || new Error("うまくいきませんでした");
+    const cur = this.STEPS.find(s => s.key === this._now);
+    const msg = MC.ui.$("#asFailMsg");
+    if (msg) {
+      msg.textContent = (cur ? `「${cur.label}」のところで止まりました。` : "")
+        + (this._fail.message || "");
+    }
+    const box = MC.ui.$("#asFail"); if (box) box.hidden = false;
+    const c = MC.ui.$("#asCancel"); if (c) c.hidden = true;
+    this.render();
+  },
+  finishAll() { this._done = this.STEPS.map(s => s.key); this._now = null; this._sub = null; this.render(); },
 
   /* 進み具合(0..1)。重み付きなので、重い段の途中でもバーが進んで見える */
   ratio() {
@@ -2694,7 +2766,10 @@ MC.ui.autoStage = {
     let got = 0;
     for (const s of this.STEPS) {
       if (this._done.includes(s.key)) got += s.w;
-      else if (s.key === this._now) got += s.w * 0.35;   // 途中の段も少し進める
+      /* ★ 段の中の実測を混ぜる(2026-08-01 レビュー14件)。前は固定の0.35だったため、
+         いちばん重い段(w:30)に入ると 51% で固定され、数分間バーも%も
+         1 も動かなかった ─ 止まっている＝固まった、と読まれる */
+      else if (s.key === this._now) got += s.w * Math.max(0.12, this._inner || 0);
     }
     return Math.max(0, Math.min(1, got / total));
   },
@@ -2717,23 +2792,49 @@ MC.ui.autoStage = {
     const pct = MC.ui.$("#asPct"); if (pct) pct.textContent = Math.round(r * 100) + "%";
     const eta = MC.ui.$("#asEta");
     if (eta) eta.textContent = MC.ui.autoSub ? MC.ui.autoSub() : "";
+    const cur = this.STEPS.find(s => s.key === this._now);
     const head = MC.ui.$("#asHead");
-    if (head) {
-      const cur = this.STEPS.find(s => s.key === this._now);
-      head.textContent = this._now ? cur.label + "…" : "できました";
+    if (head && !this._fail) head.textContent = this._now ? cur.label + "…" : "できました";
+    /* 段が変わったときだけ1行読み上げる。リスト全体に aria-live を張ると、
+       0.5秒ごとの再描画で6項目を延々と読み直す(沈黙より悪い) */
+    const say = MC.ui.$("#asSay");
+    if (say) {
+      const line = this._fail ? "うまくいきませんでした"
+        : this._now ? cur.label : "できました";
+      if (say.textContent !== line) say.textContent = line;
     }
     const host = MC.ui.$("#asSteps");
     if (!host) return;
-    host.innerHTML = this.STEPS.map(s => {
+    /* ★ 0.5秒ごとに innerHTML を全置換するのをやめる(2026-08-01 レビュー14件)。
+       毎回すべての <li> と <i> が新しいノードに差し替わっていたため、
+       ・済んだ✓の asPop(.35s) が 5〜9分ずっと跳ね続ける
+       ・now の asPulse(1.3s) が周期の38%までしか進まずワープする
+       ・読み上げが6項目を0.5秒ごとに全文読み直す
+       という、いちばん見ている場所がいちばん落ち着かない状態になっていた。
+       骨は1度だけ作り、以後は**変わった属性だけ**書き換える。
+       class を毎回代入しないのが要 ─ 同じ値でも代入するとアニメが再生される */
+    if (host.children.length !== this.STEPS.length) {
+      host.innerHTML = this.STEPS.map(s =>
+        `<li class="as-step" data-k="${s.key}"><i></i>`
+        + `<span class="as-step-t"></span><span class="as-step-sub"></span></li>`).join("");
+    }
+    this.STEPS.forEach((s, i) => {
+      const li = host.children[i]; if (!li) return;
       const done = this._done.includes(s.key), now = s.key === this._now;
-      const icon = done ? '<i class="fa-solid fa-check"></i>'
-        : now ? '<i class="fa-solid fa-circle"></i>' : "<i></i>";
-      const sub = (now && this._sub) ? `<span class="as-step-sub">${MC.ui.esc(this._sub)}</span>` : "";
-      /* 済んだ段は「何ができたか」で言う(2026-08-01 レビューP1) */
-      const text = done ? (s.done || s.label) : s.label;
-      return `<li class="as-step${done ? " done" : now ? " now" : ""}">${icon}`
-        + `<span>${MC.ui.esc(text)}</span>${sub}</li>`;
-    }).join("");
+      const cls = "as-step" + (done ? " done" : now ? " now" : "");
+      if (li.className !== cls) li.className = cls;
+      const ic = done ? "fa-solid fa-check" : now ? "fa-solid fa-circle" : "";
+      const iEl = li.querySelector("i");
+      if (iEl && iEl.className !== ic) iEl.className = ic;
+      /* 済んだ段は「何ができたか」で言う */
+      const t = done ? (s.done || s.label) : s.label;
+      const tEl = li.querySelector(".as-step-t");
+      if (tEl && tEl.textContent !== t) tEl.textContent = t;
+      /* 済んだ段は成果(mark)、いまの段は補足(_sub) */
+      const st = (done ? this._doneSub[s.key] : (now ? this._sub : null)) || "";
+      const sEl = li.querySelector(".as-step-sub");
+      if (sEl && sEl.textContent !== st) sEl.textContent = st;
+    });
   },
 };
 
@@ -2742,29 +2843,60 @@ MC.ui.autoStage = {
 MC.ui.autoSub = () => {
   const total = MC.ui._autoEtaSec || 0;
   if (!(total > 30)) return "";
-  const left = total - (performance.now() - (MC.ui._autoT0 || performance.now())) / 1000;
+  const el = (performance.now() - (MC.ui._autoT0 || performance.now())) / 1000;
+  const left = total - el;
+  /* ★ 見積りを超えたら「まもなく」を言い続けない(2026-08-01 レビュー14件)。
+     iPhone の実測がまだ無い以上、見積りが外れるのは前提。外れたときに
+     嘘を言い続けるより、経過を正直に出すほうが不安が小さい */
+  if (left <= 0) return `もう少しかかっています・経過 ${Math.max(1, Math.round(el / 60))}分`;
   if (left <= 45) return "まもなく完成します";
-  return `完成まで およそ${Math.max(1, Math.round(left / 60))}分・このままお待ちください`;
+  /* 「このままお待ちください」は画面下の固定文へ移した。ここに足すと
+     320px 幅で2行に折り返して、数字が読みにくくなる(実測 27px→46px) */
+  return `あと およそ${Math.max(1, Math.round(left / 60))}分`;
+};
+
+/* 中止は「失敗」ではない。失敗の顔(理由と次の一手)を出すべきではないので、
+   例外の型で分ける。message は使わないが name で判別する */
+MC.ui.AutoCancelled = class extends Error {
+  constructor() { super("やめました"); this.name = "AutoCancelled"; }
 };
 
 MC.ui.runAuto = async () => {
   if (MC.ui._busy || (MC.exporter && MC.exporter.running)) return;
   if (!MC.media.slotClips().length) return;
-  MC.ui._autoCancel = false;
-  MC.ui._autoRunning = true;      // 段の切れ目で鍵が外れないようにする
-  MC.ui._autoT0 = performance.now();
-  MC.ui._autoEtaSec = MC.ui.autoEtaSec();   // 総所要は入口で1回だけ見積もる
-  MC.ui.applyAutoChoices();
-  MC.ui.setBusy(true);
-  MC.ui.autoStage.open();          // ここから先はおまかせ専用の1画面だけ
-  const tick = setInterval(() => MC.ui.autoStage.render(), 500);   // 残り時間を減らす
+  let tick = null;
   try {
+    /* ★ _autoRunning は try の**中**で立てる(2026-08-01 レビュー14件)。外で立てると、
+       ここから autoStage.open() までのどれかが投げたとき finally に入らず、
+       鍵が永久に返らない。setBusy(false) は _autoRunning が立っている間ずっと
+       握り潰される(setBusy の先頭)ので、画面のボタンが二度と有効にならず、
+       リロード以外に復帰手段が無くなる */
+    MC.ui._autoCancel = false;
+    MC.ui._autoRunning = true;      // 段の切れ目で鍵が外れないようにする
+    MC.ui._autoT0 = performance.now();
+    MC.ui._autoEtaSec = MC.ui.autoEtaSec();   // 総所要は入口で1回だけ見積もる
+    MC.ui.applyAutoChoices();
+    MC.ui.setBusy(true);
+    MC.ui.autoStage.open();          // ここから先はおまかせ専用の1画面だけ
+    tick = setInterval(() => MC.ui.autoStage.render(), 500);   // 残り時間を減らす
     /* ① 傾き(自動) → ② 同期 → ③ 音声(おすすめ) → ④ 音楽の解析 */
     await MC.ui.runEasy({ auto: true });
-    if (MC.ui._autoCancel || !MC.S.showIn == null) { /* 進捗は runEasy 側が出す */ }
+    /* ★ `!MC.S.showIn == null` は `(boolean) == null` で**常に false**、
+       しかも本体が空だった。この製品で一度事故った型そのもの(消した工程名が
+       条件に残り `数値 < undefined` が常に false になった件)なので撤去する */
+    if (MC.ui._autoCancel) throw new MC.ui.AutoCancelled();
+    MC.ui.autoStage.mark("scan",
+      (MC.S.showIn != null && MC.S.showOut != null)
+        ? `演奏している ${Math.max(1, Math.round((MC.S.showOut - MC.S.showIn) / 60))}分を見つけました` : "");
     /* runEasy が音声で止まる分岐は auto では通らない(先に決めてあるため)。
-       ここまで来て showIn が無い= 解析に失敗している */
-    if (MC.S.showIn == null || MC.S.showOut == null) return;
+       ここまで来て showIn が無い= 解析に失敗している。
+       ★ 黙って return してはいけない(2026-08-01 レビュー14件)。finally が全画面を畳むので、
+         7分待った人の画面が理由も出ないまま消えるだけになる */
+    if (MC.S.showIn == null || MC.S.showOut == null)
+      throw new Error("演奏している場所を見つけられませんでした");
+    /* 映像解析は <video> をシークで専有する(visual/color も同じ)。
+       ここから先はプレビューを止める ─ 取り合うと絵も解析も乱れる */
+    MC.preview.pause();
     MC.ui.autoStage.step("finish");
     /* ⑤ 長さと開始位置を決め打ちで確定 → ⑥ 映像解析とカット割 → ⑦ 書き出し
        ★ ここで当て直すのが要。applyLengthChoice は
@@ -2779,26 +2911,54 @@ MC.ui.runAuto = async () => {
     MC.saveState();
     MC.ui.refreshJourney();
     await MC.ui.runEasyFinish();
-    if (MC.ui._autoCancel || !MC.S.easyDone) return;
+    if (MC.ui._autoCancel) throw new MC.ui.AutoCancelled();
+    if (!MC.S.easyDone) throw new Error("カメラの切り替えを決められませんでした");
+    MC.ui.autoStage.mark("finish",
+      `カットを ${((MC.S.cutList || []).length) || 0} 個 作りました`);
     MC.ui.refreshJourney();
+    /* ★ 6段目のチェックを点け、「できました」を一拍だけ見せてから畳む
+       (2026-08-01 レビュー14件)。ここが無いと finishAll() が一度も呼ばれず、
+       5〜9分かけた仕事の**完成の瞬間が画面に存在しない** */
     MC.ui.autoStage.step("export");
+    MC.ui.autoStage.finishAll();
+    await new Promise(r => setTimeout(r, 700));
     /* 書き出しは専用の全画面(#exportOverlay)が受け持つ。
        そちらが出るので、おまかせの画面はここで畳む ─ 2枚重ねない */
     MC.ui.autoStage.close();
+    /* ★ 鍵を**先に**返す(2026-08-01 レビュー14件)。#exportBtn のハンドラは1行目で
+       `if (MC.ui._busy) return;` を通る。setBusy(false) は _autoRunning が
+       立っている間ずっと握り潰されるため、ここで返さないと click が即 return し、
+       書き出しが1バイトも始まらないまま全画面が畳まれていた
+       ─ 自走がいちばん最後に無言で死ぬ経路。本番 v1.64.0 にも入っている */
+    MC.ui._autoRunning = false;
+    MC.ui.setBusy(false);
     const btn = MC.ui.$("#exportBtn");
-    if (btn && !btn.disabled) btn.click();
+    if (!btn || btn.disabled) throw new Error("書き出しを始められませんでした");
+    btn.click();
   } catch (e) {
-    console.error(e);
-    MC.ui.showErrorLog(e);
-    /* 失敗したら、こだわりへ逃がす。自走が黙って止まるのがいちばん困る */
-    MC.ui.setSetupTab("pro");
-    MC.ui._tabsForced = true;
-    MC.ui.refreshSetupTabs();
-    MC.ui.toast("自動でできませんでした。こだわりで続けられます");
+    if (e && e.name === "AutoCancelled") {
+      MC.ui.autoStage.close();
+      MC.ui.toast("やめました。こだわりで続けられます");
+      MC.ui.setSetupTab("pro");
+      MC.ui._tabsForced = true;
+      MC.ui.refreshSetupTabs();
+    } else {
+      console.error(e);
+      MC.ui.showErrorLog(e);
+      /* ★ 失敗しても全画面は畳まない(2026-08-01 レビュー14件)。
+         #easyStatus も #errorLog も、この全画面(z-index 130)の**下**にある。
+         畳んで裏へ逃がすと「画面がふっと消えた」だけになり、
+         実機で何が起きたのかを本人が誰にも伝えられない */
+      MC.ui.autoStage.fail(e);
+      MC.ui.setSetupTab("pro");
+      MC.ui._tabsForced = true;
+      MC.ui.refreshSetupTabs();
+    }
   } finally {
-    clearInterval(tick);
-    MC.ui.autoStage.close();      // 途中で失敗しても必ず畳む(canvas を元へ戻す)
-    MC.ui._autoRunning = false;   // ここで初めて鍵を返す
+    if (tick) clearInterval(tick);
+    /* 失敗の顔を出しているときだけは畳まない。それ以外は必ず畳む(canvasを戻す) */
+    if (!MC.ui.autoStage._fail) MC.ui.autoStage.close();
+    MC.ui._autoRunning = false;   // 成功経路では上で返済済み(二重でも無害)
     MC.ui.setBusy(false);
     MC.ui.renderAll();
     MC.ui.refreshJourney();
@@ -2852,12 +3012,26 @@ MC.ui.runEasy = async (opt) => {
       const fixed = await MC.ui.autoHorizon(p);
       MC.log("auto: 傾きを直した本数=" + fixed);
       MC.ui.renderClips();
+      MC.ui.autoStage.mark("tilt", fixed ? `${fixed}本の傾きを直しました` : "傾きは大丈夫でした");
+      /* ★ ここでプレビューを実際に流す(2026-08-01 レビュー14件)。autoStage.open() の
+         play() は、この直後に走る runEasy 先頭の pause() が**同期的に**
+         打ち消していた(最初の await より前)ので、主役のプレビューは
+         一度も動いていなかった。
+         傾き検出(horizon.suggest)は <video> をシークで専有するため、
+         流すのはそれが済んだこの位置から。同期・音の読み込み・音楽の解析は
+         音しか見ないので取り合いにならない。いちばん長く無言になるのが
+         この区間で、絵が止まっていると「固まった」としか見えない */
+      MC.ui.autoPreviewPlay();
     }
     if (vids.length >= 2) {
       p.step(tiltSteps + 1, "音を合わせています…")
         .pulse("音を合わせています…", auto ? { sub: MC.ui.autoSub() } : undefined);
       if (auto) MC.ui.autoStage.step("sync");
       await MC.sync.run(p);
+      {
+        const off = Math.max(0, ...vids.map(c => Math.abs(c.offset || 0)));
+        if (auto) MC.ui.autoStage.mark("sync", `ズレ ${off.toFixed(2)}秒 を合わせました`);
+      }
       /* 同期に成功したら、失敗時に前倒しで開いたタブを本来の条件へ戻す
          (立てっぱなしだと以後ずっと序盤からタブが出る) */
       MC.ui._tabsForced = false;
@@ -2868,6 +3042,8 @@ MC.ui.runEasy = async (opt) => {
       MC.ui.autoStage.step("audio");
       const pick = MC.ui.autoPickAudio();
       MC.log("auto: 音声=" + (pick ? pick.name : "(なし)"));
+      MC.ui.autoStage.mark("audio",
+        pick ? `${MZP.shortName(pick.name)} の音がいちばんきれいでした` : "");
       MC.ui.autoStage.step("scan");
     }
     if (vids.length >= 2 && !MC.S.audioDecided) {
@@ -2886,6 +3062,7 @@ MC.ui.runEasy = async (opt) => {
        手動同期(#syncBtn)が唯一の復旧手段なので、失敗時だけ前倒しで出す */
     MC.ui._tabsForced = true;
     MC.ui.refreshSetupTabs();
+    if (MC.ui._autoRunning) throw e;   // ★ 自走中は上へ返す(理由を全画面に出すため)
   } finally {
     MC.ui.setBusy(false);
     MC.ui.renderAll();   // 途中で止まってもタイムライン等の表示を状態に合わせ直す
@@ -2906,7 +3083,11 @@ MC.ui.runEasy = async (opt) => {
 MC.ui.scanSteps = () => 2;
 
 MC.ui.runEasyScan = async (pIn, base = 0) => {
-  if (!pIn && MC.ui._busy) return;
+  /* ★ 自走中は _busy を見ない(2026-08-01 レビュー14件)。runAuto は段の切れ目で鍵が
+     外れないよう先に setBusy(true) してから呼ぶので、ここで _busy を見ると
+     自分が掛けた鍵で自分が弾かれる。二重起動の防止は runAuto の入口が受け持つ
+     (runEasy には既に同じ断りがある。こちらだけ抜けていた) */
+  if (!pIn && MC.ui._busy && !MC.ui._autoRunning) return;
   if (!pIn) { MC.ui.setBusy(true); MC.ui.clearErrorLog(); MC.preview.pause(); }
   const p = pIn || MZP.start({ mount: "#easyStatus", chapter: "音楽の解析", delay: 0,
                                steps: MC.ui.scanSteps(), label: "音楽を解析しています…" });
@@ -2922,7 +3103,13 @@ MC.ui.runEasyScan = async (pIn, base = 0) => {
     const onProg = fr => {
       const pctTxt = `音を読み込み中 ${Math.round(Math.max(0, Math.min(1, fr)) * 100)}%`;
       p.pulse("演奏の始まりと終わりを調べています…", { sub: pctTxt });
-      if (MC.ui.autoStage) { MC.ui.autoStage._sub = pctTxt; MC.ui.autoStage.render(); }
+      /* 段の中の進み具合にも流す(2026-08-01 レビュー14件)。段単位でしか進まないと、
+         いちばん長い段でバーも%も数分間 1 も動かず「固まった」と読まれる */
+      if (MC.ui.autoStage) {
+        MC.ui.autoStage._sub = pctTxt;
+        MC.ui.autoStage._inner = Math.max(0, Math.min(0.8, (fr || 0) * 0.8));
+        MC.ui.autoStage.render();
+      }
     };
     try { s = await MC.salute.detect(onProg); }
     catch (e) { MC.log("scan: 演奏区間を検出できず →", e.message); }
@@ -2969,6 +3156,11 @@ MC.ui.runEasyScan = async (pIn, base = 0) => {
     console.error(e);
     p.fail("処理に失敗しました", { detail: e.message });
     MC.ui.showErrorLog(e);
+    /* ★ 自走中は握り潰さない(2026-08-01 レビュー14件)。ここで飲み込むと runAuto の catch へ
+       永久に届かない。しかも p.fail の描画先(#easyStatus)も showErrorLog の
+       描画先(#errorLog)も、おまかせ全画面(z-index 130)の**下**にあるので、
+       利用者には何ひとつ見えないまま画面だけが消えていた */
+    if (MC.ui._autoRunning) throw e;
   } finally {
     if (!pIn) { MC.ui.setBusy(false); MC.ui.renderAll(); }
   }
@@ -2990,7 +3182,12 @@ MC.ui.finishSteps = () => {
 };
 
 MC.ui.runEasyFinish = async (pIn, base = 0) => {
-  if (!pIn && MC.ui._busy) return;
+  /* ★ ここが、おまかせがいちばん手前で黙って死んでいた場所(2026-08-01 レビュー14件)。
+     runAuto は `await MC.ui.runEasyFinish();` と**引数なし**で呼ぶので pIn は
+     undefined。_busy は自走中ずっと true なので、この行で即 return していた。
+     結果、カット割も色そろえも1行も走らず、easyDone が false のまま
+     呼び出し元が黙って return して全画面が消える ─ 本番 v1.64.0 も同じ */
+  if (!pIn && MC.ui._busy && !MC.ui._autoRunning) return;
   const t0 = performance.now();   // 次回の見積りを実測へ寄せるため
   if (!pIn) { MC.ui.setBusy(true); MC.ui.clearErrorLog(); MC.preview.pause(); }
   const p = pIn || MZP.start({ mount: "#easyStatus", chapter: "仕上げ", delay: 0,
@@ -3040,7 +3237,7 @@ MC.ui.runEasyFinish = async (pIn, base = 0) => {
     /* 分析が終わったことを目立たせて知らせる(2026-07-23 優さん指示)。
        スマホは分析中に別アプリへ切り替えていることが多いので、
        戻ってきたとき/戻る前どちらでも気づけるように出す */
-    MC.ui.notifyAnalysisDone();
+    MC.ui.notifyAnalysisDone({ silent: !!MC.ui._autoRunning });
     /* ここからの主役は書き出し。おまかせボタン自体を「動画を書き出す」に
        化けさせ、次にすることを迷わせない(2026-07-21 優さん指示) */
     MC.S.easyDone = true;
@@ -3061,6 +3258,11 @@ MC.ui.runEasyFinish = async (pIn, base = 0) => {
     console.error(e);
     p.fail("処理に失敗しました", { detail: e.message });
     MC.ui.showErrorLog(e);
+    /* ★ 自走中は握り潰さない(2026-08-01 レビュー14件)。ここで飲み込むと runAuto の catch へ
+       永久に届かない。しかも p.fail の描画先(#easyStatus)も showErrorLog の
+       描画先(#errorLog)も、おまかせ全画面(z-index 130)の**下**にあるので、
+       利用者には何ひとつ見えないまま画面だけが消えていた */
+    if (MC.ui._autoRunning) throw e;
   } finally {
     if (!pIn) { MC.ui.setBusy(false); MC.ui.renderAll(); }
   }
@@ -3315,11 +3517,24 @@ MC.ui.wire = () => {
   /* おまかせ全画面の中止。走っている処理にも止まれと伝える */
   { const c = MC.ui.$("#asCancel");
     if (c) c.onclick = () => {
+      /* ★ 確認を挟む(2026-08-01 レビュー14件)。7分待った直後の1タップで全部消えるのは重すぎる */
+      if (!window.confirm("やめますか？\nここまでの解析結果は残ります。")) return;
       MC.ui._autoCancel = true;
       if (MC.exporter) MC.exporter.cancelFlag = true;
       if (MC.sync && MC.sync.cancel) MC.sync.cancel();
+      /* ★ 押しても即座には畳まない(2026-08-01 レビュー14件)。畳んでも解析は動き続けるうえ、
+         _autoRunning が立っている間は setBusy(false) が握り潰されるので、
+         裏の画面はボタンが全部無効のまま数分固まって見えていた
+         (「やめたのに何も押せない・端末が熱い」がいちばん信用を失う)。
+         実際に止まるまで、この画面で「やめています…」と言って待つ */
+      MC.ui.autoStage.cancelling();
+    }; }
+  /* 失敗の顔の2つのボタン。もう一度おまかせ / 自分で仕上げる */
+  { const r = MC.ui.$("#asRetry");
+    if (r) r.onclick = () => { MC.ui.autoStage.close(); MC.ui.runAuto(); }; }
+  { const m = MC.ui.$("#asManual");
+    if (m) m.onclick = () => {
       MC.ui.autoStage.close();
-      MC.ui.toast("中止しました。こだわりで続けられます");
       MC.ui.setSetupTab("pro");
       MC.ui._tabsForced = true;
       MC.ui.refreshSetupTabs();

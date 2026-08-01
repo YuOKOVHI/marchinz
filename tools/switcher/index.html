@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-app-v="1.65.0">
+<html lang="ja" data-mz-app-v="1.66.0">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -17,7 +17,7 @@
 <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
 <link rel="stylesheet" href="/tools/shared/progress.css">
 <link rel="stylesheet" href="/tools/shared/journey.css">
-<link rel="stylesheet" href="css/style.css?v=1.65.0">
+<link rel="stylesheet" href="css/style.css?v=1.66.0">
 <link rel="stylesheet" href="/tools/shared/sitechrome.css">
 </head>
 <body data-mz-tool="switcher">
@@ -464,6 +464,11 @@
   <div class="as-inner">
     <p id="asTitle" class="as-title">
       <span class="as-badge">おまかせ</span><span id="asHead">動画を作っています</span></p>
+    <!-- 何をおまかせしたのかを出す。預けた内容が見えないと安心できない -->
+    <p id="asWhat" class="as-what">60秒のハイライト・盛り上がるところから・MarchinZカラー</p>
+    <!-- 段が変わったときだけ1行読み上げる。リスト側に aria-live を張ると
+         0.5秒ごとの再描画で6項目を延々と読み直してしまう -->
+    <p id="asSay" class="mz-sr-only" role="status" aria-live="polite"></p>
 
     <!-- プレビュー。処理中の絵がそのまま見える(ここへ #cv を移す) -->
     <div id="asPreview" class="as-preview"></div>
@@ -475,9 +480,23 @@
     <!-- 段のチェックリスト。済んだものに✓が点いていく -->
     <!-- 段が進んだことを読み上げにも伝える。3分間、視覚以外の手がかりが
          これしか無い(2026-08-01 レビューP0) -->
-    <ol id="asSteps" class="as-steps" aria-live="polite" aria-atomic="false"></ol>
+    <ol id="asSteps" class="as-steps"></ol>
 
-    <button type="button" id="asCancel" class="btn ghost as-cancel">中止する</button>
+    <!-- うまくいかなかったときは、畳まずにここで理由と次の一手を出す。
+         #easyStatus も #errorLog もこの全画面(z-index 130)の下にあるため、
+         畳んで裏へ逃がすと「画面がふっと消えた」だけになる -->
+    <div id="asFail" class="as-fail" hidden>
+      <p class="as-fail-h"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> うまくいきませんでした</p>
+      <p id="asFailMsg" class="as-fail-msg"></p>
+      <p class="as-fail-hint">動画が1本だけだったり、素材が短すぎると、ここで止まることがあります。</p>
+      <div class="as-fail-btns">
+        <button type="button" id="asRetry" class="btn primary">もう一度おまかせでやる</button>
+        <button type="button" id="asManual" class="btn ghost">自分で仕上げる</button>
+      </div>
+    </div>
+
+    <p class="as-wait">このままお待ちください。画面を閉じても止まりません</p>
+    <button type="button" id="asCancel" class="btn ghost as-cancel">やめる</button>
   </div>
 </div>
 
@@ -556,28 +575,28 @@
 <script src="vendor/mp4box.all.min.js"></script>
 <script src="vendor/mp4-muxer.min.js"></script>
 <script src="vendor/fft.js"></script>
-<script src="js/state.js?v=1.65.0"></script>
-<script src="js/layout.js?v=1.65.0"></script>
-<script src="js/media.js?v=1.65.0"></script>
-<script src="js/audio.js?v=1.65.0"></script>
-<script src="js/sync.js?v=1.65.0"></script>
-<script src="js/beats.js?v=1.65.0"></script>
-<script src="js/sections.js?v=1.65.0"></script>
-<script src="js/highlight.js?v=1.65.0"></script>
-<script src="js/visual.js?v=1.65.0"></script>
-<script src="js/director.js?v=1.65.0"></script>
-<script src="js/colormatch.js?v=1.65.0"></script>
+<script src="js/state.js?v=1.66.0"></script>
+<script src="js/layout.js?v=1.66.0"></script>
+<script src="js/media.js?v=1.66.0"></script>
+<script src="js/audio.js?v=1.66.0"></script>
+<script src="js/sync.js?v=1.66.0"></script>
+<script src="js/beats.js?v=1.66.0"></script>
+<script src="js/sections.js?v=1.66.0"></script>
+<script src="js/highlight.js?v=1.66.0"></script>
+<script src="js/visual.js?v=1.66.0"></script>
+<script src="js/director.js?v=1.66.0"></script>
+<script src="js/colormatch.js?v=1.66.0"></script>
 <!-- horizon.js(自動傾き検出)を読み込みに戻した(2026-08-01 優さん指示
      「おまかせは傾き補正も自動で行う」)。2026-07-28 に外したのは
      **こだわりで自動提案をやめた**ためで、実装自体は生きていた。
      こだわりでは今も提案しない ─ 使うのは おまかせ の自走だけ -->
-<script src="js/horizon.js?v=1.65.0"></script>
-<script src="js/salute.js?v=1.65.0"></script>
-<script src="js/preview.js?v=1.65.0"></script>
-<script src="js/timeline.js?v=1.65.0"></script>
-<script src="js/cutmode.js?v=1.65.0"></script>
-<script src="js/exporter.js?v=1.65.0"></script>
-<script src="js/ui.js?v=1.65.0"></script>
-<script src="js/app.js?v=1.65.0"></script>
+<script src="js/horizon.js?v=1.66.0"></script>
+<script src="js/salute.js?v=1.66.0"></script>
+<script src="js/preview.js?v=1.66.0"></script>
+<script src="js/timeline.js?v=1.66.0"></script>
+<script src="js/cutmode.js?v=1.66.0"></script>
+<script src="js/exporter.js?v=1.66.0"></script>
+<script src="js/ui.js?v=1.66.0"></script>
+<script src="js/app.js?v=1.66.0"></script>
 </body>
 </html>

@@ -52,14 +52,23 @@ MC.director.run = async (p, base = 0) => {
   const [tIn, tOut] = MC.trimRange();
   const vclips = MC.S.clips.filter(c => !c.isAudio && !c.isImage);
   for (let ci = 0; ci < vclips.length; ci++) {
+    /* ★ 中断点(2026-08-01 レビュー14件)。ここに1つも無かったため、おまかせ画面で
+       「やめる」を押しても解析は最後まで走り続け、その間ずっと
+       端末が熱いまま裏の画面のボタンも全部無効だった */
+    if (MC.ui && MC.ui._autoCancel) throw new Error("やめました");
     const c = vclips[ci];
     p.step(base + 2, `映像を見ています…(${ci + 1}/${vclips.length}本目)`);
     const l0 = Math.max(0, tIn - c.offset);
     const l1 = Math.max(l0 + 1, Math.min(c.duration, tOut - c.offset));
     // 進捗は全クリップ通算(クリップごとに0%へ巻き戻さない)
-    await MC.visual.analyzeClip(c, l0, l1, (i, n) =>
-      p.set((ci + i / n) / vclips.length, null,
-            { sub: `${ci + 1} / ${vclips.length} 本目・${MZP.shortName(c.name)}` }));
+    await MC.visual.analyzeClip(c, l0, l1, (i, n) => {
+      if (MC.ui && MC.ui._autoCancel) throw new Error("やめました");
+      const fr = (ci + i / n) / vclips.length;
+      p.set(fr, null, { sub: `${ci + 1} / ${vclips.length} 本目・${MZP.shortName(c.name)}` });
+      /* おまかせ画面のバーにも流す。この段(w:30)がいちばん長いので、
+         ここが段単位のままだと数分間 51% で固定されて見える */
+      if (MC.ui && MC.ui.autoStage) MC.ui.autoStage.progress(fr * 0.85);
+    });
   }
 
   // ③ カット割
