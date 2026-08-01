@@ -409,6 +409,8 @@
           <button id="downloadBtn" class="btn big"><i class="fa-solid fa-download"></i> ダウンロード</button>
         </div>
         <div id="doneNote" class="status"></div>
+        <a href="/#creators-heading" id="doneToTools" class="btn ghost eo-tools">
+          <i class="fa-solid fa-grip" aria-hidden="true"></i> ツール一覧に戻る</a>
       </div>
     </section>
 
@@ -556,7 +558,15 @@
         <button type="button" id="eoStatsCopy" class="btn small ghost"><i class="fa-regular fa-copy"></i> コピー</button>
       </details>
     </div>
-    <button type="button" id="eoClose" class="btn ghost eo-close" hidden>閉じる</button>
+    <!-- ★ 作り終えたら、次にどこへ行けるかを出す(2026-08-02 優さん指示)。
+         いままで完成画面の出口は「閉じる」だけで、他のツールへ移る道が
+         メニューの中にしか無かった。ツール一覧はトップページの
+         クリエイター節(4ツールのカードが並ぶ) -->
+    <div class="eo-exit">
+      <a href="/#creators-heading" id="eoToTools" class="btn ghost eo-tools">
+        <i class="fa-solid fa-grip" aria-hidden="true"></i> ツール一覧に戻る</a>
+      <button type="button" id="eoClose" class="btn ghost eo-close" hidden>閉じる</button>
+    </div>
   </div>
 </div>
 
