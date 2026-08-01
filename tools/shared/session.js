@@ -69,8 +69,15 @@ window.MZ_SESSION = (() => {
       S._wantAwake = !!want;
       try {
         if (want && !S._wakeLock && navigator.wakeLock) {
-          S._wakeLock = await navigator.wakeLock.request("screen");
-          S._wakeLock.addEventListener("release", () => { S._wakeLock = null; });
+          /* ★ 自分の錠前かどうかを見てから消す(2026-08-01 レビュー)。
+             前は共有の S._wakeLock をそのまま null にしていた。
+             解放 → すぐ取り直し、の順に起きると（自走の終わりに一度返して
+             書き出しの頭でまた取る、がまさにこれ）、**新しい錠前を持ったまま**
+             古い解放通知が来て null にしてしまう。以後 awake が嘘になり、
+             次の復帰でもう1本重ねて取る ─ 解放されるのは最後の1本だけ */
+          const lk = await navigator.wakeLock.request("screen");
+          lk.addEventListener("release", () => { if (S._wakeLock === lk) S._wakeLock = null; });
+          S._wakeLock = lk;
         } else if (!want && S._wakeLock) {
           const w = S._wakeLock;
           S._wakeLock = null;

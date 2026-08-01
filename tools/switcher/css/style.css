@@ -1563,7 +1563,10 @@ html:has(body.mz-auto-stage), body.mz-auto-stage {
   animation: asPop .35s cubic-bezier(.2, 1.4, .4, 1); }
 .as-step-t { min-width: 0; }
 /* 空のときに幅を取らないよう、中身が無ければ余白も出さない */
+/* ★ 1行に固定する(2026-08-01 レビュー実測)。長い成果文が2行に折れると
+   行の高さが 34px → 54px に膨らみ、左のテキストと視覚的にぶつかっていた */
 .as-step-sub { margin-left: auto; padding-left: 8px; text-align: right;
+  max-width: 45%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   font-size: 12px; color: var(--tx2); font-weight: 500; }
 .as-step-sub:empty { padding-left: 0; }
 
@@ -1579,10 +1582,26 @@ html:has(body.mz-auto-stage), body.mz-auto-stage {
 .as-fail-btns .btn { min-height: 44px; }
 .as-fail-det { font-size: 12px; color: var(--tx2); }
 .as-fail-det summary { min-height: 32px; display: flex; align-items: center; cursor: pointer; }
+.as-fail-copy { min-height: 44px; width: 100%; margin: 6px 0 0; }
 .as-fail-log { margin: 6px 0 0; padding: 8px; max-height: 200px; overflow: auto;
   background: rgba(15, 33, 56, .05); border-radius: 8px;
   font-size: 11px; line-height: 1.5; white-space: pre-wrap; word-break: break-all;
   -webkit-user-select: text; user-select: text; }
+/* ★ 失敗したら、用済みになったものを畳む(2026-08-01 レビュー実測)。
+   実測で失敗時の中身は 1034px = 375×635 画面の1.6倍あり、
+   「うまくいきませんでした」の見出しが画面の外に落ちていた。
+   削るべきは説明ではなく、**失敗して用済みになったもの**のほう */
+.auto-stage.as-failed .as-steps,
+.auto-stage.as-failed .as-bar,
+.auto-stage.as-failed .as-meta,
+.auto-stage.as-failed #asWhat { display: none; }
+.auto-stage.as-failed .as-preview canvas { max-height: 96px; }
+/* 止まったのだから、動くものは全部止める */
+.auto-stage.as-failed .as-step i,
+.auto-stage.as-failed .as-bar-fill { animation: none !important; }
+.as-step.failed { color: var(--tx); }
+.as-step.failed i { background: rgba(197, 48, 48, .14); color: #c53030; }
+
 /* 画面が消えると止まる、の案内。読み飛ばされない濃さにする */
 .as-wake { margin: -2px 0 0; padding: 8px 10px; border-radius: 10px;
   background: rgba(197, 138, 0, .12); color: var(--tx); font-size: 12px; line-height: 1.5; }

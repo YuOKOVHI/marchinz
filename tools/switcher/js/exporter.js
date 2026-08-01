@@ -96,9 +96,15 @@ MC.exporter.VideoPipe = class {
       /* ★ どのカメラで落ちたのかを残す(2026-08-01 実機)。
          iPhoneが返す "Decoder failure" だけでは3本のうちどれの話か分からず、
          次の一手が打てなかった。名前と素材の形まで書いて、そのまま送れるようにする */
+      /* ★ ブラウザが返す英語(例 "Decoder failure")を画面へ流さない
+         (2026-08-01 レビュー)。専門用語を出さない方針が、いちばん見られる
+         1行で破れていた。生の原因は raw に逃がし、記録にだけ出す */
       error: e => {
         const why = (e && (e.message || e.name)) || String(e);
-        this.error = new Error(`映像を読み解けませんでした（${this.clip.name}）: ${why}`);
+        const err = new Error(`${this.clip.name} を読み込めませんでした`);
+        err.raw = why;
+        MC.log(`デコード失敗 ${this.clip.name}: ${why}`);
+        this.error = err;
       },
     });
     this.decoder.configure(cfg);
@@ -112,13 +118,14 @@ MC.exporter.VideoPipe = class {
        VideoFrame は iOS では IOSurface(GPUメモリ)を掴むため、1080p×3カメラ×8枚で
        数十MBになる。**iOS実機での速度影響は未検証**。詰まって遅くなるようなら
        この係数(6/4)を戻す。デスクトップの水位(12/8)は変えない */
-    /* ★ iOSの水位をさらに下げた(2026-08-01 実機 Decoder failure)。
-       3分割の縦積みは3本とも毎コマ描くのでデコーダを1本も減らせない。
-       減らせるのは各本が同時に抱える VideoFrame の枚数だけ ─
-       VideoFrame は iOS では IOSurface(GPUメモリ)を掴むため、
-       1080p×3本×4枚が同時に生きていた。6/4 → 4/2 にする */
-    while (!this.eof && this.decoder.decodeQueueSize < (MC.isIOS ? 4 : 12) &&
-           this.frames.length < (MC.isIOS ? 2 : 8)) {
+    /* ★ 6/4 に戻した(2026-08-01 レビュー)。4/2 まで絞ると先読みが2枚しか
+       効かず、1コマごとに waitDequeue(最大50ms)を挟む回数が増えて
+       書き出しがそのぶん延びる。解析だけで7分かかる端末で書き出しまで
+       延ばすと、**別の理由(時間切れ・発熱)で落ちる**確率が上がる。
+       メモリが原因という確証が無いまま速度を捨てるのは分が悪い。
+       本命の park(<video>を手放す)を先に試し、変えるのは1つずつにする */
+    while (!this.eof && this.decoder.decodeQueueSize < (MC.isIOS ? 6 : 12) &&
+           this.frames.length < (MC.isIOS ? 4 : 8)) {
       const { value: s, done } = await this.cursor.next();
       if (done) {
         this.eof = true;
@@ -268,7 +275,10 @@ MC.exporter.encodeAudio = async (muxer, clip, fromLocalSec, durSec, onStatus) =>
   const need = Math.ceil(durSec * OUT_SR);
   /* ★ 音を整える(2026-08-01 優さん指示)。PCM経路と同じものを通す ─
      片方だけに入れると、素材の種類で音の仕上がりが変わってしまう */
-  const _pol = MC.audio.Polish ? new MC.audio.Polish(clip.stats, OUT_SR) : null;
+  /* 材料は「音声に使うクリップ」に揃える。経路ごとに参照元が違うと、
+     同じ素材でも AAC と リニアPCM で仕上がりが変わる */
+  const _pol = MC.audio.Polish
+    ? new MC.audio.Polish((MC.getClip(MC.S.audioClipId) || clip || {}).stats, OUT_SR) : null;
   let error = null;
   const rsL = new MC.audio.LinearResampler(cfg.sampleRate, OUT_SR);
   const rsR = new MC.audio.LinearResampler(cfg.sampleRate, OUT_SR);
@@ -296,7 +306,7 @@ MC.exporter.encodeAudio = async (muxer, clip, fromLocalSec, durSec, onStatus) =>
   const emitWindow = () => {
     if (!pendN || encErr) { pendN = 0; return; }
     const n = pendN;
-    if (_pol) { _pol.run(pend, 0, n, 0); _pol.run(pend, FR, n, 1); }   // ★ 音を整える
+    if (_pol) _pol.runStereo(pend, 0, FR, n);   // ★ 音を整える(左右まとめて)
     const data = new Float32Array(n * 2);
     data.set(pend.subarray(0, n), 0);
     data.set(pend.subarray(FR, FR + n), n);
@@ -401,7 +411,11 @@ MC.exporter.encodeAudioPcm = async (muxer, src, fromLocalSec, durSec, onStatus) 
      超えた分は角を丸める。窓をまたいで状態が続くのでここで1つだけ作る */
   const _pol = MC.audio.Polish
     ? new MC.audio.Polish((MC.getClip(MC.S.audioClipId) || {}).stats, OUT_SR) : null;
-  if (_pol) MC.log(`音を整えます: 音量 ×${_pol.gain.toFixed(2)} / 沈める境目 ${_pol.thr.toFixed(4)}`);
+  if (_pol) {
+    MC.log(_pol.measured
+      ? `音を整えます: 音量 ×${_pol.gain.toFixed(2)} / 沈める境目 ${_pol.thr.toFixed(4)}`
+      : "音の高さを測れていないので、音はそのまま入れます");
+  }
   const primingSec = (await MC.exporter.measureAacDelay()) / 48000;
   const from = Math.max(0, fromLocalSec + primingSec);
 
@@ -422,7 +436,7 @@ MC.exporter.encodeAudioPcm = async (muxer, src, fromLocalSec, durSec, onStatus) 
   const flushWindow = async () => {
     if (!pendN || encErr) { pendN = 0; return; }
     const n = pendN;
-    if (_pol) { _pol.run(pend, 0, n, 0); _pol.run(pend, FR, n, 1); }   // ★ 音を整える
+    if (_pol) _pol.runStereo(pend, 0, FR, n);   // ★ 音を整える(左右まとめて)
     const data = new Float32Array(n * 2);
     data.set(pend.subarray(0, n), 0);
     data.set(pend.subarray(FR, FR + n), n);
@@ -1071,16 +1085,16 @@ MC.exporter._exportVideoPart = async (opt) => {
     });
     const baseCfg = { codec: "avc1.640028", width: w, height: h,
                       bitrate: MC.exporter.videoBitrate(), framerate: fps };
-    /* ★ iPhoneで映像3本のときは名指しをやめる(2026-08-01 実機 Decoder failure)。
-       iPhoneが同時に使える映像処理の口数は限られていて、
-       デコーダ3本＋エンコーダ1本で取り合いになる。名指しをやめると
-       端末が空いている側へ回せる。そのぶん遅くなるが、落ちるよりよい。
-       ※これは実機ログからの推測。次の実機で当たりかどうかが分かる */
-    const _tight = MC.isIOS
-      && MC.activeClips().filter(c => !c.isAudio && !c.isImage).length >= 3;
-    if (_tight) MC.log("export: 映像3本なのでエンコーダは端末まかせにします(iPhone)");
-    let vcfg = _tight ? { ...baseCfg }
-                      : { ...baseCfg, hardwareAcceleration: "prefer-hardware" };
+    /* ★ 差し戻し(2026-08-01 レビュー)。「映像3本のiPhoneでは名指しをやめる」を
+       入れたが、hardwareAcceleration を**書かない**のは "no-preference" と
+       同義で、これは元々の既定値。端末は結局ハードウェアを選ぶので
+       まったくの no-op だった。しかも直後の
+       `if (!s.supported) vcfg = baseCfg` が自分自身への代入になり、
+       取りこぼしの受け皿まで死んでいた。
+       口を1つ空けたいなら渡すべきは "prefer-software" だが、それは
+       書き出しを大幅に遅くする。本命は <video>3本を手放すほう(park)なので、
+       まずそれだけを試す ─ 一度に2つ動かすと、どちらが効いたか判らない */
+    let vcfg = { ...baseCfg, hardwareAcceleration: "prefer-hardware" };
     try {
       const s = await VideoEncoder.isConfigSupported(vcfg);
       if (!s || !s.supported) vcfg = baseCfg;
@@ -1640,16 +1654,16 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle, opts) => {
       codec: "avc1.640028", width: w, height: h,
       bitrate: MC.exporter.videoBitrate(), framerate: fps,
     };
-    /* ★ iPhoneで映像3本のときは名指しをやめる(2026-08-01 実機 Decoder failure)。
-       iPhoneが同時に使える映像処理の口数は限られていて、
-       デコーダ3本＋エンコーダ1本で取り合いになる。名指しをやめると
-       端末が空いている側へ回せる。そのぶん遅くなるが、落ちるよりよい。
-       ※これは実機ログからの推測。次の実機で当たりかどうかが分かる */
-    const _tight = MC.isIOS
-      && MC.activeClips().filter(c => !c.isAudio && !c.isImage).length >= 3;
-    if (_tight) MC.log("export: 映像3本なのでエンコーダは端末まかせにします(iPhone)");
-    let vcfg = _tight ? { ...baseCfg }
-                      : { ...baseCfg, hardwareAcceleration: "prefer-hardware" };
+    /* ★ 差し戻し(2026-08-01 レビュー)。「映像3本のiPhoneでは名指しをやめる」を
+       入れたが、hardwareAcceleration を**書かない**のは "no-preference" と
+       同義で、これは元々の既定値。端末は結局ハードウェアを選ぶので
+       まったくの no-op だった。しかも直後の
+       `if (!s.supported) vcfg = baseCfg` が自分自身への代入になり、
+       取りこぼしの受け皿まで死んでいた。
+       口を1つ空けたいなら渡すべきは "prefer-software" だが、それは
+       書き出しを大幅に遅くする。本命は <video>3本を手放すほう(park)なので、
+       まずそれだけを試す ─ 一度に2つ動かすと、どちらが効いたか判らない */
+    let vcfg = { ...baseCfg, hardwareAcceleration: "prefer-hardware" };
     try {
       const s = await VideoEncoder.isConfigSupported(vcfg);
       if (!s || !s.supported) vcfg = baseCfg;

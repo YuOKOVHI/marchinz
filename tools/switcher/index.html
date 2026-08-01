@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-app-v="1.67.0">
+<html lang="ja" data-mz-app-v="1.68.0">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -15,10 +15,10 @@
 <meta property="og:image" content="https://marchinz.netlify.app/ogp-card.png">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
-<link rel="stylesheet" href="/tools/shared/progress.css">
-<link rel="stylesheet" href="/tools/shared/journey.css">
-<link rel="stylesheet" href="css/style.css?v=1.67.0">
-<link rel="stylesheet" href="/tools/shared/sitechrome.css">
+<link rel="stylesheet" href="/tools/shared/progress.css?v=1.68.0">
+<link rel="stylesheet" href="/tools/shared/journey.css?v=1.68.0">
+<link rel="stylesheet" href="css/style.css?v=1.68.0">
+<link rel="stylesheet" href="/tools/shared/sitechrome.css?v=1.68.0">
 </head>
 <body data-mz-tool="switcher">
 <header class="topbar">
@@ -490,20 +490,29 @@
     <div id="asFail" class="as-fail" hidden>
       <p class="as-fail-h"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> うまくいきませんでした</p>
       <p id="asFailMsg" class="as-fail-msg"></p>
-      <p class="as-fail-hint">動画が1本だけだったり、素材が短すぎると、ここで止まることがあります。</p>
+      <!-- 手がかりは失敗ごとに入れ替える(JSが書く) -->
+      <p id="asFailHint" class="as-fail-hint"></p>
+      <!-- ★ 選択肢は2つに戻す(2026-08-01 レビュー)。困っている人に差し出す
+           3つのうち1つが「記録をコピーする」では、用事の重さが釣り合わない -->
       <div class="as-fail-btns">
         <button type="button" id="asRetry" class="btn primary">もう一度おまかせでやる</button>
         <button type="button" id="asManual" class="btn ghost">自分で仕上げる</button>
-        <button type="button" id="asCopy" class="btn ghost">この記録をコピーする</button>
       </div>
-      <!-- 打ち直しでは肝心のログが落ちる。そのまま貼って送れる形で出しておく -->
+      <!-- 打ち直しでは肝心のログが落ちる。そのまま貼って送れる形で出しておく。
+           コピーのボタンは記録そのもののところに置く（1つのことに2つのUIを当てない） -->
       <details id="asFailDetails" class="as-fail-det">
-        <summary>くわしい記録</summary>
+        <summary>この失敗の記録</summary>
+        <button type="button" id="asCopy" class="btn ghost as-fail-copy">コピーして送る</button>
         <pre id="asFailLog" class="as-fail-log"></pre>
       </details>
     </div>
 
-    <p class="as-wait">このままお待ちください。画面を閉じても止まりません</p>
+    <!-- ★ 「画面を閉じても止まりません」は事実として誤り(2026-08-01 レビュー)。
+         iOS は画面が消えれば止まるし、タブを閉じても止まる。しかも #asWake の
+         「画面が消えると止まります」と正面衝突していた（普通の人にとって
+         「画面を閉じる」と「画面が消える」は同じ行為）。
+         書き出しの全画面と同じ言い方に揃える -->
+    <p class="as-wait">このままお待ちください。ほかのアプリを開くと止まります</p>
     <button type="button" id="asCancel" class="btn ghost as-cancel">やめる</button>
   </div>
 </div>
@@ -573,38 +582,38 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="/tools/shared/limits.js"></script>
-<script src="/tools/shared/sitechrome.js"></script>
-<script src="/tools/shared/progress.js"></script>
-<script src="/tools/shared/journey.js"></script>
-<script src="/tools/shared/watermark.js"></script>
-<script src="/tools/shared/mp4source.js"></script>
-<script src="/tools/shared/session.js"></script>
+<script src="/tools/shared/limits.js?v=1.68.0"></script>
+<script src="/tools/shared/sitechrome.js?v=1.68.0"></script>
+<script src="/tools/shared/progress.js?v=1.68.0"></script>
+<script src="/tools/shared/journey.js?v=1.68.0"></script>
+<script src="/tools/shared/watermark.js?v=1.68.0"></script>
+<script src="/tools/shared/mp4source.js?v=1.68.0"></script>
+<script src="/tools/shared/session.js?v=1.68.0"></script>
 <script src="vendor/mp4box.all.min.js"></script>
 <script src="vendor/mp4-muxer.min.js"></script>
 <script src="vendor/fft.js"></script>
-<script src="js/state.js?v=1.67.0"></script>
-<script src="js/layout.js?v=1.67.0"></script>
-<script src="js/media.js?v=1.67.0"></script>
-<script src="js/audio.js?v=1.67.0"></script>
-<script src="js/sync.js?v=1.67.0"></script>
-<script src="js/beats.js?v=1.67.0"></script>
-<script src="js/sections.js?v=1.67.0"></script>
-<script src="js/highlight.js?v=1.67.0"></script>
-<script src="js/visual.js?v=1.67.0"></script>
-<script src="js/director.js?v=1.67.0"></script>
-<script src="js/colormatch.js?v=1.67.0"></script>
+<script src="js/state.js?v=1.68.0"></script>
+<script src="js/layout.js?v=1.68.0"></script>
+<script src="js/media.js?v=1.68.0"></script>
+<script src="js/audio.js?v=1.68.0"></script>
+<script src="js/sync.js?v=1.68.0"></script>
+<script src="js/beats.js?v=1.68.0"></script>
+<script src="js/sections.js?v=1.68.0"></script>
+<script src="js/highlight.js?v=1.68.0"></script>
+<script src="js/visual.js?v=1.68.0"></script>
+<script src="js/director.js?v=1.68.0"></script>
+<script src="js/colormatch.js?v=1.68.0"></script>
 <!-- horizon.js(自動傾き検出)を読み込みに戻した(2026-08-01 優さん指示
      「おまかせは傾き補正も自動で行う」)。2026-07-28 に外したのは
      **こだわりで自動提案をやめた**ためで、実装自体は生きていた。
      こだわりでは今も提案しない ─ 使うのは おまかせ の自走だけ -->
-<script src="js/horizon.js?v=1.67.0"></script>
-<script src="js/salute.js?v=1.67.0"></script>
-<script src="js/preview.js?v=1.67.0"></script>
-<script src="js/timeline.js?v=1.67.0"></script>
-<script src="js/cutmode.js?v=1.67.0"></script>
-<script src="js/exporter.js?v=1.67.0"></script>
-<script src="js/ui.js?v=1.67.0"></script>
-<script src="js/app.js?v=1.67.0"></script>
+<script src="js/horizon.js?v=1.68.0"></script>
+<script src="js/salute.js?v=1.68.0"></script>
+<script src="js/preview.js?v=1.68.0"></script>
+<script src="js/timeline.js?v=1.68.0"></script>
+<script src="js/cutmode.js?v=1.68.0"></script>
+<script src="js/exporter.js?v=1.68.0"></script>
+<script src="js/ui.js?v=1.68.0"></script>
+<script src="js/app.js?v=1.68.0"></script>
 </body>
 </html>

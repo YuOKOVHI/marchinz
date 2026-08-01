@@ -268,39 +268,70 @@ MC.audio.recommend = () => {
 MC.audio.Polish = class {
   constructor(stats, sr) {
     const s = stats || {};
-    /* ピークを -1dBFS(0.891) へそろえる。小さすぎる素材を持ち上げすぎて
-       雑音まで大きくしないよう、上げ幅には天井を置く */
-    const peak = Math.max(0.02, Math.min(1, s.peak || 0.5));
-    this.gain = Math.max(0.5, Math.min(6, 0.891 / peak));
-    /* 沈める境目。測った雑音の少し上に置く ─ ちょうどに置くと
-       弱音の演奏まで沈む */
+    /* ★ ゲインの根拠を「ピーク」から「音の平均の高さ」へ替えた
+       (2026-08-01 レビュー 重大)。
+       stats は 8kHz へ間引いた信号から測っている(MC.audio.SR = 8000)。
+       シンバルやスネアの打点は 48kHz では1〜2サンプルの尖りなので、
+       6分の1に間引く線形補間ではその点をほぼ拾えない。
+       実測ピーク 0.9 の素材が 8k では 0.35 に見え、0.891/0.35 = ×2.55 を
+       48kHz の原信号に掛けると真のピークは 2.3 ─ 打点のたびに
+       天井へ張りついて**平らに潰れる**。「割れを直す」つもりの処理が
+       打楽器を潰す、といういちばん困る壊れ方だった。
+       平均の高さ(RMS)は間引きに強い。こちらを根拠にし、上げ幅も控えめにする。
+       ピークの面倒は、下の本物のリミッタが実際の 48kHz サンプルを見て見る */
+    this.measured = !!(s.rms > 0);
+    /* 測れていない素材は素通し。既定値で走らせて黙って持ち上げない */
+    const TARGET = 0.10;                       // 約 -20dBFS。放送より控えめ
+    this.gain = this.measured
+      ? Math.max(1, Math.min(2.5, TARGET / Math.max(s.rms, 1e-4))) : 1;
+    /* 沈める境目。★ 単位を合わせる(2026-08-01 レビュー 中)。
+       noise は0.5秒窓のRMSなので、比べる側も**RMSの包絡**にする。
+       前はピーク包絡と比べていたため、同じ音でも1.5〜3倍ずれて
+       「雑音より下を沈める」がほとんど発火していなかった */
     this.thr = Math.max(1e-4, (s.noise || 0) * 2.5);
     const rc = 1 / (2 * Math.PI * 70);      // 70Hz以下を落とす
     this.a = rc / (rc + 1 / sr);
-    this.st = [{ x: 0, y: 0, env: 0 }, { x: 0, y: 0, env: 0 }];
+    this.hp = [{ x: 0, y: 0 }, { x: 0, y: 0 }];
+    /* 沈める判断とリミッタは左右で**まとめて**決める。
+       別々にすると、片側だけ下がって音の位置が動く */
+    this.env2 = 0;      // RMSの二乗の包絡
+    this.red = 1;       // いまの下げ量(1=下げていない)
+    this.sr = sr;
+    this.CEIL = 0.97;   // 天井。整数へ落とすときの余裕を残す
   }
-  /* buf の off から n サンプルを、その場で整える。ch は 0=左 1=右 */
-  run(buf, off, n, ch) {
-    const st = this.st[ch], a = this.a, g = this.gain, thr = this.thr;
-    const ATK = 0.01, REL = 0.0008;   // 立ち上がりは速く、戻りはゆっくり
+
+  /* 左右まとめて整える。buf の oL/oR から n サンプルずつ、その場で書き換える */
+  runStereo(buf, oL, oR, n) {
+    const a = this.a, g = this.gain, thr2 = this.thr * this.thr, CEIL = this.CEIL;
+    const hL = this.hp[0], hR = this.hp[1];
+    /* 包絡の時定数。sr に対して実時間で決める(端末やSRが変わってもぶれない) */
+    const ATK = 1 - Math.exp(-1 / (0.005 * this.sr));   // 5ms
+    const REL = 1 - Math.exp(-1 / (0.200 * this.sr));   // 200ms
+    const LA  = 1 - Math.exp(-1 / (0.001 * this.sr));   // リミッタは1msで掴む
+    const LR  = 1 - Math.exp(-1 / (0.150 * this.sr));   // 戻りは150ms
     for (let i = 0; i < n; i++) {
-      const x = buf[off + i];
-      const y = a * (st.y + x - st.x);          // ① 低い唸りを落とす
-      st.x = x; st.y = y;
-      const m = Math.abs(y);
-      st.env += (m > st.env ? ATK : REL) * (m - st.env);
+      // ① 低い唸り(風・空調・足音)を落とす
+      const xl = buf[oL + i], xr = buf[oR + i];
+      const yl = a * (hL.y + xl - hL.x); hL.x = xl; hL.y = yl;
+      const yr = a * (hR.y + xr - hR.x); hR.x = xr; hR.y = yr;
+      // ② 測った雑音より下を沈める(単位はRMS同士で比べる)
+      const p = (yl * yl + yr * yr) * 0.5;
+      this.env2 += (p > this.env2 ? ATK : REL) * (p - this.env2);
       let k = 1;
-      if (st.env < thr) { const r = st.env / thr; k = r * r; }   // ② 沈める
-      let v = y * k * g;                                        // ③ そろえる
-      const A = Math.abs(v);
-      if (A > 0.891) {                                          // ④ 角を丸める
-        /* ★ 天井は 1.0 ではなく 0.995 に置く(2026-08-01 QAが捕まえた)。
-           tanh は飽和すると 1 を返すので 0.891 + 0.109×1 = **ちょうど 1.0000**。
-           整数に落とすときに端が折り返して、割れを直すはずの処理が
-           自分で割れた音を作る。丸める幅を天井より内側に取る */
-        v = (v < 0 ? -1 : 1) * (0.891 + 0.104 * Math.tanh((A - 0.891) / 0.104));
-      }
-      buf[off + i] = v;
+      if (this.env2 < thr2) { const r = this.env2 / thr2; k = r; }   // r=(env/thr)^2
+      // ③ 音の高さをそろえる
+      let vl = yl * k * g, vr = yr * k * g;
+      /* ④ 天井を超えそうなら「潰す」のではなく「下げる」。
+         これが本物のリミッタ。角を丸めるだけだと、見込みを外したとき
+         打点が軒並みフラットトップになる */
+      const A = Math.max(Math.abs(vl), Math.abs(vr));
+      const want = A > CEIL ? CEIL / A : 1;
+      this.red += (want < this.red ? LA : LR) * (want - this.red);
+      vl *= this.red; vr *= this.red;
+      // 保険。ここへ来るのは立ち上がりの1〜2サンプルだけ
+      if (vl > CEIL) vl = CEIL; else if (vl < -CEIL) vl = -CEIL;
+      if (vr > CEIL) vr = CEIL; else if (vr < -CEIL) vr = -CEIL;
+      buf[oL + i] = vl; buf[oR + i] = vr;
     }
   }
 };

@@ -3270,39 +3270,95 @@ async function countSamples(ns, file, fromSec) {
     return "きれいな②を選ぶ / 旧基準はざわついた①を選んでいた";
   });
 
-  await test("★音を整える: 小さい音はそろえ、天井は超えず、低い唸りは落ちる", async () => {
+  await test("★音を整える: 打楽器を潰さず、天井を超えず、左右がずれない", async () => {
     const w = await compEnv();
-    const SR = 48000, N = 4800;
-    const sine = (amp, hz) => {
-      const b = new Float32Array(N);
-      for (let i = 0; i < N; i++) b[i] = amp * Math.sin(2 * Math.PI * hz * i / SR);
-      return b;
-    };
-    const peakOf = b => { let p = 0; for (let i = 0; i < N; i++) p = Math.max(p, Math.abs(b[i])); return p; };
+    const SR = 48000, N = 24000;
+    const peakOf = (b, o, n) => { let p = 0; for (let i = 0; i < n; i++) p = Math.max(p, Math.abs(b[o+i])); return p; };
+    /* 左右まとめて渡す形。実際の書き出しと同じ置き方(L=0.. / R=FR..) */
+    const mk = (fn) => { const b = new Float32Array(N * 2);
+      for (let i = 0; i < N; i++) { const v = fn(i); b[i] = v; b[N + i] = v; } return b; };
+    const tone = (amp, hz) => mk(i => amp * Math.sin(2 * Math.PI * hz * i / SR));
 
-    /* ① 小さい音は、人が触らなくても天井の少し下までそろう */
-    const a = sine(0.25, 1000);
-    new w.MC.audio.Polish({ peak: 0.25, noise: 0.0005 }, SR).run(a, 0, N, 0);
-    const pa = peakOf(a);
-    if (!(pa > 0.55)) throw new Error("小さい音がそろわない(peak=" + pa.toFixed(3) + ")");
-    if (pa >= 1) throw new Error("天井を超えた");
+    /* ① 測れていない素材は素通し。既定値で黙って持ち上げない
+       （前は stats 無しで ×1.78 = 約+5dB を勝手に掛けていた） */
+    {
+      const b = tone(0.30, 1000), before = peakOf(b, 0, N);
+      new w.MC.audio.Polish(undefined, SR).runStereo(b, 0, N, N);
+      const after = peakOf(b, 0, N);
+      if (after > before * 1.05) throw new Error(`測っていないのに持ち上げた ${before.toFixed(2)}→${after.toFixed(2)}`);
+    }
 
-    /* ② 見込みより大きい音が来ても、新しい音割れを作らない。
-       ここが甘いと「音量を自動でそろえる」が「音を割る」に化ける */
-    const b = sine(0.98, 1000);
-    new w.MC.audio.Polish({ peak: 0.20, noise: 0.0001 }, SR).run(b, 0, N, 0);
-    const pb = peakOf(b);
-    if (pb >= 1) throw new Error("音が割れた(peak=" + pb.toFixed(4) + ")");
+    /* ② ★本件の核心。stats は 8kHz へ間引いた信号から測るので、打楽器の
+       ピークを取りこぼす。「実際は大きいのに、統計上は小さく見える」素材でも
+       平らに潰れないこと。前の実装(ピーク基準の固定ゲイン+角丸め)だと
+       打点のたびにフラットトップになっていた */
+    {
+      const b = mk(i => (i % 4800 < 6 ? 0.95 : 0.12 * Math.sin(2 * Math.PI * 440 * i / SR)));
+      const P = new w.MC.audio.Polish({ rms: 0.05, noise: 0.001, peak: 0.30 }, SR);  // 統計は過小
+      P.runStereo(b, 0, N, N);
+      const pk = peakOf(b, 0, N);
+      if (pk > P.CEIL + 1e-6) throw new Error("天井を超えた " + pk.toFixed(4));
+      let flat = 0;
+      for (let i = 0; i < N; i++) if (Math.abs(b[i]) >= P.CEIL * 0.999) flat++;
+      if (flat > N * 0.01) throw new Error(`平らに潰れている(${flat}/${N} サンプルが天井に貼りつき)`);
+    }
 
     /* ③ 低い唸り(風・空調・足音)は落ちる。同じ大きさの1kHzと比べる */
-    const lo = sine(0.5, 30), hi = sine(0.5, 1000);
-    new w.MC.audio.Polish({ peak: 0.5, noise: 0 }, SR).run(lo, 0, N, 0);
-    new w.MC.audio.Polish({ peak: 0.5, noise: 0 }, SR).run(hi, 0, N, 0);
-    const ratio = peakOf(lo) / Math.max(1e-9, peakOf(hi));
-    if (!(ratio < 0.75)) throw new Error("低い唸りが落ちていない(比 " + ratio.toFixed(2) + ")");
-    /* ── 対照: 1kHz は落とさない(なんでも小さくする実装でも通ってしまわないように) ── */
-    if (!(peakOf(hi) > 0.55)) throw new Error("演奏の帯域まで削っている");
-    return `小さい音→${pa.toFixed(2)} / 大きい音→${pb.toFixed(4)}(<1) / 30Hzは1kHzの${ratio.toFixed(2)}倍`;
+    {
+      const lo = tone(0.5, 30), hi = tone(0.5, 1000);
+      const st = { rms: 0.1, noise: 0, peak: 0.5 };
+      new w.MC.audio.Polish(st, SR).runStereo(lo, 0, N, N);
+      new w.MC.audio.Polish(st, SR).runStereo(hi, 0, N, N);
+      const ratio = peakOf(lo, 0, N) / Math.max(1e-9, peakOf(hi, 0, N));
+      if (!(ratio < 0.75)) throw new Error("低い唸りが落ちていない(比 " + ratio.toFixed(2) + ")");
+      /* 対照: 演奏の帯域まで削っていないこと */
+      if (!(peakOf(hi, 0, N) > 0.3)) throw new Error("1kHzまで削っている");
+    }
+
+    /* ④ 左右がずれない。片チャンネルだけ下げると音の位置が動く */
+    {
+      const b = new Float32Array(N * 2);
+      for (let i = 0; i < N; i++) {
+        const v = Math.sin(2 * Math.PI * 440 * i / SR);
+        b[i] = 0.9 * v; b[N + i] = 0.3 * v;          // 左が右の3倍
+      }
+      new w.MC.audio.Polish({ rms: 0.4, noise: 0, peak: 0.9 }, SR).runStereo(b, 0, N, N);
+      const r = peakOf(b, 0, N) / Math.max(1e-9, peakOf(b, N, N));
+      if (Math.abs(r - 3) > 0.15) throw new Error("左右の釣り合いが崩れた(比 " + r.toFixed(2) + ")");
+    }
+    return "素通し/潰れない/低域は落ちる/左右そのまま の4点";
+  });
+
+  await test("★古い錠前の解放通知で、新しい錠前まで捨てない", async () => {
+    const w = await compEnv();
+    const S = w.MZ_SESSION;
+    const made = [];
+    const keep = Object.getOwnPropertyDescriptor(w.navigator, "wakeLock");
+    try {
+      Object.defineProperty(w.navigator, "wakeLock", {
+        configurable: true,
+        value: { request: async () => {
+          const l = { _ls: [], addEventListener(t, f) { this._ls.push(f); }, release: async () => {} };
+          made.push(l); return l;
+        } },
+      });
+      /* 自走の終わりに一度返し、書き出しの頭でまた取る ─ 実際に通る順番 */
+      await S.keepAwake(true);    // 錠前A
+      await S.keepAwake(false);
+      await S.keepAwake(true);    // 錠前B
+      if (!S.awake) throw new Error("取り直した直後なのに掛かっていない");
+      /* いま、Aの解放通知が遅れて届く */
+      made[0]._ls.forEach(f => f());
+      if (!S.awake) throw new Error("古い錠前の解放通知で、新しい錠前まで捨てた");
+      /* 対照: Bの通知なら、ちゃんと外れること(なんでも無視する実装にしない) */
+      made[made.length - 1]._ls.forEach(f => f());
+      if (S.awake) throw new Error("自分の解放通知を無視している(=この試験に歯が無い)");
+    } finally {
+      await S.keepAwake(false).catch(() => {});
+      if (keep) Object.defineProperty(w.navigator, "wakeLock", keep);
+      else delete w.navigator.wakeLock;
+    }
+    return `錠前${made.length}本: 古い通知では消えない / 自分の通知では消える`;
   });
 
   await test("★失敗の記録が、そのまま送れる形で出る", async () => {

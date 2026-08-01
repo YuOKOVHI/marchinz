@@ -204,19 +204,46 @@ MC.ui.showExportStats = () => {
 /* 失敗の記録をひとまとめにしてコピーする(2026-08-01 優さん指示)。
    実機で踏んだものをそのまま送れるようにする ─ 画面の写真では文字が読めず、
    打ち直しでは肝心のログが落ちる */
-MC.ui.copyReport = async () => {
+/* 失敗の中身から、次に何をすればよいかを1つだけ出す。
+   固定文だと「正解に近いが理由が違う」案内になり、次に活かせない */
+MC.ui.failHint = m => {
+  m = String(m || "");
+  if (/読み込めませんでした|デコード/.test(m)) {
+    return "カメラが3本あると、iPhoneでは重すぎて止まることがあります。1本減らすか、画質を軽いほうにしてお試しください。";
+  }
+  if (/演奏している場所/.test(m)) {
+    return "拍手やアナウンスだけの場所だと、演奏の始まりを見つけられないことがあります。演奏が入っているところから取り込み直してください。";
+  }
+  if (/カメラの切り替え/.test(m)) {
+    return "動画が1本だけだと、切り替える相手がいないので止まります。2本以上でお試しください。";
+  }
+  if (/書き出しを始められません/.test(m)) {
+    return "書き出せる長さを超えているか、素材がまだ揃っていないことがあります。こだわりで長さを確かめてください。";
+  }
+  return "素材が短すぎたり、途中で画面が消えると、ここで止まることがあります。";
+};
+
+/* 記録を組み立てる。画面に出すものとコピーするものを同じ1本から作る ─
+   別々に作ると、見えているものと送られるものが食い違う */
+MC.ui.buildReport = () => {
   const de = document.documentElement;
   const ver = de.getAttribute("data-mz-app-v") || de.getAttribute("data-mz-version") || "(版不明)";
   const mats = MC.S.clips.filter(c => !c.isAudio).map(c => {
-    const wh = (c.vw && c.vh) ? ` ${c.vw}x${c.vh}` : "";
+    const wh = (c.width && c.height) ? ` ${c.width}x${c.height}` : "";
     return `${c.name}${wh} ${(c.duration || 0).toFixed(1)}s`;
   }).join(" / ");
   const f = MC.ui.autoStage && MC.ui.autoStage._fail;
-  const text = `MarchinZ Switcher ${ver}\n${navigator.userAgent}\n`
+  /* 生の原因(ブラウザが返す英語)は画面には出さないが、記録には必ず残す */
+  const raw = (f && f.raw) ? `\n原因(そのまま): ${f.raw}` : "";
+  return `MarchinZ Switcher ${ver}\n${navigator.userAgent}\n`
     + `比率: ${MC.S.preset || "?"} / レイアウト: ${MC.S.layoutId || "?"}\n`
     + `素材: ${mats}\n`
-    + `エラー: ${f ? (f.message || String(f)) : "(なし)"}\n`
+    + `エラー: ${f ? (f.message || String(f)) : "(なし)"}${raw}\n`
     + `---- ログ ----\n${(MC.debug || []).slice(-60).join("\n")}`;
+};
+
+MC.ui.copyReport = async () => {
+  const text = MC.ui.buildReport();
   const pre = MC.ui.$("#asFailLog");
   if (pre) pre.textContent = text;
   try {
@@ -2689,6 +2716,8 @@ MC.ui.autoStage = {
   /* _sub=いま動いている段の補足 / _doneSub=済んだ段の成果 / _inner=段の中の進み具合
      _fail=失敗の顔を出しているか / _prevFocus=開く前にフォーカスがあった要素 */
   _sub: null, _doneSub: {}, _inner: 0, _fail: null, _prevFocus: null,
+  /* _failedStep=どの段で止まったか / _wakeWarn=消灯の警告(0=無 1=断られた 2=非対応) */
+  _failedStep: null, _wakeWarn: 0,
 
   open() {
     const el = MC.ui.$("#autoStage");
@@ -2698,6 +2727,9 @@ MC.ui.autoStage = {
        (「カメラを切り替える  音を読み込み中 100%」のような表示) */
     this._done = []; this._now = null;
     this._sub = null; this._doneSub = {}; this._inner = 0; this._fail = null;
+    this._failedStep = null; this._wakeWarn = 0;
+    el.classList.remove("as-failed");
+    const wt0 = el.querySelector(".as-wait"); if (wt0) wt0.hidden = false;
     const fb = MC.ui.$("#asFail"); if (fb) fb.hidden = true;
     const cb = MC.ui.$("#asCancel");
     if (cb) { cb.hidden = false; cb.disabled = false; cb.textContent = "やめる"; }
@@ -2736,7 +2768,8 @@ MC.ui.autoStage = {
     this._home = null;
     el.hidden = true;
     document.body.classList.remove("mz-auto-stage");
-    this._fail = null;
+    el.classList.remove("as-failed");
+    this._fail = null; this._failedStep = null;
     try { if (this._prevFocus && this._prevFocus.focus) this._prevFocus.focus({ preventScroll: true }); }
     catch (e) {}
     this._prevFocus = null;
@@ -2781,19 +2814,45 @@ MC.ui.autoStage = {
     if (!el || el.hidden) return;
     this._fail = err || new Error("うまくいきませんでした");
     const cur = this.STEPS.find(s => s.key === this._now);
+    /* ★ 進行中の見た目をここで全部やめる(2026-08-01 レビュー)。
+       これが無かったため、失敗した画面が
+       ・見出しが「カメラを切り替える…」のまま(render が失敗時は head に触らない)
+       ・失敗した段の青い点が脈打ち続ける(_now を消していない)
+       ・「もう少しかかっています・経過8分」を数え続ける
+       という、どう見ても「まだ動いています」の顔になっていた。
+       しかも下に積まれた失敗の説明は画面の外(実測 375×635 で 21px、
+       横向きでは 181px はみ出す)。v1.66.0 で潰した「失敗が見えない」が
+       別の経路で戻っていた */
+    this._failedStep = this._now;
+    this._now = null;                       // 脈と「…」を同時に止める
+    el.classList.add("as-failed");          // 用済みのものを畳む(CSS)
+    const head = MC.ui.$("#asHead"); if (head) head.textContent = "うまくいきませんでした";
+    const eta = MC.ui.$("#asEta"); if (eta) eta.textContent = "";
+    const wt = el.querySelector(".as-wait"); if (wt) wt.hidden = true;
+    const wk = MC.ui.$("#asWake"); if (wk) wk.hidden = true;
     const msg = MC.ui.$("#asFailMsg");
     if (msg) {
       msg.textContent = (cur ? `「${cur.label}」のところで止まりました。` : "")
         + (this._fail.message || "");
     }
+    /* ★ 手がかりは失敗ごとに変える(2026-08-01 レビュー)。
+       固定文だと、いちばん起きている失敗に間違った答えを出す ─
+       実機の Decoder failure は「3本が重すぎた」なのに
+       「動画が1本だけだと…」と書いてあった。正解に近いのに理由が違うので、
+       次に何をすればいいのかが学べない */
+    const hint = MC.ui.$("#asFailHint");
+    if (hint) hint.textContent = MC.ui.failHint(this._fail.message || "");
     const box = MC.ui.$("#asFail"); if (box) box.hidden = false;
-    /* 押す前から読める形にしておく。コピーが断られる端末でも長押しで拾える */
+    /* 押す前から読める形にしておく。コピーが断られる端末でも長押しで拾える。
+       ★ 中身はコピーされるものと同じ関数から作る ─ 前は画面がログ40行、
+         コピーが版・端末・素材つき60行と、同じ「記録」で別物だった */
     try {
       const pre = MC.ui.$("#asFailLog");
-      if (pre) pre.textContent = ((MC.debug || []).slice(-40).join("\n"));
+      if (pre) pre.textContent = MC.ui.buildReport();
     } catch (e) {}
     const c = MC.ui.$("#asCancel"); if (c) c.hidden = true;
     this.render();
+    try { el.scrollTop = 0; } catch (e) {}   // 失敗の顔を必ず視野へ
   },
   finishAll() { this._done = this.STEPS.map(s => s.key); this._now = null; this._sub = null; this.render(); },
 
@@ -2828,7 +2887,9 @@ MC.ui.autoStage = {
     }
     const pct = MC.ui.$("#asPct"); if (pct) pct.textContent = Math.round(r * 100) + "%";
     const eta = MC.ui.$("#asEta");
-    if (eta) eta.textContent = MC.ui.autoSub ? MC.ui.autoSub() : "";
+    /* ★ 失敗したら数えるのをやめる。隣で「もう少しかかっています」が
+       動き続けると、失敗しているのかまだ動いているのか判らない */
+    if (eta && !this._fail) eta.textContent = MC.ui.autoSub ? MC.ui.autoSub() : "";
     const cur = this.STEPS.find(s => s.key === this._now);
     const head = MC.ui.$("#asHead");
     if (head && !this._fail) head.textContent = this._now ? cur.label + "…" : "できました";
@@ -2845,11 +2906,31 @@ MC.ui.autoStage = {
        できるのは「直し方を伝えること」だけ。開始直後は取得中のことがあるので、
        少し様子を見てから出す(出したり消えたりさせない) */
     const wk = MC.ui.$("#asWake");
-    if (wk) {
+    if (wk && !this._fail) {
+      /* ★ 判定材料を「取れていない」から「断られた」へ替える(2026-08-01 レビュー)。
+         !awake で見ていたため、次の3つが同じ文言になっていた。
+           ① 低電力モードで断られた ← 本来の対象
+           ② そもそも仕組みが無い端末 ← 低電力モードの話をされて困る
+           ③ 別アプリから戻った直後 ← OSが一度解放し、取り直しは非同期。
+              0.5秒の再描画が先に回ると警告が一瞬生えて消える
+         一度立てたら下ろさないのも要 ─ 消えたり出たりするほうが不安になる */
+      const S2 = window.MZ_SESSION;
       const el2 = (performance.now() - (MC.ui._autoT0 || performance.now())) / 1000;
-      const ng = el2 > 6 && window.MZ_SESSION && !MZ_SESSION.awake;
-      const t = ng ? "画面が消えると止まります。設定 → 画面表示と明るさ → 自動ロック を「なし」にしてください（低電力モードでは消灯を止められません）" : "";
+      if (el2 > 6 && S2) {
+        if (S2.wakeDenied) this._wakeWarn = 1;
+        else if (!("wakeLock" in navigator)) this._wakeWarn = 2;
+      }
+      /* 設定アプリの手順は iPhone のものなので、iPhone にだけ出す */
+      const t = this._wakeWarn === 1
+        ? (MC.isIOS
+            ? "この端末では画面の消灯を止められませんでした。ときどき画面を触ってください（設定 → 画面表示と明るさ → 自動ロック を長めにしておくと確実です）"
+            : "この端末では画面の消灯を止められませんでした。ときどき画面を触ってください")
+        : this._wakeWarn === 2
+        ? "画面が消えると止まります。ときどき画面を触ってください"
+        : "";
       if (wk.textContent !== t) { wk.textContent = t; wk.hidden = !t; }
+      /* 待ち方の説明を2つ同時に出さない */
+      const wt2 = el.querySelector(".as-wait"); if (wt2) wt2.hidden = !!t;
     }
     const host = MC.ui.$("#asSteps");
     if (!host) return;
@@ -2869,9 +2950,12 @@ MC.ui.autoStage = {
     this.STEPS.forEach((s, i) => {
       const li = host.children[i]; if (!li) return;
       const done = this._done.includes(s.key), now = s.key === this._now;
-      const cls = "as-step" + (done ? " done" : now ? " now" : "");
+      const cls = "as-step" + ((s.key === this._failedStep) ? " failed"
+        : done ? " done" : now ? " now" : "");
       if (li.className !== cls) li.className = cls;
-      const ic = done ? "fa-solid fa-check" : now ? "fa-solid fa-circle" : "";
+      const bad = (s.key === this._failedStep);
+      const ic = bad ? "fa-solid fa-xmark"
+        : done ? "fa-solid fa-check" : now ? "fa-solid fa-circle" : "";
       const iEl = li.querySelector("i");
       if (iEl && iEl.className !== ic) iEl.className = ic;
       /* 済んだ段は「何ができたか」で言う */
@@ -3090,8 +3174,11 @@ MC.ui.runEasy = async (opt) => {
       MC.ui.autoStage.step("audio");
       const pick = MC.ui.autoPickAudio();
       MC.log("auto: 音声=" + (pick ? pick.name : "(なし)"));
-      MC.ui.autoStage.mark("audio",
-        pick ? `${MZP.shortName(pick.name)} の音がいちばんきれいでした` : "");
+      /* 音を整えたことは、新しい行を足さずに既にある成果の枠で言う。
+         ★ 測れているときだけ言う ─ していないことを言わない */
+      MC.ui.autoStage.mark("audio", pick
+        ? (MZP.shortName(pick.name) + ((pick.stats && pick.stats.peak > 0) ? "・音も整えます" : ""))
+        : "");
       MC.ui.autoStage.step("scan");
     }
     if (vids.length >= 2 && !MC.S.audioDecided) {
