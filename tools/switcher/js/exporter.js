@@ -81,7 +81,7 @@ MC.exporter.VideoPipe = class {
        正しい供給元(cursor)は必ず RAP から返すので、本来ここは通らない。
        通ったということは供給側が壊れているので、握り潰さず数と場所を記録する */
     this.needKey = true;
-    this.droppedDelta = 0;   // 通算(帯とログに出す)
+    this.droppedDelta = 0;   // 通算(記録に出す)
   }
 
   async init(fromLocalSec) {
@@ -138,6 +138,14 @@ MC.exporter.VideoPipe = class {
       const { value: s, done } = await this.cursor.next();
       if (done) {
         this.eof = true;
+        /* ★ 素材が尽きるまでキーフレームが来なかった場合(2026-08-02 レビュー)。
+           下の鍵は「デルタを捨てて落ちないようにする」ものだが、捨てたまま
+           EOF まで行くと**1枚も decode せずに黒/静止のまま静かに終わる**。
+           ここで記録に残さないと、そのときだけログが1行も出ない ─
+           まさにこの製品が何度も踏んできた「黙って壊れる」経路になる */
+        if (this.needKey && this.droppedDelta) {
+          MC.log(`キーフレームが最後まで来ませんでした(${this.droppedDelta}枚捨てて素材が尽きた): ${this.clip.name}`);
+        }
         await this.decoder.flush().catch(() => {});
         this.flushed = true;
         return;
