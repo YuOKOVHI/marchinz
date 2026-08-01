@@ -778,6 +778,33 @@ html, body { max-width: 100%; overflow-x: clip; }
 #doneCard .row .btn { width: 100%; }
 /* 副ボタンは全画面側の「ダウンロード」(.eo-dl=ghost)と同じ静かな顔に */
 #downloadBtn { font-size: 13px; opacity: .85; background: none; padding: 11px 15px; }
+
+/* ============ 別のシーンも作る(2026-08-01 UI/UXレビュー) ============
+   エンジニアが構造だけ置いた部分(mzso-*)の整え。実測375pxで素のUAボタン
+   (Arial 13.3px・高さ24px・OS灰色・間隔0)のままで、
+   ・24px はタップ目標44ptの半分近く
+   ・保存(323x54)の直下にOS標準の顔が並び、別の製品の画面に見えた。
+   1行=候補1つ(アイコン+名前+「何分何秒〜」を右寄せ)にする ─
+   おまかせ全画面の段リストと同じ「名前+値」の文法。
+   2列グリッドは「ドラムライン 4分10秒〜」(実測162px)が半列(約160px)に
+   収まらないので選ばない */
+.mz-scene-offers { margin-top: 14px; padding-top: 12px;
+  border-top: 1px solid var(--line); text-align: left; }
+.mzso-title { margin: 0 0 9px; font-size: 13.5px; font-weight: 700; color: var(--tx); }
+.mzso-title i { color: var(--acc); margin-right: 5px; }
+.mzso-note { display: block; margin-top: 2px; font-size: 11.5px;
+  font-weight: 500; color: var(--tx2); }
+.mzso-list { display: flex; flex-direction: column; gap: 8px; }
+.mzso-btn { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 44px;
+  padding: 10px 14px; font-family: inherit; font-size: 13.5px; font-weight: 700;
+  color: var(--navy); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 10px; cursor: pointer; text-align: left; }
+.mzso-btn i { color: var(--acc); width: 16px; text-align: center; flex: none; }
+.mzso-btn:active { transform: scale(.98); }
+.mzso-btn:hover { border-color: var(--acc); }
+.mzso-t { margin-left: auto; padding-left: 8px; flex: none;
+  font-size: 12px; font-weight: 600; color: var(--tx2);
+  font-variant-numeric: tabular-nums; }
 /* 押せない理由の説明。11pxの薄いhintでは、ブロックの理由を伝える文として弱い */
 .audio-gate-hint { margin-top: 10px; padding: 9px 11px; font-size: 12.5px; line-height: 1.6;
   color: var(--tx2); background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; }
