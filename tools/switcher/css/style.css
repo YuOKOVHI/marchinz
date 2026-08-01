@@ -323,7 +323,10 @@ body.mz-busy-lock #errorLog button { pointer-events: auto; opacity: 1; }
   .topbar { padding: 8px 12px; }
   .mz-logo { height: 28px; }
   .tool-name { font-size: 13px; padding-left: 8px; }
-  .btn { padding: 11px 16px; }
+  /* ★ すべてのボタンに 44pt を保証する(2026-08-01 優さん実機指摘
+     「ボタンのレイアウト気をつけて」)。実測375pxで #audioDecideBtn が
+     42px と、主ボタンなのに小ボタン(44px保証済み)より低かった */
+  .btn { padding: 11px 16px; min-height: 44px; }
   /* IN/OUT・試聴・記録のコピー等。長すぎて書き出せないときの逃げ道が
      この小ボタンなので、親指で外さない大きさを確保する(2026-07-26) */
   .btn.small { padding: 8px 12px; font-size: 12px; min-height: 44px; }
@@ -758,6 +761,23 @@ html, body { max-width: 100%; overflow-x: clip; }
 
 /* ---------- 書き出しの所要時間の目安 / プロジェクトリセット(2026-07-21) ---------- */
 .export-eta-hint { margin: 6px 0 0; font-size: 12px; color: var(--tx2); }
+
+/* ============ 完了・書き出しまわりのボタン(2026-08-01 優さん実機指摘
+   「ボタンのレイアウト気をつけて」) ============ */
+/* 主ボタンは行いっぱいに。実測375pxで「動画を書き出す」が 160px しかなく、
+   いちばん大事なボタンが目測で探すものになっていた(中止が出たら2分割になる) */
+#exportBtn { flex: 1 1 auto; }
+/* ★ 完了カード(パネル側)は保存とダウンロードを縦に積む。
+   実測375pxで 保存125px・ダウンロード148px が 8px 差で横に並び、
+   ・主ボタン(保存)が副ボタンより**狭い**＝視覚的な重みが逆
+   ・違う結果になる2つが親指1本ぶんの距離＝押し間違えの筆頭
+   だった。全画面の完了(#eoDone .eo-actions)は最初から縦積み・主が上・
+   副は静かな文字ボタンで、同じ内容の2画面で並びだけ違う理由も無い。
+   こちらも同じ形に揃える */
+#doneCard .row { flex-direction: column; gap: 10px; }
+#doneCard .row .btn { width: 100%; }
+/* 副ボタンは全画面側の「ダウンロード」(.eo-dl=ghost)と同じ静かな顔に */
+#downloadBtn { font-size: 13px; opacity: .85; background: none; padding: 11px 15px; }
 /* 押せない理由の説明。11pxの薄いhintでは、ブロックの理由を伝える文として弱い */
 .audio-gate-hint { margin-top: 10px; padding: 9px 11px; font-size: 12.5px; line-height: 1.6;
   color: var(--tx2); background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; }

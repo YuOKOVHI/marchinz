@@ -286,28 +286,56 @@ MC.ui.showDone = res => {
     $("#doneNote").textContent = "選んだ場所に書き出し済みです。";
     MC.ui.toast("✔ 書き出しが完了しました");
     mirror();
+    MC.ui.renderSceneOffers();   // 別のシーンも作る(2026-08-01)
     return;
   }
   if (share) {
-    // iOS等: 共有シート保存が主導線、ダウンロードも選べる
+    /* ★ スマホは「動画を保存」1つだけ(2026-08-01 優さん指示「スマホは
+       『動画を保存』だけでいい」)。前はダウンロードも並べていたが、
+       iOS Safari の <a download> は実質使えず(過去の経緯どおり保存先が謎になる)、
+       選択肢が2つあること自体が迷いの種だった。共有シート(Web Share)が唯一の正道 */
     $("#saveBtn").style.display = "inline-flex";
+    const dl = $("#downloadBtn"); if (dl) dl.style.display = "none";
     $("#doneText").innerHTML = `<span class="ok">✓ 準備できました(${(res.blob.size / 1e6).toFixed(1)}MB)</span>`;
-    $("#doneNote").textContent = "「動画を保存」で写真(カメラロール)やファイルへ。「ダウンロード」でファイル保存もできます。";
+    $("#doneNote").textContent = "「動画を保存」で写真(カメラロール)やファイルへ保存できます。";
     MC.ui.toast("✔ 準備できました。保存を押してください");
   } else {
     // PC/Mac: 自動ダウンロード済み。再ダウンロードだけ出す
     $("#saveBtn").style.display = "none";
-    $("#doneText").innerHTML = `<span class="ok">✓ 「${res.name}」を保存しました(${(res.blob.size / 1e6).toFixed(1)}MB)</span>`;
+    const dl = $("#downloadBtn"); if (dl) dl.style.display = "";
+    $("#doneText").innerHTML = `<span class="ok">✓ 「${MC.ui.esc(res.name)}」を保存しました(${(res.blob.size / 1e6).toFixed(1)}MB)</span>`;
     $("#doneNote").textContent = "ダウンロードに保存されています(もう一度保存するには「ダウンロード」)。";
     MC.ui.toast("✔ 書き出しが完了しました");
   }
   mirror();
+  MC.ui.renderSceneOffers();   // 別のシーンも作る(2026-08-01)
 };
 
-/* 保存の実行。iOSはWeb Shareで写真/ファイルへ、それ以外はダウンロード */
+/* 保存できたことを、完了画面とトーストの両方で言う(2026-08-01 優さん指摘
+   「ダウンロード完了の通知がなくわからない」)。
+   ・Web Share は resolve/AbortError で**成功と取り消しが区別できる**ので、
+     成功のときだけ言う(取り消したのに「保存できました」は嘘になる)
+   ・<a download> は完了イベントが取れないが、blob は手元にあり書き込みは
+     即時なので「ダウンロードに保存しました」で実態と合う */
+MC.ui.notifySaved = (r, how) => {
+  const size = r.blob ? `（${(r.blob.size / 1e6).toFixed(1)}MB）` : "";
+  const line = how === "share"
+    ? `✓ 「${MC.ui.esc(r.name)}」を保存しました${size}`
+    : `✓ 「${MC.ui.esc(r.name)}」をダウンロードに保存しました${size}`;
+  const n1 = MC.ui.$("#doneNote"); if (n1) n1.innerHTML = `<span class="ok">${line}</span>`;
+  const n2 = MC.ui.$("#eoDoneNote"); if (n2) n2.innerHTML = `<span class="ok">${line}</span>`;
+  MC.ui.toast(how === "share" ? "✔ 保存できました" : "✔ ダウンロードに保存しました");
+};
+
+/* 共有シートを開く。QAが成功/取り消しを差し替えられるように1枚だけ挟む
+   (navigator.share はページによっては書き換えできない) */
+MC.ui._share = files => navigator.share({ files });
+
+/* 保存の実行。iOSはWeb Shareで写真/ファイルへ、それ以外はダウンロード。
+   返り値で何が起きたかを言う("saved"/"cancelled"/"downloaded"/"none") */
 MC.ui.saveResult = async () => {
   const r = MC.exporter.lastResult;
-  if (!r) return;
+  if (!r) return "none";
   if (MC.exporter.shareMode()) {
     try {
       /* すでに File(OPFSから取り出したもの)ならそのまま渡す。
@@ -316,17 +344,100 @@ MC.ui.saveResult = async () => {
       const file = (r.blob instanceof File && r.blob.name === r.name)
         ? r.blob
         : new File([r.blob], r.name, { type: r.type || r.blob.type });
-      await navigator.share({ files: [file] });
+      await MC.ui._share([file]);
+      MC.ui.notifySaved(r, "share");                    // 成功したときだけ言う
+      return "saved";
     } catch (e) {
-      if (e && e.name === "AbortError") return;         // ユーザーがキャンセル
+      if (e && e.name === "AbortError") return "cancelled";   // 取り消しは黙る
       MC.log("share失敗→ダウンロード:", e && e.message);
       MC.exporter.triggerDownload(r.blob, r.name);        // 最後の手段
+      MC.ui.notifySaved(r, "download");
+      return "downloaded";
     }
-  } else {
-    MC.exporter.triggerDownload(r.blob, r.name);
   }
-  /* ここでは消さない。保存 → ダウンロード と続けて押されると2回目が失敗する
-     (レビュー指摘 2026-07-23)。片付けは「次の書き出し」「やり直し」「起動時」で行う */
+  MC.exporter.triggerDownload(r.blob, r.name);
+  MC.ui.notifySaved(r, "download");
+  return "downloaded";
+  /* lastResult はここでは消さない。保存 → もう一度 と続けて押されると2回目が
+     失敗する(レビュー指摘 2026-07-23)。片付けは「次の書き出し」「やり直し」「起動時」 */
+};
+
+/* 「ダウンロード」ボタン(PC)。実行したら必ず完了の言葉を出す */
+MC.ui.downloadResult = () => {
+  const r = MC.exporter.lastResult;
+  if (!r) return;
+  MC.exporter.triggerDownload(r.blob, r.name);
+  MC.ui.notifySaved(r, "download");
+};
+
+/* ============ 別のシーンも作る(2026-08-01 優さん指示) ============
+   完成のあとに「同じ素材から、別の場面も作れます」を出す。
+   候補は highlight.candidates(開始位置の候補と同じもの)を土台に、
+   **いま書き出した窓と半分以上重なるものを除く**(同じ60秒を2回出さない)。
+   個数は素材(演奏区間)の長さから自然に決まる: 短ければスタートの1個だけ、
+   長ければ最大5個(highlight.MAX)。名前も candidates の語彙をそのまま使う
+   (「大盛り上がり」「バラード」「ドラムライン」「ソロ」「フィナーレ」)。 */
+MC.ui.sceneOffers = () => {
+  try {
+    const [s0, s1] = MC.ui.showRange();
+    if (!(s1 > s0)) return [];
+    const preset = MC.ui.currentPreset(s1 - s0);
+    if (!preset) return [];
+    const lenSec = MC.highlight.presetSec(preset, s1 - s0);
+    const audioClip = MC.getClip(MC.S.audioClipId);
+    const cands = MC.highlight.candidates(audioClip, lenSec, s0, s1);
+    const pIn = MC.S.trimIn != null ? MC.S.trimIn : s0;
+    const pOut = MC.S.trimOut != null ? MC.S.trimOut : pIn + lenSec;
+    return cands.filter(c => {
+      const ov = Math.min(c.t + c.dur, pOut) - Math.max(c.t, pIn);
+      return ov < c.dur * 0.5;   // 半分以上同じ絵になる候補は出さない
+    });
+  } catch (e) { MC.log("sceneOffers: " + e.message); return []; }
+};
+
+/* 完成カードへ「別のシーンも作る」を実らせる。
+   見た目は最小限(並行のデザイン作業がこの画面を触っているため、
+   構造だけ置いて整えは委ねる)。候補が無ければ何も出さない */
+MC.ui.renderSceneOffers = () => {
+  const offers = MC.ui.sceneOffers();
+  const hosts = [
+    { after: MC.ui.$("#doneNote"), id: "doneScenes" },
+    { after: MC.ui.$("#eoDoneNote"), id: "eoDoneScenes" },
+  ];
+  for (const h of hosts) {
+    if (!h.after) continue;
+    let el = document.getElementById(h.id);
+    if (!offers.length) { if (el) el.remove(); continue; }
+    if (!el) {
+      el = document.createElement("div");
+      el.id = h.id;
+      el.className = "mz-scene-offers";
+      h.after.insertAdjacentElement("afterend", el);
+    }
+    const [s0] = MC.ui.showRange();
+    el.innerHTML =
+      '<p class="mzso-title"><i class="fa-solid fa-clapperboard" aria-hidden="true"></i> '
+      + '別のシーンも作れます<span class="mzso-note">(前回の解析を使うので速く終わります)</span></p>'
+      + '<div class="mzso-list" role="group" aria-label="別のシーンの候補">'
+      + offers.map((c, i) =>
+          `<button type="button" class="mzso-btn" data-scene="${i}">`
+          + `<i class="fa-solid ${MC.ui.esc(c.icon || "fa-flag")}" aria-hidden="true"></i> `
+          + `${MC.ui.esc(c.label)}`
+          + `<span class="mzso-t">${MC.ui.fmtLen ? MC.ui.fmtLen(Math.max(0, c.t - s0)) : ""}〜</span>`
+          + `</button>`).join("")
+      + "</div>";
+    el.querySelectorAll("[data-scene]").forEach(b => {
+      b.onclick = () => MC.ui.makeAnotherScene(offers[parseInt(b.dataset.scene, 10)]);
+    });
+  }
+};
+
+/* 候補を押したら、解析は使い回して書き出しまで自走する */
+MC.ui.makeAnotherScene = cand => {
+  if (!cand || MC.ui._busy || (MC.exporter && MC.exporter.running)) return;
+  MC.ui.exportOverlay.close();          // 完成の全画面から自走の全画面へ
+  const dc = MC.ui.$("#doneCard"); if (dc) dc.hidden = true;
+  MC.ui.runAuto({ scene: { key: cand.key, t: cand.t } });
 };
 
 MC.ui.fmtTime = s => {
@@ -581,13 +692,18 @@ MC.ui.renderLimitWhy = () => {
   if (badge) badge.hidden = true;
 };
 
-/* 書き出し完了画面の顔の注意。**Privacy でいま本当にできること**から組み立てる。
-   以前は「顔モザイク(Privacy)で隠せます」と固定文で書いていたが、
-   Privacy の動画モザイクは管理者限定(privacy/js/ui.js:438 videoAllowed)で、
-   一般の人がリンクを踏むと「いまは写真のみ対応しています」と断られていた。
-   学校へ持ち込む顧問がこれを職員に説明できない ─ 案内した先に機能が無いのは、
-   機能が無いことより悪い(2026-07-31 全国常連校の顧問レビュー P0)。
-   Privacy 側が動画に対応したら、ここは自動で本来の案内に戻る */
+/* 書き出し完了画面の顔の注意。
+   ★ 一般には Privacy（顔モザイク）の話を**一切しない**(2026-08-01 優さん指示
+   「プライバシーは画像だけだから、案内消して」)。
+   前は「準備中です・写真なら Privacy で隠せます」と正直に断っていたが、
+   いま手元にあるのは**動画**であって写真ではない ─ 使えない機能の話も、
+   別の物なら使えるという話も、この画面の用事(動画をどうするか)の答えではない。
+   同意の注意そのものは残す(2026-07-29 広報レビュー P0。これは機能の話ではなく
+   公開する本人への注意なので、Privacy の状態と無関係に必要)。
+   管理者にだけは案内を残す ─ 管理者の動画モザイクは実在する機能で、
+   案内した先に機能が無い問題(2026-07-31 顧問レビュー P0)が起きない。
+   Privacy 側が一般にも動画対応したら、limits.js の privacyVideoAllowed が
+   正本のまま、ここは自動で本来の案内に戻る */
 MC.ui.renderFaceNote = () => {
   const el = document.getElementById("eoFaces");
   if (!el) return;
@@ -598,8 +714,7 @@ MC.ui.renderFaceNote = () => {
     + "写っている人（未成年なら保護者）の同意をご確認ください。"
     + (videoOK
         ? '<br><a href="/tools/privacy/">顔モザイク（Privacy）</a>で隠せます。'
-        : '<br><span class="hint">動画の顔モザイクは準備中です。'
-          + '写真なら <a href="/tools/privacy/">Privacy</a> で隠せます。</span>');
+        : "");
 };
 
 /* ============ 長さと開始位置を決める(2026-07-31 優さん指示) ============
@@ -4033,17 +4148,13 @@ MC.ui.wire = () => {
   };
   $("#cancelBtn").onclick = () => { MC.exporter.cancelFlag = true; };
   $("#saveBtn").onclick = () => MC.ui.saveResult();
-  $("#downloadBtn").onclick = () => {
-    const r = MC.exporter.lastResult;
-    if (r) MC.exporter.triggerDownload(r.blob, r.name);
-  };
+  /* ダウンロードは downloadResult に一本化(2026-08-01)。素で triggerDownload を
+     呼ぶと「実行したのに何も言わない」ボタンに戻る(優さん指摘の当のバグ) */
+  $("#downloadBtn").onclick = () => MC.ui.downloadResult();
   // 書き出し全画面(案B)のボタン。中身はパネル側と同じ動きに寄せる
   $("#eoCancel").onclick = () => { MC.exporter.cancelFlag = true; };
   $("#eoSaveBtn").onclick = () => MC.ui.saveResult();
-  $("#eoDownloadBtn").onclick = () => {
-    const r = MC.exporter.lastResult;
-    if (r) MC.exporter.triggerDownload(r.blob, r.name);
-  };
+  $("#eoDownloadBtn").onclick = () => MC.ui.downloadResult();
   $("#eoClose").onclick = () => MC.ui.exportOverlay.close();
   document.addEventListener("keydown", ev => {
     // Escは「閉じる」が出ているときだけ(書き出し中の誤爆で消さない)

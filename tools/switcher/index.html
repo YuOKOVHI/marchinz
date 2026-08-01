@@ -542,13 +542,11 @@
       </div>
       <p id="eoDoneNote" class="eo-note"></p>
       <p id="eoOneLine" class="eo-note eo-oneline" hidden></p>
-      <!-- 顔の注意は、いちばん思い出すべきこの瞬間に出す(2026-07-29 広報レビューP0)。
-           本文フッターの Privacy リンクは sitechrome.js:240 のフッター差し替えで
-           消えており、導線がハンバーガーの中の1行だけになっていた -->
-      <!-- 中身は MC.ui.renderFaceNote() が Privacy の実態から組み立てる。
-           固定文で「動画も隠せます」と書いていたが、Privacy の動画モザイクは
-           管理者限定(privacy/js/ui.js:438)で、一般の人には存在しない機能だった。
-           案内した先に機能が無いのは、持ち込んだ人の信用を壊す(2026-07-31) -->
+      <!-- 顔の注意(同意の確認)は、いちばん思い出すべきこの瞬間に出す
+           (2026-07-29 広報レビューP0)。中身は MC.ui.renderFaceNote() が書く。
+           ★ Privacy（顔モザイク）の案内は一般には出さない(2026-08-01 優さん指示
+           「プライバシーは画像だけだから、案内消して」)。管理者にだけ、
+           実在する動画モザイクへのリンクを出す(正本は limits.js) -->
       <p class="eo-note eo-faces" id="eoFaces"></p>
       <!-- 何にどれだけ掛かったか。普段は畳んでおき、知りたい人だけ開く -->
       <details id="eoStats" class="eo-stats" hidden>
@@ -581,7 +579,10 @@
 
 <footer>
   <p>端末内で完結・無料 | MarchinZ クリエイターツール〈ベータ版〉 | <a href="/#creators" class="foot-link">MarchinZへ戻る</a></p>
-  <p class="foot-tools">続けて使う: <a href="/tools/reangle/">ReAngle（正面補正）</a> ／ <a href="/tools/privacy/">Privacy（顔モザイク）</a></p>
+  <!-- Privacy（顔モザイク）の導線は外した(2026-08-01 優さん指示
+       「プライバシーは画像だけだから、案内消して」)。ここで作ったのは動画で、
+       「続けて使う」と誘った先が画像のみ対応では、踏んだ人が必ず断られる -->
+  <p class="foot-tools">続けて使う: <a href="/tools/reangle/">ReAngle（正面補正）</a></p>
 </footer>
 
 <div id="toast" class="toast"></div>

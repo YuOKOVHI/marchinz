@@ -377,6 +377,109 @@ async function countSamples(ns, file, fromSec) {
     return "AAC / リニアPCM / 音声ファイル の3経路とも通る";
   });
 
+  /* ============ 音の書き出し経路の実測(2026-08-01 iPhone「音が入ってない」) ============
+     lpcm MOV(Resolve相当・moov末尾・v2/24bit LE)を合成素材で用意し、
+     本物の encodeAudio → AAC → mp4-muxer → demux → AudioDecoder の往復で
+     「出てきた音が鳴っているか」をRMSで実測する。
+     audio=true は「エンコードが完走した」ことしか言わない ─ 全サンプルが
+     無音でも true になる。聞こえるかどうかは、ここで数字にして見張る */
+  group("③-d 書き出した音が無音になっていないこと(実AAC往復)");
+  const loadAudioExporter = async (mutateExp) => {
+    const ns = { log: () => {}, caps: { aacDelay: null }, isIOS: false,
+                 S: { audioClipId: 1 },
+                 getClip: () => ({ stats: { rms: 0.10, noise: 0.024 } }),   // iPhone実機ログと同じ形
+                 yield: () => new Promise(r => setTimeout(r, 0)),
+                 waitDequeue: (codec, ms = 50) => new Promise(r => setTimeout(r, 5)),
+                 audio: {}, exporter: {} };
+    const win = { MC: ns, addEventListener: () => {}, MZ_MP4: await loadShared() };
+    const doc = { visibilityState: "visible", addEventListener: () => {},
+                  documentElement: { getAttribute: () => "qa" }, body: { classList: { toggle: () => {} } } };
+    const srcA = await (await fetch("../switcher/js/audio.js")).text();
+    new Function("MC", "window", "document", srcA)(ns, win, doc);
+    let srcE = await (await fetch("../switcher/js/exporter.js")).text();
+    if (mutateExp) srcE = mutateExp(srcE);
+    new Function("MC", "window", "document", "MZ_MP4", srcE)(ns, win, doc, win.MZ_MP4);
+    ns._MZ_MP4 = win.MZ_MP4;
+    return ns;
+  };
+  const aacRoundTrip = async (ns) => {
+    /* この環境で AAC が使えるか(使えない環境では検査自体を諦めて正直に言う) */
+    const sup = await AudioEncoder.isConfigSupported({
+      codec: "mp4a.40.2", sampleRate: 48000, numberOfChannels: 2, bitrate: 192000,
+    }).catch(() => ({ supported: false }));
+    if (!sup.supported) return null;
+    const file = await fixture("lpcm_tail.mov");
+    const mx = new Mp4Muxer.Muxer({
+      target: new Mp4Muxer.ArrayBufferTarget(),
+      audio: { codec: "aac", sampleRate: 48000, numberOfChannels: 2 },
+      fastStart: false,
+    });
+    /* 無音0.5秒の先(0.6秒)から1.2秒 ─ 途中からの切り出しも同時に検査する */
+    const ok = await within(20000, ns.exporter.encodeAudio(mx, { file }, 0.6, 1.2, () => {}),
+                            "音のエンコード");
+    if (!ok) throw new Error("encodeAudio が false(書き出し失敗の扱い)");
+    mx.finalize();
+    const out = new File([mx.target.buffer], "out.m4a", { type: "video/mp4" });
+    /* 出てきたMP4を読み戻して、実際に鳴っているかを測る */
+    const M = ns._MZ_MP4;
+    const src2 = new M.MP4Source(out);
+    await src2.init();
+    const at = src2.audioTrack();
+    if (!at) throw new Error("出力に音声トラックが無い");
+    const pcs = [];
+    let derr = null;
+    const dec = new AudioDecoder({
+      output: ad => {
+        const b = new Float32Array(ad.numberOfFrames);
+        ad.copyTo(b, { planeIndex: 0, format: "f32-planar" });
+        pcs.push(b); ad.close();
+      },
+      error: e => { derr = e; },
+    });
+    dec.configure(src2.audioDecoderConfig());
+    for await (const smp of src2.samples(at.id, 0)) {
+      if (derr) break;
+      dec.decode(new EncodedAudioChunk({
+        type: "key", timestamp: Math.round(smp.cts * 1e6 / smp.timescale), data: smp.data,
+      }));
+    }
+    if (!derr) await dec.flush().catch(() => {});
+    try { dec.close(); } catch (e) {}
+    if (derr) throw derr;
+    const total = pcs.reduce((a, b) => a + b.length, 0);
+    let sum = 0;
+    for (const a of pcs) for (let i = 0; i < a.length; i++) sum += a[i] * a[i];
+    return { frames: total, rms: Math.sqrt(sum / Math.max(1, total)) };
+  };
+  await test("★lpcm→AAC→MP4→デコードの往復で、音が実際に鳴っている", async () => {
+    const ns = await loadAudioExporter();
+    const r = await aacRoundTrip(ns);
+    if (r === null) return "この環境はAACエンコード非対応のため未実施(実機/Chromeで見る)";
+    const want = META["lpcm_tail.mov"].toneRms;   // 0.45
+    ge(r.frames, 1.15 * 48000, "出力サンプル数(1.2秒ぶん)");
+    if (!(r.rms >= want * 0.5)) {
+      throw new Error(`出力がほぼ無音: RMS ${r.rms.toFixed(4)} (入力 ${want})`);
+    }
+    return `RMS ${r.rms.toFixed(3)} / 入力 ${want} / ${r.frames}サンプル`;
+  });
+  await test("変異: 頭のスキップ量を壊すと無音のまま完走する(=この見張りの歯)", async () => {
+    /* skipOut が壊れて全サンプルを捨てても、無音埋めで emitted が need に達し
+       audio=true で「完走」してしまう ─ まさに疑っている壊れ方。
+       この変異を検知できないなら、上の試験は無音を見張れていない */
+    const mut = src => {
+      const before = "skipOut = Math.max(0, Math.round((from - firstSec) * OUT_SR));";
+      if (!src.includes(before)) throw new Error("変異ポイントが見つからない");
+      return src.split(before).join("skipOut = 1e9;");
+    };
+    const ns = await loadAudioExporter(mut);
+    const r = await aacRoundTrip(ns);
+    if (r === null) return "この環境はAACエンコード非対応のため未実施";
+    if (r.rms >= META["lpcm_tail.mov"].toneRms * 0.5) {
+      throw new Error("無音の変異を入れても通ってしまう(見張りに歯が無い)");
+    }
+    return `無音を検知: RMS ${r.rms.toFixed(4)}(audio=trueでも鳴っていない)`;
+  });
+
   group("④ 通知タップ誤中断(79acfee): shared/session.js の回帰テスト");
   /* 偽 document / window を差し込む。ランナー自身のタブが background だと
      visibilityState が "hidden" になり、patientTimeout が正しく再武装して
@@ -3014,24 +3117,82 @@ async function countSamples(ns, file, fromSec) {
     }
     return said[said.length - 1].slice(0, 46) + "…";
   });
-  await test("★顔モザイクの案内が、Privacyで本当にできることと一致する", async () => {
+  await test("★顔モザイクの案内は、一般には出さない（Privacyは画像のみ）", async () => {
     const w = await compEnv();
-    /* Privacy の動画モザイクは管理者限定(privacy/js/ui.js:438 videoAllowed)。
-       ここを固定文で「顔モザイクで隠せます」と書いていたため、
-       一般の人がリンクを踏むと「いまは写真のみ対応」と断られていた */
-    /* 判定の正本は limits.js の privacyVideoAllowed(条件のコピーをやめた 2026-07-31)。
-       このテストも正本を切り替える ─ admin フラグを直接見るテストのままだと、
-       正本化そのものを検知できない */
+    /* ★ 意図を書き換えた(2026-08-01 優さん指示「プライバシーは画像だけだから、
+       案内消して」)。前は「一般=準備中と正直に言う」を固定していたが、
+       手元にあるのは動画で、使えない機能の話も写真なら使えるという話も
+       この画面の用事の答えではない ─ 一般には**案内自体を出さない**。
+       同意の注意(広報レビューP0)は機能と無関係に必要なので、消えたら落とす */
     const guest = withRole(w, { privacyVideoAllowed: false },
-      () => { w.MC.ui.renderFaceNote(); return w.document.getElementById("eoFaces").textContent; });
-    if (!/準備中/.test(guest)) {
-      throw new Error("動画のモザイクが使えないのに、使えると読める: " + guest);
+      () => { w.MC.ui.renderFaceNote(); return w.document.getElementById("eoFaces"); });
+    const gTxt = guest.textContent;
+    if (/モザイク|Privacy|準備中/.test(gTxt)) {
+      throw new Error("一般に顔モザイクの案内が出ている: " + gTxt.slice(0, 60));
     }
+    if (guest.querySelector('a[href*="privacy"]')) {
+      throw new Error("一般に Privacy への導線が残っている");
+    }
+    if (!/同意/.test(gTxt)) throw new Error("同意の注意まで消えている(これは残す)");
+    /* 管理者の動画モザイクは実在する機能なので、案内は残す(正本は limits.js) */
     const admin = withRole(w, { privacyVideoAllowed: true }, () => {
       w.MC.ui.renderFaceNote(); return w.document.getElementById("eoFaces").textContent;
     });
-    if (/準備中/.test(admin)) throw new Error("管理者には使えるのに準備中と出ている");
-    return "一般=準備中と正直に / 管理者=案内する";
+    if (!/モザイク/.test(admin)) throw new Error("管理者には使えるのに案内が無い");
+    /* 本文フッターの「続けて使う」からも Privacy を外したこと(静的HTML) */
+    const foot = w.document.querySelector(".foot-tools");
+    if (foot && foot.querySelector('a[href*="privacy"]')) {
+      throw new Error("フッターに Privacy（顔モザイク）の導線が残っている");
+    }
+    return "一般=案内なし(同意の注意は残る) / 管理者=案内する / フッターからも撤去";
+  });
+  await test("★保存は端末で出し分ける — スマホ=保存1つ / PC=ダウンロード。成功のときだけ言う", async () => {
+    /* 2026-08-01 優さん実機指示「スマホは『動画を保存』だけでいい。
+       pcのときに、ダウンロードを表示」+「ダウンロード完了の通知がなくわからない」。
+       出し分けの正本は shareMode()(canShare({files}) の機能検出)。
+       Web Share は成功(resolve)と取り消し(AbortError)が区別できるので、
+       **成功のときだけ**「保存しました」を出す ─ 取り消したのに言うのは嘘になる */
+    const w = await compEnv();
+    const $ = s => w.document.querySelector(s);
+    const X = w.MC.exporter;
+    const keep = { mode: X._shareMode, last: X.lastResult,
+                   share: w.MC.ui._share, dl: X.triggerDownload };
+    const blob = new w.Blob([new Uint8Array(1024 * 1024)], { type: "video/mp4" });
+    try {
+      X.lastResult = { blob, name: "qa.mp4", type: "video/mp4" };
+      /* ① スマホ相当(共有シートあり): 「動画を保存」だけ。ダウンロードは出さない */
+      X._shareMode = true;
+      w.MC.ui.showDone({ blob, name: "qa.mp4" });
+      if ($("#saveBtn").style.display === "none") throw new Error("スマホで保存ボタンが無い");
+      if ($("#downloadBtn").style.display !== "none") throw new Error("スマホにダウンロードが出ている");
+      /* ② 取り消しは黙る(完了の言葉を出さない) */
+      const before = $("#doneNote").textContent;
+      w.MC.ui._share = () => Promise.reject(Object.assign(new Error("abort"), { name: "AbortError" }));
+      if (await w.MC.ui.saveResult() !== "cancelled") throw new Error("取り消しを区別できない");
+      if ($("#doneNote").textContent !== before) throw new Error("取り消したのに保存できたと言う");
+      /* ③ 成功したら完了画面に名前とサイズで残る */
+      w.MC.ui._share = () => Promise.resolve();
+      if (await w.MC.ui.saveResult() !== "saved") throw new Error("成功が返らない");
+      if (!/qa\.mp4.*保存しました.*MB/.test($("#doneNote").textContent)) {
+        throw new Error("成功したのに完了画面に出ない: " + $("#doneNote").textContent);
+      }
+      /* ④ PC相当: ダウンロードを出し、共有の保存は出さない */
+      X._shareMode = false;
+      w.MC.ui.showDone({ blob, name: "qa.mp4" });
+      if ($("#saveBtn").style.display !== "none") throw new Error("PCに共有の保存が出ている");
+      if ($("#downloadBtn").style.display === "none") throw new Error("PCにダウンロードが無い");
+      /* ⑤ ダウンロードも実行したら完了の言葉が出る(無言だったのが当のバグ) */
+      let hit = 0; X.triggerDownload = () => { hit++; };
+      w.MC.ui.downloadResult();
+      if (!hit) throw new Error("ダウンロードが実行されない");
+      if (!/ダウンロードに保存しました/.test($("#doneNote").textContent)) {
+        throw new Error("ダウンロードしたのに通知が無い");
+      }
+    } finally {
+      X._shareMode = keep.mode; X.lastResult = keep.last;
+      w.MC.ui._share = keep.share; X.triggerDownload = keep.dl;
+    }
+    return "スマホ=保存のみ / PC=DLのみ / 成功だけ言う・取り消しは黙る";
   });
   await test("★選べない比率(1:1)を、選べるかのように書かない", async () => {
     const w = await compEnv();
