@@ -868,6 +868,54 @@ MC.exporter.preflightFiles = async clips => {
   MC.log(`preflight OK: ${clips.length}本すべて読めます`);
 };
 
+/* ============ 書き出しの間だけ <video> を手放す(2026-08-01 実機 Decoder failure) ============
+   iPhone は <video> に H.264 を読み込ませているだけで、映像を解く口を1つ使う。
+   書き出しの最中に握っていたのは
+
+     <video> × 3（解析用。プレビューのために作ったまま）
+     VideoDecoder × 3（書き出し用）
+     VideoEncoder × 1
+     ─────────────────
+     合計 7
+
+   iPhone が同時に開ける数はこれよりずっと少ない。3本を書き出しの間だけ
+   手放せば、その分がまるごと空く。
+   絵に影響は無い ─ 書き出し中のプレビューは元から描いていないし
+   (preview.js の startBusyWatch が exporter.running を見て降りる)、
+   画は VideoDecoder が出したコマから作るので <video> は使わない。
+   ★ 戻すのを忘れるとプレビューが二度と映らない。必ず finally で戻すこと。
+     clip.url は取り込み時に作った objectURL がそのまま生きている(media.js) */
+MC.exporter._videoParked = false;
+MC.exporter.parkVideoElements = () => {
+  if (MC.exporter._videoParked) return;
+  let n = 0;
+  for (const c of MC.S.clips) {
+    const v = c.video;
+    if (!v || !v.getAttribute("src")) continue;
+    try {
+      v.pause();
+      v.removeAttribute("src");
+      v.load();          // ここまでやらないと中の作業場が解放されない
+      n++;
+    } catch (e) { MC.log("video を手放せません: " + c.name + " " + e.message); }
+  }
+  MC.exporter._videoParked = true;
+  if (n) MC.log(`export: 解析用の映像 ${n}本を書き出しの間だけ手放します`);
+};
+MC.exporter.unparkVideoElements = () => {
+  if (!MC.exporter._videoParked) return;
+  MC.exporter._videoParked = false;
+  for (const c of MC.S.clips) {
+    const v = c.video;
+    if (!v || !c.url || v.getAttribute("src")) continue;
+    try { v.src = c.url; v.load(); }
+    catch (e) { MC.log("video を戻せません: " + c.name + " " + e.message); }
+  }
+  /* 戻した直後は先頭に立っている。いま見ている位置へ寄せ直さないと
+     プレビューが1コマ目のまま固まって見える */
+  try { if (MC.preview && MC.preview.seek) MC.preview.seek(MC.S.t || 0); } catch (e) {}
+};
+
 /* 分析にしか使わないWorker/WASMを書き出しの前に解放する(2026-07-28 クラッシュ検証)。
    顔検出Worker+ONNX RuntimeのWASMヒープは、分析が終わっても居座り続けていた。
    書き出しは 3本のVideoDecoder+VideoEncoder+GL でメモリを詰めるので、
@@ -1217,6 +1265,10 @@ MC.exporter.exportMP4Parts = async (onProgress) => {
     { total: totalFrames, w, h, fps, cams: used.length, route: "OPFS(分割書き出し)",
       mbps: Math.round(MC.exporter.videoBitrate() / 1e5) / 10, ios: !!MC.isIOS });
   MC.exporter.running = true;
+  /* ★ ここで手放す(2026-08-01 実機)。running を立てた後に置くこと ─
+     先に置くと、この後の分岐で書き出しを始めずに戻る経路が
+     手放したまま帰ってしまう */
+  MC.exporter.parkVideoElements();
   const tStart = performance.now();
   const prof = { decode: 0, draw: 0, encode: 0, wait: 0, skips: 0, reseekMs: 0 };
   MC.exporter._prof = prof;
@@ -1377,6 +1429,7 @@ MC.exporter.exportMP4Parts = async (onProgress) => {
       MC.exporter.opfsRemove(finalOpfs.name);   // 完成品の書きかけだけ消す。パートは残す
     }
     MC.exporter.running = false;
+    MC.exporter.unparkVideoElements();   // ★ 失敗しても中止しても必ず戻す
   }
 
   /* ここへ来るのは分割が始まりもしなかったときだけ。
@@ -1501,6 +1554,10 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle, opts) => {
   MC.log("export素材: " + used.map(c =>
     `${MC.ui.shortName(c.name, 10)}=${c.width || "?"}x${c.height || "?"}`).join(" / "));
   MC.exporter.running = true;
+  /* ★ ここで手放す(2026-08-01 実機)。running を立てた後に置くこと ─
+     先に置くと、この後の分岐で書き出しを始めずに戻る経路が
+     手放したまま帰ってしまう */
+  MC.exporter.parkVideoElements();
   const tStart = performance.now();
   let routeLabel = "メモリ";        // 完成MP4の置き場所(記録カードに出す)
   MC.exporter._routeLabel = routeLabel;
@@ -1868,6 +1925,7 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle, opts) => {
       MC.exporter.opfsRemove(opfs.name);
     }
     MC.exporter.running = false;
+    MC.exporter.unparkVideoElements();   // ★ 失敗しても中止しても必ず戻す
   }
 };
 

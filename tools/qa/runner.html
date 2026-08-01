@@ -3331,6 +3331,52 @@ async function countSamples(ns, file, fromSec) {
     return "版・端末・エラー・ログの4点が本文に入る / 44pt";
   });
 
+
+  await test("★書き出しの間だけ解析用の映像を手放し、終わったら必ず戻す", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    const X = w.MC.exporter;
+    /* iPhone は <video> に H.264 を読み込ませているだけで映像を解く口を1つ使う。
+       書き出し中は <video>3本 + VideoDecoder3本 + VideoEncoder1本 = 7つを
+       同時に抱えていた(2026-08-01 実機 Decoder failure) */
+    S.clips.forEach((c, i) => {
+      if (!c.video) c.video = w.document.createElement("video");
+      c.url = c.url || ("blob:qa-" + i);
+      c.video.setAttribute("src", c.url);
+    });
+    X._videoParked = false;
+    try {
+      X.parkVideoElements();
+      const held = S.clips.filter(c => c.video.getAttribute("src"));
+      if (held.length) throw new Error(held.length + "本が握ったまま(口が空かない)");
+
+      /* ★ 戻し忘れるとプレビューが二度と映らない。ここが本体 */
+      X.unparkVideoElements();
+      const lost = S.clips.filter(c => c.video.getAttribute("src") !== c.url);
+      if (lost.length) throw new Error(lost.length + "本が戻っていない(プレビューが消える)");
+
+      /* 二度押しで壊れない(中止→やり直しで何度も通る道) */
+      X.parkVideoElements(); X.parkVideoElements();
+      X.unparkVideoElements(); X.unparkVideoElements();
+      if (S.clips.some(c => c.video.getAttribute("src") !== c.url)) {
+        throw new Error("二度呼ぶと戻らなくなる");
+      }
+    } finally { X._videoParked = false; }
+
+    /* 書き出しの2経路とも、入口で手放し、finally で戻していること。
+       ★ 経路が増えたときに片方だけ直す事故を止める見張り。
+         コメントに同じ字面を書かないこと(toString はコメントも返す) */
+    for (const [nm, fn] of [["exportMP4", X.exportMP4], ["exportMP4Parts", X.exportMP4Parts]]) {
+      const s = String(fn);
+      if (!s.includes("MC.exporter.parkVideoElements()")) throw new Error(nm + " が手放していない");
+      if (!s.includes("MC.exporter.unparkVideoElements()")) throw new Error(nm + " が戻していない");
+      if (s.indexOf("MC.exporter.parkVideoElements()") > s.indexOf("MC.exporter.unparkVideoElements()")) {
+        throw new Error(nm + " の順序が逆(戻してから手放している)");
+      }
+    }
+    return "手放す→戻る / 二度押しに耐える / 2経路とも入口と後始末に入っている";
+  });
+
   if (CF) { CF.remove(); CF = null; CW = null; CD = null; }
 
   /* ===== 集計 ===== */
