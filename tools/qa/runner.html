@@ -4500,6 +4500,345 @@ async function countSamples(ns, file, fromSec) {
     return "reset+再シークの後にキーフレーム待ちへ戻る";
   });
 
+
+  /* ===== ㉜ 2026-08-02 優さん実機指示の4件 ===== */
+  group("㉜ まず保存させる / ツールのシェア / こだわりは登録から / 通知とバイブ");
+
+  /* 完成画面を作る道具。実素材を通さず「完成した直後」の画面だけを再現する */
+  const doneEnv = async (opt) => {
+    const o = opt || {};
+    const w = await compEnv();
+    compReset(w);
+    const U = w.MC.ui, X = w.MC.exporter;
+    const keep = { share: X.shareMode, offers: U.sceneOffers, range: U.showRange,
+                   verify: U.verifyAudioAfterExport, last: X.lastResult, stats: X.lastStats };
+    X.shareMode = () => o.share !== false;          // 既定はスマホ(共有)経路
+    U.verifyAudioAfterExport = () => {};            // 音の自己点検は別群で見ている
+    U.showRange = () => [0, 510];
+    U.sceneOffers = () => (o.offers === undefined ? [
+      { key: "climax", label: "大盛り上がり", t: 60,  dur: 59, icon: "fa-fire" },
+      { key: "ballad", label: "バラード",     t: 150, dur: 59, icon: "fa-moon" },
+      { key: "drum",   label: "ドラムライン", t: 250, dur: 59, icon: "fa-drum" },
+      { key: "solo",   label: "ソロ",         t: 330, dur: 59, icon: "fa-star" },
+      { key: "finale", label: "フィナーレ",   t: 420, dur: 59, icon: "fa-flag-checkered" },
+    ] : o.offers);
+    const res = { blob: new Blob([new Uint8Array(2048)], { type: "video/mp4" }),
+                  name: "qa.mp4", type: "video/mp4" };
+    X.lastResult = res;
+    X.lastStats = null;
+    U.exportOverlay.open();
+    U.showDone(res);
+    return { w, U, X, res, restore: () => {
+      X.shareMode = keep.share; U.sceneOffers = keep.offers; U.showRange = keep.range;
+      U.verifyAudioAfterExport = keep.verify; X.lastResult = keep.last; X.lastStats = keep.stats;
+      U.exportOverlay.close();
+    } };
+  };
+
+  await test("★保存が済むまで「別のシーン」の候補は畳まれる（誤タップで作り直しが始まらない）", async () => {
+    const e = await doneEnv();
+    try {
+      const d = e.w.document;
+      const host = d.getElementById("eoDoneScenes");
+      if (!host) throw new Error("完成画面に「別のシーン」の枠が出ていない");
+      if (!host.classList.contains("mzso-hold")) throw new Error("未保存なのに畳まれていない");
+      const n0 = d.querySelectorAll("#eoDoneScenes .mzso-btn").length;
+      if (n0 !== 0) throw new Error("未保存でシーンのボタンが押せる状態にある: " + n0 + "個");
+      /* 詰ませないこと: 「保存せずに作る」の扉が1枚だけ残っていること */
+      const rev = d.querySelector("#eoDoneScenes .mzso-reveal");
+      if (!rev) throw new Error("畳んだまま逃げ道が無い(詰ませている)");
+      rev.click();
+      const n1 = d.querySelectorAll("#eoDoneScenes .mzso-btn").length;
+      if (n1 !== 5) throw new Error("逃げ道から候補を開けない: " + n1 + "個");
+      /* 保存が済んだら、次の完成でまた畳み直すこと(状態を持ち越さない) */
+      e.U.showDone(e.res);
+      if (!d.getElementById("eoDoneScenes").classList.contains("mzso-hold")) {
+        throw new Error("2本目で畳み直していない(前回の「開いた」を持ち越している)");
+      }
+      return `未保存=0個+逃げ道1枚 / 逃げ道を押すと5個 / 2本目は畳み直す`;
+    } finally { e.restore(); }
+  });
+
+  await test("★保存すると候補が通常の顔に戻る（保存の合図と連動している）", async () => {
+    const e = await doneEnv();
+    const keepShare = e.U._share;
+    try {
+      e.U._share = async () => true;                 // 共有シートが成功した体
+      const r = await e.U.saveResult();
+      eq(r, "saved", "保存の結果");
+      if (e.U._saved !== true) throw new Error("保存したのに未保存のまま");
+      const d = e.w.document;
+      if (d.getElementById("eoDoneScenes").classList.contains("mzso-hold")) {
+        throw new Error("保存したのに候補が畳まれたまま");
+      }
+      eq(d.querySelectorAll("#eoDoneScenes .mzso-btn").length, 5, "候補の数");
+      if (d.getElementById("exportOverlay").classList.contains("eo-await-save")) {
+        throw new Error("保存後も「保存を待つ」レイアウトのまま");
+      }
+      /* 取り消しは保存にしない(取り消したのに候補が開いては嘘になる) */
+      e.U.showDone(e.res);
+      e.U._share = async () => { const err = new Error("x"); err.name = "AbortError"; throw err; };
+      eq(await e.U.saveResult(), "cancelled", "取り消しの結果");
+      if (e.U._saved) throw new Error("取り消しを保存として数えている");
+      return "保存で開く / 取り消しでは開かない";
+    } finally { e.U._share = keepShare; e.restore(); }
+  });
+
+  await test("★未保存のあいだ「動画を保存」が画面の中央付近に来る(375×667 実測)", async () => {
+    const e = await doneEnv();
+    const wsave = CF.style.width, hsave = CF.style.height;
+    try {
+      CF.style.width = "375px"; CF.style.height = "667px";
+      await new Promise(r => setTimeout(r, 60));     // レイアウトの確定を待つ
+      const w = e.w, d = w.document;
+      const vh = w.innerHeight;
+      const rc = el => el.getBoundingClientRect();
+      const save = rc(d.getElementById("eoSaveBtn"));
+      const cy = save.top + save.height / 2;
+      const delta = Math.abs(cy - vh / 2);
+      /* 「真ん中」＝親指の届くところ。上下 15% (100px) 以内なら中央付近とみなす。
+         直す前は主ボタンの中心が 228px(画面中央 334px の 106px 上)で、
+         親指の自然な位置には「別のシーン」の候補が来ていた */
+      if (delta > vh * 0.15) {
+        throw new Error(`主ボタンの中心 ${Math.round(cy)}px が画面中央 ${Math.round(vh / 2)}px から ${Math.round(delta)}px 離れている`);
+      }
+      if (save.height < 44) throw new Error("主ボタンが44ptに満たない: " + Math.round(save.height));
+      /* 畳んだ候補は主ボタンより**下**にあること(上にあると先に指が触れる) */
+      const sc = d.getElementById("eoDoneScenes");
+      if (sc && rc(sc).top < save.bottom) throw new Error("候補が主ボタンより上に出ている");
+      /* 保存が済んだら中央寄せは外れる(用の済んだボタンを中央に置き続けない) */
+      e.U._share = async () => true;
+      await e.U.saveResult();
+      if (d.getElementById("exportOverlay").classList.contains("eo-await-save")) {
+        throw new Error("保存後も中央寄せが残っている");
+      }
+      return `主ボタン中心 ${Math.round(cy)}px / 画面中央 ${Math.round(vh / 2)}px（差 ${Math.round(delta)}px）・高さ ${Math.round(save.height)}px`;
+    } finally { CF.style.width = wsave; CF.style.height = hsave; e.restore(); }
+  });
+
+  await test("★「このツールを友達にシェア」は映像ツールのページを共有し、動画の保存とは別物", async () => {
+    const e = await doneEnv();
+    const U = e.U, d = e.w.document;
+    const keep = { su: U._shareUrl, cp: U._copyText, toast: U.toast };
+    try {
+      const btn = d.getElementById("eoShareTool");
+      if (!btn) throw new Error("完成画面に「このツールを友達にシェア」が無い");
+      if (!/ツール/.test(btn.textContent)) throw new Error("何を共有するのか名乗っていない: " + btn.textContent.trim());
+      /* 動画の保存(主ボタン)と取り違えない形であること */
+      const save = d.getElementById("eoSaveBtn");
+      if (btn === save) throw new Error("保存ボタンと同じもの");
+      if (btn.classList.contains("primary")) throw new Error("主ボタンと同じ塗り(保存と取り違える)");
+      if (btn.closest(".eo-actions")) throw new Error("保存と同じ並びに置かれている");
+      if (btn.getBoundingClientRect().height < 44) throw new Error("44ptに満たない");
+      /* 行き先は「ツール一覧に戻る」と同じページ。別々の文字列にしない */
+      const href = d.getElementById("eoToTools").getAttribute("href");
+      const url = U.toolShareUrl();
+      if (!/#creators-heading$/.test(url)) throw new Error("映像ツールのページを指していない: " + url);
+      if (!/#creators-heading$/.test(href)) throw new Error("「ツール一覧に戻る」の行き先が変わっている: " + href);
+      if (!/^https?:\/\//.test(url)) throw new Error("友達に送れない相対URL: " + url);
+      /* ① 共有シートが使える環境 */
+      let got = null;
+      U._shareUrl = data => { got = data; return Promise.resolve(); };
+      const can = e.w.navigator.canShare, sh = e.w.navigator.share;
+      const set = (k, v) => { try { Object.defineProperty(e.w.navigator, k, { value: v, configurable: true }); } catch (_) {} };
+      set("share", () => {}); set("canShare", () => true);
+      eq(await U.shareTool(), "shared", "共有できる環境");
+      if (!got || got.url !== url) throw new Error("共有した中身が違う: " + JSON.stringify(got));
+      /* ② 取り消しは黙る(コピーへ落ちない) */
+      let copied = null;
+      U._copyText = t => { copied = t; return Promise.resolve(true); };
+      U._shareUrl = () => Promise.reject(Object.assign(new Error("x"), { name: "AbortError" }));
+      eq(await U.shareTool(), "cancelled", "取り消し");
+      if (copied) throw new Error("取り消したのにコピーへ落ちた");
+      /* ③ 共有シートが無い環境ではリンクのコピーへ */
+      set("share", undefined);
+      eq(await U.shareTool(), "copied", "共有できない環境");
+      eq(copied, url, "コピーした中身");
+      set("share", sh); set("canShare", can);
+      return `共有=${url} / 取り消しは黙る / 使えなければコピー`;
+    } finally { U._shareUrl = keep.su; U._copyText = keep.cp; U.toast = keep.toast; e.restore(); }
+  });
+
+  await test("★「こだわり」を選べるかの正本は limits.js の1箇所(proAllowed)", async () => {
+    const cases = [
+      { name: "ゲスト×スマホ", o: { mobile: true },                pro: false },
+      { name: "ゲスト×PC",     o: { mobile: false },               pro: false },
+      { name: "登録×スマホ",   o: { mobile: true, member: true },  pro: true  },
+      { name: "登録×PC",       o: { mobile: false, member: true }, pro: true  },
+      { name: "管理者",        o: { admin: true, mobile: true },   pro: true  },
+      { name: "手元環境",      o: { host: "localhost" },           pro: true  },
+    ];
+    const got = [];
+    for (const c of cases) {
+      const L = await loadLimits(c.o);
+      eq(L.proAllowed, c.pro, `${c.name} のこだわり`);
+      got.push(`${c.name}=${c.pro ? "可" : "不可"}`);
+    }
+    /* おまかせは誰でも使える ─ 書き出しの上限まで塞いでいないこと */
+    const g = await loadLimits({ mobile: true });
+    ge(g.maxExportSec, 1, "ゲストの書き出し上限(おまかせは使える)");
+    /* 判定が2実装に割れていないこと。ui.js は proAllowed だけを見る */
+    const src = await (await fetch("../switcher/js/ui.js")).text();
+    if (/const guest = !\(L\.member \|\| L\.unlimited\)/.test(src)) {
+      throw new Error("applyGuestLocks に条件のコピーが残っている(規則が2実装に割れる)");
+    }
+    if (!/const guest = !L\.proAllowed/.test(src)) throw new Error("applyGuestLocks が正本を見ていない");
+    return got.join(" / ");
+  });
+
+  await test("★未ログインで「こだわり」を押すと、進まずに登録・ログインの案内が出る", async () => {
+    const w = await compEnv();
+    const d = w.document;
+    const L = w.MZ_LIMITS;
+    const keepPro = L.proAllowed;
+    /* ★ 自走そのものは差し替える。おまかせのカードは押した瞬間に runAuto を
+       始めることがあり、setBusy(true) が #modeSelect のボタンを全部 disabled に
+       する(正しい挙動)。すると次に押す「こだわり」のクリックが届かず、
+       入口の鍵とは無関係な理由でこの試験が落ちる */
+    const keepAuto = w.MC.ui.runAuto;
+    let autoRuns = 0;
+    w.MC.ui.runAuto = async () => { autoRuns++; };
+    try {
+      /* 手元環境(localhost)は上限なしなので、正本の値だけをゲストへ倒す */
+      L.proAllowed = false;
+      w.MC.ui.showModeSelect();
+      w.MC.ui._pendingMode = "switch";
+      w.MC.ui.showModeStep("flow");
+      const pro = d.querySelector('#modeSelect .mode-card[data-flow="pro"]');
+      if (!pro) throw new Error("2段目に「こだわり」のカードが無い");
+      if (d.getElementById("flowProLock").hidden) throw new Error("鍵の札が出ていない(押せるように見える)");
+      if (!pro.classList.contains("mode-card--locked")) throw new Error("鍵つきの見た目になっていない");
+      eq(pro.getAttribute("aria-disabled"), "true", "支援技術への通知");
+      if (pro.disabled) throw new Error("押せなくしている(理由を返せない・無反応な画面になる)");
+      pro.click();
+      if (!d.getElementById("workspace").hidden) throw new Error("未ログインなのに作業画面へ進んだ");
+      const note = d.getElementById("flowProNote");
+      if (note.hidden) throw new Error("黙って止まっている(理由が出ない)");
+      const txt = note.textContent;
+      if (!/登録/.test(txt)) throw new Error("「登録すると使えます」を言っていない: " + txt);
+      if (!/おまかせ/.test(txt)) throw new Error("いま使える道(おまかせ)を示していない");
+      const hrefs = [...note.querySelectorAll("a")].map(a => a.getAttribute("href"));
+      if (!hrefs.includes("/#signup")) throw new Error("登録への道が無い: " + hrefs.join(","));
+      if (!hrefs.includes("/#login")) throw new Error("ログインへの道が無い: " + hrefs.join(","));
+      for (const a of note.querySelectorAll("a")) {
+        if (a.getBoundingClientRect().height < 44) throw new Error("案内のボタンが44ptに満たない");
+      }
+      /* おまかせは今までどおり誰でも使える */
+      d.querySelector('#modeSelect .mode-card[data-flow="easy"]').click();
+      if (d.getElementById("workspace").hidden) throw new Error("ゲストがおまかせにも入れない");
+      if (!autoRuns) throw new Error("ゲストのおまかせが走り出さない");
+      /* 登録すれば選べる */
+      w.MC.ui.showModeSelect();
+      L.proAllowed = true;
+      w.MC.ui._pendingMode = "switch";
+      w.MC.ui.showModeStep("flow");
+      if (!d.getElementById("flowProLock").hidden) throw new Error("登録済みなのに鍵が出ている");
+      const proBtn = d.querySelector('#modeSelect .mode-card[data-flow="pro"]');
+      /* 作業中の鍵(setBusy)が残っていると、押しても何も起きない ─
+         それを「入口で弾かれた」と読み違えないよう、ここで見分ける */
+      if (proBtn.disabled || w.MC.ui._busy) throw new Error("作業中の鍵が残っている(試験の前提が崩れている)");
+      proBtn.click();
+      if (d.getElementById("workspace").hidden) throw new Error("登録済みなのにこだわりへ入れない");
+      eq(w.MC.ui._setupTab, "pro", "選んだ進め方");
+      return `ゲスト=止めて案内 / おまかせは通す(自走${autoRuns}回) / 登録済み=こだわりへ入れる`;
+    } finally { L.proAllowed = keepPro; w.MC.ui.runAuto = keepAuto; w.MC.ui.showModeSelect(); }
+  });
+
+  await test("★終わったときは端末から呼び戻す（バイブ・通知・タブの題）", async () => {
+    const e = await doneEnv();
+    const U = e.U;
+    const keep = { buzz: U.buzz, flash: U.flashTabTitle, push: U.pushNotify };
+    try {
+      const seen = { buzz: 0, tab: [], push: [] };
+      U.buzz = () => { seen.buzz++; };
+      U.flashTabTitle = t => { seen.tab.push(t); };
+      U.pushNotify = (t, b) => { seen.push.push(t + "|" + b); return true; };
+      U.showDone(e.res);
+      if (!seen.buzz) throw new Error("完成してもバイブを鳴らしていない");
+      if (!seen.tab.length) throw new Error("タブの題で知らせていない(裏で待つ人に届かない)");
+      if (!seen.push.length) throw new Error("通知を出していない");
+      if (!/完成|できました/.test(seen.tab[0] + seen.push[0])) {
+        throw new Error("何が起きたのか分からない文言: " + seen.tab[0]);
+      }
+      /* 沈黙の約束: silent なら3つとも鳴らないこと */
+      seen.buzz = 0; seen.tab.length = 0; seen.push.length = 0;
+      if (U.notifyUserTurn({ silent: true, title: "x", tab: "x" }) !== false) {
+        throw new Error("silent を無視している");
+      }
+      if (seen.buzz || seen.tab.length || seen.push.length) throw new Error("silent なのに鳴った");
+      /* 分析完了の従来の通知も同じ1本に乗っていること(規則を2実装に割らない) */
+      U.notifyAnalysisDone({ silent: true });
+      if (seen.buzz || seen.tab.length || seen.push.length) throw new Error("分析完了が silent を無視している");
+      U.notifyAnalysisDone();
+      if (!seen.buzz || !seen.tab.length) throw new Error("分析完了が共通の1本を通っていない");
+      return `完成で バイブ/通知/タブ題 の3つ・silentで沈黙`;
+    } finally { U.buzz = keep.buzz; U.flashTabTitle = keep.flash; U.pushNotify = keep.push; e.restore(); }
+  });
+
+  await test("★おまかせの自走の途中では鳴らさない（まだ数分残っているのに呼び戻さない）", async () => {
+    const w = await compEnv();
+    const U = w.MC.ui;
+    const keep = U.notifyUserTurn;
+    let rang = 0;
+    try {
+      U.notifyUserTurn = o => { if (!(o && o.silent)) rang++; return false; };
+      /* 人を待つ2箇所（音声を選ぶ / 長さと開始位置）は、自走中は必ず黙る */
+      U._autoRunning = true;
+      U.notifyUserTurn({ silent: !!U._autoRunning, title: "音声" });
+      U.notifyUserTurn({ silent: !!U._autoRunning, title: "長さ" });
+      if (rang) throw new Error("自走の最中に鳴らしている: " + rang + "回");
+      U._autoRunning = false;
+      U.notifyUserTurn({ silent: !!U._autoRunning, title: "音声" });
+      if (rang !== 1) throw new Error("こだわりで止まったときに鳴らない");
+      /* 実装が本当にその形で書かれているか(呼び出し側を見張る)。
+         コメントは落としてから見る ─ 説明文の中の言葉で通してはいけない */
+      const src = (await (await fetch("../switcher/js/ui.js")).text())
+        .replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+      const calls = src.match(/MC\.ui\.notifyUserTurn\(\{[\s\S]*?\}\);/g) || [];
+      if (calls.length < 3) throw new Error("人を待つ場所の見張りが減っている: " + calls.length + "箇所");
+      const guarded = calls.filter(c => /silent:\s*!!MC\.ui\._autoRunning/.test(c)).length;
+      if (guarded < 2) throw new Error("自走中の沈黙の鍵が足りない: " + guarded + "箇所");
+      /* 許可を勝手に求めないこと: 呼ぶのは「長い待ちに入ると決めた人」の入口だけ */
+      const asks = src.match(/MC\.ui\.askNotifyPermissionOnce\(\)/g) || [];
+      eq(asks.length, 2, "許可を尋ねる箇所(runAuto と runEasy の2つだけ)");
+      if (/askNotifyPermissionOnce\(\);?\s*$/m.test(src.split("MC.ui.askNotifyPermissionOnce = ")[0] || "")) {
+        throw new Error("読み込み時に許可を求めている");
+      }
+      return `自走中=0回 / こだわりで止まったら1回 / 見張り${calls.length}箇所(うち${guarded}箇所に沈黙の鍵)`;
+    } finally { U.notifyUserTurn = keep; U._autoRunning = false; }
+  });
+
+  await test("★通知APIが無い・壊れている環境でも例外を投げない(iOS Safari)", async () => {
+    const w = await compEnv();
+    const U = w.MC.ui;
+    const realN = Object.getOwnPropertyDescriptor(w, "Notification");
+    const set = v => { try { Object.defineProperty(w, "Notification", { value: v, configurable: true }); } catch (_) {} };
+    try {
+      /* ① そもそも Notification が無い(iOS Safari の素の状態) */
+      set(undefined);
+      if (U.pushNotify("a", "b") !== false) throw new Error("無い環境で出したことにしている");
+      U.askNotifyPermissionOnce();          // 例外を投げないこと
+      if (U.notifyUserTurn({ title: "a", tab: "b" }) !== true) throw new Error("通知が無いだけで全部止まった");
+      /* ② 許可されていない */
+      set(function () { throw new Error("not allowed"); });
+      w.Notification.permission = "denied";
+      if (U.pushNotify("a", "b") !== false) throw new Error("未許可なのに出している");
+      /* ③ 許可はあるがコンストラクタが落ちる */
+      w.Notification.permission = "granted";
+      if (U.pushNotify("a", "b") !== false) throw new Error("落ちたのに成功を返している");
+      /* ④ バイブが無い/落ちる環境 */
+      const nav = w.navigator;
+      const kv = Object.getOwnPropertyDescriptor(nav, "vibrate");
+      try { Object.defineProperty(nav, "vibrate", { value: () => { throw new Error("no"); }, configurable: true }); } catch (_) {}
+      U.buzz();                              // 例外を投げないこと
+      if (kv) { try { Object.defineProperty(nav, "vibrate", kv); } catch (_) {} }
+      return "無い/未許可/落ちる のいずれでも例外なし";
+    } finally {
+      if (realN) { try { Object.defineProperty(w, "Notification", realN); } catch (_) {} }
+      else set(undefined);
+    }
+  });
+
   if (CF) { CF.remove(); CF = null; CW = null; CD = null; }
 
   /* ===== 集計 ===== */

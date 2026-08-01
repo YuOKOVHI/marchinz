@@ -73,6 +73,9 @@ MC.ui.exportOverlay = {
     MC.ui.$("#eoTitleText").textContent = "書き出し中…";
     MC.ui.$("#eoTitleIcon").className = "fa-solid fa-file-export";
     el.classList.remove("eo-failed");   // 前回の失敗表示を引きずらない
+    /* 前回の「保存を待つ」レイアウトも落とす。次の完成で showDone が
+       付け直すので、ここは掃除だけ(状態を2箇所で決めない) */
+    el.classList.remove("eo-await-save");
     /* ★ 開始前の見積り(#exportEtaHint)の引き継ぎは廃止(2026-08-01 優さん指示
        「文字が多い」)。実機スクショで、上に「およそ2分」(開始前の静的見積り)、
        カード内に「残り約3分」(実測)と、**同じ待ちに2つの違う数字**が
@@ -262,10 +265,40 @@ MC.ui.copyReport = async () => {
   }
 };
 
+/* ============ 「まず保存させる」状態(2026-08-02 優さん実機指摘) ============
+   実機で「保存ボタンが真ん中に来るように。今だと、別のシーンのボタンを押してしまう。
+   一旦保存させるように」。完成画面はスクロールする1枚で、主ボタン(動画を保存)の
+   すぐ下に「別のシーンも作れます」の候補が並ぶ ─ 候補を押すと**保存しないまま**
+   次の書き出しが始まり、いま作ったものは消える(lastResult が置き換わる)。
+   取り返しのつかない誤タップなので、保存が済むまでは候補を畳んでおく。
+   ★ 押せなくはしない(詰ませない)。畳んだうえで「それでも作る」を1つ残す。 */
+MC.ui.setSaveState = saved => {
+  MC.ui._saved = !!saved;
+  const eo = MC.ui.$("#exportOverlay");
+  /* 未保存のあいだだけ、主ボタンを画面の中央付近へ寄せる(CSS側の auto マージン)。
+     保存が済んだら通常の詰め方に戻す ─ 用が済んだ主ボタンを中央に置き続けない */
+  if (eo) eo.classList.toggle("eo-await-save", !saved);
+  document.body.classList.toggle("mz-saved", !!saved);
+};
+
 MC.ui.showDone = res => {
   const share = MC.exporter.shareMode();
   const $ = MC.ui.$;
   MC.ui._audioWarnLine = null;   // 新しい完成では前回の音の警告を持ち越さない
+  /* 新しい完成＝また未保存から。前回の「保存済み」を持ち越すと、
+     2本目で候補が開いたままになり同じ事故に戻る */
+  MC.ui._scenesRevealed = false;
+  MC.ui.setSaveState(false);
+  /* ★ 「終わったとき」の呼び戻し(2026-08-02 優さん指示)。書き出しは数分かかり、
+     おまかせなら合計3〜5分。ここが**本当に終わった**唯一の地点で、しかも
+     このあと人が「動画を保存」を押さないと何も残らない ─ 呼び戻す価値が
+     いちばん高い。showDone は成功時にしか呼ばれない(失敗は exportOverlay.fail) */
+  MC.ui.notifyUserTurn({
+    title: "動画ができました",
+    body: "MarchinZ Switcher に戻って「動画を保存」を押してください",
+    tab: "✅ 完成しました — 保存してください",
+    pattern: [90, 60, 90, 60, 160],   // 完成は少し長く鳴らす(途中の合図と区別する)
+  });
   $("#doneCard").hidden = false;
   /* オーバーレイの保存画面にも同じ内容を映す(2026-07-24 案B)。
      文言はパネル側(doneText/doneNote)を組み立ててからコピーする */
@@ -287,6 +320,7 @@ MC.ui.showDone = res => {
     $("#doneText").innerHTML = `<span class="ok">✓ 「${MC.ui.esc(res.name)}」を保存しました</span>`;
     $("#doneNote").textContent = "選んだ場所に書き出し済みです。";
     MC.ui.toast("✔ 書き出しが完了しました");
+    MC.ui.setSaveState(true);   // もう保存は済んでいる。候補を畳む理由がない
     mirror();
     MC.ui.renderSceneOffers();   // 別のシーンも作る(2026-08-01)
     return;   // ディスク直書きは blob を持たないため音の自己点検はできない
@@ -314,6 +348,9 @@ MC.ui.showDone = res => {
     $("#doneText").innerHTML = `<span class="ok">✓ 「${MC.ui.esc(res.name)}」を保存しました(${(res.blob.size / 1e6).toFixed(1)}MB)</span>`;
     $("#doneNote").textContent = "";   // 「(もう一度…)」は削除。ボタン名が言っている
     MC.ui.toast("✔ 書き出しが完了しました");
+    /* PC は書き出しと同時にダウンロード済み ─ 押させる保存が無いので畳まない
+       (「先に保存してください」と言っても押すものが無い、が最悪の詰み方) */
+    MC.ui.setSaveState(true);
   }
   mirror();
   MC.ui.renderSceneOffers();   // 別のシーンも作る(2026-08-01)
@@ -411,6 +448,10 @@ MC.ui.notifySaved = (r, how) => {
     });
   }
   MC.ui._appendAudioWarn();   // 保存の言葉で音の警告を消さない(2026-08-01)
+  /* 保存が済んだ ─ ここで初めて「別のシーンも作れます」を通常の顔に戻す
+     (2026-08-02)。書き直すので、警告行を実らせた後に呼ぶ */
+  MC.ui.setSaveState(true);
+  MC.ui.renderSceneOffers();
   MC.ui.toast(how === "share" ? "✔ 保存しました" : "✔ ダウンロードに保存しました");
 };
 
@@ -502,21 +543,99 @@ MC.ui.renderSceneOffers = () => {
       h.after.insertAdjacentElement("afterend", el);
     }
     const [s0] = MC.ui.showRange();
+    /* ★ 保存が済むまでは畳んでおく(2026-08-02 優さん実機指摘)。
+       候補を押すと次の書き出しが始まり、いま作った動画は消える ─
+       保存していなければ、数分の待ちがまるごと無駄になる。
+       ただし押せなくはしない: 理由を書いて1枚だけ扉を残す */
+    const hold = !MC.ui._saved && !MC.ui._scenesRevealed;
+    el.classList.toggle("mzso-hold", hold);
     el.innerHTML =
       '<p class="mzso-title"><i class="fa-solid fa-clapperboard" aria-hidden="true"></i> '
-      + '別のシーンも作れます<span class="mzso-note">前回の解析を使うため速い</span></p>'
-      + '<div class="mzso-list" role="group" aria-label="別のシーンの候補">'
-      + offers.map((c, i) =>
-          `<button type="button" class="mzso-btn" data-scene="${i}">`
-          + `<i class="fa-solid ${MC.ui.esc(c.icon || "fa-flag")}" aria-hidden="true"></i> `
-          + `${MC.ui.esc(c.label)}`
-          + `<span class="mzso-t">${MC.ui.fmtLen ? MC.ui.fmtLen(Math.max(0, c.t - s0)) : ""}〜</span>`
-          + `</button>`).join("")
-      + "</div>";
+      + '別のシーンも作れます<span class="mzso-note">'
+      + (hold ? "先に「動画を保存」を押してください" : "前回の解析を使うため速い")
+      + "</span></p>"
+      + (hold
+        ? '<button type="button" class="mzso-reveal">'
+          + '<i class="fa-solid fa-lock-open" aria-hidden="true"></i> '
+          + `保存せずに別のシーンを作る（${offers.length}個の候補）</button>`
+        : '<div class="mzso-list" role="group" aria-label="別のシーンの候補">'
+          + offers.map((c, i) =>
+              `<button type="button" class="mzso-btn" data-scene="${i}">`
+              + `<i class="fa-solid ${MC.ui.esc(c.icon || "fa-flag")}" aria-hidden="true"></i> `
+              + `${MC.ui.esc(c.label)}`
+              + `<span class="mzso-t">${MC.ui.fmtLen ? MC.ui.fmtLen(Math.max(0, c.t - s0)) : ""}〜</span>`
+              + `</button>`).join("")
+          + "</div>");
     el.querySelectorAll("[data-scene]").forEach(b => {
       b.onclick = () => MC.ui.makeAnotherScene(offers[parseInt(b.dataset.scene, 10)]);
     });
+    const rev = el.querySelector(".mzso-reveal");
+    if (rev) rev.onclick = () => { MC.ui._scenesRevealed = true; MC.ui.renderSceneOffers(); };
   }
+};
+
+/* ============ このツールを友達にシェア(2026-08-02 優さん指示) ============
+   共有するのは**映像ツールのページ**であって、いま作った動画ではない。
+   仕組みはサイト側の他のシェアボタン(app.js の shareInstagramLinkOnly)と同じ:
+     navigator.share({url}) → 使えない/失敗したらリンクのコピーへ落ちる。
+   ・取り消し(AbortError)は黙る ─ 取り消したのに「コピーしました」は嘘になる
+   ・行き先は「ツール一覧に戻る」(#eoToTools)と同じ href から作る。
+     2つが別々の文字列だと、片方を直したときにもう片方が黙って古くなる */
+MC.ui.toolShareUrl = () => {
+  const a = MC.ui.$("#eoToTools") || MC.ui.$("#doneToTools");
+  const href = (a && a.getAttribute("href")) || "/#creators-heading";
+  try {
+    const u = new URL(href, location.href);
+    /* file:// で開いているとき(手元の確認)は共有しても届かないので、
+       本番のアドレスに寄せる。http(s) ならそのまま(localhost も含めて実測できる) */
+    if (u.protocol !== "http:" && u.protocol !== "https:") {
+      return "https://marchinz.netlify.app/" + href.replace(/^\//, "");
+    }
+    return u.href;
+  } catch (_) { return "https://marchinz.netlify.app/#creators-heading"; }
+};
+
+/* クリックと同じ処理の流れで動く同期コピー(iOS Safari の Clipboard API は
+   非同期の待ちを挟むと拒否されることがある)。app.js と同じ二段構え */
+MC.ui._copyText = text => {
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("aria-hidden", "true");
+    ta.style.cssText = "position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;padding:0;border:0;";
+    document.body.appendChild(ta);
+    ta.focus(); ta.select(); ta.setSelectionRange(0, text.length);
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    if (ok) return Promise.resolve(true);
+  } catch (_) {}
+  if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext) {
+    return navigator.clipboard.writeText(text).then(() => true).catch(() => false);
+  }
+  return Promise.resolve(false);
+};
+
+MC.ui.TOOL_SHARE_TEXT = "MarchinZの映像ツール、スマホだけで動画が作れます";
+/* QAが差し替えられるように1枚挟む(saveResult の MC.ui._share と同じ手) */
+MC.ui._shareUrl = data => navigator.share(data);
+
+MC.ui.shareTool = async () => {
+  const url = MC.ui.toolShareUrl();
+  const data = { title: "MarchinZ 映像ツール", text: MC.ui.TOOL_SHARE_TEXT, url };
+  if (typeof navigator.share === "function"
+      && (typeof navigator.canShare !== "function" || navigator.canShare(data))) {
+    try {
+      await MC.ui._shareUrl(data);
+      return "shared";
+    } catch (e) {
+      if (e && e.name === "AbortError") return "cancelled";   // 取り消しは黙る
+      MC.log("ツールのシェアに失敗→コピー: " + ((e && e.message) || e));
+    }
+  }
+  const ok = await MC.ui._copyText(url);
+  MC.ui.toast(ok ? "リンクをコピーしました。友達に貼って送れます"
+                 : "コピーできませんでした。アドレスバーのURLをお使いください");
+  return ok ? "copied" : "failed";
 };
 
 /* 候補を押したら、解析は使い回して書き出しまで自走する */
@@ -2263,7 +2382,9 @@ MC.ui.renderEasyButton = () => {
    登録の動機になる(2026-07-21 優さん指示) */
 MC.ui.applyGuestLocks = () => {
   const L = window.MZ_LIMITS || {};
-  const guest = !(L.member || L.unlimited);
+  /* 判定の正本は limits.js の proAllowed 1箇所(2026-08-02)。
+     ここに条件をべた書きすると、2段目の選択カード側と規則が2実装に割れる */
+  const guest = !L.proAllowed;
   document.body.classList.toggle("mz-guest", guest);
   ["#syncSec", "#layoutSec", "#finishSec"].forEach(sel => {
     const el = MC.ui.$(sel);
@@ -2687,9 +2808,89 @@ MC.ui.clearInterruptNote = () => {
   document.body.classList.remove("mz-interrupt-on");
 };
 
+/* ============ 端末側から呼び戻す(2026-08-02 優さん指示) ============
+   「ユーザにも終了時や選択が必要なときに、通知とバイブを」。
+   おまかせは3〜5分かかる ─ その間、人は別のアプリを見ている。
+   画面の中だけで完了を伝えても、画面を見ていない人には届かない。
+
+   手段を3つ重ねる。どれか1つでも届けばいい、という構え:
+     ①バイブ  ②通知(Notification)  ③タブのタイトル
+   ★ iOS Safari は navigator.vibrate 非対応で、通知もホーム画面に追加した
+     PWA でないと出ない。iPhoneが主戦場なのだから**どれにも頼らない** ─
+     3つとも「使えたら使う」で、使えなければ黙って諦める(エラーは見せない)。
+     画面内の表示(バナー・進捗ドック・完成画面)がいつでも正本。 */
+
+/* バイブ。iOS Safari では何も起きないが、害も無いので呼ぶ */
+MC.ui.buzz = pattern => {
+  try { if (navigator.vibrate) navigator.vibrate(pattern || [80, 40, 80]); } catch (_) {}
+};
+
+/* タブのタイトル。裏で待っている人に、タブ一覧の文字だけで知らせる。
+   ★ 元の題は1箇所に覚える。呼び出しごとに document.title を控えると、
+     2回続けて鳴ったとき2度目が「✅…」を"元の題"として覚えてしまい、
+     戻したつもりで通知文が残る */
+MC.ui.flashTabTitle = text => {
+  try {
+    if (MC.ui._titleOrig == null) MC.ui._titleOrig = document.title;
+    document.title = text;
+    const restore = () => {
+      if (MC.ui._titleOrig != null) document.title = MC.ui._titleOrig;
+      MC.ui._titleOrig = null;
+      document.removeEventListener("visibilitychange", onVis);
+      clearTimeout(MC.ui._titleTm);
+    };
+    const onVis = () => { if (document.visibilityState === "visible") restore(); };
+    document.addEventListener("visibilitychange", onVis);
+    clearTimeout(MC.ui._titleTm);
+    MC.ui._titleTm = setTimeout(restore, 15000);
+  } catch (_) {}
+};
+
+/* OSの通知。**許可があるときだけ**出す。ここでは決して許可を求めない
+   (求めるのは askNotifyPermissionOnce だけ)。iOS Safari には
+   window.Notification 自体が無いので、機能検出で静かに諦める */
+MC.ui.pushNotify = (title, body) => {
+  try {
+    const N = window.Notification;
+    if (!N || N.permission !== "granted") return false;
+    const n = new N(title, { body: body || "", tag: "marchinz-switcher", icon: "/favicon.png" });
+    n.onclick = () => { try { window.focus(); n.close(); } catch (_) {} };
+    return true;
+  } catch (_) { return false; }   // 通知APIが無い/使えない環境で例外を漏らさない
+};
+
+/* 許可を尋ねるのは「一度おまかせ(または分析)を始めた人」にだけ、一度きり。
+   ★ 初回訪問でいきなり許可を求めるのは禁止(2026-08-02 優さん指示)。
+     長い待ちに入ることが確定した瞬間＝この人にとって通知が役に立つと
+     分かった瞬間にだけ尋ねる。断られたら二度と尋ねない */
+MC.ui.NOTIFY_ASK_KEY = "mz_switcher_notify_asked_v1";
+MC.ui.askNotifyPermissionOnce = () => {
+  try {
+    const N = window.Notification;
+    if (!N || N.permission !== "default") return;    // 既に許可/拒否済みなら触らない
+    if (localStorage.getItem(MC.ui.NOTIFY_ASK_KEY)) return;
+    localStorage.setItem(MC.ui.NOTIFY_ASK_KEY, String(Date.now()));
+    const r = N.requestPermission();
+    if (r && typeof r.catch === "function") r.catch(() => {});
+  } catch (_) {}
+};
+
+/* 「あなたの番です」を端末から知らせる。長い処理が終わって**人を待つ**
+   ところ、および全部が終わったところだけで呼ぶ。
+   ★ おまかせの途中では絶対に呼ばない(silent)。以前「✅分析完了＝書き出せます」を
+     自走の最中に出し、まだ5分残っているのに人を呼び戻した事故がある */
+MC.ui.notifyUserTurn = (o) => {
+  const opt = o || {};
+  if (opt.silent) return false;
+  MC.ui.buzz(opt.pattern);
+  MC.ui.flashTabTitle(opt.tab || opt.title || "MarchinZ");
+  MC.ui.pushNotify(opt.title || "MarchinZ", opt.body || "");
+  return true;
+};
+
 /* ============ 分析完了の目立つ通知(2026-07-23 優さん指示) ============
-   ①バイブ ②タブのタイトルを一時的に変える(裏で待っている人向け)
-   ③画面内の大きな完了バナー(タップで消える)。三重にして見逃しを防ぐ */
+   ①バイブ ②通知 ③タブのタイトル(ここまで notifyUserTurn)
+   ④画面内の大きな完了バナー(タップで消える)。四重にして見逃しを防ぐ */
 MC.ui.notifyAnalysisDone = (opt) => {
   /* ★ おまかせの最中は黙る(2026-08-01 レビュー14件)。ここは分析が済んだだけで、このあと
      書き出しが数分続く。完了バナー自体は全画面(z-index 130)の下に隠れるが、
@@ -2697,21 +2898,14 @@ MC.ui.notifyAnalysisDone = (opt) => {
      人を「もう終わった・書き出せます」と勘違いさせて呼び戻していた。
      しかも押すべきボタンはおまかせが自分で押す。
      おまかせ本来の完了は、書き出しが終わった時に1回だけ出る */
+  /* バイブ・通知・タブ題は共通の1本(notifyUserTurn)へ寄せた(2026-08-02)。
+     silent の判断もそちらが持つ ─ 同じ規則を2実装に割らない */
   if (opt && opt.silent) return;
-  // iOS Safari は vibrate 非対応(効かない)。Android等では鳴る。害はないので残す(G-5)
-  try { if (navigator.vibrate) navigator.vibrate([80, 40, 80]); } catch (_) {}
-  /* タブ裏で待つ人向け: タイトルを点滅風に。操作が戻ったら元へ */
-  try {
-    const orig = document.title;
-    document.title = "✅ 分析完了 — 書き出せます";
-    const restore = () => {
-      document.title = orig;
-      document.removeEventListener("visibilitychange", onVis);
-    };
-    const onVis = () => { if (document.visibilityState === "visible") restore(); };
-    document.addEventListener("visibilitychange", onVis);
-    setTimeout(restore, 15000);
-  } catch (_) {}
+  MC.ui.notifyUserTurn({
+    title: "分析が終わりました",
+    body: "MarchinZ Switcher に戻って、動画を書き出してください",
+    tab: "✅ 分析完了 — 書き出せます",
+  });
 
   let el = document.getElementById("mzAnalysisDone");
   if (!el) {
@@ -3193,6 +3387,9 @@ MC.ui.AutoCancelled = class extends Error {
 MC.ui.runAuto = async (opt) => {
   if (MC.ui._busy || (MC.exporter && MC.exporter.running)) return;
   if (!MC.media.slotClips().length) return;
+  /* 通知の許可は「これから数分待つ」ことが確定した人にだけ、静かに一度だけ
+     尋ねる(2026-08-02 優さん指示)。初回訪問でいきなり求めない */
+  MC.ui.askNotifyPermissionOnce();
   /* ============ 別のシーンも作る(2026-08-01 優さん指示) ============
      完成後に scene:{key,t} 付きで呼ばれたら「2回目」。
      傾き・同期・音声選択・音楽解析は前回のものが生きているので飛ばし、
@@ -3342,6 +3539,9 @@ MC.ui.runEasy = async (opt) => {
        自分が弾かれる(実測: runEasy に入って即 return し、1段も走らなかった)。
        二重起動の防止は runAuto の入口が受け持つ */
   if (auto ? MC.ui._autoCancel : (btn.disabled || MC.ui._busy)) return;
+  /* こだわりの「分析を開始」も数分かかる長い待ち。ここで待つと決めた人にだけ、
+     一度だけ通知の許可を尋ねる(runAuto と同じ規則・同じ印) */
+  if (!auto) MC.ui.askNotifyPermissionOnce();
   MC.ui._anaT0 = performance.now();   // 見積り学習は同期込みの全体で測る(2026-07-28)
   MC.ui.setBusy(true);
   MC.ui.clearErrorLog();   // やり直しでは前回の失敗ログを見せない
@@ -3419,6 +3619,15 @@ MC.ui.runEasy = async (opt) => {
     if (vids.length >= 2 && !MC.S.audioDecided) {
       /* ここで一度手を止める: 音声を選んでから仕上げへ */
       p.done("同期できました", { sub: "使う音声を選んで「この音で進める」を押してください" });
+      /* ★ 人を待つ瞬間(2026-08-02 優さん指示)。同期は数分かかることがあり、
+         その間に別アプリへ行った人は、ここで止まっていることに気づけない。
+         auto は通らない分岐だが、規則を1つにするため silent も渡す */
+      MC.ui.notifyUserTurn({
+        silent: !!MC.ui._autoRunning,
+        title: "使う音声を選んでください",
+        body: "同期できました。MarchinZ Switcher に戻って音声を選ぶと先へ進めます",
+        tab: "🔔 音声を選んでください — MarchinZ",
+      });
       MC.ui.renderAll();
       MC.ui.gentleScrollTo(document.querySelector("#audioSec"), "start");
       return;
@@ -3528,6 +3737,15 @@ MC.ui.runEasyScan = async (pIn, base = 0) => {
     MC.ui.applyLengthChoice();
     p.done("音楽の解析が終わりました",
            { sub: "長さと、どこから始めるかを選んでください" });
+    /* ★ 人を待つ瞬間(2026-08-02)。音の読み込みは長尺でいちばん長く無言になる段で、
+       終わったあとは「長さと開始位置」を人が決めるまで一歩も進まない。
+       おまかせは止まらない(自分で決める)ので鳴らさない */
+    MC.ui.notifyUserTurn({
+      silent: !!MC.ui._autoRunning,
+      title: "長さと開始位置を選んでください",
+      body: "音楽の解析が終わりました。MarchinZ Switcher に戻ると続けられます",
+      tab: "🔔 長さを選んでください — MarchinZ",
+    });
     MC.ui.renderAll();
     MC.preview.seek(MC.S.trimIn);
   } catch (e) {
@@ -3868,7 +4086,42 @@ MC.ui.showModeStep = step => {
     const lead = MC.ui.$("#flowLead");
     const m = MC.ui.MODES[MC.ui._pendingMode] || MC.ui.modeConf();
     if (lead) lead.textContent = `${m.label}を作ります`;
+    MC.ui.renderFlowLock();
   }
+};
+
+/* 「こだわり」は登録した人だけ(2026-08-02 優さん指示)。
+   ★ 判定は MZ_LIMITS.proAllowed だけを見る。おまかせは誰でも使える。
+   カードは消さず、鍵つきで見せる ─ 消すと存在に気づけない */
+MC.ui.proAllowed = () => Boolean((window.MZ_LIMITS || {}).proAllowed);
+
+MC.ui.renderFlowLock = () => {
+  const ok = MC.ui.proAllowed();
+  const card = document.querySelector('#modeSelect .mode-card[data-flow="pro"]');
+  const lock = MC.ui.$("#flowProLock");
+  if (lock) lock.hidden = ok;
+  if (card) {
+    card.classList.toggle("mode-card--locked", !ok);
+    /* aria-disabled にする(disabled にはしない)。押せなくすると理由を出せず、
+       「反応しない画面」になる ─ 押させて、理由と次の一手を返す */
+    card.setAttribute("aria-disabled", ok ? "false" : "true");
+  }
+  if (ok) { const n = MC.ui.$("#flowProNote"); if (n) n.hidden = true; }
+};
+
+/* 鍵つきの「こだわり」を押したときの案内。理由と、次の一手(登録/ログイン)を出す */
+MC.ui.showFlowLockNote = () => {
+  const n = MC.ui.$("#flowProNote");
+  MC.ui.buzz([30]);   // 進まなかったことを触覚でも返す(無反応に見せない)
+  if (!n) { MC.ui.toast("「こだわり」は登録すると使えます"); return; }
+  n.hidden = false;
+  n.innerHTML = '<p class="mfn-title"><i class="fa-solid fa-lock" aria-hidden="true"></i> '
+    + '「こだわり」は登録した方が使えます</p>'
+    + '<p class="mfn-body">長さ・開始位置・カメラの切り替わり方・色を自分で決められます。'
+    + '<b>「おまかせ」は登録なしで今すぐ使えます。</b></p>'
+    + '<div class="mfn-btns"><a class="btn primary mfn-go" href="/#signup">無料登録する</a>'
+    + '<a class="btn ghost mfn-go" href="/#login">ログイン</a></div>';
+  n.scrollIntoView({ behavior: "smooth", block: "nearest" });
 };
 
 MC.ui.showModeSelect = () => {
@@ -3892,6 +4145,12 @@ MC.ui.wire = () => {
     });
   { const b = MC.ui.$("#flowBackBtn");
     if (b) b.onclick = () => MC.ui.showModeStep("kind"); }
+  /* 「このツールを友達にシェア」(2026-08-02)。完成画面と完了カードの両方に置く。
+     動画そのものの共有(#eoSaveBtn/#saveBtn)とは別の処理 */
+  ["#eoShareTool", "#doneShareTool"].forEach(sel => {
+    const b = MC.ui.$(sel);
+    if (b) b.onclick = () => MC.ui.shareTool();
+  });
   /* おまかせ全画面の中止。走っている処理にも止まれと伝える */
   { const c = MC.ui.$("#asCancel");
     if (c) c.onclick = () => {
@@ -3930,6 +4189,10 @@ MC.ui.wire = () => {
   document.querySelectorAll("#modeSelect .mode-card[data-flow]").forEach(card => {
     card.onclick = () => {
       const flow = card.dataset.flow;
+      /* ★ こだわりは登録した人だけ(2026-08-02 優さん指示)。
+         黙って無反応にはしない ─ 理由と次の一手(登録/ログイン)を出して止まる。
+         おまかせは今までどおり誰でも押せる */
+      if (flow === "pro" && !MC.ui.proAllowed()) { MC.ui.showFlowLockNote(); return; }
       MC.ui._autoFlow = flow === "easy";
       /* 1段目で選んだ種類をここで確定する。種類が未選択のまま
          2段目へ来ることは無いが、保険で switch に落とす */
@@ -4090,6 +4353,14 @@ MC.ui.wire = () => {
       p.done(r && r.low ? `ズレを合わせました(${r.low}本は手動調整をおすすめします)`
                         : "ズレを合わせました",
              { sub: MC.S.trimOut != null ? `書き出し範囲 ${MC.ui.fmtTime(ti)}〜${MC.ui.fmtTime(to)} を自動設定` : "" });
+      /* ★ 人を待つ瞬間(2026-08-02)。同期は数分かかり、終わったら次に何をするかは
+         本人が決める。別アプリへ行っていた人を呼び戻す */
+      MC.ui.notifyUserTurn({
+        silent: !!MC.ui._autoRunning,
+        title: "ズレを合わせました",
+        body: "MarchinZ Switcher に戻ると、次の工程へ進めます",
+        tab: "🔔 同期できました — MarchinZ",
+      });
       // 次のフェーズ(整える)へそっと誘導
       setTimeout(() => { MC.ui.gentleScrollTo($("#layoutSec"), "start"); }, 900);
     } catch (e) {
@@ -4294,6 +4565,14 @@ MC.ui.wire = () => {
       const r = await MC.director.run(p);
       p.done(`${r.bpm.toFixed(0)} BPM・${r.segments}カットを作りました`,
              { sub: `ディゾルブ${r.dissolves}回・帯をタップするとそこへ移動します` });
+      /* ★ 人を待つ瞬間(2026-08-02)。映像解析はいちばん重く、終わったあとは
+         カット割を本人が見て直す ─ 戻ってこないと先へ進まない */
+      MC.ui.notifyUserTurn({
+        silent: !!MC.ui._autoRunning,
+        title: "カット割ができました",
+        body: `${r.segments}カット。MarchinZ Switcher に戻って確認してください`,
+        tab: "🔔 カット割ができました — MarchinZ",
+      });
       MC.timeline.render();
       MC.preview.seek(MC.trimRange()[0]);
     } catch (e) {
@@ -4330,6 +4609,14 @@ MC.ui.wire = () => {
     try {
       await MC.color.run(p);
       p.done("色を合わせました", { sub: "音声に使うカメラに合わせています" });
+      /* ★ 人を待つ瞬間(2026-08-02)。色解析は<video>のシークを専有するので
+         待ち時間が読めない。終わったら本人の目で見てもらう */
+      MC.ui.notifyUserTurn({
+        silent: !!MC.ui._autoRunning,
+        title: "色を合わせました",
+        body: "MarchinZ Switcher に戻ってプレビューを確認してください",
+        tab: "🔔 色を合わせました — MarchinZ",
+      });
       MC.ui.renderFinish(); MC.preview.draw();
     } catch (e) {
       console.error(e);

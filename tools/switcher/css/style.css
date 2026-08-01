@@ -279,6 +279,32 @@ body.mz-busy-lock #errorLog button { pointer-events: auto; opacity: 1; }
 .mode-card-name { font-size: 16px; font-weight: 700; color: var(--navy); }
 .mode-card-desc { font-size: 12.5px; color: var(--tx2); line-height: 1.6; }
 
+/* ============ 「こだわり」は登録した方から(2026-08-02 優さん指示) ============
+   カードは消さずに鍵つきで見せる。押せば理由と次の一手が出る(下の .mode-flow-note)。
+   薄くしすぎると「壊れている」に見えるので、色は落とさず鍵の札だけを足す */
+.mode-card-lock {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 9px; border-radius: 999px;
+  background: rgba(15, 33, 56, .07); color: var(--tx2);
+  font-size: 11px; font-weight: 700; line-height: 1.7;
+}
+.mode-card-lock i { font-size: 10px; }
+.mode-card--locked { box-shadow: none; border-color: var(--line); }
+.mode-card--locked .mode-card-icon { background: rgba(15, 33, 56, .06); color: var(--tx2); }
+.mode-card--locked:hover { border-color: var(--line); transform: none; box-shadow: none; }
+/* 押したときの案内。断り文句で終わらせず、登録・ログインの2つを必ず出す */
+.mode-flow-note {
+  margin-top: 14px; padding: 14px 16px; text-align: left;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  box-shadow: var(--shadow-card);
+}
+.mfn-title { margin: 0 0 6px; font-size: 14px; font-weight: 800; color: var(--navy); }
+.mfn-title i { color: var(--acc); margin-right: 6px; }
+.mfn-body { margin: 0 0 12px; font-size: 12.5px; line-height: 1.7; color: var(--tx2); }
+.mfn-btns { display: flex; flex-direction: column; gap: 8px; }
+.mfn-go { min-height: 44px; display: inline-flex; align-items: center;
+  justify-content: center; text-decoration: none; }
+
 .mode-back-bar { display: flex; align-items: center; gap: 12px; padding: 12px 18px 0; }
 .mode-back { background: none; border: none; color: var(--acc); font-size: 13px; cursor: pointer; font-family: inherit; padding: 4px 0; }
 .mode-back:hover { color: var(--acc-deep); text-decoration: underline; }
@@ -819,6 +845,21 @@ html, body { max-width: 100%; overflow-x: clip; }
 .mzso-t { margin-left: auto; padding-left: 8px; flex: none;
   font-size: 12px; font-weight: 600; color: var(--tx2);
   font-variant-numeric: tabular-nums; }
+/* ★ 保存が済むまでは候補を畳む(2026-08-02 優さん実機指摘「別のシーンのボタンを
+   押してしまう。一旦保存させるように」)。候補を押すと次の書き出しが始まり、
+   いま作った動画は失われる ─ 誤タップの代償がいちばん大きい場所。
+   畳んだ状態では扉が1枚だけ(=誤タップの的が5個から1個になる)、
+   その1枚も「保存せずに」と名乗るので、押した人は何をしているか分かる */
+.mz-scene-offers.mzso-hold { opacity: .72; }
+.mz-scene-offers.mzso-hold .mzso-title { font-weight: 600; }
+.mz-scene-offers.mzso-hold .mzso-note { color: var(--acc2); font-weight: 700; }
+.mzso-reveal { display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; min-height: 44px; padding: 10px 14px;
+  font-family: inherit; font-size: 12.5px; font-weight: 600;
+  color: var(--tx2); background: none; border: 1px dashed var(--line);
+  border-radius: 10px; cursor: pointer; }
+.mzso-reveal i { color: var(--tx2); }
+.mzso-reveal:active { transform: scale(.98); }
 /* 押せない理由の説明。11pxの薄いhintでは、ブロックの理由を伝える文として弱い */
 .audio-gate-hint { margin-top: 10px; padding: 9px 11px; font-size: 12.5px; line-height: 1.6;
   color: var(--tx2); background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; }
@@ -1006,6 +1047,11 @@ body[data-mzj-phase="export"] .clip-slot.empty { display: none; }
   .mode-card-icon svg { width: 24px; height: 24px; }
   .mode-card-name { grid-column: 2; align-self: end; }
   .mode-card-desc { grid-column: 2; align-self: start; line-height: 1.5; }
+  /* 鍵の札も文字の側(2列目)へ。指定を忘れると自動配置でアイコンの下＝
+     1列目に落ち、44pxの枠に押し込まれて潰れる(2026-08-02 実測) */
+  /* justify-self を書かないと、グリッドの既定(stretch)で札が行いっぱいに
+     伸びて「押せるボタン」に見える(2026-08-02 実測)。札は文字ぶんだけ */
+  .mode-card-lock { grid-column: 2; align-self: start; justify-self: start; margin-top: 4px; }
 }
 
 /* スマホ: 端まで気持ちよく使う */
@@ -1299,6 +1345,25 @@ body[data-mzj-phase="export"] #timelineWrap { display: none !important; }
 .eo-done-text { font-size: 14px; text-align: center; line-height: 1.7; }
 .eo-actions { display: flex; flex-direction: column; gap: 10px; }
 .eo-actions .btn { width: 100%; }
+/* ★ 未保存のあいだ、「動画を保存」を画面の中央付近へ置く(2026-08-02 優さん実機指摘
+   「保存ボタンが真ん中に来るように調整」)。実測375pxでは、完成画面の主ボタンが
+   上寄りに出て、親指の自然な位置には「別のシーンも作れます」の候補が来ていた。
+   ─ やり方: 完成画面を画面いっぱいに広げ、{サイズ, 保存ボタン} の組だけを
+     auto マージンで中央に寄せる。あとに続くもの(注記・別のシーン・記録)は
+     下端へ送られ、親指の届く高さから外れる。
+   ─ やり方: 未保存のあいだだけ #eoDone にほぼ1画面ぶんの高さを与え、
+     その中で中身を上下中央に置く。実測375×667で
+       主ボタンの中心 = 323px（画面中央 334px の 11px 上）
+     になる。畳んだ「別のシーン」は 391〜497px＝主ボタンより下、
+     出口(シェア・ツール一覧・閉じる)は 689px 以降＝ひと巻き下に送られる。
+   ─ 92dvh(100%でなく)なのは、下に続きがあることを画面の端で見せるため。
+     100dvh にすると出口が完全に隠れ、「閉じるが無い」と読まれる。
+   ─ dvh は iOS Safari 16+(採用基準)で使える。古い実装向けに vh も並べる。
+   ─ 保存が済んだらこの塊ごと外れ、通常の詰め方に戻る
+     (用の済んだボタンを中央に置き続けない) */
+.export-overlay.eo-await-save #eoDone {
+  min-height: 92vh; min-height: 92dvh; justify-content: center;
+}
 /* 完了時の登場アニメ(2026-07-24 案B B: 達成感を出す)。
    [hidden]→表示に切り替わった瞬間に一度だけ走る */
 #eoDone:not([hidden]) { animation: eoRise .34s cubic-bezier(.2,.7,.3,1) both; }
@@ -1707,8 +1772,13 @@ html:has(body.mz-auto-stage), body.mz-auto-stage {
    .btn の既定色を継がずに、この場で必ず読める色を指定する */
 /* 完成画面の出口。主役(保存)より静かに、しかし44ptは確保する */
 .eo-exit { display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
-.eo-tools { min-height: 44px; display: inline-flex; align-items: center;
+.eo-tools, .eo-share-tool { min-height: 44px; display: inline-flex; align-items: center;
   justify-content: center; gap: 8px; text-decoration: none; }
+/* ★ 「このツールを友達にシェア」(2026-08-02)。動画そのものの共有(主ボタン=塗り)と
+   ひと目で別物と分かる形にする: 塗らない・アイコンが違う・出口の側にある。
+   同じ緑や青の塗りにすると「保存」と取り違える(いま直したばかりの事故と同型) */
+.eo-share-tool { font-size: 13px; font-weight: 600; }
+.eo-share-tool i { color: var(--acc); }
 
 .as-fail-copy, #audioWarnCopy, .mzp-retry {
   background: #fff !important; color: var(--acc) !important;
