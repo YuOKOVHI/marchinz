@@ -71,6 +71,57 @@ window.MZ_MP4 = (() => {
     throw err;
   };
 
+  /* ============ 読み始めの位置を「そのトラックだけ」で決める ============
+     (2026-08-01 実機: iPhoneで書き出しが 0/1770コマ のまま無言で固まった件)
+
+     mp4box の ISOFile.prototype.seek(time, useRap) は、moov の**全トラック**に
+     seekTrack を掛けて、返ってきたオフセットの**最小値**を返す:
+
+         for (trak of moov.traks) { ...; if (r.offset < min) min = r.offset; }
+
+     これは「その時刻から全トラックを取り出すのに必要な最初のバイト」を返す
+     仕様であって、こちらが読みたい1トラックの位置ではない。
+     実素材(DaVinci Resolve や業務用カメラの MOV)には、**サンプルが1個しかない
+     タイムコード(tmcd)トラック**が入っていて、その1サンプルは mdat の先頭に
+     置かれる。すると何秒を指定しても最小値は必ず mdat の先頭になり、
+     「ファイルの頭から読み直せ」と返ってくる。
+
+     こちらの読み手(cursor.next / samples)は、返ってきた位置から4MBずつ
+     順に読んで appendBuffer するだけなので、**要求位置に届くまでのバイトを
+     全部読んでmp4boxへ積む**ことになる。10分・1GBのMOVで7分地点から
+     書き出すと、1コマ目が出るまでに数百MBを読んで抱える。
+     画面は0コマのまま、エラーも出ない ─ ただ無言で固まったように見える。
+     カメラ3本なら3倍。iOSではここでタブごと落ちる。
+
+     直す形: 読みたいトラックにだけ seekTrack を掛ける。
+     nextSample はそのトラックにだけ立てばよい(抽出を設定しているのは
+     このトラックだけなので、他トラックの nextSample は誰も見ない)。 */
+  const seekOffsetFor = (mp4, trackId, fromSec) => {
+    const t = Math.max(0, fromSec);
+    try {
+      const trak = mp4.getTrackById(trackId);
+      if (trak && trak.samples && trak.samples.length && typeof mp4.seekTrack === "function") {
+        const r = mp4.seekTrack(t, true, trak);       // 直前のRAP。このトラックだけ
+        let off = r && isFinite(r.offset) ? r.offset : 0;
+        /* mp4box の seek() と同じ後処理。既に持っているバッファの続きから
+           読ませる(同じ範囲を二度読まない) */
+        try {
+          if (mp4.stream && typeof mp4.stream.getEndFilePositionAfter === "function") {
+            const adj = mp4.stream.getEndFilePositionAfter(off);
+            if (isFinite(adj) && adj >= off) off = adj;
+          }
+        } catch (e) { /* 位置の微調整に失敗しても、素の offset で読めばよい */ }
+        return off;
+      }
+    } catch (e) { /* 下の従来経路へ落とす */ }
+    /* seekTrack を持たない版の mp4box では従来どおり(全トラック最小)。
+       正しさは落ちる(先頭から読み直す)が、壊れはしない */
+    try {
+      const sk = mp4.seek(t, true);
+      return (sk && sk.offset) || 0;
+    } catch (e) { return 0; }
+  };
+
   /* ============ mp4box.js ラッパ: MP4/MOVのデマックス ============
      1インスタンス=1回の抽出用途で使う(状態を単純に保つ)。
 
@@ -453,17 +504,15 @@ window.MZ_MP4 = (() => {
          読み取り位置が既にファイル末尾(moov の直後)まで進んでいる。ここで
          fileStart=0 から appendBuffer し直しても、mp4box は「もう見た範囲」と
          判断して先頭のわずかな部分しか受け付けず、以降は黙って無視する
-         (onSamplesが一切発火しない=サンプル0件)。mp4.seek() を呼ぶと内部位置が
-         正しく巻き戻り、以降のappendBufferが効くようになる。
+         (onSamplesが一切発火しない=サンプル0件)。seekOffsetFor() が返す位置
+         (mp4box が「まだ見ていない」と分かる位置)から読み直すと効くようになる。
          2026-07-20判明: fromSec>0の時だけseekしていたため、seg先頭(t=0)から
          読む区間でこの罠を踏むと、エラーも出ないままそのセグメントが黒く
          抜け落ちる(guardタイムアウトにも掛からない静かな破損)。
          Privacy / ReAngle は exporter が fromSec=0 を常用するため常時この条件下にある。 */
-      let pos = 0;
-      try {
-        const sk = mp4.seek(Math.max(0, fromSec), true);
-        pos = sk && sk.offset ? sk.offset : 0;
-      } catch (e) { pos = 0; }
+      /* ★ 位置は seekOffsetFor が決める(このトラックだけを見る。上の長い注記)。
+         fromSec=0 でも必ず通すこと ─ ここを条件付きにすると黒抜けが戻る */
+      let pos = seekOffsetFor(mp4, trackId, fromSec);
       mp4.start();
       const CH = 4 << 20;
       let eof = false;
@@ -490,8 +539,10 @@ window.MZ_MP4 = (() => {
 
      注意:
      - setExtractionOptions は同一トラックへ2度呼べないので started で1回に制限
-     - fromSec=0 でも必ず mp4.seek() する(2026-07-20 の「静かな黒抜け」の教訓。
-       seek しないと mp4box が『もう見た範囲』として appendBuffer を黙って無視する)
+     - fromSec=0 でも必ず seekOffsetFor() を通す(2026-07-20 の「静かな黒抜け」の教訓。
+       通さないと mp4box が『もう見た範囲』として appendBuffer を黙って無視する)
+     - 位置は**読みたいトラックだけ**で決める。全トラック最小の mp4.seek() に
+       戻すと、tmcd 入りの実素材で毎回ファイル先頭から読み直す(2026-08-01)
      - 1つの MP4Source につき cursor は同時に1本だけ(onSamples を占有するため) */
   MP4Source.prototype.cursor = function (trackId) {
     const self = this;
@@ -519,10 +570,10 @@ window.MZ_MP4 = (() => {
         } else {
           try { mp4.stop(); } catch (e) {}
         }
-        try {
-          const sk = mp4.seek(Math.max(0, fromSec), true);   // 直前のRAPへ
-          pos = sk && sk.offset ? sk.offset : 0;
-        } catch (e) { pos = 0; }
+        /* ★ 位置は seekOffsetFor が決める(このトラックだけを見る)。
+           全トラック最小の mp4.seek() に戻すと、tmcd トラック入りの実素材で
+           毎回ファイル先頭から読み直しになる(0コマのまま無言で固まる) */
+        pos = seekOffsetFor(mp4, trackId, fromSec);
         mp4.start();
       },
       async next() {

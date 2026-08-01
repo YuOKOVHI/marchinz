@@ -302,6 +302,13 @@ MC.audio.Polish = class {
 
   /* 左右まとめて整える。buf の oL/oR から n サンプルずつ、その場で書き換える */
   runStereo(buf, oL, oR, n) {
+    /* ★ 測れていない素材は本当に素通しにする(2026-08-01 レビュー)。
+       ここを通していなかったので、measured=false でも
+       70Hzカット・雑音ゲート・リミッタ(天井0.97)は全部効いていた。
+       画面と記録は「音の高さを測れていないので、音はそのまま入れます」と
+       言っており、言っていることと、やっていることが違った。
+       ピークが0.97を超える未計測素材では、黙って波形が変わる */
+    if (!this.measured) return;
     const a = this.a, g = this.gain, thr2 = this.thr * this.thr, CEIL = this.CEIL;
     const hL = this.hp[0], hR = this.hp[1];
     /* 包絡の時定数。sr に対して実時間で決める(端末やSRが変わってもぶれない) */

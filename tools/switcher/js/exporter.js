@@ -350,6 +350,7 @@ MC.exporter.encodeAudio = async (muxer, clip, fromLocalSec, durSec, onStatus) =>
   let fed = 0;
   for await (const s of src.samples(at.id, Math.max(0, fromLocalSec - 0.5))) {
     if (error || MC.exporter.cancelFlag) break;
+    MC.exporter.beat();   // ★ 音だけを処理している間も「進んでいる」
     const ctsSec = s.cts / s.timescale;
     if ((fed++ & 63) === 0 && firstFedCts !== null) {
       /* 「整えています」と言っていたが、音量調整もノイズ処理も一切していない
@@ -382,6 +383,7 @@ MC.exporter.encodeAudio = async (muxer, clip, fromLocalSec, durSec, onStatus) =>
   /* 素材が書き出し範囲より短いときは無音で埋めて尺を合わせる
      (以前は「全長ゼロ配列」がこの役目を兼ねていた) */
   while (emitted < need && !encErr && !MC.exporter.cancelFlag) {
+    MC.exporter.beat();
     const n = Math.min(FR, need - emitted);
     pend.fill(0, 0, n);
     pend.fill(0, FR, FR + n);
@@ -452,6 +454,7 @@ MC.exporter.encodeAudioPcm = async (muxer, src, fromLocalSec, durSec, onStatus) 
   let skipOut = null, outCount = 0, done = false;
   for await (const c of src.pcmChunks(Math.max(0, from - 0.5))) {
     if (MC.exporter.cancelFlag || encErr) { done = true; break; }
+    MC.exporter.beat();   // ★ 音だけを処理している間も「進んでいる」
     if (skipOut === null) {
       const firstSec = c.startFrame / src.pcm.rate;
       skipOut = Math.max(0, Math.round((from - firstSec) * OUT_SR));
@@ -478,6 +481,7 @@ MC.exporter.encodeAudioPcm = async (muxer, src, fromLocalSec, durSec, onStatus) 
   /* 素材が書き出し範囲より短いときは無音で埋めて尺を合わせる。
      以前は「全長ゼロ配列」がこの役目を兼ねていた */
   while (emitted < need && !encErr && !MC.exporter.cancelFlag) {
+    MC.exporter.beat();
     const n = Math.min(FR, need - emitted);
     pend.fill(0, 0, n);
     pend.fill(0, FR, FR + n);
@@ -501,6 +505,12 @@ MC.exporter.encodeAudioFile = async (muxer, clip, fromLocalSec, durSec, onStatus
   const off = Math.max(0, Math.round((fromLocalSec + primingSec) * OUT_SR));
   const L = buf.getChannelData(0);
   const R = buf.numberOfChannels > 1 ? buf.getChannelData(1) : L;
+  /* ★ ここにも整音を通す(2026-08-01 レビュー)。3経路のうちここだけ通って
+     おらず、「音声だけのファイルを選んだとき」に限って仕上がりが変わっていた。
+     同じファイル内に「片方だけに入れると素材の種類で仕上がりが変わる」と
+     書いてあるのに、3つ目を書き忘れていた形 */
+  const _pol = MC.audio.Polish
+    ? new MC.audio.Polish((MC.getClip(MC.S.audioClipId) || clip || {}).stats, OUT_SR) : null;
   /* デコード済みバッファから直接窓を切り出す。全長のコピーは作らない
      (2026-07-23 Phase 1 項目4。encodeAudioPcm と同じ理由) */
   onStatus("音を入れています…");
@@ -515,6 +525,7 @@ MC.exporter.encodeAudioFile = async (muxer, clip, fromLocalSec, durSec, onStatus
   const FR = 1024;
   for (let o = 0; o < need; o += FR) {
     if (encErr || MC.exporter.cancelFlag) break;
+    MC.exporter.beat();   // ★ 音だけを処理している間も「進んでいる」
     const n = Math.min(FR, need - o);
     const data = new Float32Array(n * 2);
     for (let i = 0; i < n; i++) {
@@ -522,6 +533,7 @@ MC.exporter.encodeAudioFile = async (muxer, clip, fromLocalSec, durSec, onStatus
       data[i] = p < L.length ? L[p] : 0;
       data[n + i] = p < R.length ? R[p] : 0;
     }
+    if (_pol) _pol.runStereo(data, 0, n, n);   // ★ 音を整える(左右まとめて)
     encoder.encode(new AudioData({
       format: "f32-planar", sampleRate: OUT_SR, numberOfFrames: n, numberOfChannels: 2,
       timestamp: Math.round(o * 1e6 / OUT_SR), data,
@@ -960,6 +972,15 @@ MC.exporter.stage = s => {
    「一定時間まったく進まなければ、最後に通ったところの名前をつけて必ず止まる」
    を1箇所で保証する。止まれば失敗の顔が出て、記録もコピーできる */
 MC.exporter.STALL_MS = 120000;
+/* 見張りが様子を見にくる間隔。試験から詰められるように定数で持つ
+   (隠れたタブではタイマーが1秒へ節流されるので、5秒固定だと試験が待つだけで
+    数十秒かかり、結果も端末の機嫌に左右される) */
+MC.exporter.STALL_CHECK_MS = 5000;
+/* 「進んでいる」の一報。書き出しの本体(コマのループ)は stage() を呼ばないので、
+   ここを叩かないと**健全な書き出しが2分で見張りに殺される**。
+   1770コマをiPhoneで書くのは数分かかる仕事で、その間 stage() は一度も動かない。
+   進捗を報告するところから必ず呼ぶこと(_markProgress の先頭に置いてある) */
+MC.exporter.beat = () => { MC.exporter._lastProgAt = Date.now(); };
 MC.exporter.runWatched = async (fn) => {
   MC.exporter._lastProgAt = Date.now();
   MC.exporter._stage = "書き出しの準備";
@@ -969,10 +990,16 @@ MC.exporter.runWatched = async (fn) => {
       if (done) return;
       const idle = Date.now() - (MC.exporter._lastProgAt || Date.now());
       if (idle >= MC.exporter.STALL_MS) {
+        /* ★ 走っている本体にも降りると伝える(2026-08-01 レビュー)。
+           Promise.race は**負けた側を止めない**。ここで畳まないと、
+           画面は失敗を出したのに書き出しは裏で回り続け、
+           デコーダ3本とエンコーダとOPFSの書き込みを抱えたままになる
+           (finally も走らないので <video> も手放したまま戻らない) */
+        MC.exporter.cancelFlag = true;
         rej(new Error(`${Math.round(idle / 1000)}秒のあいだ書き出しが進みませんでした`
           + `（最後に通ったところ: ${MC.exporter._stage || "開始直後"}）`));
       }
-    }, 5000);
+    }, MC.exporter.STALL_CHECK_MS);
   });
   try { return await Promise.race([fn(), stall]); }
   finally { done = true; if (timer) clearInterval(timer); }
@@ -1170,6 +1197,7 @@ MC.exporter._exportVideoPart = async (opt) => {
     const ctx = canvas.getContext("2d");
     ctx.imageSmoothingQuality = "high";
 
+    MC.exporter.stage("映像を作っています");
     for (let k = kA; k < kB; k++) {
       if (MC.exporter.cancelFlag) throw new Error("キャンセルしました");
       if (vencErr) throw vencErr;
@@ -1318,6 +1346,7 @@ MC.exporter.exportMP4Parts = async (onProgress) => {
   const _t0mark = Date.now();
   MC.exporter._lastProgAt = Date.now();
   MC.exporter._markProgress = (k, total, extra) => {
+    MC.exporter.beat();   // ★ 見張りに「進んでいる」と伝える
     try {
       sessionStorage.setItem("mz_switcher_export_at_v1", JSON.stringify({
         k, total, pct: Math.round((k / Math.max(1, total)) * 100),
@@ -1435,6 +1464,7 @@ MC.exporter.exportMP4Parts = async (onProgress) => {
           firstChunk && desc ? { decoderConfig: { codec: "avc1.640028", description: desc } } : undefined);
         firstChunk = false;
         if (++ns % 120 === 0) {
+          MC.exporter.beat();   // ★ 結合の間も「進んでいる」
           /* 中止を見る。遅いストレージだと最大30秒「中止」が効かない画面になる
              (パート書き出し側と legacy 側には既に同じチェックがある) */
           while ((MC.exporter._pendCount || 0) > 3) {
@@ -1458,7 +1488,10 @@ MC.exporter.exportMP4Parts = async (onProgress) => {
       const tA0 = performance.now();
       const enc = audioClip.isAudio ? MC.exporter.encodeAudioFile : MC.exporter.encodeAudio;
       audioOk = await enc(muxer, audioClip, tIn - audioClip.offset, tOut - tIn,
-        (st, frac) => onProgress(0.93 + 0.04 * Math.max(0, Math.min(1, frac ?? 0.5)), st));
+        (st, frac) => {
+          MC.exporter.beat();
+          onProgress(0.93 + 0.04 * Math.max(0, Math.min(1, frac ?? 0.5)), st);
+        });
       audioMs = performance.now() - tA0;
       if (!audioOk && !MC.exporter.cancelFlag) MC.ui.toast("⚠ 音声を書き出せませんでした(映像のみ出力します)");
     }
@@ -1599,6 +1632,7 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle, opts) => {
   const _t0mark = Date.now();
   MC.exporter._lastProgAt = Date.now();
   MC.exporter._markProgress = (k, total) => {
+    MC.exporter.beat();   // ★ 見張りに「進んでいる」と伝える
     try {
       sessionStorage.setItem("mz_switcher_export_at_v1", JSON.stringify({
         k, total, pct: Math.round((k / Math.max(1, total)) * 100),
@@ -1788,6 +1822,7 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle, opts) => {
     /* 映像を作っている間、音声の進捗は画面に出さない。
        0.93 と 0.5 が交互に来ると進捗が行ったり来たりして壊れて見える */
     const onAudioStatus = (st, frac) => {
+      MC.exporter.beat();
       if (!videoDone) return;
       onProgress(0.93 + 0.04 * Math.max(0, Math.min(1, frac ?? 0.5)), st);
     };
@@ -1813,6 +1848,7 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle, opts) => {
     const t0 = performance.now();
     let tRecent = t0, kRecent = 0;   // 残り時間は直近の速度で出す(序盤の助走に引きずられないため)
 
+    MC.exporter.stage("映像を作っています");
     for (let k = 0; k < totalFrames; k++) {
       if (MC.exporter.cancelFlag) throw new Error("キャンセルしました");
       if (vencErr) throw vencErr;

@@ -30,6 +30,22 @@
 <script src="../switcher/vendor/mp4box.all.min.js"></script>
 <script src="../switcher/vendor/mp4-muxer.min.js"></script>
 <script>
+/* ===== 取ってくるものは必ず「いまのファイル」にする =====
+   runner.html だけに ?cb= を付けても、中から fetch する
+   mp4source.js / exporter.js / fixtures は前回のまま掴む。
+   「直したのに落ちる」「直っていないのに通る」を2度踏んだので、
+   ここで全部の fetch に同じ印を付ける(2026-08-01) */
+const MZQA_CB = new URLSearchParams(location.search).get("cb") || String(Date.now());
+{
+  const raw = window.fetch.bind(window);
+  window.fetch = (u, o) => {
+    if (typeof u === "string" && !/^[a-z]+:/i.test(u)) {
+      u += (u.includes("?") ? "&" : "?") + "cb=" + encodeURIComponent(MZQA_CB);
+    }
+    return raw(u, o);
+  };
+}
+
 /* ===== 最小テストフレームワーク ===== */
 const R = [];
 let curGroup = "";
@@ -75,11 +91,32 @@ async function loadShared(mutate) {
 
 /* 2026-07-20 に直した黒抜けバグを、そのままコードへ戻す変異 */
 const injectBlackoutBug = src => {
-  const before = "const sk = mp4.seek(Math.max(0, fromSec), true);";
-  const after  = "const sk = (fromSec > 0) ? mp4.seek(fromSec, true) : null;";
+  const before = "let pos = seekOffsetFor(mp4, trackId, fromSec);";
+  const after  = "let pos = (fromSec > 0) ? seekOffsetFor(mp4, trackId, fromSec) : 0;";
   if (!src.includes(before)) throw new Error("変異ポイントが見つからない(修正が別の形に書き換わった?)");
   return src.split(before).join(after);
 };
+
+/* 2026-08-01: 「読み始めの位置を全トラックの最小値で決める」へ戻す変異。
+   これが mp4box の ISOFile.seek() の素の仕様で、tmcd(タイムコード)トラックが
+   入っている実素材では毎回ファイル先頭を指す ─ iPhoneで書き出しが
+   0/1770コマのまま無言で固まった正体 */
+const injectAllTrackSeek = src => {
+  const before = "const r = mp4.seekTrack(t, true, trak);";
+  const after  = "const r = mp4.seek(t, true);";
+  if (!src.includes(before)) throw new Error("変異ポイントが見つからない(修正が別の形に書き換わった?)");
+  return src.split(before).join(after);
+};
+
+/* file.slice() の呼ばれ方を記録する File もどき。
+   「どこから読み始めたか」は返り値に出ないので、読みそのものを見張る */
+function spyFile(file) {
+  const reads = [];
+  return { reads, file: {
+    name: file.name, size: file.size, type: file.type,
+    slice(a, b) { reads.push([a, b]); return file.slice(a, b); },
+  } };
+}
 
 let FIX = {};
 async function fixture(name) {
@@ -127,7 +164,13 @@ async function countSamples(ns, file, fromSec) {
       if (!html.includes("/tools/shared/mp4source.js")) throw new Error("共有デマックスを読んでいない");
       if (!html.includes("/tools/shared/session.js")) throw new Error("共有セッションを読んでいない");
       if (/src="js\/demux\.js/.test(html)) throw new Error("自前の demux.js が復活している(再フォーク)");
-      return "共有版のみ";
+      /* ★ 共有を直しても、版番が付いていなければ端末は古いのを掴んだまま
+         (2026-08-01)。switcher だけ ?v= が付いていて、vlog/privacy/reangle は
+         素のURLだった ─ 共有デマックスを直した回に、3本へは届かない形。
+         「実装が1つ」であることと「その1つが届く」ことは別の話 */
+      const bare = html.match(/\/tools\/shared\/[A-Za-z0-9_.-]+\.(?:js|css)(?![?])/g) || [];
+      if (bare.length) throw new Error("版番の無い共有資産: " + bare.join(" / "));
+      return "共有版のみ・全部に版番あり";
     });
   }
 
@@ -178,6 +221,160 @@ async function countSamples(ns, file, fromSec) {
     if (!first.value.is_sync) throw new Error("RAP(キーフレーム)から始まっていない");
     cur.stop();
     return `先頭サンプル cts=${first.value.cts}`;
+  });
+
+  /* ============ 2026-08-01 実機: 0/1770コマのまま無言で固まった件 ============
+     実素材(Resolve/業務用カメラのMOV)には、サンプルが1個だけのタイムコード
+     (tmcd)トラックが入っていて、その1サンプルは mdat の先頭に置かれる。
+     mp4box の ISOFile.seek() は全トラックのオフセットの**最小値**を返すため、
+     何秒を指定してもこの1サンプルが最小になり「ファイル先頭から読め」と答える。
+     読み手は返ってきた位置から順に4MBずつ読むので、7分地点から書き出すと
+     1コマ目が出るまでに数百MBを読んで抱えることになる ─ 画面は0コマのまま、
+     エラーも出ない。カメラ3本なら3倍で、iOSではそこでタブごと落ちる。 */
+  group("③-b 途中から読むときにファイル先頭へ巻き戻らないこと(タイムコードトラック)");
+  const TM = () => META["tmcd_tail.mp4"];
+  await test("素材にタイムコードの1サンプルが mdat の先頭にある(事故の形)", async () => {
+    const t = TM();
+    if (!t) throw new Error("tmcd_tail.mp4 のメタが無い(make_fixtures.py を走らせ直す)");
+    if (!(t.tmcdSampleOffset < t.videoSample0Offset)) {
+      throw new Error("タイムコードが映像より後ろにある = 事故を再現できない");
+    }
+    return `tmcd@${t.tmcdSampleOffset} / 映像0@${t.videoSample0Offset}`;
+  });
+  await test("★cursor.seek(0.7) は要求位置のRAPから読み始める(先頭へ戻らない)", async () => {
+    const M = await loadShared();
+    const sp = spyFile(await fixture("tmcd_tail.mp4"));
+    const src = new M.MP4Source(sp.file);
+    await src.init();
+    const cur = src.cursor(src.videoTrack().id);
+    sp.reads.length = 0;                       // init のぶんは数えない
+    cur.seek(0.7);
+    const first = await cur.next();
+    cur.stop();
+    if (first.done) throw new Error("再シーク後に1件も返らない");
+    if (!first.value.is_sync) throw new Error("RAP(キーフレーム)から始まっていない");
+    eq(first.value.cts, 15 * META.sampleDuration, "先頭サンプルのcts");
+    if (!sp.reads.length) throw new Error("1バイトも読んでいない(見張りが空振り)");
+    const rap = TM().videoSampleOffset[15];
+    ge(sp.reads[0][0], rap, "読み始めの位置");
+    return `RAP=${rap} から読み始めた(読み直し ${sp.reads.length} 回)`;
+  });
+  await test("変異: 全トラック最小のシークへ戻すと先頭から読み直す", async () => {
+    const M = await loadShared(injectAllTrackSeek);
+    const sp = spyFile(await fixture("tmcd_tail.mp4"));
+    const src = new M.MP4Source(sp.file);
+    await src.init();
+    const cur = src.cursor(src.videoTrack().id);
+    sp.reads.length = 0;
+    cur.seek(0.7);
+    await cur.next();
+    cur.stop();
+    const rap = TM().videoSampleOffset[15];
+    if (!sp.reads.length) throw new Error("読みが記録されていない");
+    if (sp.reads[0][0] >= rap) {
+      throw new Error("変異させても先頭へ戻らない = この試験は当の事故を検知できない");
+    }
+    return `位置 ${sp.reads[0][0]} から(要求位置は ${rap})＝ずっと手前を読み直す`;
+  });
+  await test("★samples() も同じ守りを持つ(音声・結合の経路)", async () => {
+    const M = await loadShared();
+    const sp = spyFile(await fixture("tmcd_tail.mp4"));
+    const src = new M.MP4Source(sp.file);
+    await src.init();
+    sp.reads.length = 0;
+    const it = src.samples(src.videoTrack().id, 0.7);
+    const first = (await it.next()).value;
+    if (it.return) await it.return();
+    if (!first) throw new Error("1件も返らない");
+    eq(first.cts, 15 * META.sampleDuration, "先頭サンプルのcts");
+    ge(sp.reads[0][0], TM().videoSampleOffset[15], "読み始めの位置");
+  });
+  await test("先頭から読むとき(fromSec=0)は今までどおり全部読める", async () => {
+    const M = await loadShared();
+    eq(await countSamples(M, await fixture("tmcd_tail.mp4"), 0), META.samples, "サンプル数");
+    return "タイムコード入りでも黒抜けしない";
+  });
+
+  /* ============ 整音(MC.audio.Polish)============ */
+  group("③-c 音を整える処理は、言っているとおりのことをすること");
+  const loadAudioNs = async () => {
+    const ns = { log: () => {}, audio: {}, S: {}, caps: {}, isIOS: false,
+                 getClip: () => null };
+    const src = await (await fetch("../switcher/js/audio.js")).text();
+    new Function("MC", "window", "document", src)(ns, { MC: ns, addEventListener: () => {} },
+                                                  { addEventListener: () => {} });
+    if (!ns.audio || !ns.audio.Polish) throw new Error("MC.audio.Polish が生えていない");
+    return ns;
+  };
+  /* 1024フレームの窓を1つ作る(exporter が渡すのと同じ形: [L×FR][R×FR]) */
+  const mkWin = (FR, amp) => {
+    const b = new Float32Array(FR * 2);
+    for (let i = 0; i < FR; i++) {
+      const v = amp * Math.sin(2 * Math.PI * 440 * i / 48000);
+      b[i] = v; b[FR + i] = v;
+    }
+    return b;
+  };
+  await test("★測れていない素材は本当に素通し(1サンプルも触らない)", async () => {
+    const A = await loadAudioNs();
+    const FR = 1024;
+    const before = mkWin(FR, 0.99);          // 天井0.97を超える山を含む
+    const after = Float32Array.from(before);
+    new A.audio.Polish(null, 48000).runStereo(after, 0, FR, FR);
+    for (let i = 0; i < after.length; i++) {
+      if (after[i] !== before[i]) {
+        throw new Error(`測れていないのに波形が変わった (i=${i}: ${before[i]} → ${after[i]})`);
+      }
+    }
+    return "stats 無し = 完全に素通し(記録の文言どおり)";
+  });
+  await test("測れている素材はちゃんと効く(素通しの対照)", async () => {
+    const A = await loadAudioNs();
+    const FR = 1024;
+    const before = mkWin(FR, 0.02);          // 小さい音 → 持ち上がるはず
+    const after = Float32Array.from(before);
+    const pol = new A.audio.Polish({ rms: 0.02, noise: 0 }, 48000);
+    if (!(pol.gain > 1)) throw new Error("測れているのに音量がそのまま: gain=" + pol.gain);
+    pol.runStereo(after, 0, FR, FR);
+    let moved = 0;
+    for (let i = 0; i < after.length; i++) if (after[i] !== before[i]) moved++;
+    if (!moved) throw new Error("測れているのに何も起きない");
+    return `gain=${pol.gain.toFixed(2)} / ${moved}サンプルが動いた`;
+  });
+  await test("★天井を超えさせない(端数の窓でも・状態は窓をまたいで続く)", async () => {
+    const A = await loadAudioNs();
+    const FR = 1024;
+    const pol = new A.audio.Polish({ rms: 0.05, noise: 0 }, 48000);
+    let peak = 0;
+    for (const n of [FR, FR, 300]) {          // 最後は端数窓
+      const b = mkWin(FR, 0.95);
+      pol.runStereo(b, 0, FR, n);
+      for (let i = 0; i < n; i++) peak = Math.max(peak, Math.abs(b[i]), Math.abs(b[FR + i]));
+      /* 端数窓で範囲外へ書いていないこと(触っていない所は元のまま) */
+      if (n < FR) {
+        const ref = mkWin(FR, 0.95);
+        for (let i = n; i < FR; i++) {
+          if (b[i] !== ref[i] || b[FR + i] !== ref[FR + i]) throw new Error("端数窓が範囲の外を書き換えた");
+        }
+      }
+    }
+    if (!(peak <= 0.9701)) throw new Error("天井を超えた: " + peak);
+    return `最大 ${peak.toFixed(4)} (天井 0.97)`;
+  });
+  await test("★音の3経路すべてが同じ整音を通る(1つだけ素通しにしない)", async () => {
+    const src = await (await fetch("../switcher/js/exporter.js")).text();
+    const bare = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    for (const nm of ["encodeAudio", "encodeAudioPcm", "encodeAudioFile"]) {
+      const i = bare.indexOf("MC.exporter." + nm + " =");
+      if (i < 0) throw new Error(nm + " が見つからない");
+      /* 次の "MC.exporter.xxx =" までがその関数の本体 */
+      const j = bare.indexOf("\nMC.exporter.", i + 1);
+      const body = bare.slice(i, j < 0 ? bare.length : j);
+      if (!/new MC\.audio\.Polish\(/.test(body) || !/runStereo\(/.test(body)) {
+        throw new Error(nm + " だけ整音を通っていない(素材の種類で仕上がりが変わる)");
+      }
+    }
+    return "AAC / リニアPCM / 音声ファイル の3経路とも通る";
   });
 
   group("④ 通知タップ誤中断(79acfee): shared/session.js の回帰テスト");
@@ -3441,7 +3638,15 @@ async function countSamples(ns, file, fromSec) {
   await test("★書き出しは、無言で固まらずに必ず名前つきで止まる", async () => {
     const w = await compEnv();
     const X = w.MC.exporter;
-    const keep = X.STALL_MS;
+    const keep = X.STALL_MS, keepIv = X.STALL_CHECK_MS;
+    /* 見張りの巡回を詰める。隠れたタブでは setTimeout/setInterval が1秒へ
+       節流されるので、5秒間隔のままだと試験が「待つだけ」で数十秒かかり、
+       しかも通ったり落ちたりする(実測で踏んだ) */
+    X.STALL_CHECK_MS = 20;
+    /* タイマーではなく MessageChannel で時間を進める。こちらは節流されないので
+       「本当に◯秒たった」を隠れたタブでも同じように作れる */
+    const tick = () => new Promise(r => { const c = new MessageChannel(); c.port1.onmessage = () => r(); c.port2.postMessage(0); });
+    const spin = async ms => { const t0 = Date.now(); while (Date.now() - t0 < ms) await tick(); };
     try {
       /* ① 返ってこない処理を渡すと、見張りが「最後に通ったところ」を付けて止める。
          実機で 0/1770コマ のまま固まり、画面にも記録にも何も残らなかった */
@@ -3461,18 +3666,46 @@ async function countSamples(ns, file, fromSec) {
          正常な書き出しを打ち切ってしまう(=いちばんやってはいけない誤作動) */
       const slow = async () => {
         for (let i = 0; i < 6; i++) {
-          await new Promise(r => setTimeout(r, 100));
-          X._lastProgAt = Date.now();     // コマが進んだ印(本番は _markProgress が置く)
+          await spin(120);
+          X.beat();     // コマが進んだ印(本番は _markProgress の先頭が打つ)
         }
         return "ok";
       };
       if (await X.runWatched(slow) !== "ok") throw new Error("進んでいるのに打ち切った");
 
+      /* ②-b ★いちばん怖い誤作動: 本物の長い区間が心拍を打っていないと、
+         健全な書き出しが2分で殺される。コマのループも音のエンコードも
+         stage() を呼ばないので、beat() を置き忘れると必ずそうなる。
+         コメントは除いてから見る(toString はコメントも返す) */
+      const bare = fn => String(fn).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+      for (const nm of ["exportMP4", "exportMP4Parts",
+                        "encodeAudio", "encodeAudioPcm", "encodeAudioFile"]) {
+        if (!bare(X[nm]).includes("MC.exporter.beat()")) {
+          throw new Error(nm + " が見張りに進捗を伝えていない(2分で誤って打ち切られる)");
+        }
+      }
+      /* 心拍そのものが見張りの見ている値を動かしていること。
+         時間で測ると、隠れたタブのタイマー節流で結果が変わる(実測で踏んだ)ので
+         値そのものを見る */
+      X._lastProgAt = 0;
+      X.beat();
+      if (!(X._lastProgAt > 0)) throw new Error("beat が見張りの見る値を動かしていない");
+
+      /* ②-c 見張りが鳴ったら、走っている本体にも「やめて」と伝わること。
+         Promise.race は負けた側を止めない ─ 伝えないと、画面は失敗を出したのに
+         デコーダ3本とエンコーダを抱えたまま裏で回り続ける */
+      X.cancelFlag = false;
+      try {
+        await X.runWatched(() => { X.stage("映像を作っています"); return new Promise(() => {}); });
+      } catch (e) { /* 打ち切られるのが正常 */ }
+      if (!X.cancelFlag) throw new Error("見張りが鳴っても本体に中止が伝わらない(裏で走り続ける)");
+      X.cancelFlag = false;
+
       /* ③ 見張りを外したあと、時計が残って次の書き出しを誤爆させない */
       X.STALL_MS = 50;
-      await new Promise(r => setTimeout(r, 200));
+      await spin(200);
       if (await X.runWatched(async () => "ok2") !== "ok2") throw new Error("前回の見張りが残っている");
-    } finally { X.STALL_MS = keep; }
+    } finally { X.STALL_MS = keep; X.STALL_CHECK_MS = keepIv; }
     return "固まれば名前つきで止まる / 進んでいれば止めない / 後を引かない";
   });
 
