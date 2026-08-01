@@ -2971,7 +2971,7 @@ async function countSamples(ns, file, fromSec) {
   });
 
 
-  group("㉚ おまかせが黙って死なない(2026-08-01 レビュー14件 レビュー14件の見張り)");
+  group("㉚ おまかせが黙って死なない(2026-08-01 レビュー14件の見張り)");
 
   await test("★書き出しは自走から本当に起動できる(鍵を返してから押す)", async () => {
     const w = await compEnv();
@@ -3238,6 +3238,97 @@ async function countSamples(ns, file, fromSec) {
       if (w.document.title === t0) throw new Error("こだわりでも知らせなくなった(=黙らせすぎ)");
     } finally { clean(); }
     return "おまかせ=黙る / こだわり=知らせる";
+  });
+
+
+  group("㉛ iPhone実機の報告への手当て(2026-08-01)");
+
+  await test("★音は大きさで選ばない。雑音が少なく割れていないものを選ぶ", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    /* 現場でよくある3本。
+       ① 客席のど真ん中 … 大きいが、ざわつきに埋もれている
+       ② 少し離れた良い位置 … 小さいが、とてもきれい
+       ③ 近すぎるマイク … いちばん大きいが、割れている */
+    S.clips[0].stats = { rms: 0.30, noise: 0.0600, clipRatio: 0,    peak: 0.80 };
+    S.clips[1].stats = { rms: 0.08, noise: 0.0025, clipRatio: 0,    peak: 0.35 };
+    S.clips[2].stats = { rms: 0.45, noise: 0.0100, clipRatio: 0.01, peak: 1.00 };
+    const pick = w.MC.audio.recommend();
+    if (!pick) throw new Error("何も選ばれない");
+    if (pick.id !== S.clips[1].id) {
+      throw new Error("きれいな音を選ばなかった: " + pick.name);
+    }
+    /* ── 対照: 旧い基準(大きさ基準)なら、ざわついた大きい方を選んでいた ──
+       これが違わなければ、基準を変えた意味が無い(=この試験に歯が無い) */
+    const oldScore = c => c.stats.rms * (1 - Math.min(1, c.stats.clipRatio * 200));
+    const oldPick = S.clips.reduce((b, c) => (oldScore(c) > oldScore(b) ? c : b), S.clips[0]);
+    if (oldPick.id === pick.id) {
+      throw new Error("旧い基準でも同じものが選ばれる(=この試験に歯が無い)");
+    }
+    /* 割れているものは、どれだけ雑音が少なくても採らない */
+    if (pick.id === S.clips[2].id) throw new Error("割れている音を選んだ");
+    return "きれいな②を選ぶ / 旧基準はざわついた①を選んでいた";
+  });
+
+  await test("★音を整える: 小さい音はそろえ、天井は超えず、低い唸りは落ちる", async () => {
+    const w = await compEnv();
+    const SR = 48000, N = 4800;
+    const sine = (amp, hz) => {
+      const b = new Float32Array(N);
+      for (let i = 0; i < N; i++) b[i] = amp * Math.sin(2 * Math.PI * hz * i / SR);
+      return b;
+    };
+    const peakOf = b => { let p = 0; for (let i = 0; i < N; i++) p = Math.max(p, Math.abs(b[i])); return p; };
+
+    /* ① 小さい音は、人が触らなくても天井の少し下までそろう */
+    const a = sine(0.25, 1000);
+    new w.MC.audio.Polish({ peak: 0.25, noise: 0.0005 }, SR).run(a, 0, N, 0);
+    const pa = peakOf(a);
+    if (!(pa > 0.55)) throw new Error("小さい音がそろわない(peak=" + pa.toFixed(3) + ")");
+    if (pa >= 1) throw new Error("天井を超えた");
+
+    /* ② 見込みより大きい音が来ても、新しい音割れを作らない。
+       ここが甘いと「音量を自動でそろえる」が「音を割る」に化ける */
+    const b = sine(0.98, 1000);
+    new w.MC.audio.Polish({ peak: 0.20, noise: 0.0001 }, SR).run(b, 0, N, 0);
+    const pb = peakOf(b);
+    if (pb >= 1) throw new Error("音が割れた(peak=" + pb.toFixed(4) + ")");
+
+    /* ③ 低い唸り(風・空調・足音)は落ちる。同じ大きさの1kHzと比べる */
+    const lo = sine(0.5, 30), hi = sine(0.5, 1000);
+    new w.MC.audio.Polish({ peak: 0.5, noise: 0 }, SR).run(lo, 0, N, 0);
+    new w.MC.audio.Polish({ peak: 0.5, noise: 0 }, SR).run(hi, 0, N, 0);
+    const ratio = peakOf(lo) / Math.max(1e-9, peakOf(hi));
+    if (!(ratio < 0.75)) throw new Error("低い唸りが落ちていない(比 " + ratio.toFixed(2) + ")");
+    /* ── 対照: 1kHz は落とさない(なんでも小さくする実装でも通ってしまわないように) ── */
+    if (!(peakOf(hi) > 0.55)) throw new Error("演奏の帯域まで削っている");
+    return `小さい音→${pa.toFixed(2)} / 大きい音→${pb.toFixed(4)}(<1) / 30Hzは1kHzの${ratio.toFixed(2)}倍`;
+  });
+
+  await test("★失敗の記録が、そのまま送れる形で出る", async () => {
+    const w = await compEnv();
+    compReset(w);
+    const A = w.MC.ui.autoStage;
+    const cp = w.document.getElementById("asCopy");
+    if (!cp) throw new Error("記録をコピーするボタンが無い");
+    A.open();
+    try {
+      w.MC.log("QAの記録テスト用の1行");
+      A.step("finish");
+      A.fail(new Error("QAのわざとの失敗"));
+      if (cp.getBoundingClientRect().height < 44) throw new Error("コピーのボタンが44pt未満");
+      /* クリップボードは端末しだいで断られる。断られても長押しで拾えるよう、
+         組み立てた本文は必ず画面の要素へ入れてから写しにいく ─ そこを見る */
+      await w.MC.ui.copyReport();
+      const pre = w.document.getElementById("asFailLog");
+      const t = (pre && pre.textContent) || "";
+      for (const must of ["MarchinZ Switcher", "QAのわざとの失敗", "---- ログ ----",
+                          "QAの記録テスト用の1行"]) {
+        if (!t.includes(must)) throw new Error("記録に「" + must + "」が入っていない");
+      }
+      if (!/Mozilla|AppleWebKit|HeadlessChrome/.test(t)) throw new Error("端末の情報が入っていない");
+    } finally { A.close(); }
+    return "版・端末・エラー・ログの4点が本文に入る / 44pt";
   });
 
   if (CF) { CF.remove(); CF = null; CW = null; CD = null; }

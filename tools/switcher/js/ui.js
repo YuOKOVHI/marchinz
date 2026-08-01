@@ -201,6 +201,38 @@ MC.ui.showExportStats = () => {
   };
 };
 
+/* 失敗の記録をひとまとめにしてコピーする(2026-08-01 優さん指示)。
+   実機で踏んだものをそのまま送れるようにする ─ 画面の写真では文字が読めず、
+   打ち直しでは肝心のログが落ちる */
+MC.ui.copyReport = async () => {
+  const de = document.documentElement;
+  const ver = de.getAttribute("data-mz-app-v") || de.getAttribute("data-mz-version") || "(版不明)";
+  const mats = MC.S.clips.filter(c => !c.isAudio).map(c => {
+    const wh = (c.vw && c.vh) ? ` ${c.vw}x${c.vh}` : "";
+    return `${c.name}${wh} ${(c.duration || 0).toFixed(1)}s`;
+  }).join(" / ");
+  const f = MC.ui.autoStage && MC.ui.autoStage._fail;
+  const text = `MarchinZ Switcher ${ver}\n${navigator.userAgent}\n`
+    + `比率: ${MC.S.preset || "?"} / レイアウト: ${MC.S.layoutId || "?"}\n`
+    + `素材: ${mats}\n`
+    + `エラー: ${f ? (f.message || String(f)) : "(なし)"}\n`
+    + `---- ログ ----\n${(MC.debug || []).slice(-60).join("\n")}`;
+  const pre = MC.ui.$("#asFailLog");
+  if (pre) pre.textContent = text;
+  try {
+    await navigator.clipboard.writeText(text);
+    MC.ui.toast("記録をコピーしました。そのまま貼って送れます");
+  } catch (e) {
+    /* クリップボードを断られる端末がある。読める形で出して長押しに委ねる */
+    const d = MC.ui.$("#asFailDetails"); if (d) d.open = true;
+    if (pre) {
+      const r = document.createRange(); r.selectNodeContents(pre);
+      const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    }
+    MC.ui.toast("選択しました。長押しでコピーしてください");
+  }
+};
+
 MC.ui.showDone = res => {
   const share = MC.exporter.shareMode();
   const $ = MC.ui.$;
@@ -2755,6 +2787,11 @@ MC.ui.autoStage = {
         + (this._fail.message || "");
     }
     const box = MC.ui.$("#asFail"); if (box) box.hidden = false;
+    /* 押す前から読める形にしておく。コピーが断られる端末でも長押しで拾える */
+    try {
+      const pre = MC.ui.$("#asFailLog");
+      if (pre) pre.textContent = ((MC.debug || []).slice(-40).join("\n"));
+    } catch (e) {}
     const c = MC.ui.$("#asCancel"); if (c) c.hidden = true;
     this.render();
   },
@@ -2802,6 +2839,17 @@ MC.ui.autoStage = {
       const line = this._fail ? "うまくいきませんでした"
         : this._now ? cur.label : "できました";
       if (say.textContent !== line) say.textContent = line;
+    }
+    /* ★ 画面が消えると自走ごと落ちる(2026-08-01 実機)。
+       低電力モードだと iPhone は消灯の抑止を断るので、こちらでは止められない。
+       できるのは「直し方を伝えること」だけ。開始直後は取得中のことがあるので、
+       少し様子を見てから出す(出したり消えたりさせない) */
+    const wk = MC.ui.$("#asWake");
+    if (wk) {
+      const el2 = (performance.now() - (MC.ui._autoT0 || performance.now())) / 1000;
+      const ng = el2 > 6 && window.MZ_SESSION && !MZ_SESSION.awake;
+      const t = ng ? "画面が消えると止まります。設定 → 画面表示と明るさ → 自動ロック を「なし」にしてください（低電力モードでは消灯を止められません）" : "";
+      if (wk.textContent !== t) { wk.textContent = t; wk.hidden = !t; }
     }
     const host = MC.ui.$("#asSteps");
     if (!host) return;
@@ -3532,6 +3580,8 @@ MC.ui.wire = () => {
   /* 失敗の顔の2つのボタン。もう一度おまかせ / 自分で仕上げる */
   { const r = MC.ui.$("#asRetry");
     if (r) r.onclick = () => { MC.ui.autoStage.close(); MC.ui.runAuto(); }; }
+  { const cp = MC.ui.$("#asCopy");
+    if (cp) cp.onclick = () => MC.ui.copyReport(); }
   { const m = MC.ui.$("#asManual");
     if (m) m.onclick = () => {
       MC.ui.autoStage.close();

@@ -76,9 +76,15 @@ window.MZ_SESSION = (() => {
           S._wakeLock = null;
           await w.release();
         }
-      } catch (_) {
-        // 非対応・省電力モード・非表示タブ等。画面ロック対策なしで続行する
+        if (S._wakeLock) S._wakeDenied = null;
+      } catch (e) {
+        /* ★ 黙って諦めない(2026-08-01 実機)。iPhoneは低電力モードだと
+           画面消灯の抑止を断る。断られたことが分からないと
+           「おまかせの最中に勝手に落ちる」という形でしか現れず、
+           原因に辿り着けない。断られた事実を残し、画面から言えるようにする */
         S._wakeLock = null;
+        S._wakeDenied = want ? ((e && (e.message || e.name)) || "理由不明") : null;
+        if (want && window.MC && MC.log) MC.log("画面の消灯を止められません: " + S._wakeDenied);
       }
     },
 
@@ -106,6 +112,9 @@ window.MZ_SESSION = (() => {
 
     /* いま作業中とみなされているか（呼び出し側が状態を二重に持たなくて済む） */
     get guarded() { return S._guarded; },
+    /* いま画面の消灯を止められているか。止められないなら呼び出し側が案内を出す */
+    get awake() { return !!S._wakeLock; },
+    get wakeDenied() { return S._wakeDenied || null; },
   };
 
   document.addEventListener("visibilitychange", () => {

@@ -211,24 +211,96 @@ MC.audio.viaDecodeAudioData = async (clip, maxSec, startSec = 0) => {
 /* 音質統計: 有音部分の代表RMSとクリッピング率 */
 MC.audio.stats = pcm => {
   const win = MC.audio.SR / 2;  // 0.5秒窓
-  const rmsList = [];
-  let clipped = 0;
-  for (let i = 0; i < pcm.length; i++) if (Math.abs(pcm[i]) > 0.985) clipped++;
+  const rmsList = [], allList = [];
+  let clipped = 0, peak = 0;
+  for (let i = 0; i < pcm.length; i++) {
+    const a = Math.abs(pcm[i]);
+    if (a > peak) peak = a;
+    if (a > 0.985) clipped++;
+  }
   for (let o = 0; o + win <= pcm.length; o += win) {
     let s = 0;
     for (let i = o; i < o + win; i++) s += pcm[i] * pcm[i];
     const r = Math.sqrt(s / win);
-    if (r > 0.004) rmsList.push(r);  // ほぼ無音の窓は除外
+    allList.push(r);                 // 雑音の高さを測るので静かな窓も残す
+    if (r > 0.004) rmsList.push(r);  // 代表音量からはほぼ無音の窓を除外
   }
   rmsList.sort((a, b) => a - b);
+  allList.sort((a, b) => a - b);
   const rms = rmsList.length ? rmsList[Math.floor(rmsList.length / 2)] : 0;
-  return { rms, clipRatio: clipped / pcm.length };
+  /* ★ 雑音の高さ(2026-08-01)。静かな窓の代表値を見る ─ 演奏の合間に
+     残っている風・空調・客席のざわつきがここに出る。
+     いちばん静かな1窓だと、たまたま無音の瞬間を拾って0になるので下から1割 */
+  const noise = allList.length ? allList[Math.floor(allList.length * 0.1)] : 0;
+  return { rms, clipRatio: clipped / pcm.length, peak, noise };
 };
 
-/* 音声トラックのおすすめ: RMS大きい順、クリッピングにペナルティ */
+/* 音声トラックのおすすめ: 雑音が少なく、割れていないものを選ぶ。
+   ★ 大きさでは選ばない(2026-08-01 優さん指示)。大きい音がきれいな音とは
+     かぎらない ─ 近すぎるマイクは大きいが割れているし、客席のど真ん中は
+     大きいが雑音まみれ。大きさは書き出しのときに自動でそろえるので、
+     選ぶ基準からは外す */
 MC.audio.recommend = () => {
   const cands = MC.S.clips.filter(c => c.stats);
   if (!cands.length) return null;
-  const score = c => c.stats.rms * (1 - Math.min(1, c.stats.clipRatio * 200));
+  const db = v => 20 * Math.log10(Math.max(v, 1e-6));
+  const score = c => {
+    const s = c.stats;
+    if (!s.rms) return -1e9;
+    /* 雑音に対して演奏がどれだけ立っているか。これが「きれいさ」の本体 */
+    const snr = db(s.rms) - db(Math.max(s.noise || 0, 1e-5));
+    /* 割れているものは、どれだけ雑音が少なくても採らない(重い減点) */
+    const broken = Math.min(1, (s.clipRatio || 0) * 400) * 40;
+    /* 天井に貼りついている=これから割れる。割れの一歩手前も避ける */
+    const hot = (s.peak || 0) > 0.995 ? 12 : 0;
+    return snr - broken - hot;
+  };
   return cands.reduce((best, c) => (score(c) > score(best) ? c : best), cands[0]);
+};
+
+/* ============ ③ 音をきれいにする(2026-08-01 優さん指示) ============
+   おまかせで書き出すとき、選んだ音にこの順で手を入れる。
+     ① 低い唸りを落とす      … 風・空調・足音・机の振動
+     ② 測った雑音より下を沈める … 演奏の合間のざわつき。切らずに沈める
+     ③ ピークを天井の少し下へ  … 大きさは人が決めなくていい
+     ④ 超えた分は角を丸める    … 新しい音割れを作らない
+   窓をまたいで状態が続くので、書き出し1回につき1つ作って使い回すこと。 */
+MC.audio.Polish = class {
+  constructor(stats, sr) {
+    const s = stats || {};
+    /* ピークを -1dBFS(0.891) へそろえる。小さすぎる素材を持ち上げすぎて
+       雑音まで大きくしないよう、上げ幅には天井を置く */
+    const peak = Math.max(0.02, Math.min(1, s.peak || 0.5));
+    this.gain = Math.max(0.5, Math.min(6, 0.891 / peak));
+    /* 沈める境目。測った雑音の少し上に置く ─ ちょうどに置くと
+       弱音の演奏まで沈む */
+    this.thr = Math.max(1e-4, (s.noise || 0) * 2.5);
+    const rc = 1 / (2 * Math.PI * 70);      // 70Hz以下を落とす
+    this.a = rc / (rc + 1 / sr);
+    this.st = [{ x: 0, y: 0, env: 0 }, { x: 0, y: 0, env: 0 }];
+  }
+  /* buf の off から n サンプルを、その場で整える。ch は 0=左 1=右 */
+  run(buf, off, n, ch) {
+    const st = this.st[ch], a = this.a, g = this.gain, thr = this.thr;
+    const ATK = 0.01, REL = 0.0008;   // 立ち上がりは速く、戻りはゆっくり
+    for (let i = 0; i < n; i++) {
+      const x = buf[off + i];
+      const y = a * (st.y + x - st.x);          // ① 低い唸りを落とす
+      st.x = x; st.y = y;
+      const m = Math.abs(y);
+      st.env += (m > st.env ? ATK : REL) * (m - st.env);
+      let k = 1;
+      if (st.env < thr) { const r = st.env / thr; k = r * r; }   // ② 沈める
+      let v = y * k * g;                                        // ③ そろえる
+      const A = Math.abs(v);
+      if (A > 0.891) {                                          // ④ 角を丸める
+        /* ★ 天井は 1.0 ではなく 0.995 に置く(2026-08-01 QAが捕まえた)。
+           tanh は飽和すると 1 を返すので 0.891 + 0.109×1 = **ちょうど 1.0000**。
+           整数に落とすときに端が折り返して、割れを直すはずの処理が
+           自分で割れた音を作る。丸める幅を天井より内側に取る */
+        v = (v < 0 ? -1 : 1) * (0.891 + 0.104 * Math.tanh((A - 0.891) / 0.104));
+      }
+      buf[off + i] = v;
+    }
+  }
 };

@@ -93,7 +93,13 @@ MC.exporter.VideoPipe = class {
     this.tsOff = this.src.editOffsetSec(vt) || 0;
     this.decoder = new VideoDecoder({
       output: f => this.frames.push(f),
-      error: e => { this.error = e; },
+      /* ★ どのカメラで落ちたのかを残す(2026-08-01 実機)。
+         iPhoneが返す "Decoder failure" だけでは3本のうちどれの話か分からず、
+         次の一手が打てなかった。名前と素材の形まで書いて、そのまま送れるようにする */
+      error: e => {
+        const why = (e && (e.message || e.name)) || String(e);
+        this.error = new Error(`映像を読み解けませんでした（${this.clip.name}）: ${why}`);
+      },
     });
     this.decoder.configure(cfg);
     this.cursor = this.src.cursor(vt.id);
@@ -106,8 +112,13 @@ MC.exporter.VideoPipe = class {
        VideoFrame は iOS では IOSurface(GPUメモリ)を掴むため、1080p×3カメラ×8枚で
        数十MBになる。**iOS実機での速度影響は未検証**。詰まって遅くなるようなら
        この係数(6/4)を戻す。デスクトップの水位(12/8)は変えない */
-    while (!this.eof && this.decoder.decodeQueueSize < (MC.isIOS ? 6 : 12) &&
-           this.frames.length < (MC.isIOS ? 4 : 8)) {
+    /* ★ iOSの水位をさらに下げた(2026-08-01 実機 Decoder failure)。
+       3分割の縦積みは3本とも毎コマ描くのでデコーダを1本も減らせない。
+       減らせるのは各本が同時に抱える VideoFrame の枚数だけ ─
+       VideoFrame は iOS では IOSurface(GPUメモリ)を掴むため、
+       1080p×3本×4枚が同時に生きていた。6/4 → 4/2 にする */
+    while (!this.eof && this.decoder.decodeQueueSize < (MC.isIOS ? 4 : 12) &&
+           this.frames.length < (MC.isIOS ? 2 : 8)) {
       const { value: s, done } = await this.cursor.next();
       if (done) {
         this.eof = true;
@@ -255,6 +266,9 @@ MC.exporter.encodeAudio = async (muxer, clip, fromLocalSec, durSec, onStatus) =>
   const OUT_SR = 48000;
   const FR = 1024;
   const need = Math.ceil(durSec * OUT_SR);
+  /* ★ 音を整える(2026-08-01 優さん指示)。PCM経路と同じものを通す ─
+     片方だけに入れると、素材の種類で音の仕上がりが変わってしまう */
+  const _pol = MC.audio.Polish ? new MC.audio.Polish(clip.stats, OUT_SR) : null;
   let error = null;
   const rsL = new MC.audio.LinearResampler(cfg.sampleRate, OUT_SR);
   const rsR = new MC.audio.LinearResampler(cfg.sampleRate, OUT_SR);
@@ -282,6 +296,7 @@ MC.exporter.encodeAudio = async (muxer, clip, fromLocalSec, durSec, onStatus) =>
   const emitWindow = () => {
     if (!pendN || encErr) { pendN = 0; return; }
     const n = pendN;
+    if (_pol) { _pol.run(pend, 0, n, 0); _pol.run(pend, FR, n, 1); }   // ★ 音を整える
     const data = new Float32Array(n * 2);
     data.set(pend.subarray(0, n), 0);
     data.set(pend.subarray(FR, FR + n), n);
@@ -381,6 +396,12 @@ MC.exporter.encodeAudioPcm = async (muxer, src, fromLocalSec, durSec, onStatus) 
   const need = Math.ceil(durSec * OUT_SR);
   const rsL = new MC.audio.LinearResampler(src.pcm.rate, OUT_SR);
   const rsR = new MC.audio.LinearResampler(src.pcm.rate, OUT_SR);
+  /* ★ 音を整えてから入れる(2026-08-01 優さん指示)。
+     低い唸りを落とし、測った雑音より下を沈め、ピークを天井の少し下へそろえ、
+     超えた分は角を丸める。窓をまたいで状態が続くのでここで1つだけ作る */
+  const _pol = MC.audio.Polish
+    ? new MC.audio.Polish((MC.getClip(MC.S.audioClipId) || {}).stats, OUT_SR) : null;
+  if (_pol) MC.log(`音を整えます: 音量 ×${_pol.gain.toFixed(2)} / 沈める境目 ${_pol.thr.toFixed(4)}`);
   const primingSec = (await MC.exporter.measureAacDelay()) / 48000;
   const from = Math.max(0, fromLocalSec + primingSec);
 
@@ -401,6 +422,7 @@ MC.exporter.encodeAudioPcm = async (muxer, src, fromLocalSec, durSec, onStatus) 
   const flushWindow = async () => {
     if (!pendN || encErr) { pendN = 0; return; }
     const n = pendN;
+    if (_pol) { _pol.run(pend, 0, n, 0); _pol.run(pend, FR, n, 1); }   // ★ 音を整える
     const data = new Float32Array(n * 2);
     data.set(pend.subarray(0, n), 0);
     data.set(pend.subarray(FR, FR + n), n);
@@ -1001,7 +1023,16 @@ MC.exporter._exportVideoPart = async (opt) => {
     });
     const baseCfg = { codec: "avc1.640028", width: w, height: h,
                       bitrate: MC.exporter.videoBitrate(), framerate: fps };
-    let vcfg = { ...baseCfg, hardwareAcceleration: "prefer-hardware" };
+    /* ★ iPhoneで映像3本のときは名指しをやめる(2026-08-01 実機 Decoder failure)。
+       iPhoneが同時に使える映像処理の口数は限られていて、
+       デコーダ3本＋エンコーダ1本で取り合いになる。名指しをやめると
+       端末が空いている側へ回せる。そのぶん遅くなるが、落ちるよりよい。
+       ※これは実機ログからの推測。次の実機で当たりかどうかが分かる */
+    const _tight = MC.isIOS
+      && MC.activeClips().filter(c => !c.isAudio && !c.isImage).length >= 3;
+    if (_tight) MC.log("export: 映像3本なのでエンコーダは端末まかせにします(iPhone)");
+    let vcfg = _tight ? { ...baseCfg }
+                      : { ...baseCfg, hardwareAcceleration: "prefer-hardware" };
     try {
       const s = await VideoEncoder.isConfigSupported(vcfg);
       if (!s || !s.supported) vcfg = baseCfg;
@@ -1552,7 +1583,16 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle, opts) => {
       codec: "avc1.640028", width: w, height: h,
       bitrate: MC.exporter.videoBitrate(), framerate: fps,
     };
-    let vcfg = { ...baseCfg, hardwareAcceleration: "prefer-hardware" };
+    /* ★ iPhoneで映像3本のときは名指しをやめる(2026-08-01 実機 Decoder failure)。
+       iPhoneが同時に使える映像処理の口数は限られていて、
+       デコーダ3本＋エンコーダ1本で取り合いになる。名指しをやめると
+       端末が空いている側へ回せる。そのぶん遅くなるが、落ちるよりよい。
+       ※これは実機ログからの推測。次の実機で当たりかどうかが分かる */
+    const _tight = MC.isIOS
+      && MC.activeClips().filter(c => !c.isAudio && !c.isImage).length >= 3;
+    if (_tight) MC.log("export: 映像3本なのでエンコーダは端末まかせにします(iPhone)");
+    let vcfg = _tight ? { ...baseCfg }
+                      : { ...baseCfg, hardwareAcceleration: "prefer-hardware" };
     try {
       const s = await VideoEncoder.isConfigSupported(vcfg);
       if (!s || !s.supported) vcfg = baseCfg;
