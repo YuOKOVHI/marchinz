@@ -5522,6 +5522,53 @@ async function countSamples(ns, file, fromSec) {
     } finally { set("AudioContext", kAC); set("webkitAudioContext", kWAC); U.sfx._ctx = kCtx; }
   });
 
+
+  await test("★失敗の顔から閉じるとツールのトップ(1段目)に立つ / 成功の閉じるは従来どおり", async () => {
+    const e = await doneEnv();
+    const w = e.w, d = w.document, U = e.U;
+    try {
+      /* ① 失敗 → 閉じる → 1段目(種類の選択)。おまかせの工程画面には戻らない */
+      U.exportOverlay.open();
+      U.exportOverlay.fail();
+      const eoClose = d.getElementById("eoClose");
+      if (eoClose.hidden) throw new Error("失敗の顔に閉じるが無い");
+      eoClose.click();
+      if (!d.getElementById("exportOverlay").hidden) throw new Error("閉じるで畳まれない");
+      if (d.getElementById("modeSelect").hidden) throw new Error("失敗後の閉じるがトップへ戻らない(おまかせの工程に残る)");
+      if (!d.getElementById("workspace").hidden) throw new Error("工程画面が出たまま");
+      if (d.getElementById("modeStepKind").hidden) throw new Error("1段目(種類)ではなく別の段に立っている");
+      if (!d.getElementById("modeStepFlow").hidden) throw new Error("2段目(おまかせ/こだわり)が開いている");
+      /* ② 成功 → 閉じる → 従来どおり工程画面に残る(保存や別シーンがまだある) */
+      w.MC.ui.chooseMode("switch", { silent: true });
+      U.exportOverlay.open();
+      U.showDone(e.res);
+      d.getElementById("eoClose").click();
+      if (!d.getElementById("exportOverlay").hidden) throw new Error("成功の閉じるで畳まれない");
+      if (!d.getElementById("modeSelect").hidden) throw new Error("成功の閉じるまでトップへ飛ばした(従来どおり残るべき)");
+      /* ③ 失敗の顔の「もう一度おまかせ」「自分で仕上げる」は従来どおり(トップへ飛ばさない) */
+      const keepAuto = U.runAuto;
+      let reran = 0;
+      U.runAuto = async () => { reran++; };
+      try {
+        const as = d.getElementById("autoStage");
+        const wasHidden = as.hidden; as.hidden = false;
+        U._lastFailNotify = Date.now();          // 通知の実発火は別試験の担当
+        U.autoStage.fail(new Error("QAのわざとの失敗(戻り先)"));
+        d.getElementById("asRetry").click();
+        if (reran !== 1) throw new Error("もう一度おまかせが走らない");
+        if (!d.getElementById("modeSelect").hidden) throw new Error("もう一度おまかせなのにトップへ飛んだ");
+        as.hidden = false;
+        U.autoStage.fail(new Error("QAのわざとの失敗2"));
+        d.getElementById("asManual").click();
+        if (U._setupTab !== "pro") throw new Error("自分で仕上げるが こだわり に入らない");
+        if (!d.getElementById("modeSelect").hidden) throw new Error("自分で仕上げるなのにトップへ飛んだ");
+        as.classList.remove("as-failed"); as.hidden = wasHidden;
+        U.autoStage._fail = null; U.autoStage._failedStep = null;
+      } finally { U.runAuto = keepAuto; U._lastFailNotify = 0; }
+      return "失敗+閉じる=1段目 / 成功+閉じる=工程に残る / もう一度・自分で=従来どおり";
+    } finally { U.exportOverlay.close(); w.MC.ui.chooseMode("switch", { silent: true }); e.restore(); }
+  });
+
   if (CF) { CF.remove(); CF = null; CW = null; CD = null; }
 
   /* ===== 集計 ===== */

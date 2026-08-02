@@ -4871,11 +4871,23 @@ MC.ui.wire = () => {
   $("#eoCancel").onclick = () => { MC.exporter.cancelFlag = true; };
   $("#eoSaveBtn").onclick = () => MC.ui.saveResult();
   $("#eoDownloadBtn").onclick = () => MC.ui.downloadResult();
-  $("#eoClose").onclick = () => MC.ui.exportOverlay.close();
+  /* ★ 失敗の顔からの「閉じる」はツールのトップへ(2026-08-02 優さん指示
+     「止まった後に戻ると、おまかせのところに行く。戻る時はツールのトップに」)。
+     失敗して閉じた人が、失敗したときのおまかせの工程画面に立たされていた ─
+     やり直すのか・別の動画にするのかを選び直す場所は、最初の
+     「作る動画の種類」(1段目)のほう。行き先は既存の showModeSelect に乗せる
+     (showModeSelect が必ず1段目=modeStepKind から出す)。
+     成功後の「閉じる」は今までどおり工程画面に残る(まだ保存や別シーンがある) */
+  const eoCloseByUser = () => {
+    const failed = $("#exportOverlay").classList.contains("eo-failed");
+    MC.ui.exportOverlay.close();
+    if (failed) MC.ui.showModeSelect();
+  };
+  $("#eoClose").onclick = eoCloseByUser;
   document.addEventListener("keydown", ev => {
     // Escは「閉じる」が出ているときだけ(書き出し中の誤爆で消さない)
     if (ev.key === "Escape" && !$("#exportOverlay").hidden && !$("#eoClose").hidden) {
-      MC.ui.exportOverlay.close();
+      eoCloseByUser();
     }
   });
 
