@@ -4252,6 +4252,69 @@ async function countSamples(ns, file, fromSec) {
     return "固まれば名前つきで止まる / 進んでいれば止めない / 後を引かない";
   });
 
+  await test("★凍結明けの最初の巡回は殺さず、続き(revive)に譲る ─ 見張り自身が止まっていた時間は数えない", async () => {
+    /* 2026-08-02 push前レビュー: v1.77.0 の revive(デコーダ作り直し)は、
+       凍結明けに runWatched の見張りが先に鳴ると1コマも読めずに殺される。
+       見張りは Date.now() で idle を測るが、凍結中は見張り自身も止まる ─
+       復帰した最初の巡回で idle に凍結時間がまるごと乗っていた。
+       恩赦: 巡回同士の間隔(gap)が開きすぎていたら、その1回は数え直す */
+    const w = await compEnv();
+    const X = w.MC.exporter;
+    const keep = X.STALL_MS, keepIv = X.STALL_CHECK_MS, keepGap = X.FREEZE_GAP_MIN_MS;
+    const tick = () => new Promise(r => { const c = new MessageChannel(); c.port1.onmessage = () => r(); c.port2.postMessage(0); });
+    const spin = async ms => { const t0 = Date.now(); while (Date.now() - t0 < ms) await tick(); };
+    /* 凍結の代役: 同期ブロック。実タイマーは積まれても実行できず、
+       解放後の最初の巡回だけ gap が大きい ─ 実機の凍結明けと同じ形。
+       ★ 恩赦の閾値(FREEZE_GAP_MIN_MS)は 2000ms より下げない ─ 隠れたタブでは
+         巡回タイマーが1秒へ節流され、閾値がそれ未満だと毎回恩赦になって
+         ③(本物の停止)が永久に止まらなくなる(この試験自身のハング) */
+    const freeze = ms => { const t0 = Date.now(); while (Date.now() - t0 < ms) {} };
+    X.STALL_CHECK_MS = 20;
+    X.STALL_MS = 1500;
+    try {
+      /* ① 凍結(3000ms > STALL_MS=1500)を挟んでも、恩赦が効いて続きが走りきれる */
+      X.FREEZE_GAP_MIN_MS = 2000;
+      X.cancelFlag = false;
+      const r = await X.runWatched(async () => {
+        X.stage("映像を作っています");
+        freeze(3000);                                  // 画面スリープ→復帰
+        for (let i = 0; i < 4; i++) { await spin(30); X.beat(); }   // revive後の続き
+        return "revived";
+      }).catch(e => { throw new Error("凍結明けの最初の巡回で殺された: " + e.message); });
+      if (r !== "revived") throw new Error("続きが走りきれていない: " + r);
+      if (X.cancelFlag) throw new Error("恩赦したのに cancelFlag が立っている(本体が裏で死ぬ)");
+
+      /* ② 歯: 恩赦を外すと同じ凍結で殺される(v1.77.0 のままの挙動が再現する) */
+      X.FREEZE_GAP_MIN_MS = 9e9;
+      X.cancelFlag = false;
+      let msg = "";
+      try {
+        await X.runWatched(async () => {
+          X.stage("映像を作っています");
+          freeze(3000);
+          await new Promise(() => {});   // 恩赦なしでは見張りが先に鳴る
+        });
+      } catch (e) { msg = e.message; }
+      if (!/進みませんでした/.test(msg)) throw new Error("歯の確認: 恩赦を外しても死なない(試験が凍結を作れていない): " + msg);
+      X.cancelFlag = false;
+
+      /* ③ 恩赦は見張りを無力化しない: 凍結ではない本物の停止は従来どおり名指しで止まる */
+      X.FREEZE_GAP_MIN_MS = 2000;
+      msg = "";
+      try {
+        await X.runWatched(() => { X.stage("素材を開いています"); return new Promise(() => {}); });
+      } catch (e) { msg = e.message; }
+      if (!/進みませんでした/.test(msg) || !/素材を開いています/.test(msg)) {
+        throw new Error("恩赦が本物の停止まで許した: " + msg);
+      }
+      X.cancelFlag = false;
+    } finally {
+      X.STALL_MS = keep; X.STALL_CHECK_MS = keepIv; X.FREEZE_GAP_MIN_MS = keepGap;
+      X.cancelFlag = false;
+    }
+    return "凍結明け=数え直して続行 / 恩赦なし変異=死ぬ / 本物の停止=従来どおり止まる";
+  });
+
   await test("★<video>を手放す処理は、既定では走らない", async () => {
     const w = await compEnv();
     const X = w.MC.exporter;

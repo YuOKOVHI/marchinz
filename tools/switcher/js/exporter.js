@@ -1217,14 +1217,35 @@ MC.exporter.STALL_CHECK_MS = 5000;
    1770コマをiPhoneで書くのは数分かかる仕事で、その間 stage() は一度も動かない。
    進捗を報告するところから必ず呼ぶこと(_markProgress の先頭に置いてある) */
 MC.exporter.beat = () => { MC.exporter._lastProgAt = Date.now(); };
+/* ★ 凍結明けの恩赦の下限(2026-08-02 push前レビュー)。見張りのタイマー同士の
+   間隔がこれ以上開いていたら「見張り自身が止められていた」(タブ凍結・スリープ)
+   と判断し、その1回は数え直す。本物の停止(awaitが返らない)では main thread が
+   空くので見張りは STALL_CHECK_MS おきに刻み続け、gap は開かない */
+MC.exporter.FREEZE_GAP_MIN_MS = 15000;
 MC.exporter.runWatched = async (fn) => {
   MC.exporter._lastProgAt = Date.now();
   MC.exporter._stage = "書き出しの準備";
   let done = false, timer = null;
   const stall = new Promise((_, rej) => {
+    let lastTick = Date.now();
     timer = setInterval(() => {
       if (done) return;
-      const idle = Date.now() - (MC.exporter._lastProgAt || Date.now());
+      const now = Date.now();
+      const gap = now - lastTick;
+      lastTick = now;
+      /* ★ 凍結明けの恩赦(2026-08-02 push前レビュー)。タブ凍結・画面スリープ中は
+         この見張りも止まるが Date.now() は進む ─ 復帰した最初の1回で idle に
+         凍結時間がまるごと乗り、revive(exporter.js)がデコーダを作り直して
+         続きを読む前に cancelFlag で書き出しを殺していた
+         (しかも文言が「進みませんでした」で、凍結ヒントにも繋がらない)。
+         gap が開きすぎている=見張り自身が止まっていた証拠なので数え直す。
+         隠れタブのタイマー節流(Chromeの1分毎化)でも同じ枝に入るが、
+         それは「見ていない間は殺さない」であり、戻れば5秒間隔に戻って再武装する */
+      if (gap >= Math.max(MC.exporter.STALL_CHECK_MS * 4, MC.exporter.FREEZE_GAP_MIN_MS)) {
+        MC.exporter._lastProgAt = now;
+        return;
+      }
+      const idle = now - (MC.exporter._lastProgAt || now);
       if (idle >= MC.exporter.STALL_MS) {
         /* ★ 走っている本体にも降りると伝える(2026-08-01 レビュー)。
            Promise.race は**負けた側を止めない**。ここで畳まないと、
