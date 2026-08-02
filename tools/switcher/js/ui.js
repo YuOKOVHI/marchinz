@@ -3321,7 +3321,12 @@ MC.ui.autoStage = {
       const el2 = (performance.now() - (MC.ui._autoT0 || performance.now())) / 1000;
       if (el2 > 6 && S2) {
         if (S2.wakeDenied) this._wakeWarn = 1;
-        else if (!("wakeLock" in navigator)) this._wakeWarn = 2;
+        /* ★ awake も見る(2026-08-02 レビュー実測)。v1.75.0 で「仕組みが無い端末」
+           にも代役の無音動画が立つようになったのに、ここが API の有無だけで
+           判定していたため、代役で実際に画面が点いたままの端末(iOS 16.0〜16.3等)
+           にまで「画面が消えると止まります」が出ていた。警告は
+           「本命も代役も両方だめ」のときだけ ─ session.js 側の設計と揃える */
+        else if (!("wakeLock" in navigator) && !S2.awake) this._wakeWarn = 2;
       }
       /* 設定アプリの手順は iPhone のものなので、iPhone にだけ出す */
       const t = this._wakeWarn === 1
