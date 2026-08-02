@@ -60,14 +60,30 @@ window.MZ_SESSION = (() => {
       return () => clearTimeout(tm);
     },
 
-    /* ---- ②' Wake Lock を断られた端末の代替: 無音の極小動画をループ再生 ----
+    /* ---- ②' Wake Lock を断られた端末の代替: 極小動画の再生 ----
        (2026-08-02 実機: iPhoneの低電力モードは wakeLock.request を
        "Permission was denied" で断る。画面が消える → Safari ごと凍結 →
        復帰した瞬間に見張りが306秒の空白を見て書き出しを止める、が実際に起きた)
 
-       iOS は <video> が再生中のあいだ画面を消さない(NoSleep.js と同じ原理)。
-       下の _WAKE_MP4 は 64x64・2秒・音声トラック無しの H.264 を実行時生成して
-       base64 で埋め込んだもの(1.3KB)。muted + playsinline + loop で回す。
+       ★ 効く条件は WebKit の実装で決まっている(HTMLMediaElement::
+       shouldDisableSleep / mediaType / canProduceAudio を実読 2026-08-02):
+       ・loop だと問答無用で消灯を抑止しない(loop() → SleepType::None)
+       ・muted / volume=0 だと canProduceAudio()=false → VideoAudio 扱いに
+         ならず抑止しない
+       ・映像+音声の両トラックが必要(video-only も抑止しない)
+       つまり「muted な video-only の loop」は3重に無効。NoSleep.js が
+       muted にせず・loop にせず・timeupdate で先頭へ巻き戻すのは全部このため。
+
+       下の _WAKE_MP4 は 64x64 H.264(6fps) + 無音のAAC(12kHz mono, 各4Bの
+       無音フレーム)の2秒・約2KB。afconvert(macOS標準)で無音AACを作り、
+       Pythonで映像トラックと結合した(箱構造・NAL整合は再パースで検証済み)。
+       音声トラックは**入っているが中身は完全な無音**なので何も鳴らない。
+
+       muted にしないため play() にはユーザー操作の活性が要る。おまかせは
+       タップ起点なので初回は通る見込み。断られたら次のタップで再挑戦する
+       (_wakeRetryOn)。一度ユーザー操作で再生できた <video> は、以後は
+       操作なしで play() し直せる(WebKitは制限を要素ごとに解除する)ので、
+       復帰時の再生し直しは同じ要素を使い回す。
 
        デコーダの口を1つ使うが、競合はしない根拠:
        ・書き出し中は parkVideoElements() がプレビューの <video> 3本を
@@ -80,27 +96,68 @@ window.MZ_SESSION = (() => {
        止めるため、1〜2px を右下に不透明度1%で置く。 */
     _wakeVideo: null,
     _videoAwake: false,
-    _WAKE_MP4: "data:video/mp4;base64,AAAAHGZ0eXBpc29tAAACAGlzb21hdmMxbXA0MQAAAsNtb292AAAAbG12aGQAAAAA5pRPc+aUT3MAAAPoAAAH0AABAAABAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAACT3RyYWsAAABcdGtoZAAAAAPmlE9z5pRPcwAAAAEAAAAAAAAH0AAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAQAAAAEAAAAAAAettZGlhAAAAIG1kaGQAAAAA5pRPc+aUT3MAAOEAAAHCAFXEAAAAAAAvaGRscgAAAABtaGxydmlkZQAAAAAAAAAAAAAAAG1wNC1tdXhlci1oZGxyAAAAAZRtaW5mAAAAFHZtaGQAAAABAAAAAAAAAAAAAAAkZGluZgAAABxkcmVmAAAAAAAAAAEAAAAMdXJsIAAAAAEAAAFUc3RibAAAAKBzdHNkAAAAAAAAAAEAAACQYXZjMQAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAABAAEAASAAAAEgAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABj//wAAACdhdmNDAUIACv/hABAnQgAKqzBhvAgwjNQEBAQIAQAEKM48gAAAABNjb2xybmNseAABAAEAAQAAAAAYc3R0cwAAAAAAAAABAAAADAAAJYAAAAAUc3RzcwAAAAAAAAABAAAAAQAAABxzdHNjAAAAAAAAAAEAAAABAAAAAwAAAAEAAABEc3RzegAAAAAAAAAAAAAADAAAAKIAAAAnAAAAJwAAACoAAAArAAAAKwAAAC4AAAApAAAAMAAAABwAAAAqAAAAKwAAACBzdGNvAAAAAAAAAAQAAALnAAAD1wAABFcAAATeAAACcG1kYXQAAAA6BgUyR1ZK3FxMQz+U78URPNFDqAEAAAMAAQMAAAMAAQIAAE4gCwAAAwAAAwAAIzIMA4kkAQ3/////gAAAAGAluCAL///h6KAAIC/vvvngwFY4AAgBxwABADvvvvvvvqDGuuumDCuuuuuuuoMa666YMK6666666gxrrrpgwrrrrrrrmxWOAAIAccAAQA7W1ta66666666666666666668AAAAjAeEEXQjWI8RxHz6z+fz8R8/n8/n4j5/P5/PxH+gYKL/1UX8AAAAjIeEIehGsR4jiPn1n8/n4j5/P5/PxHz+fz+fiP9AyUX/qov4AAAAmAeIML+B6xGsR4jiPn1n8/n4j5/P5/PxHz+fz+fiP9AzUX/qov4AAAAAnIeIQP8D1iMU4jxHEfPinP5/PxHz+fz+fiPn8/n8/Ef6Bqov/VRfwAAAAJwHjFBf4HrEYvEeI4j58Xn8/n4j5/P5/PxHz+fz+fiP9AtUX/qov4AAAACoh4xgX8D0Iquq8TrEeI4j58U5/P5+I+fz+fz8R8/n8/n4j/QM1F/6qL+AAAAAlAeQcG/gb8R4jxHEfP5/P5+I+fz+fz8R8/n8/n4j/QK1F/6qL+AAAACwh5CAf8DeMqqqtarr4jWI8RxHz6z+fz8R8/n8/n4j5/P5/PxH+gYqL/1UX8AAAABgB5SQb+B6i/9VF/6qL/1UX/oFai/9VF/AAAAAmIeUoH/A9YjWI8RxHz6z+fz8R8/n8/n4j5/P5/PxH+gYqL/1UX8AAAAAnAeYsF/gesRi8R4jiPnxefz+fiPn8/n8/EfP5/P5+I/0C1Rf+qi/g",
+    _WAKE_MP4: "data:video/mp4;base64,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",
+    /* play() がユーザー操作の活性切れで断られたとき、次のタップで再挑戦する */
+    _wakeRetryFn: null,
+    _wakeRetryOn() {
+      if (S._wakeRetryFn) return;
+      const fn = () => {
+        S._wakeRetryOff();
+        const v = S._wakeVideo;
+        if (S._wantAwake && v && v.paused) {
+          Promise.resolve(v.play()).then(() => {
+            if (S._wakeVideo === v) S._videoAwake = true;
+          }).catch(() => { S._wakeRetryOn(); });
+        }
+      };
+      S._wakeRetryFn = fn;
+      document.addEventListener("touchend", fn, true);
+      document.addEventListener("pointerdown", fn, true);
+    },
+    _wakeRetryOff() {
+      const fn = S._wakeRetryFn;
+      if (!fn) return;
+      S._wakeRetryFn = null;
+      document.removeEventListener("touchend", fn, true);
+      document.removeEventListener("pointerdown", fn, true);
+    },
     async _wakeVideoStart() {
       /* 二重に立てない。既にあるのに止まっていたら(隠れたタブでOSが
          止めるのは実測済み)、再生だけやり直す */
       if (S._wakeVideo) {
-        if (S._wakeVideo.paused) {
-          try { await S._wakeVideo.play(); S._videoAwake = true; } catch (e) {}
+        const v0 = S._wakeVideo;
+        if (v0.paused) {
+          try {
+            await v0.play();
+            /* play() を待つ間に keepAwake(false) が来ていたら成功扱いにしない */
+            if (S._wakeVideo === v0) { S._videoAwake = true; S._wakeRetryOff(); }
+          } catch (e) {
+            if (S._wakeVideo === v0) S._wakeRetryOn();
+          }
         }
         return S._videoAwake;
       }
       let v = null;
       try {
         v = document.createElement("video");
-        v.muted = true;
-        v.setAttribute("muted", "");        // 属性も付ける(iOSの自動再生判定)
+        /* muted にも loop にもしない(上の WebKit 実読メモ)。音声トラックは
+           完全な無音なので、muted でなくても何も鳴らない */
         v.playsInline = true;
         v.setAttribute("playsinline", "");
-        v.loop = true;
+        v.volume = 1;                       // volume=0 も抑止が効かなくなる
         v.setAttribute("aria-hidden", "true");
         v.style.cssText = "position:fixed;right:0;bottom:0;width:2px;height:2px;" +
                           "opacity:0.01;pointer-events:none;z-index:-1;";
+        /* loop の代わり: 終端に着く前に少し巻き戻す(NoSleep.js と同じ)。
+           終端に着くと sentEndEvent でも抑止が切れるため、ended にも保険 */
+        v.addEventListener("timeupdate", () => {
+          if (v.currentTime > 1) v.currentTime = 0.01 + Math.random() * 0.3;
+        });
+        v.addEventListener("ended", () => {
+          if (S._wakeVideo === v && S._wantAwake) {
+            Promise.resolve(v.play()).catch(() => {});
+          }
+        });
         v.src = S._WAKE_MP4;
         (document.body || document.documentElement).appendChild(v);
         S._wakeVideo = v;
@@ -108,14 +165,18 @@ window.MZ_SESSION = (() => {
         /* play() を待つ間に keepAwake(false) が来ていたら、成功扱いにしない */
         if (S._wakeVideo !== v) return false;
         S._videoAwake = true;
-        if (window.MC && MC.log) MC.log("画面は動画のループ再生で点けたままにします(Wake Lockの代役)");
+        S._wakeRetryOff();
+        if (window.MC && MC.log) MC.log("画面は動画の再生で点けたままにします(Wake Lockの代役)");
       } catch (e) {
-        if (S._wakeVideo === v) S._wakeVideoStop();
+        /* 要素は残す(次のタップ・復帰時に同じ要素で再挑戦するため)。
+           片づけは keepAwake(false) → _wakeVideoStop() の仕事 */
+        if (S._wakeVideo === v) S._wakeRetryOn();
         if (window.MC && MC.log) MC.log("代役の動画も再生できません: " + ((e && (e.message || e.name)) || e));
       }
       return S._videoAwake;
     },
     _wakeVideoStop() {
+      S._wakeRetryOff();
       const v = S._wakeVideo;
       S._wakeVideo = null;
       S._videoAwake = false;
@@ -209,9 +270,9 @@ window.MZ_SESSION = (() => {
     S._visEpoch++;
     /* ③ 復帰時の再取得。消灯・アプリ切替で Wake Lock は解放されるため、
        作業中のまま戻ってきたら黙って取り直す。
-       代役の動画も、隠れている間は OS が止める(実測: Chromeは
-       "video-only background media was paused to save power")ので、
-       keepAwake(true) → _wakeVideoStart() の「止まっていたら再生し直す」が効く */
+       代役の動画も、隠れている間は OS に止められることがあるので、
+       keepAwake(true) → _wakeVideoStart() の「止まっていたら再生し直す」が効く
+       (同じ要素の play() し直しは、一度ユーザー操作で再生できていれば操作なしで通る) */
     if (S._wantAwake && document.visibilityState === "visible" &&
         (!S._wakeLock || (S._wakeVideo && S._wakeVideo.paused))) S.keepAwake(true);
   });
