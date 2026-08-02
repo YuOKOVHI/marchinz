@@ -1410,7 +1410,7 @@ MC.ui.updateActionBar = () => {
         conf = { label: "これでOK、続ける", icon: "fa-arrow-right",
           act: () => { MC.ui._viewPhase = null; MC.ui.refreshJourney(); } };
       } else {
-        conf = { label: MC.S.mode === "vertical" ? "動画・写真を選ぶ" : "動画を選ぶ",
+        conf = { label: MC.ui.photosInvited() ? "動画・写真を選ぶ" : "動画を選ぶ",
           icon: "fa-folder-open",
           act: () => MC.ui.$(MC.S.mode === "vertical" ? "#fileInputV" : "#fileInput").click() };
       }
@@ -1737,16 +1737,24 @@ MC.ui.renderResumeNote = () => {
   if (el) { el.hidden = true; el.innerHTML = ""; }
 };
 
+/* ★ 写真を「誘っていいか」(2026-08-02 UI/UXレビュー)。おまかせは写真を
+   取り込まない(media.addFiles の門番・setSetupTab の accept と同じ条件)のに、
+   見出しとボタンが「動画・写真を選ぶ」のままだと、誘っておいて断る画面になる。
+   文言もこの1つの判定に揃える */
+MC.ui.photosInvited = () =>
+  MC.S.mode === "vertical" && !(MC.ui._autoFlow && MC.ui._setupTab !== "pro");
+
 MC.ui.renderClips = () => {
   MC.ui.renderResumeNote();
   const box = MC.ui.$("#clipSlots");
   box.innerHTML = "";
   const vertical = MC.S.mode === "vertical";
+  const withPhotos = MC.ui.photosInvited();
   /* 縦型は写真も入れられる。見出しの名詞をモードに合わせる(2026-07-23 B-4)。
      h2にはステップのチップが付くので、専用spanだけを書き換える */
   {
     const t = document.querySelector("#dropSec .drop-title");
-    if (t) t.textContent = vertical ? "動画・写真を選ぶ" : "動画を選ぶ";
+    if (t) t.textContent = withPhotos ? "動画・写真を選ぶ" : "動画を選ぶ";
   }
   const slotClips = MC.media.slotClips();   // 音声のみを除く(動画+画像)
   /* 空き枠の補足を出す最初の1枠。3枠すべてに同じ説明を繰り返さない */
@@ -1769,7 +1777,7 @@ MC.ui.renderClips = () => {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "clip-slot-add";
-      btn.innerHTML = vertical
+      btn.innerHTML = withPhotos
         /* 補足は最初の空き枠にだけ付ける。3枠すべてに同じ説明を繰り返すと、
            1画面に同じ文が3回並ぶ(2026-07-28 文言の棚卸し) */
         ? 'タップして動画・写真を選ぶ' + (firstEmpty ? '<br><span class="hint">まとめて選べます／ここにドロップでもOK</span>' : '')

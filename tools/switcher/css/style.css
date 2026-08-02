@@ -253,6 +253,10 @@ body.mz-busy-lock #errorLog button { pointer-events: auto; opacity: 1; }
 .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px);
   background: var(--navy); color: #fff; border: none; padding: 10px 20px; border-radius: 24px;
   font-size: 13px; transition: .25s; opacity: 0; pointer-events: none; z-index: 99;
+  /* ★ 幅を出し切ってから折り返す(2026-08-02 375px実測)。left:50%の収縮幅は
+     親の半分で止まるため、長い文が187pxの縦長ピルになり語中で改行していた
+     (「使え/ません」「写/真」)。max-contentで一旦広げ、92vwで畳む */
+  width: max-content; max-width: min(92vw, 480px);
   box-shadow: 0 8px 32px rgba(15, 33, 56, 0.18); }
 .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
 
