@@ -46,7 +46,11 @@ body::before {
   white-space: nowrap; vertical-align: 2px;
 }
 .head-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-.back-link { font-size: 12px; color: var(--acc); text-decoration: none; white-space: nowrap; }
+/* ★ 左端に移した戻る(2026-08-02 ⑨)の指の的を44ptに(2026-08-03 push前レビュー実測: 38×18px)。
+   縦は負のマージンで相殺し、ヘッダーの高さは変えない(的だけ広げる) */
+.back-link { display: inline-flex; align-items: center; min-height: 44px; min-width: 44px;
+  margin: -13px 0; padding: 0 8px 0 0;
+  font-size: 12px; color: var(--acc); text-decoration: none; white-space: nowrap; }
 .back-link:hover { color: var(--acc-deep); text-decoration: underline; }
 @media (max-width: 700px) { .head-right .caps-badge { display: none; } }
 

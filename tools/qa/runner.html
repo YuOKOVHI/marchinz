@@ -1286,6 +1286,22 @@ async function countSamples(ns, file, fromSec) {
     });
   });
 
+  await test("★ヘッダー「← 戻る」は左端かつ44pt(2026-08-03 push前レビュー実測: 38×18pxだった)", async () => {
+    return withSwitcher(async (w, d) => {
+      const a = d.querySelector(".topbar .back-link");
+      if (!a) throw new Error(".back-link が見つからない");
+      const b = a.getBoundingClientRect();
+      /* 左端: ヘッダー内でロゴ類を除き最左(⑨ 戻る=左の作法)。x はパディング分だけ */
+      if (b.left > 24) throw new Error(`左端に無い(x=${Math.round(b.left)}px)`);
+      if (b.height < 43.5) throw new Error(`指の的が ${Math.round(b.height)}px(44pt未満)`);
+      if (b.width < 43.5) throw new Error(`指の的が幅 ${Math.round(b.width)}px(44pt未満)`);
+      /* 的を広げてもヘッダーの背丈を押し広げない(負マージンで相殺している) */
+      const bar = d.querySelector(".topbar").getBoundingClientRect();
+      if (bar.height > 80) throw new Error(`ヘッダーが太った(${Math.round(bar.height)}px)`);
+      return `x=${Math.round(b.left)} / ${Math.round(b.width)}×${Math.round(b.height)}px / ヘッダー${Math.round(bar.height)}px`;
+    });
+  });
+
   group("⑨ 合成(レイアウト) ─ 高速化の前に「いまの絵」を固定する");
   /* 狙いは2つ。
      ① layout.js:31 が「必ず一致させること」と書いている不変条件を機械で守る。
@@ -3489,6 +3505,36 @@ async function countSamples(ns, file, fromSec) {
       w.MC.ui.applyGuestLocks();
       return "通常=ロック / 同期失敗後=押せる";
     });
+  });
+  await test("★こだわりロックの案内が足りないものを言う(登録済み×スマホに登録を勧めない)", async () => {
+    const w = await compEnv();
+    compReset(w);
+    const rm = () => { const n = w.document.getElementById("mzProLockNote"); if (n) n.remove(); };
+    try {
+      /* 登録済み×スマホ: 足りないのはパソコン。登録リンクを出すと嘘の約束になる
+         (proAllowed=登録×PC 化(2026-08-02 ⑩)で、登録済みもロック側へ来るようになった) */
+      const t1 = withRole(w, { proAllowed: false, member: true, unlimited: false }, () => {
+        rm(); w.MC.ui.applyGuestLocks();
+        return w.document.getElementById("mzProLockNote");
+      });
+      if (!t1) throw new Error("登録済み×スマホに案内が出ない");
+      if (!/パソコン/.test(t1.textContent)) throw new Error("パソコンの条件を言っていない: " + t1.textContent);
+      if (t1.querySelector('a[href="/#signup"]') || /無料登録/.test(t1.textContent)) {
+        throw new Error("登録済みに登録を勧めている(登録しても開かない嘘の約束): " + t1.textContent);
+      }
+      /* 変異: 未登録には従来どおり登録への道を残す(方向を逆に壊していないこと) */
+      const t2 = withRole(w, { proAllowed: false, member: false, unlimited: false }, () => {
+        rm(); w.MC.ui.applyGuestLocks();
+        return w.document.getElementById("mzProLockNote");
+      });
+      if (!t2 || !t2.querySelector('a[href="/#signup"]')) {
+        throw new Error("未登録から登録への道が消えている");
+      }
+      return "登録済み=パソコン案内のみ / 未登録=登録リンクあり";
+    } finally {
+      rm();
+      w.MC.ui.applyGuestLocks();   // 実際の権限で描き直して片付ける
+    }
   });
 
   /* ===== ⑳ 自動カット割の判定ロジック(引き継ぎ書③・2026-07-31 に修正) =====
@@ -5815,7 +5861,26 @@ async function countSamples(ns, file, fromSec) {
         try { v.srcObject = null; } catch (_) {}
         U.eoLive._stream = keepStream; U.eoLive._noApi = keepNoApi;
       }
-      return "video=非muted/非loop/playsinline / on=videoだけ表示 / off=canvasへ / 拒否でも壊れない";
+      /* ④ OS側の pause で「再生中」を名乗り続けない(凍ったコマを見せない)。
+         listener は prime のストリーム作成時に付く ─ ③ が付けている。
+         判定は prime と同じ機能検出(API の無い環境ではこの項だけ黙って飛ばす) */
+      if (el.captureStream && (w.AudioContext || w.webkitAudioContext) && w.MediaStream) {
+        U.eoLive.on = true;
+        v.dispatchEvent(new w.Event("pause"));
+        if (U.eoLive.on) throw new Error("OSに止められても on のまま(凍った<video>を見せ続ける)");
+      }
+      /* ⑤ stop() は AudioContext を眠らせる(書き出しの外で無音を鳴らし続けない)。
+         変異: suspend を呼ばない実装ならここで検出する */
+      { const keepCtx = U.eoLive._ctx;
+        const fake = { state: "running", _s: false,
+          suspend() { this._s = true; this.state = "suspended"; return Promise.resolve(); } };
+        try {
+          U.eoLive._ctx = fake;
+          U.eoLive.stop();
+          if (!fake._s) throw new Error("stop() が AudioContext を眠らせていない");
+        } finally { U.eoLive._ctx = keepCtx; }
+      }
+      return "video=非muted/非loop/playsinline / on=videoだけ表示 / off=canvasへ / 拒否でも壊れない / pause=canvasへ / stop=ctx休止";
     } finally { U.eoLive.on = keepOn; U.exportOverlay.close(); }
   });
 

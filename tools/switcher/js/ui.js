@@ -208,6 +208,12 @@ MC.ui.eoLive = {
         v.srcObject = this._stream;
         v.playsInline = true; v.setAttribute("playsinline", "");
         v.muted = false; v.volume = 1;
+        /* ★ OS側に止められたら「再生中」を名乗り続けない(push前レビュー)。
+           iOSは割り込み(電話・Siri等)で黙って pause することがある。
+           on を倒せば livePreview が次のコマから canvas 表示に戻す
+           (止まった<video>の凍ったコマを見せ続けない)。stop() の pause でも
+           発火するが、そこでは直後に on=false にしており二重でも無害 */
+        v.addEventListener("pause", () => { this.on = false; });
       }
       /* resume は await しない ─ タップの活性が無いと**永遠に解決しない**promise を
          返す実装があり、await すると prime ごと固まる。活性があれば同期的に走る */
@@ -225,6 +231,10 @@ MC.ui.eoLive = {
   stop() {
     const v = document.getElementById("eoLiveVid");
     if (v) { v.hidden = true; try { v.pause(); } catch (_) {} }
+    /* ★ AudioContext は眠らせる(push前レビュー)。書き出しの外でも無音を
+       レンダリングし続け、電池と音声セッションを握ったままだった。
+       close ではなく suspend ─ 次の prime() が resume で使い回す設計のため */
+    try { if (this._ctx && this._ctx.state === "running") this._ctx.suspend().catch(() => {}); } catch (_) {}
     this.on = false;
   },
 };
@@ -2709,7 +2719,12 @@ MC.ui.applyGuestLocks = () => {
       if (!document.body.classList.contains("mz-guest")) return;
       const sec = ev.target.closest(".mz-locked");
       if (!sec || ev.target.closest("h2")) return;   // 見出しは畳み開閉に使う
-      MC.ui.toast("この設定は無料登録で使えます");
+      /* ★ 足りないものを言い分ける(2026-08-02 ⑩ push前レビュー)。proAllowed が
+         登録×PC になった結果、登録済み×スマホもここへ来る ─ その人に
+         「無料登録で」と言うと、登録しても開かない嘘の約束になる */
+      const L2 = window.MZ_LIMITS || {};
+      MC.ui.toast((L2.member || L2.unlimited)
+        ? "この設定はパソコンで使えます" : "この設定は無料登録で使えます");
       const n = document.getElementById("mzProLockNote");
       if (n) n.scrollIntoView({ behavior: "smooth", block: "center" });
     });
@@ -2722,10 +2737,14 @@ MC.ui.applyGuestLocks = () => {
     note = document.createElement("div");
     note.id = "mzProLockNote";
     note.className = "mz-pro-lock-note";
+    /* ★ 登録済み×スマホには登録リンクを出さない(2026-08-02 ⑩ push前レビュー)。
+       この人に足りないのはパソコンで、登録ではない ─ showFlowLockNote と同じ出し分け */
     note.innerHTML = '<i class="fa-solid fa-lock" aria-hidden="true"></i> '
-      + 'こだわり設定は MarchinZ への登録で使えます。'
-      + 'ゲストは「使う音声」の選択だけ変更できます。 '
-      + '<a href="/#signup">無料登録</a>';
+      + ((L.member || L.unlimited)
+        ? 'こだわり設定はパソコンで使えます。この端末では「使う音声」の選択だけ変更できます。'
+        : 'こだわり設定は MarchinZ への登録とパソコンで使えます。'
+          + 'ゲストは「使う音声」の選択だけ変更できます。 '
+          + '<a href="/#signup">無料登録</a>');
     pane.insertBefore(note, pane.firstChild);
   } else if (!guest && note) {
     note.remove();
