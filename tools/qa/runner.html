@@ -4501,6 +4501,130 @@ async function countSamples(ns, file, fromSec) {
   });
 
 
+  /* ============ ㉝ Wake Lock の代役: 無音動画ループ ============
+     (2026-08-02 実機: 低電力モードの iPhone は wakeLock.request を
+     "Permission was denied" で断る。画面が消える → Safari 凍結 → 復帰時に
+     見張りが306秒の空白を見て止める、が v1.74.0 で実際に起きた。
+     代役: <video muted playsinline loop> の極小動画。iOS は動画再生中は
+     画面を消さない(NoSleep方式)) */
+  group("㉝ Wake Lock を断られたら、無音動画の代役で画面を点けたままにする");
+  const loadSessionWake = async (opt) => {
+    const o = opt || {};
+    const made = [];
+    const doc = {
+      visibilityState: "visible",
+      addEventListener: () => {},
+      _appended: [],
+      createElement: () => {
+        const el = {
+          muted: false, loop: false, playsInline: false, paused: true, src: "",
+          attrs: {}, style: {}, removed: false,
+          setAttribute(k, v2) { this.attrs[k] = v2; },
+          removeAttribute(k) { delete this.attrs[k]; if (k === "src") this.src = ""; },
+          load() { this.reloaded = true; },
+          async play() {
+            if (o.playFails) throw new Error("NotAllowedError: 再生できない想定");
+            this.paused = false;
+          },
+          pause() { this.paused = true; },
+          remove() { this.removed = true; },
+        };
+        made.push(el);
+        return el;
+      },
+      body: { appendChild(el) { doc._appended.push(el); } },
+    };
+    const win = { addEventListener: () => {}, removeEventListener: () => {} };
+    const src = await (await fetch("../shared/session.js")).text();
+    /* nav は後から挿し替えられるよう外に出す(「本物が取れたら代役を返す」の試験) */
+    const nav = o.nav || { wakeLock: { request: async () => { throw new Error("Permission was denied"); } } };
+    new Function("window", "document", "navigator", src)(win, doc, nav);
+    const S = win.MZ_SESSION;
+    if (!S) throw new Error("MZ_SESSION が生えていない");
+    return { S, made, doc, nav };
+  };
+  await test("★断られたら代役が立つ(muted+playsinline+loop・awake=true・警告は出ない)", async () => {
+    const { S, made, doc } = await loadSessionWake();
+    await S.keepAwake(true);
+    eq(made.length, 1, "作られた<video>の数");
+    const v = made[0];
+    if (!v.muted || !v.loop || !("playsinline" in v.attrs) || !("muted" in v.attrs)) {
+      throw new Error("muted/playsinline/loop が揃っていない(iOSの自動再生条件)");
+    }
+    if (v.paused) throw new Error("play() が呼ばれていない");
+    eq(doc._appended.length, 1, "DOMへ入った数");
+    if (/display\s*:\s*none/.test(v.style.cssText || "")) throw new Error("display:none はiOSが動画を止める");
+    eq(S.awake, true, "awake(代役でも点いている扱い)");
+    eq(S.wakeDenied, null, "wakeDenied(代役が効いていれば警告を出させない)");
+    if (!/Permission/.test(S._wakeDenied || "")) throw new Error("断られた生の事実が記録に残っていない");
+    return "断られた事実は残しつつ、画面は点いている扱い";
+  });
+  await test("★keepAwake(false) で代役は止まり、確実に手放す", async () => {
+    const { S, made } = await loadSessionWake();
+    await S.keepAwake(true);
+    await S.keepAwake(false);
+    const v = made[0];
+    if (!v.paused) throw new Error("止まっていない");
+    if (v.src !== "" || !v.reloaded) throw new Error("src を外して load() し直していない(デコーダが返らない)");
+    if (!v.removed) throw new Error("DOMから消えていない");
+    eq(S.awake, false, "awake");
+    if (S._wakeVideo) throw new Error("参照が残っている(次回に二重で立つ)");
+  });
+  await test("★二重に立たない(何度呼んでも<video>は1本)", async () => {
+    const { S, made } = await loadSessionWake();
+    await S.keepAwake(true);
+    await S.keepAwake(true);
+    await S.keepAwake(true);
+    eq(made.length, 1, "作られた<video>の数");
+    eq(S.awake, true, "awake");
+    /* 止められていたら再生だけやり直す(隠れたタブでOSが止めるのは実測済み) */
+    made[0].paused = true;
+    await S.keepAwake(true);
+    eq(made.length, 1, "再生し直しでも新しく作らない");
+    if (made[0].paused) throw new Error("止まった代役を再生し直していない");
+    return "1本のまま・止まれば再生し直す";
+  });
+  await test("代役まで失敗したときだけ、従来の警告(wakeDenied)が出る", async () => {
+    const { S } = await loadSessionWake({ playFails: true });
+    await S.keepAwake(true);
+    eq(S.awake, false, "awake");
+    if (!S.wakeDenied) throw new Error("両方だめなのに wakeDenied が無い(案内が出せない)");
+    return "『ときどき画面を触ってください』の経路は生きている";
+  });
+  await test("本物の錠前が取れたら代役は返す(デコーダを空ける)", async () => {
+    const { S, made, nav } = await loadSessionWake();
+    await S.keepAwake(true);              // 断られて代役が立つ
+    eq(S.awake, true, "代役で点いている");
+    nav.wakeLock.request = async () => ({ addEventListener: () => {}, release: async () => {} });
+    S._wakeLock = null;                   // 復帰時の取り直し(visibilitychange)と同じ形
+    await S.keepAwake(true);
+    if (!S._wakeLock) throw new Error("本物が取れていない");
+    if (!made[0].removed) throw new Error("本物が取れたのに代役が回りっぱなし");
+    eq(S.awake, true, "awake");
+  });
+  await test("★埋め込みの動画は本物のブラウザで読める(64x64・約2秒)", async () => {
+    const src = await (await fetch("../shared/session.js")).text();
+    const m = src.match(/data:video\/mp4;base64,[A-Za-z0-9+/=]+/);
+    if (!m) throw new Error("session.js に埋め込み動画が無い");
+    const v = document.createElement("video");
+    v.muted = true; v.playsInline = true; v.src = m[0];
+    await within(4000, new Promise((res, rej) => {
+      v.addEventListener("loadedmetadata", res);
+      v.addEventListener("error", () => rej(new Error("動画として読めない")));
+    }), "メタデータ読み込み");
+    if (!(v.duration > 1.5 && v.duration < 2.5)) throw new Error("長さが想定外: " + v.duration);
+    eq(v.videoWidth, 64, "幅");
+    /* 再生そのものは前面のときだけ確かめる(隠れたタブはOSが
+       video-only の再生を止める。実測: "paused to save power") */
+    if (document.visibilityState !== "visible") return "隠れたタブのためメタデータのみ(前面で再走すると再生も見る)";
+    try { await v.play(); } catch (e) { return "再生は保留(" + (e.name || "?") + ")・メタデータはOK"; }
+    await new Promise(r => setTimeout(r, 700));
+    const t = v.currentTime;
+    v.pause(); v.removeAttribute("src");
+    if (!(t > 0)) throw new Error("再生時間が進まない");
+    return `再生OK(${t.toFixed(2)}秒進んだ)・${Math.round(m[0].length / 1024)}KBのdata URI`;
+  });
+
   /* ===== ㉜ 2026-08-02 優さん実機指示の4件 ===== */
   group("㉜ まず保存させる / ツールのシェア / こだわりは登録から / 通知とバイブ");
 

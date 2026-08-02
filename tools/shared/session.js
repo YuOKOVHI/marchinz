@@ -60,6 +60,71 @@ window.MZ_SESSION = (() => {
       return () => clearTimeout(tm);
     },
 
+    /* ---- ②' Wake Lock を断られた端末の代替: 無音の極小動画をループ再生 ----
+       (2026-08-02 実機: iPhoneの低電力モードは wakeLock.request を
+       "Permission was denied" で断る。画面が消える → Safari ごと凍結 →
+       復帰した瞬間に見張りが306秒の空白を見て書き出しを止める、が実際に起きた)
+
+       iOS は <video> が再生中のあいだ画面を消さない(NoSleep.js と同じ原理)。
+       下の _WAKE_MP4 は 64x64・2秒・音声トラック無しの H.264 を実行時生成して
+       base64 で埋め込んだもの(1.3KB)。muted + playsinline + loop で回す。
+
+       デコーダの口を1つ使うが、競合はしない根拠:
+       ・書き出し中は parkVideoElements() がプレビューの <video> 3本を
+         手放している(src を外す)ので、この1本は**3本の跡地に1本**でしかない
+       ・64x64@6fps は 1080p の 1/500 以下の画素数。iOSのHWデコーダは
+         解像度合計で律速されるため、実質ゼロ負荷
+       ・エンコーダ(VideoEncoder)とは別資源
+
+       display:none や画面外(left:-9999px)は iOS が「見えていない動画」として
+       止めるため、1〜2px を右下に不透明度1%で置く。 */
+    _wakeVideo: null,
+    _videoAwake: false,
+    _WAKE_MP4: "data:video/mp4;base64,AAAAHGZ0eXBpc29tAAACAGlzb21hdmMxbXA0MQAAAsNtb292AAAAbG12aGQAAAAA5pRPc+aUT3MAAAPoAAAH0AABAAABAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAACT3RyYWsAAABcdGtoZAAAAAPmlE9z5pRPcwAAAAEAAAAAAAAH0AAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAQAAAAEAAAAAAAettZGlhAAAAIG1kaGQAAAAA5pRPc+aUT3MAAOEAAAHCAFXEAAAAAAAvaGRscgAAAABtaGxydmlkZQAAAAAAAAAAAAAAAG1wNC1tdXhlci1oZGxyAAAAAZRtaW5mAAAAFHZtaGQAAAABAAAAAAAAAAAAAAAkZGluZgAAABxkcmVmAAAAAAAAAAEAAAAMdXJsIAAAAAEAAAFUc3RibAAAAKBzdHNkAAAAAAAAAAEAAACQYXZjMQAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAABAAEAASAAAAEgAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABj//wAAACdhdmNDAUIACv/hABAnQgAKqzBhvAgwjNQEBAQIAQAEKM48gAAAABNjb2xybmNseAABAAEAAQAAAAAYc3R0cwAAAAAAAAABAAAADAAAJYAAAAAUc3RzcwAAAAAAAAABAAAAAQAAABxzdHNjAAAAAAAAAAEAAAABAAAAAwAAAAEAAABEc3RzegAAAAAAAAAAAAAADAAAAKIAAAAnAAAAJwAAACoAAAArAAAAKwAAAC4AAAApAAAAMAAAABwAAAAqAAAAKwAAACBzdGNvAAAAAAAAAAQAAALnAAAD1wAABFcAAATeAAACcG1kYXQAAAA6BgUyR1ZK3FxMQz+U78URPNFDqAEAAAMAAQMAAAMAAQIAAE4gCwAAAwAAAwAAIzIMA4kkAQ3/////gAAAAGAluCAL///h6KAAIC/vvvngwFY4AAgBxwABADvvvvvvvqDGuuumDCuuuuuuuoMa666YMK6666666gxrrrpgwrrrrrrrmxWOAAIAccAAQA7W1ta66666666666666666668AAAAjAeEEXQjWI8RxHz6z+fz8R8/n8/n4j5/P5/PxH+gYKL/1UX8AAAAjIeEIehGsR4jiPn1n8/n4j5/P5/PxHz+fz+fiP9AyUX/qov4AAAAmAeIML+B6xGsR4jiPn1n8/n4j5/P5/PxHz+fz+fiP9AzUX/qov4AAAAAnIeIQP8D1iMU4jxHEfPinP5/PxHz+fz+fiPn8/n8/Ef6Bqov/VRfwAAAAJwHjFBf4HrEYvEeI4j58Xn8/n4j5/P5/PxHz+fz+fiP9AtUX/qov4AAAACoh4xgX8D0Iquq8TrEeI4j58U5/P5+I+fz+fz8R8/n8/n4j/QM1F/6qL+AAAAAlAeQcG/gb8R4jxHEfP5/P5+I+fz+fz8R8/n8/n4j/QK1F/6qL+AAAACwh5CAf8DeMqqqtarr4jWI8RxHz6z+fz8R8/n8/n4j5/P5/PxH+gYqL/1UX8AAAABgB5SQb+B6i/9VF/6qL/1UX/oFai/9VF/AAAAAmIeUoH/A9YjWI8RxHz6z+fz8R8/n8/n4j5/P5/PxH+gYqL/1UX8AAAAAnAeYsF/gesRi8R4jiPnxefz+fiPn8/n8/EfP5/P5+I/0C1Rf+qi/g",
+    async _wakeVideoStart() {
+      /* 二重に立てない。既にあるのに止まっていたら(隠れたタブでOSが
+         止めるのは実測済み)、再生だけやり直す */
+      if (S._wakeVideo) {
+        if (S._wakeVideo.paused) {
+          try { await S._wakeVideo.play(); S._videoAwake = true; } catch (e) {}
+        }
+        return S._videoAwake;
+      }
+      let v = null;
+      try {
+        v = document.createElement("video");
+        v.muted = true;
+        v.setAttribute("muted", "");        // 属性も付ける(iOSの自動再生判定)
+        v.playsInline = true;
+        v.setAttribute("playsinline", "");
+        v.loop = true;
+        v.setAttribute("aria-hidden", "true");
+        v.style.cssText = "position:fixed;right:0;bottom:0;width:2px;height:2px;" +
+                          "opacity:0.01;pointer-events:none;z-index:-1;";
+        v.src = S._WAKE_MP4;
+        (document.body || document.documentElement).appendChild(v);
+        S._wakeVideo = v;
+        await v.play();
+        /* play() を待つ間に keepAwake(false) が来ていたら、成功扱いにしない */
+        if (S._wakeVideo !== v) return false;
+        S._videoAwake = true;
+        if (window.MC && MC.log) MC.log("画面は動画のループ再生で点けたままにします(Wake Lockの代役)");
+      } catch (e) {
+        if (S._wakeVideo === v) S._wakeVideoStop();
+        if (window.MC && MC.log) MC.log("代役の動画も再生できません: " + ((e && (e.message || e.name)) || e));
+      }
+      return S._videoAwake;
+    },
+    _wakeVideoStop() {
+      const v = S._wakeVideo;
+      S._wakeVideo = null;
+      S._videoAwake = false;
+      if (!v) return;
+      try { v.pause(); } catch (e) {}
+      try { v.removeAttribute("src"); if (v.load) v.load(); } catch (e) {}   // デコーダを確実に返す
+      try { if (v.remove) v.remove(); } catch (e) {}
+    },
+
     /* ---- ② 画面を点けたままにする ----
        want=true で取得、false で解放。何度呼んでも安全（冪等）。
        画面が一度でも消えると OS 側が解放するので、復帰時に取り直す（下の listener）。 */
@@ -83,7 +148,14 @@ window.MZ_SESSION = (() => {
           S._wakeLock = null;
           await w.release();
         }
-        if (S._wakeLock) S._wakeDenied = null;
+        if (S._wakeLock) {
+          S._wakeDenied = null;
+          S._wakeVideoStop();       // 本物の錠前が取れたら代役は返す(デコーダを空ける)
+        } else if (want && !navigator.wakeLock) {
+          /* 仕組みそのものが無い端末(旧iOS等)も、代役の動画で点けたままにする */
+          await S._wakeVideoStart();
+        }
+        if (!want) S._wakeVideoStop();
       } catch (e) {
         /* ★ 黙って諦めない(2026-08-01 実機)。iPhoneは低電力モードだと
            画面消灯の抑止を断る。断られたことが分からないと
@@ -92,6 +164,12 @@ window.MZ_SESSION = (() => {
         S._wakeLock = null;
         S._wakeDenied = want ? ((e && (e.message || e.name)) || "理由不明") : null;
         if (want && window.MC && MC.log) MC.log("画面の消灯を止められません: " + S._wakeDenied);
+        /* ★ 断られたら代役を立てる(2026-08-02 実機: 低電力モードの
+           "Permission was denied")。代役が回っていれば実際に画面は消えないので、
+           awake=true / wakeDenied=null として扱う(下のゲッター)。
+           代役まで失敗したときだけ、従来の「ときどき画面を触ってください」が出る */
+        if (want) await S._wakeVideoStart();
+        if (!want) S._wakeVideoStop();
       }
     },
 
@@ -119,16 +197,23 @@ window.MZ_SESSION = (() => {
 
     /* いま作業中とみなされているか（呼び出し側が状態を二重に持たなくて済む） */
     get guarded() { return S._guarded; },
-    /* いま画面の消灯を止められているか。止められないなら呼び出し側が案内を出す */
-    get awake() { return !!S._wakeLock; },
-    get wakeDenied() { return S._wakeDenied || null; },
+    /* いま画面の消灯を止められているか。止められないなら呼び出し側が案内を出す。
+       ★ 代役の動画が回っていれば true(実際に画面は消えない)。
+       wakeDenied も同様に null を返し、#asWake の警告は
+       「本命も代役も両方だめだったとき」だけ出る(意味を変えない) */
+    get awake() { return !!S._wakeLock || S._videoAwake; },
+    get wakeDenied() { return S._videoAwake ? null : (S._wakeDenied || null); },
   };
 
   document.addEventListener("visibilitychange", () => {
     S._visEpoch++;
     /* ③ 復帰時の再取得。消灯・アプリ切替で Wake Lock は解放されるため、
-       作業中のまま戻ってきたら黙って取り直す */
-    if (S._wantAwake && !S._wakeLock && document.visibilityState === "visible") S.keepAwake(true);
+       作業中のまま戻ってきたら黙って取り直す。
+       代役の動画も、隠れている間は OS が止める(実測: Chromeは
+       "video-only background media was paused to save power")ので、
+       keepAwake(true) → _wakeVideoStart() の「止まっていたら再生し直す」が効く */
+    if (S._wantAwake && document.visibilityState === "visible" &&
+        (!S._wakeLock || (S._wakeVideo && S._wakeVideo.paused))) S.keepAwake(true);
   });
 
   return S;
