@@ -5105,6 +5105,21 @@ async function countSamples(ns, file, fromSec) {
     const realRun = w.MC.ui.runAuto;
     let ran = 0; w.MC.ui.runAuto = () => { ran++; };
     try {
+      /* ★ 門そのものの配線(2026-08-02 レビューで追加)。needsWipePick 単体が
+         正しくても、focusNextAction(自走の入口 ui.js)がそこへ運ばなければ
+         「選ばせずに黙って自走」に戻る ─ この形の退行は関数単体の試験では
+         捕まらない(実測: 分岐を消しても他の4件は全PASSのままだった)。
+         openWipePick をスタブして「開こうとしたか」「先に自走しなかったか」を見る */
+      {
+        const realOpen = w.MC.ui.openWipePick;
+        let opened = 0; w.MC.ui.openWipePick = () => { opened++; };
+        try {
+          w.MC.ui.focusNextAction();
+          await new Promise(r => setTimeout(r, 340));   // 260ms の遅延を跨いで待つ
+        } finally { w.MC.ui.openWipePick = realOpen; }
+        eq(opened, 1, "focusNextAction が選択画面を開く回数");
+        eq(ran, 0, "選択の前に始まった自走の回数");
+      }
       w.MC.ui.openWipePick();
       const el = w.document.getElementById("wipePick");
       if (el.hidden) throw new Error("#wipePick が開かない");
@@ -5182,6 +5197,30 @@ async function countSamples(ns, file, fromSec) {
       eq(S2.wipeClipId2, null, "2本のときの小窓2");
     } finally { w.MC.ui.focusNextAction = realFocus; }
     return "3本=左下が自動で入る / 2本=従来どおり右下のみ";
+  });
+
+  await test("★長いファイル名でも割り当てカードが画面からはみ出さない(375px)", async () => {
+    /* iPhoneの実ファイル名は長い。グリッドの 1fr は nowrap の中身より縮めないので、
+       .wp-card に min-width:0 が無いと画面幅を突き破って横スクロールになる
+       (2026-08-02 レビュー実測で発見・修正)。iframe は 390px=スマホ幅で実測する */
+    const w = await compEnv();
+    const S = compReset(w);
+    S.mode = "wipeCam"; S.layoutId = "wipe";
+    S.clips[0].name = "正面から撮ったカメラ_iPhone15Pro_4Kの長いファイル名_2026-08-02.mov";
+    w.MC.ui._autoFlow = true; S.wipePicked = false;
+    try {
+      w.MC.ui.openWipePick();
+      const el = w.document.getElementById("wipePick");
+      if (el.hidden) throw new Error("#wipePick が開かない");
+      const card = el.querySelector(".wp-card");
+      const cw = card.getBoundingClientRect().width;
+      const host = el.clientWidth;
+      if (el.scrollWidth > el.clientWidth + 1)
+        throw new Error(`横スクロールが出る: scrollWidth ${el.scrollWidth} > ${el.clientWidth}`);
+      if (cw > host)
+        throw new Error(`カードが画面より広い: ${Math.round(cw)}px > ${host}px`);
+      return `カード ${Math.round(cw)}px ≤ 画面 ${host}px・横スクロール無し`;
+    } finally { w.MC.ui.closeWipePick(); w.MC.ui._autoFlow = false; }
   });
 
   if (CF) { CF.remove(); CF = null; CW = null; CD = null; }

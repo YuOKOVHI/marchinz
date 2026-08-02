@@ -345,6 +345,9 @@ html:has(body.mz-wipe-pick), body.mz-wipe-pick {
   letter-spacing: .08em; }
 .wp-cards { display: grid; grid-template-columns: 1fr; gap: 12px; }
 .wp-card { display: flex; align-items: center; gap: 12px; text-align: left;
+  /* min-width:0 が無いとグリッドの 1fr が nowrap のファイル名より縮めず、
+     長い名前のとき 375px で横スクロールになる(2026-08-02 レビュー実測で発見) */
+  min-width: 0;
   padding: 10px; background: var(--panel); border: 1px solid var(--line);
   border-radius: 14px; box-shadow: var(--shadow-card); cursor: pointer;
   font-family: inherit; transition: .15s; }
