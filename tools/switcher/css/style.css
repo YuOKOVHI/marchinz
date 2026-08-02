@@ -1863,6 +1863,18 @@ html:has(body.mz-auto-stage), body.mz-auto-stage {
 .as-step.failed { color: var(--tx); }
 .as-step.failed i { background: rgba(197, 48, 48, .14); color: #c53030; }
 
+/* 「同じ演奏の動画ですか？」の2択(2026-08-02)。失敗の赤ではなく問いの青。
+   出し入れ・畳み方は as-failed と同じ規則(用済みのものを畳み、動きを止める) */
+.as-ask { border-color: rgba(30, 79, 214, .28); background: rgba(30, 79, 214, .05); }
+.as-ask .as-fail-msg::before { content: "\f059"; color: var(--acc); }  /* fa-circle-question */
+.auto-stage.as-asking .as-steps,
+.auto-stage.as-asking .as-bar,
+.auto-stage.as-asking .as-meta,
+.auto-stage.as-asking #asWhat { display: none; }
+.auto-stage.as-asking .as-preview canvas { max-height: 96px; }
+.auto-stage.as-asking .as-step i,
+.auto-stage.as-asking .as-bar-fill { animation: none !important; }
+
 /* 画面が消えると止まる、の案内。読み飛ばされない濃さにする */
 .as-wake { margin: -2px 0 0; padding: 8px 10px; border-radius: 10px;
   background: rgba(197, 138, 0, .12); color: var(--tx); font-size: 12px; line-height: 1.5; }
@@ -1938,8 +1950,9 @@ html:has(body.mz-auto-stage), body.mz-auto-stage {
   .as-wait { font-size: 11px; }
   .auto-stage { padding-top: calc(10px + env(safe-area-inset-top, 0px));
                 padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
-  /* 失敗したら2列は要らない(プレビューは用済み) */
-  .auto-stage.as-failed .as-inner { display: flex; flex-direction: column; }
+  /* 失敗したら2列は要らない(プレビューは用済み)。2択(as-asking)も同じ */
+  .auto-stage.as-failed .as-inner,
+  .auto-stage.as-asking .as-inner { display: flex; flex-direction: column; }
 }
 
 @media (prefers-reduced-motion: reduce) {

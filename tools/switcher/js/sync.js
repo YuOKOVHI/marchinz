@@ -5,6 +5,18 @@
 
 MC.sync = { MIN_CONF: 8.0 };
 
+/* ★ 「同じ演奏を撮った動画か」を疑う下限(2026-08-02 優さん指示)。
+   MIN_CONF(8.0)は1回の照合を採用するかの門で、これはその上に置く**別の疑いの門**。
+   根拠(実測):
+   ・同じ演奏(実機の正常ログ)         conf = 17.8〜23.7
+   ・同じ演奏(合成・別マイク環境で劣化) conf = 129〜138
+   ・別の演奏(合成・同じ曲の別テイク、テンポ微差) conf = 14.5〜14.7 ← 最難の不良
+   ・別の演奏(合成・旋律もテンポも違う) conf = 8.8〜9.3
+   良品の下限 17.8 と不良の上限 14.7 の中間 = 16.0。
+   これ未満(またはタイムスタンプ落ち)は「別の演奏かもしれない」として、
+   黙ってズレたまま進まず本人に2択(同期なしで作る/選び直す)を返す */
+MC.sync.DOUBT_CONF = 16.0;
+
 MC.sync.nextPow2 = n => 1 << Math.ceil(Math.log2(n));
 
 /* boxcar平均でデシメート */
@@ -204,6 +216,27 @@ MC.sync.run = async p => {
     }
   }
 
+  /* ★ 「同じ演奏か」の疑い(2026-08-02 優さん指示)。根拠は DOUBT_CONF の注記。
+     波形が全ステージで負けた(タイムスタンプ落ち)か、勝ったが自信が薄い
+     (conf < DOUBT_CONF)ものを疑う。基準(conf=Infinity)は対象外。
+     本人が「同期なしでそのまま並べて作る」を選んだ後(syncDoubtAccepted)は、
+     疑いを繰り返さず、疑わしい本は**ずらさずに0へ置く** ─ 別の演奏の
+     タイムスタンプ差(数十分もあり得る)でタイムラインを引き伸ばさない */
+  const doubted = results.filter(r =>
+    r.method !== "基準" && (r.method === "タイムスタンプ" || r.conf < MC.sync.DOUBT_CONF));
+  let doubt = [];
+  if (doubted.length && MC.S.syncDoubtAccepted) {
+    for (const r of doubted) {
+      r.raw = 0;
+      r.method = "同期なし";
+      MC.log(`sync ${r.clip.name}: 同期なし(本人が別演奏のまま作ると選択)`);
+    }
+  } else if (doubted.length) {
+    doubt = doubted.map(r => ({ name: r.clip.name, conf: r.conf }));
+    MC.log("sync 疑い(同じ演奏ではない可能性): "
+      + doubted.map(r => `${r.clip.name} conf=${r.conf == null ? "-" : r.conf.toFixed(1)}`).join(" / "));
+  }
+
   // 正規化: 最小オフセットを0に(グローバルタイムライン先頭)
   const minRaw = Math.min(...results.map(r => r.raw));
   for (const r of results) {
@@ -215,8 +248,14 @@ MC.sync.run = async p => {
   MC.saveState();
   MC.ui.renderAll();
   const low = results.filter(r => r.method === "タイムスタンプ").length;
-  MC.ui.toast(low ? `同期完了(${low}本は時刻推定・精度±数秒 → 手動微調整してください)` : "波形同期が完了しました 🎯");
-  return { low, total: clips.length };
+  /* 疑いがあるときのトーストは正直に言う(こだわりはこの1行が知らせのすべて。
+     おまかせは runEasy がこの戻り値で自走を止め、2択の画面を出す) */
+  if (doubt.length) {
+    MC.ui.toast("⚠ 同じ演奏を撮った動画ではないようです（音が一致しません）。手動同期するか、動画を選び直してください");
+  } else {
+    MC.ui.toast(low ? `同期完了(${low}本は時刻推定・精度±数秒 → 手動微調整してください)` : "波形同期が完了しました 🎯");
+  }
+  return { low, total: clips.length, doubt };
 };
 
 /* 手動ナッジ: delta秒ずらして最小0に再正規化 */

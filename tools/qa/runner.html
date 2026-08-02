@@ -5701,6 +5701,232 @@ async function countSamples(ns, file, fromSec) {
     }
   });
 
+  group("㉗ 縦型2本のおまかせ／同じ演奏でない動画(2026-08-02 優さん実機報告)");
+  /* 実機報告「縦動画で動画が2つのとき、全部同じカメラになって、この静止画のまま最後まで」
+     への手当て3点をここで見張る:
+     ① おまかせ×縦型×2本 = 中央=1本目/上下=2本目(全スロット同一なら落ちる)
+     ② おまかせ中は手動の傾き工程に入らない(renderTiltSec のソロ固定が
+        プレビューを「1本目だけの静止画」にする経路の遮断)
+     ③ 同じ演奏でない動画は黙ってズレたまま進まず、2択で止まる */
+
+  await test("★おまかせ×縦型×2本: 中央=1本目・上下=2本目(全スロット同一なら落ちる)", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    const U = w.MC.ui;
+    const keepAuto = U._autoFlow, keepTab = U._setupTab, keepRun = U.runAuto;
+    U.runAuto = () => {};   // afterChange → focusNextAction の自走をこの試験では走らせない
+    try {
+      S.mode = "vertical"; S.layoutId = "v3";
+      S.clips = S.clips.slice(0, 2);
+      S.slots = [null, null, null];
+      U._autoFlow = true; U._setupTab = "easy";
+      w.MC.media.afterChange();
+      /* スロットの検査を1つの関数に(変異の歯もこれで確かめる) */
+      const check = slots => {
+        if (new Set(slots).size < 2) throw new Error("全スロットが同一カメラ: " + slots.join(","));
+        if (slots[1] !== S.clips[0].id) throw new Error("中央が1本目でない: " + slots.join(","));
+        if (slots[0] !== S.clips[1].id || slots[2] !== S.clips[1].id)
+          throw new Error("上下が2つめでない: " + slots.join(","));
+      };
+      check(S.slots);
+      /* 変異の歯①: 全スロット同一([1,1,1])は必ず検知される */
+      let bit = "";
+      try { check([S.clips[0].id, S.clips[0].id, S.clips[0].id]); } catch (e) { bit = e.message; }
+      if (!/全スロット/.test(bit)) throw new Error("歯①: 全スロット同一を見逃す");
+      /* 変異の歯②: 旧挙動([1,2,1]=中央が2本目)も検知される */
+      bit = "";
+      try { check([S.clips[0].id, S.clips[1].id, S.clips[0].id]); } catch (e) { bit = e.message; }
+      if (!/中央が1本目でない/.test(bit)) throw new Error("歯②: 旧挙動(中央=2本目)を見逃す");
+      /* こだわりは従来のまま: [1,2,1](上下=1本目の複製・自由選択の起点) */
+      U._autoFlow = false;
+      S.slots = [null, null, null];
+      w.MC.media.afterChange();
+      if (S.slots.join(",") !== [S.clips[0].id, S.clips[1].id, S.clips[0].id].join(","))
+        throw new Error("こだわりの既定が変わった: " + S.slots.join(","));
+      /* 3本のおまかせは従来どおり順に3枠へ */
+      U._autoFlow = true;
+      S.clips = compReset(w).clips;   // 3本へ戻す
+      S.mode = "vertical"; S.layoutId = "v3";
+      S.slots = [null, null, null];
+      w.MC.media.afterChange();
+      if (S.slots.join(",") !== "1,2,3") throw new Error("3本の割当が変わった: " + S.slots.join(","));
+      return "2本=[2,1,2] / こだわり=[1,2,1] / 3本=[1,2,3]・歯2本あり";
+    } finally {
+      U._autoFlow = keepAuto; U._setupTab = keepTab; U.runAuto = keepRun;
+      compReset(w);
+    }
+  });
+
+  await test("★おまかせ中は傾き工程に入らない(ソロ固定で1本目だけの静止画にならない)", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    const U = w.MC.ui, d = w.document;
+    const keepAuto = U._autoFlow, keepTab = U._setupTab, keepRun = U.runAuto;
+    U.runAuto = () => {};
+    try {
+      S.mode = "vertical"; S.layoutId = "v3";
+      S.clips.forEach(c => { c.tiltOk = false; });
+      S.tiltSkipped = false; S.easyDone = false;
+      w.MC.preview.soloId = null;
+      /* おまかせ: 傾き未確認でも tilt 工程を見せない(自走の autoHorizon が受け持つ)。
+         v1.78.0 まではここが "tilt" になり、renderTiltSec がプレビューを
+         1本目のソロ表示に固定+35%へシークしていた(実機の「全部同じカメラで静止画」の絵) */
+      U._autoFlow = true; U._setupTab = "easy"; U._viewPhase = null;
+      U.refreshJourney();
+      if (d.body.dataset.mzjPhase === "tilt")
+        throw new Error("おまかせなのに傾き工程に入った(ソロ固定が再発する)");
+      if (w.MC.preview.soloId != null)
+        throw new Error("おまかせでプレビューがソロ固定された: soloId=" + w.MC.preview.soloId);
+      /* 歯: こだわり(proタブ)では従来どおり tilt に入り、ソロ固定も働く */
+      U._autoFlow = false; U._viewPhase = null;
+      U.refreshJourney();
+      if (d.body.dataset.mzjPhase !== "tilt")
+        throw new Error("こだわりの傾き工程まで消えた: " + d.body.dataset.mzjPhase);
+      if (w.MC.preview.soloId == null)
+        throw new Error("こだわりの傾き画面でソロ表示が働かない");
+      return "おまかせ=傾き工程もソロ固定も無し / こだわり=従来どおり";
+    } finally {
+      U.unpinTilt();
+      U._autoFlow = keepAuto; U._setupTab = keepTab; U.runAuto = keepRun;
+      U._viewPhase = null;
+      compReset(w);
+      U.refreshJourney();
+    }
+  });
+
+  await test("★「同じ演奏か」の閾値: 同一演奏 > DOUBT_CONF > 別演奏 (合成音の実測)", async () => {
+    const w = await compEnv();
+    const M = w.MC;
+    if (!(M.sync.DOUBT_CONF > M.sync.MIN_CONF))
+      throw new Error(`DOUBT_CONF(${M.sync.DOUBT_CONF}) が MIN_CONF(${M.sync.MIN_CONF}) 以下`);
+    /* 現実に寄せた擬似音楽(実測の根拠は sync.js の DOUBT_CONF 注記):
+       同一演奏=同じ旋律・同じテンポを別マイク環境で / 別演奏=旋律もテンポも別 */
+    const SR = 8000;
+    const music = (durSec, melSeed, bpm, shiftSec, envSeed) => {
+      let rng = melSeed >>> 0;
+      const rand = () => (rng = (rng * 1664525 + 1013904223) >>> 0) / 2 ** 32;
+      const notes = Array.from({ length: Math.ceil(durSec * 4) },
+        () => 220 * Math.pow(2, Math.floor(rand() * 12) / 12));
+      let rng2 = (envSeed * 2654435761 + 1) >>> 0;
+      const rand2 = () => (rng2 = (rng2 * 1664525 + 1013904223) >>> 0) / 2 ** 32;
+      const n = durSec * SR, pcm = new Float32Array(n);
+      for (let i = 0; i < n; i++) {
+        const t = i / SR + shiftSec;
+        if (t < 1 || t > durSec - 1) continue;
+        const beat = t * bpm / 60, env = Math.exp(-4 * (beat % 1));
+        const note = notes[Math.max(0, Math.floor(beat)) % notes.length];
+        pcm[i] = 0.3 * Math.sin(2 * Math.PI * note * t) * (0.4 + 0.6 * env)
+               + 0.22 * env * (rand2() - 0.5);
+      }
+      const d1 = Math.floor(SR * (0.023 + 0.02 * rand2())), g1 = 0.35;
+      for (let i = d1; i < n; i++) pcm[i] += g1 * pcm[i - d1];
+      let lp = 0; const a = 0.35 + 0.3 * rand2();
+      for (let i = 0; i < n; i++) {
+        lp += a * (pcm[i] - lp);
+        pcm[i] = Math.max(-0.9, Math.min(0.9, lp + 0.05 * (rand2() - 0.5)));
+      }
+      return pcm;
+    };
+    const same = await M.sync.offsetBetween(music(60, 7, 120, 0, 1), music(60, 7, 120, -5, 2));
+    const diff = await M.sync.offsetBetween(music(60, 7, 120, 0, 3), music(60, 99, 117, 0, 4));
+    if (!(same.conf >= M.sync.DOUBT_CONF))
+      throw new Error(`同一演奏が疑われる: conf=${same.conf.toFixed(1)} < ${M.sync.DOUBT_CONF}`);
+    if (!(diff.conf < M.sync.DOUBT_CONF))
+      throw new Error(`別演奏を見逃す: conf=${diff.conf.toFixed(1)} >= ${M.sync.DOUBT_CONF}`);
+    if (Math.abs(same.offset - (-5)) > 0.05)
+      throw new Error(`同一演奏のオフセットがずれた: ${same.offset.toFixed(2)}`);
+    return `同一=conf ${same.conf.toFixed(1)} / 別=conf ${diff.conf.toFixed(1)} / 閾値 ${M.sync.DOUBT_CONF}`;
+  });
+
+  await test("★sync.run: 別演奏は doubt を返し、受け入れ後は「同期なし」で0秒に置く", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    const M = w.MC;
+    const keepOB = M.sync.offsetBetween, keepToast = M.ui.toast;
+    const toasts = [];
+    M.ui.toast = t => toasts.push(String(t));
+    try {
+      S.clips = S.clips.slice(0, 2);
+      S.slots = [1, 2, null];
+      S.audioClipId = 1; S.refClipId = 1;
+      S.syncDoubtAccepted = false;
+      /* 抽出済みの体裁(cached() を満たす)にして、照合だけ差し替える */
+      for (const c of S.clips) {
+        c.audio8k = new Float32Array(8000);
+        c.audio8kStart = 0; c.audio8kReqStart = 0; c.audio8kReqSpan = M.audio.MAX_SEC;
+      }
+      M.sync.offsetBetween = async () => ({ offset: 0, conf: 5 });   // 全ステージ負け=別演奏の形
+      const r1 = await M.sync.run();
+      if (!r1 || !r1.doubt || r1.doubt.length !== 1)
+        throw new Error("疑いが返らない: " + JSON.stringify(r1 && r1.doubt));
+      if (S.clips[1].syncMethod !== "タイムスタンプ")
+        throw new Error("別演奏の1本が波形扱い: " + S.clips[1].syncMethod);
+      if (!toasts.some(t => /同じ演奏を撮った動画ではない/.test(t)))
+        throw new Error("こだわり向けの正直なトーストが出ない: " + toasts.join(" / "));
+      /* 「同期なしでそのまま作る」を選んだ後: 疑いを繰り返さず、0秒に並べる */
+      S.syncDoubtAccepted = true;
+      const r2 = await M.sync.run();
+      if (r2.doubt && r2.doubt.length) throw new Error("受け入れ後も疑いを繰り返す");
+      if (S.clips[1].syncMethod !== "同期なし")
+        throw new Error("受け入れ後の方法が違う: " + S.clips[1].syncMethod);
+      if (Math.abs(S.clips[0].offset) > 1e-6 || Math.abs(S.clips[1].offset) > 1e-6)
+        throw new Error(`同期なしなのにずれて置かれた: ${S.clips[0].offset} / ${S.clips[1].offset}`);
+      return "doubt 1件+正直トースト → 受け入れ後は同期なし・0秒";
+    } finally {
+      M.sync.offsetBetween = keepOB;
+      M.ui.toast = keepToast;
+      S.syncDoubtAccepted = false;
+      compReset(w);
+    }
+  });
+
+  await test("★2択の画面: 判断待ち通知に乗り、①で自走再開・②で素材の工程へ", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    const U = w.MC.ui, d = w.document;
+    const keepNotify = U.notifyUserTurn, keepRun = U.runAuto;
+    let notified = null, ran = 0;
+    U.notifyUserTurn = o => { notified = o || {}; return true; };
+    U.runAuto = () => { ran++; };
+    try {
+      U.autoStage.open();
+      U.autoStage.askSync([{ name: "別の演奏.mp4", conf: 9.1 }]);
+      const el = d.getElementById("autoStage"), ask = d.getElementById("asAsk");
+      if (!el || el.hidden) throw new Error("全画面が出ていない");
+      if (!ask || ask.hidden) throw new Error("2択の箱が出ていない");
+      if (!el.classList.contains("as-asking")) throw new Error("as-asking が付かない(進行中の顔のまま)");
+      if (!notified) throw new Error("判断待ちの通知(notifyUserTurn)が飛ばない");
+      if (notified.silent) throw new Error("判断待ちなのに silent で黙っている");
+      U.autoStage.render();   // 0.5秒ごとの再描画相当
+      const head = d.getElementById("asHead");
+      if (head && /完成/.test(head.textContent))
+        throw new Error("判断待ちの画面が完成の顔をしている: " + head.textContent);
+      /* ① 同期なしでそのまま作る → 印が立ち、自走が再開する */
+      d.getElementById("asNoSync").click();
+      if (!S.syncDoubtAccepted) throw new Error("①で syncDoubtAccepted が立たない");
+      if (ran !== 1) throw new Error("①で自走が再開しない");
+      if (!el.hidden) throw new Error("①の後に全画面が畳まれない");
+      /* ② 動画を選び直す → 素材の工程へ戻る(動画は消さない) */
+      S.syncDoubtAccepted = false;
+      U.autoStage.open();
+      U.autoStage.askSync([{ name: "別の演奏.mp4", conf: 9.1 }]);
+      const nClips = S.clips.length;
+      d.getElementById("asRepick").click();
+      if (!el.hidden) throw new Error("②の後に全画面が畳まれない");
+      if (d.body.dataset.mzjPhase !== "mat")
+        throw new Error("②の行き先が素材の工程でない: " + d.body.dataset.mzjPhase);
+      if (S.clips.length !== nClips) throw new Error("②で動画が消えた");
+      if (S.syncDoubtAccepted) throw new Error("②なのに同期なしの印が立った");
+      return "通知1回・①=印+再開+畳む・②=素材へ+動画は残る";
+    } finally {
+      U.notifyUserTurn = keepNotify; U.runAuto = keepRun;
+      U.autoStage.close();
+      U._viewPhase = null;
+      compReset(w);
+      U.refreshJourney();
+    }
+  });
+
   if (CF) { CF.remove(); CF = null; CW = null; CD = null; }
 
   /* ===== 集計 ===== */

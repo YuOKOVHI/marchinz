@@ -37,6 +37,9 @@ window.MC = {
        非永続: クリップidは読込ごとに変わり wipeMainId 等も保存されないため、
        次に開いたときはもう一度選んでもらう */
     wipePicked: false,
+    /* 「同じ演奏ではないようです」の2択で①同期なしを選んだ印(2026-08-02)。
+       非永続: 素材が変われば疑いも判断もやり直し(resetEasyDone が落とす) */
+    syncDoubtAccepted: false,
     /* Phase 3: 仕上げ */
     colorOn: true, colorStrength: 0.8,   // カラー自動マッチは初期ON(同期後に自動実行)
     horizonOn: true,      // 自動傾き修正(既定ON。2026-07-23 優さん指示)

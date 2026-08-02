@@ -224,7 +224,17 @@ MC.media.afterChange = () => {
     if (n === 1) MC.S.layoutId = "single";
     else if (n === 2) {
       if (!["v2", "v3", "big2"].includes(MC.S.layoutId)) MC.S.layoutId = "v3";
-      if (MC.S.layoutId === "v3" && MC.S.slots[2] == null) MC.S.slots[2] = MC.S.slots[0];
+      /* ★ おまかせ×縦型×2本(2026-08-02 優さん指示)。
+         「最初に選んだのをセンター。2つめを上下に」= 3段の中央=1本目/上下=2本目。
+         従来は slots[2]=slots[0] の複製だけで [1本目,2本目,1本目] になり、
+         中央に来るのは**2本目**だった(指示と上下が逆)。
+         こだわり(proタブ)は従来どおり自由選択なので触らない。
+         判定は media.addFiles の写真の門番と同じ2条件に揃える */
+      if (MC.S.layoutId === "v3" && MC.ui._autoFlow && MC.ui._setupTab !== "pro") {
+        MC.S.slots = [slotClips[1].id, slotClips[0].id, slotClips[1].id];
+      } else if (MC.S.layoutId === "v3" && MC.S.slots[2] == null) {
+        MC.S.slots[2] = MC.S.slots[0];
+      }
     } else if (n >= 3 && !["v3", "big2"].includes(MC.S.layoutId)) MC.S.layoutId = "v3";
   }
   const firstVideo = MC.S.clips.find(c => !c.isImage);   // 音声既定は音の出る素材から

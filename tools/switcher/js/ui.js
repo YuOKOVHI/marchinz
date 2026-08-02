@@ -861,6 +861,8 @@ MC.ui.resetEasyDone = (restored = false) => {
      どれをメインにするかの前提が変わる。復元(restored)でも選び直してもらう ─
      wipeMainId は id で持っていて、id は読込ごとに振り直されるため */
   MC.S.wipePicked = false;
+  /* 「同じ演奏ではない」2択の判断も素材が変わればやり直し(2026-08-02) */
+  MC.S.syncDoubtAccepted = false;
   MC.S.lengthDecided = false;
   MC.ui._tabsForced = false;   // 同期失敗の前倒し開放は素材が変われば解除(2026-07-31)
   if (!restored) {
@@ -1549,8 +1551,16 @@ MC.ui.refreshJourney = () => {
   if (slot.length && synced && audioDone) done.push("sync");
   if (slot.length && synced && audioDone && lengthDone) done.push("length");
   if (exported) done.push("export");
+  /* ★ おまかせでは手動の傾き工程を見せない(2026-08-02 縦型2本の実機報告)。
+     取り込み直後〜自走開始の間も current が "tilt" になり、renderTiltSec が
+     プレビューを**1本目のソロ表示に固定**(soloId+ピン)+35%地点へシークしていた。
+     ソロの解除は「次の工程へ移るとき」なので、おまかせの長い同期・解析の間
+     ずっと1本目だけの静止画が主役に居座る ─ 「全部同じカメラで静止画のまま」の絵。
+     おまかせの傾きは autoHorizon が自動で当てる(tiltSkipped)ので、この工程は不要。
+     こだわり(proタブ)へ移った人には従来どおり出す */
+  const tiltHands = !(MC.ui._autoFlow && MC.ui._setupTab !== "pro");
   let current = !slot.length ? "mat"
-    : (!tiltDone && !MC.S.easyDone) ? "tilt"
+    : (!tiltDone && !MC.S.easyDone && tiltHands) ? "tilt"
     /* 同期と音声の決定は同じ工程(2026-08-01)。どちらか未了なら sync に留まる */
     : ((vids.length >= 2 && !synced) || !audioDone) ? "sync"
     /* 音楽の解析が済んで、まだ長さを決めていないならここで止める。
@@ -3319,8 +3329,9 @@ MC.ui.autoStage = {
        (「カメラを切り替える  音を読み込み中 100%」のような表示) */
     this._done = []; this._now = null;
     this._sub = null; this._doneSub = {}; this._inner = 0; this._innerRaw = 0; this._fail = null;
-    this._failedStep = null; this._wakeWarn = 0;
-    el.classList.remove("as-failed", "as-complete");
+    this._failedStep = null; this._wakeWarn = 0; this._ask = false;
+    el.classList.remove("as-failed", "as-complete", "as-asking");
+    { const ask = MC.ui.$("#asAsk"); if (ask) ask.hidden = true; }
     const wt0 = el.querySelector(".as-wait"); if (wt0) wt0.hidden = false;
     const fb = MC.ui.$("#asFail"); if (fb) fb.hidden = true;
     const cb = MC.ui.$("#asCancel");
@@ -3360,8 +3371,9 @@ MC.ui.autoStage = {
     this._home = null;
     el.hidden = true;
     document.body.classList.remove("mz-auto-stage");
-    el.classList.remove("as-failed", "as-complete");
-    this._fail = null; this._failedStep = null;
+    el.classList.remove("as-failed", "as-complete", "as-asking");
+    this._fail = null; this._failedStep = null; this._ask = false;
+    const ask = MC.ui.$("#asAsk"); if (ask) ask.hidden = true;
     try { if (this._prevFocus && this._prevFocus.focus) this._prevFocus.focus({ preventScroll: true }); }
     catch (e) {}
     this._prevFocus = null;
@@ -3400,6 +3412,38 @@ MC.ui.autoStage = {
     const eta = MC.ui.$("#asEta");
     if (eta) eta.textContent = "今動いている処理が止まるまで少し待ちます";
   },
+  /* ============ 「同じ演奏ではないようです」の2択(2026-08-02 優さん指示) ============
+     失敗の顔と同じ場所(全画面のまま)で止まり、
+     ①同期なしでそのまま並べて作る ②動画を選び直す ─ を本人に返す。
+     doubt = sync.run が返した [{name, conf}]。
+     判断待ちなので notifyUserTurn(silent なし)に乗せる ─ 同期は数分かかることが
+     あり、別アプリへ行った人はここで止まっていることに気づけない */
+  askSync(doubt) {
+    const el = MC.ui.$("#autoStage");
+    if (!el || el.hidden) return;
+    this._ask = true;
+    this._failedStep = this._now;
+    this._now = null;                       // 進行中の脈と「…」を止める(fail と同じ理由)
+    el.classList.add("as-asking");
+    const head = MC.ui.$("#asHead"); if (head) head.textContent = "確認してください";
+    const eta = MC.ui.$("#asEta"); if (eta) eta.textContent = "";
+    const wt = el.querySelector(".as-wait"); if (wt) wt.hidden = true;
+    const wk = MC.ui.$("#asWake"); if (wk) wk.hidden = true;
+    const c = MC.ui.$("#asCancel"); if (c) c.hidden = true;
+    const names = (doubt || []).map(d => MC.ui.shortName(d.name)).join(" / ");
+    const msg = MC.ui.$("#asAskMsg");
+    if (msg) msg.textContent = (names ? `「${names}」は、` : "")
+      + "同じ演奏を撮った動画ではないようです（音が一致しません）。";
+    const box = MC.ui.$("#asAsk"); if (box) box.hidden = false;
+    MC.ui.notifyUserTurn({
+      title: "同じ演奏の動画か確認してください",
+      body: "音が一致しませんでした。MarchinZ Switcher に戻って、進め方を選んでください",
+      tab: "🔔 確認してください — MarchinZ",
+    });
+    this.render();
+    try { el.scrollTop = 0; } catch (e) {}
+  },
+
   /* 失敗の顔。畳まずに、この画面のまま理由と次の一手を出す。
      畳んで裏へ逃がすと、エラーの描画先がこの全画面の下なので何も見えない */
   fail(err) {
@@ -3498,15 +3542,19 @@ MC.ui.autoStage = {
     const eta = MC.ui.$("#asEta");
     /* ★ 失敗したら数えるのをやめる。隣で「もう少しかかっています」が
        動き続けると、失敗しているのかまだ動いているのか判らない */
-    if (eta && !this._fail) eta.textContent = MC.ui.autoSub ? MC.ui.autoSub() : "";
+    if (eta && !this._fail && !this._ask) eta.textContent = MC.ui.autoSub ? MC.ui.autoSub() : "";
     const cur = this.STEPS.find(s => s.key === this._now);
     const head = MC.ui.$("#asHead");
-    if (head && !this._fail) head.textContent = this._now ? cur.label + "…" : "完成しました";
+    /* ★ 2択(_ask)の間も head を上書きしない(2026-08-02)。askSync が
+       「確認してください」を書いた直後に render が _now=null を見て
+       「完成しました」へ戻し、判断待ちの画面が完成の顔をしていた */
+    if (head && !this._fail && !this._ask) head.textContent = this._now ? cur.label + "…" : "完成しました";
     /* 段が変わったときだけ1行読み上げる。リスト全体に aria-live を張ると、
        0.5秒ごとの再描画で6項目を延々と読み直す(沈黙より悪い) */
     const say = MC.ui.$("#asSay");
     if (say) {
       const line = this._fail ? "うまくいきませんでした"
+        : this._ask ? "確認してください"
         : this._now ? cur.label : "完成しました";
       if (say.textContent !== line) say.textContent = line;
     }
@@ -3515,7 +3563,7 @@ MC.ui.autoStage = {
        できるのは「直し方を伝えること」だけ。開始直後は取得中のことがあるので、
        少し様子を見てから出す(出したり消えたりさせない) */
     const wk = MC.ui.$("#asWake");
-    if (wk && !this._fail) {
+    if (wk && !this._fail && !this._ask) {
       /* ★ 判定材料を「取れていない」から「断られた」へ替える(2026-08-01 レビュー)。
          !awake で見ていたため、次の3つが同じ文言になっていた。
            ① 低電力モードで断られた ← 本来の対象
@@ -3605,6 +3653,16 @@ MC.ui.autoSub = () => {
    例外の型で分ける。message は使わないが name で判別する */
 MC.ui.AutoCancelled = class extends Error {
   constructor() { super("やめました"); this.name = "AutoCancelled"; }
+};
+
+/* 「同じ演奏を撮った動画ではないようです」(2026-08-02)。失敗ではなく判断待ちの印。
+   doubt = sync.run の返した [{name, conf}] */
+MC.ui.SyncDoubt = class extends Error {
+  constructor(doubt) {
+    super("同じ演奏を撮った動画ではないようです");
+    this.name = "SyncDoubt";
+    this.doubt = doubt || [];
+  }
 };
 
 /* ============ おまかせ×ワイプの割り当て(2026-08-02 優さん指示) ============
@@ -3811,7 +3869,11 @@ MC.ui.runAuto = async (opt) => {
     if (!btn || btn.disabled) throw new Error("書き出しを始められませんでした");
     btn.click();
   } catch (e) {
-    if (e && e.name === "AutoCancelled") {
+    if (e && e.name === "SyncDoubt") {
+      /* 同じ演奏ではないかもしれない(2026-08-02)。失敗の顔ではなく、
+         おまかせ全画面の上で2択を出して待つ。通知は「判断待ち」の既定に乗せる */
+      MC.ui.autoStage.askSync(e.doubt);
+    } else if (e && e.name === "AutoCancelled") {
       MC.ui.autoStage.close();
       MC.ui.toast("やめました。こだわりで続けられます");
       MC.ui.setSetupTab("pro");
@@ -3831,8 +3893,9 @@ MC.ui.runAuto = async (opt) => {
     }
   } finally {
     if (tick) clearInterval(tick);
-    /* 失敗の顔を出しているときだけは畳まない。それ以外は必ず畳む(canvasを戻す) */
-    if (!MC.ui.autoStage._fail) MC.ui.autoStage.close();
+    /* 失敗の顔と「同じ演奏か」の2択を出しているときだけは畳まない。
+       それ以外は必ず畳む(canvasを戻す) */
+    if (!MC.ui.autoStage._fail && !MC.ui.autoStage._ask) MC.ui.autoStage.close();
     MC.ui._autoRunning = false;   // 成功経路では上で返済済み(二重でも無害)
     MC.ui.setBusy(false);
     MC.ui.renderAll();
@@ -3905,10 +3968,16 @@ MC.ui.runEasy = async (opt) => {
       p.step(tiltSteps + 1, "音を合わせています…")
         .pulse("音を合わせています…", auto ? { sub: MC.ui.autoSub() } : undefined);
       if (auto) MC.ui.autoStage.step("sync");
-      await MC.sync.run(p);
+      const sres = await MC.sync.run(p);
+      /* ★ 同じ演奏ではないかもしれない(2026-08-02 優さん指示)。
+         おまかせは黙ってズレたまま進まず、ここで自走を止めて2択を返す
+         (①同期なしでそのまま並べて作る ②動画を選び直す)。
+         こだわりは sync.run 自身のトーストが知らせる(止めない) */
+      if (auto && sres && sres.doubt && sres.doubt.length) throw new MC.ui.SyncDoubt(sres.doubt);
       {
         const off = Math.max(0, ...vids.map(c => Math.abs(c.offset || 0)));
-        if (auto) MC.ui.autoStage.mark("sync", `ズレ ${off.toFixed(2)}秒`);
+        if (auto) MC.ui.autoStage.mark("sync",
+          MC.S.syncDoubtAccepted ? "同期なし" : `ズレ ${off.toFixed(2)}秒`);
       }
       /* 同期に成功したら、失敗時に前倒しで開いたタブを本来の条件へ戻す
          (立てっぱなしだと以後ずっと序盤からタブが出る) */
@@ -3944,6 +4013,12 @@ MC.ui.runEasy = async (opt) => {
     }
     await MC.ui.runEasyScan(p, tiltSteps + syncSteps);   // 続きの段番号から
   } catch (e) {
+    /* 「同じ演奏ではないようです」は失敗ではなく判断待ち(2026-08-02)。
+       失敗の顔・エラーログを通さず、そのまま runAuto の2択へ渡す */
+    if (e && e.name === "SyncDoubt") {
+      p.done("同期を確認します", { sub: "同じ演奏の動画かどうかを確認してください" });
+      throw e;
+    }
     console.error(e);
     p.fail("処理に失敗しました", { detail: e.message });
     MC.ui.showErrorLog(e);
@@ -4500,6 +4575,24 @@ MC.ui.wire = () => {
          (「やめたのに何も押せない・端末が熱い」がいちばん信用を失う)。
          実際に止まるまで、この画面で「やめています…」と言って待つ */
       MC.ui.autoStage.cancelling();
+    }; }
+  /* 「同じ演奏ではないようです」の2択(2026-08-02 優さん指示)。
+     ①同期なし: 印を立てて自走を再開(sync.run が疑いの本を0秒へ置く)
+     ②選び直す: 全画面を畳んで素材の工程へ戻す(動画は消さない。
+       入れ替えたら focusNextAction がまた自走を始める) */
+  { const b = MC.ui.$("#asNoSync");
+    if (b) b.onclick = () => {
+      MC.S.syncDoubtAccepted = true;
+      MC.ui.autoStage.close();
+      MC.ui.runAuto();
+    }; }
+  { const b = MC.ui.$("#asRepick");
+    if (b) b.onclick = () => {
+      MC.ui.autoStage.close();
+      MC.ui._viewPhase = "mat";
+      MC.ui.refreshJourney();
+      MC.ui.toast("動画を入れ替えてください（同じ演奏を撮ったものどうしだと同期できます）");
+      window.scrollTo({ top: 0, behavior: "smooth" });
     }; }
   /* 失敗の顔の2つのボタン。もう一度おまかせ / 自分で仕上げる */
   { const r = MC.ui.$("#asRetry");
