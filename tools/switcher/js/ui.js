@@ -557,7 +557,10 @@ MC.ui.renderSceneOffers = () => {
       + (hold
         ? '<button type="button" class="mzso-reveal">'
           + '<i class="fa-solid fa-lock-open" aria-hidden="true"></i> '
-          + `保存せずに別のシーンを作る（${offers.length}個の候補）</button>`
+          /* 個数(「5個の候補」)は出さない(2026-08-02 レビュー)。ここは
+             逃げ道であって売り文句ではない ─ 数を書くほど扉が魅力的になり、
+             いま止めたい誤タップを自分で誘うことになる。数は開けば分かる */
+          + "保存せずに別のシーンを作る</button>"
         : '<div class="mzso-list" role="group" aria-label="別のシーンの候補">'
           + offers.map((c, i) =>
               `<button type="button" class="mzso-btn" data-scene="${i}">`
@@ -2831,6 +2834,11 @@ MC.ui.buzz = pattern => {
      戻したつもりで通知文が残る */
 MC.ui.flashTabTitle = text => {
   try {
+    /* ★ 画面を見ている人のタブ題は書き換えない(2026-08-02 レビュー)。
+       この合図は「裏で待っている人」だけのもので、見ている人には
+       画面の中の表示(完成画面・完了バナー)が既に同じことを言っている。
+       見ている人の題まで15秒書き換えるのは、伝わらないうえに紛らわしい */
+    if (document.visibilityState === "visible") return;
     if (MC.ui._titleOrig == null) MC.ui._titleOrig = document.title;
     document.title = text;
     const restore = () => {
@@ -2853,6 +2861,10 @@ MC.ui.pushNotify = (title, body) => {
   try {
     const N = window.Notification;
     if (!N || N.permission !== "granted") return false;
+    /* ★ 画面を見ている人にはOSの通知を出さない(2026-08-02 レビュー)。
+       見ている人には完成画面がもう出ている ─ 同じことを窓の外からもう一度
+       言うだけで、うるさいだけになる。呼び戻す相手は「離れている人」 */
+    if (document.visibilityState === "visible") return false;
     const n = new N(title, { body: body || "", tag: "marchinz-switcher", icon: "/favicon.png" });
     n.onclick = () => { try { window.focus(); n.close(); } catch (_) {} };
     return true;
@@ -4117,7 +4129,11 @@ MC.ui.showFlowLockNote = () => {
   n.hidden = false;
   n.innerHTML = '<p class="mfn-title"><i class="fa-solid fa-lock" aria-hidden="true"></i> '
     + '「こだわり」は登録した方が使えます</p>'
-    + '<p class="mfn-body">長さ・開始位置・カメラの切り替わり方・色を自分で決められます。'
+    /* できることの説明は書かない(2026-08-02 レビュー)。すぐ上のカードに
+       「長さ・開始位置・カメラの切り替わり方・色を自分で決めます」と
+       同じ文が出ており、同じ画面に二度書くと文字が増えるだけになる。
+       ここで言うべきことは2つ ─ 登録は無料 / いま使える道がある */
+    + '<p class="mfn-body">登録は無料です。'
     + '<b>「おまかせ」は登録なしで今すぐ使えます。</b></p>'
     + '<div class="mfn-btns"><a class="btn primary mfn-go" href="/#signup">無料登録する</a>'
     + '<a class="btn ghost mfn-go" href="/#login">ログイン</a></div>';
@@ -4329,6 +4345,11 @@ MC.ui.wire = () => {
        押せる ─ ズレたままの3本が黙って1本の動画になる経路。
        setBusy で作業領域を丸ごと止め、必ず finally で返す */
     if (MC.ui._busy) return;
+    /* ★ 手動の3ボタン(同期・カット割・色合わせ)も数分の長い待ち(2026-08-02 レビュー)。
+       終わったら notifyUserTurn で呼び戻すのに、許可を尋ねる場所が
+       runAuto/runEasy だけだと、手動で進めた人には通知だけが永遠に届かない。
+       印(localStorage)は共通なので、尋ねるのは一度きりのまま */
+    MC.ui.askNotifyPermissionOnce();
     MC.ui.setBusy(true);
     const p = MZP.start({ mount: "#syncStatus", chapter: "同期", steps: 4,
                           label: "音を分析しています…" });
@@ -4555,6 +4576,7 @@ MC.ui.wire = () => {
   MC.ui.renderLevel();
   $("#autocutBtn").onclick = async () => {
     if (MC.ui._busy) return;          // ★ 他の作業中は始めない(2026-08-01 交差レビュー)
+    MC.ui.askNotifyPermissionOnce();  //    長い待ちに入る入口(2026-08-02 レビュー)
     MC.ui.setBusy(true);              //    解析中に書き出しを押される経路を塞ぐ
     MC.preview.pause();   // 解析中はvideo要素をシークで専有する
     const p = MZP.start({ mount: "#autocutStatus", chapter: "レイアウト",
@@ -4603,6 +4625,7 @@ MC.ui.wire = () => {
   $("#colorStrength").oninput = e => { MC.S.colorStrength = parseFloat(e.target.value); MC.saveState(); MC.preview.draw(); };
   $("#colorMatchBtn").onclick = async () => {
     if (MC.ui._busy) return;          // ★ 他の作業中は始めない(2026-08-01 交差レビュー)
+    MC.ui.askNotifyPermissionOnce();  //    長い待ちに入る入口(2026-08-02 レビュー)
     MC.ui.setBusy(true);              //    色解析は<video>のシークを専有する
     const p = MZP.start({ mount: "#finishStatus", chapter: "仕上げ",
                           label: "色を調べています…" });

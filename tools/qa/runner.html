@@ -4606,6 +4606,18 @@ async function countSamples(ns, file, fromSec) {
       /* 畳んだ候補は主ボタンより**下**にあること(上にあると先に指が触れる) */
       const sc = d.getElementById("eoDoneScenes");
       if (sc && rc(sc).top < save.bottom) throw new Error("候補が主ボタンより上に出ている");
+      /* ★ 出口(シェア・ツール一覧・閉じる)が同じ画面に収まっていること
+         (2026-08-02 レビュー)。中央寄せのために画面を引き伸ばした版では
+         出口が1スクロール下へ落ち、下端に見えるのは空白だけだった ─
+         巻けることに気づけず「閉じるが無い」と読まれる */
+      const exit = d.querySelector("#exportOverlay .eo-exit");
+      if (!exit) throw new Error("完成画面に出口が無い");
+      const eb = rc(exit).bottom;
+      if (eb > vh) throw new Error(`出口の下端 ${Math.round(eb)}px が画面(${vh}px)の外にある`);
+      /* 空白の穴を作らないこと: 候補の下端から出口の上までが1画面の1/4を超えたら、
+         それは「余白」ではなく「壊れて見える穴」(実測で258pxあった) */
+      const gap = rc(exit).top - (sc ? rc(sc).bottom : save.bottom);
+      if (gap > vh * 0.25) throw new Error(`候補と出口のあいだに ${Math.round(gap)}px の空白`);
       /* 保存が済んだら中央寄せは外れる(用の済んだボタンを中央に置き続けない) */
       e.U._share = async () => true;
       await e.U.saveResult();
@@ -4800,7 +4812,10 @@ async function countSamples(ns, file, fromSec) {
       if (guarded < 2) throw new Error("自走中の沈黙の鍵が足りない: " + guarded + "箇所");
       /* 許可を勝手に求めないこと: 呼ぶのは「長い待ちに入ると決めた人」の入口だけ */
       const asks = src.match(/MC\.ui\.askNotifyPermissionOnce\(\)/g) || [];
-      eq(asks.length, 2, "許可を尋ねる箇所(runAuto と runEasy の2つだけ)");
+      /* 長い待ちに入る入口だけ: runAuto / runEasy / 手動の3ボタン(同期・カット割・
+         色合わせ)。手動で進めた人にも通知が届くように5箇所へ増やした
+         (2026-08-02 レビュー)。印は共通なので尋ねるのは一度きりのまま */
+      eq(asks.length, 5, "許可を尋ねる箇所(長い待ちの入口だけ)");
       if (/askNotifyPermissionOnce\(\);?\s*$/m.test(src.split("MC.ui.askNotifyPermissionOnce = ")[0] || "")) {
         throw new Error("読み込み時に許可を求めている");
       }
