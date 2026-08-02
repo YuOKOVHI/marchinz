@@ -5678,6 +5678,29 @@ async function countSamples(ns, file, fromSec) {
     }
   });
 
+  await test("★入口に「写真」の訴求が無い(未登録相当でも写真の道が無い人を誘わない・2026-08-02 案A)", async () => {
+    /* 写真はこだわり(登録者限定)だけの機能。1段目の種類カード・2段目のおまかせ/こだわり・
+       鍵の案内のどこにも「写真」の誘い文句が出ないことを見張る(文言は全員「動画」統一) */
+    const w = await compEnv();
+    const d = w.document, U = w.MC.ui;
+    const keepLim = w.MZ_LIMITS;
+    const note = d.getElementById("flowProNote");
+    try {
+      w.MZ_LIMITS = Object.assign({}, w.MZ_LIMITS || {}, { proAllowed: false });   // 未登録相当
+      if (U.proAllowed()) throw new Error("未登録相当を作れていない(proAllowed が真)");
+      U.renderFlowLock();
+      U.showFlowLockNote();   // 鍵の案内文まで開いた状態で全文を測る
+      const txt = d.getElementById("modeSelect").textContent;
+      const hit = txt.match(/.{0,14}写真.{0,14}/);
+      if (hit) throw new Error("入口に「写真」が残る: …" + hit[0] + "…");
+      return "1段目カード・2段目・鍵の案内のどこにも「写真」なし";
+    } finally {
+      w.MZ_LIMITS = keepLim;
+      if (note) { note.hidden = true; note.innerHTML = ""; }
+      U.renderFlowLock();
+    }
+  });
+
   if (CF) { CF.remove(); CF = null; CW = null; CD = null; }
 
   /* ===== 集計 ===== */
