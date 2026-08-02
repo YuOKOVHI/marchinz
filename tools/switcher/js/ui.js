@@ -820,6 +820,11 @@ MC.ui.focusNextAction = () => {
      二重に走らないよう、実行中と書き出し済みは弾く */
   if (MC.ui._autoFlow && !MC.ui._busy && !(MC.exporter && MC.exporter.running)
       && !MC.S.easyDone) {
+    /* ★ 選び直しの保留(2026-08-02 優さん指示)。「動画を選び直す」で戻った人は
+       外す/追加の途中で、素材が1回変わるたびにここが自走を再開すると、
+       間違った動画を外した瞬間(まだ入れ替えていない)に走り出してしまう。
+       再開は行動バーの「これでOK、おまかせを再開」が受け持つ */
+    if (MC.ui._repickHold) return;
     /* ★ ワイプだけは例外(2026-08-02 優さん指示)。自走の前に
        「どれをメインに、どれを右下ワイプにするか」を1画面だけ選んでもらう。
        選び終わると wipePickTap が runAuto を呼び、以後は止まらない */
@@ -1408,7 +1413,13 @@ MC.ui.updateActionBar = () => {
          ここが無いと「動画を選ぶ」画面から先へ戻れない(2026-07-28) */
       const R = MC.ui.STEP_RANK;
       const reached = MC.ui._derivedPhase || "mat";
-      if (MC.ui._viewPhase === "mat" && R[reached] > R.mat) {
+      if (MC.ui._repickHold && MC.ui._autoFlow && MC.media.slotClips().length) {
+        /* 選び直しから戻った人の再開ボタン(2026-08-02)。保留を解いて
+           focusNextAction へ渡す ─ ワイプの割り当てが要る場合も正しい分岐を通る */
+        conf = { label: "これでOK、おまかせを再開", icon: "fa-wand-magic-sparkles",
+          act: () => { MC.ui._repickHold = false; MC.ui._viewPhase = null;
+                       MC.ui.refreshJourney(); MC.ui.focusNextAction(); } };
+      } else if (MC.ui._viewPhase === "mat" && R[reached] > R.mat) {
         conf = { label: "これでOK、続ける", icon: "fa-arrow-right",
           act: () => { MC.ui._viewPhase = null; MC.ui.refreshJourney(); } };
       } else {
@@ -1829,6 +1840,8 @@ ${c.isImage ? "" : (c.tiltOk
                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
                <span>傾き 未確認</span>
                <span class="tilt-badge-go" aria-hidden="true">›</span></button>`)}
+        <button type="button" class="btn small ghost clip-repick">
+          <i class="fa-solid fa-rotate" aria-hidden="true"></i> この${c.isImage ? "写真" : "動画"}を選び直す</button>
         ${(!pro || c.isImage) ? "" : `
         <div class="clip-sync">
           <span class="sync-badge ${badgeCls}">${c.syncMethod}</span>
@@ -1882,6 +1895,16 @@ ${c.isImage ? "" : (c.tiltOk
       if (MC.S.cutList.length) MC.ui.toast("撮り方を変えました。「自動カット割」で割り直せます");
     };
     card.querySelector(".clip-remove").onclick = () => MC.media.removeClip(c.id);
+    /* 間違った動画の入れ替え(2026-08-02 優さん指示)。右上の✕は小さくて
+       気づかれなかった ─ 「外して選ぶ」の2手を、名前のついた1手にする。
+       おまかせでは外した瞬間に focusNextAction が自走を再開してしまうので、
+       先に保留を立てる(再開は行動バーの「これでOK、おまかせを再開」) */
+    { const rp = card.querySelector(".clip-repick");
+      if (rp) rp.onclick = () => {
+        if (MC.ui._autoFlow && MC.ui._setupTab !== "pro") MC.ui._repickHold = true;
+        MC.media.removeClip(c.id);
+        MC.ui.$(vertical ? "#fileInputV" : "#fileInput").click();
+      }; }
     /* 傾きバッジ → その動画から確認/再調整(2026-07-31 カード内タスク化) */
     const tb = card.querySelector("[data-tilt]");
     if (tb) tb.onclick = () => {
@@ -3336,6 +3359,8 @@ MC.ui.autoStage = {
     const fb = MC.ui.$("#asFail"); if (fb) fb.hidden = true;
     const cb = MC.ui.$("#asCancel");
     if (cb) { cb.hidden = false; cb.disabled = false; cb.textContent = "やめる"; }
+    /* 「動画を選び直す」も同じ寿命で出し入れする(2026-08-02 優さん指示) */
+    { const rp = MC.ui.$("#asRepickRun"); if (rp) { rp.hidden = false; rp.disabled = false; } }
     /* canvas を全画面のプレビュー枠へ移す。戻す場所を覚えておく */
     const cv = document.getElementById("cv");
     const host = MC.ui.$("#asPreview");
@@ -3408,6 +3433,8 @@ MC.ui.autoStage = {
   cancelling() {
     const c = MC.ui.$("#asCancel");
     if (c) { c.disabled = true; c.textContent = "やめています…"; }
+    /* 中止は1回でいい。もう片方の止めるボタンも同時に眠らせる(2026-08-02) */
+    { const rp = MC.ui.$("#asRepickRun"); if (rp) rp.disabled = true; }
     const head = MC.ui.$("#asHead"); if (head) head.textContent = "やめています…";
     const eta = MC.ui.$("#asEta");
     if (eta) eta.textContent = "今動いている処理が止まるまで少し待ちます";
@@ -3430,6 +3457,8 @@ MC.ui.autoStage = {
     const wt = el.querySelector(".as-wait"); if (wt) wt.hidden = true;
     const wk = MC.ui.$("#asWake"); if (wk) wk.hidden = true;
     const c = MC.ui.$("#asCancel"); if (c) c.hidden = true;
+    /* 2択の箱の中に自前の「動画を選び直す」があるので、下の常設は引っ込める */
+    { const rp = MC.ui.$("#asRepickRun"); if (rp) rp.hidden = true; }
     const names = (doubt || []).map(d => MC.ui.shortName(d.name)).join(" / ");
     const msg = MC.ui.$("#asAskMsg");
     if (msg) msg.textContent = (names ? `「${names}」は、` : "")
@@ -3496,6 +3525,9 @@ MC.ui.autoStage = {
       if (pre) pre.textContent = MC.ui.buildReport();
     } catch (e) {}
     const c = MC.ui.$("#asCancel"); if (c) c.hidden = true;
+    /* 失敗の顔の選択肢は「もう一度/自分で仕上げる」の2つに絞ってある。
+       常設の「動画を選び直す」も同じ理由で引っ込める(2026-08-02) */
+    { const rp = MC.ui.$("#asRepickRun"); if (rp) rp.hidden = true; }
     this.render();
     try { el.scrollTop = 0; } catch (e) {}   // 失敗の顔を必ず視野へ
   },
@@ -3752,6 +3784,20 @@ MC.ui.wipePickTap = id => {
   MC.ui.runAuto();   // ここから先は今までどおり書き出しまで自走
 };
 
+/* 「動画を選び直す」で止まったあとの着地(2026-08-02 優さん指示)。
+   素材の工程に立たせ、取り込み済みの動画は**残す**(数GBの再取り込みは重い)。
+   タブはおまかせのまま ─ こだわりへ飛ばすと、入れ替えたいだけの人が
+   5工程の画面に置き去りになる。再開は行動バーの「これでOK、おまかせを再開」。
+   QA もこの関数で着地の実体を測る(runAuto の catch と同じ経路) */
+MC.ui.repickLand = () => {
+  MC.ui._repickAfterCancel = false;
+  MC.ui._repickHold = true;   // 外す/追加が済むまで focusNextAction は自走を再開しない
+  MC.ui._viewPhase = "mat";
+  MC.ui.refreshJourney();
+  MC.ui.toast("やめました。動画は残っています ─ ✕で外して入れ替えられます");
+  window.scrollTo({ top: 0, behavior: "smooth" });
+};
+
 MC.ui.runAuto = async (opt) => {
   if (MC.ui._busy || (MC.exporter && MC.exporter.running)) return;
   if (!MC.media.slotClips().length) return;
@@ -3786,6 +3832,10 @@ MC.ui.runAuto = async (opt) => {
        握り潰される(setBusy の先頭)ので、画面のボタンが二度と有効にならず、
        リロード以外に復帰手段が無くなる */
     MC.ui._autoCancel = false;
+    /* 選び直しの印も必ず倒してから走る(2026-08-02)。前回の「選び直す」が
+       残っていると、今回の普通の「やめる」まで素材へ飛ばされる */
+    MC.ui._repickAfterCancel = false;
+    MC.ui._repickHold = false;       // 実際に走り出したら保留は用済み
     MC.ui._autoRunning = true;      // 段の切れ目で鍵が外れないようにする
     MC.ui._autoT0 = performance.now();
     /* 2回目は同期までを飛ばすので、見積りもそのぶん縮める。
@@ -3873,12 +3923,19 @@ MC.ui.runAuto = async (opt) => {
       /* 同じ演奏ではないかもしれない(2026-08-02)。失敗の顔ではなく、
          おまかせ全画面の上で2択を出して待つ。通知は「判断待ち」の既定に乗せる */
       MC.ui.autoStage.askSync(e.doubt);
-    } else if (e && e.name === "AutoCancelled") {
+    } else if (e && (e.name === "AutoCancelled"
+        /* director/colormatch の中断点は素の Error("やめました") を投げる。
+           名前だけで見分けると、本人がやめたのに失敗の顔が出る(2026-08-02)。
+           _autoCancel が立っている=止めたのは本人、として同じ扱いにする */
+        || (MC.ui._autoCancel && /やめました/.test(e.message || "")))) {
       MC.ui.autoStage.close();
-      MC.ui.toast("やめました。こだわりで続けられます");
-      MC.ui.setSetupTab("pro");
-      MC.ui._tabsForced = true;
-      MC.ui.refreshSetupTabs();
+      if (MC.ui._repickAfterCancel) MC.ui.repickLand();
+      else {
+        MC.ui.toast("やめました。こだわりで続けられます");
+        MC.ui.setSetupTab("pro");
+        MC.ui._tabsForced = true;
+        MC.ui.refreshSetupTabs();
+      }
     } else {
       console.error(e);
       MC.ui.showErrorLog(e);
@@ -4576,6 +4633,20 @@ MC.ui.wire = () => {
          実際に止まるまで、この画面で「やめています…」と言って待つ */
       MC.ui.autoStage.cancelling();
     }; }
+  /* おまかせ全画面の「動画を選び直す」(2026-08-02 優さん指示)。
+     中止の仕組みは「やめる」と**同じ鍵**(_autoCancel / cancelFlag / sync.cancel)を
+     流用し、新しい鍵は作らない。増やすのは「止まったあとの行き先」の印だけ。
+     確認も「やめる」と同じ作法で1回だけ挟む */
+  { const b = MC.ui.$("#asRepickRun");
+    if (b) b.onclick = () => {
+      if (!window.confirm("動画を選び直しますか？\n取り込んだ動画と、ここまでの解析結果は残ります。")) return;
+      MC.ui._repickAfterCancel = true;   // 着地の印(中止の鍵ではない)
+      MC.ui._autoCancel = true;
+      if (MC.exporter) MC.exporter.cancelFlag = true;
+      if (MC.sync && MC.sync.cancel) MC.sync.cancel();
+      /* 押しても即座には畳まない ─ 実際に止まるまでの顔は「やめる」と共通 */
+      MC.ui.autoStage.cancelling();
+    }; }
   /* 「同じ演奏ではないようです」の2択(2026-08-02 優さん指示)。
      ①同期なし: 印を立てて自走を再開(sync.run が疑いの本を0秒へ置く)
      ②選び直す: 全画面を畳んで素材の工程へ戻す(動画は消さない。
@@ -4589,6 +4660,10 @@ MC.ui.wire = () => {
   { const b = MC.ui.$("#asRepick");
     if (b) b.onclick = () => {
       MC.ui.autoStage.close();
+      /* ★ 保留を立てる(2026-08-02)。無いと、間違った動画を✕で外した瞬間に
+         focusNextAction が残り2本で自走を再開してしまい、
+         入れ替える隙が無かった(ワイプだけ割り当て画面に救われていた) */
+      MC.ui._repickHold = true;
       MC.ui._viewPhase = "mat";
       MC.ui.refreshJourney();
       MC.ui.toast("動画を入れ替えてください（同じ演奏を撮ったものどうしだと同期できます）");
@@ -4622,6 +4697,9 @@ MC.ui.wire = () => {
          おまかせは今までどおり誰でも押せる */
       if (flow === "pro" && !MC.ui.proAllowed()) { MC.ui.showFlowLockNote(); return; }
       MC.ui._autoFlow = flow === "easy";
+      /* 進め方を選び直したら、選び直しの保留は用済み(2026-08-02)。
+         残っていると、おまかせを選んだのに永久に走り出さない */
+      MC.ui._repickHold = false;
       /* 1段目で選んだ種類をここで確定する。種類が未選択のまま
          2段目へ来ることは無いが、保険で switch に落とす */
       MC.ui.chooseMode(MC.ui._pendingMode || MC.S.mode || "switch");

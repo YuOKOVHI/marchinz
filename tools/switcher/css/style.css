@@ -129,6 +129,10 @@ body::before {
 .clip-remove { position: absolute; top: 6px; right: 8px; background: none; border: none; color: var(--tx2);
   cursor: pointer; font-size: 14px; }
 .clip-remove:hover { color: var(--err); }
+/* カードの「この動画を選び直す」(2026-08-02 優さん指示)。右上の✕(外す)は
+   小さくて気づかれなかったので、名前のついた44ptの一手を並べる(✕は残す)。
+   .btn.small のままだと指の的が細すぎるので、高さだけ44ptへ持ち上げる */
+.clip-repick { min-height: 44px; margin-top: 6px; align-self: flex-start; }
 .pan-row { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--tx2);
   margin-top: 4px; flex-wrap: wrap; }
 /* ラベル(横位置/役割/出番/撮り方)は縦に折り返させない。

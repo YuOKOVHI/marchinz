@@ -5917,13 +5917,119 @@ async function countSamples(ns, file, fromSec) {
         throw new Error("②の行き先が素材の工程でない: " + d.body.dataset.mzjPhase);
       if (S.clips.length !== nClips) throw new Error("②で動画が消えた");
       if (S.syncDoubtAccepted) throw new Error("②なのに同期なしの印が立った");
-      return "通知1回・①=印+再開+畳む・②=素材へ+動画は残る";
+      /* ②は保留も立てる(2026-08-02)。無いと✕で外した瞬間に自走が再開する */
+      if (!U._repickHold) throw new Error("②で選び直しの保留が立たない");
+      return "通知1回・①=印+再開+畳む・②=素材へ+動画は残る+保留";
     } finally {
       U.notifyUserTurn = keepNotify; U.runAuto = keepRun;
       U.autoStage.close();
       U._viewPhase = null;
+      U._repickHold = false;
       compReset(w);
       U.refreshJourney();
+    }
+  });
+
+  await test("★自走の全画面「動画を選び直す」: 中止機構を流用して止め、素材の工程へ(動画は残る)", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    const U = w.MC.ui, d = w.document;
+    const keepConfirm = w.confirm, keepToast = U.toast;
+    const toasts = []; U.toast = m => toasts.push(String(m));
+    let asked = 0, ok = false;
+    w.confirm = () => { asked++; return ok; };
+    try {
+      U._autoCancel = false; U._repickAfterCancel = false; U._repickHold = false;
+      U.autoStage.open();
+      const b = d.getElementById("asRepickRun");
+      if (!b || b.hidden) throw new Error("全画面に「動画を選び直す」が無い");
+      const cb = d.getElementById("asCancel");
+      if (!cb || cb.hidden) throw new Error("「やめる」が消えた(役割が別なので並べて出す)");
+      /* 確認で「いいえ」→ 何も起きない(「やめる」と同じ作法で1回だけ確認) */
+      b.click();
+      if (asked !== 1) throw new Error("確認を挟んでいない");
+      if (U._autoCancel || U._repickAfterCancel) throw new Error("「いいえ」なのに中止の鍵が立った");
+      /* 「はい」→ 既存の中止機構(_autoCancel/cancelFlag)が立ち、着地の印が付く */
+      ok = true;
+      b.click();
+      if (!U._autoCancel) throw new Error("_autoCancel が立たない(既存の中止機構を流用していない)");
+      if (!U._repickAfterCancel) throw new Error("着地の印(_repickAfterCancel)が立たない");
+      if (!w.MC.exporter.cancelFlag) throw new Error("exporter.cancelFlag が立たない");
+      if (!cb.disabled || !/やめています/.test(cb.textContent)) throw new Error("止まるまでの顔(やめています…)になっていない");
+      if (!b.disabled) throw new Error("選び直す自身が眠らない(二度押せる)");
+      /* runAuto の catch と同じ着地(repickLand): 素材の工程+動画は残る+保留 */
+      const nClips = S.clips.length;
+      U.autoStage.close();
+      U.repickLand();
+      if (d.body.dataset.mzjPhase !== "mat")
+        throw new Error("着地が素材の工程でない: " + d.body.dataset.mzjPhase);
+      if (S.clips.length !== nClips) throw new Error("動画が消えた");
+      if (!U._repickHold) throw new Error("保留が立たない(外した瞬間に自走が再開してしまう)");
+      if (U._repickAfterCancel) throw new Error("着地の印が消えていない(次の「やめる」まで飛ばされる)");
+      if (!toasts.some(t => /動画は残って/.test(t))) throw new Error("動画が残る案内が無い: " + toasts.join(" / "));
+      return "確認1回・鍵は既存の_autoCancel・着地=素材工程+動画残存+保留";
+    } finally {
+      w.confirm = keepConfirm; U.toast = keepToast;
+      U._autoCancel = false; U._repickAfterCancel = false; U._repickHold = false;
+      w.MC.exporter.cancelFlag = false;
+      U.autoStage.close(); U._viewPhase = null;
+      compReset(w); U.refreshJourney();
+    }
+  });
+
+  await test("★選び直しの保留: 素材が変わっても自走を再開せず、カードの「選び直す」は外して選ばせる", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    const U = w.MC.ui, d = w.document;
+    const keepRun = U.runAuto, keepTab = U._setupTab;
+    let ran = 0; U.runAuto = () => { ran++; };
+    try {
+      /* モードは compReset が戻さない。前の試験が wipeCam を残していると、
+         保留解除後の focusNextAction が runAuto でなく割り当て画面へ行き、
+         「再開1回」を数えられない。ここで switch に固定する */
+      U.chooseMode("switch", { silent: true });
+      U._autoFlow = true; U._setupTab = "easy"; U._repickHold = true;
+      /* ★ 時間で測らない(2026-08-02 実測)。本物は setTimeout(260ms) 越しに走るが、
+         隠れタブ/裏iframeではタイマーが何秒も丸められ、固定待ちでは
+         「走らなかった」と「まだ走っていない」を区別できない(3回連続で誤FAIL)。
+         focusNextAction を呼ぶ間だけ setTimeout を即時実行に差し替えて同期で測る */
+      const runNow = fn => {
+        const keep = w.setTimeout;
+        w.setTimeout = (f, ms) => { f(); return 0; };
+        try { fn(); } finally { w.setTimeout = keep; }
+      };
+      /* 保留中は focusNextAction が自走を再開しない */
+      runNow(() => U.focusNextAction());
+      if (ran !== 0) throw new Error("保留中なのに自走が再開した");
+      /* カードの「この動画を選び直す」= 保留を立ててから外し、ファイル選択を開く */
+      U._repickHold = false;   // 押した時点で保留が立つことを見るため一度おろす
+      U.renderClips();
+      const rp = d.querySelector("#clipSlots .clip-repick");
+      if (!rp) throw new Error("カードに「この動画を選び直す」が無い");
+      /* モード(S.mode)は compReset が戻さない=前の試験しだいで縦型のことがあり、
+         入り口は #fileInput / #fileInputV のどちらにもなる。両方を見張る */
+      const fi = d.getElementById("fileInput"), fiV = d.getElementById("fileInputV");
+      let picked = 0;
+      fi.click = fiV.click = () => { picked++; };
+      const n0 = S.clips.length;
+      rp.click();
+      delete fi.click; delete fiV.click;   // 素のprototypeのclickへ戻す
+      if (S.clips.length !== n0 - 1) throw new Error("押した動画が外れていない");
+      if (picked !== 1) throw new Error("ファイル選択が開かれない");
+      if (!U._repickHold) throw new Error("おまかせなのに保留が立たない(外した瞬間に走り出す)");
+      /* 外した直後(afterChange→focusNextAction)も保留が効いて、何も予約されない */
+      if (ran !== 0) throw new Error("入れ替えの途中で自走が再開した");
+      /* 再開の一手(行動バーの「これでOK、おまかせを再開」相当) */
+      U._repickHold = false;
+      runNow(() => U.focusNextAction());
+      if (ran !== 1) throw new Error("保留を解いても自走が再開しない: " + ran
+        + ` (autoFlow=${U._autoFlow} busy=${U._busy} exp=${!!(w.MC.exporter && w.MC.exporter.running)}`
+        + ` easyDone=${S.easyDone} wipe=${U.needsWipePick()})`);
+      return "保留中は再開0回・カード=外す+選択+保留・解除で再開1回";
+    } finally {
+      U.runAuto = keepRun; U._setupTab = keepTab;
+      U._autoFlow = false; U._repickHold = false;
+      compReset(w); U.refreshJourney();
     }
   });
 
