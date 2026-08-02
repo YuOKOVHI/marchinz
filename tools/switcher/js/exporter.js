@@ -62,6 +62,34 @@ try {
   if (byUrl || byFlag) MC.exporter.setNoSkip(true);
 } catch (_) {}
 
+/* ============ 凍結でOSに回収された部品の後始末 ============
+   (2026-08-02 実機: 書き出し中に画面スリープ → 復帰したら
+   "VideoDecoder is not configured" で即死)
+
+   タブが凍結すると iOS は WebCodecs のデコーダ/エンコーダを回収する。
+   復帰後に decode()/encode() を呼ぶと InvalidStateError が**同期で**飛ぶ
+   (state は "unconfigured" か "closed" に戻っている)。
+   ・デコーダ → 作り直して現在位置へ seek し直せば続きから読める(下の revive)。
+     キーフレーム待ちの鍵と dropPendingBatch がそのまま効く
+   ・エンコーダ → 作り直しは途中まで書いたチャンクとの整合(keyframe周期・
+     タイムスタンプ・muxerの状態)が要り、割に合わない。**正直に
+     「画面が消えて中断された」と名指しして、おまかせのやり直し
+     (解析は使い回し)へ促す**(ui.js の exportFailHint / failHint) */
+MC.exporter.codecGone = (e, c) => {
+  try { if (c && (c.state === "closed" || c.state === "unconfigured")) return true; } catch (_) {}
+  const m = String((e && (e.raw || e.message || e.name)) || "");
+  return /InvalidStateError|not configured|unconfigured|has been closed|is closed/i.test(m);
+};
+/* 画面には日本語だけ(既存方式)。生の英語は raw に逃がして記録にだけ出す */
+MC.exporter.frozenError = raw => {
+  const err = new Error("画面が消えて書き出しが中断されました");
+  err.raw = String((raw && (raw.raw || raw.message || raw.name)) || raw || "");
+  return err;
+};
+/* デコーダを作り直す回数の上限。1回の書き出しで何度も凍結する状況は
+   「点けたままにできない端末で長い書き出し」なので、粘るより名指しで止める */
+MC.exporter.PIPE_REVIVE_MAX = 3;
+
 /* ---- 1カメラ分のデコードパイプ: frameAt(tLocal秒)がhold-last-frameでフレームを返す ---- */
 MC.exporter.VideoPipe = class {
   constructor(clip) {
@@ -82,6 +110,7 @@ MC.exporter.VideoPipe = class {
        通ったということは供給側が壊れているので、握り潰さず数と場所を記録する */
     this.needKey = true;
     this.droppedDelta = 0;   // 通算(記録に出す)
+    this.revives = 0;        // 凍結からの作り直し回数(帯とログに出す)
   }
 
   async init(fromLocalSec) {
@@ -99,6 +128,15 @@ MC.exporter.VideoPipe = class {
        composition delay 相当の elst が入るのが普通で、そのぶん映像が音声に対して
        1〜3フレームずれる。素材によって出たり出なかったりするので気づきにくい */
     this.tsOff = this.src.editOffsetSec(vt) || 0;
+    this.cfg = cfg;                  // revive(凍結からの作り直し)が使う
+    this._newDecoder();
+    this.cursor = this.src.cursor(vt.id);
+    /* cursor はコンテナ時刻で探すので、補正ぶんを足し戻してから探す */
+    this.cursor.seek(Math.max(0, fromLocalSec + this.tsOff));
+  }
+
+  /* デコーダを1本作って構える。init と revive の共通部 */
+  _newDecoder() {
     this.decoder = new VideoDecoder({
       output: f => this.frames.push(f),
       /* ★ どのカメラで落ちたのかを残す(2026-08-01 実機)。
@@ -115,11 +153,39 @@ MC.exporter.VideoPipe = class {
         this.error = err;
       },
     });
-    this.decoder.configure(cfg);
+    this.decoder.configure(this.cfg);
     this.needKey = true;             // 設定直後はキーフレーム必須
-    this.cursor = this.src.cursor(vt.id);
-    /* cursor はコンテナ時刻で探すので、補正ぶんを足し戻してから探す */
-    this.cursor.seek(Math.max(0, fromLocalSec + this.tsOff));
+  }
+
+  /* ---- 凍結でOSに回収されたデコーダを作り直し、現在位置から読み直す ----
+     (2026-08-02 実機: 画面スリープ→復帰で "VideoDecoder is not configured")
+     cursor.seek が直前RAPへ丸め、dropPendingBatch が配り途中の束を捨て、
+     needKey の鍵がデルタを弾く ─ 既存の3点がそのまま効くので、
+     ここでやるのは「作り直して・現在位置へ・seek し直す」だけ。
+     this.current は閉じない(hold-last-frame は凍結をまたいでも保つ) */
+  async revive(why) {
+    this.revives++;
+    const raw = String((why && (why.raw || why.message || why.name)) || why || "");
+    if (this.revives > MC.exporter.PIPE_REVIVE_MAX) {
+      /* 何度も凍結する=点けたままにできない端末。粘らず名指しで止める。
+         文言は exportFailHint がヒント(おまかせのやり直し)に変える */
+      const err = MC.exporter.frozenError(`revive上限(${MC.exporter.PIPE_REVIVE_MAX}回)超え: ${raw}`);
+      this.error = err;
+      throw err;
+    }
+    MC.log(`凍結から復帰: ${this.clip.name} のデコーダを作り直します(${this.revives}回目 / ${raw})`);
+    this.error = null;
+    try { this.decoder.close(); } catch (e) {}
+    this.frames.forEach(f => { try { f.close(); } catch (e) {} });
+    this.frames = [];
+    this._newDecoder();
+    this.eof = false;
+    this.flushed = false;
+    /* 最後に要求された時刻から読み直す(init/skipTo と同じ座標変換) */
+    const tLocal = this.lastReqUs != null ? this.lastReqUs / 1e6 : 0;
+    const target = Math.min(tLocal + this.tsOff, Math.max(0, this.clip.duration - 0.3));
+    this.cursor.seek(Math.max(0, target));
+    if (this.prof) this.prof.revives = (this.prof.revives || 0) + 1;
   }
 
   async pump() {
@@ -162,12 +228,23 @@ MC.exporter.VideoPipe = class {
           MC.log(`キーフレーム待ちで ${this.droppedDelta}枚捨てました(通算): ${this.clip.name}`);
         }
       }
-      this.decoder.decode(new EncodedVideoChunk({
-        type: s.is_sync ? "key" : "delta",
-        timestamp: Math.round((s.cts / s.timescale - this.tsOff) * 1e6),   // elst補正
-        duration: Math.max(1, Math.round(s.duration * 1e6 / s.timescale)),
-        data: s.data,
-      }));
+      try {
+        this.decoder.decode(new EncodedVideoChunk({
+          type: s.is_sync ? "key" : "delta",
+          timestamp: Math.round((s.cts / s.timescale - this.tsOff) * 1e6),   // elst補正
+          duration: Math.max(1, Math.round(s.duration * 1e6 / s.timescale)),
+          data: s.data,
+        }));
+      } catch (err) {
+        /* ★ 凍結でOSに回収されたデコーダは decode() が同期で
+           InvalidStateError を投げる(2026-08-02 実機)。作り直して
+           現在位置から読み直し、frameAt のループに続きを任せる */
+        if (MC.exporter.codecGone(err, this.decoder)) {
+          await this.revive(err);
+          return;
+        }
+        throw err;
+      }
     }
   }
 
@@ -206,7 +283,12 @@ MC.exporter.VideoPipe = class {
      要求位置からさらに同じだけ先へ進もうとして破綻していた
      (トリム開始が 0 のときだけ偶然動く。自動トリム導入で表面化。2026-07-20) */
   async frameAt(tLocalSec) {
-    if (this.error) throw this.error;
+    /* 凍結の後は error コールバック経由で届くこともある(非同期の回収通知)。
+       revive できる形なら作り直して続行、それ以外は従来どおり投げる */
+    if (this.error) {
+      if (MC.exporter.codecGone(this.error, this.decoder)) await this.revive(this.error);
+      else throw this.error;
+    }
     const tUs = tLocalSec * 1e6;
     /* 前回の要求からSKIP_MIN秒より先へ跳んでいる=その間このカメラは
        出番が無かった。間のフレームをデコードせず直前RAPへ飛ぶ(2026-07-22) */
@@ -226,7 +308,11 @@ MC.exporter.VideoPipe = class {
       if (this.frames.length) return this.current;                    // 次フレームはtより先=確定
       if (this.eof && this.flushed) return this.current;              // もう来ない=最後を保持
       await this.pump();
-      if (this.error) throw this.error;
+      if (this.error) {
+        /* 凍結の回収通知は error コールバックで届くこともある。上と同じ扱い */
+        if (MC.exporter.codecGone(this.error, this.decoder)) await this.revive(this.error);
+        else throw this.error;
+      }
       if (!this.frames.length && !this.eof) {
         await MC.waitDequeue(this.decoder, 50);
       }
@@ -1350,7 +1436,8 @@ MC.exporter._exportVideoPart = async (opt) => {
     MC.exporter.stage("映像を作っています");
     for (let k = kA; k < kB; k++) {
       if (MC.exporter.cancelFlag) throw new Error("キャンセルしました");
-      if (vencErr) throw vencErr;
+      if (vencErr) throw MC.exporter.codecGone(vencErr, venc)
+        ? MC.exporter.frozenError(vencErr) : vencErr;   // 凍結でエンコーダが回収された形(2026-08-02)
       if (MC.exporter._writeFatal) {
         throw new Error("端末の保存領域へ書き込めなくなりました。"
           + "空き容量を増やすか、書き出す範囲を短くしてお試しください。");
@@ -1392,13 +1479,15 @@ MC.exporter._exportVideoPart = async (opt) => {
       });
       prof.draw += performance.now() - _tDr;
       const _tE = performance.now();
-      venc.encode(vf, { keyFrame: (k - kA) % (fps * 2) === 0 });
+      try { venc.encode(vf, { keyFrame: (k - kA) % (fps * 2) === 0 }) }
+      catch (err) { throw MC.exporter.codecGone(err, venc) ? MC.exporter.frozenError(err) : err; }
       vf.close();
       prof.encode += performance.now() - _tE;
       if (k % 10 === 0) { await onFrame(k); await MC.yield(); }
     }
     await venc.flush();
-    if (vencErr) throw vencErr;
+    if (vencErr) throw MC.exporter.codecGone(vencErr, venc)
+        ? MC.exporter.frozenError(vencErr) : vencErr;   // 凍結でエンコーダが回収された形(2026-08-02)
     muxer.finalize();
     const file = await MC.exporter.opfsFinalizeWorker(name);
     if (!file.size) throw new Error("パートの書き込み結果が空です");
@@ -2001,7 +2090,8 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle, opts) => {
     MC.exporter.stage("映像を作っています");
     for (let k = 0; k < totalFrames; k++) {
       if (MC.exporter.cancelFlag) throw new Error("キャンセルしました");
-      if (vencErr) throw vencErr;
+      if (vencErr) throw MC.exporter.codecGone(vencErr, venc)
+        ? MC.exporter.frozenError(vencErr) : vencErr;   // 凍結でエンコーダが回収された形(2026-08-02)
       /* 音声が例外で落ちた時点で、この書き出しはどのみち失敗する。
          最後まで映像を作ってから知らせるのは5分の無駄なので、ここで畳む */
       if (audioFatal) throw audioFatal;
@@ -2071,7 +2161,8 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle, opts) => {
       });
       prof.draw += performance.now() - _tDraw;
       const _tEnc = performance.now();
-      venc.encode(vf, { keyFrame: k % (fps * 2) === 0 });
+      try { venc.encode(vf, { keyFrame: k % (fps * 2) === 0 }) }
+      catch (err) { throw MC.exporter.codecGone(err, venc) ? MC.exporter.frozenError(err) : err; }
       vf.close();
       prof.encode += performance.now() - _tEnc;
       if (k % 10 === 0) {
@@ -2102,7 +2193,8 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle, opts) => {
       }
     }
     await venc.flush();
-    if (vencErr) throw vencErr;
+    if (vencErr) throw MC.exporter.codecGone(vencErr, venc)
+        ? MC.exporter.frozenError(vencErr) : vencErr;   // 凍結でエンコーダが回収された形(2026-08-02)
     try { sessionStorage.removeItem("mz_switcher_export_at_v1"); } catch (_) {}
     {
       const tot = (prof.decode + prof.draw + prof.encode + prof.wait) / 1000;

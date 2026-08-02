@@ -5223,6 +5223,153 @@ async function countSamples(ns, file, fromSec) {
     } finally { w.MC.ui.closeWipePick(); w.MC.ui._autoFlow = false; }
   });
 
+  /* ============ ㉟ 凍結でデコーダが回収されても、作り直して続きから ============
+     (2026-08-02 実機: 書き出し中に画面スリープ → 復帰したら
+     "VideoDecoder is not configured" で即死)
+     iOS はタブ凍結中に WebCodecs のデコーダを回収する(state が
+     unconfigured/closed に戻る)。VideoDecoder.reset() が**まったく同じ状態**を
+     作るので、それで実機の症状を合成する。
+     ・デコーダ → revive(作り直し+現在位置へseek)で続きから読む
+     ・エンコーダ → 作り直さず「画面が消えて中断」を名指し(正直さ優先) */
+  group("㉟ 凍結でデコーダが回収されても、作り直して続きから読む");
+  /* seek できる偽 cursor(SEQ の実サンプル列を使う)。revive が
+     「現在位置の直前RAPへ seek し直す」ことまで見張る */
+  const mkSeekCursor = () => {
+    const c = { i: 0, seeks: [] };
+    c.seek = t => {
+      c.seeks.push(t);
+      let at = 0;
+      for (let j = 0; j < SEQ.arr.length; j++) {
+        const s = SEQ.arr[j];
+        if (s.is_sync && s.cts / s.timescale <= t + 1e-6) at = j;
+      }
+      c.i = at;
+    };
+    c.next = async () => (c.i < SEQ.arr.length
+      ? { value: SEQ.arr[c.i++], done: false } : { value: undefined, done: true });
+    return c;
+  };
+  const mkFrozenPipe = async (MCns) => {
+    const pipe = new MCns.exporter.VideoPipe({ name: "synth100", duration: S1N / S1FPS });
+    pipe.cfg = SEQ.cfg;
+    pipe.tsOff = 0;                  // init() を通さないので手で(elst無し素材の体)
+    let decoded = 0, derr = null;
+    pipe._mkDec = () => new VideoDecoder({ output: f => { decoded++; f.close(); },
+                                           error: e => { derr = e; } });
+    /* 本物の _newDecoder は frames へ積むが、この試験は枚数だけ見ればよいので
+       output を数える版に差し替える(revive が _newDecoder を呼ぶ事実は変えない) */
+    pipe._newDecoder = function () { this.decoder = this._mkDec(); this.decoder.configure(this.cfg); this.needKey = true; };
+    pipe._newDecoder();
+    pipe.cursor = mkSeekCursor();
+    pipe.cursor.seek(0);
+    return { pipe, nDecoded: () => decoded, derr: () => derr };
+  };
+  const pumpAll = async pipe => {
+    let spins = 0;
+    while (!pipe.eof && spins++ < 600) {
+      await pipe.pump();
+      pipe.frames.length = 0;
+      await new Promise(r => setTimeout(r, 2));
+    }
+    await pipe.decoder.flush().catch(() => {});
+  };
+  await test("★回収(reset)されても revive して最後まで読める", async () => {
+    if (!SEQ) throw new Error("㉑の供給列が無い");
+    const MCns = await loadExporterMut();
+    const { pipe, nDecoded } = await mkFrozenPipe(MCns);
+    /* 途中まで健全に回す */
+    for (let i = 0; i < 3; i++) { await pipe.pump(); pipe.frames.length = 0; }
+    const before = nDecoded();
+    pipe.lastReqUs = 1.0e6;              // 「いま1.0秒を書いている」体
+    pipe.decoder.reset();                // ← iOSの回収と同じ状態(unconfigured)
+    await pumpAll(pipe);                 // 次の decode が即死するはずの経路
+    try { pipe.decoder.close(); } catch (e) {}
+    eq(pipe.revives, 1, "作り直しの回数");
+    if (!(nDecoded() > before)) throw new Error("revive後に1枚もデコードしていない");
+    const sk = pipe.cursor.seeks;
+    const last = sk[sk.length - 1];
+    if (!(Math.abs(last - 1.0) < 0.35)) throw new Error("現在位置へ seek し直していない: " + last);
+    return `reset後に revive 1回・seek(${last.toFixed(2)})・計${nDecoded()}枚`;
+  });
+  const dropReviveGuard = src => {
+    const before = "        if (MC.exporter.codecGone(err, this.decoder)) {\n"
+                 + "          await this.revive(err);\n"
+                 + "          return;\n"
+                 + "        }\n";
+    if (!src.includes(before)) throw new Error("変異ポイントが見つからない(修正が別の形に書き換わった?)");
+    if (src.split(before).length !== 2) throw new Error("変異ポイントが1箇所でない");
+    return src.split(before).join("");
+  };
+  await test("変異: reviveを外すと生の InvalidStateError で即死(v1.76.0の実機)", async () => {
+    if (!SEQ) throw new Error("㉑の供給列が無い");
+    const MCns = await loadExporterMut(dropReviveGuard);
+    const { pipe } = await mkFrozenPipe(MCns);
+    for (let i = 0; i < 3; i++) { await pipe.pump(); pipe.frames.length = 0; }
+    pipe.decoder.reset();
+    let msg = "";
+    try { await pumpAll(pipe); } catch (e) { msg = (e && (e.message || e.name)) || String(e); }
+    try { pipe.decoder.close(); } catch (e) {}
+    if (!msg) throw new Error("変異させても落ちない= この試験は当の事故を検知できない");
+    if (pipe.revives) throw new Error("変異版なのに revive が動いた");
+    return "例外: " + msg.slice(0, 60);
+  });
+  await test("★何度も凍結したら、名指しの日本語で止まる(英語を出さない)", async () => {
+    if (!SEQ) throw new Error("㉑の供給列が無い");
+    const MCns = await loadExporterMut();
+    const { pipe } = await mkFrozenPipe(MCns);
+    await pipe.pump(); pipe.frames.length = 0;
+    pipe.revives = MCns.exporter.PIPE_REVIVE_MAX;   // 既に上限まで作り直した体
+    pipe.decoder.reset();
+    let err = null;
+    try { await pumpAll(pipe); } catch (e) { err = e; }
+    try { pipe.decoder.close(); } catch (e) {}
+    if (!err) throw new Error("上限を超えても止まらない");
+    if (!/画面が消えて書き出しが中断/.test(err.message)) throw new Error("名指しになっていない: " + err.message);
+    if (/[A-Za-z]{4,}/.test(err.message)) throw new Error("画面向けの文言に英語が混ざっている: " + err.message);
+    if (!err.raw || !/revive上限/.test(err.raw)) throw new Error("生の原因が raw に残っていない");
+    return "画面=日本語 / raw=" + String(err.raw).slice(0, 40);
+  });
+  await test("★エンコーダの回収は codecGone が見分け、frozenError が日本語にする", async () => {
+    const MCns = await loadExporterMut();
+    const X = MCns.exporter;
+    const dead = { name: "InvalidStateError", message: "VideoEncoder is not configured" };
+    if (!X.codecGone(dead, null)) throw new Error("回収の形を見分けられない");
+    if (X.codecGone(new Error("out of memory"), null)) throw new Error("無関係なエラーまで凍結扱いにする");
+    if (!X.codecGone(new Error("なんでも"), { state: "closed" })) throw new Error("state=closed を見ていない");
+    const fe = X.frozenError(dead);
+    if (!/画面が消えて書き出しが中断/.test(fe.message)) throw new Error("文言: " + fe.message);
+    if (!/not configured/.test(fe.raw)) throw new Error("raw に生の原因が残らない");
+    /* 配線: 4つの vencErr と2つの encode が変換を通っていること */
+    const src = await (await fetch("../switcher/js/exporter.js")).text();
+    eq((src.match(/frozenError\(vencErr\)/g) || []).length, 4, "vencErr の変換箇所");
+    eq((src.match(/catch \(err\) \{ throw MC\.exporter\.codecGone\(err, venc\)/g) || []).length, 2, "encode の変換箇所");
+    return "見分け・変換・配線4+2 すべてOK";
+  });
+  await test("★failHint/exportFailHint: 凍結は専用の案内(「形式が扱えない」に落ちない)", async () => {
+    const uiSrc = await (await fetch("../switcher/js/ui.js")).text();
+    const pull = name => {
+      const m = uiSrc.match(new RegExp(name.replace(".", "\\.") + " = (e|m) => \\{"));
+      if (!m) throw new Error(name + " が見つからない");
+      /* 本体を「トップレベルの };」まで切り出して実行できる形にする */
+      const body = uiSrc.slice(uiSrc.indexOf("=>", m.index));
+      const end = body.indexOf("\n};");
+      return "(" + m[1] + ") " + body.slice(0, end + 2);
+    };
+    const stub = { trimRange: () => [0, 10] };
+    const fh = new Function("MC", "return " + pull("MC.ui.failHint"))(stub);
+    const eh = new Function("MC", "return " + pull("MC.ui.exportFailHint"))(stub);
+    const msg = "画面が消えて書き出しが中断されました";
+    if (!/解析を使い回して/.test(fh(msg))) throw new Error("failHint が専用の案内を出さない: " + fh(msg));
+    const out = eh(new Error(msg));
+    if (!/解析を使い回して/.test(out)) throw new Error("exportFailHint が専用の案内を出さない: " + out);
+    if (/扱えないようです/.test(out)) throw new Error("「形式が扱えない」という間違った案内に落ちている");
+    /* 対照: 従来の decoder 系はいままでどおり */
+    if (!/扱えないようです/.test(eh(new Error("decoder error XYZ")))) {
+      throw new Error("従来の decoder 系の案内が消えた");
+    }
+    return "凍結=専用の案内 / 従来の案内も無傷";
+  });
+
   if (CF) { CF.remove(); CF = null; CW = null; CD = null; }
 
   /* ===== 集計 ===== */
