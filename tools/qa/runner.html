@@ -5370,6 +5370,158 @@ async function countSamples(ns, file, fromSec) {
     return "凍結=専用の案内 / 従来の案内も無傷";
   });
 
+
+  /* ===== ㉞ 2026-08-02 追加: 完了・保存はファンファーレ、失敗もお知らせ(㉝は並行のWake Lock群) ===== */
+  group("㉞ 完了・保存はファンファーレ / 失敗もお知らせ");
+
+  await test("★完了と保存で祝う(紙吹雪+効果音+振動)、取り消しでは祝わない", async () => {
+    const e = await doneEnv();
+    const U = e.U;
+    const keep = { fan: U.fanfare, play: U.sfx.play, buzz: U.buzz, share: U._share,
+                   turn: U.notifyUserTurn };
+    const log = [];
+    try {
+      U.fanfare = k => { log.push("fan:" + k); return true; };
+      U.sfx.play = k => { log.push("sfx:" + k); return true; };
+      U.buzz = () => { log.push("buzz"); };
+      U.showDone(e.res);
+      if (!log.includes("fan:done")) throw new Error("完成で紙吹雪が出ない");
+      if (!log.includes("sfx:done")) throw new Error("完成でファンファーレが鳴らない");
+      if (!log.includes("buzz")) throw new Error("完成で振動しない");
+      log.length = 0;
+      U._share = async () => true;
+      await U.saveResult();
+      if (!log.includes("fan:saved") || !log.includes("sfx:saved")) {
+        throw new Error("保存の祝いが無い: " + log.join(","));
+      }
+      if (!log.includes("buzz")) throw new Error("保存で振動しない");
+      /* 取り消しは祝わない(取り消したのにファンファーレは嘘になる) */
+      U.showDone(e.res);
+      log.length = 0;
+      U._share = async () => { const x = new Error("x"); x.name = "AbortError"; throw x; };
+      await U.saveResult();
+      if (log.some(l => l.includes("saved"))) throw new Error("取り消したのに祝った: " + log.join(","));
+      return "完了=紙吹雪+音+振動 / 保存=同 / 取り消し=沈黙";
+    } finally {
+      U.fanfare = keep.fan; U.sfx.play = keep.play; U.buzz = keep.buzz;
+      U._share = keep.share; U.notifyUserTurn = keep.turn;
+      U._fanfareStop(); e.restore();
+    }
+  });
+
+  await test("★失敗は完了と別の低い音+失敗種別で知らせ、同じ失敗で二重に鳴らさない", async () => {
+    const e = await doneEnv();
+    const U = e.U;
+    const keep = { play: U.sfx.play, turn: U.notifyUserTurn, fan: U.fanfare };
+    const played = [], kinds = [];
+    try {
+      U.sfx.play = k => { played.push(k); return true; };
+      U.notifyUserTurn = o => { kinds.push((o && o.kind) || "turn"); return true; };
+      U.fanfare = () => true;
+      U._lastFailNotify = 0;
+      U.exportOverlay.open();
+      U.exportOverlay.fail();
+      if (!played.includes("fail")) throw new Error("失敗音が鳴らない");
+      if (!kinds.includes("fail")) throw new Error("失敗の通知種別が無い: " + kinds.join(","));
+      if (played.includes("done")) throw new Error("失敗なのに完了の音が混ざった");
+      /* 音色そのもの(実物の定義)が別か。失敗=低い(300Hz未満)・完了=高い(400Hz超) */
+      const T = U.sfx.TONES;
+      if (!(T.fail[0][0] < 300 && T.done[0][0] > 400)) {
+        throw new Error(`失敗音が完了音と紛らわしい: fail=${T.fail[0][0]}Hz / done=${T.done[0][0]}Hz`);
+      }
+      /* どの音も1秒以内(指示)。開始+長さの最大で見る */
+      for (const k of ["done", "saved", "fail"]) {
+        const end = T[k].reduce((m, x) => Math.max(m, x[1] + x[2]), 0);
+        if (end > 1) throw new Error(`${k} の音が1秒を超える: ${end}s`);
+      }
+      /* 同じ失敗が2つの顔から届いても1回(2.5秒の窓) */
+      played.length = 0; kinds.length = 0;
+      U.exportOverlay.fail();
+      if (played.length || kinds.length) throw new Error("同じ失敗で二重に鳴った");
+      return `fail=${T.fail.map(x => x[0]).join("/")}Hz(低・下降) / done=${T.done.map(x => x[0]).join("/")}Hz(上昇) / 全音1秒以内 / 二重なし`;
+    } finally {
+      U.sfx.play = keep.play; U.notifyUserTurn = keep.turn; U.fanfare = keep.fan;
+      U._lastFailNotify = 0; U.exportOverlay.close(); e.restore();
+    }
+  });
+
+  await test("★おまかせの途中の進行は黙るが、途中の失敗は知らせる(失敗=終端)", async () => {
+    const w = await compEnv();
+    const U = w.MC.ui;
+    const keep = { turn: U.notifyUserTurn, play: U.sfx.play };
+    const kinds = [];
+    const as = w.document.getElementById("autoStage");
+    const wasHidden = as.hidden;
+    try {
+      U.notifyUserTurn = o => { if (!(o && o.silent)) kinds.push((o && o.kind) || "turn"); return true; };
+      U.sfx.play = () => true;
+      U._lastFailNotify = 0;
+      U._autoRunning = true;
+      /* 進行の通知は silent の鉄則どおり黙る */
+      U.notifyUserTurn({ silent: !!U._autoRunning, title: "音声" });
+      if (kinds.length) throw new Error("自走中の進行で鳴った");
+      /* 失敗の顔は自走中でも知らせる */
+      as.hidden = false;
+      U.autoStage.fail(new Error("QAのわざとの失敗(㉝)"));
+      if (!kinds.includes("fail")) throw new Error("自走中の失敗が黙っている: " + kinds.join(","));
+      return "進行=沈黙 / 失敗=fail種別で知らせる";
+    } finally {
+      U.notifyUserTurn = keep.turn; U.sfx.play = keep.play;
+      U._autoRunning = false; U._lastFailNotify = 0;
+      U.autoStage._fail = null; U.autoStage._failedStep = null;
+      as.classList.remove("as-failed"); as.hidden = wasHidden;
+    }
+  });
+
+  await test("★紙吹雪は静止設定・裏タブでは出ず、連打で重ねず、必ず片付く", async () => {
+    const w = await compEnv();
+    const U = w.MC.ui;
+    const keep = { vis: U.fxVisible, mo: U.motionOk };
+    try {
+      U._fanfareStop();
+      U.fxVisible = () => false; U.motionOk = () => true;
+      if (U.fanfare("done") !== false) throw new Error("裏タブで出した");
+      U.fxVisible = () => true; U.motionOk = () => false;
+      if (U.fanfare("done") !== false) throw new Error("静止設定(prefers-reduced-motion)で出した");
+      if (w.document.querySelector(".mz-fanfare-canvas")) throw new Error("出さないのにcanvasが残った");
+      U.motionOk = () => true;
+      if (U.fanfare("done") !== true) throw new Error("出せる条件で出ない");
+      if (U.fanfare("saved") !== false) throw new Error("連打で重ねた");
+      eq(w.document.querySelectorAll(".mz-fanfare-canvas").length, 1, "canvasの数");
+      U._fanfareStop();
+      if (w.document.querySelector(".mz-fanfare-canvas")) throw new Error("後片付けされない");
+      if (U._fanfareOn) throw new Error("片付けても鍵が残る(次が出せない)");
+      /* 音も裏タブでは鳴らさない(通知に任せる) */
+      U.fxVisible = () => false;
+      if (U.sfx.ready()) throw new Error("裏タブなのに鳴らせる判定");
+      return "裏タブ/静止=出ない / 連打=1枚 / 片付けOK / 裏タブの音=鳴らさない";
+    } finally { U.fxVisible = keep.vis; U.motionOk = keep.mo; U._fanfareStop(); }
+  });
+
+  await test("★音はタップで解錠し、音のAPIが無い環境でも例外を投げない(iOS)", async () => {
+    const w = await compEnv();
+    const U = w.MC.ui;
+    /* iOSの「タップ起点でしか作れない」への配線があるか(コメントは除いて見る) */
+    const src = (await (await fetch("../switcher/js/ui.js")).text())
+      .replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    if (!/pointerdown[\s\S]{0,160}sfx\.unlock/.test(src)) {
+      throw new Error("タップでの解錠が配線されていない(完了時に一度も鳴れない)");
+    }
+    /* API が無い/壊れている環境で静かに諦めるか */
+    const set = (k, v) => { try { Object.defineProperty(w, k, { value: v, configurable: true }); } catch (_) {} };
+    const kAC = w.AudioContext, kWAC = w.webkitAudioContext, kCtx = U.sfx._ctx;
+    try {
+      U.sfx._ctx = null;
+      set("AudioContext", undefined); set("webkitAudioContext", undefined);
+      U.sfx.unlock();   // 例外を投げないこと
+      if (U.sfx.play("done") !== false) throw new Error("APIが無いのに鳴ったことにしている");
+      /* ctx はあるが suspended(タップ前のiOS) → 鳴らさない */
+      U.sfx._ctx = { state: "suspended" };
+      if (U.sfx.ready()) throw new Error("解錠前なのに鳴らせる判定");
+      return "解錠の配線あり / API無し・解錠前は静かに諦める";
+    } finally { set("AudioContext", kAC); set("webkitAudioContext", kWAC); U.sfx._ctx = kCtx; }
+  });
+
   if (CF) { CF.remove(); CF = null; CW = null; CD = null; }
 
   /* ===== 集計 ===== */

@@ -117,6 +117,14 @@ MC.ui.exportOverlay = {
        アイコンも eo-fail で危険色にする(それまで通常時と同じブランド青で、
        色による危険の信号がゼロだった) */
     el.classList.add("eo-failed");
+    /* ★ 失敗も端末から知らせる(2026-08-02 優さん指示「失敗時もお知らせして」)。
+       低い音+振動+通知。おまかせ全画面の失敗(autoStage.fail)と同じ失敗が
+       重なっても notifyFail 側の窓が1回にまとめる */
+    MC.ui.notifyFail({
+      title: "書き出せませんでした",
+      body: "MarchinZ Switcher に戻って、理由と次の一手をご確認ください",
+      tab: "⚠ 書き出せませんでした — MarchinZ",
+    });
   },
   close() {
     const el = MC.ui.$("#exportOverlay");
@@ -306,6 +314,9 @@ MC.ui.showDone = res => {
     tab: "✅ 完成しました — 保存してください",
     pattern: [90, 60, 90, 60, 160],   // 完成は少し長く鳴らす(途中の合図と区別する)
   });
+  /* ★ ファンファーレ(2026-08-02 優さん指示「完了時のUIを楽しく」)。
+     紙吹雪+和音。裏タブなら何も出ない(上の通知が既に届いている) */
+  MC.ui.celebrate("done");
   $("#doneCard").hidden = false;
   /* オーバーレイの保存画面にも同じ内容を映す(2026-07-24 案B)。
      文言はパネル側(doneText/doneNote)を組み立ててからコピーする */
@@ -459,6 +470,8 @@ MC.ui.notifySaved = (r, how) => {
      (2026-08-02)。書き直すので、警告行を実らせた後に呼ぶ */
   MC.ui.setSaveState(true);
   MC.ui.renderSceneOffers();
+  /* ★ 保存もお祝い(2026-08-02)。取り消し(AbortError)はここへ来ないので祝わない */
+  MC.ui.celebrate("saved");
   MC.ui.toast(how === "share" ? "✔ 保存しました" : "✔ ダウンロードに保存しました");
 };
 
@@ -2917,6 +2930,159 @@ MC.ui.notifyUserTurn = (o) => {
   return true;
 };
 
+/* ============ 失敗のお知らせ(2026-08-02 優さん指示「失敗時もお知らせして」) ============
+   失敗も「終わり」の一種 ─ 人が戻ってこないと何も進まない。
+   ★ おまかせの途中で黙る鉄則(silent)は**進行の通知**の話。失敗は進行ではなく
+     終端なので、自走中でも知らせる(でなければ、失敗の大半が自走中に起きる以上
+     「失敗時もお知らせ」が空文になる)。
+   ★ 同じ失敗が2つの顔(おまかせ全画面と書き出し全画面)から届いても、
+     2.5秒の窓で1回にまとめる ─ 失敗の連打ほど神経に障るものはない */
+MC.ui.notifyFail = (o) => {
+  const opt = o || {};
+  const now = Date.now();
+  if (now - (MC.ui._lastFailNotify || 0) < 2500) return false;
+  MC.ui._lastFailNotify = now;
+  MC.ui.sfx.play("fail");   // 完了と明確に別の、短い低い音(裏タブなら鳴らず通知に任せる)
+  return MC.ui.notifyUserTurn({
+    kind: "fail",
+    pattern: [180, 90, 180],   // 完了(短×2+長)と区別できる強めの2打
+    title: opt.title || "うまくいきませんでした",
+    body: opt.body || "MarchinZ Switcher に戻って、理由と次の一手をご確認ください",
+    tab: opt.tab || "⚠ 失敗しました — MarchinZ",
+  });
+};
+
+/* ============ ファンファーレ(2026-08-02 優さん指示「完了・保存のUIを楽しく」) ============
+   数分待って出来上がった瞬間が、いままで文字が入れ替わるだけだった。
+   紙吹雪(canvas)+短い和音+振動で「できた!」を体に返す。
+   守るもの:
+   ・prefers-reduced-motion では紙吹雪を出さない(既存方針)
+   ・裏タブでは絵も音も出さない(見ていない画面で騒がない。通知が既に届いている)
+   ・連打で重ねない(_fanfareOn)。2.2秒で必ず消える
+   ・外部ライブラリなし。この節が実装のすべて */
+MC.ui.fxVisible = () => !document.hidden;   // 試験が差し替える継ぎ目(document.hiddenは偽装できない)
+MC.ui.motionOk = () => {
+  try { return !window.matchMedia("(prefers-reduced-motion: reduce)").matches; }
+  catch (_) { return true; }
+};
+MC.ui._fanfareStop = () => {
+  const c = document.querySelector(".mz-fanfare-canvas");
+  if (c) c.remove();
+  MC.ui._fanfareOn = false;
+};
+MC.ui.fanfare = kind => {
+  if (!MC.ui.fxVisible() || !MC.ui.motionOk() || MC.ui._fanfareOn) return false;
+  const W = window.innerWidth, H = window.innerHeight;
+  const cv = document.createElement("canvas");
+  cv.className = "mz-fanfare-canvas";
+  /* 全画面(z-120)の上・トースト級。pointer-events:none なので保存ボタンは普通に押せる */
+  cv.style.cssText = "position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:998";
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  cv.width = Math.max(1, W * dpr); cv.height = Math.max(1, H * dpr);
+  document.body.appendChild(cv);
+  const ctx = cv.getContext("2d");
+  ctx.scale(dpr, dpr);
+  /* MarchinZの色: ロゴの黄・ブランド青・OK緑+明るい差し色 */
+  const COLORS = ["#f7c948", "#1e4fd6", "#2fa36b", "#5ab0ff", "#ff8a5c", "#ffffff"];
+  const saved = kind === "saved";
+  const n = saved ? 46 : 84;
+  const parts = Array.from({ length: n }, (_, i) => {
+    const a = (-90 + (Math.random() * 130 - 65)) * Math.PI / 180;   // 上向きの扇 ±65°
+    const v = (saved ? 380 : 540) * (0.45 + Math.random() * 0.75);
+    return {
+      x: W / 2 + (Math.random() * 140 - 70),
+      y: H * (saved ? 0.55 : 0.45),   // 保存は主ボタンのあたり、完了は画面中央から
+      vx: Math.cos(a) * v, vy: Math.sin(a) * v,
+      w: 5 + Math.random() * 5, h: 8 + Math.random() * 7,
+      rot: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 12,
+      c: COLORS[i % COLORS.length],
+    };
+  });
+  const DUR = saved ? 1500 : 2200, G = 900;   // 重力は「ひらひら」より少し軽快に
+  MC.ui._fanfareOn = true;
+  let t0 = null;
+  const step = ts => {
+    if (!cv.isConnected) { MC.ui._fanfareOn = false; return; }   // 途中で片付けられたら黙って終える
+    if (t0 == null) t0 = ts;
+    const t = (ts - t0) / 1000, k = (ts - t0) / DUR;
+    ctx.clearRect(0, 0, W, H);
+    ctx.globalAlpha = k > 0.7 ? Math.max(0, 1 - (k - 0.7) / 0.3) : 1;   // 終わりはふっと消える
+    for (const p of parts) {
+      const x = p.x + p.vx * t, y = p.y + p.vy * t + G * t * t / 2;
+      if (y > H + 20) continue;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(p.rot + p.vr * t);
+      ctx.fillStyle = p.c;
+      /* 高さを揺らすと紙が翻って見える(回転だけだと硬い) */
+      ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h * (0.35 + 0.65 * Math.abs(Math.cos(t * 6 + p.rot))));
+      ctx.restore();
+    }
+    if (k < 1) requestAnimationFrame(step);
+    else MC.ui._fanfareStop();
+  };
+  requestAnimationFrame(step);
+  return true;
+};
+
+/* ---- 効果音。外部ファイル無し、WebAudioのオシレータで合成 ----
+   iOS Safari は AudioContext を**タップ起点でしか**作れない。wire() が
+   最初のタップで unlock() を呼び、完了時(数分後)はその文脈で鳴らす。
+   タブが裏なら鳴らさない(ready)。端末がサイレントなら鳴らないのは iOS の仕様として受け入れる */
+MC.ui.sfx = {
+  _ctx: null,
+  /* [周波数Hz, 開始秒, 長さ秒]。done=上昇の和音(C5-E5-G5-C6・0.8秒で終わる)、
+     saved=軽い2音、fail=低い2音(A3→F3・下がる)。同じ音で違う意味を言わない */
+  TONES: {
+    done:  [[523.25, 0, 0.12], [659.25, 0.11, 0.12], [783.99, 0.22, 0.14], [1046.5, 0.34, 0.42]],
+    saved: [[659.25, 0, 0.10], [987.77, 0.09, 0.26]],
+    fail:  [[220, 0, 0.10], [174.61, 0.13, 0.30]],
+  },
+  unlock() {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      if (!this._ctx) this._ctx = new AC();
+      if (this._ctx.state === "suspended") {
+        const p = this._ctx.resume();
+        if (p && typeof p.catch === "function") p.catch(() => {});
+      }
+    } catch (_) {}
+  },
+  /* 鳴らせるか。ctxが無い/止まっている(=タップ前・iOSが裏で回収)・裏タブでは鳴らさない */
+  ready() {
+    return !!(this._ctx && this._ctx.state === "running") && MC.ui.fxVisible();
+  },
+  play(kind) {
+    if (!this.ready()) return false;
+    try {
+      const ctx = this._ctx, t0 = ctx.currentTime + 0.02;
+      const master = ctx.createGain();
+      master.gain.value = 0.14;   // 控えめ。びっくりさせない
+      master.connect(ctx.destination);
+      for (const [f, at, dur] of (this.TONES[kind] || [])) {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = kind === "fail" ? "sine" : "triangle";   // 失敗は丸く低く、祝いは少し明るく
+        o.frequency.value = f;
+        g.gain.setValueAtTime(0, t0 + at);
+        g.gain.linearRampToValueAtTime(1, t0 + at + 0.015);
+        g.gain.exponentialRampToValueAtTime(0.001, t0 + at + dur);
+        o.connect(g); g.connect(master);
+        o.start(t0 + at); o.stop(t0 + at + dur + 0.05);
+      }
+      return true;
+    } catch (_) { return false; }
+  },
+};
+
+/* 祝いの一式。絵と音はここで、振動は呼び出し元の notifyUserTurn / ここが打つ */
+MC.ui.celebrate = kind => {
+  MC.ui.fanfare(kind);
+  MC.ui.sfx.play(kind);
+  /* 完了(done)の振動は showDone の notifyUserTurn が打つ。保存はここで短く */
+  if (kind === "saved") MC.ui.buzz([40, 30, 90]);
+};
+
 /* ============ 分析完了の目立つ通知(2026-07-23 優さん指示) ============
    ①バイブ ②通知 ③タブのタイトル(ここまで notifyUserTurn)
    ④画面内の大きな完了バナー(タップで消える)。四重にして見逃しを防ぐ */
@@ -3238,6 +3404,14 @@ MC.ui.autoStage = {
     this._failedStep = this._now;
     this._now = null;                       // 脈と「…」を同時に止める
     el.classList.add("as-failed");          // 用済みのものを畳む(CSS)
+    /* ★ 失敗も端末から知らせる(2026-08-02)。自走中でも鳴らす ─ 失敗は進行ではなく
+       **終端**で、人が戻らないと何も進まない。「途中では鳴らさない」鉄則は
+       進行の通知(notifyUserTurn の silent)の話であって、止まったことは別 */
+    MC.ui.notifyFail({
+      title: "うまくいきませんでした",
+      body: "MarchinZ Switcher に戻って、もう一度やるか自分で仕上げるかを選べます",
+      tab: "⚠ うまくいきませんでした — MarchinZ",
+    });
     const head = MC.ui.$("#asHead"); if (head) head.textContent = "うまくいきませんでした";
     const eta = MC.ui.$("#asEta"); if (eta) eta.textContent = "";
     const wt = el.querySelector(".as-wait"); if (wt) wt.hidden = true;
@@ -4267,6 +4441,13 @@ MC.ui.showModeSelect = () => {
 /* --- イベント配線 --- */
 MC.ui.wire = () => {
   const $ = MC.ui.$;
+
+  /* ★ 効果音の解錠(2026-08-02)。iOS Safari は AudioContext をタップ起点でしか
+     作れない/再開できない。どのタップでも unlock しておけば、数分後の完了時に
+     その文脈で鳴らせる。iOSは裏へ回ると ctx を止めることがあるので、
+     once にせず**毎タップ** resume を試みる(走っていれば何もしない・軽い) */
+  ["pointerdown", "keydown"].forEach(ev =>
+    document.addEventListener(ev, () => MC.ui.sfx.unlock(), { capture: true, passive: true }));
 
   /* 種類カード。**ここでは作業画面へ進まない**(2026-08-01)。
      選んだ種類を覚えて、2段目の「どちらで作りますか」へ送る */

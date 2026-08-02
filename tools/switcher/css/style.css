@@ -855,6 +855,14 @@ html, body { max-width: 100%; overflow-x: clip; }
    主ボタンが緑の「✓ 保存しました」に変わり、下に緑の帯が入る ─
    文字を足さずに、画面の主役の色で言う */
 .btn.primary.saved { background: var(--ok); }
+/* ★ 保存できた瞬間、主ボタンがぽんと弾む(2026-08-02 優さん指示「保存時のUIを楽しく」)。
+   派手さより気持ちよさ ─ 6%膨らんで97%へ沈み、戻る。0.5秒で終わる */
+@keyframes mzSavedPop {
+  0% { transform: scale(1); } 35% { transform: scale(1.06); }
+  65% { transform: scale(.97); } 100% { transform: scale(1); }
+}
+.btn.primary.saved { animation: mzSavedPop .5s cubic-bezier(.2, .8, .3, 1.2); }
+@media (prefers-reduced-motion: reduce) { .btn.primary.saved { animation: none; } }
 .eo-note.save-ok, .status.save-ok {
   background: rgba(30, 122, 67, .12); color: var(--ok);
   font-weight: 700; padding: 10px 12px; border-radius: 10px;
