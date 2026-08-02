@@ -1946,8 +1946,15 @@ MC.ui.renderAudio = () => {
        rms を3段の言葉に割る(-20dB相当=0.1 / -34dB相当=0.02 が境目) */
     const loud = r => r >= 0.1 ? "音が大きい" : r >= 0.02 ? "音は標準" : "音が小さめ";
     const stat = c.stats
-      ? `${loud(c.stats.rms || 0)}${c.stats.clipRatio > 0.001 ? "・音がわれています⚠" : ""}`
+      ? loud(c.stats.rms || 0)
       : (c.hasAudio === false ? "音声なし" : "分析するとここに音量が出ます");
+    /* ★理由バッジ(2026-08-02 合意④): カード1枚に一言だけ。点数は出さない。
+       おすすめ(選ばれたもの) > 音割れあり > 風の音あり の順で1つ。
+       「音がわれています⚠」の文言はバッジへ一本化した(同じことを2回言わない) */
+    const fl = MC.audio.flags(c.stats);
+    const badge = reco && reco.id === c.id ? `<span class="reco-badge">おすすめ</span>`
+      : fl.broken ? `<span class="reco-badge warn">音割れあり</span>`
+      : fl.wind ? `<span class="reco-badge warn">風の音あり</span>` : "";
     /* 呼び名は「動画N」に統一(2026-08-01)。素材カードも傾きの画面も「動画N」なのに、
        ここだけ「カメラN」で、同じものを2つの名前で呼んでいた。
        プレビュー左下のバッジも同じ日に「動画N」へ揃えた */
@@ -1957,7 +1964,7 @@ MC.ui.renderAudio = () => {
     label.innerHTML = `
       <input type="radio" name="audioClip" ${MC.S.audioClipId === c.id ? "checked" : ""} ${c.hasAudio === false ? "disabled" : ""}>
       ${c.isAudio ? '<i class="fa-solid fa-file-audio" title="取り込んだ音声ファイル"></i> ' : ""}<span>${MC.ui.esc(dispName)}${!c.isAudio && slotIdx >= 0 ? ` <span class="hint">${MC.ui.esc(MC.ui.shortName(c.name, 12))}</span>` : ""}</span>
-      ${reco && reco.id === c.id ? `<span class="reco-badge">おすすめ</span>` : ""}
+      ${badge}
       <span class="audio-stat">${stat}</span>`;
     label.querySelector("input").onchange = () => {
       MC.S.audioClipId = c.id;

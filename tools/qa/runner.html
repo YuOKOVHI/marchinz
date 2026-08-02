@@ -4119,6 +4119,131 @@ async function countSamples(ns, file, fromSec) {
   });
 
 
+  /* ============ 音の基準(2026-08-02 専門家パネル合意+優さん承認) ============
+     整音(Polish)は触らない ─ ここで見るのは選ぶ基準(stats/recommend)だけ。
+     ③-c群の整音試験とは別物 */
+  group("㊳ 音の基準: 割れの貼りつき/弱奏の誤認/風(2026-08-02)");
+
+  await test("★リミッタで潰れた「数値上は割れていない割れ音」を flatRun が見つける", async () => {
+    const w = await compEnv();
+    const SR = w.MC.audio.SR, N = SR * 4;
+    /* ① 貼りつき素材: 1.3倍の100Hzサインを0.94で頭打ち。0.985に届かないので
+       clipRatio では永遠に見えない ─ 録音機のリミッタが潰した素材の形 */
+    const flatPcm = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      const v = 1.3 * Math.sin(2 * Math.PI * 100 * i / SR);
+      flatPcm[i] = Math.max(-0.94, Math.min(0.94, v));
+    }
+    const fs = w.MC.audio.stats(flatPcm);
+    if (fs.clipRatio > 0) throw new Error("clipRatioでは見えない前提が崩れた: " + fs.clipRatio);
+    if (!(fs.flatRun > 0.1)) throw new Error("貼りつきを見つけられない flatRun=" + fs.flatRun);
+    /* ② 対照(誤検知の見張り): 割れていない大きめのサインでは発動しない */
+    const clean = new Float32Array(N);
+    for (let i = 0; i < N; i++) clean[i] = 0.9 * Math.sin(2 * Math.PI * 100 * i / SR);
+    const cs = w.MC.audio.stats(clean);
+    if (cs.flatRun > 0.001) throw new Error("割れていない音で誤検知 flatRun=" + cs.flatRun);
+    /* ③ 変異の歯: recommend が flatRun を本当に見ていること。
+       旧式(clipRatioだけ)なら貼りつき素材の方が選ばれる組を出す */
+    const S = compReset(w);
+    S.clips[0].stats = { rms: 0.30, noise: 0.003, clipRatio: 0, flatRun: 0.30, peak: 0.94, lfRatio: 0 };
+    S.clips[1].stats = { rms: 0.08, noise: 0.004, clipRatio: 0, flatRun: 0,    peak: 0.35, lfRatio: 0 };
+    S.clips[2].stats = { rms: 0.05, noise: 0.020, clipRatio: 0, flatRun: 0,    peak: 0.30, lfRatio: 0 };
+    const pick = w.MC.audio.recommend();
+    if (!pick || pick.id !== S.clips[1].id) throw new Error("貼りつき素材を選んだ: " + (pick && pick.name));
+    const db = v => 20 * Math.log10(Math.max(v, 1e-6));
+    const oldScore = c => db(c.stats.rms) - db(Math.max(c.stats.noise, 1e-5))
+      - Math.min(1, c.stats.clipRatio * 400) * 40;   // 旧: flatRun を見ない
+    const oldPick = S.clips.reduce((b, c) => (oldScore(c) > oldScore(b) ? c : b), S.clips[0]);
+    if (oldPick.id === pick.id) throw new Error("旧式でも同じ選択(=この試験に歯が無い)");
+    return "flatRun=" + fs.flatRun.toFixed(2) + " で検知 / きれいな音は0 / 旧式は貼りつきを選んでいた";
+  });
+
+  await test("★弱奏を雑音と誤認しない(noise は「静かな窓」の中央値)", async () => {
+    const w = await compEnv();
+    const SR = w.MC.audio.SR, win = SR / 2;
+    /* 20窓(10秒): 演奏0.2×14窓 / 弱奏0.06×4窓 / 本当の合間0.01×2窓。
+       旧p10は下から2番目=弱奏0.06を「雑音」と読んで6倍に見積もっていた */
+    const plan = [];
+    for (let k = 0; k < 14; k++) plan.push(0.2);
+    for (let k = 0; k < 4; k++) plan.push(0.06);
+    for (let k = 0; k < 2; k++) plan.push(0.01);
+    const mkWin = list => {
+      const pcm = new Float32Array(list.length * win);
+      list.forEach((r, wi) => {
+        const amp = r * Math.SQRT2;   // サインのRMS=amp/√2 なので逆算
+        for (let i = 0; i < win; i++) pcm[wi * win + i] = amp * Math.sin(2 * Math.PI * 440 * i / SR);
+      });
+      return pcm;
+    };
+    const s = w.MC.audio.stats(mkWin(plan));
+    if (!(Math.abs(s.rms - 0.2) < 0.02)) throw new Error("代表RMSが演奏を向いていない rms=" + s.rms);
+    if (!(s.noise < 0.02)) throw new Error("弱奏(0.06)を雑音に数えた noise=" + s.noise);
+    /* 変異の歯: この配置なら旧p10は本当に誤認する(しないなら試験が甘い) */
+    const sortedAll = plan.slice().sort((a, b) => a - b);
+    const oldNoise = sortedAll[Math.floor(sortedAll.length * 0.1)];
+    if (!(oldNoise >= 0.05)) throw new Error("旧p10でも誤認しない配置(=歯が無い) old=" + oldNoise);
+    /* フォールバック: 切れ目なく鳴っている素材(静か窓ゼロ)では現行p10へ戻る */
+    const s2 = w.MC.audio.stats(mkWin([0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2]));
+    if (!(s2.noise > 0.15)) throw new Error("静か窓ゼロでp10フォールバックしない noise=" + s2.noise);
+    return `noise=${s.noise.toFixed(3)}(旧p10=${oldNoise}) / 静か窓ゼロはp10へ`;
+  });
+
+  await test("★風(合間の低域)で減点が発動し、演奏の正当な低域では発動しない", async () => {
+    const w = await compEnv();
+    const SR = w.MC.audio.SR, win = SR / 2;
+    const mk = plan => {
+      const pcm = new Float32Array(plan.length * win);
+      plan.forEach((p, wi) => { for (let i = 0; i < win; i++)
+        pcm[wi * win + i] = p.amp * Math.sin(2 * Math.PI * p.hz * i / SR); });
+      return pcm;
+    };
+    const loud = { amp: 0.3, hz: 1000 };
+    /* ① 風あり: 演奏の合間(静か窓)に60Hzのボコボコが残る */
+    const windy = mk([loud, loud, loud, { amp: 0.02, hz: 60 }, { amp: 0.02, hz: 60 }, loud, loud, loud]);
+    const s1 = w.MC.audio.stats(windy);
+    if (!(s1.lfRatio > 0.6)) throw new Error("風を見つけられない lfRatio=" + s1.lfRatio);
+    /* ② 対照(変異の歯): スーザフォンの低域は演奏中=大きい窓に居る。
+       合間は高域の小音。ここで発動したらマーチングの音を風と呼ぶことになる */
+    const tuba = { amp: 0.3, hz: 60 }, rest = { amp: 0.02, hz: 1000 };
+    const s2 = w.MC.audio.stats(mk([tuba, tuba, tuba, rest, rest, tuba, tuba, tuba]));
+    if (s2.lfRatio > 0.6) throw new Error("演奏の正当な低域で誤発動 lfRatio=" + s2.lfRatio);
+    /* ③ recommend で8点の減点として効くこと(点が近い2本の順位が入れ替わる) */
+    const S = compReset(w);
+    S.clips[0].stats = { rms: 0.20, noise: 0.004, clipRatio: 0, flatRun: 0, peak: 0.5, lfRatio: 0.8 };
+    S.clips[1].stats = { rms: 0.10, noise: 0.004, clipRatio: 0, flatRun: 0, peak: 0.5, lfRatio: 0.1 };
+    S.clips[2].stats = { rms: 0.02, noise: 0.010, clipRatio: 0, flatRun: 0, peak: 0.3, lfRatio: 0 };
+    const pick = w.MC.audio.recommend();
+    if (!pick || pick.id !== S.clips[1].id) throw new Error("風の減点が効いていない: " + (pick && pick.name));
+    /* 変異: 風を消せば元の順位に戻る(=入れ替わりの理由が本当に風) */
+    S.clips[0].stats.lfRatio = 0;
+    if (w.MC.audio.recommend().id !== S.clips[0].id) throw new Error("風以外の理由で負けている(=歯が無い)");
+    return `風 lfRatio=${s1.lfRatio.toFixed(2)} / スーザフォン=${s2.lfRatio.toFixed(2)} / 減点で順位が入れ替わる`;
+  });
+
+  await test("★理由バッジはカード1枚に一言だけ・点数は出さない", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.clips[0].stats = { rms: 0.10, noise: 0.003, clipRatio: 0,    flatRun: 0,   peak: 0.5, lfRatio: 0 };
+    S.clips[1].stats = { rms: 0.20, noise: 0.003, clipRatio: 0.01, flatRun: 0.3, peak: 1.0, lfRatio: 0.9 };
+    S.clips[2].stats = { rms: 0.15, noise: 0.010, clipRatio: 0,    flatRun: 0,   peak: 0.5, lfRatio: 0.9 };
+    S.audioPickedByUser = false;
+    w.MC.ui.renderAudio();
+    const cards = [...w.document.querySelectorAll("#audioChoices .audio-choice")];
+    eq(cards.length, 3, "カードの枚数");
+    const btexts = cards.map(el => [...el.querySelectorAll(".reco-badge")].map(b => b.textContent.trim()));
+    btexts.forEach((t, i) => {
+      if (t.length > 1) throw new Error(`カード${i + 1}に一言を超えるバッジ: ` + t.join("/"));
+      if (t[0] && /\d/.test(t[0])) throw new Error(`カード${i + 1}のバッジに点数が出ている: ` + t[0]);
+    });
+    eq(btexts[0][0], "おすすめ", "おすすめの一言");
+    eq(btexts[1][0], "音割れあり", "割れ(flatRun+clipRatio)の一言");   // 風も出る条件だが割れが勝つ
+    eq(btexts[2][0], "風の音あり", "風の一言");
+    /* 「音がわれています⚠」の重複表示が消えていること(バッジへ一本化) */
+    if (/われています/.test(cards[1].textContent)) throw new Error("割れの文言が二重に出ている");
+    return "おすすめ/音割れあり/風の音あり が1枚1言・数字なし";
+  });
+
+
   group("㉖-b こだわりの手動ボタンは作業中の鍵を掛ける(2026-08-01 交差レビュー)");
   await test("★同期の最中は書き出しボタンが押せない(黙って壊れる経路の封鎖)", async () => {
     const w = await compEnv();

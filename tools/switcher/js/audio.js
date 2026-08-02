@@ -208,31 +208,73 @@ MC.audio.viaDecodeAudioData = async (clip, maxSec, startSec = 0) => {
   return { pcm: Float32Array.from(d.subarray(s0, s0 + n)), start: s0 / MC.audio.SR };
 };
 
-/* 音質統計: 有音部分の代表RMSとクリッピング率 */
+/* 音質統計: 有音部分の代表RMS・クリッピング率・貼りつき率・低域比率。
+   ★ 全部を8kHzモノラルの1パスで測る(2026-08-02 専門家パネル合意)。
+     追加コストは1サンプルあたり LPF1段+比較数回の O(n) のみ
+     (旧実装は「全サンプル」「窓ごと」の2ループだったのを1つに畳んだ)。 */
 MC.audio.stats = pcm => {
   const win = MC.audio.SR / 2;  // 0.5秒窓
-  const rmsList = [], allList = [];
+  const rmsList = [], winR = [], winEn = [], winLf = [];
   let clipped = 0, peak = 0;
+  /* ★割れの貼りつき検知(合意①): |a|>0.92 かつ前サンプルとの差がほぼ0、が
+     4サンプル以上続いたらフラットトップ(割れた波形の平らな天井)とみなす。
+     clipRatio(0.985超え)だけだと、録音機のリミッタが 0.985 より下で潰した
+     「数値上は割れていない割れ音」を素通ししてしまう */
+  let flat = 0, run = 0, prev = 0;
+  /* ★風の検知の材料(合意③): 1次LPF(遮断≈120Hz)を通した低域エネルギー。
+     風のボコボコは低域に集中する。窓ごとに貯めて、あとで「静かな窓」だけの
+     比率を出す(演奏中はスーザフォンやバスドラの正当な低域が混ざるため) */
+  const LPA = 1 - Math.exp(-2 * Math.PI * 120 / MC.audio.SR);
+  let lp = 0, s = 0, lf = 0, wCount = 0;
   for (let i = 0; i < pcm.length; i++) {
-    const a = Math.abs(pcm[i]);
+    const v = pcm[i], a = Math.abs(v);
     if (a > peak) peak = a;
     if (a > 0.985) clipped++;
+    if (a > 0.92 && Math.abs(v - prev) < 0.004) { run++; }
+    else { if (run >= 4) flat += run; run = 0; }
+    prev = v;
+    lp += LPA * (v - lp);
+    s += v * v; lf += lp * lp;
+    if (++wCount === win) {
+      const r = Math.sqrt(s / win);
+      winR.push(r); winEn.push(s); winLf.push(lf);   // 雑音を測るので静かな窓も残す
+      if (r > 0.004) rmsList.push(r);                // 代表音量からはほぼ無音の窓を除外
+      s = 0; lf = 0; wCount = 0;
+    }
   }
-  for (let o = 0; o + win <= pcm.length; o += win) {
-    let s = 0;
-    for (let i = o; i < o + win; i++) s += pcm[i] * pcm[i];
-    const r = Math.sqrt(s / win);
-    allList.push(r);                 // 雑音の高さを測るので静かな窓も残す
-    if (r > 0.004) rmsList.push(r);  // 代表音量からはほぼ無音の窓を除外
-  }
+  if (run >= 4) flat += run;
   rmsList.sort((a, b) => a - b);
-  allList.sort((a, b) => a - b);
+  const allList = winR.slice().sort((a, b) => a - b);
   const rms = rmsList.length ? rmsList[Math.floor(rmsList.length / 2)] : 0;
-  /* ★ 雑音の高さ(2026-08-01)。静かな窓の代表値を見る ─ 演奏の合間に
-     残っている風・空調・客席のざわつきがここに出る。
-     いちばん静かな1窓だと、たまたま無音の瞬間を拾って0になるので下から1割 */
-  const noise = allList.length ? allList[Math.floor(allList.length * 0.1)] : 0;
-  return { rms, clipRatio: clipped / pcm.length, peak, noise };
+  /* ★ 雑音の高さ(合意②で改定)。「静かな窓」= 代表RMSの1/4未満の窓の中央値。
+     旧実装の「下から1割」は、弱奏やソロ(演奏そのもの)の窓を雑音と誤認して
+     雑音を高く見積もり、静かに演奏するカメラのSNRを不当に下げていた。
+     静かな窓が1つも無い(=切れ目なく鳴っている)素材だけ旧p10へフォールバック */
+  const QUIET = 0.25 * rms;
+  const quiet = winR.filter(r => r < QUIET).sort((a, b) => a - b);
+  const noise = quiet.length ? quiet[Math.floor(quiet.length / 2)]
+    : (allList.length ? allList[Math.floor(allList.length * 0.1)] : 0);
+  /* ★ 低域比率(合意③): 静かな窓だけの Σ(LPF出力²)/Σ(全体²)。
+     演奏の合間まで低域が鳴り続けている=風・ハンドリングノイズ。
+     静かな窓が無ければ判定不能として0(演奏の正当な低域で誤検知しない) */
+  let lfSum = 0, enSum = 0;
+  for (let i = 0; i < winR.length; i++) {
+    if (winR[i] < QUIET) { lfSum += winLf[i]; enSum += winEn[i]; }
+  }
+  const lfRatio = enSum > 1e-9 ? lfSum / enSum : 0;
+  return { rms, clipRatio: clipped / pcm.length, peak, noise,
+           flatRun: pcm.length ? flat / pcm.length : 0, lfRatio };
+};
+
+/* カード表示用の一言判定(2026-08-02)。recommend と同じ材料から
+   「音割れあり」「風の音あり」を出す。閾値は recommend の減点と揃える:
+   broken=減点が満点(40)の半分以上 / wind=減点の発動条件そのもの */
+MC.audio.flags = s => {
+  if (!s) return { broken: false, wind: false };
+  return {
+    broken: Math.min(1, (s.clipRatio || 0) * 400 + (s.flatRun || 0) * 200) >= 0.5,
+    wind: (s.lfRatio || 0) > 0.6,
+  };
 };
 
 /* 音声トラックのおすすめ: 雑音が少なく、割れていないものを選ぶ。
@@ -249,11 +291,16 @@ MC.audio.recommend = () => {
     if (!s.rms) return -1e9;
     /* 雑音に対して演奏がどれだけ立っているか。これが「きれいさ」の本体 */
     const snr = db(s.rms) - db(Math.max(s.noise || 0, 1e-5));
-    /* 割れているものは、どれだけ雑音が少なくても採らない(重い減点) */
-    const broken = Math.min(1, (s.clipRatio || 0) * 400) * 40;
+    /* 割れているものは、どれだけ雑音が少なくても採らない(重い減点)。
+       ★ clipRatio(天井超え)に加えて flatRun(貼りつき)も見る(2026-08-02 合意①):
+         録音機のリミッタで潰された素材は天井に届かないまま割れている */
+    const broken = Math.min(1, (s.clipRatio || 0) * 400 + (s.flatRun || 0) * 200) * 40;
     /* 天井に貼りついている=これから割れる。割れの一歩手前も避ける */
     const hot = (s.peak || 0) > 0.995 ? 12 : 0;
-    return snr - broken - hot;
+    /* ★ 風(合意③): 演奏の合間まで低域が鳴り続けているカメラは減点。
+       lfRatio は「静かな窓」だけで測っているので、演奏の正当な低域では発動しない */
+    const wind = (s.lfRatio || 0) > 0.6 ? 8 : 0;
+    return snr - broken - hot - wind;
   };
   return cands.reduce((best, c) => (score(c) > score(best) ? c : best), cands[0]);
 };
