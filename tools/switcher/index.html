@@ -1,14 +1,14 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-app-v="1.75.0">
+<html lang="ja" data-mz-app-v="1.76.0">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>MarchinZ Switcher — ランスルー同期・自動スイッチング〈ベータ版〉</title>
 <meta name="description" content="みんなで撮ったランスルー動画を音で自動同期。自動スイッチング・ワイプでMP4に。MarchinZの無料クリエイターツール。">
 <meta name="theme-color" content="#fefcef">
-<link rel="icon" type="image/x-icon" href="/favicon.ico?v=1.75.0">
-<link rel="icon" type="image/png" href="/favicon.png?v=1.75.0">
-<link rel="apple-touch-icon" href="/pwa/apple-touch-icon.png?v=1.75.0">
+<link rel="icon" type="image/x-icon" href="/favicon.ico?v=1.76.0">
+<link rel="icon" type="image/png" href="/favicon.png?v=1.76.0">
+<link rel="apple-touch-icon" href="/pwa/apple-touch-icon.png?v=1.76.0">
 <meta property="og:title" content="MarchinZ Switcher — ランスルー同期・自動スイッチング">
 <meta property="og:description" content="みんなで撮ったランスルー動画を音で自動同期。自動スイッチング・ワイプでMP4に。MarchinZの無料クリエイターツール。">
 <meta property="og:type" content="website">
@@ -16,10 +16,10 @@
 <meta property="og:image" content="https://marchinz.netlify.app/ogp-card.png">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
-<link rel="stylesheet" href="/tools/shared/progress.css?v=1.75.0">
-<link rel="stylesheet" href="/tools/shared/journey.css?v=1.75.0">
-<link rel="stylesheet" href="css/style.css?v=1.75.0">
-<link rel="stylesheet" href="/tools/shared/sitechrome.css?v=1.75.0">
+<link rel="stylesheet" href="/tools/shared/progress.css?v=1.76.0">
+<link rel="stylesheet" href="/tools/shared/journey.css?v=1.76.0">
+<link rel="stylesheet" href="css/style.css?v=1.76.0">
+<link rel="stylesheet" href="/tools/shared/sitechrome.css?v=1.76.0">
 </head>
 <body data-mz-tool="switcher">
 <header class="topbar">
@@ -60,6 +60,18 @@
         <!-- 比率は ui.js の presets:["9x16"] で固定。1:1 は選べないので書かない(2026-07-31) -->
         <span class="mode-card-desc">動画も写真も、音で自動同期して1本に。SNS向けの縦型（9:16）</span>
       </button>
+<!-- 並びは ①縦型 ②自動スイッチング ③ワイプ動画(2026-08-02 優さん指示)。
+           それまでは 縦型/ワイプ/スイッチングの順だった -->
+      <button type="button" class="mode-card" data-mode="switch">
+        <span class="mode-card-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2.5" y="5" width="19" height="14" rx="2"></rect>
+            <rect x="13.5" y="12" width="6" height="5" rx="1"></rect>
+          </svg>
+        </span>
+        <span class="mode-card-name">自動スイッチング動画</span>
+        <span class="mode-card-desc">複数カメラを音で同期し、自動で切り替え／ワイプ。横型（16:9）で1本に</span>
+      </button>
       <button type="button" class="mode-card" data-mode="wipeCam">
         <span class="mode-card-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
@@ -70,16 +82,6 @@
         </span>
         <span class="mode-card-name">ワイプカメラ動画</span>
         <span class="mode-card-desc">メイン1台を固定し、小窓を2つまで重ねる。分析が速い。横型（16:9）</span>
-      </button>
-      <button type="button" class="mode-card" data-mode="switch">
-        <span class="mode-card-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="2.5" y="5" width="19" height="14" rx="2"></rect>
-            <rect x="13.5" y="12" width="6" height="5" rx="1"></rect>
-          </svg>
-        </span>
-        <span class="mode-card-name">自動スイッチング動画</span>
-        <span class="mode-card-desc">複数カメラを音で同期し、自動で切り替え／ワイプ。横型（16:9）で1本に</span>
       </button>
     </div>
   </div>
@@ -119,6 +121,27 @@
     </div>
     <!-- 押したときの案内。黙って押せないのではなく、理由と次の一手を出す -->
     <div id="flowProNote" class="mode-flow-note" hidden role="status"></div>
+  </div>
+</section>
+
+<!-- おまかせ×ワイプだけの例外(2026-08-02 優さん指示):
+     「どれをメインに、どれを右下ワイプにするか」だけは本人が選ぶ。
+     おまかせは本来タップ0回で自走するが、どちらを大きく映すかは機械には
+     当てられない(先頭の動画=メインとは限らない)。
+     1タップ目=メイン、2タップ目=右下ワイプ(2本ならタップ2回で済む)。
+     3本目が残ったら左下ワイプへ自動で入る(こだわりの既定と同じ)。
+     選び終わったら残りは今までどおり書き出しまで自走する -->
+<section id="wipePick" class="wipe-pick" hidden role="dialog" aria-modal="true" aria-labelledby="wpTitle">
+  <div class="wp-inner">
+    <p class="wp-kind">ワイプカメラ動画</p>
+    <h2 id="wpTitle" class="mode-title">メインにする動画をタップ</h2>
+    <p id="wpLead" class="mode-lead">画面いっぱいに映す1本です</p>
+    <div id="wpCards" class="wp-cards"></div>
+    <div class="wp-foot">
+      <!-- 押し間違いの逃げ道。閉じるだけで、取り込んだ動画はそのまま -->
+      <button type="button" id="wpBack" class="btn small ghost">← 動画を選び直す</button>
+      <button type="button" id="wpReset" class="btn small ghost" hidden>メインから選び直す</button>
+    </div>
   </div>
 </section>
 
@@ -618,38 +641,38 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="/tools/shared/limits.js?v=1.75.0"></script>
-<script src="/tools/shared/sitechrome.js?v=1.75.0"></script>
-<script src="/tools/shared/progress.js?v=1.75.0"></script>
-<script src="/tools/shared/journey.js?v=1.75.0"></script>
-<script src="/tools/shared/watermark.js?v=1.75.0"></script>
-<script src="/tools/shared/mp4source.js?v=1.75.0"></script>
-<script src="/tools/shared/session.js?v=1.75.0"></script>
+<script src="/tools/shared/limits.js?v=1.76.0"></script>
+<script src="/tools/shared/sitechrome.js?v=1.76.0"></script>
+<script src="/tools/shared/progress.js?v=1.76.0"></script>
+<script src="/tools/shared/journey.js?v=1.76.0"></script>
+<script src="/tools/shared/watermark.js?v=1.76.0"></script>
+<script src="/tools/shared/mp4source.js?v=1.76.0"></script>
+<script src="/tools/shared/session.js?v=1.76.0"></script>
 <script src="vendor/mp4box.all.min.js"></script>
 <script src="vendor/mp4-muxer.min.js"></script>
 <script src="vendor/fft.js"></script>
-<script src="js/state.js?v=1.75.0"></script>
-<script src="js/layout.js?v=1.75.0"></script>
-<script src="js/media.js?v=1.75.0"></script>
-<script src="js/audio.js?v=1.75.0"></script>
-<script src="js/sync.js?v=1.75.0"></script>
-<script src="js/beats.js?v=1.75.0"></script>
-<script src="js/sections.js?v=1.75.0"></script>
-<script src="js/highlight.js?v=1.75.0"></script>
-<script src="js/visual.js?v=1.75.0"></script>
-<script src="js/director.js?v=1.75.0"></script>
-<script src="js/colormatch.js?v=1.75.0"></script>
+<script src="js/state.js?v=1.76.0"></script>
+<script src="js/layout.js?v=1.76.0"></script>
+<script src="js/media.js?v=1.76.0"></script>
+<script src="js/audio.js?v=1.76.0"></script>
+<script src="js/sync.js?v=1.76.0"></script>
+<script src="js/beats.js?v=1.76.0"></script>
+<script src="js/sections.js?v=1.76.0"></script>
+<script src="js/highlight.js?v=1.76.0"></script>
+<script src="js/visual.js?v=1.76.0"></script>
+<script src="js/director.js?v=1.76.0"></script>
+<script src="js/colormatch.js?v=1.76.0"></script>
 <!-- horizon.js(自動傾き検出)を読み込みに戻した(2026-08-01 優さん指示
      「おまかせは傾き補正も自動で行う」)。2026-07-28 に外したのは
      **こだわりで自動提案をやめた**ためで、実装自体は生きていた。
      こだわりでは今も提案しない ─ 使うのは おまかせ の自走だけ -->
-<script src="js/horizon.js?v=1.75.0"></script>
-<script src="js/salute.js?v=1.75.0"></script>
-<script src="js/preview.js?v=1.75.0"></script>
-<script src="js/timeline.js?v=1.75.0"></script>
-<script src="js/cutmode.js?v=1.75.0"></script>
-<script src="js/exporter.js?v=1.75.0"></script>
-<script src="js/ui.js?v=1.75.0"></script>
-<script src="js/app.js?v=1.75.0"></script>
+<script src="js/horizon.js?v=1.76.0"></script>
+<script src="js/salute.js?v=1.76.0"></script>
+<script src="js/preview.js?v=1.76.0"></script>
+<script src="js/timeline.js?v=1.76.0"></script>
+<script src="js/cutmode.js?v=1.76.0"></script>
+<script src="js/exporter.js?v=1.76.0"></script>
+<script src="js/ui.js?v=1.76.0"></script>
+<script src="js/app.js?v=1.76.0"></script>
 </body>
 </html>

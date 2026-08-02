@@ -800,6 +800,10 @@ MC.ui.focusNextAction = () => {
      二重に走らないよう、実行中と書き出し済みは弾く */
   if (MC.ui._autoFlow && !MC.ui._busy && !(MC.exporter && MC.exporter.running)
       && !MC.S.easyDone) {
+    /* ★ ワイプだけは例外(2026-08-02 優さん指示)。自走の前に
+       「どれをメインに、どれを右下ワイプにするか」を1画面だけ選んでもらう。
+       選び終わると wipePickTap が runAuto を呼び、以後は止まらない */
+    if (MC.ui.needsWipePick()) { setTimeout(() => MC.ui.openWipePick(), 260); return; }
     setTimeout(() => MC.ui.runAuto(), 260);
     return;
   }
@@ -833,6 +837,10 @@ MC.ui.focusNextAction = () => {
    どのみち映像解析はやり直しになる。範囲だけ引き継いで選び直してもらう */
 MC.ui.resetEasyDone = (restored = false) => {
   MC.S.audioDecided = false;   // 素材が変われば音声も選び直し(2026-07-24)
+  /* ワイプの「メイン/右下ワイプ」も選び直し(2026-08-02)。動画が増減したら
+     どれをメインにするかの前提が変わる。復元(restored)でも選び直してもらう ─
+     wipeMainId は id で持っていて、id は読込ごとに振り直されるため */
+  MC.S.wipePicked = false;
   MC.S.lengthDecided = false;
   MC.ui._tabsForced = false;   // 同期失敗の前倒し開放は素材が変われば解除(2026-07-31)
   if (!restored) {
@@ -1845,6 +1853,10 @@ ${c.isImage ? "" : (c.tiltOk
     slot.appendChild(card);
     box.appendChild(slot);
   }
+  /* ワイプの割り当て画面が開いている間は、あとから完成するサムネイルを反映する
+     (makeThumb → renderClips 経由でここへ来る。2026-08-02) */
+  { const wp = MC.ui.$("#wipePick");
+    if (wp && !wp.hidden) MC.ui.renderWipePick(); }
 };
 
 /* --- 音声選択 --- */
@@ -3399,6 +3411,93 @@ MC.ui.AutoCancelled = class extends Error {
   constructor() { super("やめました"); this.name = "AutoCancelled"; }
 };
 
+/* ============ おまかせ×ワイプの割り当て(2026-08-02 優さん指示) ============
+   おまかせは本来タップ0回で自走するが、**ワイプだけは例外**として、
+   取り込みのあとに「どれをメインに、どれを右下ワイプにするか」を選んでもらう。
+   どちらを大きく映すかは機械には当てられない(先頭の動画=メインとは限らない)。
+   1タップ目=メイン、2タップ目=右下ワイプ。3本目が残ったら左下ワイプへ
+   自動で入る(こだわりの既定 media.js と同じ規則)。選んだら自走を再開する。
+   状態は既存の wipeMainId/wipeClipId/wipeClipId2 に載せ、増やすのは
+   「選び終わったか」(S.wipePicked・非永続)の1つだけ */
+MC.ui.needsWipePick = () =>
+  MC.S.mode === "wipeCam" && !!MC.ui._autoFlow && !MC.S.wipePicked
+  && MC.S.clips.filter(c => !c.isImage && !c.isAudio).length >= 2;
+
+/* 割り当ての候補=スロットに入る動画(画像・音声のみは小窓にできない) */
+MC.ui.wipePickClips = () => MC.media.slotClips().filter(c => !c.isImage && !c.isAudio);
+
+MC.ui.openWipePick = () => {
+  const el = MC.ui.$("#wipePick");
+  if (!el || !el.hidden) return;
+  MC.ui._wpMain = null;
+  MC.preview.pause();   // 選択画面の裏で音が鳴り続けないように(モード選択と同じ)
+  el.hidden = false;
+  document.body.classList.add("mz-wipe-pick");
+  MC.ui.renderWipePick();
+  try { const c = el.querySelector(".wp-card"); if (c) c.focus({ preventScroll: true }); } catch (e) {}
+};
+
+MC.ui.closeWipePick = () => {
+  const el = MC.ui.$("#wipePick");
+  if (!el || el.hidden) return;
+  el.hidden = true;
+  document.body.classList.remove("mz-wipe-pick");
+};
+
+MC.ui.renderWipePick = () => {
+  const box = MC.ui.$("#wpCards");
+  if (!box) return;
+  const main = MC.ui._wpMain;
+  const title = MC.ui.$("#wpTitle"), lead = MC.ui.$("#wpLead"), reset = MC.ui.$("#wpReset");
+  if (title) title.textContent = main == null
+    ? "メインにする動画をタップ" : "右下ワイプにする動画をタップ";
+  if (lead) lead.textContent = main == null
+    ? "画面いっぱいに映す1本です" : "小さな窓で右下に重なる1本です";
+  if (reset) reset.hidden = main == null;
+  box.innerHTML = "";
+  for (const c of MC.ui.wipePickClips()) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    const isMain = main === c.id;
+    btn.className = "wp-card" + (isMain ? " wp-card--main" : "");
+    /* メインに選んだカードは押しても進まない(下の wipePickTap)。
+       見た目のバッジと aria の両方でそれを言う */
+    btn.setAttribute("aria-pressed", isMain ? "true" : "false");
+    btn.innerHTML = `
+      <span class="wp-thumb-wrap">${c.thumb
+        ? `<img class="wp-thumb" src="${c.thumb}" alt="">`
+        : '<span class="wp-thumb wp-thumb--empty"></span>'}${isMain
+        ? '<span class="wp-badge"><i class="fa-solid fa-expand" aria-hidden="true"></i> メイン</span>' : ""}
+      </span>
+      <span class="wp-name">${MC.ui.esc(c.name)}</span>
+      <span class="wp-meta">${MC.ui.fmtTime(c.duration)}</span>`;
+    btn.onclick = () => MC.ui.wipePickTap(c.id);
+    box.appendChild(btn);
+  }
+};
+
+MC.ui.wipePickTap = id => {
+  if (MC.ui._wpMain == null) {
+    MC.ui._wpMain = id;
+    MC.ui.buzz([10]);
+    MC.ui.renderWipePick();   // 2タップ目(右下ワイプ)の画面へ
+    return;
+  }
+  if (id === MC.ui._wpMain) return;   // メインと同じ動画は小窓にできない
+  MC.S.wipeMainId = MC.ui._wpMain;
+  MC.S.wipeClipId = id;
+  MC.S.wipePos = "br";   // おまかせの小窓1は右下(優さんの指示の言葉どおり)
+  /* 3本目が残っていたら左下ワイプへ(こだわりの既定と同じ)。
+     2本なら小窓2は無し=右下のみ */
+  const third = MC.ui.wipePickClips().find(c =>
+    c.id !== MC.S.wipeMainId && c.id !== id);
+  if (third) { MC.S.wipeClipId2 = third.id; MC.S.wipePos2 = "bl"; }
+  MC.S.wipePicked = true;
+  MC.saveState();
+  MC.ui.closeWipePick();
+  MC.ui.runAuto();   // ここから先は今までどおり書き出しまで自走
+};
+
 MC.ui.runAuto = async (opt) => {
   if (MC.ui._busy || (MC.exporter && MC.exporter.running)) return;
   if (!MC.media.slotClips().length) return;
@@ -4032,23 +4131,25 @@ MC.ui.updateTransport = () => {
   MC.timeline.updateHead();
 };
 
-/* --- 最初のモード選択(縦型作成 / 自動スイッチング) ---
-   presets/layouts = そのモードで選べるものだけ。ここに無い選択肢はUIに出さない */
+/* --- 最初のモード選択(①縦型 → ②自動スイッチング → ③ワイプ) ---
+   presets/layouts = そのモードで選べるものだけ。ここに無い選択肢はUIに出さない。
+   並びも表示順(2026-08-02 優さん指示)に合わせてある ─ カードの実体は
+   index.html #modeStepKind 側で、ここは読み手のための整列 */
 MC.ui.MODES = {
   vertical: {
     preset: "9x16", layoutId: "v3", label: "縦型動画",   // 3分割縦積みが初期
     presets: ["9x16"],                                   // 縦型で固定(比率は選ばせない)
     layouts: ["v3", "v2", "big2", "single"],             // 横並べは廃止
   },
-  wipeCam: {
-    preset: "16x9", layoutId: "wipe", label: "ワイプカメラ動画",   // メイン固定+小窓2まで(2026-07-24)
-    presets: ["16x9"],
-    layouts: ["wipe"],
-  },
   switch: {
     preset: "16x9", layoutId: "switch", label: "自動スイッチング動画",
     presets: ["16x9"],                                    // 横型のみ(2026-07-19 優さん指定)
     layouts: ["switch"],                                  // ワイプは専用モードへ分離(2026-07-24)
+  },
+  wipeCam: {
+    preset: "16x9", layoutId: "wipe", label: "ワイプカメラ動画",   // メイン固定+小窓2まで(2026-07-24)
+    presets: ["16x9"],
+    layouts: ["wipe"],
   },
 };
 
@@ -4170,6 +4271,13 @@ MC.ui.wire = () => {
     const b = MC.ui.$(sel);
     if (b) b.onclick = () => MC.ui.shareTool();
   });
+  /* おまかせ×ワイプの割り当て(2026-08-02)。戻る=閉じるだけ(動画はそのまま。
+     素材を変えると focusNextAction がもう一度この画面を開く)。
+     選び直す=メインの選択からやり直し */
+  { const b = MC.ui.$("#wpBack");
+    if (b) b.onclick = () => MC.ui.closeWipePick(); }
+  { const r = MC.ui.$("#wpReset");
+    if (r) r.onclick = () => { MC.ui._wpMain = null; MC.ui.renderWipePick(); }; }
   /* おまかせ全画面の中止。走っている処理にも止まれと伝える */
   { const c = MC.ui.$("#asCancel");
     if (c) c.onclick = () => {
@@ -4220,8 +4328,12 @@ MC.ui.wire = () => {
       if (flow === "pro") MC.ui._tabsForced = true;   // こだわりを選んだ人にはタブを出す
       MC.ui.refreshSetupTabs();
       MC.ui.refreshJourney();
-      /* すでに素材が入っている(前回の続き)なら、その場で走り出す */
-      if (MC.ui._autoFlow && MC.media.slotClips().length) MC.ui.runAuto();
+      /* すでに素材が入っている(前回の続き)なら、その場で走り出す。
+         ワイプだけは先に「メイン/右下ワイプ」を選んでもらう(2026-08-02) */
+      if (MC.ui._autoFlow && MC.media.slotClips().length) {
+        if (MC.ui.needsWipePick()) MC.ui.openWipePick();
+        else MC.ui.runAuto();
+      }
     };
   });
 

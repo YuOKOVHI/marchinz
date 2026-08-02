@@ -32,6 +32,11 @@ window.MC = {
     wipeClipId: null,           // ワイプの小窓カメラ(1つ目)
     wipeClipId2: null,          // ワイプの小窓カメラ(2つ目、null=なし)
     wipePos: "br", wipePos2: "bl", wipeSize: 0.32,
+    /* おまかせ×ワイプの「メイン/右下ワイプ」の割り当てを済ませたか(2026-08-02
+       優さん指示: おまかせでもワイプだけはここを本人が選ぶ)。
+       非永続: クリップidは読込ごとに変わり wipeMainId 等も保存されないため、
+       次に開いたときはもう一度選んでもらう */
+    wipePicked: false,
     /* Phase 3: 仕上げ */
     colorOn: true, colorStrength: 0.8,   // カラー自動マッチは初期ON(同期後に自動実行)
     horizonOn: true,      // 自動傾き修正(既定ON。2026-07-23 優さん指示)

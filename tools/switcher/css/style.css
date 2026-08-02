@@ -324,6 +324,44 @@ body.mz-busy-lock #errorLog button { pointer-events: auto; opacity: 1; }
   .mode-select { padding: 24px 12px; }
 }
 
+/* ============ おまかせ×ワイプの割り当て(2026-08-02 優さん指示) ============
+   おまかせで唯一のタップ: どれをメインに、どれを右下ワイプにするか。
+   1画面1操作 ─ タップで即決まり、2本ならタップ2回で自走が始まる。
+   全画面の作法(flex-start+margin:auto・safe-area・背後の固定)は .auto-stage と同じ */
+.wipe-pick { position: fixed; inset: 0; z-index: 130;
+  background: linear-gradient(180deg, #f7f9fc 0%, #eef2f8 100%);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: calc(24px + env(safe-area-inset-top, 0px))
+           calc(16px + env(safe-area-inset-right, 0px))
+           calc(24px + env(safe-area-inset-bottom, 0px))
+           calc(16px + env(safe-area-inset-left, 0px));
+  overflow-y: auto; }
+.wipe-pick[hidden] { display: none; }
+html:has(body.mz-wipe-pick), body.mz-wipe-pick {
+  overflow: hidden !important; height: 100%;
+}
+.wp-inner { width: 100%; max-width: 520px; margin: auto; text-align: center; }
+.wp-kind { margin: 0 0 4px; color: var(--acc); font-size: 11.5px; font-weight: 800;
+  letter-spacing: .08em; }
+.wp-cards { display: grid; grid-template-columns: 1fr; gap: 12px; }
+.wp-card { display: flex; align-items: center; gap: 12px; text-align: left;
+  padding: 10px; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 14px; box-shadow: var(--shadow-card); cursor: pointer;
+  font-family: inherit; transition: .15s; }
+.wp-card:hover { border-color: var(--acc); }
+.wp-card--main { border-color: var(--acc); box-shadow: 0 0 0 2px var(--acc) inset; }
+.wp-thumb-wrap { position: relative; flex: 0 0 112px; }
+.wp-thumb { display: block; width: 112px; height: 66px; object-fit: cover;
+  border-radius: 9px; background: #15171d; }
+.wp-thumb--empty { background: #d9dfe8; }
+.wp-badge { position: absolute; left: 6px; bottom: 6px; padding: 2px 8px;
+  border-radius: 999px; background: var(--acc); color: #fff;
+  font-size: 10.5px; font-weight: 700; }
+.wp-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--navy);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wp-meta { font-size: 12px; color: var(--tx2); font-variant-numeric: tabular-nums; }
+.wp-foot { margin-top: 16px; display: flex; justify-content: center; gap: 10px; }
+
 /* ============ タイムライン(スイッチング/ワイプ) ============ */
 .timeline-wrap { width: 100%; max-width: 720px; }
 .tl-strip { position: relative; height: 44px; background: var(--panel2); border: 1px solid var(--line);

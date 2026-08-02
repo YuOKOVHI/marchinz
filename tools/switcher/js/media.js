@@ -227,6 +227,15 @@ MC.media.afterChange = () => {
     const sub = slotClips.find(c => c.id !== MC.S.wipeMainId) || slotClips[0];
     MC.S.wipeClipId = sub.id;   // 小窓1の既定=メイン以外の先頭
   }
+  /* 小窓2の既定(2026-08-02 優さん指示: こだわりのワイプは ①メイン ②右下 ③左下)。
+     動画が3本そろったら、残りの1本を左下(wipePos2の既定="bl")の小窓2へ。
+     2本以下なら従来どおり右下のみ(nullのまま)。手で「（なし）」へ戻した場合も、
+     素材が増減したときだけここで入り直す(描画は layout.js の既存 wipeClipId2 経路) */
+  if (MC.S.wipeClipId2 == null && n >= 3) {
+    const third = slotClips.find(c => !c.isImage
+      && c.id !== MC.S.wipeMainId && c.id !== MC.S.wipeClipId);
+    if (third) MC.S.wipeClipId2 = third.id;
+  }
   MC.restoreCutList();
   MC.restoreTrim();
   MC.preview.applyMute();

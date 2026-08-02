@@ -1336,6 +1336,10 @@ async function countSamples(ns, file, fromSec) {
     S.exportPreset = null; S.startKey = null; S.startAt = null;
     S.lengthDecided = false; S.audioDecided = false; S.easyDone = false;
     S.trimIn = 0; S.trimOut = null;
+    /* おまかせ×ワイプの割り当て(2026-08-02)。試験どうしの状態漏れ防止 */
+    S.wipePicked = false;
+    w.MC.ui._autoFlow = false;
+    if (w.MC.ui.closeWipePick) w.MC.ui.closeWipePick();
     w.MC.exporter.lastResult = null;
     w.MC.ui._viewPhase = null;
     w.MZWM = null;
@@ -5078,6 +5082,106 @@ async function countSamples(ns, file, fromSec) {
         try { Object.defineProperty(w.Navigator.prototype, "wakeLock", keep.wkAPI); } catch (_) {}
       }
     }
+  });
+
+  group("㉞ ワイプの割り当て・左下ワイプ・種類の並び(2026-08-02 優さん指示)");
+
+  await test("★種類カードの並びは ①縦型 ②自動スイッチング ③ワイプ", async () => {
+    const w = await compEnv();
+    const order = [...w.document.querySelectorAll("#modeStepKind .mode-card[data-mode]")]
+      .map(b => b.dataset.mode);
+    eq(order.join(","), "vertical,switch,wipeCam", "並び");
+    return "①縦型 ②自動スイッチング ③ワイプ動画";
+  });
+
+  await test("★おまかせ×ワイプは自走の前に「メイン/右下ワイプ」の選択が挟まる", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.mode = "wipeCam"; S.layoutId = "wipe";
+    w.MC.ui._autoFlow = true; S.wipePicked = false;
+    if (!w.MC.ui.needsWipePick()) throw new Error("needsWipePick が false(選択が挟まらない)");
+    /* 実際に画面が出て、タップ2回で割り当てが決まり自走が再開するか。
+       runAuto は本物を走らせず「呼ばれたこと」だけを見る */
+    const realRun = w.MC.ui.runAuto;
+    let ran = 0; w.MC.ui.runAuto = () => { ran++; };
+    try {
+      w.MC.ui.openWipePick();
+      const el = w.document.getElementById("wipePick");
+      if (el.hidden) throw new Error("#wipePick が開かない");
+      const cards = () => [...el.querySelectorAll(".wp-card")];
+      eq(cards().length, 3, "カード数");
+      cards()[1].click();          // 1タップ目 = メイン(動画2)
+      cards()[0].click();          // 2タップ目 = 右下ワイプ(動画1)
+      eq(S.wipeMainId, 2, "メイン");
+      eq(S.wipeClipId, 1, "右下ワイプ");
+      eq(S.wipePos, "br", "小窓1の位置");
+      eq(S.wipeClipId2, 3, "残った3本目は左下ワイプ");
+      eq(S.wipePos2, "bl", "小窓2の位置");
+      if (!S.wipePicked) throw new Error("wipePicked が立たない(次の素材変更でまた挟まってしまう)");
+      if (!el.hidden) throw new Error("選び終わったのに画面が閉じない");
+      eq(ran, 1, "自走の再開回数");
+      if (w.MC.ui.needsWipePick()) throw new Error("選び終わっても needsWipePick が true");
+    } finally { w.MC.ui.runAuto = realRun; w.MC.ui.closeWipePick(); w.MC.ui._autoFlow = false; }
+    return "タップ2回 → メイン/右下/左下が決まり、自走が1回だけ再開";
+  });
+
+  await test("★選択が挟まるのは おまかせ×ワイプ だけ(他の種類・こだわりは挟まらない)", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    w.MC.ui._autoFlow = true; S.wipePicked = false;
+    try {
+      for (const m of ["vertical", "switch"]) {
+        S.mode = m;
+        if (w.MC.ui.needsWipePick()) throw new Error(`${m} なのに選択が挟まる`);
+      }
+      S.mode = "wipeCam";
+      w.MC.ui._autoFlow = false;   // こだわり
+      if (w.MC.ui.needsWipePick()) throw new Error("こだわりなのに選択が挟まる");
+      /* 動画1本では選びようがない(そのまま自走) */
+      w.MC.ui._autoFlow = true;
+      S.clips = S.clips.slice(0, 1);
+      if (w.MC.ui.needsWipePick()) throw new Error("動画1本なのに選択が挟まる");
+    } finally { w.MC.ui._autoFlow = false; }
+    return "縦型/スイッチング/こだわり/1本 のどれも素通り";
+  });
+
+  await test("★左下ワイプが実際に左下へ描かれる(画素・書き出しと同じ drawComposite)", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.mode = "wipeCam"; S.layoutId = "wipe";
+    S.wipeMainId = 1; S.wipeClipId = 2; S.wipePos = "br";
+    S.wipeClipId2 = 3; S.wipePos2 = "bl";
+    const W = 320, H = 180;
+    const r = render(w, W, H, 0.5);
+    near(r.px(W / 2, 8), CAM[1], 8, "メイン(上中央)");
+    near(r.px(W - 8, H - 8), CAM[2], 8, "右下ワイプ");
+    near(r.px(8, H - 8), CAM[3], 8, "左下ワイプ");
+    /* 書き出しがデコードするカメラの判定(neededIds)にも3本とも入っていること */
+    const need = [...new Set(w.MC.neededIds(0.5))].sort().join(",");
+    eq(need, "1,2,3", "neededIds");
+    return "メイン+右下+左下が画素で確認でき、neededIds も3本";
+  });
+
+  await test("★こだわり: 3本そろうと3本目が左下ワイプの既定に入る(2本なら右下のみ)", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    /* afterChange は次の一手への誘導(openTilt 等)まで動かすので、そこだけ黙らせる */
+    const realFocus = w.MC.ui.focusNextAction;
+    w.MC.ui.focusNextAction = () => {};
+    try {
+      S.mode = "wipeCam"; S.layoutId = "wipe";
+      S.wipeClipId2 = null;
+      w.MC.media.afterChange();
+      eq(S.wipeClipId2, 3, "3本目の小窓2");
+      eq(S.wipePos2, "bl", "小窓2の位置の既定");
+      const S2 = compReset(w);
+      S2.mode = "wipeCam"; S2.layoutId = "wipe";
+      S2.clips = S2.clips.slice(0, 2); S2.slots = [1, 2, null];
+      S2.wipeClipId2 = null;
+      w.MC.media.afterChange();
+      eq(S2.wipeClipId2, null, "2本のときの小窓2");
+    } finally { w.MC.ui.focusNextAction = realFocus; }
+    return "3本=左下が自動で入る / 2本=従来どおり右下のみ";
   });
 
   if (CF) { CF.remove(); CF = null; CW = null; CD = null; }
