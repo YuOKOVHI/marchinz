@@ -86,6 +86,11 @@ MC.ui.exportOverlay = {
        戻れると書いておいて戻れないのは、黙っているより悪い。
        中の仕組み(完了パートの再利用)は残す ─ 効いたときは黙って速くなる */
     MC.ui.showResumeNoteIfAny = () => {};
+    /* ライブプレビュー(#eoLive)は前回の絵を引きずらない。最初のコピーが
+       来るまで隠す(空の黒箱を見せない)。間引きの時計も巻き戻す */
+    const lv = MC.ui.$("#eoLive");
+    if (lv) lv.hidden = true;
+    if (MC.exporter) MC.exporter._liveAt = 0;
     MC.ui.$("#eoRun").hidden = false;
     MC.ui.$("#eoDone").hidden = true;
     MC.ui.$("#eoClose").hidden = true;

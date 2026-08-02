@@ -12,16 +12,40 @@
    cutList形式は既存互換 [{t, clipId, trans, dur}]。 */
 
 MC.director = {
-  /* 切替頻度3段階: 基準ショット長(秒)と引き画の織り込み間隔(何ショットに1回) */
+  /* 切替頻度3段階: 基準ショット長(秒)と引き画の織り込み間隔(何ショットに1回)。
+     ★ 既定(2:おすすめ)を 5.0/3.0/9 → 4.0/2.5/7 に短縮(2026-08-02 優さん指示
+     「切り替えはもう少し多めにして」)。反省会用途では全員の視点がテンポよく
+     見えるのが価値で、9秒上限は1カメラを見つめ続ける時間として長すぎた。
+     1(少なめ)と3(多め)は本人が明示的に選ぶ値なので据え置く */
   LEVELS: {
     1: { base: 8.0, min: 4.5, max: 14, interleave: 2 },  // 少なめ(ゆったり)
-    2: { base: 5.0, min: 3.0, max: 9,  interleave: 3 },  // おすすめ
+    2: { base: 4.0, min: 2.5, max: 7,  interleave: 3 },  // おすすめ
     3: { base: 3.2, min: 1.8, max: 6,  interleave: 4 },  // 多め(細かい)
   },
   /* 素材ごとの出番の希望(clip.freq)をスコアへ足す量。
      「少なめ」は下の登場間隔ボーナス(最大0.48)より小さくして、
      出番ゼロにはならず「たまに出る」に落ち着かせる */
   FREQ_BIAS: { less: -0.35, auto: 0, more: 0.45 },
+  /* ★ 同一カメラの連続ショット上限(2026-08-02 優さん実機: 動画2本で
+     1カメラに張り付いた)。スコアの交互化圧力は prevId -0.9 + 登場間隔 +0.48 の
+     計1.38が上限で、ソロ区間(wClose=0.30+0.95*feature)+操作カメラ加点
+     (+0.12+0.9*feature*close)が重なると片方が常勝し、曲の間ずっと
+     切り替わらない。マーチングの反省会では「両方の視点が見える」ことが
+     価値なので、上限に達したら失格でない別カメラへ強制的に切り替える。
+     失格(dq)しか残っていなければ切り替えない ─ 「振っている絵は絶対に
+     入れない」(ディレクター指示)は連続上限より強い */
+  MAX_RUN: 3,
+  /* ★ 出番の飢餓ガード(2026-08-02 優さん実機: 「3本入れたのに2台しか出ない」。
+     N本入れるとN-1台になる規則性)。原因はスコアの構造 ─ 上位2台は
+     「直前 -0.9 / 2つ前 -0.25」の罰を交互に払いながら回るが、3台目は
+     常に**その区間の勝者**(罰を払っていない側)に勝たねばならず、
+     登場間隔ボーナス(最大+0.48)では届かない。つまり少し弱いカメラは
+     何本入れても構造的に出番ゼロになる(2本のときは2台目が同じ理屈で消える)。
+     ─ そこで「STARVE ショット以上出ていない失格でないカメラ」がいたら、
+     採点に関係なく次のショットに出す。反省会では全員の視点が見えることが
+     採点の細かい優劣より価値が高い(優さんの用途判断)。
+     値4: おすすめ(基準4秒)でおよそ20秒に1回は必ず巡ってくる間隔 */
+  STARVE: 4,
   DISSOLVE_BPM: 92,    // これ未満の局所BPMはディゾルブ候補
   _salute: null,
 };
@@ -224,6 +248,7 @@ MC.director.generate = () => {
 
   const ctx = {
     prevId: null, prev2Id: null,
+    runLen: 0,          // いまのカメラが何ショット連続しているか(MAX_RUN用)
     segsSinceWide: 0,
     interleave: L.interleave,
     sinceUse: new Map(MC.S.clips.map(c => [c.id, 99])),
@@ -232,6 +257,7 @@ MC.director.generate = () => {
   const cuts = [];
   /* 失格で見送った区間の集計。実素材でしきい値を詰めるための根拠を残す */
   const dqTally = { total: 0, by: {} };
+  let forcedN = 0;   // 連続上限による強制切替の回数(実素材で偏りを読む根拠)
   let t = tIn;
   let guard = 0;
   while (t < tOut - L.min && guard++ < 2000) {
@@ -274,6 +300,35 @@ MC.director.generate = () => {
       if (usable) top = usable;
     }
 
+    /* ★ 全カメラの出番を仕組みで保証する2枚のガード(2026-08-02 優さん実機)。
+       採点は「どの画がいまいちばん良いか」を決めるだけで、
+       「全員の視点が見える」ことは採点からは出てこない ─ ここで保証する。
+       どちらのガードも失格(dq)のカメラへは切り替えない(「振っている絵は
+       絶対に入れない」の絶対条件が上)。なお失格延長(上のcontinue)は
+       cuts を増やさないので runLen には数えない ─ 延長は「良い画が無い」
+       ときの緊急避難で、ここで無理に切ると失格の画が出る */
+    if (!top.dq) {
+      /* ① 飢餓ガード: STARVE ショット以上出ていないカメラを強制的に出す。
+         該当が複数なら採点順で最良の1台(ranked はスコア降順) */
+      const starving = ranked.find(r => !r.dq && r.id !== top.id
+        && (ctx.sinceUse.get(r.id) || 0) >= MC.director.STARVE);
+      if (starving) {
+        forcedN++;
+        MC.log(`director: ${t.toFixed(1)}s〜 ${ctx.sinceUse.get(starving.id)}ショット出ていないカメラを出す`);
+        top = starving;
+      }
+      /* ② 連続上限: 同じカメラが MAX_RUN ショット続いたら別カメラへ
+         (2本のとき①より先に効く。①と②で N=2 も N=3 以上も両方塞がる) */
+      if (top.id === ctx.prevId && ctx.runLen >= MC.director.MAX_RUN) {
+        const alt = ranked.find(r => r.id !== ctx.prevId && !r.dq);
+        if (alt) {
+          forcedN++;
+          MC.log(`director: ${t.toFixed(1)}s〜 連続${ctx.runLen}ショットのため別カメラへ強制切替`);
+          top = alt;
+        }
+      }
+    }
+
     // トランジション: 静か or 局所BPM低 → ディゾルブ(冒頭カットはそのまま)
     let trans = "cut", dur = 0;
     if (cuts.length) {
@@ -287,6 +342,7 @@ MC.director.generate = () => {
     cuts.push({ t, clipId: top.id, trans, dur });
 
     // 文脈更新
+    ctx.runLen = top.id === ctx.prevId ? ctx.runLen + 1 : 1;
     for (const [id, v] of ctx.sinceUse) ctx.sinceUse.set(id, v + 1);
     ctx.sinceUse.set(top.id, 0);
     ctx.prev2Id = ctx.prevId;
@@ -300,6 +356,7 @@ MC.director.generate = () => {
   MC.S.cutList = cuts;
   MC.saveState();
   const nDissolve = cuts.filter(c => c.trans === "dissolve").length;
-  MC.log(`director: level=${MC.S.cutLevel} ${cuts.length}カット(ディゾルブ${nDissolve}) bpm=${bpmAll.toFixed(1)}`);
+  MC.log(`director: level=${MC.S.cutLevel} ${cuts.length}カット(ディゾルブ${nDissolve}`
+    + `${forcedN ? `・強制切替${forcedN}` : ""}) bpm=${bpmAll.toFixed(1)}`);
   return { segments: cuts.length, bpm: bpmAll, dissolves: nDissolve };
 };

@@ -365,21 +365,31 @@ MC.preview = {
     const W = this.canvas.width, H = this.canvas.height, ctx = this.ctx;
     const base = Math.min(W, H);
     const spin = !!(opts && opts.spinner);
+    /* ★ 大きさの係数(2026-08-02 優さん指示「真ん中のゲージとテキストを動画に
+       対して6〜7割の大きさに。特に縦型はもっと大きく」)。
+       固定pxでなく描画領域比で決める。基準は min(W,H) のまま、作業中
+       (ゲージつき)の一式だけを拡大する ─ 「ここは書き出されません」等の
+       常設案内まで巨大化させない。
+       縦型(9x16)は canvas 1080px 幅が画面では375pxまで縮み、同じ係数でも
+       いちばん小さく見えるので係数をさらに大きく取る。
+       実測(タイトル「映像分析中…」+ゲージの塊): 16:9=短辺の約69%、
+       9:16=幅の約76%(数値は QA ㊲ が常時見張る。2.2 だと84%で7割を超えた) */
+    const F = spin ? (H > W ? 2.0 : 1.8) : 1;
     ctx.save();
     ctx.fillStyle = "rgba(6, 10, 16, 0.55)";
     ctx.fillRect(0, 0, W, H);
-    const cy = spin ? H / 2 + base * 0.02 : H / 2;
+    const cy = spin ? H / 2 + base * 0.02 * F : H / 2;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillStyle = "#fff";
-    ctx.font = `700 ${Math.round(base * 0.05)}px -apple-system, sans-serif`;
-    ctx.fillText(title, W / 2, sub ? cy - base * 0.035 : cy);
+    ctx.font = `700 ${Math.round(base * 0.05 * F)}px -apple-system, sans-serif`;
+    ctx.fillText(title, W / 2, sub ? cy - base * 0.035 * F : cy);
     if (sub) {
       ctx.fillStyle = "rgba(255,255,255,0.75)";
-      ctx.font = `500 ${Math.round(base * 0.034)}px -apple-system, sans-serif`;
+      ctx.font = `500 ${Math.round(base * 0.034 * F)}px -apple-system, sans-serif`;
       /* 幅を超える補足は切る。溢れると左右が枠の外へ消えて、
          真ん中だけが読める意味不明な行になる */
-      ctx.fillText(this.fitText(ctx, sub, W * 0.86), W / 2, cy + base * 0.03);
+      ctx.fillText(this.fitText(ctx, sub, W * 0.86), W / 2, cy + base * 0.03 * F);
     }
     if (spin) {
       /* ============ 円の進捗(2026-08-01 優さん指示) ============
@@ -396,9 +406,9 @@ MC.preview = {
          canvas は 1080〜1920px、表示は 375px 幅まで縮むので、
          見た目で分かる大きさにするには canvas 上でかなり大きく描く必要がある */
       const TOP = -Math.PI / 2;              // 真上(12時)
-      const r = base * 0.09;
-      const cx = W / 2, cyS = H / 2 - base * 0.115;
-      const lw = Math.max(3, base * 0.013);
+      const r = base * 0.09 * F;             // 大きさは上の F(6〜7割指示)に連動
+      const cx = W / 2, cyS = H / 2 - base * 0.115 * F;
+      const lw = Math.max(3, base * 0.013 * F);
       const det = (opts.ratio != null && isFinite(opts.ratio) && opts.ratio > 0);
       const pct = det ? Math.max(0, Math.min(1, opts.ratio)) : 0;
       const t = (Date.now() % 2600) / 2600;
@@ -417,7 +427,7 @@ MC.preview = {
       ctx.stroke();
       if (det) {                             // 輪の中に%。12時が始点だと一目で分かる
         ctx.fillStyle = "rgba(255,255,255,0.95)";
-        ctx.font = `700 ${Math.round(base * 0.038)}px -apple-system, sans-serif`;
+        ctx.font = `700 ${Math.round(base * 0.038 * F)}px -apple-system, sans-serif`;
         ctx.fillText(`${Math.round(pct * 100)}%`, cx, cyS);
       }
     }

@@ -1217,6 +1217,37 @@ MC.exporter.STALL_CHECK_MS = 5000;
    1770コマをiPhoneで書くのは数分かかる仕事で、その間 stage() は一度も動かない。
    進捗を報告するところから必ず呼ぶこと(_markProgress の先頭に置いてある) */
 MC.exporter.beat = () => { MC.exporter._lastProgAt = Date.now(); };
+
+/* ★ 書き出し中のライブプレビュー(2026-08-02 優さん要望「進捗だけで絵が無い」)。
+   コマループが合成し終えた canvas を、書き出し全画面の #eoLive へ縮小コピーする。
+   毎コマ描くと書き出し自体が遅くなるので LIVE_MS(970ms)に1回へ間引く:
+   ─ iOSの負荷見積り: 1080x1920 → 長辺480 の drawImage は GPU で1回 1〜3ms 程度。
+     30fps合成で毎コマ描くと +30〜90ms/秒(書き出し3〜9%減速)だが、
+     970ms間引きなら +1〜3ms/秒(0.1〜0.3%)で誤差に沈む。
+     970ms(1000msでない)なのは、コマループの周期と同期して
+     「いつも同じ拍で当たる/外れる」偏りを避けるため。
+   ─ 全画面(#exportOverlay)が出ていないときは何もしない(裏経路の書き出しや
+     QAのヘッドレス実行で、見えないcanvasへ描く無駄をしない) */
+MC.exporter.LIVE_MS = 970;
+MC.exporter._liveAt = 0;
+MC.exporter.livePreview = (src) => {
+  const now = performance.now();
+  if (now - MC.exporter._liveAt < MC.exporter.LIVE_MS) return;
+  const ov = document.getElementById("exportOverlay");
+  const el = document.getElementById("eoLive");
+  if (!ov || ov.hidden || !el) return;
+  const sw = src && src.width, sh = src && src.height;
+  if (!sw || !sh) return;
+  MC.exporter._liveAt = now;
+  try {
+    // 表示サイズは長辺480(サイズが変わった最初の1回だけ設定。width代入は全消去なので毎回はしない)
+    const k = 480 / Math.max(sw, sh);
+    const dw = Math.max(2, Math.round(sw * k)), dh = Math.max(2, Math.round(sh * k));
+    if (el.width !== dw || el.height !== dh) { el.width = dw; el.height = dh; }
+    el.getContext("2d").drawImage(src, 0, 0, dw, dh);
+    el.hidden = false;
+  } catch (e) { /* プレビューが描けなくても書き出しは止めない */ }
+};
 /* ★ 凍結明けの恩赦の下限(2026-08-02 push前レビュー)。見張りのタイマー同士の
    間隔がこれ以上開いていたら「見張り自身が止められていた」(タブ凍結・スリープ)
    と判断し、その1回は数え直す。本物の停止(awaitが返らない)では main thread が
@@ -1504,6 +1535,7 @@ MC.exporter._exportVideoPart = async (opt) => {
       catch (err) { throw MC.exporter.codecGone(err, venc) ? MC.exporter.frozenError(err) : err; }
       vf.close();
       prof.encode += performance.now() - _tE;
+      MC.exporter.livePreview(canvas);   // 書き出し中の絵を全画面へ(970ms間引き)
       if (k % 10 === 0) { await onFrame(k); await MC.yield(); }
     }
     await venc.flush();
@@ -2186,6 +2218,7 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle, opts) => {
       catch (err) { throw MC.exporter.codecGone(err, venc) ? MC.exporter.frozenError(err) : err; }
       vf.close();
       prof.encode += performance.now() - _tEnc;
+      MC.exporter.livePreview(canvas);   // 書き出し中の絵を全画面へ(970ms間引き)
       if (k % 10 === 0) {
         MC.exporter._prof = prof;   // 途中経過の記録から skips を読めるように
         if (k % 300 === 0 && navigator.storage && navigator.storage.estimate) {
@@ -2352,6 +2385,7 @@ MC.exporter._exportRealtimeInner = async onProgress => {
   // trimOut到達(preview側で自動pause)まで待つ
   await new Promise(res => {
     const iv = setInterval(() => {
+      MC.exporter.livePreview(canvas);   // 実時間録画でも書き出し全画面に絵を出す
       onProgress((MC.S.t - tIn) / (tOut - tIn), `録画中… ${MC.ui.fmtTime(MC.S.t - tIn)} / ${MC.ui.fmtTime(tOut - tIn)}(実時間)`);
       if (!MC.S.playing || MC.exporter.cancelFlag) { clearInterval(iv); res(); }
     }, 200);

@@ -49,8 +49,18 @@ const MZQA_CB = new URLSearchParams(location.search).get("cb") || String(Date.no
 /* ===== 最小テストフレームワーク ===== */
 const R = [];
 let curGroup = "";
-const group = g => { curGroup = g; const d = document.createElement("div"); d.className = "grp"; d.textContent = g; out.appendChild(d); };
+/* ★ 群の絞り込み(2026-08-02 優さんの新テンポ: セッション中は「関連するQA群+
+   新規見張り」だけ回し、全件はpush前に一度だけ)。?g=⑳,㊱ のように部分一致・
+   カンマ区切りで群を選ぶ。無指定なら従来どおり全件(pushの前の全件走は不変)。
+   絞ったときは末尾のまとめに「絞り込み」と明記し、全PASSの顔で全件走と
+   取り違えないようにする */
+const MZQA_G = (new URLSearchParams(location.search).get("g") || "")
+  .split(",").map(s => s.trim()).filter(Boolean);
+const groupWanted = () => !MZQA_G.length || MZQA_G.some(k => curGroup.includes(k));
+const group = g => { curGroup = g; if (!groupWanted()) return;
+  const d = document.createElement("div"); d.className = "grp"; d.textContent = g; out.appendChild(d); };
 async function test(name, fn) {
+  if (!groupWanted()) return;
   const t0 = performance.now();
   let ok = true, msg = "";
   try { msg = (await fn()) || ""; }
@@ -3542,6 +3552,95 @@ async function countSamples(ns, file, fromSec) {
     return `検出${B.bpm.toFixed(2)}BPM / 最大ズレ${worst.toFixed(3)}秒`;
   });
 
+  await test("★N本入れたらN台全部が出る(2本=張り付き/3本=N-1台 の両方を再現して塞ぐ)", async () => {
+    /* 2026-08-02 優さん実機: 「2本選んで1台」「3本選んで2台」= N本でN-1台の規則性。
+       原因は採点の構造(音声担当の除外ではない ─ _rank の pool は
+       !isAudio && !isImage の全カメラを含むことを確認済み):
+       ・2本: 「直前 -0.9 + 登場間隔 +0.48」の交互化圧力(計1.38)を、
+         ソロ区間(wClose=1.25)+操作カメラ加点(+0.12+0.9×feature×close)が超えて片方が常勝
+       ・3本: 上位2台は罰(-0.9/-0.25)を交互に払いながら回るが、3台目は常に
+         「その区間の勝者(罰を払っていない側)」に勝つ必要があり +0.48 では届かない
+       → 修正は採点でなく保証: STARVE(飢餓ガード)+MAX_RUN(連続上限) */
+    const w = await compEnv();
+    const S = compReset(w);
+    S.audioClipId = 1;
+    S.trimIn = 0; S.trimOut = 60;
+    /* 切替頻度は既定(2:おすすめ)に固定する。cutLevel は compReset が戻さず、
+       他の試験の saveState 経由で 1(少なめ)が残るとカット数が15→8に化ける */
+    S.cutLevel = 2;
+    const mkBeats = () => ({ bpm: 120, period: 0.5, hopSec: 0.05,
+      beats: Array.from({ length: 119 }, (_, i) => (i + 1) * 0.5),
+      env: new Array(1200).fill(1) });
+    const keep = { seg: w.MC.visual.seg, cls: w.MC.sections.classify,
+                   sal: w.MC.director._salute,
+                   run: w.MC.director.MAX_RUN, stv: w.MC.director.STARVE };
+    const m = (maxF, operated) => ({
+      shakeP75: .03, shakeCamP75: .03, flipRatio: 0, panRatio: 0,
+      operated, settled: true, sharpMean: 50, sharpMed: 50,
+      moE: 0, act: .1, actNear: .5, nF: 1, maxF, faceOK: true, n: 10 });
+    const runCase = (M, guards) => {
+      w.MC.visual.seg = clip => M[clip.id];
+      for (const id of Object.keys(M)) {
+        const why = w.MC.visual.dqReason(M[id], "auto");
+        if (why) throw new Error(`試験の前提が崩れた: cam${id} が失格(${why})`);
+      }
+      w.MC.director.MAX_RUN = guards ? keep.run : Infinity;
+      w.MC.director.STARVE = guards ? keep.stv : Infinity;
+      w.MC.director.generate();
+      const cuts = S.cutList;
+      let run = 0, prev = null, maxRun = 0;
+      for (const c of cuts) {
+        run = c.clipId === prev ? run + 1 : 1;
+        prev = c.clipId; maxRun = Math.max(maxRun, run);
+      }
+      return { cuts, used: new Set(cuts.map(c => c.clipId)), maxRun };
+    };
+    try {
+      w.MC.director._salute = null;
+      // 曲じゅうソロ扱い(実素材で起きる「featureが高止まりする」条件の再現)
+      w.MC.sections.classify = () => ({ feature: 1, percussion: 0, tutti: 0, pit: 0,
+                                        bpm: 120, dyn: 0.5, quiet: 0 });
+
+      /* ===== ケースA: 2本(寄りの操作カメラ+少し弱いミドル) ===== */
+      S.clips = S.clips.slice(0, 2);
+      S.slots = [1, 2];
+      Object.assign(S.clips[0], { beatsData: mkBeats(), sections: {} });
+      const M2 = { 1: m(.30, true), 2: m(.132, false) };
+      // 変異: ガードなしなら1台に張り付く(修正前の症状を再現=試験に歯がある)
+      const a0 = runCase(M2, false);
+      if (a0.used.size !== 1) throw new Error("2本: ガードなしでも張り付かない(再現失敗): " + [...a0.used]);
+      // 本番: 2台とも出て、連続は上限以下
+      const a1 = runCase(M2, true);
+      if (a1.used.size !== 2) throw new Error("2本: 片方しか出ない: " + JSON.stringify([...a1.used]));
+      if (a1.maxRun > keep.run) throw new Error(`2本: 同一カメラが${a1.maxRun}連続(上限${keep.run})`);
+
+      /* ===== ケースB: 3本(操作カメラ2台が交互に回り、3台目が締め出される) ===== */
+      compReset(w);
+      S.audioClipId = 1; S.trimIn = 0; S.trimOut = 60;
+      Object.assign(S.clips[0], { beatsData: mkBeats(), sections: {} });
+      const M3 = { 1: m(.30, true), 2: m(.223, true), 3: m(.16, false) };
+      // 変異: ガードなしなら3本入れても2台(=優さん実機のN-1)
+      const b0 = runCase(M3, false);
+      if (b0.used.size !== 2) throw new Error("3本: ガードなしで2台にならない(再現失敗): " + [...b0.used]);
+      if (b0.used.has(3)) throw new Error("3本: 締め出されるのは最弱のcam3のはず: " + [...b0.used]);
+      // 本番: 3台全部が出て、連続は上限以下
+      const b1 = runCase(M3, true);
+      if (b1.used.size !== 3) throw new Error("3本: " + b1.used.size + "台しか出ない: " + JSON.stringify(b1.cuts.map(c => c.clipId)));
+      if (b1.maxRun > keep.run) throw new Error(`3本: 同一カメラが${b1.maxRun}連続(上限${keep.run})`);
+      /* cam3 は STARVE ショットごとに必ず巡ってくる(1回きりの顔見せではない) */
+      const n3 = b1.cuts.filter(c => c.clipId === 3).length;
+      if (n3 < Math.floor(b1.cuts.length / (keep.stv + 2))) {
+        throw new Error(`3本: cam3 の出番が${n3}回だけ(飢餓ガードが常時効いていない)`);
+      }
+      return `2本: 張り付き→2台(最長連続${a1.maxRun}) / 3本: 2台→3台(全${b1.cuts.length}カット中cam3が${n3}回)`;
+    } finally {
+      w.MC.visual.seg = keep.seg; w.MC.sections.classify = keep.cls;
+      w.MC.director._salute = keep.sal;
+      w.MC.director.MAX_RUN = keep.run; w.MC.director.STARVE = keep.stv;
+      compReset(w);
+    }
+  });
+
 
   group("㉚ おまかせが黙って死なない(2026-08-01 レビュー14件の見張り)");
 
@@ -4879,12 +4978,20 @@ async function countSamples(ns, file, fromSec) {
       if (btn.classList.contains("primary")) throw new Error("主ボタンと同じ塗り(保存と取り違える)");
       if (btn.closest(".eo-actions")) throw new Error("保存と同じ並びに置かれている");
       if (btn.getBoundingClientRect().height < 44) throw new Error("44ptに満たない");
-      /* 行き先は「ツール一覧に戻る」と同じページ。別々の文字列にしない */
       const href = d.getElementById("eoToTools").getAttribute("href");
       const url = U.toolShareUrl();
       /* 2026-08-02 優さん指示: シェアの行き先はツール一覧ではなく Switcher 自身 */
       if (!/\/tools\/switcher\/$/.test(url)) throw new Error("Switcher自身のURLを指していない: " + url);
-      if (!/#creators-heading$/.test(href)) throw new Error("「ツール一覧に戻る」の行き先が変わっている: " + href);
+      /* 2026-08-02 優さん指示「ツール一覧に戻るも、スイッチャーのページにいって」。
+         出口の行き先も Switcher 自身(=再読込で最初から)。文言も「戻る」でなく
+         再スタートだと分かる言い方であること */
+      if (href !== "/tools/switcher/") throw new Error("出口の行き先が Switcher 自身でない: " + href);
+      const exitTxt = d.getElementById("eoToTools").textContent.trim();
+      if (/ツール一覧/.test(exitTxt)) throw new Error("行き先はSwitcherなのに「ツール一覧」と名乗っている: " + exitTxt);
+      const doneExit = d.getElementById("doneToTools");
+      if (doneExit && doneExit.getAttribute("href") !== "/tools/switcher/") {
+        throw new Error("パネル側の出口(doneToTools)の行き先が違う: " + doneExit.getAttribute("href"));
+      }
       if (!/^https?:\/\//.test(url)) throw new Error("友達に送れない相対URL: " + url);
       /* ① 共有シートが使える環境 */
       let got = null;
@@ -5145,6 +5252,103 @@ async function countSamples(ns, file, fromSec) {
         try { Object.defineProperty(w.Navigator.prototype, "wakeLock", keep.wkAPI); } catch (_) {}
       }
     }
+  });
+
+  group("㊱ 書き出し中のライブプレビュー(2026-08-02 優さん要望「進捗だけで絵が無い」)");
+
+  await test("★書き出し中の絵が全画面の進捗の上に出る(970ms間引き)", async () => {
+    const w = await compEnv();
+    compReset(w);
+    const d = w.document, X = w.MC.exporter;
+    const el = d.getElementById("eoLive");
+    if (!el) throw new Error("#eoLive が無い");
+    /* 置き場所: 書き出し全画面(#eoRun)の中・進捗(#eoProgress)より上(優さん指定)。
+       #eoRun の中にあれば、完成/失敗で #eoRun ごと隠れて片付く */
+    if (!d.getElementById("eoRun").contains(el)) throw new Error("#eoLive が #eoRun の外にある");
+    const pos = el.compareDocumentPosition(d.getElementById("eoProgress"));
+    if (!(pos & w.Node.DOCUMENT_POSITION_FOLLOWING)) throw new Error("#eoLive が進捗より下にある");
+    const mk = rgb => { const c = d.createElement("canvas"); c.width = 108; c.height = 192;
+      const x = c.getContext("2d"); x.fillStyle = rgb; x.fillRect(0, 0, 108, 192); return c; };
+    const px = () => el.getContext("2d").getImageData(1, 1, 1, 1).data;
+    try {
+      /* ① 全画面が閉じているあいだは描かない(見えないcanvasへの無駄描き) */
+      w.MC.ui.exportOverlay.close();
+      X._liveAt = 0;
+      X.livePreview(mk("#f00"));
+      if (!el.hidden) throw new Error("全画面が閉じているのに絵が出た");
+      /* ② open は前回の絵を隠し、最初のコピーで現れる(サイズは長辺480へ縮小) */
+      w.MC.ui.exportOverlay.open();
+      if (!el.hidden) throw new Error("open 直後から出ている(前回の絵を引きずる)");
+      X.livePreview(mk("#f00"));
+      if (el.hidden) throw new Error("コピーしたのに出てこない");
+      if (px()[0] < 200) throw new Error("赤いコマが写っていない: " + px());
+      if (el.width !== 270 || el.height !== 480) {
+        throw new Error(`縮小サイズが違う: ${el.width}x${el.height}(9:16は270x480のはず)`);
+      }
+      /* ③ 間引き: LIVE_MS 未満の連打は捨てる。毎コマ描くと書き出し自体が
+         遅くなる(30fps毎コマで3〜9%減速の見積り。exporter.js の注記) */
+      X.livePreview(mk("#0f0"));
+      if (px()[1] > 100) throw new Error("間引かずに毎コマ描いている");
+      /* ④ 時間が経てば次のコマへ更新される */
+      X._liveAt = 0;
+      X.livePreview(mk("#0f0"));
+      if (px()[1] < 200) throw new Error("2コマ目に更新されない: " + px());
+      return "閉=描かない / 開=970msに1回・長辺480 / 連打は間引く";
+    } finally { w.MC.ui.exportOverlay.close(); }
+  });
+
+  await test("★おまかせ経由の書き出しも同じ全画面へ来る(=プレビューが出る)+コマループ3経路に注入済み", async () => {
+    /* おまかせは easyDone 後に #exportBtn.click() で通常の書き出し入口へ合流する
+       (ui.js)。入口が1つなら exportOverlay.open() も livePreview の表示先も同じ。
+       経路をソースの実体で確かめ、二重経路が生えたら落ちる */
+    const src = await (await fetch("../switcher/js/ui.js?cb=" + Date.now())).text();
+    if (!/easyDone\)\s*\{\s*\$\("#exportBtn"\)\.click\(\)/.test(src)) {
+      throw new Error("おまかせが #exportBtn を経由しなくなった(全画面とプレビューの経路を確認すること)");
+    }
+    const srcE = await (await fetch("../switcher/js/exporter.js?cb=" + Date.now())).text();
+    const taps = srcE.match(/MC\.exporter\.livePreview\(canvas\)/g) || [];
+    /* パート方式・一括方式・実時間録画の3経路すべてに注入されていること。
+       1経路でも欠けると「その書き出し方のときだけ絵が出ない」に戻る */
+    eq(taps.length, 3, "livePreview の注入箇所(パート/一括/実時間)");
+    return "おまかせ→#exportBtn 合流 / コマループ3経路すべてに注入";
+  });
+
+  group("㊲ プレビューの円ゲージとテキストの大きさ(2026-08-02 優さん指示「動画の6〜7割に」)");
+
+  await test("★作業中のゲージ+テキストは描画領域の6〜7割・縦型は特に大きい", async () => {
+    const w = await compEnv();
+    compReset(w);
+    const P = w.MC.preview;
+    /* 実物の drawOverlayMessage をオフスクリーンへ描かせて、白い画素の
+       外接幅を実測する(フォント係数の検算でなく「出た絵」を測る) */
+    const draw = (W, H, spinner) => {
+      const cv = w.document.createElement("canvas");
+      cv.width = W; cv.height = H;
+      const ctx = cv.getContext("2d", { willReadFrequently: true });
+      ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H);
+      P.drawOverlayMessage.call({ canvas: cv, ctx, fitText: P.fitText },
+        spinner ? "映像分析中..." : "ここは書き出されません",
+        "1 / 3 本目・Timeline 3.mov",
+        spinner ? { spinner: true, ratio: 0.15 } : undefined);
+      const d = ctx.getImageData(0, 0, W, H).data;
+      let x0 = W, x1 = 0;
+      for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 2) {
+        if (d[(y * W + x) * 4] > 140) { if (x < x0) x0 = x; if (x > x1) x1 = x; }
+      }
+      return x1 > x0 ? x1 - x0 : 0;
+    };
+    const land = draw(1920, 1080, true);       // 16:9
+    const port = draw(1080, 1920, true);       // 9:16(縦型)
+    const landR = land / 1080, portR = port / 1080;   // どちらも短辺=1080に対する比
+    /* 6〜7割: 実測が0.55を割ったら小さすぎ、0.95を超えたらはみ出しの危険 */
+    if (landR < 0.55 || landR > 0.95) throw new Error(`16:9 の塊が短辺の${(landR * 100).toFixed(0)}%(6〜7割でない)`);
+    if (portR < 0.60 || portR > 0.95) throw new Error(`9:16 の塊が幅の${(portR * 100).toFixed(0)}%(6〜7割でない)`);
+    /* 「特に縦型はもっと大きく」: 縦型の比が16:9を下回らないこと */
+    if (portR < landR) throw new Error(`縦型(${(portR * 100).toFixed(0)}%)が16:9(${(landR * 100).toFixed(0)}%)より小さい`);
+    /* 常設の案内(ゲージなし)まで巨大化していないこと */
+    const still = draw(1920, 1080, false);
+    if (still >= land) throw new Error("「ここは書き出されません」まで拡大されている");
+    return `16:9=短辺の${(landR * 100).toFixed(0)}% / 9:16=幅の${(portR * 100).toFixed(0)}% / 常設案内は据え置き`;
   });
 
   group("㉞ ワイプの割り当て・左下ワイプ・種類の並び(2026-08-02 優さん指示)");
@@ -5988,6 +6192,12 @@ async function countSamples(ns, file, fromSec) {
          保留解除後の focusNextAction が runAuto でなく割り当て画面へ行き、
          「再開1回」を数えられない。ここで switch に固定する */
       U.chooseMode("switch", { silent: true });
+      /* ★ _busy も compReset は戻さない(2026-08-02 実測)。前の試験群が
+         runAuto 実物を通ると busy が立ったまま残り、この試験の
+         「保留を解けば再開する」が busy の鍵で偽FAILになる(群を絞った実行で
+         露見。v1.80.0 素のコードでも同じ)。この試験は「着地後・何も
+         走っていない」状態の再現なので、前提を自分で作る */
+      U.setBusy(false);
       U._autoFlow = true; U._setupTab = "easy"; U._repickHold = true;
       /* ★ 時間で測らない(2026-08-02 実測)。本物は setTimeout(260ms) 越しに走るが、
          隠れタブ/裏iframeではタイマーが何秒も丸められ、固定待ちでは
@@ -6019,8 +6229,17 @@ async function countSamples(ns, file, fromSec) {
       if (!U._repickHold) throw new Error("おまかせなのに保留が立たない(外した瞬間に走り出す)");
       /* 外した直後(afterChange→focusNextAction)も保留が効いて、何も予約されない */
       if (ran !== 0) throw new Error("入れ替えの途中で自走が再開した");
-      /* 再開の一手(行動バーの「これでOK、おまかせを再開」相当) */
+      /* 再開の一手(行動バーの「これでOK、おまかせを再開」相当)。
+         ★ 直前にもう一度 busy を下ろす(2026-08-02 実測): 前の試験群が予約した
+         setTimeout(() => runAuto(), 260) が裏iframeの節流で**この試験の最中**に
+         発火し、本物の runAuto が busy を立て直すことがある(群を絞った実行で
+         露見・v1.80.0素のコードでも再現)。清潔な単独iframeでは busy は
+         一度も立たないことを確認済み ─ これは製品でなく試験間の漏れ。
+         _autoRunning が立ったままだと setBusy(false) は無視される(ui.js:2575
+         自走中は鍵を外さない仕様)ので、先にそれを下ろす */
       U._repickHold = false;
+      U._autoRunning = false;
+      U.setBusy(false);
       runNow(() => U.focusNextAction());
       if (ran !== 1) throw new Error("保留を解いても自走が再開しない: " + ran
         + ` (autoFlow=${U._autoFlow} busy=${U._busy} exp=${!!(w.MC.exporter && w.MC.exporter.running)}`
@@ -6037,11 +6256,12 @@ async function countSamples(ns, file, fromSec) {
 
   /* ===== 集計 ===== */
   const bad = R.filter(r => !r.ok);
-  sum.textContent = bad.length
+  const scope = MZQA_G.length ? `〔絞り込み: ${MZQA_G.join(",")} — push前は全件を回すこと〕` : "";
+  sum.textContent = (bad.length
     ? `FAIL ${bad.length} / ${R.length} — ${bad.map(b => b.name).join(" / ")}`
-    : `全 ${R.length} 件 PASS`;
+    : `全 ${R.length} 件 PASS`) + scope;
   sum.style.color = bad.length ? "crimson" : "seagreen";
-  window.__MZQA = { total: R.length, failed: bad.length, results: R };
+  window.__MZQA = { total: R.length, failed: bad.length, filtered: MZQA_G, results: R };
   document.title = (bad.length ? `FAIL(${bad.length})` : "PASS") + " — MarchinZ QA";
 })();
 </script>
