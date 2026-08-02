@@ -4815,7 +4815,8 @@ async function countSamples(ns, file, fromSec) {
       /* 行き先は「ツール一覧に戻る」と同じページ。別々の文字列にしない */
       const href = d.getElementById("eoToTools").getAttribute("href");
       const url = U.toolShareUrl();
-      if (!/#creators-heading$/.test(url)) throw new Error("映像ツールのページを指していない: " + url);
+      /* 2026-08-02 優さん指示: シェアの行き先はツール一覧ではなく Switcher 自身 */
+      if (!/\/tools\/switcher\/$/.test(url)) throw new Error("Switcher自身のURLを指していない: " + url);
       if (!/#creators-heading$/.test(href)) throw new Error("「ツール一覧に戻る」の行き先が変わっている: " + href);
       if (!/^https?:\/\//.test(url)) throw new Error("友達に送れない相対URL: " + url);
       /* ① 共有シートが使える環境 */

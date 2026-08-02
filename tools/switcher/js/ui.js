@@ -582,20 +582,18 @@ MC.ui.renderSceneOffers = () => {
    仕組みはサイト側の他のシェアボタン(app.js の shareInstagramLinkOnly)と同じ:
      navigator.share({url}) → 使えない/失敗したらリンクのコピーへ落ちる。
    ・取り消し(AbortError)は黙る ─ 取り消したのに「コピーしました」は嘘になる
-   ・行き先は「ツール一覧に戻る」(#eoToTools)と同じ href から作る。
-     2つが別々の文字列だと、片方を直したときにもう片方が黙って古くなる */
+   ・行き先は**このツール(Switcher)自身のURL**(2026-08-02 優さん指示)。
+     受け取った友達が1タップで同じツールに立てる ─ 一覧を経由させない */
 MC.ui.toolShareUrl = () => {
-  const a = MC.ui.$("#eoToTools") || MC.ui.$("#doneToTools");
-  const href = (a && a.getAttribute("href")) || "/#creators-heading";
+  const PATH = "/tools/switcher/";
   try {
-    const u = new URL(href, location.href);
     /* file:// で開いているとき(手元の確認)は共有しても届かないので、
        本番のアドレスに寄せる。http(s) ならそのまま(localhost も含めて実測できる) */
-    if (u.protocol !== "http:" && u.protocol !== "https:") {
-      return "https://marchinz.netlify.app/" + href.replace(/^\//, "");
+    if (location.protocol !== "http:" && location.protocol !== "https:") {
+      return "https://marchinz.netlify.app" + PATH;
     }
-    return u.href;
-  } catch (_) { return "https://marchinz.netlify.app/#creators-heading"; }
+    return new URL(PATH, location.href).href;
+  } catch (_) { return "https://marchinz.netlify.app" + PATH; }
 };
 
 /* クリックと同じ処理の流れで動く同期コピー(iOS Safari の Clipboard API は
