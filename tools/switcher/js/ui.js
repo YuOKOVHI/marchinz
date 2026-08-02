@@ -90,6 +90,8 @@ MC.ui.exportOverlay = {
        来るまで隠す(空の黒箱を見せない)。間引きの時計も巻き戻す */
     const lv = MC.ui.$("#eoLive");
     if (lv) lv.hidden = true;
+    /* <video>版のライブプレビューも最初のコピーまで隠す(同じ理由) */
+    { const lvv = MC.ui.$("#eoLiveVid"); if (lvv) lvv.hidden = true; }
     if (MC.exporter) MC.exporter._liveAt = 0;
     /* ★ 出口(シェア・最初から作り直す)は書き出し中は隠す(2026-08-02 push前レビュー)。
        「最初から作り直す」はページ再読込のリンクで、iPhoneのSafariは
@@ -114,6 +116,7 @@ MC.ui.exportOverlay = {
     MC.ui.$("#eoDone").hidden = false;
     MC.ui.$("#eoClose").hidden = false;
     { const ex = el.querySelector(".eo-exit"); if (ex) ex.hidden = false; }
+    MC.ui.eoLive.stop();   // 書き出しが終われば「再生中」を装う理由は無い
   },
   fail() {
     const el = MC.ui.$("#exportOverlay");
@@ -123,6 +126,7 @@ MC.ui.exportOverlay = {
        あるため)ので、放っておくと凍った合成コマが「書き出せませんでした」の
        上に残り、375px では理由カードを画面外へ押し下げる */
     { const lv = MC.ui.$("#eoLive"); if (lv) lv.hidden = true; }
+    MC.ui.eoLive.stop();   // <video>版の凍ったコマも同じ理由で片付ける
     MC.ui.$("#eoTitleText").textContent = "書き出せませんでした";
     MC.ui.$("#eoTitleIcon").className = "fa-solid fa-triangle-exclamation eo-fail";
     MC.ui.$("#eoCancel").style.display = "none";   // 失敗後の中止は意味がない
@@ -155,6 +159,73 @@ MC.ui.exportOverlay = {
     if (!el) return;
     el.hidden = true;
     document.body.classList.remove("mz-export-open");
+    MC.ui.eoLive.stop();
+  },
+};
+
+/* ============ 書き出し中のライブプレビューを「本物の再生」に(2026-08-02 優さん指示④
+   「書き出し中に映像出るのはいい。でも暗くなる。動画を再生中のようにして」) ============
+   WebKit の消灯抑止(shouldDisableSleep)は「映像+音声トラックを持つメディアが
+   再生中」であることが条件(過去レビューで確認済み。session.js の _wakeVideo と同じ実読)。
+   #eoLive(canvas)の絵を captureStream() で <video id="eoLiveVid"> へ流し、
+   無音のオーディオトラック(AudioContext → MediaStreamDestination)を合流させる。
+   実絵が動く=OSが「動画を再生中」と認めるので、2pxの代役動画より確実。
+
+   ★ デコーダの口は使わない: captureStream は canvas に描かれた絵をそのまま
+     流すだけでデコードが発生しない。書き出し中の VideoDecoder 群と競合しない。
+   ★ muted / volume=0 にしない(どちらも WebKit は消灯を抑止しない。session.js の実読)。
+     音声トラックの中身は完全な無音なので、何も鳴らない。
+   ★ play() はユーザー操作の活性が要る。おまかせ開始・書き出しボタンの
+     タップ文脈で prime() し、一度通れば以後は同じ要素で play() し直せる
+     (WebKit は制限を要素ごとに解除する)。
+   失敗したら従来の canvas 表示に静かに戻す(機能検出。exporter.livePreview が
+   on を見て出し分ける) */
+MC.ui.eoLive = {
+  on: false, _stream: null, _ctx: null, _vTrack: null, _noApi: false,
+  async prime() {
+    if (this.on || this._noApi) return;
+    const cv = document.getElementById("eoLive");
+    const v = document.getElementById("eoLiveVid");
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!cv || !v || !cv.captureStream || !AC || !window.MediaStream) {
+      this._noApi = true; return;
+    }
+    try {
+      if (!this._stream) {
+        /* fps は上限。コマは livePreview の drawImage(970msに1回)が進める */
+        const vs = cv.captureStream(8);
+        this._vTrack = vs.getVideoTracks()[0] || null;
+        this._ctx = new AC();
+        /* 無音の音声: 何も繋がない destination は実装によってフレームが
+           流れないことがあるので、offset=0 の定数源を必ず繋ぐ(=完全な無音) */
+        const dest = this._ctx.createMediaStreamDestination();
+        if (this._ctx.createConstantSource) {
+          const src = this._ctx.createConstantSource();
+          src.offset.value = 0; src.connect(dest); src.start();
+        }
+        this._stream = new MediaStream(
+          [...vs.getVideoTracks(), ...dest.stream.getAudioTracks()]);
+        v.srcObject = this._stream;
+        v.playsInline = true; v.setAttribute("playsinline", "");
+        v.muted = false; v.volume = 1;
+      }
+      /* resume は await しない ─ タップの活性が無いと**永遠に解決しない**promise を
+         返す実装があり、await すると prime ごと固まる。活性があれば同期的に走る */
+      try { if (this._ctx.state === "suspended") this._ctx.resume().catch(() => {}); } catch (_) {}
+      await v.play();
+      this.on = true;
+    } catch (e) {
+      /* 断られても壊さない。次のタップ(prime呼び出し)で再挑戦する */
+      this.on = false;
+      MC.log("書き出しプレビューの動画化は保留(canvas表示のまま): "
+        + ((e && (e.message || e.name)) || e));
+    }
+  },
+  /* 完成・失敗・閉じるで片付ける。ストリームは次の prime で使い回す */
+  stop() {
+    const v = document.getElementById("eoLiveVid");
+    if (v) { v.hidden = true; try { v.pause(); } catch (_) {} }
+    this.on = false;
   },
 };
 
@@ -162,11 +233,18 @@ MC.ui.exportOverlay = {
    何にどれだけ掛かったのか確かめようがなかった(失敗時の #errorLog だけが出口だった)。
    ここが速度改善の効果を実機で読むための唯一の窓口になる。
    ログ文字列を読み取るのではなく MC.exporter.lastStats(構造体)から組み立てる。 */
+/* ★ ログ系UIは管理者だけに出す(2026-08-02 優さん指示⑫「ログ全般は管理者
+   アカウントだけに」)。対象: 診断ログ(#eoStats)・失敗の記録(#asFailDetails)・
+   詳しいログ(#errorLog)・音の警告の「記録をコピー」。
+   一般ユーザーには文言と手がかり(asFailMsg/asFailHint 等)だけを見せる。
+   記録そのもの(MC.debug / buildReport)は積み続ける ─ 見せる場所を絞るだけ */
+MC.ui.isAdmin = () => Boolean(window.MZ_LIMITS && MZ_LIMITS.admin);
+
 MC.ui.showExportStats = () => {
   const host = MC.ui.$("#eoStats");
   const s = MC.exporter.lastStats;
   if (!host) return;
-  if (!s) { host.hidden = true; return; }
+  if (!s || !MC.ui.isAdmin()) { host.hidden = true; return; }
   const sec = ms => (ms / 1000).toFixed(1);
   const mmss = t => `${Math.floor(t / 60)}分${String(Math.round(t % 60)).padStart(2, "0")}秒`;
   /* 全角は2桁ぶんの幅を取るので、文字数ではなく表示幅で揃える。
@@ -328,6 +406,7 @@ MC.ui.showDone = res => {
      2本目で候補が開いたままになり同じ事故に戻る */
   MC.ui._scenesRevealed = false;
   MC.ui.setSaveState(false);
+  MC.ui.liftShareTool(false);   // 新しい完成では、シェアは出口の列に戻す
   /* ★ 「終わったとき」の呼び戻し(2026-08-02 優さん指示)。書き出しは数分かかり、
      おまかせなら合計3〜5分。ここが**本当に終わった**唯一の地点で、しかも
      このあと人が「動画を保存」を押さないと何も残らない ─ 呼び戻す価値が
@@ -365,6 +444,7 @@ MC.ui.showDone = res => {
     MC.ui.setSaveState(true);   // もう保存は済んでいる。候補を畳む理由がない
     mirror();
     MC.ui.renderSceneOffers();   // 別のシーンも作る(2026-08-01)
+    MC.ui.liftShareTool(true);   // 保存済みならシェアを持ち上げる(⑥)
     return;   // ディスク直書きは blob を持たないため音の自己点検はできない
   }
   /* 前回の「✓保存しました」の顔が残っていたら平常へ戻す(2回目の書き出し) */
@@ -396,6 +476,7 @@ MC.ui.showDone = res => {
   }
   mirror();
   MC.ui.renderSceneOffers();   // 別のシーンも作る(2026-08-01)
+  if (MC.ui._saved) MC.ui.liftShareTool(true);   // PC(自動DL済み)もシェアを持ち上げる(⑥)
   MC.ui.verifyAudioAfterExport(res);   // 音の自己点検(裏で。結果が出たら追記)
 };
 
@@ -416,7 +497,9 @@ MC.ui.verifyAudioAfterExport = async res => {
     const line = "⚠ 出来上がった動画に<b>音が入っていない可能性</b>があります"
       + (v.rms != null ? `（実測 ${v.rms.toFixed(4)}）` : "")
       + `。${MC.ui.esc(v.why || "")} `
-      + '<button type="button" class="mzp-retry" id="audioWarnCopy">記録をコピー</button>';
+      /* 「記録をコピー」は管理者だけ(2026-08-02 ⑫)。警告そのものは全員に出す */
+      + (MC.ui.isAdmin()
+          ? '<button type="button" class="mzp-retry" id="audioWarnCopy">記録をコピー</button>' : "");
     MC.ui._audioWarnLine = line;
     MC.ui._appendAudioWarn();
     MC.ui.toast("⚠ 音の確認で問題が見つかりました", 6000);
@@ -475,12 +558,14 @@ MC.ui.resetSaveUi = () => {
    出さない(「文字が多い」。名前は保存先のアプリが見せる) */
 MC.ui.notifySaved = (r, how) => {
   const size = r.blob ? `（${(r.blob.size / 1e6).toFixed(1)}MB）` : "";
-  const line = how === "share"
-    ? `✓ 保存しました${size}`
-    : `✓ ダウンロードに保存しました${size}`;
+  /* ★ 共有(share)では帯を出さない(2026-08-02 優さん指摘⑦「保存しましたが2つでる」)。
+     主ボタン自身が「✓ 保存しました」に変わり、サイズも見出し(#eoDoneText)に
+     既に出ている ─ 帯はボタンと同じ文をもう一度言うだけだった。
+     ダウンロード(PC)ではボタンの顔が変わらないので、帯が完了を言う従来のまま */
+  const line = how === "share" ? "" : `✓ ダウンロードに保存しました${size}`;
   ["#doneNote", "#eoDoneNote"].forEach(sel => {
     const n = MC.ui.$(sel);
-    if (n) { n.textContent = line; n.classList.add("save-ok"); }
+    if (n) { n.textContent = line; n.classList.toggle("save-ok", !!line); }
   });
   if (how === "share") {
     ["#saveBtn", "#eoSaveBtn"].forEach(sel => {
@@ -494,6 +579,9 @@ MC.ui.notifySaved = (r, how) => {
      (2026-08-02)。書き直すので、警告行を実らせた後に呼ぶ */
   MC.ui.setSaveState(true);
   MC.ui.renderSceneOffers();
+  /* 保存が済んだら、ツールのシェアを保存の直下へ持ち上げて目立たせる
+     (2026-08-02 優さん指示⑥)。未保存の間は動かさない(先に保存させる導線) */
+  MC.ui.liftShareTool(true);
   /* ★ 保存もお祝い(2026-08-02)。取り消し(AbortError)はここへ来ないので祝わない */
   MC.ui.celebrate("saved");
   MC.ui.toast(how === "share" ? "✔ 保存しました" : "✔ ダウンロードに保存しました");
@@ -557,7 +645,13 @@ MC.ui.sceneOffers = () => {
     if (!preset) return [];
     const lenSec = MC.highlight.presetSec(preset, s1 - s0);
     const audioClip = MC.getClip(MC.S.audioClipId);
-    const cands = MC.highlight.candidates(audioClip, lenSec, s0, s1);
+    /* ★ 候補窓は「全動画が重なっている区間」に制限(2026-08-02 優さん指摘⑤
+       「3つ目の動画がないところも選ばれている」)。音声は動画より長いことが
+       あり、音だけで探すと動画の無い時間帯に窓を置いてしまう。
+       共通部分が短ければ、作れる分だけ(candidates が自然に減らす) */
+    const [c0, c1] = MC.ui.coverRange(s0, s1);
+    if (!(c1 > c0 + 1)) return [];
+    const cands = MC.highlight.candidates(audioClip, lenSec, c0, c1);
     const pIn = MC.S.trimIn != null ? MC.S.trimIn : s0;
     const pOut = MC.S.trimOut != null ? MC.S.trimOut : pIn + lenSec;
     return cands.filter(c => {
@@ -565,6 +659,16 @@ MC.ui.sceneOffers = () => {
       return ov < c.dur * 0.5;   // 半分以上同じ絵になる候補は出さない
     });
   } catch (e) { MC.log("sceneOffers: " + e.message); return []; }
+};
+
+/* ============ 別のシーンの回数(2026-08-02 優さん決定⑭) ============
+   ゲストは1本まで・登録は何本でも。回数の正本は limits.js の maxExtraScenes。
+   数えるのは**このセッション内だけ**(リロードでリセットは許容 ─ 別シーンは
+   メモリ上の解析が生きている間しか速く作れないため、永続化する意味が薄い) */
+MC.ui._extraScenesMade = 0;
+MC.ui.extraScenesLeft = () => {
+  const lim = (window.MZ_LIMITS && MZ_LIMITS.maxExtraScenes);
+  return (lim == null ? Infinity : lim) - (MC.ui._extraScenesMade || 0);
 };
 
 /* 完成カードへ「別のシーンも作る」を実らせる。
@@ -587,6 +691,17 @@ MC.ui.renderSceneOffers = () => {
       h.after.insertAdjacentElement("afterend", el);
     }
     const [s0] = MC.ui.showRange();
+    /* ★ ゲストが1本を使い切ったら、候補の代わりに登録の誘いを1行だけ(⑭)。
+       責めずに、登録で何ができるかだけを言う */
+    if (MC.ui.extraScenesLeft() <= 0) {
+      el.classList.remove("mzso-hold");
+      el.innerHTML =
+        '<p class="mzso-title"><i class="fa-solid fa-clapperboard" aria-hidden="true"></i> '
+        + '別のシーンも作れます<span class="mzso-note">'
+        + '登録すると、別のシーンを何本でも作れます</span></p>'
+        + '<a class="mzso-signup" href="/#signup">無料登録する</a>';
+      continue;
+    }
     /* ★ 保存が済むまでは畳んでおく(2026-08-02 優さん実機指摘)。
        候補を押すと次の書き出しが始まり、いま作った動画は消える ─
        保存していなければ、数分の待ちがまるごと無駄になる。
@@ -618,6 +733,31 @@ MC.ui.renderSceneOffers = () => {
     });
     const rev = el.querySelector(".mzso-reveal");
     if (rev) rev.onclick = () => { MC.ui._scenesRevealed = true; MC.ui.renderSceneOffers(); };
+  }
+};
+
+/* ★ 保存が済んだら「このツールを友達にシェア」を保存バンドの直下へ持ち上げる
+   (2026-08-02 優さん指示⑥「もっと目立つように」)。ghost のまま診断ログの下に
+   沈んでいて、いちばん押してほしい瞬間(保存できて嬉しい直後)に見えなかった。
+   ・lift=true : ボタンを完成カードの保存表示(#doneNote/#eoDoneNote)の直後へ移し、
+     枠+薄い塗り(.share-lift)で強める。主役の保存より強くしない(主従: 保存>シェア)
+   ・lift=false: 出口の列(.eo-exit)の先頭へ戻す。次の完成は未保存から始まるため */
+MC.ui.liftShareTool = lift => {
+  const spots = [
+    { btn: "#eoShareTool", note: "#eoDoneNote", root: "#exportOverlay" },
+    { btn: "#doneShareTool", note: "#doneNote", root: "#doneCard" },
+  ];
+  for (const s of spots) {
+    const b = MC.ui.$(s.btn), note = MC.ui.$(s.note), root = MC.ui.$(s.root);
+    if (!b || !note || !root) continue;
+    const exit = root.querySelector(".eo-exit");
+    if (lift) {
+      note.insertAdjacentElement("afterend", b);
+      b.classList.add("share-lift");
+    } else {
+      if (exit && b.parentElement !== exit) exit.insertBefore(b, exit.firstElementChild);
+      b.classList.remove("share-lift");
+    }
   }
 };
 
@@ -686,6 +826,10 @@ MC.ui.shareTool = async () => {
 /* 候補を押したら、解析は使い回して書き出しまで自走する */
 MC.ui.makeAnotherScene = cand => {
   if (!cand || MC.ui._busy || (MC.exporter && MC.exporter.running)) return;
+  /* ★ 回数の門(⑭)。UIを差し替えるだけでなく実行側も塞ぐ ─
+     古い画面や直接呼び出しから回数を踏み越えさせない */
+  if (MC.ui.extraScenesLeft() <= 0) { MC.ui.renderSceneOffers(); return; }
+  MC.ui._extraScenesMade = (MC.ui._extraScenesMade || 0) + 1;
   MC.ui.exportOverlay.close();          // 完成の全画面から自走の全画面へ
   const dc = MC.ui.$("#doneCard"); if (dc) dc.hidden = true;
   MC.ui.runAuto({ scene: { key: cand.key, t: cand.t } });
@@ -735,6 +879,14 @@ MC.ui.renderRestoreNote = () => {
     + `${got.join("・")}を復元しました`;
   const slots = MC.ui.$("#clipSlots");
   if (slots) host.insertBefore(el, slots); else host.appendChild(el);
+};
+
+/* ★ 保存済みの前回状態(同期・カット割・範囲・モード)を静かに捨てる(2026-08-02 ⑪)。
+   「意図してツールを出た」導線から呼ぶ ─ 次に来たときは最初から始める。
+   resetProject と違い、いま開いている画面には触らない(出ていく途中なので) */
+MC.ui.resetSavedProject = () => {
+  try { localStorage.removeItem("marchcut_project"); } catch (_) {}
+  MC.restoreInfo = { sync: 0, cuts: false, trim: false };
 };
 
 MC.ui.resetProject = () => {
@@ -997,6 +1149,22 @@ MC.ui.showRange = () => {
   return [a, Math.max(a + 1, b)];
 };
 
+/* ★ 全動画が重なっている区間(グローバル秒。2026-08-02 優さん指摘⑤)。
+   各動画は offset〜offset+duration しか映せない。共通部分の外に窓を置くと、
+   短い動画のカメラが「無い時間帯」なのにカット割に選ばれ、黒や凍った絵になる。
+   引数の [s0,s1](演奏範囲)との交差を返す。動画が無ければ演奏範囲そのまま */
+MC.ui.coverRange = (s0, s1) => {
+  const vids = MC.S.clips.filter(c => !c.isAudio && !c.isImage);
+  if (!vids.length) return [s0, s1];
+  let lo = -Infinity, hi = Infinity;
+  for (const c of vids) {
+    const off = c.offset || 0;
+    lo = Math.max(lo, off);
+    hi = Math.min(hi, off + (c.duration || 0));
+  }
+  return [Math.max(s0, lo), Math.min(s1, hi)];
+};
+
 /* いま選ばれているプリセット(使えないものを選んでいたら、使える中で一番長いもの)。
    既定を「使える中で一番長い」にしているのは、これまでの動き(演奏まるごと)に
    一番近いのが「まるごと」だから ─ 上限が足りる人には今までどおりに見える */
@@ -1040,7 +1208,13 @@ MC.ui.applyLengthChoice = () => {
   if (!preset) return null;
   const lenSec = MC.highlight.presetSec(preset, s1 - s0);
   const audioClip = MC.getClip(MC.S.audioClipId);
-  const cands = MC.highlight.candidates(audioClip, lenSec, s0, s1);
+  /* ★ 開始位置の候補も「全動画が重なっている区間」から選ぶ(2026-08-02 ⑤)。
+     ただし共通部分が選んだ長さを収められないときは従来の演奏範囲に戻す ─
+     極端に短い動画1本のせいで、書き出し全体をその数秒へ押し込めない */
+  const [c0raw, c1raw] = MC.ui.coverRange(s0, s1);
+  const covered = (c1raw - c0raw) >= lenSec + 1;
+  const [t0, t1] = covered ? [c0raw, c1raw] : [s0, s1];
+  const cands = MC.highlight.candidates(audioClip, lenSec, t0, t1);
   /* 選ぶ余地があるか。候補の数ではなく**実際の自由度**で見る ─
      候補が1つしか作れない曲でも、余地があるなら自分で決められるべき */
   const room = (s1 - s0) - lenSec;
@@ -1048,7 +1222,7 @@ MC.ui.applyLengthChoice = () => {
   let cand;
   if (MC.S.startKey === "manual" && canChoose) {
     const base = MC.S.startAt == null ? cands[0].t : MC.S.startAt;
-    const t = MC.highlight.snapToBeat(base, audioClip, s0, s1 - lenSec);
+    const t = MC.highlight.snapToBeat(base, audioClip, t0, t1 - lenSec);
     MC.S.startAt = t;
     cand = { ...MC.highlight.MANUAL, t, dur: lenSec, z: 0 };
   } else {
@@ -3580,6 +3754,9 @@ MC.ui.autoStage = {
       const pre = MC.ui.$("#asFailLog");
       if (pre) pre.textContent = MC.ui.buildReport();
     } catch (e) {}
+    /* ★ 「この失敗の記録」ごと管理者だけに(2026-08-02 ⑫)。一般ユーザーには
+       上の asFailMsg(理由)と asFailHint(次の一手)だけを見せる */
+    { const det = MC.ui.$("#asFailDetails"); if (det) det.hidden = !MC.ui.isAdmin(); }
     const c = MC.ui.$("#asCancel"); if (c) c.hidden = true;
     /* 失敗の顔の選択肢は「もう一度/自分で仕上げる」の2つに絞ってある。
        常設の「動画を選び直す」も同じ理由で引っ込める(2026-08-02) */
@@ -3671,10 +3848,13 @@ MC.ui.autoStage = {
         else if (!("wakeLock" in navigator) && !S2.awake) this._wakeWarn = 2;
       }
       /* 設定アプリの手順は iPhone のものなので、iPhone にだけ出す */
+      /* ★ 文言は「責めない予告形」へ(2026-08-02 優さん指示③)。
+         「この端末では〜止められませんでした」は失敗の宣告で、まだ何も
+         起きていない人を不安にさせるだけだった。起きたときの直し方だけを言う */
       const t = this._wakeWarn === 1
         ? (MC.isIOS
-            ? "この端末では画面の消灯を止められませんでした。ときどき画面を触ってください（設定 → 画面表示と明るさ → 自動ロック を長めにしておくと確実です）"
-            : "この端末では画面の消灯を止められませんでした。ときどき画面を触ってください")
+            ? "途中で画面が暗くなる場合は、設定 → 画面表示と明るさ → 自動ロック を長めにしてください"
+            : "途中で画面が暗くなる場合は、ときどき画面を触ってください")
         : this._wakeWarn === 2
         ? "画面が消えると止まります。ときどき画面を触ってください"
         : "";
@@ -3872,6 +4052,9 @@ MC.ui.runAuto = async (opt) => {
   /* 通知の許可は「これから数分待つ」ことが確定した人にだけ、静かに一度だけ
      尋ねる(2026-08-02 優さん指示)。初回訪問でいきなり求めない */
   MC.ui.askNotifyPermissionOnce();
+  /* 書き出し中プレビューの<video>再生を、このタップの活性で解錠しておく
+     (おまかせの書き出しはプログラムからの click で、タップの活性が無い) */
+  MC.ui.eoLive.prime();
   /* ============ 別のシーンも作る(2026-08-01 優さん指示) ============
      完成後に scene:{key,t} 付きで呼ばれたら「2回目」。
      傾き・同期・音声選択・音楽解析は前回のものが生きているので飛ばし、
@@ -4398,6 +4581,9 @@ MC.ui.clearErrorLog = () => {
 MC.ui._showErrorLog = err => {
   const host = MC.ui.$("#errorLog");
   if (!host) return;
+  /* 一般ユーザーには出さない(2026-08-02 ⑫)。失敗の文言と次の一手は
+     p.fail / 失敗の顔(asFailMsg・asFailHint)が言う。記録は積んだまま */
+  if (!MC.ui.isAdmin()) { host.hidden = true; return; }
   const env = [
     `MarchinZ Switcher ${document.documentElement.getAttribute("data-mz-version") || "(版不明)"}`,
     `${navigator.userAgent}`,
@@ -4616,7 +4802,16 @@ MC.ui.renderFlowLock = () => {
   const ok = MC.ui.proAllowed();
   const card = document.querySelector('#modeSelect .mode-card[data-flow="pro"]');
   const lock = MC.ui.$("#flowProLock");
-  if (lock) lock.hidden = ok;
+  if (lock) {
+    lock.hidden = ok;
+    /* 鍵の札は「何が足りないか」を言う(2026-08-02 優さん指示⑩「こだわりはPCだけ」)。
+       登録済みの人に「登録した方が」と言うと、登録誘導と混同する */
+    if (!ok) {
+      const L = window.MZ_LIMITS || {};
+      lock.innerHTML = '<i class="fa-solid fa-lock" aria-hidden="true"></i> '
+        + ((L.member || L.unlimited) ? "パソコンで使えます" : "登録＋パソコンで使えます");
+    }
+  }
   if (card) {
     card.classList.toggle("mode-card--locked", !ok);
     /* aria-disabled にする(disabled にはしない)。押せなくすると理由を出せず、
@@ -4629,19 +4824,29 @@ MC.ui.renderFlowLock = () => {
 /* 鍵つきの「こだわり」を押したときの案内。理由と、次の一手(登録/ログイン)を出す */
 MC.ui.showFlowLockNote = () => {
   const n = MC.ui.$("#flowProNote");
+  /* ★ 何が足りないかで案内を分ける(2026-08-02 優さん指示⑩)。
+     ・登録済み×スマホ: 「パソコンでご利用いただけます」だけ。登録誘導と混同させない
+     ・未登録        : 従来の登録・ログイン案内(パソコンの条件も1語で言う) */
+  const L = window.MZ_LIMITS || {};
+  const memberOk = !!(L.member || L.unlimited);
   MC.ui.buzz([30]);   // 進まなかったことを触覚でも返す(無反応に見せない)
-  if (!n) { MC.ui.toast("「こだわり」は登録すると使えます"); return; }
+  if (!n) { MC.ui.toast(memberOk ? "「こだわり」はパソコンで使えます"
+                                 : "「こだわり」は登録すると使えます"); return; }
   n.hidden = false;
-  n.innerHTML = '<p class="mfn-title"><i class="fa-solid fa-lock" aria-hidden="true"></i> '
-    + '「こだわり」は登録した方が使えます</p>'
-    /* できることの説明は書かない(2026-08-02 レビュー)。すぐ上のカードに
-       「長さ・開始位置・カメラの切り替わり方・色を自分で決めます」と
-       同じ文が出ており、同じ画面に二度書くと文字が増えるだけになる。
-       ここで言うべきことは2つ ─ 登録は無料 / いま使える道がある */
-    + '<p class="mfn-body">登録は無料です。'
-    + '<b>「おまかせ」は登録なしで今すぐ使えます。</b></p>'
-    + '<div class="mfn-btns"><a class="btn primary mfn-go" href="/#signup">無料登録する</a>'
-    + '<a class="btn ghost mfn-go" href="/#login">ログイン</a></div>';
+  n.innerHTML = memberOk
+    ? '<p class="mfn-title"><i class="fa-solid fa-desktop" aria-hidden="true"></i> '
+      + '「こだわり」はパソコンでご利用いただけます</p>'
+      + '<p class="mfn-body">細かい調整の画面はパソコン向けです。'
+      + '<b>この端末では「おまかせ」が使えます。</b></p>'
+    : '<p class="mfn-title"><i class="fa-solid fa-lock" aria-hidden="true"></i> '
+      + '「こだわり」は登録した方がパソコンで使えます</p>'
+      /* できることの説明は書かない(2026-08-02 レビュー)。すぐ上のカードに
+         同じ文が出ており、二度書くと文字が増えるだけになる。
+         ここで言うべきことは2つ ─ 登録は無料 / いま使える道がある */
+      + '<p class="mfn-body">登録は無料です。'
+      + '<b>「おまかせ」は登録なしで今すぐ使えます。</b></p>'
+      + '<div class="mfn-btns"><a class="btn primary mfn-go" href="/#signup">無料登録する</a>'
+      + '<a class="btn ghost mfn-go" href="/#login">ログイン</a></div>';
   n.scrollIntoView({ behavior: "smooth", block: "nearest" });
 };
 
@@ -4974,6 +5179,9 @@ MC.ui.wire = () => {
     /* pointer-events はキーボード操作を止めない。分析中に Tab→Enter が届くと
        書き出しが並走する(2026-07-26 レビュー指摘) */
     if (MC.ui._busy) return;
+    /* こだわりからの実タップならここが活性。おまかせの合成clickなら
+       runAuto 側の prime が済んでいる(どちらでも二重には作らない) */
+    MC.ui.eoLive.prime();
     MC.preview.pause();
     const prog = $("#exportProgress");   // 旧・パネル内進捗(全画面移行後は使わない)
     $("#doneCard").hidden = true;
@@ -5131,11 +5339,28 @@ MC.ui.wire = () => {
      やり直すのか・別の動画にするのかを選び直す場所は、最初の
      「作る動画の種類」(1段目)のほう。行き先は既存の showModeSelect に乗せる
      (showModeSelect が必ず1段目=modeStepKind から出す)。
-     成功後の「閉じる」は今までどおり工程画面に残る(まだ保存や別シーンがある) */
+     ★ 成功後の「閉じる」は**ツール一覧**へ(2026-08-02 優さん指示⑧
+     「さっきので閉じると、こだわりのuiに戻る。ここは、ツール一覧に戻ってほしい」)。
+     作り終えた人の用事はこのツールでは済んでいて、こだわりの工程画面に
+     立たせても次にやることが無い。行き先はトップページのクリエイター節。
+     未保存のまま閉じようとしたら1回だけ確認する ─ ページを離れると
+     いま作った動画(メモリ上のblob)は消えるため、黙って失わせない */
+  MC.ui.goToolList = () => {
+    MC.ui.resetSavedProject();   // 意図した退出=次は最初から(⑪)
+    location.href = "/#creators-heading";
+  };
   const eoCloseByUser = () => {
     const failed = $("#exportOverlay").classList.contains("eo-failed");
+    if (failed) {
+      MC.ui.exportOverlay.close();
+      MC.ui.showModeSelect();
+      return;
+    }
+    if (!MC.ui._saved && MC.exporter.lastResult && MC.exporter.lastResult.blob) {
+      if (!confirm("まだ保存していません。閉じると、いま作った動画は消えます。\n閉じますか？")) return;
+    }
     MC.ui.exportOverlay.close();
-    if (failed) MC.ui.showModeSelect();
+    MC.ui.goToolList();
   };
   $("#eoClose").onclick = eoCloseByUser;
   document.addEventListener("keydown", ev => {

@@ -1245,7 +1245,20 @@ MC.exporter.livePreview = (src) => {
     const dw = Math.max(2, Math.round(sw * k)), dh = Math.max(2, Math.round(sh * k));
     if (el.width !== dw || el.height !== dh) { el.width = dw; el.height = dh; }
     el.getContext("2d").drawImage(src, 0, 0, dw, dh);
-    el.hidden = false;
+    /* ★ <video>再生モード(2026-08-02 優さん指示④)。MC.ui.eoLive が
+       captureStream で canvas を <video> に流せていれば、表示は <video> 側。
+       canvas は描き続ける(それがストリームの源)が、画面には出さない。
+       requestFrame は「描いた今のコマを流す」明示の合図(隠れタブ検証で確立した
+       captureStream(0)+requestFrame と同じ手。fps自動でも保険で叩く) */
+    const wk = window.MC && MC.ui && MC.ui.eoLive;
+    if (wk && wk.on) {
+      try { if (wk._vTrack && wk._vTrack.requestFrame) wk._vTrack.requestFrame(); } catch (_) {}
+      const v = document.getElementById("eoLiveVid");
+      if (v && v.hidden) v.hidden = false;
+      el.hidden = true;
+    } else {
+      el.hidden = false;
+    }
   } catch (e) { /* プレビューが描けなくても書き出しは止めない */ }
 };
 /* ★ 凍結明けの恩赦の下限(2026-08-02 push前レビュー)。見張りのタイマー同士の

@@ -380,7 +380,9 @@ html:has(body.mz-wipe-pick), body.mz-wipe-pick {
 .wp-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--navy);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wp-meta { font-size: 12px; color: var(--tx2); font-variant-numeric: tabular-nums; }
-.wp-foot { margin-top: 16px; display: flex; justify-content: center; gap: 10px; }
+/* 戻る(#wpBack)は左端(2026-08-02 優さん指示⑨)。やり直し(#wpReset)は右へ離す */
+.wp-foot { margin-top: 16px; display: flex; justify-content: flex-start; gap: 10px; }
+.wp-foot #wpReset { margin-left: auto; }
 
 /* ============ タイムライン(スイッチング/ワイプ) ============ */
 .timeline-wrap { width: 100%; max-width: 720px; }
@@ -926,6 +928,12 @@ html, body { max-width: 100%; overflow-x: clip; }
   border-radius: 10px; cursor: pointer; }
 .mzso-reveal i { color: var(--tx2); }
 .mzso-reveal:active { transform: scale(.98); }
+/* ★ ゲストが1本使い切ったあとの登録の誘い(2026-08-02 ⑭)。責めずに1行+1ボタン */
+.mzso-signup { display: flex; align-items: center; justify-content: center;
+  min-height: 44px; margin-top: 4px; border: 1px solid rgba(30, 79, 214, .35);
+  border-radius: 10px; color: var(--acc); font-size: 13.5px; font-weight: 700;
+  text-decoration: none; background: rgba(30, 79, 214, .05); }
+.mzso-signup:active { transform: scale(.98); }
 /* 押せない理由の説明。11pxの薄いhintでは、ブロックの理由を伝える文として弱い */
 .audio-gate-hint { margin-top: 10px; padding: 9px 11px; font-size: 12.5px; line-height: 1.6;
   color: var(--tx2); background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; }
@@ -1515,7 +1523,10 @@ body.tab-pro #easyPane { display: none !important; }
 
 /* 選択画面 2段目の「種類を選び直す」(2026-08-01)。
    見出しの上に置く小さな戻り道。44ptは割らない */
-.mode-step-back { display: inline-flex; align-items: center; min-height: 44px;
+/* ★ 左端に置く(2026-08-02 優さん指示⑨)。.mode-inner が text-align:center なので、
+   inline のままだと戻るが中央に浮いて見つけられなかった */
+.mode-step-back { display: flex; align-items: center; min-height: 44px;
+  margin-right: auto; text-align: left;
   padding: 0 4px; margin-bottom: 2px; border: none; background: none;
   color: var(--acc); font: inherit; font-size: 14px; cursor: pointer; }
 .mode-step-back:active { opacity: .6; }
@@ -1867,6 +1878,14 @@ html:has(body.mz-auto-stage), body.mz-auto-stage {
    同じ緑や青の塗りにすると「保存」と取り違える(いま直したばかりの事故と同型) */
 .eo-share-tool { font-size: 13px; font-weight: 600; }
 .eo-share-tool i { color: var(--acc); }
+/* ★ 保存が済んだら、シェアを保存バンドの直下へ持ち上げて目立たせる
+   (2026-08-02 優さん指示⑥「ツールをシェアをもっと目立つように」)。
+   主従は 保存(塗り) > シェア(枠+薄い塗り) > その他(ghost) ─
+   主役の保存より強くしない(塗り切らない・アクセントは枠と文字色まで) */
+.eo-share-tool.share-lift {
+  border: 1.5px solid var(--acc); color: var(--acc);
+  background: rgba(30, 79, 214, .06); font-size: 14px; font-weight: 700;
+}
 
 .as-fail-copy, #audioWarnCopy, .mzp-retry {
   background: #fff !important; color: var(--acc) !important;

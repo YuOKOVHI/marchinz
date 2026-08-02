@@ -1,6 +1,17 @@
 "use strict";
 /* ============ 起動 ============ */
 
+/* ★ 戻る/進むで bfcache から丸ごと蘇ったら読み直す(2026-08-02 優さん報告⑪
+   「一度選んでツールに戻ったとき、前に選んでいた動画が残って、さらにエラーログがでる」)。
+   iOS Safari はページを離れてもJSの状態ごと凍結保存し、戻ると**そのまま再開**する。
+   前回の動画・進捗の顔・エラー表示・(凍結で殺された)デコーダまで蘇るため、
+   エラーだけが残った壊れた画面になる。意図した再訪はリセットで開始する。
+   リロード事故(書き出し中に落ちた等)は persisted=false なので、
+   同期・カット割の復元(localStorage)は従来どおり効く */
+window.addEventListener("pageshow", e => {
+  if (e.persisted) location.reload();
+});
+
 window.addEventListener("DOMContentLoaded", async () => {
   MC.preview.init(document.getElementById("cv"));
   MC.ui.wire();
@@ -51,6 +62,15 @@ window.addEventListener("DOMContentLoaded", async () => {
      出力の種類は、おまかせなら自動スイッチング固定。
      こだわりの人は「← 種類を変える」で選び直せる。
      mode の保存(state.js)はそのまま残す ─ 前回の種類を覚えている */
+
+  /* ★ 意図してツールを出る導線では、保存済みの前回状態も捨てる(2026-08-02 ⑪
+     「一度戻ると、リセットした状態でスタート」)。対象は
+     「← 戻る」(ヘッダー)・「最初から作り直す」(完成画面2箇所)・フッターの戻り。
+     クラッシュ・リロードはここを通らないので、復元(続きから)は生きたまま */
+  for (const sel of [".back-link", "#eoToTools", "#doneToTools", ".foot-link"]) {
+    document.querySelectorAll(sel).forEach(a =>
+      a.addEventListener("click", () => { MC.ui.resetSavedProject(); }));
+  }
 
   // OPFSへ本当に書けるかを一度だけ実測してキャッシュ(G-1)。
   // これで maxExportableSec が「上限なし」と嘘をつかなくなる

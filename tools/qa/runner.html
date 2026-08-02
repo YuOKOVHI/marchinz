@@ -2514,11 +2514,13 @@ async function countSamples(ns, file, fromSec) {
   }
 
   group("⑭ 取り込み・書き出しの上限(会員種別 × 端末)");
-  await test("★4通りの上限が指示どおり(ゲスト1分未満 / 登録スマホ3分 / 登録PC10分)", async () => {
+  await test("★4通りの上限が指示どおり(ゲスト1分未満 / 登録スマホ2分 / 登録PC10分)", async () => {
+    /* ★ 2026-08-02 優さん最終決定: ゲスト59秒 / 登録×スマホ120秒(3分→2分) /
+       登録×PC600秒。取り込みの**本数**の上限は全員元から存在しない(長さだけ) */
     const cases = [
       { name: "ゲスト×スマホ", o: { mobile: true },                video: 300.5, exp: 59 },
       { name: "ゲスト×PC",     o: { mobile: false },               video: 300.5, exp: 59 },
-      { name: "登録×スマホ",   o: { mobile: true, member: true },  video: 300.5, exp: 180 },
+      { name: "登録×スマホ",   o: { mobile: true, member: true },  video: 300.5, exp: 120 },
       { name: "登録×PC",       o: { mobile: false, member: true }, video: 720.5, exp: 600 },
     ];
     const got = [];
@@ -2547,6 +2549,17 @@ async function countSamples(ns, file, fromSec) {
     for (const p of g.filter(p => p.locked)) {
       if (!p.unlock) throw new Error(`${p.label} に解除の道が書かれていない`);
     }
+    /* ゲスト×スマホの「ミドル(2分)」: 登録だけで届く(スマホ登録=2分) */
+    const gm = g.find(p => p.id === "mid");
+    if (!/登録/.test(gm.unlock) || /パソコン/.test(gm.unlock)) {
+      throw new Error("ゲストの「ミドル」の解除の道が実態と違う(登録だけで届く): " + gm.unlock);
+    }
+    /* ゲスト×スマホの「まるごと」: 登録だけでは伸びない(スマホ登録=2分)ので
+       「登録して、パソコンで」と両方言うこと(嘘の誘い文句を残さない) */
+    const gf = g.find(p => p.id === "full");
+    if (!/登録/.test(gf.unlock) || !/パソコン/.test(gf.unlock)) {
+      throw new Error("ゲストの「まるごと」の解除の道が実態と違う: " + gf.unlock);
+    }
     const m = (await loadLimits({ mobile: true, member: true })).exportPresets();
     eq(m.filter(p => !p.locked).map(p => p.id).join(","), "short,mid", "登録×スマホ");
     // スマホの登録ユーザーには「パソコンで」と言う(登録を勧めても伸びないため)
@@ -2555,6 +2568,29 @@ async function countSamples(ns, file, fromSec) {
     const pc = (await loadLimits({ mobile: false, member: true })).exportPresets();
     eq(pc.filter(p => p.locked).length, 0, "登録×PCで鍵の数");
     return "ゲスト=1 / 登録スマホ=2 / 登録PC=3";
+  });
+
+  await test("★上限いっぱいの書き出し経路: 59秒/120秒=一括・600秒=分割(90秒パート)", async () => {
+    /* 2026-08-02 ⑬最終(59/120/600)と分割の門(PART_MIN_TOTAL=135)の整合。
+       ゲスト59秒・登録スマホ120秒は一括(分割の複雑さを持ち込まない)、
+       登録PCの長尺は分割が受け持つ ─ この対応が崩れたら気づくための見張り */
+    const w = await compEnv();
+    const X = w.MC.exporter;
+    const guest = await loadLimits({ mobile: true });
+    const mMob = await loadLimits({ mobile: true, member: true });
+    const mPc = await loadLimits({ mobile: false, member: true });
+    const keep = { opfs: X.opfsSupported, off: X.partsOff };
+    try {
+      X.partsOff = false;
+      X.opfsSupported = () => true;
+      if (X.partsApplicable(guest.maxExportSec, null)) throw new Error("ゲスト59秒が分割になっている");
+      if (X.partsApplicable(mMob.maxExportSec, null)) throw new Error("登録スマホ120秒が分割になっている(門135秒の内のはず)");
+      if (!X.partsApplicable(mPc.maxExportSec, null)) throw new Error("登録PC600秒が分割経路に入らない");
+      if (X.partsApplicable(mPc.maxExportSec, {})) throw new Error("保存先ハンドルあり(PCの直書き)でも分割に入る");
+      X.opfsSupported = () => false;
+      if (X.partsApplicable(mPc.maxExportSec, null)) throw new Error("OPFS無しでも分割に入る(書き先が無い)");
+    } finally { X.opfsSupported = keep.opfs; X.partsOff = keep.off; }
+    return `59s/120s=一括(門${X.PART_MIN_TOTAL}s) / 600s=分割 / 直書き・OPFS無し=従来`;
   });
 
   /* ===== ⑮ どこから始めるか(見どころ候補) ===== */
@@ -2713,9 +2749,10 @@ async function countSamples(ns, file, fromSec) {
     S.exportPreset = "mid"; S.startKey = "start";
     w.MC.ui.renderLengthSec();
     const [ti2, to2] = w.MC.trimRange();
-    if (Math.abs((to2 - ti2) - 180) > 0.01) throw new Error(`選び直しが効かない: ${(to2 - ti2).toFixed(2)}`);
+    /* ミドルは120秒(2026-08-02 優さん決定: 180→120) */
+    if (Math.abs((to2 - ti2) - 120) > 0.01) throw new Error(`選び直しが効かない: ${(to2 - ti2).toFixed(2)}`);
     eq(S.showOut, 510, "選び直しても演奏の範囲は不変");
-    return "59秒(終端)→180秒(冒頭) 切り替え可";
+    return "59秒(終端)→120秒(冒頭) 切り替え可";
   });
   await test("★長さのカードは、使える尺と『解除したら使える尺』を取り違えない", async () => {
     const w = await compEnv();
@@ -2739,7 +2776,7 @@ async function countSamples(ns, file, fromSec) {
          何が違うのか分からないカードが並ぶ(2026-07-31 スクショで発覚) */
       if (new Set(durs).size !== 3) throw new Error("3枚の長さが同じに見える: " + durs.join(" / "));
       eq(durs[0], "59秒", "ショート(使える=実際に書き出される尺)");
-      eq(durs[1], "3分", "ミドル(鍵つき=解除したら使える尺)");
+      eq(durs[1], "2分", "ミドル(鍵つき=解除したら使える尺。2026-08-02 180→120秒)");
       eq(durs[2], "8分30秒", "まるごと(鍵つき=解除したら使える尺)");
       /* 鍵つきを押したら、解除の道と登録リンクが画面に出る(押しても無反応にしない) */
       w.document.querySelectorAll("#lenPresets .len-card.locked")[0].click();
@@ -2804,8 +2841,8 @@ async function countSamples(ns, file, fromSec) {
     const song = mkSong(510);
     song.beatsData = { beats: Array.from({ length: 1020 }, (_, i) => i * 0.5), bpm: 120, period: 0.5 };
     Object.assign(w.MC.getClip(1), song);
-    /* 1分で終盤(7:20)を選んでおいて、3分へ伸ばす。
-       そのままだと 440+180=620秒 で演奏(510秒)を60秒も越える */
+    /* 1分で終盤(7:20)を選んでおいて、ミドル(2分)へ伸ばす。
+       そのままだと 440+120=560秒 で演奏(510秒)を50秒も越える */
     S.exportPreset = "short"; S.startKey = "manual"; S.startAt = 440;
     w.MC.ui.refreshJourney();
     eq(S.trimIn, 440, "1分のときのIN");
@@ -2813,8 +2850,8 @@ async function countSamples(ns, file, fromSec) {
     w.MC.ui.renderLengthSec();
     if (S.trimOut > 510.01) throw new Error(`長さを伸ばしたら演奏をはみ出した: ${S.trimOut}`);
     eq(S.startKey, "manual", "長さを変えても「自分で選ぶ」のまま");
-    if (Math.abs((S.trimOut - S.trimIn) - 180) > 0.01) {
-      throw new Error(`3分になっていない: ${(S.trimOut - S.trimIn).toFixed(2)}`);
+    if (Math.abs((S.trimOut - S.trimIn) - 120) > 0.01) {
+      throw new Error(`2分になっていない: ${(S.trimOut - S.trimIn).toFixed(2)}`);
     }
     return `IN 440s → ${S.trimIn}s へ引き戻し・OUT ${S.trimOut}s`;
   });
@@ -3378,15 +3415,17 @@ async function countSamples(ns, file, fromSec) {
       if (await w.MC.ui.saveResult() !== "cancelled") throw new Error("取り消しを区別できない");
       if ($("#doneNote").textContent !== before) throw new Error("取り消したのに保存できたと言う");
       /* ③ 成功したら画面の主役が変わる(2026-08-01 優さん指示
-         「保存完了ももっとわかりやすく」): 主ボタンが「✓ 保存しました」(緑)に
-         変わり、緑の帯にサイズが残る。ファイル名は出さない(「文字が多い」) */
+         「保存完了ももっとわかりやすく」): 主ボタンが「✓ 保存しました」(緑)に変わる。
+         ★ 帯は出さない(2026-08-02 優さん指摘⑦「保存しましたが2つでる」)。
+           ボタンと帯が同じ文を二度言っていた ─ 共有ではボタンが状態を語り、
+           サイズは見出しに既にあるので、帯は空にする */
       w.MC.ui._share = () => Promise.resolve();
       if (await w.MC.ui.saveResult() !== "saved") throw new Error("成功が返らない");
-      if (!/保存しました.*MB/.test($("#doneNote").textContent)) {
-        throw new Error("成功したのに完了画面に出ない: " + $("#doneNote").textContent);
+      if (/保存しました/.test($("#doneNote").textContent)) {
+        throw new Error("帯がボタンと同じ「保存しました」を重ねて言う(⑦の再発): " + $("#doneNote").textContent);
       }
-      if (!$("#doneNote").classList.contains("save-ok")) {
-        throw new Error("成功の帯(save-ok)が付かない");
+      if ($("#doneNote").classList.contains("save-ok")) {
+        throw new Error("空の帯に save-ok の色が残る");
       }
       if (!$("#saveBtn").classList.contains("saved")
           || !/保存しました/.test($("#saveBtn").textContent)) {
@@ -4052,17 +4091,33 @@ async function countSamples(ns, file, fromSec) {
     return `錠前${made.length}本: 古い通知では消えない / 自分の通知では消える`;
   });
 
-  await test("★失敗の記録が、そのまま送れる形で出る", async () => {
+  await test("★失敗の記録が、そのまま送れる形で出る(管理者のみ。一般には文言と手がかりだけ)", async () => {
     const w = await compEnv();
     compReset(w);
     const A = w.MC.ui.autoStage;
     const cp = w.document.getElementById("asCopy");
     if (!cp) throw new Error("記録をコピーするボタンが無い");
+    /* ★ ログ系UIは管理者だけ(2026-08-02 優さん指示⑫)。QA環境は admin=false なので
+       ここで一時的に名乗る。先に「一般ユーザーには出ない」も見る */
+    const keepAdmin = (w.MZ_LIMITS || {}).admin;
     A.open();
     try {
+      w.MZ_LIMITS.admin = false;
+      w.MC.ui._lastFailNotify = Date.now();
+      A.fail(new Error("QAのわざとの失敗(一般)"));
+      if (!w.document.getElementById("asFailDetails").hidden) {
+        throw new Error("一般ユーザーに「この失敗の記録」が出ている(⑫)");
+      }
+      const msg = w.document.getElementById("asFailMsg").textContent;
+      if (!/QAのわざとの失敗\(一般\)/.test(msg)) throw new Error("一般ユーザーへの文言まで消えている");
+      A.close(); A.open();
+      w.MZ_LIMITS.admin = true;
       w.MC.log("QAの記録テスト用の1行");
       A.step("finish");
       A.fail(new Error("QAのわざとの失敗"));
+      if (w.document.getElementById("asFailDetails").hidden) {
+        throw new Error("管理者なのに記録が出ない");
+      }
       if (cp.getBoundingClientRect().height < 44) throw new Error("コピーのボタンが44pt未満");
       /* クリップボードは端末しだいで断られる。断られても長押しで拾えるよう、
          組み立てた本文は必ず画面の要素へ入れてから写しにいく ─ そこを見る */
@@ -4074,8 +4129,8 @@ async function countSamples(ns, file, fromSec) {
         if (!t.includes(must)) throw new Error("記録に「" + must + "」が入っていない");
       }
       if (!/Mozilla|AppleWebKit|HeadlessChrome/.test(t)) throw new Error("端末の情報が入っていない");
-    } finally { A.close(); }
-    return "版・端末・エラー・ログの4点が本文に入る / 44pt";
+    } finally { w.MZ_LIMITS.admin = keepAdmin; A.close(); w.MC.ui._lastFailNotify = 0; }
+    return "一般=文言と手がかりのみ / 管理者=版・端末・エラー・ログの4点+44pt";
   });
 
 
@@ -5238,10 +5293,12 @@ async function countSamples(ns, file, fromSec) {
   });
 
   await test("★「こだわり」を選べるかの正本は limits.js の1箇所(proAllowed)", async () => {
+    /* ★ 2026-08-02 優さん指示⑩「こだわりは、pcだけにしよう」:
+       登録 かつ PC のみ。登録×スマホも不可になった。admin/手元環境は端末を問わず可 */
     const cases = [
       { name: "ゲスト×スマホ", o: { mobile: true },                pro: false },
       { name: "ゲスト×PC",     o: { mobile: false },               pro: false },
-      { name: "登録×スマホ",   o: { mobile: true, member: true },  pro: true  },
+      { name: "登録×スマホ",   o: { mobile: true, member: true },  pro: false },
       { name: "登録×PC",       o: { mobile: false, member: true }, pro: true  },
       { name: "管理者",        o: { admin: true, mobile: true },   pro: true  },
       { name: "手元環境",      o: { host: "localhost" },           pro: true  },
@@ -5268,7 +5325,7 @@ async function countSamples(ns, file, fromSec) {
     const w = await compEnv();
     const d = w.document;
     const L = w.MZ_LIMITS;
-    const keepPro = L.proAllowed;
+    const keepPro = L.proAllowed, keepMem = L.member, keepUnl = L.unlimited;
     /* ★ 自走そのものは差し替える。おまかせのカードは押した瞬間に runAuto を
        始めることがあり、setBusy(true) が #modeSelect のボタンを全部 disabled に
        する(正しい挙動)。すると次に押す「こだわり」のクリックが届かず、
@@ -5277,8 +5334,9 @@ async function countSamples(ns, file, fromSec) {
     let autoRuns = 0;
     w.MC.ui.runAuto = async () => { autoRuns++; };
     try {
-      /* 手元環境(localhost)は上限なしなので、正本の値だけをゲストへ倒す */
-      L.proAllowed = false;
+      /* 手元環境(localhost)は上限なしなので、正本の値をゲスト相当へ倒す。
+         案内文は member/unlimited を見て分岐する(⑩)ため、そちらも倒す */
+      L.proAllowed = false; L.member = false; L.unlimited = false;
       w.MC.ui.showModeSelect();
       w.MC.ui._pendingMode = "switch";
       w.MC.ui.showModeStep("flow");
@@ -5301,6 +5359,16 @@ async function countSamples(ns, file, fromSec) {
       for (const a of note.querySelectorAll("a")) {
         if (a.getBoundingClientRect().height < 44) throw new Error("案内のボタンが44ptに満たない");
       }
+      /* ★ 登録済み×スマホ(⑩): 登録誘導と混同させない ─ パソコンの案内だけ */
+      L.member = true;
+      w.MC.ui.showFlowLockNote();
+      const txt2 = note.textContent;
+      if (!/パソコン/.test(txt2)) throw new Error("登録済みへのパソコン案内が無い: " + txt2);
+      if (/無料登録/.test(txt2) || note.querySelector('a[href="/#signup"]')) {
+        throw new Error("登録済みの人に登録を勧めている(混同): " + txt2);
+      }
+      if (!/おまかせ/.test(txt2)) throw new Error("登録済み×スマホに、いま使える道(おまかせ)を示していない");
+      L.member = false;
       /* おまかせは今までどおり誰でも使える */
       d.querySelector('#modeSelect .mode-card[data-flow="easy"]').click();
       if (d.getElementById("workspace").hidden) throw new Error("ゲストがおまかせにも入れない");
@@ -5318,8 +5386,11 @@ async function countSamples(ns, file, fromSec) {
       proBtn.click();
       if (d.getElementById("workspace").hidden) throw new Error("登録済みなのにこだわりへ入れない");
       eq(w.MC.ui._setupTab, "pro", "選んだ進め方");
-      return `ゲスト=止めて案内 / おまかせは通す(自走${autoRuns}回) / 登録済み=こだわりへ入れる`;
-    } finally { L.proAllowed = keepPro; w.MC.ui.runAuto = keepAuto; w.MC.ui.showModeSelect(); }
+      return `ゲスト=止めて案内 / 登録×スマホ=PC案内(登録誘導なし) / おまかせは通す(自走${autoRuns}回) / 可なら入れる`;
+    } finally {
+      L.proAllowed = keepPro; L.member = keepMem; L.unlimited = keepUnl;
+      w.MC.ui.runAuto = keepAuto; w.MC.ui.showModeSelect();
+    }
   });
 
   await test("★終わったときは端末から呼び戻す（バイブ・通知・タブの題）", async () => {
@@ -5453,10 +5524,13 @@ async function countSamples(ns, file, fromSec) {
         if (!/画面が消えると止まります/.test(r.text)) throw new Error("文言: " + r.text);
       }
       if (keep.wkAPI) Object.defineProperty(w.Navigator.prototype, "wakeLock", keep.wkAPI);
-      /* ④ 断られて代役も失敗 → 従来の警告。iPhone の設定手順は iPhone にだけ */
+      /* ④ 断られて代役も失敗 → 警告。iPhone の設定手順は iPhone にだけ。
+         ★ 文言は「責めない予告形」(2026-08-02 優さん指示③)。
+           「止められませんでした」という失敗の宣告を出さない */
       r = put({ awake: false, wakeDenied: "Permission was denied" });
       if (r.warn !== 1 || !r.shown) throw new Error("両方だめ(断られた)なのに警告が出ない");
-      if (!/画面の消灯を止められませんでした/.test(r.text)) throw new Error("文言: " + r.text);
+      if (!/途中で画面が暗くなる場合は/.test(r.text)) throw new Error("文言: " + r.text);
+      if (/止められませんでした/.test(r.text)) throw new Error("失敗の宣告が残っている: " + r.text);
       if (!w.MC.isIOS && /自動ロック/.test(r.text)) {
         throw new Error("iPhone向けの設定手順が iPhone以外に出ている");
       }
@@ -5547,42 +5621,332 @@ async function countSamples(ns, file, fromSec) {
     return "おまかせ→#exportBtn 合流 / コマループ3経路すべてに注入";
   });
 
-  group("㊲ プレビューの円ゲージとテキストの大きさ(2026-08-02 優さん指示「動画の6〜7割に」)");
+  group("㊲ プレビューの円ゲージとテキスト(2026-08-02 優さん指示①②「文字に上限・タイトル→ゲージ→文字の順」)");
 
-  await test("★作業中のゲージ+テキストは描画領域の6〜7割・縦型は特に大きい", async () => {
+  await test("★並びは 動画タイトル→円ゲージ→説明文字・重なりゼロ・文字ははみ出さない(9:16/16:9 実測)", async () => {
     const w = await compEnv();
     compReset(w);
     const P = w.MC.preview;
-    /* 実物の drawOverlayMessage をオフスクリーンへ描かせて、白い画素の
-       外接幅を実測する(フォント係数の検算でなく「出た絵」を測る) */
+    /* 実物の drawOverlayMessage をオフスクリーンへ描かせ、
+       ①返り値の寸法(輪と文字の位置)で「順序と重なり」を、
+       ②画素の外接で「枠からのはみ出し」を測る */
     const draw = (W, H, spinner) => {
       const cv = w.document.createElement("canvas");
       cv.width = W; cv.height = H;
       const ctx = cv.getContext("2d", { willReadFrequently: true });
       ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H);
-      P.drawOverlayMessage.call({ canvas: cv, ctx, fitText: P.fitText },
+      const m = P.drawOverlayMessage.call({ canvas: cv, ctx, fitText: P.fitText },
         spinner ? "映像分析中..." : "ここは書き出されません",
-        "1 / 3 本目・Timeline 3.mov",
-        spinner ? { spinner: true, ratio: 0.15 } : undefined);
+        "3 / 3 本目・Timeline 1.mov",
+        spinner ? { spinner: true, ratio: 0.87 } : undefined);
       const d = ctx.getImageData(0, 0, W, H).data;
-      let x0 = W, x1 = 0;
+      let x0 = W, x1 = 0, y0 = H, y1 = 0;
       for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 2) {
-        if (d[(y * W + x) * 4] > 140) { if (x < x0) x0 = x; if (x > x1) x1 = x; }
+        if (d[(y * W + x) * 4] > 140) {
+          if (x < x0) x0 = x; if (x > x1) x1 = x;
+          if (y < y0) y0 = y; if (y > y1) y1 = y;
+        }
       }
-      return x1 > x0 ? x1 - x0 : 0;
+      return { m, x0, x1, y0, y1 };
     };
-    const land = draw(1920, 1080, true);       // 16:9
-    const port = draw(1080, 1920, true);       // 9:16(縦型)
-    const landR = land / 1080, portR = port / 1080;   // どちらも短辺=1080に対する比
-    /* 6〜7割: 実測が0.55を割ったら小さすぎ、0.95を超えたらはみ出しの危険 */
-    if (landR < 0.55 || landR > 0.95) throw new Error(`16:9 の塊が短辺の${(landR * 100).toFixed(0)}%(6〜7割でない)`);
-    if (portR < 0.60 || portR > 0.95) throw new Error(`9:16 の塊が幅の${(portR * 100).toFixed(0)}%(6〜7割でない)`);
-    /* 「特に縦型はもっと大きく」: 縦型の比が16:9を下回らないこと */
-    if (portR < landR) throw new Error(`縦型(${(portR * 100).toFixed(0)}%)が16:9(${(landR * 100).toFixed(0)}%)より小さい`);
-    /* 常設の案内(ゲージなし)まで巨大化していないこと */
+    for (const [W, H, name] of [[1080, 1920, "9:16"], [1920, 1080, "16:9"]]) {
+      const { m, x0, x1, y0, y1 } = draw(W, H, true);
+      if (!m) throw new Error(name + ": 寸法が返らない(レイアウトの実測ができない)");
+      /* 順序: 動画タイトル(補足) → 輪 → 説明。それぞれ触れない(重なりゼロ) */
+      if (!(m.subY + m.subFont / 2 <= m.ringTop)) {
+        throw new Error(`${name}: 動画タイトルが輪に重なる(下端${Math.round(m.subY + m.subFont / 2)} > 輪上端${Math.round(m.ringTop)})`);
+      }
+      if (!(m.titleY - m.titleFont / 2 >= m.ringBottom)) {
+        throw new Error(`${name}: 説明の文字が輪に重なる(上端${Math.round(m.titleY - m.titleFont / 2)} < 輪下端${Math.round(m.ringBottom)})`);
+      }
+      /* 文字の上限(①): ゲージ拡大の係数をそのまま掛けた大きさ(基準の5%×F)より
+         小さく抑えられていること。輪はFのまま大きい(ゲージと文字の独立) */
+      if (m.titleFont > m.base * 0.058 + 1) throw new Error(`${name}: 説明の文字が上限超え ${m.titleFont}px`);
+      if (m.F > 1.5 && m.titleFont >= Math.round(m.base * 0.05 * m.F)) {
+        throw new Error(`${name}: 文字がゲージの係数のまま(上限が効いていない)`);
+      }
+      /* はみ出しゼロ(②): 白い画素が描画領域の外周2%より内側に収まる */
+      if (x0 < W * 0.02 || x1 > W * 0.98 || y0 < H * 0.02 || y1 > H * 0.98) {
+        throw new Error(`${name}: 枠からはみ出している(外接 x${x0}..${x1} y${y0}..${y1})`);
+      }
+      /* ゲージ自体は大きいまま(直径が短辺の3割前後) */
+      const dia = (m.r * 2) / m.base;
+      if (dia < 0.28 || dia > 0.5) throw new Error(`${name}: 輪の直径が短辺の${(dia * 100).toFixed(0)}%(縮んだ/膨れた)`);
+    }
+    /* 縦型のゲージは16:9より小さくない(「特に縦型は大きく」の据え置き) */
+    const rp = draw(1080, 1920, true).m.r, rl = draw(1920, 1080, true).m.r;
+    if (rp < rl) throw new Error(`縦型の輪(${Math.round(rp)})が16:9(${Math.round(rl)})より小さい`);
+    /* 常設の案内(ゲージなし)は従来のまま拡大しない */
     const still = draw(1920, 1080, false);
-    if (still >= land) throw new Error("「ここは書き出されません」まで拡大されている");
-    return `16:9=短辺の${(landR * 100).toFixed(0)}% / 9:16=幅の${(portR * 100).toFixed(0)}% / 常設案内は据え置き`;
+    if (still.m) throw new Error("常設案内までゲージのレイアウトになっている");
+    return "順序=タイトル→輪→説明 / 重なり0 / 文字上限あり / はみ出し0 / 輪は大きいまま";
+  });
+
+  group("㊳ 実機報告5件(2026-08-02 優さん)の見張り");
+
+  await test("★円ゲージの%は単調増加(巻き戻る進捗・不確定の合間・おまかせの全体通算)", async () => {
+    const w = await compEnv();
+    compReset(w);
+    const P = w.MC.preview, U = w.MC.ui, d = w.document;
+    const asEl = d.getElementById("autoStage");
+    const keep = { mzp: w.MZP, ratio: U.autoStage.ratio,
+                   gk: P._gaugeKey, gm: P._gaugeMax, t0: U._autoT0,
+                   hid: asEl.hidden };
+    try {
+      /* --- こだわり相当(autoStage 非表示): MZPの%をそのまま使う ---
+         MZP.current は getter なので、MZP ごと差し替える(busyLabel は current しか読まない) */
+      asEl.hidden = true;
+      const h = { closed: false, state: "run", ratio: 0.5,
+                  opt: { chapter: "音楽の解析" }, sub: "3 / 3 本目" };
+      const fake = { current: h };
+      w.MZP = fake;
+      P._gaugeKey = null; P._gaugeMax = 0;
+      eq(P.busyLabel().ratio, 0.5, "初回の%");
+      /* 変異①: 巻き戻る進捗を流す → 前回値より小さい値は無視 */
+      h.ratio = 0.3;
+      if (P.busyLabel().ratio !== 0.5) throw new Error("小さい値を無視しない(円が戻って見える)");
+      /* 変異②: 不確定(pulse)の合間 → 最後の値を保つ(輪が縮まない) */
+      h.state = "pulse";
+      if (P.busyLabel().ratio !== 0.5) throw new Error("不確定の合間に値を落とす(輪が縮んで戻る)");
+      h.state = "run"; h.ratio = 0.8;
+      eq(P.busyLabel().ratio, 0.8, "前進は通す");
+      /* 新しい仕事(別ハンドル)では数え直す */
+      fake.current = { closed: false, state: "run", ratio: 0.1, opt: { chapter: "書き出し" } };
+      eq(P.busyLabel().ratio, 0.1, "新しい仕事は0から");
+      /* --- おまかせ(autoStage 表示中): 段の%でなく全体通算を使う --- */
+      asEl.hidden = false; U._autoT0 = 12345;
+      let overall = 0.4;
+      U.autoStage.ratio = () => overall;
+      fake.current = { closed: false, state: "run", ratio: 0.87, opt: { chapter: "音楽の解析" } };
+      const r1 = P.busyLabel().ratio;
+      if (Math.abs(r1 - 0.4) > 1e-9) {
+        throw new Error("おまかせ中に段の中の%(87%)を使っている(音→映像で2度0%へ戻る): " + r1);
+      }
+      /* 変異③: 全体通算がわずかに戻っても表示は戻さない */
+      overall = 0.35;
+      if (P.busyLabel().ratio !== 0.4) throw new Error("おまかせ中の巻き戻りを無視しない");
+      overall = 0.6;
+      eq(P.busyLabel().ratio, 0.6, "おまかせの前進");
+      return "巻き戻り無視 / 不確定でも保持 / 仕事が変われば数え直し / おまかせ=全体通算";
+    } finally {
+      w.MZP = keep.mzp; U.autoStage.ratio = keep.ratio;
+      P._gaugeKey = keep.gk; P._gaugeMax = keep.gm; U._autoT0 = keep.t0;
+      asEl.hidden = keep.hid;
+    }
+  });
+
+  await test("★シーン候補は全動画が重なる区間の中だけ(3本目が無い時間帯を選ばない・変異つき)", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    await sceneAudioSetup(w, S);
+    const U = w.MC.ui;
+    /* 3本目だけ短い(0〜150秒しか無い)状況を作る。音声(動画1)は400秒まである */
+    w.MC.getClip(3).duration = 150;
+    S.exportPreset = "short"; S.startKey = "start";
+    if (!U.applyLengthChoice()) throw new Error("範囲を決められない");
+    S.lengthDecided = true;
+    /* 開始位置そのものも共通区間の中に落ちること(applyLengthChoice) */
+    if (!(S.trimIn >= 40 - 0.01 && S.trimOut <= 150 + 0.01)) {
+      throw new Error(`1回目の窓が共通区間(40〜150)の外: ${S.trimIn.toFixed(1)}〜${S.trimOut.toFixed(1)}`);
+    }
+    const offers = U.sceneOffers();
+    for (const o of offers) {
+      if (o.t < 40 - 0.01 || o.t + o.dur > 150 + 0.01) {
+        throw new Error(`候補「${o.label}」が3本目の無い時間帯を含む: ${o.t.toFixed(1)}〜${(o.t + o.dur).toFixed(1)}`);
+      }
+    }
+    /* 変異: 共通区間の制限を外すと、150秒より後ろの候補が実際に出ること
+       (=このフィクスチャと見張りに検出力がある証明) */
+    const keepCover = U.coverRange;
+    try {
+      U.coverRange = (a, b) => [a, b];
+      const mut = U.sceneOffers();
+      if (!mut.some(o => o.t + o.dur > 150 + 1)) {
+        throw new Error("変異(制限なし)でも候補が150秒に収まる=この見張りは何も検出していない");
+      }
+    } finally { U.coverRange = keepCover; }
+    /* 共通部分が選んだ長さより短いときは、窓ごと押し込めず従来の範囲に戻す(詰ませない) */
+    w.MC.getClip(3).duration = 70;   // 共通部分 40〜70 = 30秒 < 59秒
+    const r = U.applyLengthChoice();
+    if (!r) throw new Error("共通部分が短いと長さを決められなくなる(詰み)");
+    w.MC.getClip(3).duration = 400;
+    return `共通区間内=${offers.length}個 / 変異は検出 / 短い共通部分では従来へ`;
+  });
+
+  await test("★書き出し中プレビューの<video>再生 — 消灯抑止の条件と、断られたらcanvasへ戻る", async () => {
+    const w = await compEnv();
+    compReset(w);
+    const d = w.document, U = w.MC.ui, X = w.MC.exporter;
+    const v = d.getElementById("eoLiveVid");
+    if (!v) throw new Error("#eoLiveVid が無い");
+    if (!d.getElementById("eoRun").contains(v)) throw new Error("#eoLiveVid が #eoRun の外にある");
+    /* WebKit の消灯抑止(shouldDisableSleep)が効く条件(session.js の実読と同じ):
+       muted でない・loop でない・playsinline。音の中身は無音トラックで賄う */
+    if (v.hasAttribute("muted") || v.muted) throw new Error("muted になっている(WebKitは muted だと消灯を抑止しない)");
+    if (v.loop || v.hasAttribute("loop")) throw new Error("loop になっている(WebKitは loop だと消灯を抑止しない)");
+    if (!v.hasAttribute("playsinline")) throw new Error("playsinline が無い(iOSで全画面再生に化ける)");
+    const el = d.getElementById("eoLive");
+    const mk = () => { const c = d.createElement("canvas"); c.width = 108; c.height = 192;
+      const x = c.getContext("2d"); x.fillStyle = "#f00"; x.fillRect(0, 0, 108, 192); return c; };
+    const keepOn = U.eoLive.on;
+    try {
+      U.exportOverlay.open();
+      /* ① <video>再生が生きていれば、表示は video・canvas は隠す(二重に出さない) */
+      U.eoLive.on = true; X._liveAt = 0;
+      X.livePreview(mk());
+      if (v.hidden) throw new Error("動画版のプレビューが現れない");
+      if (!el.hidden) throw new Error("canvas と動画が二重に出ている");
+      /* ② 使えない環境では従来の canvas 表示に静かに戻る(機能検出) */
+      U.eoLive.on = false; X._liveAt = 0;
+      X.livePreview(mk());
+      if (el.hidden) throw new Error("従来の canvas 表示に戻らない");
+      /* ③ play() が断られたら on は立たない(壊さず canvas のまま) */
+      const keepPlay = w.HTMLMediaElement.prototype.play;
+      const keepStream = U.eoLive._stream, keepNoApi = U.eoLive._noApi;
+      try {
+        w.HTMLMediaElement.prototype.play = function () {
+          return Promise.reject(Object.assign(new Error("denied"), { name: "NotAllowedError" }));
+        };
+        U.eoLive._stream = null; U.eoLive._noApi = false;
+        await U.eoLive.prime();
+        if (U.eoLive.on) throw new Error("play() が断られたのに再生中を名乗る");
+      } finally {
+        w.HTMLMediaElement.prototype.play = keepPlay;
+        try { v.srcObject = null; } catch (_) {}
+        U.eoLive._stream = keepStream; U.eoLive._noApi = keepNoApi;
+      }
+      return "video=非muted/非loop/playsinline / on=videoだけ表示 / off=canvasへ / 拒否でも壊れない";
+    } finally { U.eoLive.on = keepOn; U.exportOverlay.close(); }
+  });
+
+  await test("★保存が済むとツールのシェアが保存表示の直下へ上がる(主役の保存よりは強くしない)", async () => {
+    const e = await doneEnv();
+    const d = e.w.document;
+    const keepShare = e.U._share;
+    try {
+      const btn = d.getElementById("eoShareTool");
+      /* 未保存: 位置も見た目も従来のまま(まず保存させる導線を壊さない) */
+      if (btn.classList.contains("share-lift") || !btn.closest(".eo-exit")) {
+        throw new Error("未保存なのにシェアが持ち上がっている");
+      }
+      e.U._share = async () => true;
+      await e.U.saveResult();
+      if (!btn.classList.contains("share-lift")) throw new Error("保存後にシェアが強調されない");
+      if (btn.previousElementSibling !== d.getElementById("eoDoneNote")) {
+        throw new Error("保存表示の直下に居ない: 前の要素=" + (btn.previousElementSibling || {}).id);
+      }
+      if (btn.closest(".eo-actions")) throw new Error("主ボタン(保存)の列に混ざった");
+      if (btn.classList.contains("primary")) throw new Error("主役の保存より強い塗りになっている");
+      /* パネル側(doneCard)も同じ扱い */
+      const pb = d.getElementById("doneShareTool");
+      if (pb && !pb.classList.contains("share-lift")) throw new Error("パネル側のシェアが持ち上がらない");
+      /* 次の完成では出口の列へ戻る(新しい完成=未保存から) */
+      e.U.showDone(e.res);
+      if (btn.classList.contains("share-lift") || !btn.closest(".eo-exit")) {
+        throw new Error("2本目の完成でシェアが出口に戻らない");
+      }
+      return "未保存=出口のまま / 保存後=バンド直下+強調 / 2本目は戻す";
+    } finally { e.U._share = keepShare; e.restore(); }
+  });
+
+  await test("★ログ系UIは管理者だけ(診断ログ・詳しいログ) / 意図した退出で前回状態を捨てる", async () => {
+    const w = await compEnv();
+    compReset(w);
+    const U = w.MC.ui, d = w.document, X = w.MC.exporter;
+    const keepAdmin = (w.MZ_LIMITS || {}).admin;
+    const keepStats = X.lastStats;
+    const keepLS = w.localStorage.getItem("marchcut_project");
+    const host = d.getElementById("errorLog");
+    try {
+      /* --- ⑫ 診断ログ(#eoStats): 一般には出ない(統計があっても) --- */
+      w.MZ_LIMITS.admin = false;
+      X.lastStats = { qa: true };
+      U.showExportStats();
+      if (!d.getElementById("eoStats").hidden) throw new Error("一般ユーザーに診断ログが出る");
+      /* --- ⑫ 詳しいログ(#errorLog): 一般=出ない / 管理者=出る --- */
+      host.hidden = true;
+      U._showErrorLog(new Error("QAのログ試験"));
+      if (!host.hidden) throw new Error("一般ユーザーに詳しいログが出る");
+      w.MZ_LIMITS.admin = true;
+      U._showErrorLog(new Error("QAのログ試験(管理者)"));
+      if (host.hidden) throw new Error("管理者なのに詳しいログが出ない");
+      if (!/QAのログ試験\(管理者\)/.test(host.textContent)) throw new Error("ログの中身が無い");
+      host.hidden = true; host.innerHTML = "";
+      /* --- ⑪ 意図した退出=保存済みの前回状態を捨てる --- */
+      w.localStorage.setItem("marchcut_project", JSON.stringify({ clips: [{ key: "qa" }] }));
+      U.resetSavedProject();
+      if (w.localStorage.getItem("marchcut_project") != null) {
+        throw new Error("退出しても前回状態が残る(次回また蘇る)");
+      }
+      /* 退出の導線とbfcache対策の配線(実クリックは遷移するのでソースで見る) */
+      const app = await (await fetch("../switcher/js/app.js?cb=" + Date.now())).text();
+      if (!/pageshow[\s\S]{0,400}persisted[\s\S]{0,120}location\.reload/.test(app)) {
+        throw new Error("bfcache復帰の読み直しが無い(戻ると前の動画とエラーが蘇る)");
+      }
+      if (!/back-link[\s\S]{0,400}resetSavedProject/.test(app)) {
+        throw new Error("「← 戻る」等の退出でリセットしていない");
+      }
+      const uiSrc = await (await fetch("../switcher/js/ui.js?cb=" + Date.now())).text();
+      if (!/goToolList[\s\S]{0,300}resetSavedProject/.test(uiSrc)) {
+        throw new Error("成功後の「閉じる」(ツール一覧行き)でリセットしていない");
+      }
+      return "一般=ログ非表示 / 管理者=表示 / 退出でリセット / bfcacheは読み直し";
+    } finally {
+      w.MZ_LIMITS.admin = keepAdmin; X.lastStats = keepStats;
+      if (host) { host.hidden = true; }
+      try {
+        if (keepLS == null) w.localStorage.removeItem("marchcut_project");
+        else w.localStorage.setItem("marchcut_project", keepLS);
+      } catch (_) {}
+    }
+  });
+
+  await test("★別のシーンはゲスト1本まで・登録は何本でも(表示と実行の両方に門・変異つき)", async () => {
+    const e = await doneEnv();
+    const w = e.w, d = w.document, U = e.U;
+    const keep = { max: w.MZ_LIMITS.maxExtraScenes, made: U._extraScenesMade,
+                   auto: U.runAuto };
+    let ran = 0;
+    U.runAuto = async () => { ran++; };
+    try {
+      /* --- ゲスト(1本まで) --- */
+      w.MZ_LIMITS.maxExtraScenes = 1;
+      U._extraScenesMade = 0;
+      U.setSaveState(true);           // 保存済みの状態にして候補を開く
+      U.renderSceneOffers();
+      const btns = d.querySelectorAll("#eoDoneScenes .mzso-btn");
+      if (btns.length !== 5) throw new Error("1本目の前から候補が出ない: " + btns.length);
+      /* 1本目は作れる */
+      U.makeAnotherScene({ key: "climax", t: 60 });
+      if (ran !== 1) throw new Error("ゲストの1本目が走らない");
+      eq(U._extraScenesMade, 1, "作った数");
+      /* 使い切ったら候補は誘いの1行に差し替わる */
+      U.exportOverlay.open(); U.showDone(e.res); U.setSaveState(true); U.renderSceneOffers();
+      const el = d.getElementById("eoDoneScenes");
+      if (!el) throw new Error("誘いの枠ごと消えている");
+      if (el.querySelector(".mzso-btn")) throw new Error("使い切ったのに候補が押せる");
+      if (!/登録すると/.test(el.textContent) || !/何本でも/.test(el.textContent)) {
+        throw new Error("登録の誘いが無い: " + el.textContent.trim());
+      }
+      const link = el.querySelector('a[href="/#signup"]');
+      if (!link) throw new Error("誘いから登録への道が無い");
+      /* 変異: UIを飛ばして直接呼んでも実行側の門が塞ぐ */
+      U.makeAnotherScene({ key: "ballad", t: 150 });
+      if (ran !== 1) throw new Error("実行側の門が無い(UIを飛ばすと2本目が作れる)");
+      /* --- 登録(何本でも) --- */
+      w.MZ_LIMITS.maxExtraScenes = Infinity;
+      U.exportOverlay.open(); U.showDone(e.res); U.setSaveState(true); U.renderSceneOffers();
+      if (d.querySelectorAll("#eoDoneScenes .mzso-btn").length !== 5) {
+        throw new Error("登録ユーザーに候補が出ない");
+      }
+      U.makeAnotherScene({ key: "ballad", t: 150 });
+      U.makeAnotherScene({ key: "solo", t: 330 });
+      if (ran !== 3) throw new Error("登録ユーザーが2本目以降を作れない: " + ran);
+      return "ゲスト=1本+誘い(直接呼びも門) / 登録=無制限";
+    } finally {
+      w.MZ_LIMITS.maxExtraScenes = keep.max; U._extraScenesMade = keep.made;
+      U.runAuto = keep.auto; e.restore();
+    }
   });
 
   group("㉞ ワイプの割り当て・左下ワイプ・種類の並び(2026-08-02 優さん指示)");
@@ -6024,7 +6388,7 @@ async function countSamples(ns, file, fromSec) {
   });
 
 
-  await test("★失敗の顔から閉じるとツールのトップ(1段目)に立つ / 成功の閉じるは従来どおり", async () => {
+  await test("★失敗+閉じる=1段目 / 成功+閉じる=ツール一覧(未保存は確認1回)(2026-08-02 ⑧)", async () => {
     const e = await doneEnv();
     const w = e.w, d = w.document, U = e.U;
     try {
@@ -6039,13 +6403,32 @@ async function countSamples(ns, file, fromSec) {
       if (!d.getElementById("workspace").hidden) throw new Error("工程画面が出たまま");
       if (d.getElementById("modeStepKind").hidden) throw new Error("1段目(種類)ではなく別の段に立っている");
       if (!d.getElementById("modeStepFlow").hidden) throw new Error("2段目(おまかせ/こだわり)が開いている");
-      /* ② 成功 → 閉じる → 従来どおり工程画面に残る(保存や別シーンがまだある) */
+      /* ② 成功 → 閉じる → **ツール一覧**へ(2026-08-02 優さん指示⑧
+         「ここは、ツール一覧に戻ってほしい」)。こだわりの工程画面に残さない。
+         未保存なら1回だけ確認し、断ればその場に残る(動画を黙って失わせない) */
       w.MC.ui.chooseMode("switch", { silent: true });
       U.exportOverlay.open();
       U.showDone(e.res);
-      d.getElementById("eoClose").click();
-      if (!d.getElementById("exportOverlay").hidden) throw new Error("成功の閉じるで畳まれない");
-      if (!d.getElementById("modeSelect").hidden) throw new Error("成功の閉じるまでトップへ飛ばした(従来どおり残るべき)");
+      const keepGo = U.goToolList, keepConfirm = w.confirm;
+      let went = 0, asked = 0, allow = false;
+      U.goToolList = () => { went++; };
+      w.confirm = () => { asked++; return allow; };
+      try {
+        d.getElementById("eoClose").click();
+        if (asked !== 1) throw new Error("未保存の閉じるで確認が出ない(動画が黙って消える)");
+        if (went || d.getElementById("exportOverlay").hidden) throw new Error("確認を断ったのに閉じた/飛んだ");
+        allow = true;
+        d.getElementById("eoClose").click();
+        if (went !== 1) throw new Error("確認OKなのにツール一覧へ行かない");
+        if (!d.getElementById("exportOverlay").hidden) throw new Error("成功の閉じるで畳まれない");
+        /* 保存済みなら確認なしでツール一覧へ直行。1段目にも飛ばない */
+        U.exportOverlay.open(); U.showDone(e.res); U.setSaveState(true);
+        asked = 0;
+        d.getElementById("eoClose").click();
+        if (asked) throw new Error("保存済みなのに確認を出した");
+        if (went !== 2) throw new Error("保存済みの閉じるがツール一覧へ行かない");
+        if (!d.getElementById("modeSelect").hidden) throw new Error("成功の閉じるが1段目へ飛んだ(行き先はツール一覧)");
+      } finally { U.goToolList = keepGo; w.confirm = keepConfirm; }
       /* ③ 失敗の顔の「もう一度おまかせ」「自分で仕上げる」は従来どおり(トップへ飛ばさない) */
       const keepAuto = U.runAuto;
       let reran = 0;
@@ -6066,7 +6449,7 @@ async function countSamples(ns, file, fromSec) {
         as.classList.remove("as-failed"); as.hidden = wasHidden;
         U.autoStage._fail = null; U.autoStage._failedStep = null;
       } finally { U.runAuto = keepAuto; U._lastFailNotify = 0; }
-      return "失敗+閉じる=1段目 / 成功+閉じる=工程に残る / もう一度・自分で=従来どおり";
+      return "失敗+閉じる=1段目 / 成功+閉じる=ツール一覧(未保存は確認・断れば残る) / もう一度・自分で=従来どおり";
     } finally { U.exportOverlay.close(); w.MC.ui.chooseMode("switch", { silent: true }); e.restore(); }
   });
 

@@ -317,7 +317,27 @@ MC.preview = {
        いちばん長く無言になるのがこの区間で、%が出せる唯一の場所 */
     let ratio = (cur.state === "run" && cur.ratio > 0) ? cur.ratio : null;
     const as = MC.ui && MC.ui.autoStage;
-    if (ratio == null && as && as._innerRaw > 0) ratio = as._innerRaw;
+    /* ★ おまかせ中は**全体通算**(autoStage.ratio=重み付きの0→100が一度きり)を使う
+       (2026-08-02 優さん指摘「円のゲージが戻るように見える時がある」)。
+       cur.ratio や _innerRaw は「その段の中の%」で、音の読み込み(0→100)→
+       映像解析(0→100)と**同じ画面の中で何度も0へ巻き戻る**。下の画面の
+       進捗バーと同じ数字になるので、2つの%が食い違う混乱も消える */
+    const asEl = document.getElementById("autoStage");
+    const asOn = !!(as && asEl && !asEl.hidden);
+    if (asOn) ratio = as.ratio();
+    else if (ratio == null && as && as._innerRaw > 0) ratio = as._innerRaw;
+    /* ★ 単調増加の保証(同上)。同じ仕事の間は、前回より小さい値を無視する。
+       仕事の切れ目(おまかせの開始時刻 or MZPのハンドル)が変わったら数え直す。
+       確定値が無い合間も最後の値を保つ ─ 輪が不確定の伸縮に落ちて
+       「縮んで戻った」ように見えるのを防ぐ */
+    const gKey = asOn ? "as:" + (MC.ui._autoT0 || 0) : cur;
+    if (this._gaugeKey !== gKey) { this._gaugeKey = gKey; this._gaugeMax = 0; }
+    if (ratio != null) {
+      if (ratio < this._gaugeMax) ratio = this._gaugeMax;
+      else this._gaugeMax = ratio;
+    } else if (this._gaugeMax > 0) {
+      ratio = this._gaugeMax;
+    }
     return { label, sub, ratio, dots: ".".repeat(Math.floor(Date.now() / 400) % 4) };
   },
 
@@ -378,20 +398,24 @@ MC.preview = {
     ctx.save();
     ctx.fillStyle = "rgba(6, 10, 16, 0.55)";
     ctx.fillRect(0, 0, W, H);
-    const cy = spin ? H / 2 + base * 0.02 * F : H / 2;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillStyle = "#fff";
-    ctx.font = `700 ${Math.round(base * 0.05 * F)}px -apple-system, sans-serif`;
-    ctx.fillText(title, W / 2, sub ? cy - base * 0.035 * F : cy);
-    if (sub) {
-      ctx.fillStyle = "rgba(255,255,255,0.75)";
-      ctx.font = `500 ${Math.round(base * 0.034 * F)}px -apple-system, sans-serif`;
-      /* 幅を超える補足は切る。溢れると左右が枠の外へ消えて、
-         真ん中だけが読める意味不明な行になる */
-      ctx.fillText(this.fitText(ctx, sub, W * 0.86), W / 2, cy + base * 0.03 * F);
+    if (!spin) {
+      const cy = H / 2;
+      ctx.fillStyle = "#fff";
+      ctx.font = `700 ${Math.round(base * 0.05)}px -apple-system, sans-serif`;
+      ctx.fillText(title, W / 2, sub ? cy - base * 0.035 : cy);
+      if (sub) {
+        ctx.fillStyle = "rgba(255,255,255,0.75)";
+        ctx.font = `500 ${Math.round(base * 0.034)}px -apple-system, sans-serif`;
+        /* 幅を超える補足は切る。溢れると左右が枠の外へ消えて、
+           真ん中だけが読める意味不明な行になる */
+        ctx.fillText(this.fitText(ctx, sub, W * 0.86), W / 2, cy + base * 0.03);
+      }
+      ctx.restore();
+      return;
     }
-    if (spin) {
+    {
       /* ============ 円の進捗(2026-08-01 優さん指示) ============
          **始点と終点を真上(12時)にそろえる**。canvas の角度0は3時なので
          -π/2 を基準にする。以前は弧をぐるぐる回していたため、始点も終点も
@@ -405,15 +429,34 @@ MC.preview = {
 
          canvas は 1080〜1920px、表示は 375px 幅まで縮むので、
          見た目で分かる大きさにするには canvas 上でかなり大きく描く必要がある */
+      /* ============ 並びとレイアウト(2026-08-02 優さん指示②) ============
+         上から「動画タイトル(補足) → 円ゲージ → 説明の文字」の縦順に固定し、
+         それぞれを輪の半径+間隔で機械的に離す ─ 重なりが構造的に起きない。
+         以前は輪を上・文字を中央に置く座標計算で、縦型(F=2.0)では
+         説明の中心が輪の下端より上に来て、文字が輪に食い込んでいた(実機)。
+
+         ★ 文字の大きさはゲージと独立に上限を持つ(2026-08-02 優さん指示①
+           「フェーズの文字が大きくて見えない」)。ゲージ拡大の係数 F を
+           文字にそのまま掛けると、縦型では説明が幅からはみ出す */
       const TOP = -Math.PI / 2;              // 真上(12時)
-      const r = base * 0.09 * F;             // 大きさは上の F(6〜7割指示)に連動
-      const cx = W / 2, cyS = H / 2 - base * 0.115 * F;
+      const tFont = Math.min(Math.round(base * 0.05 * F), Math.round(base * 0.058));
+      const sFont = Math.min(Math.round(base * 0.034 * F), Math.round(base * 0.042));
+      const r = base * 0.09 * F;             // 輪の大きさは F(6〜7割指示)に連動
+      const cx = W / 2, cyS = H / 2 - base * 0.02;
+      const gap = base * 0.035;
       const lw = Math.max(3, base * 0.013 * F);
       const det = (opts.ratio != null && isFinite(opts.ratio) && opts.ratio > 0);
       const pct = det ? Math.max(0, Math.min(1, opts.ratio)) : 0;
       const t = (Date.now() % 2600) / 2600;
       const sweep = det ? pct * Math.PI * 2
                         : Math.max(0.12, Math.sin(t * Math.PI)) * Math.PI * 2;
+      const subY = cyS - r - gap - sFont / 2;      // 動画タイトル(輪の上)
+      const titleY = cyS + r + gap + tFont / 2;    // 説明の文字(輪の下)
+      if (sub) {
+        ctx.fillStyle = "rgba(255,255,255,0.78)";
+        ctx.font = `600 ${sFont}px -apple-system, sans-serif`;
+        ctx.fillText(this.fitText(ctx, sub, W * 0.86), W / 2, subY);
+      }
       ctx.lineCap = "round";
       ctx.beginPath();                       // 下地の輪(残りがどれだけかが分かる)
       ctx.arc(cx, cyS, r, 0, Math.PI * 2);
@@ -427,11 +470,17 @@ MC.preview = {
       ctx.stroke();
       if (det) {                             // 輪の中に%。12時が始点だと一目で分かる
         ctx.fillStyle = "rgba(255,255,255,0.95)";
-        ctx.font = `700 ${Math.round(base * 0.038 * F)}px -apple-system, sans-serif`;
+        ctx.font = `700 ${Math.min(Math.round(base * 0.038 * F), Math.round(base * 0.05))}px -apple-system, sans-serif`;
         ctx.fillText(`${Math.round(pct * 100)}%`, cx, cyS);
       }
+      ctx.fillStyle = "#fff";
+      ctx.font = `700 ${tFont}px -apple-system, sans-serif`;
+      ctx.fillText(this.fitText(ctx, title, W * 0.86), W / 2, titleY);
+      ctx.restore();
+      /* QA が「順序と重なりゼロ」を実測できるよう寸法を返す(描画には影響しない) */
+      return { subY, subFont: sFont, ringTop: cyS - r - lw / 2, ringBottom: cyS + r + lw / 2,
+               titleY, titleFont: tFont, r, base, F };
     }
-    ctx.restore();
   },
 
   /* 与えた幅に収まるところまで縮めて「…」を付ける */

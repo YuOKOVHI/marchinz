@@ -26,7 +26,7 @@ window.MZDevice = (() => {
 
      　　　　　　　　　書き出し(プランの壁)
      ゲスト(端末問わず)   1分未満
-     登録 × スマホ         3分
+     登録 × スマホ         2分
      登録 × パソコン      10分
      管理者・手元環境     上限なし
      ※Switcherの取り込みはプランで縛らない。入口は技術的な天井
@@ -36,7 +36,12 @@ window.MZDevice = (() => {
    端末を軸に入れた理由: スマホは動画を丸ごとメモリに載せるため、長い書き出しが
    途中で落ちる(iPhone実機で8分12秒が62%で停止)。落ちる長さを許可しておいて
    「落ちました」と言うより、最初から届く長さだけを見せる方が親切。
-   ゲストは端末に関わらず1分未満(登録の壁を端末でブレさせない。優さん判断)。
+   ゲストは端末に関わらず1分未満(登録の壁を端末でブレさせない)。
+   登録×スマホは2分(2026-08-02 優さん決定。3分から縮めた)。
+   取り込みの**本数**の制限は全員元から存在しない ─ 縛っているのは長さだけ
+   (2026-08-02 優さん「どちらも本数は無制限」を明文化)。
+   スマホの登録メリット = 書き出し2分 + 「別のシーン」が何本でも
+   (maxExtraScenes: ゲスト1本 → 無制限)。こだわりはPC×登録限定(proAllowed)。
 
    書き出しは3つの長さから選ぶ方式にした(EXPORT_PRESETS)。上限を超える
    プリセットは鍵つきで見せ、「登録すると/パソコンだと使える」と伝える。
@@ -99,12 +104,13 @@ window.MZ_LIMITS = (() => {
        renderFaceNote が**両方ここを見る**(2026-07-31)。以前は条件のコピーが
        2箇所にあり、片方を変えるともう片方が嘘になる構造だった */
     privacyVideoAllowed: admin,
-    /* 「こだわり」を選べる人(2026-08-02 優さん指示「こだわりは登録ユーザーからに」)。
-       いままで同じ条件(member || unlimited)が ui.js の applyGuestLocks に
-       べた書きされており、2段目の選択カードを足すたびに条件のコピーが
-       増える構造だった。上限と同じくここ1箇所を正本にする。
+    /* 「こだわり」を選べる人。ここ1箇所が正本(条件のコピーを増やさない)。
+       ★ 2026-08-02 優さん指示「こだわりは、pcだけにしよう」:
+         登録ユーザー **かつ パソコン**(bigDevice)。細かい調整のUIはPC向けで、
+         スマホは「おまかせ」が本線。admin/手元環境(unlimited)は開発・検証のため
+         端末を問わず通す(上限系と同じ扱い)。
        ★ おまかせは誰でも使える ─ ここで縛るのは「こだわり」だけ */
-    proAllowed: member || unlimited,
+    proAllowed: unlimited || (member && bigDevice),
     /* 取り込める1本の長さ。登録 × パソコン だけ12分、それ以外は5分。
        12分あるのは、複数カメラの回し始めのズレ(実測で最大5分超)を
        吸収したうえでショウ全体が入るようにするため */
@@ -132,20 +138,27 @@ window.MZ_LIMITS = (() => {
     sourceLimitLabel: unlimited ? "上限なし" : mobile ? "20分" : "40分",
 
     /* 書き出せる長さ(IN〜OUTの範囲)。取り込みとは別枠。
-       ゲスト1分未満 / 登録×スマホ 3分 / 登録×パソコン 10分。
+       ゲスト1分未満 / 登録×スマホ 2分 / 登録×パソコン 10分
+       (2026-08-02 優さん決定: 登録×スマホは 3分→2分)。
        ※端末のメモリ上限(MC.exporter.MEM_HARD_LIMIT)とは別で、
          実際にはどちらか厳しい方が効く */
     maxExportSec: unlimited ? Infinity
       : !member ? 59
-      : bigDevice ? 600 : 180,
+      : bigDevice ? 600 : 120,
     /* ラベルも unlimited を見る。数値は Infinity なのにラベルだけ
        「1分未満」と出ていた(管理者は member の印を持たないため。2026-07-31) */
-    exportLimitLabel: unlimited ? "上限なし" : !member ? "1分未満" : bigDevice ? "10分" : "3分",
+    exportLimitLabel: unlimited ? "上限なし" : !member ? "1分未満" : bigDevice ? "10分" : "2分",
+    /* 完成後の「別のシーンも作る」の回数(2026-08-02 優さん決定⑭)。
+       ゲストは1本まで・登録は何本でも。判定の正本はここ1箇所で、
+       ui.js は renderSceneOffers(表示)と makeAnotherScene(実行)の両方で参照する。
+       数えるのはセッション内だけ(リロードでリセットは許容 ─ 別シーンは
+       メモリ上の解析が生きている間しか速く作れないので、永続化する意味が薄い) */
+    maxExtraScenes: (member || unlimited) ? Infinity : 1,
     /* 登録ユーザーの完成尺。ゲストに「登録すると何分まで作れるか」を
        案内するときにも使うため、ロールに依らない定数として持つ。
        いま使っている端末で登録したらどうなるかを言う(スマホで「10分」と
        言われても、登録しても3分なので嘘になる) */
-    memberExportLabel: bigDevice ? "10分" : "3分",   // 「登録すると」の案内用(unlimitedでは使わない)
+    memberExportLabel: bigDevice ? "10分" : "2分",   // 「登録すると」の案内用(unlimitedでは使わない)
     // Privacyの動画は誰でも10分(モザイク作業は選んだ範囲だけのため)
     maxPrivacyVideoSec: unlimited ? Infinity : 600.5,
     maxPhotos: unlimited ? Infinity : member ? 5 : 1,   // 一度に扱える写真の枚数
@@ -176,14 +189,15 @@ window.MZ_LIMITS = (() => {
      演奏の長さで丸める。ここの sec は上限比較と表示のための代表値 */
   L.EXPORT_PRESETS = [
     { id: "short", label: "ショート",   sec: 59,  hint: "SNSに投稿しやすい長さ" },
-    { id: "mid",   label: "ミドル",     sec: 180, hint: "3分に収める長さ" },
+    /* ミドルは2分(2026-08-02 優さん決定: 登録×スマホの上限=2分に合わせて 180→120) */
+    { id: "mid",   label: "ミドル",     sec: 120, hint: "2分に収める長さ" },
     { id: "full",  label: "まるごと",   sec: 510, hint: "演奏全体", whole: true },
   ];
 
   /* いまの人・いまの端末で使えるかを添えて返す。
      locked のときは「何をすれば使えるか」を1文で持たせる */
   L.exportPresets = () => {
-    const memberHere = bigDevice ? 600 : 180;   // いまの端末で登録したときの上限
+    const memberHere = bigDevice ? 600 : 120;   // いまの端末で登録したときの上限
     return L.EXPORT_PRESETS.map(p => {
       const locked = p.sec > L.maxExportSec;
       let unlock = "";
@@ -258,11 +272,17 @@ window.MZ_LIMITS = (() => {
       html = `<p class="mz-plan">ゲストは${g}まで、登録ユーザーは${m}まで。`
         + ' <a href="/#signup">無料登録</a></p>';
     } else {
-      /* 素材の上限が登録で変わらない端末(スマホ)では、完成の話だけをする */
-      const same = g === m;
+      /* ★ 伸びるものだけを言う(2026-08-02 ⑬)。ゲストが3分になった結果、
+         スマホでは登録しても完成が伸びない(3分→3分)。「登録すると3分に」と
+         書くと嘘の誘い文句になる ─ 実際に変わる項目だけ並べる */
+      const same = g === m;                                      // 素材が伸びない端末か
+      const gain = L.memberExportLabel !== L.exportLimitLabel;   // 完成が伸びる端末か
+      const perks = [
+        ...(same ? [] : [`素材${m}`]),
+        ...(gain ? [`完成${L.memberExportLabel}`] : []),
+      ];
       html = `<p class="mz-plan">ゲストは素材${g}・完成${L.exportLimitLabel}まで。`
-        + (same ? `登録すると完成が${L.memberExportLabel}に。`
-                : `登録すると素材${m}・完成${L.memberExportLabel}に。`)
+        + (perks.length ? `登録すると${perks.join("・")}に。` : "")
         + ' <a href="/#signup">無料登録</a></p>';
     }
     hosts.forEach(el => { el.innerHTML = html; });
@@ -279,13 +299,17 @@ window.MZ_LIMITS = (() => {
     /* 端末で変わる項目は、いま使っている端末の値で書く(2026-07-31)。
        スマホで「12分になります」と出しても、登録しても5分のままで嘘になる */
     const vLine = bigDevice ? "取り込める動画: 5分 → 12分" : null;
-    const eLine = `書き出せる長さ: 1分未満 → ${bigDevice ? "10分(ショウ全体が入ります)" : "3分"}`;
+    /* ★ 端末ごとに実際に伸びる値だけを言う(2026-08-02 ⑬最終: 59秒/2分/10分)。
+       こだわりはPC×登録だけ(⑩)なのでスマホには書かない(嘘の誘い文句を残さない) */
+    const eLine = `書き出せる長さ: 1分未満 → ${bigDevice ? "10分(ショウ全体が入ります)" : "2分"}`;
     const per = {
       switcher: [
         vLine,
         eLine,
-        bigDevice ? null : "パソコンで開くと、さらに10分まで書き出せます",
-        "「こだわり」設定(同期・レイアウト・仕上げの調整)",
+        /* 別のシーンはゲスト1本まで → 登録で何本でも(2026-08-02 ⑭) */
+        "完成後の「別のシーン」: 1本まで → 何本でも",
+        bigDevice ? null : "パソコンで開くと、10分まで書き出せます",
+        bigDevice ? "「こだわり」設定(同期・レイアウト・仕上げの調整)" : null,
       ].filter(Boolean),
       reangle: [
         vLine,
