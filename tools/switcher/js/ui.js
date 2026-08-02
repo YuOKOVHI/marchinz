@@ -111,6 +111,11 @@ MC.ui.exportOverlay = {
   fail() {
     const el = MC.ui.$("#exportOverlay");
     if (!el || el.hidden) return;
+    /* ★ ライブプレビューの最後のコマを片付ける(2026-08-02 push前レビュー)。
+       fail() は #eoRun を隠さない(失敗の理由カード #eoProgress がその中に
+       あるため)ので、放っておくと凍った合成コマが「書き出せませんでした」の
+       上に残り、375px では理由カードを画面外へ押し下げる */
+    { const lv = MC.ui.$("#eoLive"); if (lv) lv.hidden = true; }
     MC.ui.$("#eoTitleText").textContent = "書き出せませんでした";
     MC.ui.$("#eoTitleIcon").className = "fa-solid fa-triangle-exclamation eo-fail";
     MC.ui.$("#eoCancel").style.display = "none";   // 失敗後の中止は意味がない

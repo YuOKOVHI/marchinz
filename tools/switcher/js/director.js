@@ -309,9 +309,16 @@ MC.director.generate = () => {
        ときの緊急避難で、ここで無理に切ると失格の画が出る */
     if (!top.dq) {
       /* ① 飢餓ガード: STARVE ショット以上出ていないカメラを強制的に出す。
-         該当が複数なら採点順で最良の1台(ranked はスコア降順) */
+         該当が複数なら採点順で最良の1台(ranked はスコア降順)。
+         ★ cuts.length との min を取る(2026-08-02 push前レビュー):
+         sinceUse は「未登場でも登場間隔ボーナスが満額つく」ように 99 で
+         初期化されているため、素の値だと開始直後は全カメラが飢餓に見え、
+         1カット目が毎回ランク2位へ強制されていた(オープニングの
+         DM・サリュート最優先=採点ルール②が常に破られる)。
+         「実際に経過したショット数」で数えれば、飢餓は本来どおり
+         STARVE カット目以降にしか成立しない */
       const starving = ranked.find(r => !r.dq && r.id !== top.id
-        && (ctx.sinceUse.get(r.id) || 0) >= MC.director.STARVE);
+        && Math.min(ctx.sinceUse.get(r.id) || 0, cuts.length) >= MC.director.STARVE);
       if (starving) {
         forcedN++;
         MC.log(`director: ${t.toFixed(1)}s〜 ${ctx.sinceUse.get(starving.id)}ショット出ていないカメラを出す`);

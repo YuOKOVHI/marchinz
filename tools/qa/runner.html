@@ -3613,6 +3613,13 @@ async function countSamples(ns, file, fromSec) {
       const a1 = runCase(M2, true);
       if (a1.used.size !== 2) throw new Error("2本: 片方しか出ない: " + JSON.stringify([...a1.used]));
       if (a1.maxRun > keep.run) throw new Error(`2本: 同一カメラが${a1.maxRun}連続(上限${keep.run})`);
+      /* ★1カット目は採点の勝者(2026-08-02 push前レビュー)。sinceUse の初期値99を
+         飢餓ガードが素のまま読むと、開始直後は全カメラが飢餓に見えて
+         1カット目が毎回ランク2位へ強制される(オープニングの採点ルール②が
+         常に破られる)。ガードは「実際に経過したショット数」でだけ発動する */
+      if (a1.cuts[0].clipId !== 1) {
+        throw new Error("2本: 1カット目が採点の勝者でない(飢餓ガードの初手誤発動): cam" + a1.cuts[0].clipId);
+      }
 
       /* ===== ケースB: 3本(操作カメラ2台が交互に回り、3台目が締め出される) ===== */
       compReset(w);
@@ -3627,6 +3634,9 @@ async function countSamples(ns, file, fromSec) {
       const b1 = runCase(M3, true);
       if (b1.used.size !== 3) throw new Error("3本: " + b1.used.size + "台しか出ない: " + JSON.stringify(b1.cuts.map(c => c.clipId)));
       if (b1.maxRun > keep.run) throw new Error(`3本: 同一カメラが${b1.maxRun}連続(上限${keep.run})`);
+      if (b1.cuts[0].clipId !== 1) {
+        throw new Error("3本: 1カット目が採点の勝者でない(飢餓ガードの初手誤発動): cam" + b1.cuts[0].clipId);
+      }
       /* cam3 は STARVE ショットごとに必ず巡ってくる(1回きりの顔見せではない) */
       const n3 = b1.cuts.filter(c => c.clipId === 3).length;
       if (n3 < Math.floor(b1.cuts.length / (keep.stv + 2))) {
@@ -5504,8 +5514,21 @@ async function countSamples(ns, file, fromSec) {
       X._liveAt = 0;
       X.livePreview(mk("#0f0"));
       if (px()[1] < 200) throw new Error("2コマ目に更新されない: " + px());
-      return "閉=描かない / 開=970msに1回・長辺480 / 連打は間引く";
-    } finally { w.MC.ui.exportOverlay.close(); }
+      /* ⑤ 失敗の顔では前のコマを片付ける(2026-08-02 push前レビュー)。
+         fail() は #eoRun を隠さない(失敗理由の #eoProgress がその中)ので、
+         明示的に隠さないと凍った合成コマが「書き出せませんでした」の上に
+         残り、375px では理由カードが画面外へ押し下げられる */
+      w.MC.ui._lastFailNotify = Date.now();   // 通知・効果音は鳴らさずに測る
+      w.MC.ui.exportOverlay.fail();
+      if (!el.hidden) throw new Error("失敗の顔に前のコマが残っている");
+      return "閉=描かない / 開=970msに1回・長辺480 / 連打は間引く / 失敗で片付く";
+    } finally {
+      w.MC.ui.exportOverlay.close();
+      /* fail() の痕跡を残さない(eo-failed は後続の㉞試験も読む) */
+      const ov = d.getElementById("exportOverlay");
+      if (ov) ov.classList.remove("eo-failed");
+      const ec = d.getElementById("eoCancel"); if (ec) ec.style.display = "";
+    }
   });
 
   await test("★おまかせ経由の書き出しも同じ全画面へ来る(=プレビューが出る)+コマループ3経路に注入済み", async () => {
