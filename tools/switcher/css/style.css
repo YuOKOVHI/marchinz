@@ -181,7 +181,9 @@ body.mz-busy-lock #errorLog button { pointer-events: auto; opacity: 1; }
 
 .audio-choices { display: flex; flex-direction: column; gap: 6px; }
 .audio-choice { display: flex; align-items: center; gap: 8px; background: var(--panel2); padding: 7px 10px;
-  border-radius: 8px; cursor: pointer; font-size: 12px; border: 1px solid var(--line); }
+  border-radius: 8px; cursor: pointer; font-size: 12px; border: 1px solid var(--line);
+  /* 指で選ぶラジオ行。実測35pxで44ptに届いていなかった(2026-08-02 push前レビュー) */
+  min-height: 44px; }
 .audio-choice.selected { border-color: var(--acc); background: #f4f7ff; }
 .audio-choice input { accent-color: var(--acc); }
 .reco-badge { background: var(--acc2); color: #fff; font-size: 10px;
@@ -1854,6 +1856,10 @@ html:has(body.mz-auto-stage), body.mz-auto-stage {
    .btn の既定色を継がずに、この場で必ず読める色を指定する */
 /* 完成画面の出口。主役(保存)より静かに、しかし44ptは確保する */
 .eo-exit { display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
+/* ★ hidden属性より display:flex が勝つ罠の封じ(2026-08-02)。書き出し実行中は
+   ui.js が出口を隠す ─ 「最初から作り直す」は再読込リンクで、実行中の
+   誤タップは書き出しの即死。iOS Safari は beforeunload の確認も出さない */
+.eo-exit[hidden] { display: none !important; }
 .eo-tools, .eo-share-tool { min-height: 44px; display: inline-flex; align-items: center;
   justify-content: center; gap: 8px; text-decoration: none; }
 /* ★ 「このツールを友達にシェア」(2026-08-02)。動画そのものの共有(主ボタン=塗り)と

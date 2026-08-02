@@ -91,6 +91,12 @@ MC.ui.exportOverlay = {
     const lv = MC.ui.$("#eoLive");
     if (lv) lv.hidden = true;
     if (MC.exporter) MC.exporter._liveAt = 0;
+    /* ★ 出口(シェア・最初から作り直す)は書き出し中は隠す(2026-08-02 push前レビュー)。
+       「最初から作り直す」はページ再読込のリンクで、iPhoneのSafariは
+       beforeunload の確認を出さないため、実行中に誤タップすると数分の
+       書き出しがその場で消える。実行中の正しい出口は「中止」だけ。
+       完成(done)と失敗(fail)で戻す ─ 「閉じる」もこの列にいる */
+    { const ex = el.querySelector(".eo-exit"); if (ex) ex.hidden = true; }
     MC.ui.$("#eoRun").hidden = false;
     MC.ui.$("#eoDone").hidden = true;
     MC.ui.$("#eoClose").hidden = true;
@@ -107,6 +113,7 @@ MC.ui.exportOverlay = {
     MC.ui.$("#eoRun").hidden = true;
     MC.ui.$("#eoDone").hidden = false;
     MC.ui.$("#eoClose").hidden = false;
+    { const ex = el.querySelector(".eo-exit"); if (ex) ex.hidden = false; }
   },
   fail() {
     const el = MC.ui.$("#exportOverlay");
@@ -120,6 +127,13 @@ MC.ui.exportOverlay = {
     MC.ui.$("#eoTitleIcon").className = "fa-solid fa-triangle-exclamation eo-fail";
     MC.ui.$("#eoCancel").style.display = "none";   // 失敗後の中止は意味がない
     MC.ui.$("#eoClose").hidden = false;            // 詳細はMZPのfail表示が出ている
+    { const ex = el.querySelector(".eo-exit"); if (ex) ex.hidden = false; }
+    /* ★ ライブプレビューの最後のコマも落とす(2026-08-02 push前レビュー)。
+       #eoRun は失敗理由(#eoProgress)ごと見せ続けるため隠せない。すると
+       止まったコマが「書き出せませんでした」の上に34vhぶん残り、
+       まだ動いているように見えるうえ、失敗理由と次の一手を画面の下へ
+       押し出す(375×667 実測で「もう一度ためす」が下端ぎりぎりだった) */
+    { const lv = MC.ui.$("#eoLive"); if (lv) lv.hidden = true; }
     /* 「この画面のままお待ちください」を消す(2026-07-25 実機レビュー)。
        失敗しているのに待機を促す文が残り、画面が矛盾していた。
        #eoRun ごと隠してはいけない ─ 失敗の理由を出す #eoProgress(MZPのfailカード)が
@@ -1943,7 +1957,11 @@ ${c.isImage ? "" : (c.tiltOk
     note.className = "need-second-note";
     note.innerHTML = '<i class="fa-solid fa-circle-info" aria-hidden="true"></i> '
       + '2つ目の動画を選んでください（1本だけでは作れないため、そろったら自動で始まります）';
-    box.appendChild(note);
+    /* ★ 置き場所は「動画1のカードの直下=動画2の空き枠の直上」(2026-08-02
+       push前レビュー)。末尾に足すと空き枠2つ(動画2・動画3)より下に落ち、
+       375px では折り目の下 ─ 次にすべき行動(動画2を選ぶ)の手前で読ませる */
+    const emptySlot = firstEmptyIdx != null ? box.children[firstEmptyIdx] : null;
+    if (emptySlot) box.insertBefore(note, emptySlot); else box.appendChild(note);
   }
   /* ワイプの割り当て画面が開いている間は、あとから完成するサムネイルを反映する
      (makeThumb → renderClips 経由でここへ来る。2026-08-02) */
