@@ -5569,6 +5569,52 @@ async function countSamples(ns, file, fromSec) {
     } finally { U.exportOverlay.close(); w.MC.ui.chooseMode("switch", { silent: true }); e.restore(); }
   });
 
+
+  await test("★おまかせでは写真は選べない(1行知らせて除外) / こだわりは従来どおり通る", async () => {
+    const e = await doneEnv();
+    const w = e.w, d = w.document, U = e.U, M = w.MC;
+    const keepFlow = U._autoFlow, keepTab = U._setupTab;
+    let toasts = [];
+    const keepToast = U.toast; U.toast = m => { toasts.push(String(m)); };
+    try {
+      /* 1x1 PNG(実画像) */
+      const png = Uint8Array.from(atob(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="), c => c.charCodeAt(0));
+      const mkPhoto = name => new w.File([png], name, { type: "image/png", lastModified: 1 });
+      M.ui.chooseMode("vertical", { silent: true });
+      const before = M.S.clips.length;
+      /* ① おまかせ: 弾かれて文言が1回出る */
+      U._autoFlow = true; U._setupTab = "easy";
+      await M.media.addFiles([mkPhoto("qa_easy.png")]);
+      if (M.S.clips.length !== before) throw new Error("おまかせなのに写真が入った");
+      const said = toasts.filter(t => t.includes("おまかせでは写真は使えません"));
+      if (said.length !== 1) throw new Error("知らせが1行出ない: " + JSON.stringify(toasts));
+      if (!said[0].includes("こだわり")) throw new Error("こだわりへの案内が無い");
+      /* ② accept: おまかせは image/* 無し、こだわりで復活(既存導線 setSetupTab 経由) */
+      U.setSetupTab("easy");
+      const fiv = d.getElementById("fileInputV");
+      if (/image/.test(fiv.accept)) throw new Error("おまかせの accept に image/* が残る");
+      U.setSetupTab("pro");
+      if (!/image\/\*/.test(fiv.accept)) throw new Error("こだわりで accept に image/* が戻らない");
+      /* ③ こだわり(proタブ): 従来どおり写真が通る。QA環境は素材3つで
+         枠が満席なので、空の枠に差し替えてから試す(枠上限の試験は別件) */
+      toasts = [];
+      U._autoFlow = false;
+      const stashClips = M.S.clips, stashSlots = M.S.slots.slice();
+      M.S.clips = []; M.S.slots = M.S.slots.map(() => null);
+      try {
+        await M.media.addFiles([mkPhoto("qa_pro.png")]);
+        const got = M.S.clips.find(c => c.isImage && c.name === "qa_pro.png");
+        if (!got) throw new Error("こだわりで写真が入らない: " + JSON.stringify(toasts));
+        if (toasts.some(t => t.includes("おまかせでは写真は使えません"))) throw new Error("こだわりなのに弾きの文言が出た");
+      } finally { M.S.clips = stashClips; M.S.slots = stashSlots; }
+      return "おまかせ=除外+1行 / accept切替 / こだわり=写真OK";
+    } finally {
+      U.toast = keepToast; U._autoFlow = keepFlow; U._setupTab = keepTab;
+      w.MC.ui.chooseMode("switch", { silent: true }); e.restore();
+    }
+  });
+
   if (CF) { CF.remove(); CF = null; CW = null; CD = null; }
 
   /* ===== 集計 ===== */

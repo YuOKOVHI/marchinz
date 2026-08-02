@@ -31,9 +31,15 @@ MC.media.sniffContainer = async f => {
 MC.media.addFiles = async files => {
   let added = 0;
   const skipped = [];   // 動画として扱えず見送ったファイル(最後にまとめて知らせる)
+  let photoBlocked = 0; // おまかせに写真が混ざった数(最後に1行で知らせる)
   for (const f of files) {
     const isImage = /^image\//.test(f.type) || /\.(jpe?g|png|webp|heic|heif|gif)$/i.test(f.name);
     if (isImage) {
+      /* ★ おまかせは動画のみ(2026-08-02 優さん指示「おまかせでは、写真は
+         選べないようにしよう」)。accept は選択の窓しか守れず、ドラッグ&
+         ドロップと「すべてを表示」はここへ届くので、取り込みの入口にも番人。
+         黙って捨てず、ループ後に1行だけ知らせる。こだわり(proタブ)は従来どおり */
+      if (MC.ui._autoFlow && MC.ui._setupTab !== "pro") { photoBlocked++; continue; }
       // 画像・写真は縦型動画作成でのみ取り込める
       if (MC.S.mode !== "vertical") { MC.ui.toast("画像・写真は「縦型動画作成」でのみ使えます"); continue; }
       if (await MC.media.addImageFile(f)) added++;
@@ -102,6 +108,9 @@ MC.media.addFiles = async files => {
     MC.ui.toast(`⚠ ${head} は動画として読み込めませんでした。`
       + "iPhoneやカメラで撮った MP4 / MOV をお使いください"
       + "（ビデオカメラのAVCHD(.MTS)は、カメラの設定をMP4記録に変えると使えます）");
+  }
+  if (photoBlocked) {
+    MC.ui.toast("おまかせでは写真は使えません（動画のみ）。写真はこだわりでどうぞ");
   }
   if (added) MC.media.afterChange();
 };

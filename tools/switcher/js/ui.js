@@ -2471,6 +2471,13 @@ MC.ui.setSetupTab = tab => {
      工程の出し分け(applySteps)と喧嘩させない */
   document.body.classList.toggle("tab-easy", easy);
   document.body.classList.toggle("tab-pro", !easy);
+  /* ★ おまかせでは写真は選べない(2026-08-02 優さん指示)。縦型のファイル選択の
+     窓(#fileInputV)から image/* を外す。こだわりへ移ると戻す。ドラッグ&
+     ドロップは accept を通らないので media.addFiles 側の番人と二段構え */
+  { const fiv = MC.ui.$("#fileInputV");
+    if (fiv) fiv.accept = (MC.ui._autoFlow && easy)
+      ? "video/mp4,video/quicktime,.mp4,.mov,.m4v"
+      : "video/mp4,video/quicktime,.mp4,.mov,.m4v,image/*"; }
   document.querySelectorAll("#setupTabs .tab").forEach(b => {
     const on = b.dataset.tab === tab;
     b.classList.toggle("on", on);
