@@ -3786,11 +3786,19 @@ async function countSamples(ns, file, fromSec) {
   await test("★おまかせの最中に「分析完了」の嘘の通知を出さない", async () => {
     const w = await compEnv();
     compReset(w);
-    const t0 = w.document.title;
+    /* ★ 実タブ題では測らない(2026-08-02 レビュー)。flashTabTitle は
+       「見ている人のタブ題は書き換えない」(visible なら早期 return)仕様なので、
+       タブ前面では題が変わらないのが正しい。前の版は題の変化そのものを
+       要求していて、前面では構造的に落ち、隠れたタブでだけ偶然通っていた
+       (可視性依存の flaky)。ここではスタブで「notifyUserTurn 経由で
+       呼ばれるか/呼ばれないか」を見る ─ visible/hidden のどちらでも同じ結果 */
+    const U = w.MC.ui;
+    const keep = U.flashTabTitle;
+    const flashed = [];
+    U.flashTabTitle = t => { flashed.push(t); };
     const clean = () => {
       const b = w.document.getElementById("mzAnalysisDone");
       if (b) b.remove();
-      w.document.title = t0;
     };
     try {
       /* おまかせ中はここで終わりではない ─ このあと書き出しが数分続く。
@@ -3798,14 +3806,16 @@ async function countSamples(ns, file, fromSec) {
          バイブとタブのタイトルは端末に届いてしまい、別アプリへ行っていた人を
          「もう書き出せる」と勘違いさせて呼び戻していた */
       w.MC.ui.notifyAnalysisDone({ silent: true });
-      if (w.document.title !== t0) throw new Error("おまかせ中なのにタブの題が変わった: " + w.document.title);
+      if (flashed.length) throw new Error("おまかせ中なのにタブの題へ知らせた: " + flashed.join(","));
       if (w.document.getElementById("mzAnalysisDone")) throw new Error("おまかせ中なのに完了バナーが出た");
-      /* ── 対照: こだわりのときは今までどおり知らせる ── */
+      /* ── 対照: こだわりのときは今までどおり知らせる(両側を保つ) ── */
       clean();
       w.MC.ui.notifyAnalysisDone();
-      if (w.document.title === t0) throw new Error("こだわりでも知らせなくなった(=黙らせすぎ)");
-    } finally { clean(); }
-    return "おまかせ=黙る / こだわり=知らせる";
+      if (!flashed.length) throw new Error("こだわりでも知らせなくなった(=黙らせすぎ)");
+      if (!/分析完了/.test(flashed[0] || "")) throw new Error("タブ題の文言が想定外: " + flashed[0]);
+      if (!w.document.getElementById("mzAnalysisDone")) throw new Error("こだわりで完了バナーが出ない");
+    } finally { U.flashTabTitle = keep; clean(); }
+    return "おまかせ=呼ばれない / こだわり=呼ばれる(タブの可視性に依らない)";
   });
 
 
