@@ -88,6 +88,10 @@ body::before {
 .clip-cards { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
 /* 動画1/2/3スロット */
 .clip-slots { display: flex; flex-direction: column; gap: 12px; }
+/* おまかせで動画1本のときの常設の案内(2026-08-02)。責めない色で1行 */
+.need-second-note { font-size: 13px; color: var(--acc-deep); background: #f4f7ff;
+  border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.need-second-note i { margin-right: 4px; }
 .clip-slot-label { font-size: 11px; font-weight: 700; color: var(--acc); margin-bottom: 4px; letter-spacing: 0.02em; }
 .clip-slot.empty .clip-slot-add {
   width: 100%; border: 2px dashed rgba(15, 33, 56, 0.25); border-radius: 10px;

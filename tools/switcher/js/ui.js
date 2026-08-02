@@ -818,6 +818,12 @@ MC.ui.gentleScrollTo = (el, block = "nearest") => {
   el.scrollIntoView({ behavior: "smooth", block });
 };
 
+/* ★ おまかせは動画2本から(2026-08-02 優さん指示)。縦型/自動SW/ワイプの
+   3種類とも多カメラが前提 ─ 1本では比べる相手も切り替える先も無い。
+   写真・音声ファイルは数えない。こだわりはこの門を通らない(従来どおり) */
+MC.ui.needSecondVideo = () =>
+  !!MC.ui._autoFlow && MC.S.clips.filter(c => !c.isImage && !c.isAudio).length < 2;
+
 MC.ui.focusNextAction = () => {
   if (!MC.S.clips.length) return;
   /* ★ おまかせを選んでいるなら、ここから先は一度も止まらない(2026-08-01 優さん指示)。
@@ -830,6 +836,10 @@ MC.ui.focusNextAction = () => {
        間違った動画を外した瞬間(まだ入れ替えていない)に走り出してしまう。
        再開は行動バーの「これでOK、おまかせを再開」が受け持つ */
     if (MC.ui._repickHold) return;
+    /* ★ 1本では自走を始めない(2026-08-02 優さん指示)。素材工程に留まり、
+       案内は取り込み枠の下の常設1行(renderClips)が受け持つ。
+       2本目が入れば media.js がここをまた呼ぶので、自然に走り出す */
+    if (MC.ui.needSecondVideo()) return;
     /* ★ ワイプだけは例外(2026-08-02 優さん指示)。自走の前に
        「どれをメインに、どれを右下ワイプにするか」を1画面だけ選んでもらう。
        選び終わると wipePickTap が runAuto を呼び、以後は止まらない */
@@ -1918,6 +1928,17 @@ ${c.isImage ? "" : (c.tiltOk
     };
     slot.appendChild(card);
     box.appendChild(slot);
+  }
+  /* ★ 1本のときの常設の案内(2026-08-02 優さん指示)。トーストは流れて消えるので
+     取り込み枠のすぐ下に置きっぱなしにする。2本目が入れば renderClips が
+     呼び直されて自然に消える。責めない言い方・「2つ目」表記(漢字方針) */
+  if (MC.ui.needSecondVideo() && slotClips.length >= 1) {
+    const note = document.createElement("div");
+    note.id = "needSecondNote";
+    note.className = "need-second-note";
+    note.innerHTML = '<i class="fa-solid fa-circle-info" aria-hidden="true"></i> '
+      + '2つ目の動画を選んでください（1本だけでは作れないため、そろったら自動で始まります）';
+    box.appendChild(note);
   }
   /* ワイプの割り当て画面が開いている間は、あとから完成するサムネイルを反映する
      (makeThumb → renderClips 経由でここへ来る。2026-08-02) */
@@ -3813,6 +3834,18 @@ MC.ui.repickLand = () => {
 MC.ui.runAuto = async (opt) => {
   if (MC.ui._busy || (MC.exporter && MC.exporter.running)) return;
   if (!MC.media.slotClips().length) return;
+  /* ★ 動画1本では作れない(2026-08-02 優さん指示)。focusNextAction の門とは
+     別に、実行の入口にも置く ─ ワイプ選択後・再試行ボタン・別のシーンなど
+     runAuto へ直接来る道があるため。素材工程に立たせ、案内は常設1行が言う */
+  if (MC.S.clips.filter(c => !c.isImage && !c.isAudio).length < 2) {
+    /* refreshJourney は到達点が動いた回に寄り道(_viewPhase)を消す。
+       先に一度追従させてから素材工程を見せる(消される順序を踏まない) */
+    MC.ui.refreshJourney();
+    MC.ui._viewPhase = "mat";
+    MC.ui.refreshJourney();
+    MC.ui.renderClips();
+    return;
+  }
   /* 通知の許可は「これから数分待つ」ことが確定した人にだけ、静かに一度だけ
      尋ねる(2026-08-02 優さん指示)。初回訪問でいきなり求めない */
   MC.ui.askNotifyPermissionOnce();

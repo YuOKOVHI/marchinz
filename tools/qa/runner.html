@@ -4244,6 +4244,92 @@ async function countSamples(ns, file, fromSec) {
   });
 
 
+  /* ============ おまかせは動画2本から(2026-08-02 優さん指示) ============ */
+  group("㊴ おまかせは動画2本から(1本のときは案内して自走しない)");
+
+  await test("★1本なら案内が出て自走しない / 写真では門が開かない", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    const keep = w.MC.ui.runAuto;
+    let called = 0;
+    try {
+      S.clips = [S.clips[0]]; S.slots = [1];
+      w.MC.ui._autoFlow = true; w.MC.ui._repickHold = false;
+      if (!w.MC.ui.needSecondVideo()) throw new Error("1本なのに2本目が要ると言わない");
+      w.MC.ui.renderClips();
+      const note = w.document.getElementById("needSecondNote");
+      if (!note) throw new Error("常設の案内が出ない");
+      if (!/2つ目の動画を選んでください/.test(note.textContent)) {
+        throw new Error("案内の文言が違う: " + note.textContent);
+      }
+      /* トーストでなく常設(取り込み枠 #clipSlots の中に居る)こと */
+      if (!w.document.getElementById("clipSlots").contains(note)) {
+        throw new Error("案内が取り込み枠の近くに無い");
+      }
+      /* focusNextAction が自走を始めない */
+      w.MC.ui.runAuto = () => { called++; };
+      w.MC.ui.focusNextAction();
+      await new Promise(r => setTimeout(r, 400));
+      if (called) throw new Error("1本なのに自走が始まった");
+      /* 写真を足しても動画は1本のまま=門は開かない(縦型の前提) */
+      S.clips.push({ id: 9, name: "p.jpg", isImage: true, isAudio: false, duration: 0,
+        syncMethod: "基準", pan: 0.5, rot: 0, tiltOk: true, stats: null });
+      S.slots = [1, 9];
+      if (!w.MC.ui.needSecondVideo()) throw new Error("写真で門が開いた(動画だけを数える約束)");
+      w.MC.ui.focusNextAction();
+      await new Promise(r => setTimeout(r, 400));
+      if (called) throw new Error("写真を足しただけで自走が始まった");
+      return "案内あり・自走なし / 写真は数えない";
+    } finally { w.MC.ui.runAuto = keep; w.MC.ui._autoFlow = false; }
+  });
+
+  await test("★2本目が入れば案内が消えて走り出す(変異の歯: 同じ経路で確認)", async () => {
+    const w = await compEnv();
+    const S = compReset(w);   // 動画3本
+    const keep = w.MC.ui.runAuto;
+    let called = 0;
+    try {
+      w.MC.ui._autoFlow = true; w.MC.ui._repickHold = false;
+      S.clips = S.clips.slice(0, 2); S.slots = [1, 2];
+      if (w.MC.ui.needSecondVideo()) throw new Error("2本あるのに足りないと言う");
+      w.MC.ui.renderClips();
+      if (w.document.getElementById("needSecondNote")) throw new Error("2本そろっても案内が残る");
+      w.MC.ui.runAuto = () => { called++; };
+      w.MC.ui.focusNextAction();
+      await new Promise(r => setTimeout(r, 400));
+      if (!called) throw new Error("2本そろったのに自走が始まらない(=止めすぎ)");
+      return "案内が消える / 同じ経路で自走が始まる";
+    } finally { w.MC.ui.runAuto = keep; w.MC.ui._autoFlow = false; }
+  });
+
+  await test("★runAuto の入口にも門がある(ワイプ選択後・再試行など直接の道)", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    const keepAsk = w.MC.ui.askNotifyPermissionOnce;
+    try {
+      w.MC.ui._autoFlow = true; w.MC.ui._repickHold = false;
+      /* 門のすぐ先(通知の打診)へ番人を置き、通過したかを見分ける */
+      w.MC.ui.askNotifyPermissionOnce = () => { throw new Error("QA番人:門を通過"); };
+      S.clips = [S.clips[0]]; S.slots = [1];
+      await w.MC.ui.runAuto();   // 1本: 門で止まる=番人に触れない
+      if (w.MC.ui._autoRunning) throw new Error("1本なのに自走の鍵が立った");
+      if (w.MC.ui._viewPhase !== "mat") throw new Error("素材工程に立たされない: " + w.MC.ui._viewPhase);
+      /* 変異の歯: 2本なら門を通る(番人が鳴る)。鳴らなければ門が広すぎる */
+      const S2 = compReset(w);
+      w.MC.ui._autoFlow = true;
+      S2.clips = S2.clips.slice(0, 2); S2.slots = [1, 2];
+      let passed = false;
+      try { await w.MC.ui.runAuto(); }
+      catch (e) { passed = /QA番人/.test(e.message); if (!passed) throw e; }
+      if (!passed) throw new Error("2本でも門を通らない(=止めすぎ)");
+      return "1本=素材工程で止まる / 2本=門を通る";
+    } finally {
+      w.MC.ui.askNotifyPermissionOnce = keepAsk;
+      w.MC.ui._autoFlow = false; w.MC.ui._autoRunning = false;
+      compReset(w);
+    }
+  });
+
   group("㉖-b こだわりの手動ボタンは作業中の鍵を掛ける(2026-08-01 交差レビュー)");
   await test("★同期の最中は書き出しボタンが押せない(黙って壊れる経路の封鎖)", async () => {
     const w = await compEnv();
