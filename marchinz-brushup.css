@@ -1263,7 +1263,16 @@ body {
   white-space: nowrap;
 }
 
-.mz-ctools-lead { margin-bottom: 0.7rem; }
+.mz-ctools-lead { margin-bottom: 0.35rem; }
+
+/* ロゴの断り(2026-08-03 優さん指示「上に小さめの文字で」)。
+   リード文より一段小さく・弱い色で、注意書きだと分かる重さにする */
+.mz-ctools-note {
+  margin: 0 0 0.7rem;
+  font-size: 0.78rem;
+  line-height: 1.6;
+  color: #6b7280;
+}
 
 .mz-ctools-grid {
   display: grid;
