@@ -87,7 +87,9 @@
         logo.loading = "lazy";
         ch.appendChild(logo);
       }
-      ch.appendChild(document.createTextNode(opts.channelName));
+      /* 素のテキストノードだとCSSで掴めない(省略記号を当てられない)ので span に包む。
+         1行に省略するのはメディア帯だけで、他の帯の見た目は変えない */
+      ch.appendChild(el("span", "mz-video-card-channel-name", opts.channelName));
       body.appendChild(ch);
     }
     if (opts.meta) body.appendChild(el("p", "mz-video-card-meta", opts.meta));
@@ -167,7 +169,13 @@
     if (section) section.hidden = false;
   }
 
-  /* メディアページ(#page-webmagazine)の Laundry Day!! グリッドから先頭 limit 枚を読む。
+  /* 「2025 / 9」→「2025年9月号」。日付ではなく“号”だと分かる形にそろえる */
+  function issueLabel(raw) {
+    var m = String(raw || "").match(/(\d{4})\s*\/\s*(\d{1,2})/);
+    return m ? m[1] + "年" + Number(m[2]) + "月号" : String(raw || "").trim();
+  }
+
+  /* メディアページ(#page-webmagazine)の Laundry Day!! グリッドから新しい順に limit 枚を読む。
 
      ★ 号のデータは index.html のカードが正本。ここに号数や表紙のリストを別に持つと
        必ずどちらかが古くなるので、二重管理しない。#page-webmagazine は hidden だが
@@ -178,25 +186,38 @@
     if (!grid) return [];
     var cards = grid.querySelectorAll("a.magazine-card");
     var out = [];
-    for (var i = 0; i < cards.length && out.length < limit; i++) {
+    for (var i = 0; i < cards.length; i++) {
       var card = cards[i];
       var title = card.querySelector(".magazine-title");
       if (!card.href || !title || !title.textContent.trim()) continue;
+      var label = title.textContent.trim();
+      var volM = label.match(/vol\.\s*(\d+)/i);
       var img = card.querySelector(".magazine-thumb img");
       var meta = card.querySelector(".magazine-meta");
       out.push({
+        vol: volM ? parseInt(volM[1], 10) : -1,
         url: card.href,
         /* 属性の生値を使う(相対パス + ?v= のまま同じページで読ませる) */
         thumb: img ? img.getAttribute("src") : "",
-        title: title.textContent.trim(),
-        channelName: "Laundry Day!!（NPO法人マーチング祭）",
-        meta: meta ? meta.textContent.trim() : "",
+        title: label,
+        badge: "フリーマガジン",
+        /* タイトルが「Laundry Day!! vol.10」なので、ここは発行元だけ。
+           誌名を二度書くと375pxで2行に折れる */
+        channelName: "NPO法人マーチング祭",
+        meta: issueLabel(meta ? meta.textContent : ""),
       });
     }
-    return out;
+    /* ★ DOMの並び順に頼らない。カードを末尾に足しても最新号が出るように号数で降順。 */
+    out.sort(function (a, b) { return b.vol - a.vol; });
+    if (out.length < limit) {
+      /* 黙って note だけの帯になるのを防ぐ(マークアップが変わった合図) */
+      console.warn("[MarchinZ] 新着メディア: Laundry Day!! を " + out.length + " 件しか読めませんでした");
+    }
+    return out.slice(0, limit);
   }
 
-  /* TOPの「新着メディア」バンド(2026-08-04 優さん指示で「新着note」から拡張)。
+  /* TOPの「メディア」バンド(2026-08-04 優さん指示で「新着note」から拡張)。
+     Laundry Day!! は年2回発行で最新号が半年〜1年前になるため「新着」とは呼ばない。
      note の最新2件 + Laundry Day!! の最新2件 = 4枚。
      DOM の id が mz-top-note-* のままなのは、CSS(スマホ2×2の指定)を巻き込まないため。 */
   function renderTopMedia() {
@@ -212,6 +233,7 @@
           url: n.url,
           thumb: n.thumb,
           title: n.title || "note",
+          badge: "note",
           channelName: n.accountLabel || "",
           meta: daysAgoLabel(parseDate(n.pubDate)),
         };

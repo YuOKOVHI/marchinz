@@ -3897,6 +3897,22 @@ body {
   #mz-top-note-grid .mz-video-card-title {
     font-size: 0.78rem;
   }
+  /* メディア帯は note(2行)と雑誌(1行)が混ざるので、2×2の行の高さをそろえる。
+     .mz-video-card-title は line-height:1.45 / line-clamp:2 なので2行ぶん確保する */
+  #mz-top-note-grid .mz-video-card-title {
+    min-height: calc(2 * 1.45em);
+  }
+  /* note のアカウント名(「Marching notes™︎ byマーチング祭®︎」)は2行に折れて
+     雑誌側との行の高さが16.3pxずれる。この帯だけ1行に省略してそろえる */
+  #mz-top-note-grid .mz-video-card-channel {
+    min-width: 0;
+  }
+  #mz-top-note-grid .mz-video-card-channel-name {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
   #mz-top-video-grid .mz-video-card-body,
   #mz-top-note-grid .mz-video-card-body {
     padding: 0.5rem 0.55rem 0.6rem;
@@ -4694,4 +4710,22 @@ input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
   margin: -1px; padding: 0; border: 0;
   clip: rect(0 0 0 0); clip-path: inset(50%);
   overflow: hidden; white-space: nowrap;
+}
+
+/* メディアページの発行元リンク(2026-08-04)。
+   素のテキストリンクだと当たり判定が高さ17pxしかなく、直下の紹介文とも間隔0pxで
+   「押せるもの」に見えないため、44px を確保して本文から離す */
+/* 誌名を「Laundry Day!!」に揃えた結果375pxで2行になるため、発行元は途中で折らず
+   誌名との境で改行させる */
+.media-subheading-by {
+  white-space: nowrap;
+}
+
+.media-official-link {
+  margin-bottom: 0.35rem;
+}
+.media-official-link .static-panel-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
 }

@@ -62,6 +62,29 @@ BROWSER_HEADERS = [
 ]
 
 
+# Amazon が絞ってきたときは 200 で「5秒後に同じURLへ」という小さな待機ページを返す
+# (CAPTCHA ではない。2026-08-04 実測: 本文2,825バイト・meta refresh のみ)。
+# これを本文と誤認すると「vol番号を読めなかった」という的外れな理由で赤くなる。
+META_REFRESH = re.compile(
+    r'<meta[^>]+http-equiv=["\']?refresh["\']?[^>]*content=["\']?(\d+)\s*;', re.I)
+
+
+class Throttled(Exception):
+    """相手に一時的に絞られた。待てば通る見込みがある。"""
+
+    def __init__(self, wait):
+        super().__init__("待機ページを返された(%s秒後に再試行を指示)" % wait)
+        self.wait = wait
+
+
+def _throttle_wait(body):
+    """待機ページなら指示された秒数、そうでなければ None。"""
+    if len(body) > 20000:
+        return None
+    m = META_REFRESH.search(body)
+    return min(int(m.group(1)), 30) if m else None
+
+
 def _get_once(url, timeout):
     u = urllib.parse.urlsplit(url)
     conn_cls = http.client.HTTPSConnection if u.scheme == "https" else http.client.HTTPConnection
@@ -91,7 +114,9 @@ def _get_once(url, timeout):
     if "gzip" in enc:
         raw = gzip.GzipFile(fileobj=io.BytesIO(raw)).read()
     elif "deflate" in enc:
-        raw = zlib.decompress(raw, -zlib.MAX_WBITS)
+        # MAX_WBITS|32 = zlib/gzip 自動判別。-MAX_WBITS(生deflate)決め打ちだと
+        # zlib ラップ形式で "invalid stored block lengths" になる
+        raw = zlib.decompress(raw, zlib.MAX_WBITS | 32)
     return raw.decode("utf-8", errors="replace"), None
 
 
@@ -104,9 +129,17 @@ def fetch(url, tries=3, timeout=25):
             for _ in range(5):  # 転送は5回まで追う
                 body, redirect = _get_once(target, timeout)
                 if body is not None:
+                    wait = _throttle_wait(body)
+                    if wait is not None:
+                        raise Throttled(wait)
                     return body
                 target = redirect
             raise RuntimeError("転送が多すぎる")
+        except Throttled as e:
+            # 相手が待てと言っているので、その秒数だけ素直に待つ
+            last = e
+            if i < tries - 1:
+                time.sleep(e.wait + 1)
         except Exception as e:  # noqa: BLE001 - ネット失敗はまとめて握って再試行
             last = e
             if i < tries - 1:
@@ -128,15 +161,30 @@ def read_index():
 
 # ---------------------------------------------------------------- いま載っている号
 
+def grid_block(index_html, grid_id):
+    """id="<grid_id>" から次の見出し(<h3>/<h4>)までを切り出す。
+
+    ページ全体に正規表現を当てると、別の場所に「vol.11 近日公開」のような
+    予告文を1行書いただけで current が繰り上がり、新刊検出が黙って止まる。
+    """
+    i = index_html.find('id="%s"' % grid_id)
+    if i < 0:
+        return ""
+    m = re.search(r"<h[34][^>]*>", index_html[i:])
+    return index_html[i:i + m.start()] if m else index_html[i:]
+
+
 def current_laundry_vol(index_html):
     """index.html の #laundry-grid が持つ最大の vol 番号。"""
-    vols = [int(v) for v in re.findall(r"Laundry Day!! vol\.(\d+)", index_html)]
+    blk = grid_block(index_html, "laundry-grid")
+    vols = [int(v) for v in re.findall(r"Laundry Day!! vol\.(\d+)", blk)]
     return max(vols) if vols else None
 
 
 def current_express_vol(index_html):
     """index.html の #books-grid が持つ最大の vol 番号。"""
-    vols = [int(v) for v in re.findall(r"マーチングエクスプレス21 vol\.(\d+)", index_html)]
+    blk = grid_block(index_html, "books-grid")
+    vols = [int(v) for v in re.findall(r"マーチングエクスプレス21 vol\.(\d+)", blk)]
     return max(vols) if vols else None
 
 
@@ -213,6 +261,13 @@ def run_check(key, index_html):
                 "error": "index.html から現在の掲載号を読めなかった"}
     page = fetch(conf["source"])
     latest = conf["latest"](page)
+    # 掲載中より古い号しか読めない = 相手のページ構造が変わって手掛かりが
+    # 古いまま残っている強い証拠。ここを素通りさせると、緑のまま永久に
+    # 「変わりなし」を返し続けて見張りが死んでいることに誰も気づけない
+    if latest["vol"] < current:
+        raise RuntimeError(
+            "掲載中(vol.{})より新しい号を読めなかった(最大 vol.{})。"
+            "取得元の構造が変わった可能性がある".format(current, latest["vol"]))
     return {
         "key": key,
         "name": conf["name"],

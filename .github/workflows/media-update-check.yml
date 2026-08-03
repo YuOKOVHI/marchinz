@@ -70,7 +70,9 @@ jobs:
         run: python3 check_media_updates.py --target "$TARGET" --github-output
 
       - name: 新刊があれば Issue を立てる
-        if: steps.check.outputs.found == 'true'
+        # always(): check が exit 2 で赤くなっても、見つけた新刊は必ず知らせる
+        # (if に状態関数が無いと GitHub が暗黙に success() を AND してスキップするため)
+        if: always() && steps.check.outputs.found == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TITLE: ${{ steps.check.outputs.issue_title }}
