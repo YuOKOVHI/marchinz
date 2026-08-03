@@ -6609,6 +6609,84 @@ async function countSamples(ns, file, fromSec) {
     }
   });
 
+  await test("★好み画面の「動画を選び直す」は素材の工程へ着地し、再開の道が残る(詰み防止)", async () => {
+    /* 2026-08-03 push前レビューの実バグ: #fpBack が closeFinishPick だけで、
+       押した人は現在地「同期と分析」(5工程)に置き去りになっていた ─ おまかせを
+       再開する道も、好み画面へ戻る道もどこにも無い(実測: 見えるのは試聴/
+       この音で進めるだけ)。全画面の「動画を選び直す」(#asRepick)と同じ着地
+       (repickLand)を使い、行動バーの「これでOK、おまかせを再開」で戻れること */
+    const w = await compEnv();
+    const S = compReset(w);
+    const d = w.document;
+    const keepAuto = w.MC.ui.runAuto, keepOpen = w.MC.ui.openFinishPick;
+    let ran = 0, opened = 0;
+    w.MC.ui.runAuto = () => { ran++; };
+    try {
+      S.mode = "wipeCam"; S.layoutId = "wipe";
+      w.MC.ui._autoFlow = true; S.finishPicked = false; w.MC.ui._repickHold = false;
+      /* ★ タブも「おまかせ」に揃える(2026-08-03)。compReset は _setupTab を戻さないので、
+         こだわりを踏んだ先行試験(㊴ 権限の3段など)の "pro" が漏れてくる ─ そのとき
+         行動バーは「分析を開始」になり、この試験だけが自分で詰みを作っていた。
+         製品では入口が _autoFlow と _setupTab を必ず一緒に決める(ui.js の
+         setSetupTab(flow === "easy" ? "easy" : "pro"))ので、おまかせ×proは実在しない。
+         ここを揃えるのは前提の再現であって、見張りを緩めるものではない */
+      w.MC.ui._setupTab = "easy";
+      /* ★ 進捗ドック(MZP)も畳んでおく(2026-08-03)。updateActionBar は
+         「進捗ドック表示中はドックに場所を譲る」設計で、run/pulse/frozen が
+         残っていると行動バーを丸ごと引っ込める(実測: ab="自動カット割"・
+         abVisible=false で古いラベルのまま)。㉚/㉝/㊱ など進捗を開く群が
+         先に走ると閉じずに残り、compReset も畳まない。
+         好み画面で「戻る」を押す人が進捗ドックの最中ということは無い */
+      if (w.MZP && w.MZP.current && !w.MZP.current.closed) w.MZP.current.close();
+      w.MC.ui.openFinishPick();
+      if (d.getElementById("finishPick").hidden) throw new Error("画面が開かない");
+      d.getElementById("fpBack").click();
+      if (!d.getElementById("finishPick").hidden) throw new Error("戻るで閉じない");
+      /* ①素材の工程へ着地している ②保留が立って自走が勝手に再開しない
+         ③好みは未選択のまま(戻ったのに選んだことにされない) */
+      eq(w.MC.ui._viewPhase, "mat", "着地の工程");
+      eq(w.MC.ui._repickHold, true, "選び直しの保留");
+      eq(S.finishPicked, false, "好みは未選択のまま");
+      /* ★ 再開の道: 行動バーの「これでOK、おまかせを再開」が実在して見えている。
+         ★ 押した直後の**そのままの画面**で見ること ─ ここで refreshJourney を
+           挟み直すと、到達点が動いた回に寄り道(_viewPhase)が消えて
+           「動画を選ぶ」に戻り、試験だけが自分で詰みを作ってしまう
+           (repickLand が二段構えでよける相手と同じ罠) */
+      const resume = [...d.querySelectorAll("button")].find(b =>
+        /おまかせを再開/.test(b.textContent) && b.offsetParent !== null);
+      if (!resume) {
+        /* 落ちたときは推測せずに実状態を吐く(試験間の状態漏れの追跡用) */
+        const ab = d.getElementById("abPrimary");
+        throw new Error("「おまかせを再開」が出ない(押した人が詰む) ─ "
+          + JSON.stringify({ vp: w.MC.ui._viewPhase, derived: w.MC.ui._derivedPhase,
+              hold: w.MC.ui._repickHold, auto: w.MC.ui._autoFlow, tab: w.MC.ui._setupTab,
+              busy: w.MC.ui._busy, running: !!(w.MC.exporter && w.MC.exporter.running),
+              slots: w.MC.media.slotClips().length, easyDone: S.easyDone,
+              lastResult: !!w.MC.exporter.lastResult,
+              ab: ab ? ab.textContent.replace(/\s+/g, " ").trim() : null,
+              abVisible: ab ? !!ab.offsetParent : null,
+              mzj: !!d.querySelector(".mzj"), wsHidden: d.getElementById("workspace").hidden }));
+      }
+      /* 保留中は素材が変わっても自走を再開しない(間違って外した瞬間に走り出さない) */
+      ran = 0; w.MC.ui.focusNextAction();
+      eq(ran, 0, "保留中に始まった自走");
+      w.MC.ui.openFinishPick = () => { opened++; };
+      ran = 0;
+      resume.click();
+      await new Promise(r => setTimeout(r, 400));   // focusNextAction は 260ms 待つ
+      eq(opened, 1, "再開で開き直す好み画面の回数");
+      eq(ran, 0, "画面より先に始まった自走の回数");
+      eq(w.MC.ui._repickHold, false, "再開したら保留は解ける");
+      return "戻る=素材工程へ着地+保留 / 「おまかせを再開」で好み画面が開き直る";
+    } finally {
+      w.MC.ui.runAuto = keepAuto; w.MC.ui.openFinishPick = keepOpen;
+      w.MC.ui.closeFinishPick();
+      w.MC.ui._autoFlow = false; w.MC.ui._repickHold = false;
+      w.MC.ui.chooseMode("switch", { silent: true });
+      compReset(w); w.MC.ui.refreshJourney();
+    }
+  });
+
   /* ============ ㉟ 凍結でデコーダが回収されても、作り直して続きから ============
      (2026-08-02 実機: 書き出し中に画面スリープ → 復帰したら
      "VideoDecoder is not configured" で即死)

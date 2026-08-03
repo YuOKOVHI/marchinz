@@ -4217,6 +4217,13 @@ MC.ui.finishPickGo = () => {
 MC.ui.repickLand = () => {
   MC.ui._repickAfterCancel = false;
   MC.ui._repickHold = true;   // 外す/追加が済むまで focusNextAction は自走を再開しない
+  /* ★ 先に一度追従させてから素材工程を立てる(2026-08-03 push前レビュー)。
+     refreshJourney は到達点が動いた回に寄り道(_viewPhase)を**消す**ので、
+     立ててから呼ぶと着地がその場で流れる ─ runAuto の1本ガードが同じ二段構えを
+     踏んでいるのと同じ理由。中止からの着地では到達点がすでに落ち着いていて
+     たまたま生きていたが、好み画面の「動画を選び直す」(取り込み直後=到達点が
+     動く回)から呼ぶと素通りして、押した人が5工程の画面に置き去りになった */
+  MC.ui.refreshJourney();
   MC.ui._viewPhase = "mat";
   MC.ui.refreshJourney();
   MC.ui.toast("やめました。動画は残っています ─ ✕で外して入れ替えられます");
@@ -5073,11 +5080,15 @@ MC.ui.wire = () => {
     const b = MC.ui.$(sel);
     if (b) b.onclick = () => MC.ui.shareTool();
   });
-  /* 仕上げの好み(2026-08-03)。戻る=閉じるだけ(動画はそのまま。
-     素材を変えると focusNextAction がもう一度この画面を開く)。
-     進む=好みを既存フラグへ書いて自走を再開 */
+  /* 仕上げの好み(2026-08-03)。進む=好みを既存フラグへ書いて自走を再開。
+     ★ 戻る=素材の工程へ着地させる(2026-08-03 push前レビュー)。閉じるだけでは、
+       おまかせの人が現在地「同期と分析」の5工程の画面に置き去りになり、
+       再開の道がどこにも無かった(実測: 見えるのは試聴/この音で進めるだけ)。
+       全画面の「動画を選び直す」(#asRepick)と同じ着地(repickLand)を使い、
+       行動バーの「これでOK、おまかせを再開」で戻れるようにする ─
+       finishPicked は倒れたままなので、再開すればこの画面がまた開く */
   { const b = MC.ui.$("#fpBack");
-    if (b) b.onclick = () => MC.ui.closeFinishPick(); }
+    if (b) b.onclick = () => { MC.ui.closeFinishPick(); MC.ui.repickLand(); }; }
   { const g = MC.ui.$("#fpGo");
     if (g) g.onclick = () => MC.ui.finishPickGo(); }
   /* おまかせ全画面の中止。走っている処理にも止まれと伝える */
