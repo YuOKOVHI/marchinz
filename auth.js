@@ -549,7 +549,34 @@
     }
   }
 
+  /* ★ ログイン中の覆いが残り続けないための保険(2026-08-03 優さん報告
+     「Google認証後が切り替わらない時がある」)。
+     リダイレクト帰りは onAuthStateChanged が覆いを消さず、消す役は
+     onSignedIn の非同期プロフィール同期の finally **1箇所だけ**。その中には
+     Firestore の await が4つあり、時間切れを持たない ─ 通信が詰まると
+     finally に到達せず、裏では showLoggedInView と
+     navigateAwayFromAuthEntryIfLoggedIn が済んでいるのに覆いだけが残る。
+     「時がある」の形と一致する。同期の成否に関わらず、一定時間で必ず外す。
+     正規の消灯(setAuthLoadingOverlayVisible(false))が来たら見張りは畳む */
+  let authOverlayWatchdogTimer = 0;
+  function clearAuthOverlayWatchdog() {
+    if (!authOverlayWatchdogTimer) return;
+    clearTimeout(authOverlayWatchdogTimer);
+    authOverlayWatchdogTimer = 0;
+  }
+  function armAuthOverlayWatchdog(ms = 8000) {
+    clearAuthOverlayWatchdog();
+    authOverlayWatchdogTimer = setTimeout(() => {
+      authOverlayWatchdogTimer = 0;
+      if (!authLoadingOverlay || authLoadingOverlay.style.display === "none") return;
+      console.warn("[MarchinZ] auth loading overlay watchdog fired");
+      setAuthLoadingOverlayVisible(false);
+      setAuthLoadingOverlayText(DEFAULT_AUTH_LOADING_TEXT);
+    }, ms);
+  }
+
   function setAuthLoadingOverlayVisible(visible) {
+    if (!visible) clearAuthOverlayWatchdog();
     if (!authLoadingOverlay) return;
     authLoadingOverlay.style.display = visible ? "flex" : "none";
     authLoadingOverlay.setAttribute("aria-hidden", visible ? "false" : "true");
@@ -3688,6 +3715,9 @@
     const completedAuthRedirect = isAuthRedirectPending();
     setAuthRedirectPending(false);
     if (!completedAuthRedirect) setAuthLoadingOverlayVisible(false);
+    /* リダイレクト帰りはここで覆いを消さず、プロフィール同期の終わりに委ねる。
+       その同期が詰まっても覆いが残らないよう、見張りを立てる(上の説明を参照) */
+    else armAuthOverlayWatchdog();
     onSignedIn(user, { completedAuthRedirect });
   });
 

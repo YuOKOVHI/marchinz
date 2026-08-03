@@ -118,6 +118,21 @@ MC.ui.exportOverlay = {
     { const ex = el.querySelector(".eo-exit"); if (ex) ex.hidden = false; }
     MC.ui.eoLive.stop();   // 書き出しが終われば「再生中」を装う理由は無い
   },
+  /* ツール一覧へ移動する間の顔(2026-08-03 優さん指摘)。
+     ★ ここで**畳まない**のが肝。location.href の遷移は即座ではないので、
+       先に close() すると、その待ち時間だけ裏のこだわりの作業画面が露出し
+       「一度こだわりのページが表示され、その後TOPに戻る」に見えていた。
+       覆ったまま、押したことだけが伝わるように文言と操作列を切り替える */
+  leaving() {
+    const el = MC.ui.$("#exportOverlay");
+    if (!el || el.hidden) return;
+    MC.ui.$("#eoTitleText").textContent = "ツール一覧へ戻っています…";
+    MC.ui.$("#eoTitleIcon").className = "fa-solid fa-arrow-left";
+    MC.ui.$("#eoDone").hidden = true;         // 保存/共有はもう押させない
+    MC.ui.$("#eoClose").hidden = true;        // 二度押しで別の遷移を始めない
+    { const ex = el.querySelector(".eo-exit"); if (ex) ex.hidden = true; }
+    MC.ui.eoLive.stop();
+  },
   fail() {
     const el = MC.ui.$("#exportOverlay");
     if (!el || el.hidden) return;
@@ -5671,7 +5686,14 @@ MC.ui.wire = () => {
     if (!MC.ui._saved && MC.exporter.lastResult && MC.exporter.lastResult.blob) {
       if (!confirm("まだ保存していません。閉じると、いま作った動画は消えます。\n閉じますか？")) return;
     }
-    MC.ui.exportOverlay.close();
+    /* ★ 全画面は畳まずに移動する(2026-08-03 優さん指摘「一度こだわりのページが
+       表示され、その後TOPページに戻る」)。location.href の遷移は即座ではないので、
+       先に close() すると、その待ち時間だけ裏のこだわりの作業画面が露出していた ─
+       作り終えた人にはもう用の無い画面が一瞬だけ現れる。
+       覆ったまま移動すれば、見えるのは完成の画面 → ツール一覧 の1回だけ。
+       ★ 遷移が始まらなかったときのために、文言だけ「戻っています」に替える
+         (押したのに何も起きていないように見せない) */
+    MC.ui.exportOverlay.leaving();
     MC.ui.goToolList();
   };
   $("#eoClose").onclick = eoCloseByUser;

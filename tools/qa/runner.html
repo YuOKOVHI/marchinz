@@ -7249,13 +7249,30 @@ async function countSamples(ns, file, fromSec) {
         allow = true;
         d.getElementById("eoClose").click();
         if (went !== 1) throw new Error("確認OKなのにツール一覧へ行かない");
-        if (!d.getElementById("exportOverlay").hidden) throw new Error("成功の閉じるで畳まれない");
+        /* ★ 移動の間も覆ったまま(2026-08-03 優さん指摘「一度こだわりのページが
+           表示され、その後TOPページに戻る」)。location.href の遷移は即座ではないので、
+           先に畳むと裏の作業画面がその待ち時間だけ露出する。畳まないのが正しい */
+        if (d.getElementById("exportOverlay").hidden) {
+          throw new Error("移動の前に畳んでいる(裏のこだわり画面が一瞬見える)");
+        }
         /* 保存済みなら確認なしでツール一覧へ直行。1段目にも飛ばない */
         U.exportOverlay.open(); U.showDone(e.res); U.setSaveState(true);
         asked = 0;
         d.getElementById("eoClose").click();
         if (asked) throw new Error("保存済みなのに確認を出した");
         if (went !== 2) throw new Error("保存済みの閉じるがツール一覧へ行かない");
+        if (d.getElementById("exportOverlay").hidden) {
+          throw new Error("保存済みでも移動の前に畳んでいる");
+        }
+        /* 押したことは伝える(覆ったままだと「何も起きていない」に見える) */
+        const ttl = d.getElementById("eoTitleText").textContent;
+        if (!/戻っています/.test(ttl)) throw new Error("移動中の文言が変わらない: " + ttl);
+        if (!d.getElementById("eoClose").hidden) throw new Error("移動中も閉じるが押せる(二重遷移)");
+        /* 覆いが画面を埋めていること=裏が透けない */
+        const eor = d.getElementById("exportOverlay").getBoundingClientRect();
+        if (eor.width < w.innerWidth - 1 || eor.height < w.innerHeight - 1) {
+          throw new Error(`覆いが画面を埋めていない ${Math.round(eor.width)}x${Math.round(eor.height)}`);
+        }
         if (!d.getElementById("modeSelect").hidden) throw new Error("成功の閉じるが1段目へ飛んだ(行き先はツール一覧)");
       } finally { U.goToolList = keepGo; w.confirm = keepConfirm; }
       /* ③ 失敗の顔の「もう一度おまかせ」「自分で仕上げる」は従来どおり(トップへ飛ばさない) */
