@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """メディアページの紙もの2誌に新刊が出ていないかを調べる(2026-08-04 優さん指示)。
 
-    Laundry Day!!         週1回  https://www.marching-matsuri.com/laundryday
-    マーチングエクスプレス21  月1回  Amazon の検索結果
+    Laundry Day!!         毎日  https://www.marching-matsuri.com/laundryday
+    マーチングエクスプレス21  毎日  Amazon の検索結果
 
 **このスクリプトはサイトを書き換えない。** 見つけたことを報告するだけで、
 掲載は優さんが表紙画像を用意してから手で行う(表紙だけは自動で取れないため)。
@@ -20,8 +20,15 @@
     python3 check_media_updates.py --github-output     # Actions 用(+ Issue 本文を書き出す)
 
 終了コード:
-    0  調べられた(新刊の有無は出力を見る)
-    2  取得に失敗して判断できなかった ← Actions ではここで赤くして気づけるようにする
+    0  調べられた(新刊の有無は出力を見る)。相手に一時的に弾かれた日もここ。
+    2  見張りが壊れている ← Actions ではここで赤くして気づけるようにする
+
+★ 失敗を2種類に分ける(2026-08-04 毎日に変えたため)。
+   ・弾かれた(Blocked): 相手が今日は返してくれなかっただけ。明日また試せばよい。
+     毎日走るのにこれで赤くすると、Amazon に弾かれた日ごとに失敗メールが飛び、
+     やがて誰も見なくなる = 見張りが死ぬのと同じ。
+   ・読めなかった(それ以外): ページは返ってきたのに vol 番号が拾えない、
+     掲載中より古い号しか無い = **相手の作りが変わった**証拠。これは赤くする。
 """
 
 import argparse
@@ -69,7 +76,11 @@ META_REFRESH = re.compile(
     r'<meta[^>]+http-equiv=["\']?refresh["\']?[^>]*content=["\']?(\d+)\s*;', re.I)
 
 
-class Throttled(Exception):
+class Blocked(Exception):
+    """相手に届かなかった/弾かれた。こちらの壊れではないので赤くしない。"""
+
+
+class Throttled(Blocked):
     """相手に一時的に絞られた。待てば通る見込みがある。"""
 
     def __init__(self, wait):
@@ -110,7 +121,7 @@ def _get_once(url, timeout):
     if status in (301, 302, 303, 307, 308) and location:
         return None, urllib.parse.urljoin(url, location)
     if status != 200:
-        raise RuntimeError("HTTP {}".format(status))
+        raise Blocked("HTTP {}".format(status))
     if "gzip" in enc:
         raw = gzip.GzipFile(fileobj=io.BytesIO(raw)).read()
     elif "deflate" in enc:
@@ -144,7 +155,7 @@ def fetch(url, tries=3, timeout=25):
             last = e
             if i < tries - 1:
                 time.sleep(2 * (i + 1))
-    raise RuntimeError("{} の取得に失敗: {}".format(url, last))
+    raise Blocked("{} の取得に失敗: {}".format(url, last))
 
 
 def strip_tags(s):
@@ -221,7 +232,7 @@ def latest_express(page_html):
     """
     text = strip_tags(page_html)
     if re.search(r"Enter the characters|自動化されたアクセス", text, re.I):
-        raise RuntimeError("Amazon にロボット判定された(CAPTCHA)")
+        raise Blocked("Amazon にロボット判定された(CAPTCHA)")
     vols = [
         int(m.group(1))
         for m in re.finditer(r"マーチングエクスプレス\s*21\s*vol[.．]?\s*(\d{1,3})", text, re.I)
@@ -328,18 +339,30 @@ def main():
     for key in keys:
         try:
             results.append(run_check(key, index_html))
-        except Exception as e:  # noqa: BLE001 - 取得/解析の失敗はまとめて結果に載せる
-            results.append({"key": key, "name": CHECKS[key]["name"], "ok": False, "error": str(e)})
+        except Blocked as e:
+            # 相手が今日は返してくれなかっただけ。明日また試す(赤くしない)
+            results.append({"key": key, "name": CHECKS[key]["name"], "ok": False,
+                            "blocked": True, "error": str(e)})
+        except Exception as e:  # noqa: BLE001 - 解析の失敗は「見張りが壊れた」印
+            results.append({"key": key, "name": CHECKS[key]["name"], "ok": False,
+                            "blocked": False, "error": str(e)})
 
     news = [r for r in results if r.get("found")]
-    failed = [r for r in results if not r.get("ok")]
+    blocked = [r for r in results if not r.get("ok") and r.get("blocked")]
+    broken = [r for r in results if not r.get("ok") and not r.get("blocked")]
 
     if args.json:
-        print(json.dumps({"results": results, "found": bool(news)}, ensure_ascii=False, indent=2))
+        print(json.dumps({"results": results, "found": bool(news),
+                          "blocked": [r["key"] for r in blocked],
+                          "broken": [r["key"] for r in broken]},
+                         ensure_ascii=False, indent=2))
     else:
         for r in results:
             if not r.get("ok"):
-                print("[{}] 調べられなかった: {}".format(r["name"], r["error"]), file=sys.stderr)
+                print("[{}] {}: {}".format(
+                    r["name"],
+                    "今日は弾かれた(明日また試す)" if r.get("blocked") else "★調べ方が壊れている",
+                    r["error"]), file=sys.stderr)
             elif r["found"]:
                 print("[{}] ★新刊 vol.{}（いま載っているのは vol.{}） {}".format(
                     r["name"], r["latest"], r["current"], r["url"]))
@@ -359,8 +382,10 @@ def main():
                 f.write("found={}\n".format("true" if news else "false"))
                 f.write("issue_title={}\n".format(title))
 
-    # 1つでも調べられなかったら赤くする(黙って「変わりなし」に見えるのが一番まずい)
-    return 2 if failed else 0
+    # ★赤くするのは「調べ方が壊れた」ときだけ(2026-08-04 毎日に変えたため)。
+    #   弾かれた日まで赤くすると、毎日の失敗メールに埋もれて誰も見なくなる。
+    #   ただし黙って「変わりなし」に見せることは絶対にしない ─ 上の1行で必ず言う。
+    return 2 if broken else 0
 
 
 if __name__ == "__main__":

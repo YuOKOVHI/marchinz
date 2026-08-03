@@ -1,19 +1,19 @@
 # メディアページの紙もの2誌に新刊が出ていないかを見張る(2026-08-04 優さん指示)
 #
-#   Laundry Day!!          週1回  公式ページ(marching-matsuri.com)
-#   マーチングエクスプレス21   月1回  Amazon の検索結果
+#   Laundry Day!!          毎日  公式ページ(marching-matsuri.com)
+#   マーチングエクスプレス21   毎日  Amazon の検索結果
+#
+# 毎日にできる理由(2026-08-04 優さん指示): 公開リポジトリなので Actions の実行時間は
+# 無料。何もコミットしないので Netlify のビルドも走らず、クレジットも減らない。
 #
 # ★ サイトのファイルは一切書き換えない。見つけたら Issue を立てるだけ。
 #   表紙画像だけは自動で取れないので、掲載は優さんが手で行う。
-#   コミットしないので Netlify のビルドクレジットも減らない。
 name: メディア更新チェック (Laundry Day!! / マーチングエクスプレス21)
 
 on:
   schedule:
-    # 毎週月曜 06:00 JST (日曜 21:00 UTC) — Laundry Day!!
-    - cron: "0 21 * * 0"
-    # 毎月2日 06:00 JST (1日 21:00 UTC) — マーチングエクスプレス21
-    - cron: "0 21 1 * *"
+    # 毎日 06:00 JST (21:00 UTC)。2誌まとめて調べる
+    - cron: "0 21 * * *"
   workflow_dispatch:
     inputs:
       target:
@@ -40,19 +40,16 @@ jobs:
         with:
           python-version: "3.11"
 
-      # cron が2本あるので、どちらで起きたのかで対象を分ける。
-      # 手で回したとき(workflow_dispatch)は入力どおり、既定は両方。
+      # 毎日の巡回は2誌とも見る。手で回したとき(workflow_dispatch)だけ絞れる。
       - name: 対象を決める
         id: pick
         env:
           SCHEDULE: ${{ github.event.schedule }}
           INPUT_TARGET: ${{ github.event.inputs.target }}
         run: |
-          case "$SCHEDULE" in
-            "0 21 * * 0") target=laundry ;;
-            "0 21 1 * *") target=express ;;
-            *)            target="${INPUT_TARGET:-all}" ;;
-          esac
+          # 毎日の巡回は2誌とも。手で回したときだけ入力で絞れる
+          if [ -n "$SCHEDULE" ]; then target=all
+          else target="${INPUT_TARGET:-all}"; fi
           # 想定の3語以外は受け付けない(run: へ値を渡す前にここで閉じる)
           case "$target" in
             all|laundry|express) ;;
@@ -61,8 +58,10 @@ jobs:
           echo "対象: $target"
           echo "target=$target" >> "$GITHUB_OUTPUT"
 
-      # 取得や解析に失敗したらここで赤くなる。
-      # 「黙って“変わりなし”に見える」のが一番まずいので、握りつぶさない。
+      # ★赤くなるのは「調べ方が壊れた」ときだけ(相手のページの作りが変わった等)。
+      # 相手に弾かれただけの日は緑のまま(理由はログに必ず出る) ─ 毎日走るので、
+      # 弾かれた日まで赤くすると失敗メールに埋もれて誰も見なくなる。
+      # 「黙って“変わりなし”に見える」ことだけは絶対にさせない。
       - name: 更新チェック
         id: check
         env:
