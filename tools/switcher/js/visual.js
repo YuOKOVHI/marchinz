@@ -47,6 +47,20 @@ MC.visual = {
   HOP: 3.0,
   /* 殺しスイッチ: trueで旧video要素シーク方式に固定(実機切り分け用) */
   forceSeek: false,
+  /* ---------- カメラの性格の推定しきい値(2026-08-03 優さん指示②) ----------
+     act = 6×4グリッドのうち残差(補正後の差分)が出たセルの割合(0..1)。
+     ・TH_WIDE_ACT 0.25: 画面の1/4以上のセルが恒常的に動く=引きで隊形全体が
+       視野に入っている(俯瞰・引きの固定カメラ)。合成素材の実測では
+       俯瞰相当=0.30 / 寄りの通常カメラ=0.10 で、0.25 が両者を分ける
+     ・TH_STATIC_ACT 0.05: 動くセルが5%未満=被写体がほぼ止まっている
+       (フロントピット・ドラムメジャー等の定点。合成実測 0.02)
+     ・TH_STATIC_MOE 0.012: 画面平均の残差もごく小さいこと(手元だけが
+       細かく動く定点を「動いている」と誤認しないための AND 条件)
+     ・TH_FIXED_SHAKE 0.02: 三脚固定相当のブレ(手ブレ失格の TH_SHAKE=0.11 の1/5) */
+  TH_WIDE_ACT: 0.25,
+  TH_STATIC_ACT: 0.05,
+  TH_STATIC_MOE: 0.012,
+  TH_FIXED_SHAKE: 0.02,
 };
 
 /* ---------- 顔検出の実行場所(3段構え) ----------
@@ -470,6 +484,24 @@ MC.visual._finalize = V => {
   }
   V.movingFrac = V.dxs.length ? camMoveN / V.dxs.length : 0;
   V.operated = V.movingFrac > 0.15;
+
+  /* ---------- カメラの性格(2026-08-03 優さん指示②「俯瞰固定は気持ち多め、
+     人が動いてないのは少なめ」) ----------
+     既に取ってあるサンプル列の中央値を取るだけ(O(n))。新しい解析パスは走らせない。
+     ・overheadFixed: カメラ自体が動かず(非操作+ブレ中央値が三脚相当)、
+       画面の広い範囲が動き続けている = 引きで隊形全体が見える俯瞰・定点の引き
+     ・staticScene: 動き量が恒常的に小さい(actもmoEも中央値が小さい)
+       = フロントピット・ドラムメジャー等、人がほぼ動かない定点。
+     クリップ全体の性格なので、採点(director._rank)はセグメントごとに
+     再計算せず、この値を読むだけ */
+  const med = arr => { const s = [...arr].sort((a, b) => a - b); return s.length ? s[s.length >> 1] : 0; };
+  V.actMed = med(V.act);
+  V.moEMed = med(V.moE);
+  V.shakeMed = med(V.shake);
+  V.overheadFixed = !V.operated && V.shakeMed <= MC.visual.TH_FIXED_SHAKE
+    && V.actMed >= MC.visual.TH_WIDE_ACT;
+  V.staticScene = !V.operated && V.actMed < MC.visual.TH_STATIC_ACT
+    && V.moEMed < MC.visual.TH_STATIC_MOE;
 };
 
 /* 入口: WebCodecs逐次デコード(速い)を試し、開けない素材・失敗は

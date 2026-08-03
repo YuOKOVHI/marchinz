@@ -17,10 +17,18 @@ MC.director = {
      「切り替えはもう少し多めにして」)。反省会用途では全員の視点がテンポよく
      見えるのが価値で、9秒上限は1カメラを見つめ続ける時間として長すぎた。
      1(少なめ)と3(多め)は本人が明示的に選ぶ値なので据え置く */
+  /* ★ 2026-08-03 優さん指示①「もっと切り替え頻度を多く。4秒以上は同じのにしない」
+     +補足「きっちり4秒じゃなくてもいい。少し誤差があってもいい」。
+     おすすめ(2)は目標レンジ2.0〜4.0秒の**ソフト上限** ─ 小節の区切りを優先し、
+     スナップの都合で+1秒程度の超過は許容する(音楽的な区切り > きっちり4秒)。
+     sameSec = 同一カメラの連続オンエア時間の上限(秒)。回数(MAX_RUN)より
+     **時間が主**。おすすめでは min2秒×2ショットで超えるため、
+     実質「同じカメラの連続は1ショット強」になる。
+     多め(3)=目安2〜3秒でさらに短く / 少なめ(1)=従来寄り(5〜7秒・上限も緩い) */
   LEVELS: {
-    1: { base: 8.0, min: 4.5, max: 14, interleave: 2 },  // 少なめ(ゆったり)
-    2: { base: 4.0, min: 2.5, max: 7,  interleave: 3 },  // おすすめ
-    3: { base: 3.2, min: 1.8, max: 6,  interleave: 4 },  // 多め(細かい)
+    1: { base: 5.0, min: 3.5, max: 7.0, sameSec: 8.0, interleave: 2 },  // 少なめ(ゆったり)
+    2: { base: 3.0, min: 2.0, max: 4.0, sameSec: 5.0, interleave: 3 },  // おすすめ(2〜4秒)
+    3: { base: 2.4, min: 1.8, max: 3.0, sameSec: 4.0, interleave: 4 },  // 多め(細かい)
   },
   /* 素材ごとの出番の希望(clip.freq)をスコアへ足す量。
      「少なめ」は下の登場間隔ボーナス(最大0.48)より小さくして、
@@ -33,8 +41,19 @@ MC.director = {
      切り替わらない。マーチングの反省会では「両方の視点が見える」ことが
      価値なので、上限に達したら失格でない別カメラへ強制的に切り替える。
      失格(dq)しか残っていなければ切り替えない ─ 「振っている絵は絶対に
-     入れない」(ディレクター指示)は連続上限より強い */
+     入れない」(ディレクター指示)は連続上限より強い。
+     ★ 2026-08-03: 主役は時間上限(MAX_SAME_SEC)に交代。回数は時間が測れない
+       異常系の保険として残す(時間上限が先に効くので通常は出番がない) */
   MAX_RUN: 3,
+  /* ★ カメラの性格の重み(2026-08-03 優さん指示②「俯瞰固定は気持ち多め、
+     フロントピットやドラムメジャーなど、人が動いてないのは少なめ」)。
+     性格の推定は visual.js の _finalize(overheadFixed / staticScene)。
+     ・OVERHEAD_BONUS: 控えめな加点。ショット種スコア(重み0.25〜1.3×0..1)の
+       数%〜10%相当。強くしすぎると俯瞰に張り付く
+     ・STATIC_BIAS: FREQ_BIAS.less(-0.35)と同格の減点。出番ゼロにはしない ─
+       登場間隔ボーナス(最大+0.48)と飢餓ガード(STARVE)が最低保証を担う */
+  OVERHEAD_BONUS: 0.15,
+  STATIC_BIAS: -0.4,
   /* ★ 出番の飢餓ガード(2026-08-02 優さん実機: 「3本入れたのに2台しか出ない」。
      N本入れるとN-1台になる規則性)。原因はスコアの構造 ─ 上位2台は
      「直前 -0.9 / 2つ前 -0.25」の罰を交互に払いながら回るが、3台目は
@@ -199,6 +218,15 @@ MC.director._rank = (g0, g1, cls, ctx) => {
     if (c.role === "pit") score += pitSeg ? 1.2 : -0.35;
     // 素材ごとの出番の希望(少なめ/おまかせ/多め)
     score += MC.director.FREQ_BIAS[c.freq] || 0;
+    /* ★ カメラの性格で出番を重み付け(2026-08-03 優さん指示②)。
+       クリップ全体の性格(visual._finalize が推定)を読むだけ ─
+       俯瞰固定=控えめに加点 / 人が動かない定点=減点(ゼロにはしない。
+       登場間隔ボーナスと飢餓ガードが最低保証) */
+    const Vc = c.visual;
+    if (Vc) {
+      if (Vc.overheadFixed) score += MC.director.OVERHEAD_BONUS;
+      if (Vc.staticScene) score += MC.director.STATIC_BIAS;
+    }
     // 画質(セグメント内シャープネスがクリップ中央値に対して高いか)
     if (m && m.sharpMed > 1e-6) score += 0.1 * Math.min(1.2, m.sharpMean / m.sharpMed);
 
@@ -249,6 +277,7 @@ MC.director.generate = () => {
   const ctx = {
     prevId: null, prev2Id: null,
     runLen: 0,          // いまのカメラが何ショット連続しているか(MAX_RUN用)
+    runSec: 0,          // いまのカメラの連続オンエア秒(sameSec用。時間が主)
     segsSinceWide: 0,
     interleave: L.interleave,
     sinceUse: new Map(MC.S.clips.map(c => [c.id, 99])),
@@ -272,6 +301,10 @@ MC.director.generate = () => {
     let tNext = MC.director._snap(grid, t + target, t + L.min);
     tNext = Math.min(tNext, tOut);
     if (tNext <= t + 0.5) tNext = Math.min(tOut, t + L.min);
+    /* ★ ソフト上限(2026-08-03 優さん①+補足)。小節スナップの都合で max を
+       多少(+1秒まで)超えるのは許す ─ 音楽的な区切りを優先する。
+       それすら無い(小節が遠い)ときだけ、区切りより長さを採って max で切る */
+    if (tNext - t > L.max + 1.0) tNext = Math.min(tOut, t + L.max);
 
     // このセグメントのカメラを選ぶ
     const cls = MC.sections.classify(audioClip, t, tNext);
@@ -292,7 +325,10 @@ MC.director.generate = () => {
         why.forEach(w => { dqTally.by[w] = (dqTally.by[w] || 0) + 1; });
         const detail = Object.entries(tally).map(([k, v]) => `${k}×${v}`).join(" / ");
         MC.log(`director: ${t.toFixed(1)}s〜 は使える画が無いため直前のカットを延長（${detail}）`);
-        // 文脈は進めずに時刻だけ進める(このセグメントは前のカットが占める)
+        // 文脈は進めずに時刻だけ進める(このセグメントは前のカットが占める)。
+        // 連続オンエア秒だけは足す ─ 延長は sameSec を超えうるが、
+        // 「振っている絵は絶対に入れない」(絶対条件)が時間上限より強い
+        ctx.runSec += (tNext - t);
         t = tNext;
         continue;
       }
@@ -324,13 +360,18 @@ MC.director.generate = () => {
         MC.log(`director: ${t.toFixed(1)}s〜 ${ctx.sinceUse.get(starving.id)}ショット出ていないカメラを出す`);
         top = starving;
       }
-      /* ② 連続上限: 同じカメラが MAX_RUN ショット続いたら別カメラへ
-         (2本のとき①より先に効く。①と②で N=2 も N=3 以上も両方塞がる) */
-      if (top.id === ctx.prevId && ctx.runLen >= MC.director.MAX_RUN) {
+      /* ② 連続上限: **時間が主・回数は従**(2026-08-03 優さん指示①)。
+         同じカメラの連続オンエアが L.sameSec を超える見込みなら別カメラへ。
+         おすすめ(sameSec=5)では2ショット目で必ず超えるため、実質
+         「同じカメラは1ショット強まで」= 4秒目安のソフト上限が効く。
+         MAX_RUN(回数)は時間が測れない異常系の保険として残す */
+      if (top.id === ctx.prevId
+          && (ctx.runSec + (tNext - t) > (L.sameSec || Infinity)
+              || ctx.runLen >= MC.director.MAX_RUN)) {
         const alt = ranked.find(r => r.id !== ctx.prevId && !r.dq);
         if (alt) {
           forcedN++;
-          MC.log(`director: ${t.toFixed(1)}s〜 連続${ctx.runLen}ショットのため別カメラへ強制切替`);
+          MC.log(`director: ${t.toFixed(1)}s〜 連続${ctx.runSec.toFixed(1)}秒/${ctx.runLen}ショットのため別カメラへ強制切替`);
           top = alt;
         }
       }
@@ -349,6 +390,7 @@ MC.director.generate = () => {
     cuts.push({ t, clipId: top.id, trans, dur });
 
     // 文脈更新
+    ctx.runSec = top.id === ctx.prevId ? ctx.runSec + (tNext - t) : (tNext - t);
     ctx.runLen = top.id === ctx.prevId ? ctx.runLen + 1 : 1;
     for (const [id, v] of ctx.sinceUse) ctx.sinceUse.set(id, v + 1);
     ctx.sinceUse.set(top.id, 0);

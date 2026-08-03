@@ -3658,7 +3658,8 @@ async function countSamples(ns, file, fromSec) {
       env: new Array(1200).fill(1) });
     const keep = { seg: w.MC.visual.seg, cls: w.MC.sections.classify,
                    sal: w.MC.director._salute,
-                   run: w.MC.director.MAX_RUN, stv: w.MC.director.STARVE };
+                   run: w.MC.director.MAX_RUN, stv: w.MC.director.STARVE,
+                   same: w.MC.director.LEVELS[2].sameSec };
     const m = (maxF, operated) => ({
       shakeP75: .03, shakeCamP75: .03, flipRatio: 0, panRatio: 0,
       operated, settled: true, sharpMean: 50, sharpMed: 50,
@@ -3671,6 +3672,9 @@ async function countSamples(ns, file, fromSec) {
       }
       w.MC.director.MAX_RUN = guards ? keep.run : Infinity;
       w.MC.director.STARVE = guards ? keep.stv : Infinity;
+      /* 時間上限(sameSec)も同時に外す ─ 2026-08-03 から時間が主のため、
+         これを外さないと「ガードなしの張り付き再現」(変異)が成立しない */
+      w.MC.director.LEVELS[2].sameSec = guards ? keep.same : Infinity;
       w.MC.director.generate();
       const cuts = S.cutList;
       let run = 0, prev = null, maxRun = 0;
@@ -3732,9 +3736,144 @@ async function countSamples(ns, file, fromSec) {
       w.MC.visual.seg = keep.seg; w.MC.sections.classify = keep.cls;
       w.MC.director._salute = keep.sal;
       w.MC.director.MAX_RUN = keep.run; w.MC.director.STARVE = keep.stv;
+      w.MC.director.LEVELS[2].sameSec = keep.same;
       compReset(w);
     }
   });
+
+  await test("★同一カメラは目安4秒(ソフト上限)で切り替わる / 密度3段でカット数が変わる(変異つき)", async () => {
+    /* 2026-08-03 優さん指示①「もっと切り替え頻度を多く。4秒以上は同じのにしない」
+       +補足「きっちり4秒じゃなくてもいい」→ ソフト上限:
+       ・1ショットは max(4秒)+1秒 まで(小節の区切り優先の許容)
+       ・同一カメラの連続オンエアは sameSec(おすすめ5秒)以内
+       ・「少なめ」はゆったり(5〜7秒)のまま残す */
+    const w = await compEnv();
+    const S = compReset(w);
+    S.audioClipId = 1; S.trimIn = 0; S.trimOut = 60; S.cutLevel = 2;
+    const mkBeats = () => ({ bpm: 120, period: 0.5, hopSec: 0.05,
+      beats: Array.from({ length: 119 }, (_, i) => (i + 1) * 0.5),
+      env: new Array(1200).fill(1) });
+    Object.assign(w.MC.getClip(1), { beatsData: mkBeats(), sections: {} });
+    const m = (maxF, operated) => ({
+      shakeP75: .03, shakeCamP75: .03, flipRatio: 0, panRatio: 0,
+      operated, settled: true, sharpMean: 50, sharpMed: 50,
+      moE: 0, act: .1, actNear: .5, nF: 1, maxF, faceOK: true, n: 10 });
+    const keep = { seg: w.MC.visual.seg, cls: w.MC.sections.classify,
+                   sal: w.MC.director._salute, run: w.MC.director.MAX_RUN,
+                   stv: w.MC.director.STARVE, same: w.MC.director.LEVELS[2].sameSec };
+    const runs = cuts => {   // 同一カメラの連続オンエア秒の一覧
+      const out = []; let cur = null, len = 0;
+      for (let i = 0; i < cuts.length; i++) {
+        const end = i + 1 < cuts.length ? cuts[i + 1].t : 60;
+        const d = end - cuts[i].t;
+        if (cuts[i].clipId === cur) len += d; else { if (cur != null) out.push(len); cur = cuts[i].clipId; len = d; }
+      }
+      if (cur != null) out.push(len);
+      return out;
+    };
+    try {
+      w.MC.director._salute = null;
+      // 片方が常勝する条件(feature高止まり+強いカメラ)で時間上限の働きを見る
+      w.MC.sections.classify = () => ({ feature: 1, percussion: 0, tutti: 0, pit: 0,
+                                        bpm: 120, dyn: 0.5, quiet: 0 });
+      const M = { 1: m(.30, true), 2: m(.132, false), 3: m(.16, false) };
+      w.MC.visual.seg = clip => M[clip.id];
+      w.MC.director.generate();
+      const cuts = S.cutList;
+      /* ① 各ショットは max+1(=5秒)以下(ソフト上限)・min-ε以上 */
+      for (let i = 0; i < cuts.length; i++) {
+        const end = i + 1 < cuts.length ? cuts[i + 1].t : 60;
+        const len = end - cuts[i].t;
+        if (len > 5.01) throw new Error(`ショットが${len.toFixed(1)}秒(ソフト上限5秒超)`);
+      }
+      /* ② 同一カメラの連続オンエアは sameSec(5秒)以内 */
+      const worst = Math.max(...runs(cuts));
+      if (worst > w.MC.director.LEVELS[2].sameSec + 0.01) {
+        throw new Error(`同一カメラが${worst.toFixed(1)}秒続く(上限${w.MC.director.LEVELS[2].sameSec}秒)`);
+      }
+      /* ③ 変異: 時間上限と回数・飢餓の門を全部外すと4秒超えの張り付きが実際に出る
+         (=この見張りに検出力がある証明) */
+      w.MC.director.LEVELS[2].sameSec = Infinity;
+      w.MC.director.MAX_RUN = Infinity;
+      w.MC.director.STARVE = Infinity;
+      w.MC.director.generate();
+      const worstMut = Math.max(...runs(S.cutList));
+      if (!(worstMut > 5.01)) throw new Error("変異(上限なし)でも張り付きが出ない=見張りが空回り: " + worstMut.toFixed(1));
+      w.MC.director.LEVELS[2].sameSec = keep.same;
+      w.MC.director.MAX_RUN = keep.run;
+      w.MC.director.STARVE = keep.stv;
+      /* ④ 密度3段: 少なめ(1)はおすすめ(2)よりカットが確実に少ない
+         (完成画面の「もっと多く/少なく」はこの cutLevel を±1するだけ) */
+      S.cutLevel = 2; w.MC.director.generate(); const n2 = S.cutList.length;
+      S.cutLevel = 1; w.MC.director.generate(); const n1 = S.cutList.length;
+      if (!(n1 < n2)) throw new Error(`少なめ(${n1})がおすすめ(${n2})より少なくない`);
+      S.cutLevel = 2;
+      return `最長ショット5秒以下 / 同一カメラ最長${worst.toFixed(1)}秒 / 変異=${worstMut.toFixed(1)}秒 / 密度1=${n1}カット・2=${n2}カット`;
+    } finally {
+      w.MC.visual.seg = keep.seg; w.MC.sections.classify = keep.cls;
+      w.MC.director._salute = keep.sal;
+      w.MC.director.MAX_RUN = keep.run; w.MC.director.STARVE = keep.stv;
+      w.MC.director.LEVELS[2].sameSec = keep.same;
+      compReset(w);
+    }
+  });
+
+  await test("★カメラの性格: 俯瞰固定は気持ち多め・人が動かない定点は少なめ(変異つき)", async () => {
+    /* 2026-08-03 優さん指示②。推定(visual._finalize)と採点(director._rank)の両方を見る */
+    const w = await compEnv();
+    const S = compReset(w);
+    const V0 = MC0 => MC0;   // 可読用
+    /* --- 推定: 既存サンプル列の中央値だけで性格が出る --- */
+    const N = 40, fill = v => new Array(N).fill(v);
+    const fin = o => { const V = { dxs: fill(0), sharp: fill(50),
+      act: fill(o.act), moE: fill(o.moE), shake: fill(o.shake ?? 0.005), ...o.over };
+      w.MC.visual._finalize(V); return V; };
+    const over = fin({ act: 0.30, moE: 0.03 });
+    if (!over.overheadFixed || over.staticScene) throw new Error("俯瞰固定を推定できない");
+    const stat = fin({ act: 0.02, moE: 0.005 });
+    if (!stat.staticScene || stat.overheadFixed) throw new Error("動きの無い定点を推定できない");
+    const norm = fin({ act: 0.10, moE: 0.03 });
+    if (norm.overheadFixed || norm.staticScene) throw new Error("普通のカメラに性格が付いた");
+    /* 操作カメラは広く動いて見えても俯瞰扱いしない(パンで全面が動くだけ) */
+    const oper = fin({ act: 0.30, moE: 0.03, over: { dxs: fill(5) } });
+    if (oper.overheadFixed) throw new Error("操作カメラまで俯瞰固定になっている");
+    /* --- 採点: _rank の順位が性格で動く --- */
+    const m = maxF => ({ shakeP75: .03, shakeCamP75: .03, flipRatio: 0, panRatio: 0,
+      operated: false, settled: true, sharpMean: 50, sharpMed: 50,
+      moE: 0, act: .1, actNear: .5, nF: 1, maxF, faceOK: true, n: 10 });
+    const M = { 1: m(.17), 2: m(.16), 3: m(.20) };   // 素の採点は 3 > 1 > 2
+    const keep = { seg: w.MC.visual.seg, sal: w.MC.director._salute,
+                   ob: w.MC.director.OVERHEAD_BONUS, sb: w.MC.director.STATIC_BIAS };
+    try {
+      w.MC.visual.seg = clip => M[clip.id];
+      w.MC.director._salute = null;
+      S.clips[0].visual = {};                        // cam1 = 普通
+      S.clips[1].visual = { overheadFixed: true };   // cam2 = 俯瞰固定
+      S.clips[2].visual = { staticScene: true };     // cam3 = 定点(人が動かない)
+      const cls = { feature: 0, percussion: 0, tutti: .3, pit: 0, bpm: 120, dyn: .5, quiet: 0 };
+      const ctx = () => ({ prevId: null, prev2Id: null, runLen: 0, runSec: 0,
+        segsSinceWide: 0, interleave: 99, sinceUse: new Map([[1, 0], [2, 0], [3, 0]]),
+        hasPitCam: false });
+      /* 俯瞰(+0.15)は、素の採点で少し勝るcam1(寄り+0.025相当)を上回る=気持ち多め */
+      let r = w.MC.director._rank(10, 13, cls, ctx());
+      if (r[0].id !== 2) throw new Error("俯瞰固定が「気持ち多め」になっていない: 先頭=cam" + r[0].id);
+      /* 定点(-0.4)は、素の採点で最強のcam3(+0.10相当)でも先頭に来ない=少なめ */
+      if (r.find(x => x.id === 3) === r[0]) throw new Error("定点が減点されていない");
+      const pos3 = r.findIndex(x => x.id === 3);
+      if (pos3 === 0) throw new Error("定点が先頭に来ている");
+      /* 変異: 重みを0にすると素の採点どおり cam3 が先頭に戻る(見張りに歯) */
+      w.MC.director.OVERHEAD_BONUS = 0; w.MC.director.STATIC_BIAS = 0;
+      r = w.MC.director._rank(10, 13, cls, ctx());
+      if (r[0].id !== 3) throw new Error("変異(重み0)で素の採点に戻らない: 先頭=cam" + r[0].id);
+      return "推定=俯瞰/定点/普通/操作の4通り / 採点=俯瞰が浮き・定点が沈む / 変異で戻る";
+    } finally {
+      w.MC.visual.seg = keep.seg; w.MC.director._salute = keep.sal;
+      w.MC.director.OVERHEAD_BONUS = keep.ob; w.MC.director.STATIC_BIAS = keep.sb;
+      S.clips.forEach(c => { delete c.visual; });
+      compReset(w);
+    }
+  });
+
 
 
   group("㉚ おまかせが黙って死なない(2026-08-01 レビュー14件の見張り)");
@@ -6011,6 +6150,63 @@ async function countSamples(ns, file, fromSec) {
     } finally {
       w.MZ_LIMITS.maxExtraScenes = keep.max; U._extraScenesMade = keep.made;
       U.runAuto = keep.auto; e.restore();
+    }
+  });
+
+  await test("★完成画面の「切り替えをもっと多く/少なく」— 自動SWだけ・±1・両端は消す・ゲスト枠を消費", async () => {
+    /* 2026-08-03 優さん指示「他のシーンの下に、切り替え(スイッチ)をもっと多くする、
+       もっと少なくする もできるように」。同じシーンのまま cutLevel±1 で作り直す。
+       回数は「別のシーン」と同じ勘定(枠の思想を単純に保つ) */
+    const e = await doneEnv();
+    const w = e.w, d = w.document, U = e.U, S = w.MC.S;
+    const keep = { max: w.MZ_LIMITS.maxExtraScenes, made: U._extraScenesMade,
+                   auto: U.runAuto, lv: S.cutLevel, mode: S.mode,
+                   sk: S.startKey, sa: S.startAt };
+    let ran = 0, got = null;
+    U.runAuto = async opt => { ran++; got = opt; };
+    try {
+      S.mode = "switch"; S.cutLevel = 2; S.startKey = "climax"; S.startAt = null;
+      w.MZ_LIMITS.maxExtraScenes = 1; U._extraScenesMade = 0;
+      U.setSaveState(true);
+      U.renderSceneOffers();
+      const el = d.getElementById("eoDoneDensity");
+      if (!el) throw new Error("完成画面に切り替えの2択が無い");
+      /* 置き場所は「別のシーン」の下 */
+      const sc = d.getElementById("eoDoneScenes");
+      if (sc && el.previousElementSibling !== sc) throw new Error("別のシーンの下に居ない");
+      if (!el.querySelector('[data-density="1"]') || !el.querySelector('[data-density="-1"]')) {
+        throw new Error("中間段(おすすめ)なのに2択が揃っていない");
+      }
+      /* 両端: そのボタンだけ静かに消える */
+      S.cutLevel = 3; U.renderDensityOffers();
+      if (d.querySelector('#eoDoneDensity [data-density="1"]')) throw new Error("上端でも「もっと多く」が出ている");
+      if (!d.querySelector('#eoDoneDensity [data-density="-1"]')) throw new Error("上端で「少なく」まで消えた");
+      S.cutLevel = 1; U.renderDensityOffers();
+      if (d.querySelector('#eoDoneDensity [data-density="-1"]')) throw new Error("下端でも「もっと少なく」が出ている");
+      /* 自動スイッチング以外には出さない */
+      S.mode = "vertical"; U.renderDensityOffers();
+      if (d.getElementById("eoDoneDensity")) throw new Error("縦型にも出ている");
+      S.mode = "switch"; S.cutLevel = 2; U.renderDensityOffers();
+      /* 押すと同じシーンのまま密度±1で自走(解析使い回しの scene 経路) */
+      d.querySelector('#eoDoneDensity [data-density="1"]').click();
+      eq(S.cutLevel, 3, "密度が+1される");
+      eq(ran, 1, "作り直しが走る");
+      if (!got || !got.scene || got.scene.key !== "climax") {
+        throw new Error("同じシーンを引き継いでいない: " + JSON.stringify(got));
+      }
+      eq(U._extraScenesMade, 1, "ゲストの枠(別のシーンと同じ勘定)を消費する");
+      /* 枠を使い切ったら: 2択は消え、直接呼んでも走らない(変異=UI飛ばし) */
+      U.exportOverlay.open(); U.showDone(e.res); U.setSaveState(true); U.renderSceneOffers();
+      if (d.getElementById("eoDoneDensity")) throw new Error("枠ゼロでも2択が出ている");
+      U.remakeWithDensity(-1);
+      if (ran !== 1) throw new Error("枠ゼロなのに直接呼びで作り直せる(門が無い)");
+      eq(S.cutLevel, 3, "枠ゼロでは密度も動かさない");
+      return "自動SWのみ / 別のシーンの下 / ±1と両端 / scene引き継ぎ / 枠1本を共有";
+    } finally {
+      w.MZ_LIMITS.maxExtraScenes = keep.max; U._extraScenesMade = keep.made;
+      U.runAuto = keep.auto; S.cutLevel = keep.lv; S.mode = keep.mode;
+      S.startKey = keep.sk; S.startAt = keep.sa;
+      e.restore();
     }
   });
 

@@ -742,6 +742,9 @@ MC.ui.renderSceneOffers = () => {
     const rev = el.querySelector(".mzso-reveal");
     if (rev) rev.onclick = () => { MC.ui._scenesRevealed = true; MC.ui.renderSceneOffers(); };
   }
+  /* 切り替えの多い/少ない版(2026-08-03)。別のシーンの下に出すので、
+     シーン候補の描画が終わったここで毎回並べ直す */
+  MC.ui.renderDensityOffers();
 };
 
 /* ★ 保存が済んだら「このツールを友達にシェア」を保存バンドの直下へ持ち上げる
@@ -829,6 +832,65 @@ MC.ui.shareTool = async () => {
   MC.ui.toast(ok ? "リンクをコピーしました。友達に貼って送れます"
                  : "コピーできませんでした。アドレスバーのURLをお使いください");
   return ok ? "copied" : "failed";
+};
+
+/* ============ 切り替えの多い/少ない版を作り直す(2026-08-03 優さん指示
+   「他のシーンの下に、切り替えをもっと多くする、もっと少なくする もできるように」) ============
+   同じシーン・同じ設定のまま、カット密度(cutLevel 1〜3)だけ±1して再書き出しする。
+   解析は使い回し(=別のシーンと同じ高速経路。カット割りと書き出しだけやり直す)。
+   ・表示は自動スイッチング(mode==="switch")のときだけ(縦型・ワイプはカット割が主役でない)
+   ・両端(1/3)に達したら、その方向のボタンは静かに消す
+   ・★ 回数は「別のシーン」と**同じ勘定**(maxExtraScenes/_extraScenesMade)。
+     ゲスト1本の枠を消費する ─ 枠の思想(完成後の作り直しは1本)を単純に保つ */
+MC.ui.renderDensityOffers = () => {
+  const hosts = [
+    { scenes: "doneScenes", note: MC.ui.$("#doneNote"), id: "doneDensity" },
+    { scenes: "eoDoneScenes", note: MC.ui.$("#eoDoneNote"), id: "eoDoneDensity" },
+  ];
+  const cur = MC.S.cutLevel || 2;
+  const canMore = cur < 3, canLess = cur > 1;
+  const show = MC.S.mode === "switch"
+    && (canMore || canLess)
+    && MC.ui.extraScenesLeft() > 0
+    && !(!MC.ui._saved && !MC.ui._scenesRevealed);   // 保存前は候補と同じく畳む(誤タップ防止)
+  for (const h of hosts) {
+    let el = document.getElementById(h.id);
+    if (!show) { if (el) el.remove(); continue; }
+    /* 置き場所は「別のシーン」の下。無ければ保存表示の下 */
+    const anchor = document.getElementById(h.scenes) || h.note;
+    if (!anchor) continue;
+    if (!el) { el = document.createElement("div"); el.id = h.id; el.className = "mz-scene-offers"; }
+    anchor.insertAdjacentElement("afterend", el);
+    el.innerHTML =
+      '<p class="mzso-title"><i class="fa-solid fa-shuffle" aria-hidden="true"></i> '
+      + 'カメラの切り替え<span class="mzso-note">同じシーンのまま、切り替えの回数だけ変えて作り直します</span></p>'
+      + '<div class="mzso-list" role="group" aria-label="切り替えの回数">'
+      + (canMore ? '<button type="button" class="mzso-btn" data-density="1">'
+          + '<i class="fa-solid fa-plus" aria-hidden="true"></i> 切り替えをもっと多くする</button>' : "")
+      + (canLess ? '<button type="button" class="mzso-btn" data-density="-1">'
+          + '<i class="fa-solid fa-minus" aria-hidden="true"></i> 切り替えをもっと少なくする</button>' : "")
+      + "</div>";
+    el.querySelectorAll("[data-density]").forEach(b => {
+      b.onclick = () => MC.ui.remakeWithDensity(parseInt(b.dataset.density, 10));
+    });
+  }
+};
+
+MC.ui.remakeWithDensity = delta => {
+  if (MC.ui._busy || (MC.exporter && MC.exporter.running)) return;
+  const cur = MC.S.cutLevel || 2;
+  const next = Math.min(3, Math.max(1, cur + delta));
+  if (next === cur) return;
+  /* 回数の門は「別のシーン」と共通(上の設計コメント参照) */
+  if (MC.ui.extraScenesLeft() <= 0) { MC.ui.renderSceneOffers(); return; }
+  MC.ui._extraScenesMade = (MC.ui._extraScenesMade || 0) + 1;
+  MC.S.cutLevel = next;
+  MC.saveState();
+  MC.ui.exportOverlay.close();
+  const dc = MC.ui.$("#doneCard"); if (dc) dc.hidden = true;
+  /* 同じシーンを scene 指定で渡す → runAuto の高速経路(解析使い回し)に乗り、
+     applyLengthChoice が同じ startKey/startAt から同じ窓を引き直す */
+  MC.ui.runAuto({ scene: { key: MC.S.startKey || "start", t: MC.S.startAt } });
 };
 
 /* 候補を押したら、解析は使い回して書き出しまで自走する */
