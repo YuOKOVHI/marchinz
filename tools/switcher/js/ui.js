@@ -2831,7 +2831,19 @@ MC.ui.refreshSetupTabs = () => {
   const rank = MC.ui.STEP_RANK;
   tabs.hidden = !MC.ui._tabsForced &&
     (rank[MC.ui._stepPhase ?? "mat"] ?? 0) < rank.sync;
-  if (tabs.hidden && MC.ui._setupTab === "pro") { MC.ui.setSetupTab("easy"); return; }
+  /* ★ おまかせから逃げてきた人は降格させない(2026-08-03 2巡目レビュー)。
+     中止・失敗・「自分で仕上げる」でこだわりへ落ちた人は _autoFlow が立ったまま
+     _setupTab="pro" になる。そこで動画を1本外すと
+       resetEasyDone が _tabsForced を倒す → タブが隠れる → ここで pro→easy へ降格
+     となり、needsFinishPick の「こだわりには挟まない」門が黙って開いて、
+     おまかせ専用の全画面がかぶさっていた(実測: removeClip の600ms後に開く)。
+     降格の役目は「タブが無い段で pro に閉じ込めない」ことなので、
+     自分でこだわりを選んだ人(_autoFlow=false)にだけ効かせれば足りる。
+     逃げてきた人はタブを出したままにして、閉じ込めも起こさない */
+  if (tabs.hidden && MC.ui._setupTab === "pro") {
+    if (!MC.ui._autoFlow) { MC.ui.setSetupTab("easy"); return; }
+    tabs.hidden = false;   // pro のままにする以上、戻る道は見せ続ける
+  }
   const lead = MC.ui.$("#setupTabsLead");
   if (lead) {
     lead.textContent = MC.ui._setupTab === "pro"
@@ -4043,7 +4055,7 @@ MC.ui.finishRoles = () => {
 
 /* おすすめの割り当て=今日までの自動の既定と同じ並び(既定1タップ=従来と同じ結果)。
    ワイプ=メイン既定(wipeMain)→小窓1→小窓2 / 縦型3本=スロット順 /
-   縦型2本=[中央(slots[1]=1本目), 上・下] (media.afterChange の既定と同じ形) */
+   縦型2本=[中(slots[1]=1本目), 上と下] (media.afterChange の既定と同じ形) */
 MC.ui.finishDefaultOrder = () => {
   const ids = MC.ui.finishCards().map(c => c.id);
   let pref = [];
@@ -4063,7 +4075,10 @@ MC.ui.finishDefaultOrder = () => {
 /* ダイアログの外を触れなくする(2026-08-03 レビュー)。role="dialog" aria-modal="true"
    を名乗りながら、実測でダイアログ外に14個のタブ可能要素が残り、Tab で背後の画面を
    操作できていた。inert は iOS Safari 16.4+ で効き、未対応環境では単に無視されるので
-   壊れ方が安全(既存の #exportOverlay と作法を揃える) */
+   壊れ方が安全。
+   ★ このアプリで inert を使うのはここが初めて(#exportOverlay は使っていない)。
+     body 直下の兄弟に付けるので、開いている最中に body へ足された要素は掴めない ─
+     根治は <dialog>.showModal()。いまは踏める経路が無いことを2巡目レビューで確認済み */
 MC.ui.setFinishPickInert = on => {
   const el = MC.ui.$("#finishPick");
   for (const n of document.body.children) {
@@ -4194,20 +4209,41 @@ MC.ui.renderFinishPick = () => {
   /* --- 進むボタン。配置の選び直し中(pending)は押させない --- */
   const go = MC.ui.$("#fpGo");
   if (go) {
-    const willDisable = fp.pending != null;
-    /* ★ 無効化する前に焦点を逃がす(2026-08-03 レビュー実測)。
-       開いた直後は #fpGo に焦点がある。カードを1枚タップして pending に入ると
-       ここで disabled になり、焦点が <body> へ落ちていた ─ 読み上げ位置が
-       ダイアログの外(先頭)へ飛ぶ。次に押すべきカードへ渡す */
-    if (willDisable && !go.disabled && document.activeElement === go) {
-      const next = MC.ui.$("#fpCards") &&
-        [...MC.ui.$("#fpCards").querySelectorAll(".wp-card")]
-          .find(b => /？/.test(b.textContent));
-      try { (next || MC.ui.$("#fpBack")).focus({ preventScroll: true }); } catch (e) {}
-    }
-    go.disabled = willDisable;
+    go.disabled = fp.pending != null;
     go.textContent = fp.changed ? "これで進む" : "このまま進む";
   }
+  MC.ui.keepFinishPickFocus();
+};
+
+/* 焦点をダイアログの中に留める(2026-08-03 2巡目レビュー実測)。
+   ★ 描き直した**あと**に一度だけ見る。renderFinishPick は #fpCards を
+     innerHTML="" で作り直すので、焦点を持っていたカードごと消えて <body> へ落ちる。
+     前の版は「無効化の直前・焦点が #fpGo のときだけ」逃がしていたため、
+       ・1タップ目 → 効く
+       ・2タップ目(割り当て完了) → BODY へ落ちる ← 防ぎたかったもの
+       ・VoiceOver のダブルタップ(対象に焦点が立つ) → 最初から効かない
+     と、救いたい相手にほぼ効いていなかった。
+   行き先は「次に押すカード → 進む → 戻る」。次のカードは fp.order で引く ─
+   文字「？」で探すと `これ？の動画.mp4` のようなファイル名に釣られて、
+   割り当て済みのカードへ焦点が飛ぶ(実測) */
+MC.ui.keepFinishPickFocus = () => {
+  const el = MC.ui.$("#finishPick");
+  if (!el || el.hidden) return;
+  const a = document.activeElement;
+  if (a && a !== document.body && el.contains(a)) return;   // まだ中に居る
+  const fp = MC.ui._fp;
+  let next = null;
+  if (fp && fp.pending != null) {
+    const cards = MC.ui.finishCards();
+    const id = (cards.find(c => !fp.order.includes(c.id)) || {}).id;
+    if (id != null) {
+      const i = cards.findIndex(c => c.id === id);
+      next = el.querySelectorAll("#fpCards .wp-card")[i] || null;
+    }
+  }
+  const go = MC.ui.$("#fpGo");
+  const to = next || (go && !go.disabled ? go : MC.ui.$("#fpBack"));
+  try { if (to) to.focus({ preventScroll: true }); } catch (e) {}
 };
 
 /* 配置カードのタップ。割り当て済みからのタップ=そのカードを1番目にして

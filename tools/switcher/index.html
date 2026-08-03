@@ -147,7 +147,8 @@
     <p class="mode-lead">おすすめを選んであります。変えたいところだけタップ</p>
     <div id="fpPlaceSec" class="fp-sec" hidden>
       <h3 class="fp-sec-title">カメラの配置</h3>
-      <p id="fpHint" class="fp-hint"></p>
+      <!-- 手順は書き換わるだけなので aria-live が無いと読み上げに乗らない(2026-08-03 2巡目レビュー) -->
+      <p id="fpHint" class="fp-hint" role="status" aria-live="polite"></p>
       <div id="fpCards" class="wp-cards"></div>
     </div>
     <div id="fpLevelSec" class="fp-sec" hidden>

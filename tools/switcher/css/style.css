@@ -276,6 +276,11 @@ body.mz-busy-lock #errorLog button { pointer-events: auto; opacity: 1; }
   width: max-content; max-width: min(92vw, 480px);
   box-shadow: 0 8px 32px rgba(15, 33, 56, 0.18); }
 .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+/* ★ 行動バーが出ているときは、その上へ逃がす(2026-08-03 2巡目レビュー実測)。
+   選び直しの着地は「これでOK、おまかせを再開」を押してくださいと**名指しする**のに、
+   トースト(2行・高さ59px)がその48ptの的を34px、3.5秒ぶん覆っていた。
+   行動バーの高さ = 上下パディング10+10 + ボタン48 + safe-area */
+body.mz-actionbar-on .toast { bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
 
 .empty-slot-label { color: var(--tx2); }
 
@@ -349,12 +354,18 @@ body.mz-busy-lock #errorLog button { pointer-events: auto; opacity: 1; }
    おまかせで動画を選んだあとの1画面。おすすめが選択済みで出て、
    「このまま進む」1タップで自走が始まる(旧 .wipe-pick を統合・置き換え)。
    全画面の作法(flex-start+margin:auto・safe-area・背後の固定)は .auto-stage と同じ */
+/* ★ 下パディングは持たない(2026-08-03 2巡目レビュー実測)。sticky の .wp-foot は
+   **スクロールポートのパディング箱**に貼り付くので、ここに 24px を置くと
+   フッタの下端が画面下端の24px上で止まり、その窓から下の中身(色カード)が
+   フェードも無しに生で覗いていた(実測: footBottom 529 / 画面 553、
+   隙間のヒットテスト=fp-colors)。下の余白と safe-area は .wp-foot が受け持つ ─
+   容器と両方で env() を取ると実機で二重取りになり、ボタンが 34px 余計に浮く */
 .finish-pick { position: fixed; inset: 0; z-index: 130;
   background: linear-gradient(180deg, #f7f9fc 0%, #eef2f8 100%);
   display: flex; align-items: flex-start; justify-content: center;
   padding: calc(24px + env(safe-area-inset-top, 0px))
            calc(16px + env(safe-area-inset-right, 0px))
-           calc(24px + env(safe-area-inset-bottom, 0px))
+           0
            calc(16px + env(safe-area-inset-left, 0px));
   overflow-y: auto; }
 .finish-pick[hidden] { display: none; }
@@ -424,13 +435,16 @@ html:has(body.mz-finish-pick), body.mz-finish-pick {
      71px 下に落ちていた ─ 1タップで自走が始まることだけが存在理由の画面で、
      その的が初期表示に無いのは哲学が効いていないのと同じ。
      上のフェードで「まだ下に続く」ことも同時に言う(.finish-pick の背景と同色) */
-.wp-foot { position: sticky; bottom: 0; z-index: 1;
-  margin-top: 20px; padding: 12px 0 calc(4px + env(safe-area-inset-bottom, 0px));
+.wp-foot { position: sticky; bottom: 0; z-index: 1; background: #eef2f8;
+  margin-top: 20px;
+  /* 下の余白と safe-area はここだけが持つ(容器と二重に取らない・上のコメント参照) */
+  padding: 12px 0 calc(24px + env(safe-area-inset-bottom, 0px));
   display: flex; align-items: stretch; gap: 10px; }
+/* 上のフェード。20px だと見出し「色」のちょうど真ん中に落ちて
+   文字が半分だけ薄く見えるので、行を丸ごと送れる 32px にする(2巡目レビュー) */
 .wp-foot::before { content: ""; position: absolute; left: 0; right: 0; bottom: 100%;
-  height: 20px; pointer-events: none;
+  height: 32px; pointer-events: none;
   background: linear-gradient(180deg, rgba(238,242,248,0) 0%, #eef2f8 100%); }
-.wp-foot { background: #eef2f8; }
 .wp-foot #fpBack { min-height: 44px; }   /* .btn.small のままでは指の的が細すぎる */
 .wp-foot #fpGo { flex: 1; min-height: 48px; font-size: 14px; }
 .wp-foot #fpGo:disabled { opacity: .45; cursor: default; }

@@ -6408,6 +6408,59 @@ async function countSamples(ns, file, fromSec) {
     return "3モードのおまかせ=挟まる / こだわり(綺麗・落ちた人とも)・1本=素通り";
   });
 
+  await test("★こだわりで動画を外しても、おまかせ専用の画面が割り込まない(操作を通して測る)", async () => {
+    /* 2026-08-03 2巡目レビュー。上の試験は _setupTab="pro" を**代入して**
+       needsFinishPick() を呼ぶだけなので 0ms で PASS しながら、実際の操作では
+       破れていた ─ _setupTab は門の外で黙って戻る:
+         removeClip → resetEasyDone が _tabsForced を倒す
+                    → refreshSetupTabs がタブを隠す
+                    → その場で pro→easy へ降格 → 門が開く
+       「操作を通す」でしか捕まらない穴なので、門の正本はこちらにする。
+       ★ removeClip は _busy や _stepPhase まで動かすので、後始末を完結させること
+         (ここを怠って ㊵ の2件を巻き添えにした) */
+    const w = await compEnv();
+    const d = w.document;
+    const U = w.MC.ui;
+    const keep = { flow: U._autoFlow, tab: U._setupTab, forced: U._tabsForced,
+                   step: U._stepPhase, busy: U._busy, hold: U._repickHold,
+                   view: U._viewPhase, open: U.openFinishPick, run: U.runAuto };
+    let opened = 0;
+    try {
+      const S = compReset(w);
+      S.mode = "switch"; S.layoutId = "switch";
+      S.clips.forEach(c => { if (!c.video) c.video = { pause() {} }; });
+      /* 「自分で仕上げる」を踏んだ直後の状態(_autoFlow は倒れない・タブは前倒し開放) */
+      U._autoFlow = true; U.setSetupTab("pro"); U._tabsForced = true;
+      S.finishPicked = false; S.easyDone = false; U._repickHold = false;
+      U.setBusy(false);
+      if (U.needsFinishPick()) throw new Error("外す前から門が開いている(前提が崩れている)");
+      U.openFinishPick = () => { opened++; };
+      U.runAuto = () => {};
+      w.MC.media.removeClip(S.clips[S.clips.length - 1].id);   // ← こだわりで1本 ✕
+      await new Promise(r => setTimeout(r, 400));              // focusNextAction は260ms待つ
+      if (opened || U.needsFinishPick()) {
+        throw new Error(`外したら門が開いた(tab=${U._setupTab} / 開いた回数=${opened})`);
+      }
+      /* 降格を止めた以上、pro に閉じ込めない=戻る道(タブ)は出したまま */
+      if (d.getElementById("setupTabs").hidden) {
+        throw new Error("pro のままなのにタブが隠れている(戻る道が無い)");
+      }
+      /* 自分でこだわりを選んだ人(_autoFlow=false)は従来どおり easy へ降格する */
+      U._autoFlow = false; U.setSetupTab("pro"); U._tabsForced = false;
+      U._stepPhase = "mat"; U.refreshSetupTabs();
+      eq(U._setupTab, "easy", "本物のこだわりの降格(従来どおり)");
+      return `外しても門は閉じたまま(tab=pro維持・開いた回数0)・タブは残る / 本物のこだわりは降格`;
+    } finally {
+      U.openFinishPick = keep.open; U.runAuto = keep.run;
+      U._autoFlow = keep.flow; U._tabsForced = keep.forced;
+      U._stepPhase = keep.step; U._repickHold = keep.hold; U._viewPhase = keep.view;
+      U.setBusy(!!keep.busy);
+      U.setSetupTab(keep.tab || "easy");
+      U.closeFinishPick();
+      compReset(w); U.refreshJourney();
+    }
+  });
+
   await test("★左下ワイプが実際に左下へ描かれる(画素・書き出しと同じ drawComposite)", async () => {
     const w = await compEnv();
     const S = compReset(w);
@@ -6504,8 +6557,24 @@ async function countSamples(ns, file, fromSec) {
         if (go.bottom > vh + 1 || go.top < 0) {
           throw new Error(`${mode}: 進むボタンが初期表示に無い(下端 ${Math.round(go.bottom)}px > 画面 ${vh}px)`);
         }
-        /* スクロールし切ったとき、色カードがフッタの下に隠れ残らないこと */
+        /* ★ 貼り付いたフッタの「下」から中身が覗かないこと(2026-08-03 2巡目レビュー)。
+           sticky はスクロールポートの**パディング箱**に貼り付くので、容器に
+           padding-bottom があるとフッタが画面下端まで届かず、その窓から
+           色カードがフェードも無しに生で見えていた(実測: footBottom 529 / 画面 553、
+           隙間のヒットテスト = fp-colors)。中身がスクロールする回だけ見る */
         const sec = d.getElementById("finishPick");
+        if (sec.scrollHeight > sec.clientHeight + 1) {
+          const fr0 = sec.querySelector(".wp-foot").getBoundingClientRect();
+          if (fr0.bottom < vh - 1) {
+            const gy = Math.round((fr0.bottom + vh) / 2);
+            const under = d.elementFromPoint(Math.round(w.innerWidth / 2), gy);
+            const peek = under && under.closest && under.closest("#fpCards, #fpColors, #fpLevels");
+            if (peek) {
+              throw new Error(`${mode}: フッタの下の隙間(${Math.round(vh - fr0.bottom)}px)から中身が覗く`);
+            }
+          }
+        }
+        /* スクロールし切ったとき、色カードがフッタの下に隠れ残らないこと */
         sec.scrollTop = sec.scrollHeight;
         const colors = d.getElementById("fpColors").getBoundingClientRect();
         const foot = sec.querySelector(".wp-foot").getBoundingClientRect();
@@ -6554,12 +6623,34 @@ async function countSamples(ns, file, fromSec) {
         outside.focus();
         if (d.activeElement === outside) throw new Error("ダイアログの外へ焦点が移せてしまう");
       }
-      /* ② 進むを無効にするとき、焦点はダイアログの中に留まる */
+      /* ② 焦点は**どのタップでも**ダイアログの中に留まる。
+         ★ 1タップ目だけを見ていたため、前の版(無効化の直前・焦点が #fpGo のときだけ
+           逃がす)が「2タップ目で BODY へ落ちる」まま PASS していた。
+           renderFinishPick は毎回 #fpCards を作り直すので、焦点を持ったカードごと
+           消える ─ 割り当てが完了する回まで通しで見る */
       eq(d.activeElement.id, "fpGo", "開いた直後の焦点");
-      sec.querySelectorAll(".wp-card")[1].click();
+      sec.querySelectorAll(".wp-card")[1].click();       // 1タップ目(pending へ)
       if (!d.getElementById("fpGo").disabled) throw new Error("選び直しの途中なのに進める");
       if (!sec.contains(d.activeElement)) {
-        throw new Error("進むを無効にした瞬間、焦点がダイアログの外へ落ちた");
+        throw new Error("1タップ目で焦点がダイアログの外へ落ちた");
+      }
+      sec.querySelectorAll(".wp-card")[2].click();       // 2タップ目(割り当て完了)
+      if (d.getElementById("fpGo").disabled) throw new Error("割り当てが済んだのに進めない");
+      if (!sec.contains(d.activeElement)) {
+        throw new Error("割り当て完了で焦点がダイアログの外へ落ちた(「これで進む」へ辿り着けない)");
+      }
+      /* ③ 次に押すカードは fp.order で引く ─ 文字「？」で探すと、
+         ファイル名に「？」を含む素材で割り当て済みのカードへ焦点が飛ぶ */
+      const S2 = compReset(w);
+      S2.mode = "vertical"; S2.layoutId = "v3";
+      S2.clips[0].name = "これ？の動画.mp4";
+      w.MC.ui._autoFlow = true; w.MC.ui._setupTab = "easy";
+      S2.finishPicked = false; w.MC.ui._fp = null;
+      w.MC.ui.closeFinishPick(); w.MC.ui.openFinishPick();
+      sec.querySelectorAll(".wp-card")[0].click();
+      const lab = d.activeElement ? (d.activeElement.getAttribute("aria-label") || "") : "";
+      if (/いまは/.test(lab)) {
+        throw new Error(`「？」をファイル名から拾って割り当て済みへ飛んだ: ${lab}`);
       }
       /* ③ Escape は「戻る」と同じ着地(素材工程+保留)。閉じたら inert も外れる */
       d.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
