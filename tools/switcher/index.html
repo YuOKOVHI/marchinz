@@ -1,14 +1,14 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-app-v="1.85.0">
+<html lang="ja" data-mz-app-v="1.86.0">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>MarchinZ Switcher — ランスルー同期・自動スイッチング〈ベータ版〉</title>
 <meta name="description" content="みんなで撮ったランスルー動画を音で自動同期。自動スイッチング・ワイプでMP4に。MarchinZの無料クリエイターツール。">
 <meta name="theme-color" content="#fefcef">
-<link rel="icon" type="image/x-icon" href="/favicon.ico?v=1.85.0">
-<link rel="icon" type="image/png" href="/favicon.png?v=1.85.0">
-<link rel="apple-touch-icon" href="/pwa/apple-touch-icon.png?v=1.85.0">
+<link rel="icon" type="image/x-icon" href="/favicon.ico?v=1.86.0">
+<link rel="icon" type="image/png" href="/favicon.png?v=1.86.0">
+<link rel="apple-touch-icon" href="/pwa/apple-touch-icon.png?v=1.86.0">
 <meta property="og:title" content="MarchinZ Switcher — ランスルー同期・自動スイッチング">
 <meta property="og:description" content="みんなで撮ったランスルー動画を音で自動同期。自動スイッチング・ワイプでMP4に。MarchinZの無料クリエイターツール。">
 <meta property="og:type" content="website">
@@ -16,10 +16,10 @@
 <meta property="og:image" content="https://marchinz.netlify.app/ogp-card.png">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
-<link rel="stylesheet" href="/tools/shared/progress.css?v=1.85.0">
-<link rel="stylesheet" href="/tools/shared/journey.css?v=1.85.0">
-<link rel="stylesheet" href="css/style.css?v=1.85.0">
-<link rel="stylesheet" href="/tools/shared/sitechrome.css?v=1.85.0">
+<link rel="stylesheet" href="/tools/shared/progress.css?v=1.86.0">
+<link rel="stylesheet" href="/tools/shared/journey.css?v=1.86.0">
+<link rel="stylesheet" href="css/style.css?v=1.86.0">
+<link rel="stylesheet" href="/tools/shared/sitechrome.css?v=1.86.0">
 </head>
 <body data-mz-tool="switcher">
 <header class="topbar">
@@ -131,23 +131,37 @@
   </div>
 </section>
 
-<!-- おまかせ×ワイプだけの例外(2026-08-02 優さん指示):
-     「どれをメインに、どれを右下ワイプにするか」だけは本人が選ぶ。
-     おまかせは本来タップ0回で自走するが、どちらを大きく映すかは機械には
-     当てられない(先頭の動画=メインとは限らない)。
-     1タップ目=メイン、2タップ目=右下ワイプ(2本ならタップ2回で済む)。
-     3本目が残ったら左下ワイプへ自動で入る(こだわりの既定と同じ)。
-     選び終わったら残りは今までどおり書き出しまで自走する -->
-<section id="wipePick" class="wipe-pick" hidden role="dialog" aria-modal="true" aria-labelledby="wpTitle">
+<!-- 仕上げの好み(2026-08-03 優さん承認案):
+     おまかせで動画を選んだあと、モードごとに**1画面だけ**挟む選択。
+     旧 #wipePick(メイン/右下ワイプの割り当て)はここへ統合した(二重の選択画面は作らない)。
+     ・共通: 色 = シネマティック(MarchinZカラー・既定✓) / ナチュラル(色補正なし・色合わせのみ)
+     ・縦型: カメラの配置(どの動画をどの帯に。タップ割り当て方式)
+     ・自動スイッチング: 切り替えの多さ3段階(既存 cutLevel)
+     ・ワイプ: メイン/右下/左下の割り当て
+     おすすめが選択済みで出て、「このまま進む」1タップで従来と同じ結果のまま
+     書き出しまで自走する(タップ0回の哲学) -->
+<section id="finishPick" class="finish-pick" hidden role="dialog" aria-modal="true" aria-labelledby="fpTitle">
   <div class="wp-inner">
-    <p class="wp-kind">ワイプカメラ動画</p>
-    <h2 id="wpTitle" class="mode-title">メインにする動画をタップ</h2>
-    <p id="wpLead" class="mode-lead">画面いっぱいに映す1本です</p>
-    <div id="wpCards" class="wp-cards"></div>
+    <p id="fpKind" class="wp-kind"></p>
+    <h2 id="fpTitle" class="mode-title">仕上げの好み</h2>
+    <p class="mode-lead">おすすめを選んであります。変えたいところだけタップ</p>
+    <div id="fpPlaceSec" class="fp-sec" hidden>
+      <h3 class="fp-sec-title">カメラの配置</h3>
+      <p id="fpHint" class="fp-hint"></p>
+      <div id="fpCards" class="wp-cards"></div>
+    </div>
+    <div id="fpLevelSec" class="fp-sec" hidden>
+      <h3 class="fp-sec-title">カメラの切り替え</h3>
+      <div id="fpLevels" class="fp-seg" role="radiogroup" aria-label="カメラの切り替えの多さ"></div>
+    </div>
+    <div class="fp-sec">
+      <h3 class="fp-sec-title">色</h3>
+      <div id="fpColors" class="fp-colors" role="radiogroup" aria-label="色の仕上げ"></div>
+    </div>
     <div class="wp-foot">
-      <!-- 押し間違いの逃げ道。閉じるだけで、取り込んだ動画はそのまま -->
-      <button type="button" id="wpBack" class="btn small ghost">← 動画を選び直す</button>
-      <button type="button" id="wpReset" class="btn small ghost" hidden>メインから選び直す</button>
+      <!-- 押し間違いの逃げ道。閉じるだけで、取り込んだ動画はそのまま(戻る=左) -->
+      <button type="button" id="fpBack" class="btn small ghost">← 動画を選び直す</button>
+      <button type="button" id="fpGo" class="btn primary">このまま進む</button>
     </div>
   </div>
 </section>
@@ -686,38 +700,38 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="/tools/shared/limits.js?v=1.85.0"></script>
-<script src="/tools/shared/sitechrome.js?v=1.85.0"></script>
-<script src="/tools/shared/progress.js?v=1.85.0"></script>
-<script src="/tools/shared/journey.js?v=1.85.0"></script>
-<script src="/tools/shared/watermark.js?v=1.85.0"></script>
-<script src="/tools/shared/mp4source.js?v=1.85.0"></script>
-<script src="/tools/shared/session.js?v=1.85.0"></script>
+<script src="/tools/shared/limits.js?v=1.86.0"></script>
+<script src="/tools/shared/sitechrome.js?v=1.86.0"></script>
+<script src="/tools/shared/progress.js?v=1.86.0"></script>
+<script src="/tools/shared/journey.js?v=1.86.0"></script>
+<script src="/tools/shared/watermark.js?v=1.86.0"></script>
+<script src="/tools/shared/mp4source.js?v=1.86.0"></script>
+<script src="/tools/shared/session.js?v=1.86.0"></script>
 <script src="vendor/mp4box.all.min.js"></script>
 <script src="vendor/mp4-muxer.min.js"></script>
 <script src="vendor/fft.js"></script>
-<script src="js/state.js?v=1.85.0"></script>
-<script src="js/layout.js?v=1.85.0"></script>
-<script src="js/media.js?v=1.85.0"></script>
-<script src="js/audio.js?v=1.85.0"></script>
-<script src="js/sync.js?v=1.85.0"></script>
-<script src="js/beats.js?v=1.85.0"></script>
-<script src="js/sections.js?v=1.85.0"></script>
-<script src="js/highlight.js?v=1.85.0"></script>
-<script src="js/visual.js?v=1.85.0"></script>
-<script src="js/director.js?v=1.85.0"></script>
-<script src="js/colormatch.js?v=1.85.0"></script>
+<script src="js/state.js?v=1.86.0"></script>
+<script src="js/layout.js?v=1.86.0"></script>
+<script src="js/media.js?v=1.86.0"></script>
+<script src="js/audio.js?v=1.86.0"></script>
+<script src="js/sync.js?v=1.86.0"></script>
+<script src="js/beats.js?v=1.86.0"></script>
+<script src="js/sections.js?v=1.86.0"></script>
+<script src="js/highlight.js?v=1.86.0"></script>
+<script src="js/visual.js?v=1.86.0"></script>
+<script src="js/director.js?v=1.86.0"></script>
+<script src="js/colormatch.js?v=1.86.0"></script>
 <!-- horizon.js(自動傾き検出)を読み込みに戻した(2026-08-01 優さん指示
      「おまかせは傾き補正も自動で行う」)。2026-07-28 に外したのは
      **こだわりで自動提案をやめた**ためで、実装自体は生きていた。
      こだわりでは今も提案しない ─ 使うのは おまかせ の自走だけ -->
-<script src="js/horizon.js?v=1.85.0"></script>
-<script src="js/salute.js?v=1.85.0"></script>
-<script src="js/preview.js?v=1.85.0"></script>
-<script src="js/timeline.js?v=1.85.0"></script>
-<script src="js/cutmode.js?v=1.85.0"></script>
-<script src="js/exporter.js?v=1.85.0"></script>
-<script src="js/ui.js?v=1.85.0"></script>
-<script src="js/app.js?v=1.85.0"></script>
+<script src="js/horizon.js?v=1.86.0"></script>
+<script src="js/salute.js?v=1.86.0"></script>
+<script src="js/preview.js?v=1.86.0"></script>
+<script src="js/timeline.js?v=1.86.0"></script>
+<script src="js/cutmode.js?v=1.86.0"></script>
+<script src="js/exporter.js?v=1.86.0"></script>
+<script src="js/ui.js?v=1.86.0"></script>
+<script src="js/app.js?v=1.86.0"></script>
 </body>
 </html>

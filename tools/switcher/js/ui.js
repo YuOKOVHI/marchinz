@@ -1084,10 +1084,11 @@ MC.ui.focusNextAction = () => {
        案内は取り込み枠の下の常設1行(renderClips)が受け持つ。
        2本目が入れば media.js がここをまた呼ぶので、自然に走り出す */
     if (MC.ui.needSecondVideo()) return;
-    /* ★ ワイプだけは例外(2026-08-02 優さん指示)。自走の前に
-       「どれをメインに、どれを右下ワイプにするか」を1画面だけ選んでもらう。
-       選び終わると wipePickTap が runAuto を呼び、以後は止まらない */
-    if (MC.ui.needsWipePick()) { setTimeout(() => MC.ui.openWipePick(), 260); return; }
+    /* ★ 自走の前に「仕上げの好み」を1画面だけ(2026-08-03 優さん承認案。
+       旧: ワイプだけの割り当て画面を3モード共通に拡張)。おすすめが選択済みで
+       出るので、従来どおりなら「このまま進む」の1タップ。
+       選び終わると finishPickGo が runAuto を呼び、以後は止まらない */
+    if (MC.ui.needsFinishPick()) { setTimeout(() => MC.ui.openFinishPick(), 260); return; }
     setTimeout(() => MC.ui.runAuto(), 260);
     return;
   }
@@ -1121,10 +1122,11 @@ MC.ui.focusNextAction = () => {
    どのみち映像解析はやり直しになる。範囲だけ引き継いで選び直してもらう */
 MC.ui.resetEasyDone = (restored = false) => {
   MC.S.audioDecided = false;   // 素材が変われば音声も選び直し(2026-07-24)
-  /* ワイプの「メイン/右下ワイプ」も選び直し(2026-08-02)。動画が増減したら
-     どれをメインにするかの前提が変わる。復元(restored)でも選び直してもらう ─
-     wipeMainId は id で持っていて、id は読込ごとに振り直されるため */
-  MC.S.wipePicked = false;
+  /* 「仕上げの好み」も選び直し(2026-08-03。旧 wipePicked と同じ理屈)。
+     動画が増減したら配置(どれをどの帯に/メインに)の前提が変わる。
+     復元(restored)でも選び直してもらう ─ 配置は id で持っていて、
+     id は読込ごとに振り直されるため */
+  MC.S.finishPicked = false;
   /* 「同じ演奏ではない」2択の判断も素材が変わればやり直し(2026-08-02) */
   MC.S.syncDoubtAccepted = false;
   MC.S.lengthDecided = false;
@@ -2211,10 +2213,10 @@ ${c.isImage ? "" : (c.tiltOk
     const emptySlot = firstEmptyIdx != null ? box.children[firstEmptyIdx] : null;
     if (emptySlot) box.insertBefore(note, emptySlot); else box.appendChild(note);
   }
-  /* ワイプの割り当て画面が開いている間は、あとから完成するサムネイルを反映する
+  /* 仕上げの好み画面が開いている間は、あとから完成するサムネイルを反映する
      (makeThumb → renderClips 経由でここへ来る。2026-08-02) */
-  { const wp = MC.ui.$("#wipePick");
-    if (wp && !wp.hidden) MC.ui.renderWipePick(); }
+  { const fp = MC.ui.$("#finishPick");
+    if (fp && !fp.hidden) MC.ui.renderFinishPick(); }
 };
 
 /* --- 音声選択 --- */
@@ -3527,8 +3529,8 @@ MC.ui.initVisibility = () => {
 MC.ui.AUTO = {
   preset: "short",        // 完成60秒(実尺は上限で丸まる)
   startKey: "climax",     // 盛り上がるシーン
-  filterId: "marchinz",   // MarchinZカラー
-  cutLevel: 2,            // 切り替えは「おすすめ」
+  filterId: "marchinz",   // MarchinZカラー(=「仕上げの好み」のおすすめ)
+  cutLevel: 2,            // 切り替えは「おすすめ」(同上)
 };
 
 /* おまかせで決め打ちにする設定を当てる。呼ぶのは自走の入口だけ */
@@ -3536,15 +3538,21 @@ MC.ui.applyAutoChoices = () => {
   MC.S.exportPreset = MC.ui.AUTO.preset;
   MC.S.startKey = MC.ui.AUTO.startKey;
   MC.S.startAt = null;
-  MC.S.filterId = MC.ui.AUTO.filterId;
-  MC.S.colorOn = true;
   MC.S.horizonOn = true;
-  /* ★ 切替頻度も決め打ちに戻す(2026-08-03 push前レビュー)。
-     完成画面の「もっと多く/少なく」(remakeWithDensity)は cutLevel を
-     ±1して saveState する ─ その値は localStorage に残り、リセットや
-     再訪のあとの**新規おまかせ**まで「多め/少なめ」を黙って引き継いでいた。
-     作り直し(scene 付き)はこの関数を通らないので、±1はそのまま生きる */
-  MC.S.cutLevel = MC.ui.AUTO.cutLevel;
+  /* ★ 色と切替頻度は「仕上げの好み」(2026-08-03 優さん承認案)が受け持つ。
+     あの画面は毎回の新規おまかせで**おすすめから**選び直させて明示的に
+     入れ直すので、finishPicked が立っている間はここで上書きしない
+     (ナチュラルを選んだ直後に marchinz へ戻す事故の防止)。
+     立っていない経路(画面を通らず runAuto へ来た保険)では従来どおり
+     決め打ちへ戻す ─ 完成画面の「もっと多く/少なく」(remakeWithDensity)の
+     ±1が localStorage に残り、リセットや再訪のあとの新規おまかせまで
+     「多め/少なめ」を黙って引き継ぐ穴(2026-08-03 push前レビュー)はこれで
+     塞いだまま。作り直し(scene 付き)はこの関数を通らないので±1は生きる */
+  if (!MC.S.finishPicked) {
+    MC.S.filterId = MC.ui.AUTO.filterId;
+    MC.S.colorOn = true;
+    MC.S.cutLevel = MC.ui.AUTO.cutLevel;
+  }
 };
 
 /* 傾きを自動で当てる。検出できた本だけ回し、できなかった本は0のまま。
@@ -3991,90 +3999,213 @@ MC.ui.SyncDoubt = class extends Error {
   }
 };
 
-/* ============ おまかせ×ワイプの割り当て(2026-08-02 優さん指示) ============
-   おまかせは本来タップ0回で自走するが、**ワイプだけは例外**として、
-   取り込みのあとに「どれをメインに、どれを右下ワイプにするか」を選んでもらう。
-   どちらを大きく映すかは機械には当てられない(先頭の動画=メインとは限らない)。
-   1タップ目=メイン、2タップ目=右下ワイプ。3本目が残ったら左下ワイプへ
-   自動で入る(こだわりの既定 media.js と同じ規則)。選んだら自走を再開する。
-   状態は既存の wipeMainId/wipeClipId/wipeClipId2 に載せ、増やすのは
-   「選び終わったか」(S.wipePicked・非永続)の1つだけ */
-MC.ui.needsWipePick = () =>
-  MC.S.mode === "wipeCam" && !!MC.ui._autoFlow && !MC.S.wipePicked
+/* ============ 仕上げの好み(2026-08-03 優さん承認案) ============
+   おまかせで動画を選んだあと、自走の前に**1画面だけ**挟む選択。
+   旧 #wipePick(ワイプだけのメイン/右下の割り当て)はここへ統合した ─
+   二重の選択画面は作らない。
+   ・共通: 色 = シネマティック(MarchinZカラー・既定✓) / ナチュラル(色補正なし・
+     カメラ間の色合わせのみ)。既存の filterId/colorOn に接続し、新しい色処理は作らない
+   ・縦型: カメラの配置(どの動画をどの帯に)
+   ・自動スイッチング: 切り替えの多さ3段階(既存 cutLevel 1〜3)
+   ・ワイプ: メイン/右下/左下の割り当て(旧 wipePick と同じタップ順)
+   おすすめが選択済みで出て、「このまま進む」1タップで従来と同じ結果のまま
+   自走が始まる(タップ0回の哲学)。状態は既存フラグ(slots・wipe系・cutLevel・
+   filterId)に載せ、増やすのは「選び終わったか」(S.finishPicked・非永続)の1つだけ */
+MC.ui.needsFinishPick = () =>
+  !!MC.ui._autoFlow && !MC.S.finishPicked
   && MC.S.clips.filter(c => !c.isImage && !c.isAudio).length >= 2;
 
-/* 割り当ての候補=スロットに入る動画(画像・音声のみは小窓にできない) */
-MC.ui.wipePickClips = () => MC.media.slotClips().filter(c => !c.isImage && !c.isAudio);
+/* 配置カードの候補。縦型は帯に写真も置けるのでスロット素材ぜんぶ、
+   ワイプは動画だけ(画像・音声のみは小窓にできない)。スロットは3つまで */
+MC.ui.finishCards = () => {
+  const s = MC.media.slotClips();
+  return (MC.S.mode === "vertical" ? s : s.filter(c => !c.isImage)).slice(0, 3);
+};
 
-MC.ui.openWipePick = () => {
-  const el = MC.ui.$("#wipePick");
+/* 帯/役の名前(タップした順にこの役へ入る)。切り替え(switch)は配置なし */
+MC.ui.finishRoles = () => {
+  const n = MC.ui.finishCards().length;
+  if (MC.S.mode === "wipeCam") return n >= 3 ? ["メイン", "右下", "左下"] : ["メイン", "右下"];
+  if (MC.S.mode === "vertical") return n >= 3 ? ["上", "中", "下"] : ["中央", "上・下"];
+  return [];
+};
+
+/* おすすめの割り当て=今日までの自動の既定と同じ並び(既定1タップ=従来と同じ結果)。
+   ワイプ=メイン既定(wipeMain)→小窓1→小窓2 / 縦型3本=スロット順 /
+   縦型2本=[中央(slots[1]=1本目), 上・下] (media.afterChange の既定と同じ形) */
+MC.ui.finishDefaultOrder = () => {
+  const ids = MC.ui.finishCards().map(c => c.id);
+  let pref = [];
+  if (MC.S.mode === "wipeCam") {
+    const main = MC.wipeMain();
+    pref = [main, MC.wipePip1(main), MC.S.wipeClipId2];
+  } else if (MC.S.mode === "vertical") {
+    pref = ids.length >= 3 ? [MC.S.slots[0], MC.S.slots[1], MC.S.slots[2]]
+                           : [MC.S.slots[1], MC.S.slots[0]];
+  }
+  const order = [];
+  for (const id of pref) if (id != null && ids.includes(id) && !order.includes(id)) order.push(id);
+  for (const id of ids) if (!order.includes(id)) order.push(id);
+  return order;
+};
+
+MC.ui.openFinishPick = () => {
+  const el = MC.ui.$("#finishPick");
   if (!el || !el.hidden) return;
-  MC.ui._wpMain = null;
+  /* おすすめは毎回ここで選び直す(色・頻度は S の残り値を見ない)。
+     前回の±1(remakeWithDensity)や前回の色が、新しいおまかせへ黙って
+     漏れ戻らないため(2026-08-03 push前レビューの承継。applyAutoChoices 参照) */
+  MC.ui._fp = { color: "cinema", level: MC.ui.AUTO.cutLevel,
+                order: MC.ui.finishDefaultOrder(), pending: null, changed: false };
   MC.preview.pause();   // 選択画面の裏で音が鳴り続けないように(モード選択と同じ)
   el.hidden = false;
-  document.body.classList.add("mz-wipe-pick");
-  MC.ui.renderWipePick();
-  try { const c = el.querySelector(".wp-card"); if (c) c.focus({ preventScroll: true }); } catch (e) {}
+  document.body.classList.add("mz-finish-pick");
+  MC.ui.renderFinishPick();
+  /* 焦点は「このまま進む」へ ─ いちばん多い操作(0決定)を最短にする */
+  try { const b = MC.ui.$("#fpGo"); if (b) b.focus({ preventScroll: true }); } catch (e) {}
 };
 
-MC.ui.closeWipePick = () => {
-  const el = MC.ui.$("#wipePick");
+MC.ui.closeFinishPick = () => {
+  const el = MC.ui.$("#finishPick");
   if (!el || el.hidden) return;
   el.hidden = true;
-  document.body.classList.remove("mz-wipe-pick");
+  document.body.classList.remove("mz-finish-pick");
 };
 
-MC.ui.renderWipePick = () => {
-  const box = MC.ui.$("#wpCards");
-  if (!box) return;
-  const main = MC.ui._wpMain;
-  const title = MC.ui.$("#wpTitle"), lead = MC.ui.$("#wpLead"), reset = MC.ui.$("#wpReset");
-  if (title) title.textContent = main == null
-    ? "メインにする動画をタップ" : "右下ワイプにする動画をタップ";
-  if (lead) lead.textContent = main == null
-    ? "画面いっぱいに映す1本です" : "小さな窓で右下に重なる1本です";
-  if (reset) reset.hidden = main == null;
-  box.innerHTML = "";
-  for (const c of MC.ui.wipePickClips()) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    const isMain = main === c.id;
-    btn.className = "wp-card" + (isMain ? " wp-card--main" : "");
-    /* メインに選んだカードは押しても進まない(下の wipePickTap)。
-       見た目のバッジと aria の両方でそれを言う */
-    btn.setAttribute("aria-pressed", isMain ? "true" : "false");
-    btn.innerHTML = `
-      <span class="wp-thumb-wrap">${c.thumb
-        ? `<img class="wp-thumb" src="${c.thumb}" alt="">`
-        : '<span class="wp-thumb wp-thumb--empty"></span>'}${isMain
-        ? '<span class="wp-badge"><i class="fa-solid fa-expand" aria-hidden="true"></i> メイン</span>' : ""}
-      </span>
-      <span class="wp-name">${MC.ui.esc(c.name)}</span>
-      <span class="wp-meta">${MC.ui.fmtTime(c.duration)}</span>`;
-    btn.onclick = () => MC.ui.wipePickTap(c.id);
-    box.appendChild(btn);
+MC.ui.renderFinishPick = () => {
+  const el = MC.ui.$("#finishPick");
+  if (!el) return;
+  const fp = MC.ui._fp || (MC.ui._fp = { color: "cinema", level: MC.ui.AUTO.cutLevel,
+    order: MC.ui.finishDefaultOrder(), pending: null, changed: false });
+  const kind = MC.ui.$("#fpKind");
+  if (kind) kind.textContent = MC.ui.modeConf().label;
+  /* --- 配置(縦型/ワイプだけ) --- */
+  const cards = MC.ui.finishCards();
+  const roles = MC.ui.finishRoles();
+  const showPlace = roles.length > 0 && cards.length >= 2;
+  const placeSec = MC.ui.$("#fpPlaceSec");
+  if (placeSec) placeSec.hidden = !showPlace;
+  if (showPlace) {
+    /* 開いている間に素材が増減したら、割り当てを既定から作り直す */
+    const ids = cards.map(c => c.id);
+    if ((fp.pending == null && fp.order.length !== ids.length)
+        || fp.order.some(id => !ids.includes(id))) {
+      fp.order = MC.ui.finishDefaultOrder(); fp.pending = null;
+    }
+    const hint = MC.ui.$("#fpHint");
+    if (hint) hint.textContent = fp.pending != null
+      ? `つぎに「${roles[fp.pending]}」にする動画をタップ`
+      : `変えるなら「${roles[0]}」にする動画からタップ`;
+    const box = MC.ui.$("#fpCards");
+    box.innerHTML = "";
+    for (const c of cards) {
+      const at = fp.order.indexOf(c.id);   // pending中は order=選び終えた分だけ
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "wp-card" + (at === 0 ? " wp-card--main" : "");
+      btn.setAttribute("aria-pressed", at === 0 ? "true" : "false");
+      btn.innerHTML = `
+        <span class="wp-thumb-wrap">${c.thumb
+          ? `<img class="wp-thumb" src="${c.thumb}" alt="">`
+          : '<span class="wp-thumb wp-thumb--empty"></span>'}</span>
+        <span class="wp-main"><span class="wp-name">${MC.ui.esc(c.name)}</span>
+          <span class="wp-meta">${c.isImage ? "写真" : MC.ui.fmtTime(c.duration)}</span></span>
+        <span class="fp-chip${at >= 0 ? "" : " fp-chip--empty"}">${at >= 0 ? MC.ui.esc(roles[at]) : "？"}</span>`;
+      btn.onclick = () => MC.ui.finishPickTap(c.id);
+      box.appendChild(btn);
+    }
+  }
+  /* --- 切り替えの多さ(自動スイッチングだけ) --- */
+  const lvSec = MC.ui.$("#fpLevelSec");
+  if (lvSec) lvSec.hidden = MC.S.mode !== "switch";
+  if (MC.S.mode === "switch") {
+    const box = MC.ui.$("#fpLevels");
+    box.innerHTML = "";
+    for (const [lv, label] of [[1, "少なめ"], [2, "おすすめ"], [3, "多め"]]) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "fp-seg-btn" + (fp.level === lv ? " on" : "");
+      b.setAttribute("role", "radio");
+      b.setAttribute("aria-checked", fp.level === lv ? "true" : "false");
+      b.textContent = label;
+      b.onclick = () => { if (fp.level === lv) return;
+        fp.level = lv; fp.changed = true; MC.ui.buzz([10]); MC.ui.renderFinishPick(); };
+      box.appendChild(b);
+    }
+  }
+  /* --- 色(全モード共通) --- */
+  const cbox = MC.ui.$("#fpColors");
+  if (cbox) {
+    cbox.innerHTML = "";
+    for (const [key, name, desc, reco] of [
+      ["cinema", "シネマティック", "MarchinZの色に整えます", true],
+      ["natural", "ナチュラル", "撮ったままの色。カメラの色だけそろえます", false],
+    ]) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "fp-color" + (fp.color === key ? " on" : "");
+      b.setAttribute("role", "radio");
+      b.setAttribute("aria-checked", fp.color === key ? "true" : "false");
+      b.innerHTML = `<span class="fp-color-name">${name}${reco
+          ? '<span class="fp-reco">おすすめ</span>' : ""}</span>
+        <span class="fp-color-desc">${desc}</span>
+        <i class="fa-solid fa-circle-check fp-check" aria-hidden="true"></i>`;
+      b.onclick = () => { if (fp.color === key) return;
+        fp.color = key; fp.changed = true; MC.ui.buzz([10]); MC.ui.renderFinishPick(); };
+      cbox.appendChild(b);
+    }
+  }
+  /* --- 進むボタン。配置の選び直し中(pending)は押させない --- */
+  const go = MC.ui.$("#fpGo");
+  if (go) {
+    go.disabled = fp.pending != null;
+    go.textContent = fp.changed ? "これで進む" : "このまま進む";
   }
 };
 
-MC.ui.wipePickTap = id => {
-  if (MC.ui._wpMain == null) {
-    MC.ui._wpMain = id;
-    MC.ui.buzz([10]);
-    MC.ui.renderWipePick();   // 2タップ目(右下ワイプ)の画面へ
-    return;
+/* 配置カードのタップ。割り当て済みからのタップ=そのカードを1番目にして
+   選び直し開始。残り1枚は自動で最後の役へ入る(2本なら1タップで入れ替わる) */
+MC.ui.finishPickTap = id => {
+  const fp = MC.ui._fp;
+  if (!fp) return;
+  const ids = MC.ui.finishCards().map(c => c.id);
+  if (fp.pending == null) {
+    fp.order = [id]; fp.pending = 1;
+  } else {
+    if (fp.order.includes(id)) { MC.ui.buzz([30]); return; }   // もう選んだカード
+    fp.order.push(id); fp.pending++;
   }
-  if (id === MC.ui._wpMain) return;   // メインと同じ動画は小窓にできない
-  MC.S.wipeMainId = MC.ui._wpMain;
-  MC.S.wipeClipId = id;
-  MC.S.wipePos = "br";   // おまかせの小窓1は右下(優さんの指示の言葉どおり)
-  /* 3本目が残っていたら左下ワイプへ(こだわりの既定と同じ)。
-     2本なら小窓2は無し=右下のみ */
-  const third = MC.ui.wipePickClips().find(c =>
-    c.id !== MC.S.wipeMainId && c.id !== id);
-  if (third) { MC.S.wipeClipId2 = third.id; MC.S.wipePos2 = "bl"; }
-  MC.S.wipePicked = true;
+  if (ids.length - fp.order.length === 1) {
+    fp.order.push(ids.find(x => !fp.order.includes(x)));
+  }
+  if (fp.order.length >= ids.length) { fp.pending = null; fp.changed = true; }
+  MC.ui.buzz([10]);
+  MC.ui.renderFinishPick();
+};
+
+/* 「このまま進む/これで進む」。選んだ好みを既存フラグへ書き、自走を再開する */
+MC.ui.finishPickGo = () => {
+  const fp = MC.ui._fp;
+  if (!fp || fp.pending != null) return;
+  /* 色: 既存の filterId/colorOn に接続(新しい色処理は作らない)。
+     ナチュラル=フィルターなし。カメラ間の色合わせ(colorOn)はどちらでも残す */
+  MC.S.filterId = fp.color === "natural" ? "none" : MC.ui.AUTO.filterId;
+  MC.S.colorOn = true;
+  if (MC.S.mode === "switch") MC.S.cutLevel = fp.level;
+  const o = fp.order;
+  if (MC.S.mode === "vertical" && o.length >= 2) {
+    /* 2本は3段の中央+上下(media.afterChange の既定と同じ形)。3本は上から順 */
+    MC.S.slots = o.length >= 3 ? [o[0], o[1], o[2]] : [o[1], o[0], o[1]];
+  }
+  if (MC.S.mode === "wipeCam" && o.length >= 2) {
+    MC.S.wipeMainId = o[0];
+    MC.S.wipeClipId = o[1];
+    MC.S.wipePos = "br";   // おまかせの小窓1は右下(2026-08-02 優さんの指示の言葉どおり)
+    if (o[2] != null) { MC.S.wipeClipId2 = o[2]; MC.S.wipePos2 = "bl"; }
+  }
+  MC.S.finishPicked = true;
   MC.saveState();
-  MC.ui.closeWipePick();
+  MC.ui.closeFinishPick();
   MC.ui.runAuto();   // ここから先は今までどおり書き出しまで自走
 };
 
@@ -4942,13 +5073,13 @@ MC.ui.wire = () => {
     const b = MC.ui.$(sel);
     if (b) b.onclick = () => MC.ui.shareTool();
   });
-  /* おまかせ×ワイプの割り当て(2026-08-02)。戻る=閉じるだけ(動画はそのまま。
+  /* 仕上げの好み(2026-08-03)。戻る=閉じるだけ(動画はそのまま。
      素材を変えると focusNextAction がもう一度この画面を開く)。
-     選び直す=メインの選択からやり直し */
-  { const b = MC.ui.$("#wpBack");
-    if (b) b.onclick = () => MC.ui.closeWipePick(); }
-  { const r = MC.ui.$("#wpReset");
-    if (r) r.onclick = () => { MC.ui._wpMain = null; MC.ui.renderWipePick(); }; }
+     進む=好みを既存フラグへ書いて自走を再開 */
+  { const b = MC.ui.$("#fpBack");
+    if (b) b.onclick = () => MC.ui.closeFinishPick(); }
+  { const g = MC.ui.$("#fpGo");
+    if (g) g.onclick = () => MC.ui.finishPickGo(); }
   /* おまかせ全画面の中止。走っている処理にも止まれと伝える */
   { const c = MC.ui.$("#asCancel");
     if (c) c.onclick = () => {
@@ -5039,9 +5170,9 @@ MC.ui.wire = () => {
       MC.ui.refreshSetupTabs();
       MC.ui.refreshJourney();
       /* すでに素材が入っている(前回の続き)なら、その場で走り出す。
-         ワイプだけは先に「メイン/右下ワイプ」を選んでもらう(2026-08-02) */
+         自走の前の「仕上げの好み」1画面はここでも挟む(2026-08-03) */
       if (MC.ui._autoFlow && MC.media.slotClips().length) {
-        if (MC.ui.needsWipePick()) MC.ui.openWipePick();
+        if (MC.ui.needsFinishPick()) MC.ui.openFinishPick();
         else MC.ui.runAuto();
       }
     };

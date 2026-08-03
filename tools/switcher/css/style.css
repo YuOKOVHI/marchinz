@@ -345,11 +345,11 @@ body.mz-busy-lock #errorLog button { pointer-events: auto; opacity: 1; }
   .mode-select { padding: 24px 12px; }
 }
 
-/* ============ おまかせ×ワイプの割り当て(2026-08-02 優さん指示) ============
-   おまかせで唯一のタップ: どれをメインに、どれを右下ワイプにするか。
-   1画面1操作 ─ タップで即決まり、2本ならタップ2回で自走が始まる。
+/* ============ 仕上げの好み(2026-08-03 優さん承認案) ============
+   おまかせで動画を選んだあとの1画面。おすすめが選択済みで出て、
+   「このまま進む」1タップで自走が始まる(旧 .wipe-pick を統合・置き換え)。
    全画面の作法(flex-start+margin:auto・safe-area・背後の固定)は .auto-stage と同じ */
-.wipe-pick { position: fixed; inset: 0; z-index: 130;
+.finish-pick { position: fixed; inset: 0; z-index: 130;
   background: linear-gradient(180deg, #f7f9fc 0%, #eef2f8 100%);
   display: flex; align-items: flex-start; justify-content: center;
   padding: calc(24px + env(safe-area-inset-top, 0px))
@@ -357,14 +357,18 @@ body.mz-busy-lock #errorLog button { pointer-events: auto; opacity: 1; }
            calc(24px + env(safe-area-inset-bottom, 0px))
            calc(16px + env(safe-area-inset-left, 0px));
   overflow-y: auto; }
-.wipe-pick[hidden] { display: none; }
-html:has(body.mz-wipe-pick), body.mz-wipe-pick {
+.finish-pick[hidden] { display: none; }
+html:has(body.mz-finish-pick), body.mz-finish-pick {
   overflow: hidden !important; height: 100%;
 }
 .wp-inner { width: 100%; max-width: 520px; margin: auto; text-align: center; }
 .wp-kind { margin: 0 0 4px; color: var(--acc); font-size: 11.5px; font-weight: 800;
   letter-spacing: .08em; }
-.wp-cards { display: grid; grid-template-columns: 1fr; gap: 12px; }
+/* 選択のまとまり(配置/切り替え/色)。左寄せ+小さな見出しで縦のリズムを作る */
+.fp-sec { margin-top: 18px; text-align: left; }
+.fp-sec-title { margin: 0 0 8px; font-size: 13px; font-weight: 800; color: var(--navy); }
+.fp-hint { margin: -4px 0 8px; font-size: 12px; color: var(--tx2); }
+.wp-cards { display: grid; grid-template-columns: 1fr; gap: 10px; }
 .wp-card { display: flex; align-items: center; gap: 12px; text-align: left;
   /* min-width:0 が無いとグリッドの 1fr が nowrap のファイル名より縮めず、
      長い名前のとき 375px で横スクロールになる(2026-08-02 レビュー実測で発見) */
@@ -374,19 +378,54 @@ html:has(body.mz-wipe-pick), body.mz-wipe-pick {
   font-family: inherit; transition: .15s; }
 .wp-card:hover { border-color: var(--acc); }
 .wp-card--main { border-color: var(--acc); box-shadow: 0 0 0 2px var(--acc) inset; }
-.wp-thumb-wrap { position: relative; flex: 0 0 112px; }
-.wp-thumb { display: block; width: 112px; height: 66px; object-fit: cover;
+.wp-thumb-wrap { position: relative; flex: 0 0 96px; }
+.wp-thumb { display: block; width: 96px; height: 56px; object-fit: cover;
   border-radius: 9px; background: #15171d; }
 .wp-thumb--empty { background: #d9dfe8; }
-.wp-badge { position: absolute; left: 6px; bottom: 6px; padding: 2px 8px;
-  border-radius: 999px; background: var(--acc); color: #fff;
-  font-size: 10.5px; font-weight: 700; }
-.wp-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--navy);
+.wp-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.wp-name { min-width: 0; font-size: 13px; font-weight: 600; color: var(--navy);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wp-meta { font-size: 12px; color: var(--tx2); font-variant-numeric: tabular-nums; }
-/* 戻る(#wpBack)は左端(2026-08-02 優さん指示⑨)。やり直し(#wpReset)は右へ離す */
-.wp-foot { margin-top: 16px; display: flex; justify-content: flex-start; gap: 10px; }
-.wp-foot #wpReset { margin-left: auto; }
+.wp-meta { font-size: 11.5px; color: var(--tx2); font-variant-numeric: tabular-nums; }
+/* 帯/役の札。割り当て済み=塗り、選び直し中の未定=点線の「？」 */
+.fp-chip { flex: 0 0 auto; min-width: 48px; text-align: center; padding: 5px 10px;
+  border-radius: 999px; background: var(--acc); color: #fff;
+  font-size: 11.5px; font-weight: 700; white-space: nowrap; }
+.fp-chip--empty { background: transparent; color: var(--tx2);
+  border: 1px dashed var(--line); }
+/* 切り替えの多さ: 3等分のセグメント(44pt) */
+.fp-seg { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.fp-seg-btn { min-height: 44px; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); box-shadow: var(--shadow-card); font-family: inherit;
+  font-size: 13px; font-weight: 700; color: var(--navy); cursor: pointer; transition: .15s; }
+.fp-seg-btn:hover { border-color: var(--acc); }
+.fp-seg-btn.on { border-color: var(--acc); box-shadow: 0 0 0 2px var(--acc) inset;
+  color: var(--acc); }
+/* 色: 2枚のカード。選択は枠+右上のチェックで言う(色は絵の話なので文字を増やさない) */
+.fp-colors { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.fp-color { position: relative; text-align: left; min-height: 44px;
+  padding: 12px 12px 10px; border-radius: 14px; border: 1px solid var(--line);
+  background: var(--panel); box-shadow: var(--shadow-card); font-family: inherit;
+  cursor: pointer; transition: .15s; }
+.fp-color:hover { border-color: var(--acc); }
+.fp-color.on { border-color: var(--acc); box-shadow: 0 0 0 2px var(--acc) inset; }
+.fp-color-name { display: block; font-size: 13px; font-weight: 700; color: var(--navy);
+  padding-right: 18px; }
+.fp-reco { margin-left: 6px; font-size: 10px; font-weight: 700; color: var(--acc);
+  border: 1px solid currentColor; border-radius: 999px; padding: 1px 6px;
+  vertical-align: 1px; white-space: nowrap; }
+.fp-color-desc { display: block; margin-top: 3px; font-size: 11.5px; line-height: 1.5;
+  color: var(--tx2); }
+.fp-check { position: absolute; top: 10px; right: 10px; color: var(--acc);
+  opacity: 0; transition: .15s; }
+.fp-color.on .fp-check { opacity: 1; }
+/* 戻る(#fpBack)は左端(2026-08-02 優さん指示⑨の作法を継ぐ)。進むは右で大きく */
+.wp-foot { margin-top: 20px; display: flex; align-items: stretch; gap: 10px; }
+.wp-foot #fpBack { min-height: 44px; }   /* .btn.small のままでは指の的が細すぎる */
+.wp-foot #fpGo { flex: 1; min-height: 48px; font-size: 14px; }
+.wp-foot #fpGo:disabled { opacity: .45; cursor: default; }
+@media (max-width: 355px) {
+  .fp-colors { grid-template-columns: 1fr; }   /* 320px はカードを縦積みに */
+}
 
 /* ============ タイムライン(スイッチング/ワイプ) ============ */
 .timeline-wrap { width: 100%; max-width: 720px; }

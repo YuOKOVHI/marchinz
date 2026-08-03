@@ -1362,10 +1362,14 @@ async function countSamples(ns, file, fromSec) {
     S.exportPreset = null; S.startKey = null; S.startAt = null;
     S.lengthDecided = false; S.audioDecided = false; S.easyDone = false;
     S.trimIn = 0; S.trimOut = null;
-    /* おまかせ×ワイプの割り当て(2026-08-02)。試験どうしの状態漏れ防止 */
-    S.wipePicked = false;
+    /* 仕上げの好み(2026-08-03)。試験どうしの状態漏れ防止。
+       ★ 既定は「選択済み」= 自走の門は開けておく(門そのものを試す試験だけが
+       false へ倒す)。false のままだと focusNextAction を使う既存の試験が
+       全部この画面で止まってしまう */
+    S.finishPicked = true;
     w.MC.ui._autoFlow = false;
-    if (w.MC.ui.closeWipePick) w.MC.ui.closeWipePick();
+    w.MC.ui._fp = null;
+    if (w.MC.ui.closeFinishPick) w.MC.ui.closeFinishPick();
     w.MC.exporter.lastResult = null;
     w.MC.ui._viewPhase = null;
     w.MZWM = null;
@@ -5554,7 +5558,9 @@ async function countSamples(ns, file, fromSec) {
       }
       if (!/おまかせ/.test(txt2)) throw new Error("登録済み×スマホに、いま使える道(おまかせ)を示していない");
       L.member = false;
-      /* おまかせは今までどおり誰でも使える */
+      /* おまかせは今までどおり誰でも使える。仕上げの好みは選択済みの前提にして
+         門の先(自走)まで届くかを測る(門そのものは㊵で試す) */
+      w.MC.S.finishPicked = true;
       d.querySelector('#modeSelect .mode-card[data-flow="easy"]').click();
       if (d.getElementById("workspace").hidden) throw new Error("ゲストがおまかせにも入れない");
       if (!autoRuns) throw new Error("ゲストのおまかせが走り出さない");
@@ -6201,16 +6207,22 @@ async function countSamples(ns, file, fromSec) {
       U.remakeWithDensity(-1);
       if (ran !== 1) throw new Error("枠ゼロなのに直接呼びで作り直せる(門が無い)");
       eq(S.cutLevel, 3, "枠ゼロでは密度も動かさない");
-      /* ±1は saveState まで届く(localStorage に残る)。新規おまかせの入口
-         (applyAutoChoices)が「おすすめ」へ戻さないと、次のプロジェクトまで
-         多め/少なめを黙って引き継ぐ(2026-08-03 push前レビューで実バグ) */
-      const keep2 = { ep: S.exportPreset, fi: S.filterId, co: S.colorOn, ho: S.horizonOn };
+      /* ±1は saveState まで届く(localStorage に残る)。新規おまかせが「おすすめ」へ
+         戻さないと、次のプロジェクトまで多め/少なめを黙って引き継ぐ
+         (2026-08-03 push前レビューで実バグ)。2026-08-03 の「仕上げの好み」以降、
+         戻す役は2枚: ①画面(毎回おすすめから出直す=㊵で確認) ②画面を通らない
+         保険経路の applyAutoChoices(finishPicked が寝ているときだけ決め打ち)。
+         ここでは②を測る。選択済み(finishPicked=true)のときに上書きしないことは
+         ㊵の変異つき試験が受け持つ */
+      const keep2 = { ep: S.exportPreset, fi: S.filterId, co: S.colorOn, ho: S.horizonOn,
+                      fp: S.finishPicked };
       try {
+        S.finishPicked = false;
         U.applyAutoChoices();
         eq(S.cutLevel, 2, "新規おまかせは「おすすめ」に戻る(±1を持ち越さない)");
       } finally {
         S.exportPreset = keep2.ep; S.filterId = keep2.fi;
-        S.colorOn = keep2.co; S.horizonOn = keep2.ho;
+        S.colorOn = keep2.co; S.horizonOn = keep2.ho; S.finishPicked = keep2.fp;
       }
       return "自動SWのみ / 別のシーンの下 / ±1と両端 / scene引き継ぎ / 枠1本を共有 / 新規おまかせはおすすめへ";
     } finally {
@@ -6257,7 +6269,7 @@ async function countSamples(ns, file, fromSec) {
     }
   });
 
-  group("㉞ ワイプの割り当て・左下ワイプ・種類の並び(2026-08-02 優さん指示)");
+  group("㉞ ワイプの割り当て(仕上げの好みへ統合)・左下ワイプ・種類の並び");
 
   await test("★種類カードの並びは ①縦型 ②自動スイッチング ③ワイプ", async () => {
     const w = await compEnv();
@@ -6267,70 +6279,80 @@ async function countSamples(ns, file, fromSec) {
     return "①縦型 ②自動スイッチング ③ワイプ動画";
   });
 
-  await test("★おまかせ×ワイプは自走の前に「メイン/右下ワイプ」の選択が挟まる", async () => {
+  await test("★おまかせ×ワイプ: 仕上げの好みで「メイン/右下/左下」を選び直せる", async () => {
     const w = await compEnv();
     const S = compReset(w);
     S.mode = "wipeCam"; S.layoutId = "wipe";
-    w.MC.ui._autoFlow = true; S.wipePicked = false;
-    if (!w.MC.ui.needsWipePick()) throw new Error("needsWipePick が false(選択が挟まらない)");
-    /* 実際に画面が出て、タップ2回で割り当てが決まり自走が再開するか。
+    w.MC.ui._autoFlow = true; S.finishPicked = false;
+    if (!w.MC.ui.needsFinishPick()) throw new Error("needsFinishPick が false(選択が挟まらない)");
+    /* 実際に画面が出て、タップ2回で割り当てが変わり、進むで自走が再開するか。
        runAuto は本物を走らせず「呼ばれたこと」だけを見る */
     const realRun = w.MC.ui.runAuto;
     let ran = 0; w.MC.ui.runAuto = () => { ran++; };
     try {
-      /* ★ 門そのものの配線(2026-08-02 レビューで追加)。needsWipePick 単体が
+      /* ★ 門そのものの配線(2026-08-02 レビューの教訓)。needsFinishPick 単体が
          正しくても、focusNextAction(自走の入口 ui.js)がそこへ運ばなければ
          「選ばせずに黙って自走」に戻る ─ この形の退行は関数単体の試験では
-         捕まらない(実測: 分岐を消しても他の4件は全PASSのままだった)。
-         openWipePick をスタブして「開こうとしたか」「先に自走しなかったか」を見る */
+         捕まらない。openFinishPick をスタブして「開こうとしたか」
+         「先に自走しなかったか」を見る */
       {
-        const realOpen = w.MC.ui.openWipePick;
-        let opened = 0; w.MC.ui.openWipePick = () => { opened++; };
+        const realOpen = w.MC.ui.openFinishPick;
+        let opened = 0; w.MC.ui.openFinishPick = () => { opened++; };
         try {
           w.MC.ui.focusNextAction();
           await new Promise(r => setTimeout(r, 340));   // 260ms の遅延を跨いで待つ
-        } finally { w.MC.ui.openWipePick = realOpen; }
+        } finally { w.MC.ui.openFinishPick = realOpen; }
         eq(opened, 1, "focusNextAction が選択画面を開く回数");
         eq(ran, 0, "選択の前に始まった自走の回数");
       }
-      w.MC.ui.openWipePick();
-      const el = w.document.getElementById("wipePick");
-      if (el.hidden) throw new Error("#wipePick が開かない");
+      w.MC.ui.openFinishPick();
+      const el = w.document.getElementById("finishPick");
+      if (el.hidden) throw new Error("#finishPick が開かない");
       const cards = () => [...el.querySelectorAll(".wp-card")];
       eq(cards().length, 3, "カード数");
-      cards()[1].click();          // 1タップ目 = メイン(動画2)
-      cards()[0].click();          // 2タップ目 = 右下ワイプ(動画1)
+      /* おすすめが選択済みで出る: 既定の割り当て(メイン=1/右下=2/左下=3) */
+      const chips = () => cards().map(c => c.querySelector(".fp-chip").textContent);
+      eq(chips().join(","), "メイン,右下,左下", "既定の札");
+      const go = w.document.getElementById("fpGo");
+      if (go.disabled) throw new Error("既定のまま進めない(おすすめ選択済みの約束が破れている)");
+      /* 選び直し: 1タップ目=メイン(動画2)。途中は進むを止める */
+      cards()[1].click();
+      if (!go.disabled) throw new Error("選び直しの途中なのに進める(中途半端な割り当てで走る)");
+      cards()[0].click();          // 2タップ目=右下(動画1) → 残り3本目は左下へ自動
+      if (go.disabled) throw new Error("選び終わったのに進めない");
+      eq(chips().join(","), "右下,メイン,左下", "選び直し後の札");
+      go.click();
       eq(S.wipeMainId, 2, "メイン");
       eq(S.wipeClipId, 1, "右下ワイプ");
       eq(S.wipePos, "br", "小窓1の位置");
       eq(S.wipeClipId2, 3, "残った3本目は左下ワイプ");
       eq(S.wipePos2, "bl", "小窓2の位置");
-      if (!S.wipePicked) throw new Error("wipePicked が立たない(次の素材変更でまた挟まってしまう)");
-      if (!el.hidden) throw new Error("選び終わったのに画面が閉じない");
+      if (!S.finishPicked) throw new Error("finishPicked が立たない(次の素材変更でまた挟まってしまう)");
+      if (!el.hidden) throw new Error("進んだのに画面が閉じない");
       eq(ran, 1, "自走の再開回数");
-      if (w.MC.ui.needsWipePick()) throw new Error("選び終わっても needsWipePick が true");
-    } finally { w.MC.ui.runAuto = realRun; w.MC.ui.closeWipePick(); w.MC.ui._autoFlow = false; }
-    return "タップ2回 → メイン/右下/左下が決まり、自走が1回だけ再開";
+      if (w.MC.ui.needsFinishPick()) throw new Error("選び終わっても needsFinishPick が true");
+    } finally { w.MC.ui.runAuto = realRun; w.MC.ui.closeFinishPick(); w.MC.ui._autoFlow = false; }
+    return "既定=メイン/右下/左下・タップ2回で選び直し→進むで自走が1回だけ再開";
   });
 
-  await test("★選択が挟まるのは おまかせ×ワイプ だけ(他の種類・こだわりは挟まらない)", async () => {
+  await test("★選択が挟まるのは おまかせ だけ(こだわり・動画1本は挟まらない)", async () => {
     const w = await compEnv();
     const S = compReset(w);
-    w.MC.ui._autoFlow = true; S.wipePicked = false;
+    w.MC.ui._autoFlow = true; S.finishPicked = false;
     try {
-      for (const m of ["vertical", "switch"]) {
+      /* 2026-08-03 からは3モードとも1画面だけ挟む(色は共通の選択) */
+      for (const m of ["vertical", "switch", "wipeCam"]) {
         S.mode = m;
-        if (w.MC.ui.needsWipePick()) throw new Error(`${m} なのに選択が挟まる`);
+        if (!w.MC.ui.needsFinishPick()) throw new Error(`${m} のおまかせなのに選択が挟まらない`);
       }
-      S.mode = "wipeCam";
       w.MC.ui._autoFlow = false;   // こだわり
-      if (w.MC.ui.needsWipePick()) throw new Error("こだわりなのに選択が挟まる");
-      /* 動画1本では選びようがない(そのまま自走) */
+      if (w.MC.ui.needsFinishPick()) throw new Error("こだわりなのに選択が挟まる");
+      /* 動画1本では選びようがない(2本の門 needSecondVideo が先に止める) */
       w.MC.ui._autoFlow = true;
       S.clips = S.clips.slice(0, 1);
-      if (w.MC.ui.needsWipePick()) throw new Error("動画1本なのに選択が挟まる");
+      if (w.MC.ui.needsFinishPick()) throw new Error("動画1本なのに選択が挟まる");
     } finally { w.MC.ui._autoFlow = false; }
-    return "縦型/スイッチング/こだわり/1本 のどれも素通り";
+    return "3モードのおまかせ=挟まる / こだわり・1本=素通り";
   });
 
   await test("★左下ワイプが実際に左下へ描かれる(画素・書き出しと同じ drawComposite)", async () => {
@@ -6372,19 +6394,20 @@ async function countSamples(ns, file, fromSec) {
     return "3本=左下が自動で入る / 2本=従来どおり右下のみ";
   });
 
-  await test("★長いファイル名でも割り当てカードが画面からはみ出さない(375px)", async () => {
+  await test("★長いファイル名でも仕上げの好みが画面からはみ出さない(スマホ幅)", async () => {
     /* iPhoneの実ファイル名は長い。グリッドの 1fr は nowrap の中身より縮めないので、
        .wp-card に min-width:0 が無いと画面幅を突き破って横スクロールになる
-       (2026-08-02 レビュー実測で発見・修正)。iframe は 390px=スマホ幅で実測する */
+       (2026-08-02 レビュー実測で発見・修正)。iframe は 390px=スマホ幅で実測する。
+       進むボタンの44pt(タップ目標)もここで一緒に測る */
     const w = await compEnv();
     const S = compReset(w);
     S.mode = "wipeCam"; S.layoutId = "wipe";
     S.clips[0].name = "正面から撮ったカメラ_iPhone15Pro_4Kの長いファイル名_2026-08-02.mov";
-    w.MC.ui._autoFlow = true; S.wipePicked = false;
+    w.MC.ui._autoFlow = true; S.finishPicked = false;
     try {
-      w.MC.ui.openWipePick();
-      const el = w.document.getElementById("wipePick");
-      if (el.hidden) throw new Error("#wipePick が開かない");
+      w.MC.ui.openFinishPick();
+      const el = w.document.getElementById("finishPick");
+      if (el.hidden) throw new Error("#finishPick が開かない");
       const card = el.querySelector(".wp-card");
       const cw = card.getBoundingClientRect().width;
       const host = el.clientWidth;
@@ -6392,8 +6415,148 @@ async function countSamples(ns, file, fromSec) {
         throw new Error(`横スクロールが出る: scrollWidth ${el.scrollWidth} > ${el.clientWidth}`);
       if (cw > host)
         throw new Error(`カードが画面より広い: ${Math.round(cw)}px > ${host}px`);
-      return `カード ${Math.round(cw)}px ≤ 画面 ${host}px・横スクロール無し`;
-    } finally { w.MC.ui.closeWipePick(); w.MC.ui._autoFlow = false; }
+      for (const id of ["fpGo", "fpBack"]) {
+        const h = w.document.getElementById(id).getBoundingClientRect().height;
+        if (h < 44) throw new Error(`#${id} が44ptに満たない: ${Math.round(h)}px`);
+      }
+      return `カード ${Math.round(cw)}px ≤ 画面 ${host}px・横スクロール無し・ボタン44pt`;
+    } finally { w.MC.ui.closeFinishPick(); w.MC.ui._autoFlow = false; }
+  });
+
+  /* ============ ㊵ 仕上げの好み(2026-08-03 優さん承認案) ============
+     おまかせで動画を選んだあと、モードごとに1画面だけ挟む選択。
+     見張るのは4点: ①モードごとに正しい選択肢だけが出る ②おすすめが選択済みで
+     「このまま進む」1タップ=従来と同じ結果 ③選んだ色/配置/頻度が
+     自走の入口(applyAutoChoices)で潰されず書き出しの絵(drawComposite)に映る
+     ④こだわりには挟まらない(㉞で確認) */
+  group("㊵ 仕上げの好み(色/配置/切り替えを1画面で・おすすめ選択済み)");
+
+  await test("★「このまま進む」1タップで従来と同じ結果(3モードとも・正しい選択肢だけ)", async () => {
+    const w = await compEnv();
+    const realRun = w.MC.ui.runAuto;
+    let ran = 0; w.MC.ui.runAuto = () => { ran++; };
+    try {
+      for (const [mode, layout] of [["switch", "switch"], ["vertical", "v3"], ["wipeCam", "wipe"]]) {
+        const S = compReset(w);
+        S.mode = mode; S.layoutId = layout;
+        /* 前回の残り値(remakeWithDensityの±1・こだわりの色)を装う ─
+           画面は毎回おすすめから出直し、残り値を引き継がない約束 */
+        S.cutLevel = 3; S.filterId = "none"; S.colorOn = false;
+        w.MC.ui._autoFlow = true; S.finishPicked = false;
+        ran = 0;
+        w.MC.ui.openFinishPick();
+        const el = w.document.getElementById("finishPick");
+        if (el.hidden) throw new Error(mode + ": 画面が開かない");
+        eq(!w.document.getElementById("fpPlaceSec").hidden, mode !== "switch", mode + ": 配置の有無");
+        eq(!w.document.getElementById("fpLevelSec").hidden, mode === "switch", mode + ": 切り替えの有無");
+        const colors = w.document.querySelectorAll("#fpColors .fp-color");
+        eq(colors.length, 2, mode + ": 色の選択肢");
+        eq(colors[0].getAttribute("aria-checked"), "true", mode + ": シネマティックが既定✓");
+        if (!/おすすめ/.test(colors[0].textContent)) throw new Error("シネマティックに「おすすめ」の札が無い");
+        const go = w.document.getElementById("fpGo");
+        if (go.disabled) throw new Error(mode + ": 既定のまま進めない");
+        eq(go.textContent.trim(), "このまま進む", mode + ": ボタンの文言");
+        go.click();
+        eq(ran, 1, mode + ": 自走の再開回数");
+        if (!el.hidden) throw new Error(mode + ": 進んだのに画面が閉じない");
+        /* 従来のおまかせと同じ着地: MarchinZカラー+色合わせON+おすすめ頻度+既定の配置 */
+        eq(S.filterId, "marchinz", mode + ": filterId");
+        eq(S.colorOn, true, mode + ": colorOn");
+        if (mode === "switch") eq(S.cutLevel, 2, "cutLevel(おすすめへ戻る)");
+        if (mode === "vertical") eq(S.slots.join(","), "1,2,3", "縦型3本の帯(従来どおり)");
+        if (mode === "wipeCam") {
+          eq(S.wipeMainId, 1, "メイン(従来の既定)");
+          eq(S.wipeClipId, 2, "右下(従来の既定)");
+          eq(S.wipeClipId2, 3, "左下(従来の既定)");
+        }
+      }
+    } finally { w.MC.ui.runAuto = realRun; w.MC.ui.closeFinishPick(); w.MC.ui._autoFlow = false; compReset(w); }
+    return "3モードとも: 正しい選択肢だけ・おすすめ✓・1タップで従来の既定に着地";
+  });
+
+  await test("★ナチュラル=色補正なし・色合わせは残る(自走の入口でも潰されない・変異つき)", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    const realRun = w.MC.ui.runAuto;
+    let ran = 0; w.MC.ui.runAuto = () => { ran++; };
+    try {
+      S.mode = "switch"; S.layoutId = "switch";
+      w.MC.ui._autoFlow = true; S.finishPicked = false;
+      w.MC.ui.openFinishPick();
+      w.document.querySelectorAll("#fpColors .fp-color")[1].click();   // ナチュラル
+      const go = w.document.getElementById("fpGo");
+      eq(go.textContent.trim(), "これで進む", "変えたときの文言");
+      const segs = w.document.querySelectorAll("#fpLevels .fp-seg-btn");
+      eq(segs.length, 3, "頻度の段数");
+      eq(segs[1].getAttribute("aria-checked"), "true", "おすすめが既定✓");
+      segs[2].click();   // 多め
+      w.document.getElementById("fpGo").click();
+      eq(S.filterId, "none", "フィルター=色補正なし");
+      eq(S.colorOn, true, "カメラ間の色合わせは残る");
+      eq(S.cutLevel, 3, "切り替え多め");
+      eq(ran, 1, "自走の再開");
+      /* 自走の入口(applyAutoChoices)が選んだ色/頻度を決め打ちへ戻さないこと。
+         runAuto の実経路と同じ関数をそのまま呼んで確かめる */
+      w.MC.ui.applyAutoChoices();
+      eq(S.filterId, "none", "入口で色が潰されない");
+      eq(S.cutLevel, 3, "入口で頻度が潰されない");
+      /* 変異の歯: 画面を通らない経路(finishPicked=false)では従来どおり決め打ちへ
+         戻る = ±1やこだわりの色が新規おまかせへ漏れ戻る穴(2026-08-03 push前
+         レビュー)は塞がったまま */
+      S.finishPicked = false;
+      w.MC.ui.applyAutoChoices();
+      eq(S.filterId, "marchinz", "保険の決め打ち(色)");
+      eq(S.cutLevel, 2, "保険の決め打ち(頻度)");
+      /* 「なし」はフィルター実装としても実在する(タイポで無音の素通しにしない) */
+      if (!w.MC.color.FILTERS[S.filterId] || !w.MC.color.FILTERS.none) {
+        throw new Error("FILTERS の対応が無い(無音で既定へ落ちる)");
+      }
+    } finally { w.MC.ui.runAuto = realRun; w.MC.ui.closeFinishPick(); w.MC.ui._autoFlow = false; compReset(w); }
+    return "ナチュラル=none+色合わせON / 多め=3 / 入口で潰されない / 保険は決め打ちのまま";
+  });
+
+  await test("★縦型: 帯の割り当てがタップで変わり、書き出しと同じ絵に映る(画素)", async () => {
+    const w = await compEnv();
+    const realRun = w.MC.ui.runAuto;
+    w.MC.ui.runAuto = () => {};
+    try {
+      /* --- 3本: 既定は 上=1/中=2/下=3。上=動画2 → 中=動画3 → 下=動画1(自動) --- */
+      const S = compReset(w);
+      S.mode = "vertical"; S.layoutId = "v3";
+      w.MC.ui._autoFlow = true; S.finishPicked = false;
+      w.MC.ui.openFinishPick();
+      const el = w.document.getElementById("finishPick");
+      const cards = () => [...el.querySelectorAll(".wp-card")];
+      const chips = () => cards().map(c => c.querySelector(".fp-chip").textContent);
+      eq(chips().join(","), "上,中,下", "既定の札(3本)");
+      cards()[1].click();
+      if (!w.document.getElementById("fpGo").disabled) throw new Error("選び直しの途中なのに進める");
+      cards()[2].click();
+      eq(chips().join(","), "下,上,中", "選び直し後の札");
+      w.document.getElementById("fpGo").click();
+      eq(S.slots.join(","), "2,3,1", "スロット");
+      /* 画素: 書き出しと同じ drawComposite で 上=CAM2 / 中=CAM3 / 下=CAM1 */
+      S.colorOn = false; S.filterId = "none"; S.borderOn = false;
+      const W = 180, H = 320;
+      const r = render(w, W, H, 0.5);
+      near(r.px(W / 2, 8), CAM[2], 8, "上の帯");
+      near(r.px(W / 2, H / 2), CAM[3], 8, "中の帯");
+      near(r.px(W / 2, H - 8), CAM[1], 8, "下の帯");
+      /* --- 2本: 役は 中央/上・下。1タップで中央が入れ替わる --- */
+      const S2 = compReset(w);
+      S2.mode = "vertical"; S2.layoutId = "v3";
+      S2.clips = S2.clips.slice(0, 2);
+      S2.slots = [2, 1, 2];   // media.afterChange のおまかせ既定(中央=1本目)
+      w.MC.ui._autoFlow = true; S2.finishPicked = false;
+      w.MC.ui.openFinishPick();
+      const cards2 = () => [...w.document.querySelectorAll("#fpCards .wp-card")];
+      eq(cards2().map(c => c.querySelector(".fp-chip").textContent).join(","),
+         "中央,上・下", "既定の札(2本)");
+      cards2()[1].click();   // 中央=動画2(残りは自動で上・下)
+      w.document.getElementById("fpGo").click();
+      eq(S2.slots.join(","), "1,2,1", "2本のスロット(中央=2本目/上下=1本目)");
+    } finally { w.MC.ui.runAuto = realRun; w.MC.ui.closeFinishPick(); w.MC.ui._autoFlow = false; compReset(w); }
+    return "3本=タップ2回で並べ替え(画素で確認) / 2本=1タップで中央が入れ替わる";
   });
 
   /* ============ ㉟ 凍結でデコーダが回収されても、作り直して続きから ============
@@ -7165,10 +7328,15 @@ async function countSamples(ns, file, fromSec) {
       U._repickHold = false;
       U._autoRunning = false;
       U.setBusy(false);
+      /* ★ 素材を外した時点で「仕上げの好み」は選び直しに戻ること(2026-08-03。
+         resetEasyDone が finishPicked を倒す ─ 配置の前提が変わるため)。
+         この試験は保留の解除そのものを測るので、確かめたうえで選択済みへ戻す */
+      if (S.finishPicked) throw new Error("素材を外しても仕上げの好みが選び直しに戻らない");
+      S.finishPicked = true;
       runNow(() => U.focusNextAction());
       if (ran !== 1) throw new Error("保留を解いても自走が再開しない: " + ran
         + ` (autoFlow=${U._autoFlow} busy=${U._busy} exp=${!!(w.MC.exporter && w.MC.exporter.running)}`
-        + ` easyDone=${S.easyDone} wipe=${U.needsWipePick()})`);
+        + ` easyDone=${S.easyDone} finish=${U.needsFinishPick()})`);
       return "保留中は再開0回・カード=外す+選択+保留・解除で再開1回";
     } finally {
       U.runAuto = keepRun; U._setupTab = keepTab;
