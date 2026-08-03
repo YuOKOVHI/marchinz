@@ -156,6 +156,13 @@
       target_label: String(raw.target_label || "").trim().slice(0, 200),
       target_href: String(raw.target_href || "").trim().slice(0, 512),
     };
+    /* ★ ここに actor_admin のような新フィールドを足してはいけない(2026-08-04)。
+       firestore.rules の adminUgcFeedAllowedKeys() が hasOnly で許可リストを持つので、
+       リストに無いキーを1つ足すだけで **書き込みが無音で拒否される**
+       (mll_profiles で同じ罠を踏んだ実績: marchinz-profile-field-allowlist)。
+       「管理者ぶんを隠す」は表示側(marchinz-admin-ugc.js の dropAdminRows)が
+       actor_uid で判定する ─ 管理者は auth-config.js の adminEmails=1人なので足りる。
+       印を付ける方式にするなら rules の許可リスト追加 + firestore:rules のデプロイが要る */
     const optKeys = [
       "public_id",
       "event_kind",
@@ -405,7 +412,45 @@
     },
   };
 
-  // Privacy/Switcher: TOP・クリエイターページのカード(a.mz-ctool-card)と
+  /* ============ Switcher の置き手紙を拾う(2026-08-04 優さん指示) ============
+     Switcher は firebase も認証も読み込まない(端末内だけで処理する作り)ので、
+     ツールの中からは記録できない。代わりに localStorage へ
+     { toolId, toolName, modeLabel, at } を置いてもらい、トップページへ戻った
+     この瞬間に1件だけ記録する。
+     ・modeLabel があれば「MarchinZ Switcher（縦型動画）」まで書く
+     ・無ければ「MarchinZ Switcher」= 種類を選ばずに離れた人
+     ・新しいFirestoreフィールドは足さない。rules の許可リスト(hasOnly)に無いキーは
+       書き込みごと拒否されるため、種類は target_label の中に入れる
+     ・古い置き手紙(24時間より前)は捨てる。拾ったら必ず消す(二重記録の防止) */
+  const TOOL_USE_PENDING_KEY = "marchinz_tool_use_pending_v1";
+  const TOOL_USE_PENDING_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+  function flushPendingToolUse() {
+    let raw = null;
+    try { raw = localStorage.getItem(TOOL_USE_PENDING_KEY); } catch { return; }
+    if (!raw) return;
+    try { localStorage.removeItem(TOOL_USE_PENDING_KEY); } catch { /* ignore */ }
+    let p = null;
+    try { p = JSON.parse(raw); } catch { return; }
+    if (!p || String(p.toolId || "") !== "switcher") return;
+    const at = Date.parse(String(p.at || ""));
+    if (Number.isFinite(at) && Date.now() - at > TOOL_USE_PENDING_MAX_AGE_MS) return;
+    const mode = String(p.modeLabel || "").trim();
+    const toolName = String(p.toolName || "MarchinZ Switcher").trim() || "MarchinZ Switcher";
+    void window.MarchinZAdminUgcLog?.recordToolUse?.({
+      toolId: "switcher",
+      toolName: mode ? `${toolName}（${mode}）` : toolName,
+      targetHref: "/tools/switcher/",
+    });
+  }
+
+  /* 置き手紙は「戻ってきた時」に拾う。ログイン状態が定まってから記録したいので
+     認証の確定(mll-auth-changed)も待つ ─ ゲストでも記録できる種別なので、
+     どちらか早い方で1回だけ動けばよい(拾った時点でキーは消える) */
+  flushPendingToolUse();
+  window.addEventListener("mll-auth-changed", () => { flushPendingToolUse(); });
+
+  // Privacy/ReAngle: TOP・クリエイターページのカード(a.mz-ctool-card)と
   // TOPの3入口ブロックのツールリンク(a[data-mz-tool-link])から開いた時に記録。
   // ツールページは別ページ(SPA外)のため、通常クリックは書き込み完了(最大500ms)を待ってから遷移する。
   // cmd/ctrl+クリック等の新規タブ系は元ページが残る=書き込みが完走するので素通し。
@@ -423,6 +468,12 @@
           ? "reangle"
           : "";
     if (!toolId) return;
+    /* ★ Switcher はここで記録しない(2026-08-04 優さん指示「どの動画かまで分かるように」)。
+       カードを押した時点では縦型/自動SW/ワイプのどれかがまだ決まっていない。
+       Switcher 側が localStorage に置き手紙をして、戻ってきた時に
+       flushPendingToolUse() が種類つきで1件だけ記録する ─ 2行に割れないよう
+       入口をこちらに一本化する(選ばずに離れた人は「開いた」として残る) */
+    if (toolId === "switcher") return;
     const toolName =
       toolId === "privacy" ? "MarchinZ Privacy"
         : toolId === "switcher" ? "MarchinZ Switcher"

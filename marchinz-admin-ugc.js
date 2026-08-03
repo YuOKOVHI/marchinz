@@ -93,6 +93,19 @@
     return `${y}/${m}/${day}`;
   }
 
+  /* 「いつ」を分まで出す(2026-08-04 優さん指示「時間も時間と分まで表示」)。
+     ★ fmtYmd は流用しない ─ あちらはイベント日付(日付だけの値)にも使われていて、
+       時刻を足すと「2026/08/04 00:00のイベント」のような嘘になる。
+       こちらは created_at(ISO日時)専用。時刻が読めない値なら日付だけに落とす */
+  function fmtYmdHm(iso) {
+    const s = String(iso || "").trim();
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) return fmtYmd(s);
+    const p = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} `
+      + `${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+
   function setMsg(text, isErr) {
     const m = el("admin-ugc-msg");
     if (!m) return;
@@ -203,6 +216,21 @@
     }
   }
 
+  /* ★ 管理者自身の操作は伏せる(2026-08-04 優さん指示「ugcは管理者権限のは
+     表示しないように」)。UGCは「実際の利用者が何をしたか」を見る場所で、
+     運営が動作確認で触ったぶんが混ざると一覧もダッシュボードの数も濁る。
+     判定は actor_uid が「いま見ている管理者自身」かどうかだけ。
+     ★ 記録側に actor_admin のような印を足す案は採らない ─ firestore.rules の
+       adminUgcFeedAllowedKeys() が hasOnly なので、許可リストに無いキーを足すと
+       **書き込みごと無音で拒否される**(mll_profiles で踏んだ罠と同型)。
+       管理者は auth-config.js の adminEmails=1人なので、uid 判定で足りる。
+     消さずに伏せるだけ。読み込みの3経路すべてをここに通す */
+  function dropAdminRows(rows) {
+    const meUid = String(getUser()?.id || "").trim();
+    if (!meUid) return rows;
+    return rows.filter((r) => String(r.actor_uid || "").trim() !== meUid);
+  }
+
   /** @param {import("firebase").firestore.Firestore} db @param {string} kind */
   async function loadFeedRows(db, kind) {
     const snap = await db.collection("mll_admin_ugc_feed").where("kind", "==", kind).limit(120).get();
@@ -210,7 +238,7 @@
     const rows = [];
     snap.forEach((d) => rows.push({ id: d.id, ...(d.data() || {}) }));
     rows.sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
-    return rows.slice(0, 80);
+    return dropAdminRows(rows).slice(0, 80);
   }
 
   const BADGE_CACHE_KEY = "marchinz_admin_ugc_badge_v1";
@@ -378,7 +406,7 @@
       const line = document.createElement("p");
       line.className = "user-prof-notif-line1 admin-ugc-line";
 
-      line.appendChild(document.createTextNode(`${fmtYmd(String(row.created_at || ""))}に `));
+      line.appendChild(document.createTextNode(`${fmtYmdHm(String(row.created_at || ""))}に `));
 
       const actorUid = String(row.actor_uid || "").trim();
       const isGuestActor =
@@ -502,8 +530,8 @@
     /** @type {Record<string, unknown>[]} */
     const rows = [];
     snap.forEach((d) => rows.push({ id: d.id, ...(d.data() || {}) }));
-    toolSummaryCache = rows;
-    return rows;
+    toolSummaryCache = dropAdminRows(rows);   // 管理者ぶんを除く(上の dropAdminRows 参照)
+    return toolSummaryCache;
   }
 
   /**
@@ -521,8 +549,8 @@
     /** @type {Record<string, unknown>[]} */
     const rows = [];
     snap.forEach((d) => rows.push({ id: d.id, ...(d.data() || {}) }));
-    allFeedCache = rows;
-    return rows;
+    allFeedCache = dropAdminRows(rows);       // 管理者ぶんを除く(同上)
+    return allFeedCache;
   }
 
   /** UGCページのダッシュボード(投稿系のみ=tool_use除外) */
@@ -699,7 +727,7 @@
       body.className = "user-prof-notif-body admin-ugc-body";
       const line = document.createElement("p");
       line.className = "user-prof-notif-line1 admin-ugc-line";
-      line.appendChild(document.createTextNode(`${fmtYmd(String(row.created_at || ""))}に `));
+      line.appendChild(document.createTextNode(`${fmtYmdHm(String(row.created_at || ""))}に `));
 
       const actorUid = String(row.actor_uid || "").trim();
       const isGuestActor =

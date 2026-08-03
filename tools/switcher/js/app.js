@@ -20,6 +20,9 @@ window.addEventListener("DOMContentLoaded", async () => {
   MC.ui.initFloatOnScroll();
   MC.ui.initVisibility();
   MC.ui.renderAll();
+  /* 「開いた」をトップページへ置き手紙(2026-08-04)。種類を選べば ui.js の
+     入口が種類つきで上書きする。選ばずに離れた人も1件として残るようにする */
+  MC.ui.noteToolUse();
 
   // 保存済みのプリセット/レイアウト等を復元
   try {

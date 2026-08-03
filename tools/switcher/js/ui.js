@@ -5049,6 +5049,33 @@ MC.ui.MODES = {
 /* いま選ばれているモードの設定 */
 MC.ui.modeConf = () => MC.ui.MODES[MC.S.mode] || MC.ui.MODES.vertical;
 
+/* ============ 「どの動画を作ったか」をトップページへ渡す(2026-08-04 優さん指示) ============
+   UGC(ツール)の一覧は「MarchinZ Switcher を使いました」までしか言えなかった。
+   縦型/自動スイッチング/ワイプのどれかまで見たい、という要望。
+
+   ★ このツールは firebase も認証も読み込まない(完全に端末内で処理する作りで、
+     それが売り文句でもある)。だから**ここでは記録しない**。localStorage に
+     置き手紙をして、記録はトップページ(marchinz-admin-ugc-log.js)に任せる。
+     ツールはトップページのカードから同じタブで開き、完成後の「閉じる」も
+     トップページへ戻すので、置き手紙はふつうに拾われる。
+   ★ 種類を選ぶ前(=起動しただけ)も1通置く。選ばずに離れた人が
+     「開いた」として残るようにするため。選べば上書きして種類つきになる。
+   ★ 新しいFirestoreフィールドは足さない ─ rules の許可リスト(hasOnly)に
+     無いキーは書き込みごと拒否される。種類は target_label の中に入れる */
+MC.ui.TOOL_USE_KEY = "marchinz_tool_use_pending_v1";
+
+MC.ui.noteToolUse = () => {
+  try {
+    const label = MC.ui.MODES[MC.S.mode] ? MC.ui.MODES[MC.S.mode].label : "";
+    localStorage.setItem(MC.ui.TOOL_USE_KEY, JSON.stringify({
+      toolId: "switcher",
+      toolName: "MarchinZ Switcher",
+      modeLabel: label,          // 「縦型動画」「自動スイッチング動画」「ワイプカメラ動画」
+      at: new Date().toISOString(),
+    }));
+  } catch (e) { /* プライベートモード等で書けなくても本体は続行 */ }
+};
+
 /* 保存状態の復元やモード切替で、そのモードに無い比率/レイアウトが残らないように寄せる */
 MC.ui.normalizeForMode = () => {
   const m = MC.ui.modeConf();
@@ -5303,6 +5330,7 @@ MC.ui.wire = () => {
       /* 1段目で選んだ種類をここで確定する。種類が未選択のまま
          2段目へ来ることは無いが、保険で switch に落とす */
       MC.ui.chooseMode(MC.ui._pendingMode || MC.S.mode || "switch");
+      MC.ui.noteToolUse();   // どの種類を使ったかをトップページへ渡す(下の説明を参照)
       MC.ui.setSetupTab(flow === "easy" ? "easy" : "pro");
       if (flow === "pro") MC.ui._tabsForced = true;   // こだわりを選んだ人にはタブを出す
       MC.ui.refreshSetupTabs();
