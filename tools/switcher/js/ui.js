@@ -274,10 +274,8 @@ MC.ui.showExportStats = () => {
     `書き出し ${sec(s.totalMs)}秒`,
     `素材 ${mmss(s.spanSec)} → 実時間の${speed}倍速`,
     `${s.w}x${s.h} ${(s.bitrate / 1e6).toFixed(0)}Mbps ${s.frames}コマ`,
-    /* 内部ID(light/full)を人の言葉(標準/高画質)で出す(2026-08-01 1080p統一)。
-       中高生がコピーして送る診断ログに「light」では、720pだった頃の名残と
-       読み違える(いまはどちらも1080p) */
-    `カメラ${s.cams}台 / ${s.layoutId} / 画質 ${(MC.exporter.QUALITIES[s.quality] || {}).label || s.quality}`,
+    /* 「画質」の表記は撤去(2026-08-03 12Mbps統一)。Mbpsが上の行に出ている */
+    `カメラ${s.cams}台 / ${s.layoutId}`,
     "",
     "── 何に時間がかかったか ──",
     bucket("デコード待ち", s.decodeMs),
@@ -1563,7 +1561,8 @@ MC.ui.initJourney = () => {
       { id: "tilt",   label: "傾きを直す", shortLabel: "傾き", hint: "1本ずつ傾きを直します" },
       { id: "sync",   label: "同期と分析",   shortLabel: "同期", hint: "音のズレを合わせ、素材を分析します" },
       { id: "length", label: "長さと開始位置", shortLabel: "長さ", hint: "長さと開始位置を選びます" },
-      { id: "export", label: "書き出し",     shortLabel: "書出", hint: "画質を選んで書き出します。色は気になるときだけ" },
+      /* 「画質を選んで」は削除(2026-08-03 12Mbps統一で選択肢ごと無くなった) */
+      { id: "export", label: "書き出し",     shortLabel: "書出", hint: "動画を書き出します。色は気になるときだけ" },
     ],
     doneHint: "書き出し完了。調整して書き出し直すこともできます",
     /* 1画面1操作(デッキ式)になってから、画面に出ているパネルは常に1枚だけ。
@@ -2326,44 +2325,13 @@ MC.ui.renderExportMode = () => {
   }
 };
 
-/* ---------- 書き出し画質の選択 ----------
-   1080pのみ(2026-08-01 優さん指示)。標準/高画質の差はビットレートだけ */
+/* ---------- 書き出し画質の選択: 廃止(2026-08-03 優さん指示「12だけに統一」) ----------
+   ビットレートは videoBitrate() が一律12Mbps(旧端末のメモリ例外3.8Mbpsのみ)。
+   選択肢を出しても結果が変わらないので、迷いの種ごと画面から下ろす。
+   枠(#qualityPicker)はHTMLに残して空+hidden にする ─ セレクタ依存(CSS/QA)を壊さない */
 MC.ui.renderQualityPicker = () => {
   const host = MC.ui.$("#qualityPicker");
-  if (!host) return;
-  const cur = MC.exporter.quality();
-  /* スマホでもディスク(OPFS)へ直接書ける端末は、メモリのために画質を落とす
-     必要がなくなった(2026-07-23 Phase 1)。「パソコン推奨」の但し書きは、
-     本当に不利な端末にだけ出す。実態と違う遠慮はユーザーの損になる */
-  /* 既定のライトを先に置く。フルHDはいつでも選べる */
-  /* 「ライトモード(720p)」等はやめた(2026-07-28)。「モード」はこのツールで
-     3つの意味に使われ、p表記は通じない。速いか・きれいか、だけを言う */
-  const defs = [
-    { id: "light", name: "標準", tag: "おすすめ",
-      desc: "フルHD。ファイルが軽く、SNSへの投稿に十分な画質" },
-    { id: "full", name: "高画質", tag: "",
-      desc: "フルHDのままデータ量を増やし、細かい動きに強くする" },
-  ];
-  host.innerHTML = defs.map(d => `
-    <button type="button" class="q-card${d.id === cur ? " on" : ""}" role="radio"
-      aria-checked="${d.id === cur}" data-q="${d.id}">
-      <span class="q-name">${d.name}${d.tag ? ` <em class="q-tag">${d.tag}</em>` : ""}</span>
-      <span class="q-desc">${d.desc}</span>
-    </button>`).join("");
-  host.querySelectorAll("[data-q]").forEach(b => {
-    b.onclick = () => {
-      MC.S.exportQuality = b.dataset.q;
-      MC.saveState();
-      MC.ui.renderQualityPicker();
-      /* 関数名は updateTransport。renderTransport は存在せず、ここで TypeError になって
-         次行の checkExportable() まで到達していなかった(2026-07-25 レビューで発覚)。
-         checkExportable は「この長さをこの端末で書き出せるか」を判定するが、その上限は
-         videoBitrate() 経由で画質に依存する(ライト8Mbps / フル12Mbps)。つまり
-         ライト→フルに切り替えたとき、出るべき「書き出せません」の警告が出ていなかった */
-      MC.ui.updateTransport();       // 見積り(ETA)を新しい画質で引き直す
-      MC.ui.checkExportable();
-    };
-  });
+  if (host) { host.hidden = true; host.innerHTML = ""; }
 };
 
 /* ---------- 縦型: カメラの配置(上/中/下)の確認と入れ替え ----------
@@ -3033,11 +3001,10 @@ MC.ui.renderFullLabel = on => {
     return;
   }
   const range = MC.trimRange();
-  const q = MC.exporter.QUALITIES[MC.exporter.quality()];
+  /* 画質の表記は撤去(2026-08-03「12だけに統一」— 全員同じなので言う意味が無い) */
   el.innerHTML = '<i class="fa-solid fa-clapperboard" aria-hidden="true"></i> '
     + '<span><b>この見た目で書き出します</b>'
-    + `範囲 ${MC.ui.fmtTime(range[0])}〜${MC.ui.fmtTime(range[1])}`
-    + (q ? " ・ " + MC.ui.esc(q.label) : "") + "</span>";
+    + `範囲 ${MC.ui.fmtTime(range[0])}〜${MC.ui.fmtTime(range[1])}</span>`;
 };
 
 /* ============ 作業中の離脱・画面ロックを防ぐ ============

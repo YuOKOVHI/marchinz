@@ -6014,6 +6014,42 @@ async function countSamples(ns, file, fromSec) {
     }
   });
 
+  await test("★ビットレートは12Mbps一本(画質・比率・端末で変えない。例外は旧端末のメモリ制約3.8Mbpsのみ)", async () => {
+    /* 2026-08-03 優さん指示「12だけに統一！スマホも12だけに」。
+       SNSがゴール=投稿時に再エンコードされるため12以上は視覚差なし */
+    const w = await compEnv();
+    const S = compReset(w);
+    const X = w.MC.exporter;
+    const keep = { q: S.exportQuality, p: S.preset, st: X.streamingOut, ios: w.MC.isIOS };
+    try {
+      X.streamingOut = () => true;
+      for (const q of ["light", "full", "sns", null]) {
+        for (const p of ["16x9", "9x16", "1x1"]) {
+          S.exportQuality = q; S.preset = p;
+          if (X.videoBitrate() !== 12e6) {
+            throw new Error(`quality=${q}/preset=${p} で ${X.videoBitrate() / 1e6}Mbps(12でない)`);
+          }
+        }
+      }
+      /* 例外: OPFSもディスク直書きも使えない旧iOS端末だけ3.8Mbps(メモリ制約) */
+      X.streamingOut = () => false;
+      w.MC.isIOS = true;
+      if (X.videoBitrate() !== 3.8e6) throw new Error("旧iOS端末のメモリ例外(3.8Mbps)が消えた=旧端末が落ちる");
+      w.MC.isIOS = false;
+      if (X.videoBitrate() !== 12e6) throw new Error("旧経路の非iOSまで絞っている");
+      /* 画質の選択UIは撤去済み(枠は空+hiddenで残す) */
+      w.MC.ui.renderQualityPicker();
+      const host = w.document.getElementById("qualityPicker");
+      if (host && (!host.hidden || host.querySelector(".q-card"))) {
+        throw new Error("画質の選択UIがまだ出ている(選んでも結果が変わらない)");
+      }
+      return "全組み合わせ12Mbps / 旧iOSのみ3.8Mbps(メモリ) / 画質UIは撤去";
+    } finally {
+      S.exportQuality = keep.q; S.preset = keep.p;
+      X.streamingOut = keep.st; w.MC.isIOS = keep.ios;
+    }
+  });
+
   group("㉞ ワイプの割り当て・左下ワイプ・種類の並び(2026-08-02 優さん指示)");
 
   await test("★種類カードの並びは ①縦型 ②自動スイッチング ③ワイプ", async () => {

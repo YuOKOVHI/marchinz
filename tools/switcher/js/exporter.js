@@ -791,7 +791,7 @@ MC.exporter.encodeAudioFile = async (muxer, clip, fromLocalSec, durSec, onStatus
    映像ビットレートは exportMP4 の venc.configure と揃えること */
 /* ---------- 画質は1080pのみ(2026-08-01 優さん指示) ----------
    720pの分岐を廃止し、出力は常にプリセットの実寸(9x16なら1080x1920)。
-   「標準/高画質」の違いは**ビットレートだけ**(8Mbps / 12Mbps)にする。
+   (2026-08-03 追記: ビットレートも12Mbps一本に統一。下の videoBitrate 参照)
 
    正直な注記(iOSへの影響): 1080は720の2.25倍の画素。優さんのiPhone実機
    (v1.70.0)では 59秒の書き出し52.3秒のうち合成(draw)が40.6秒=91%を占めて
@@ -799,16 +799,19 @@ MC.exporter.encodeAudioFile = async (muxer, clip, fromLocalSec, durSec, onStatus
    (推定100秒前後)になる。VideoFrame(IOSurface)のメモリも2.25倍。
    これで落ちるようなら、戻すのは QUALITIES に scale を復活させるのではなく
    PART_SEC を絞る方向で(90秒→45秒)。解像度は優さんの決定なので触らない */
+/* ---------- ビットレートは12Mbps一本(2026-08-03 優さん指示「12だけに統一！スマホも12だけに」) ----------
+   SNSがゴール=投稿時にプラットフォーム側で再エンコードされるため、
+   12Mbps以上にしても視覚差が出ない。標準/高画質・1:1の別値を全部やめて
+   迷いを消す。QUALITIES/quality() は内部互換(保存値・診断の記録)のためだけに残し、
+   ビットレートには一切効かない(常に標準扱い) */
 MC.exporter.QUALITIES = {
-  full:  { label: "高画質" },   // 1080p / 12Mbps
-  light: { label: "標準" },     // 1080p / 8Mbps(既定。ファイルが軽い)
+  full:  { label: "高画質" },   // 旧: 12Mbps(いまは全員12Mbps)
+  light: { label: "標準" },     // 旧: 8Mbps(同上)
 };
 /* 旧IDからの移行(sns,light=旧720p→light / hd,pro=1080p→full) */
 MC.exporter.QUALITY_ALIAS = { sns: "light", hd: "full", pro: "full" };
 
 MC.exporter.quality = () => {
-  /* 既定は標準(1080p/8Mbps)。ファイルが軽く、SNSはどうせ再圧縮される。
-     きれいに残したい人は高画質(12Mbps)へ1タップで切り替えられる */
   let q = MC.S.exportQuality || "light";
   q = MC.exporter.QUALITY_ALIAS[q] || q;              // 旧IDの保存値を寄せる
   return MC.exporter.QUALITIES[q] ? q : "light";
@@ -821,18 +824,12 @@ MC.exporter.exportDims = () => {
 };
 
 MC.exporter.videoBitrate = () => {
-  const q = MC.exporter.quality();
-  const sq = MC.S.preset === "1x1";
-  /* メモリに溜めずに書ける環境(ディスク直書き or OPFS)なら、端末で差をつけない。
-     iPhoneを3.8Mbpsに落としていたのは「完成MP4を丸ごとメモリに載せる」制約の
-     ためであって、その制約は Phase 1 で消えた(2026-07-23 優さん指示で12Mbpsへ) */
-  if (MC.exporter.streamingOut()) {
-    return q === "light" ? (sq ? 6e6 : 8e6) : (sq ? 8e6 : 12e6);
-  }
-  /* 旧経路(OPFSもディスク直書きも使えない端末)だけは、メモリ上限に
-     8分30秒を収めるため3.8Mbpsに留める */
-  if (MC.isIOS) return 3.8e6;
-  return q === "light" ? (sq ? 6e6 : 8e6) : (sq ? 8e6 : 12e6);
+  /* 一律12Mbps(2026-08-03 優さん指示)。画質・比率(1:1)・端末の分岐を廃止。
+     ★ 例外は1つだけ: OPFSもディスク直書きも使えない旧端末のiOSは3.8Mbps。
+       これは**画質ではなくメモリの制約**(完成MP4を丸ごとメモリに載せるため、
+       8分30秒を上限内に収める値)。消すと旧端末がタブごと落ちる */
+  if (!MC.exporter.streamingOut() && MC.isIOS) return 3.8e6;
+  return 12e6;
 };
 
 /** 完成MP4をメモリに溜めずに書ける環境か(ディスク直書き or OPFS) */

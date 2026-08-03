@@ -31,11 +31,9 @@ window.addEventListener("DOMContentLoaded", async () => {
        引き継ぐと「初期でオン」の指示が巻き戻る(2026-07-24 実機で発覚)。
        セッション内でOFFにするのは自由だが、次回開いたらONに戻る */
     if (saved.colorStrength != null) MC.S.colorStrength = saved.colorStrength;
-    if (saved.exportQuality) {
-      // 旧ID(sns/hd/pro)は新ID(light/full)へ寄せてから採用する
-      const q = MC.exporter.QUALITY_ALIAS[saved.exportQuality] || saved.exportQuality;
-      if (MC.exporter.QUALITIES[q]) MC.S.exportQuality = q;
-    }
+    /* exportQuality の復元は廃止(2026-08-03「12だけに統一」)。
+       ビットレートは videoBitrate() が一律12Mbps(旧端末のメモリ例外のみ)で、
+       保存値を戻しても何も変わらない */
     // フィルターは復元しない: 初期値は常に「MarchinZ」(2026-07-19 優さん指定)
     if (saved.beatsPerBar) MC.S.beatsPerBar = saved.beatsPerBar;
     // 切替頻度: 旧5段階の保存値は3段階(少なめ/おすすめ/多め)へ寄せる
