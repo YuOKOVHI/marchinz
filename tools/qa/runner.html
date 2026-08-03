@@ -6344,19 +6344,24 @@ async function countSamples(ns, file, fromSec) {
       w.MC.ui.openFinishPick();
       const el = w.document.getElementById("finishPick");
       if (el.hidden) throw new Error("#finishPick が開かない");
-      const cards = () => [...el.querySelectorAll(".wp-card")];
+      const cards = () => [...el.querySelectorAll("#fpCards .wp-card")];
       eq(cards().length, 3, "カード数");
-      /* おすすめが選択済みで出る: 既定の割り当て(メイン=1/右下=2/左下=3) */
-      const chips = () => cards().map(c => c.querySelector(".fp-chip").textContent);
-      eq(chips().join(","), "メイン,右下,左下", "既定の札");
+      /* ★ 新UI(2026-08-04): カードは役の順に並び、各カードが役の札を持つ。
+         どの札もいつでも押せて、押した先に居た動画と入れ替わるだけ */
+      const names = () => cards().map(c => c.querySelector(".wp-name").textContent);
+      const roles = () => cards().map(c => (c.querySelector(".fp-role.on") || {}).textContent);
+      eq(roles().join(","), "メイン,右下,左下", "既定の札(役の順に並ぶ)");
       const go = w.document.getElementById("fpGo");
       if (go.disabled) throw new Error("既定のまま進めない(おすすめ選択済みの約束が破れている)");
-      /* 選び直し: 1タップ目=メイン(動画2)。途中は進むを止める */
-      cards()[1].click();
-      if (!go.disabled) throw new Error("選び直しの途中なのに進める(中途半端な割り当てで走る)");
-      cards()[0].click();          // 2タップ目=右下(動画1) → 残り3本目は左下へ自動
-      if (go.disabled) throw new Error("選び終わったのに進めない");
-      eq(chips().join(","), "右下,メイン,左下", "選び直し後の札");
+      const before = names();
+      /* 2番目の動画の「メイン」を押す → 1番目と入れ替わる(1タップで完結) */
+      cards()[1].querySelectorAll(".fp-role")[0].click();
+      if (go.disabled) throw new Error("入れ替えの途中で進めなくなった(常に割り当ては完成しているはず)");
+      eq(roles().join(","), "メイン,右下,左下", "入れ替えても役の並びは動かない");
+      const after = names();
+      if (after[0] !== before[1] || after[1] !== before[0] || after[2] !== before[2]) {
+        throw new Error(`入れ替わり方が違う: ${before.join(",")} -> ${after.join(",")}`);
+      }
       go.click();
       eq(S.wipeMainId, 2, "メイン");
       eq(S.wipeClipId, 1, "右下ワイプ");
@@ -6368,7 +6373,7 @@ async function countSamples(ns, file, fromSec) {
       eq(ran, 1, "自走の再開回数");
       if (w.MC.ui.needsFinishPick()) throw new Error("選び終わっても needsFinishPick が true");
     } finally { w.MC.ui.runAuto = realRun; w.MC.ui.closeFinishPick(); w.MC.ui._autoFlow = false; }
-    return "既定=メイン/右下/左下・タップ2回で選び直し→進むで自走が1回だけ再開";
+    return "既定=メイン/右下/左下・1タップで入れ替え(進むは常に押せる)→自走が1回だけ再開";
   });
 
   await test("★選択が挟まるのは おまかせ だけ(こだわり・動画1本は挟まらない)", async () => {
@@ -6629,36 +6634,34 @@ async function countSamples(ns, file, fromSec) {
            renderFinishPick は毎回 #fpCards を作り直すので、焦点を持ったカードごと
            消える ─ 割り当てが完了する回まで通しで見る */
       eq(d.activeElement.id, "fpGo", "開いた直後の焦点");
-      sec.querySelectorAll(".wp-card")[1].click();       // 1タップ目(pending へ)
-      if (!d.getElementById("fpGo").disabled) throw new Error("選び直しの途中なのに進める");
+      const roleBtns = i => [...sec.querySelectorAll("#fpCards .wp-card")][i]
+        .querySelectorAll(".fp-role");
+      /* ★ 新UI(2026-08-04): 「進む」が無効になる瞬間はもう無い。
+         描き直しで札ごと消えるのは同じなので、押した札へ焦点が戻るかを見る */
+      roleBtns(2)[0].focus();                            // 実機のタップは焦点も立つ
+      roleBtns(2)[0].click();                            // 3枚目を「上」へ
+      if (d.getElementById("fpGo").disabled) throw new Error("入れ替えで進めなくなった");
       if (!sec.contains(d.activeElement)) {
-        throw new Error("1タップ目で焦点がダイアログの外へ落ちた");
+        throw new Error("入れ替えで焦点がダイアログの外へ落ちた");
       }
-      sec.querySelectorAll(".wp-card")[2].click();       // 2タップ目(割り当て完了)
-      if (d.getElementById("fpGo").disabled) throw new Error("割り当てが済んだのに進めない");
+      eq(d.activeElement.className.includes("fp-role"), true, "焦点が押した札へ戻る");
+      eq(d.activeElement.getAttribute("aria-checked"), "true", "戻った札が選択中");
+      roleBtns(0)[0].focus();
+      roleBtns(0)[0].click();                            // 同じ役の押し直し
       if (!sec.contains(d.activeElement)) {
-        throw new Error("割り当て完了で焦点がダイアログの外へ落ちた(「これで進む」へ辿り着けない)");
+        throw new Error("同じ役を押し直しただけで焦点が外れた");
       }
-      /* ③ 次に押すカードは fp.order で引く ─ 文字「？」で探すと、
-         ファイル名に「？」を含む素材で割り当て済みのカードへ焦点が飛ぶ */
-      const S2 = compReset(w);
-      S2.mode = "vertical"; S2.layoutId = "v3";
-      S2.clips[0].name = "これ？の動画.mp4";
-      w.MC.ui._autoFlow = true; w.MC.ui._setupTab = "easy";
-      S2.finishPicked = false; w.MC.ui._fp = null;
-      w.MC.ui.closeFinishPick(); w.MC.ui.openFinishPick();
-      sec.querySelectorAll(".wp-card")[0].click();
-      const lab = d.activeElement ? (d.activeElement.getAttribute("aria-label") || "") : "";
-      if (/いまは/.test(lab)) {
-        throw new Error(`「？」をファイル名から拾って割り当て済みへ飛んだ: ${lab}`);
-      }
+      /* どの瞬間も全員に役がある(旧UIの「？」= 役なしの状態を作らない) */
+      const noRole = [...sec.querySelectorAll("#fpCards .wp-card")]
+        .filter(c => !c.querySelector(".fp-role.on")).length;
+      eq(noRole, 0, "役の付いていないカード数");
       /* ③ Escape は「戻る」と同じ着地(素材工程+保留)。閉じたら inert も外れる */
       d.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
       if (!sec.hidden) throw new Error("Escape で閉じない");
       eq(w.MC.ui._viewPhase, "mat", "Escape の着地");
       eq(w.MC.ui._repickHold, true, "Escape 後の保留");
       eq([...d.body.children].filter(e => e.hasAttribute("inert")).length, 0, "閉じた後に残る inert");
-      return `背後 inert ${inerted}個・外へ焦点が移らない / 無効化しても焦点は中 / Escape=素材工程へ着地`;
+      return `背後 inert ${inerted}個・外へ焦点が移らない / 入れ替えても焦点は押した札 / 役なしのカード0 / Escape=素材工程へ着地`;
     } finally {
       w.MC.ui.closeFinishPick();
       w.MC.ui._autoFlow = false; w.MC.ui._repickHold = false;
@@ -6769,13 +6772,14 @@ async function countSamples(ns, file, fromSec) {
       w.MC.ui._autoFlow = true; S.finishPicked = false;
       w.MC.ui.openFinishPick();
       const el = w.document.getElementById("finishPick");
-      const cards = () => [...el.querySelectorAll(".wp-card")];
-      const chips = () => cards().map(c => c.querySelector(".fp-chip").textContent);
-      eq(chips().join(","), "上,中,下", "既定の札(3本)");
-      cards()[1].click();
-      if (!w.document.getElementById("fpGo").disabled) throw new Error("選び直しの途中なのに進める");
-      cards()[2].click();
-      eq(chips().join(","), "下,上,中", "選び直し後の札");
+      const cards = () => [...el.querySelectorAll("#fpCards .wp-card")];
+      const roles = () => cards().map(c => (c.querySelector(".fp-role.on") || {}).textContent);
+      eq(roles().join(","), "上,中,下", "既定の札(3本・役の順に並ぶ)");
+      /* 2番目(動画2)を「上」へ → [2,1,3]。つぎに3番目に来た動画3を「中」へ → [2,3,1] */
+      cards()[1].querySelectorAll(".fp-role")[0].click();
+      if (w.document.getElementById("fpGo").disabled) throw new Error("入れ替えの途中で進めなくなった");
+      cards()[2].querySelectorAll(".fp-role")[1].click();
+      eq(roles().join(","), "上,中,下", "入れ替えても役の並びは動かない");
       w.document.getElementById("fpGo").click();
       eq(S.slots.join(","), "2,3,1", "スロット");
       /* 画素: 書き出しと同じ drawComposite で 上=CAM2 / 中=CAM3 / 下=CAM1 */
@@ -6793,13 +6797,65 @@ async function countSamples(ns, file, fromSec) {
       w.MC.ui._autoFlow = true; S2.finishPicked = false;
       w.MC.ui.openFinishPick();
       const cards2 = () => [...w.document.querySelectorAll("#fpCards .wp-card")];
-      eq(cards2().map(c => c.querySelector(".fp-chip").textContent).join(","),
+      eq(cards2().map(c => (c.querySelector(".fp-role.on") || {}).textContent).join(","),
          "中,上と下", "既定の札(2本)");
-      cards2()[1].click();   // 中=動画2(残りは自動で上と下)
+      cards2()[1].querySelectorAll(".fp-role")[0].click();   // 動画2を「中」へ=入れ替え
       w.document.getElementById("fpGo").click();
       eq(S2.slots.join(","), "1,2,1", "2本のスロット(中央=2本目/上下=1本目)");
     } finally { w.MC.ui.runAuto = realRun; w.MC.ui.closeFinishPick(); w.MC.ui._autoFlow = false; compReset(w); }
-    return "3本=タップ2回で並べ替え(画素で確認) / 2本=1タップで中央が入れ替わる";
+    return "3本=札2回で並べ替え(画素で確認) / 2本=1タップで中央が入れ替わる";
+  });
+
+  await test("★傾きの自動補正は選べる(既定ON・そのままなら段も出さない)", async () => {
+    /* 2026-08-04 優さん指示。既定はON。OFFを選んだ回は自走の「傾きを直す」を
+       丸ごと飛ばし、おまかせ全画面の段にも出さない ─ やらない仕事に✓が点くのは嘘 */
+    const w = await compEnv();
+    const realRun = w.MC.ui.runAuto;
+    let ran = 0; w.MC.ui.runAuto = () => { ran++; };
+    const d = w.document;
+    try {
+      const S = compReset(w);
+      S.mode = "switch";
+      w.MC.ui._autoFlow = true; S.finishPicked = false; w.MC.ui._fp = null;
+      w.MC.ui.openFinishPick();
+      const btns = () => [...d.querySelectorAll("#fpTilt .fp-seg-btn")];
+      eq(btns().length, 2, "選択肢の数");
+      eq(btns()[0].classList.contains("on"), true, "既定は「直す」が選択済み");
+      eq(btns()[0].getAttribute("aria-checked"), "true", "読み上げ上も選択中");
+      /* ① 既定のまま進めば ON */
+      d.getElementById("fpGo").click();
+      eq(S.autoTilt, true, "既定で進んだときの autoTilt");
+      /* ② 「そのまま」を選べば OFF。進むの文言も変わる */
+      S.finishPicked = false; w.MC.ui._fp = null;
+      w.MC.ui.openFinishPick();
+      btns()[1].click();
+      eq(btns()[1].classList.contains("on"), true, "「そのまま」を選べる");
+      eq(d.getElementById("fpGo").textContent, "これで進む", "変えたら進むの文言");
+      d.getElementById("fpGo").click();
+      eq(S.autoTilt, false, "そのままを選んだときの autoTilt");
+      eq(ran, 2, "自走の再開回数");
+      /* ③ OFFの回は、おまかせ全画面の段に「傾きを直す」を出さない */
+      const A = w.MC.ui.autoStage;
+      A.open(); const off = A.STEPS.map(s => s.key); A.close();
+      if (off.includes("tilt")) throw new Error("OFFなのに傾きの段が出る: " + off.join(","));
+      S.autoTilt = true;
+      A.open(); const on = A.STEPS.map(s => s.key); A.close();
+      if (!on.includes("tilt")) throw new Error("ONなのに傾きの段が無い: " + on.join(","));
+      eq(on.length - off.length, 1, "段の数の差");
+      /* ④ 「何を預けたか」の一行も選択に追従する(固定文だと選択と食い違う) */
+      S.autoTilt = false; S.filterId = "none";
+      const t = w.MC.ui.autoWhatText();
+      if (!/傾きはそのまま/.test(t) || !/撮ったままの色/.test(t)) {
+        throw new Error("預けた内容の一行が選択に追従しない: " + t);
+      }
+      return `既定ON / そのまま=autoTilt false / 段 ${on.length}→${off.length} / 預けた一行も追従`;
+    } finally {
+      w.MC.ui.runAuto = realRun;
+      w.MC.ui.closeFinishPick();
+      try { w.MC.ui.autoStage.close(); } catch (e) {}
+      w.MC.ui._autoFlow = false; w.MC.ui._fp = null;
+      compReset(w);
+    }
   });
 
   await test("★入口を通り直した新規おまかせは、もう一度好み画面が挟まる(前回の選択を持ち越さない)", async () => {

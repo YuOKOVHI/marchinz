@@ -398,13 +398,24 @@ html:has(body.mz-finish-pick), body.mz-finish-pick {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wp-meta { font-size: 11.5px; color: var(--tx2); font-variant-numeric: tabular-nums; }
 /* 帯/役の札。割り当て済み=塗り、選び直し中の未定=点線の「？」 */
-.fp-chip { flex: 0 0 auto; min-width: 48px; text-align: center; padding: 5px 10px;
-  border-radius: 999px; background: var(--acc); color: #fff;
-  font-size: 11.5px; font-weight: 700; white-space: nowrap; }
-.fp-chip--empty { background: transparent; color: var(--tx2);
-  border: 1px dashed var(--line); }
-/* 切り替えの多さ: 3等分のセグメント(44pt) */
+/* 旧「役の札」(.fp-chip)は撤去。役はカードごとの .fp-role で直接押す(2026-08-04) */
 .fp-seg { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.fp-seg--2 { grid-template-columns: 1fr 1fr; }
+/* 役の札(2026-08-04)。カードごとに「上/中/下」を直接押して入れ替える。
+   どれか1つが必ず点いていて、押した瞬間に入れ替わりが完了する */
+.fp-roles { flex: 0 0 auto; display: flex; gap: 6px; }
+.fp-role { min-height: 44px; padding: 0 12px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--panel2); color: var(--tx2);
+  font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.fp-role:hover { border-color: var(--acc); }
+.fp-role.on { border-color: var(--acc); box-shadow: 0 0 0 2px var(--acc) inset;
+  color: var(--navy); background: var(--panel); }
+/* 狭い画面では札を2段目へ回して、横に潰さない */
+@media (max-width: 460px) {
+  .wp-card { flex-wrap: wrap; }
+  .fp-roles { flex: 1 0 100%; }
+  .fp-role { flex: 1; padding: 0 6px; }
+}
 .fp-seg-btn { min-height: 44px; border-radius: 12px; border: 1px solid var(--line);
   background: var(--panel); box-shadow: var(--shadow-card); font-family: inherit;
   font-size: 13px; font-weight: 700; color: var(--navy); cursor: pointer; transition: .15s; }

@@ -3579,6 +3579,7 @@ MC.ui.applyAutoChoices = () => {
     MC.S.filterId = MC.ui.AUTO.filterId;
     MC.S.colorOn = true;
     MC.S.cutLevel = MC.ui.AUTO.cutLevel;
+    MC.S.autoTilt = true;   // 画面を通らなかった保険の経路では既定ONへ戻す
   }
 };
 
@@ -3645,11 +3646,23 @@ MC.ui.autoEtaSec = () => {
      this.canvas の参照で描き続けるので、DOM上の親が変わっても絵は流れる。
      複製すると2枚を毎フレーム描くことになり、iPhoneでは倍の負荷になる。
      終わったら必ず元の場所へ戻す ─ 戻し忘れるとプレビューが消える */
+/* おまかせ全画面の「何を預けたか」。固定文だと、仕上げの好みで選んだ内容と
+   食い違う(ナチュラルを選んでも「MarchinZカラー」と出ていた) */
+MC.ui.autoWhatText = () => {
+  const parts = ["60秒のハイライト", "盛り上がるところから"];
+  parts.push(MC.S.filterId === "none" ? "撮ったままの色" : "MarchinZカラー");
+  if (MC.S.autoTilt === false) parts.push("傾きはそのまま");
+  return parts.join("・");
+};
+
 MC.ui.autoStage = {
   /* 段の重み。実測の所要に近い比率にしておくと、バーが等速に見える */
   /* 段の名前は2つ持つ。いま動いている間は「何をしているか」、
      済んだら「何ができたか」。できた実感は動詞ではなく成果から出る */
-  STEPS: [
+  /* 出しうる段の全部。実際に出す分は open() が STEPS へ組み直す
+     (傾きを直さない設定なら「傾きを直す」を出さない ─ やらない仕事の
+      チェックが点くのは嘘になる) */
+  ALL_STEPS: [
     { key: "tilt",   label: "傾きを直す",         done: "傾きを直しました",     w: 12 },
     { key: "sync",   label: "音を合わせる",       done: "音がそろいました",     w: 10 },
     { key: "audio",  label: "良い音を選ぶ",       done: "良い音を選びました",     w: 2 },
@@ -3657,6 +3670,7 @@ MC.ui.autoStage = {
     { key: "finish", label: "カメラを切り替える",   done: "カメラ割りができました", w: 30 },
     { key: "export", label: "動画を書き出す",      done: "書き出しました",       w: 30 },
   ],
+  STEPS: [],   // open() で ALL_STEPS から組む
   _done: [], _now: null, _home: null,
   /* _sub=いま動いている段の補足 / _doneSub=済んだ段の成果 / _inner=段の中の進み具合
      _fail=失敗の顔を出しているか / _prevFocus=開く前にフォーカスがあった要素 */
@@ -3673,6 +3687,8 @@ MC.ui.autoStage = {
     /* ★ _sub / _doneSub / _inner / _fail も戻す(2026-08-01 レビュー14件)。
        _sub を戻していなかったため、前の段の文字が次の段に居座っていた
        (「カメラを切り替える  音を読み込み中 100%」のような表示) */
+    /* 段は開くたびに組み直す。傾きを直さない設定ならその段は出さない */
+    this.STEPS = this.ALL_STEPS.filter(s => s.key !== "tilt" || MC.S.autoTilt !== false);
     this._done = []; this._now = null;
     this._sub = null; this._doneSub = {}; this._inner = 0; this._innerRaw = 0; this._fail = null;
     this._failedStep = null; this._wakeWarn = 0; this._ask = false;
@@ -3688,6 +3704,8 @@ MC.ui.autoStage = {
     const cv = document.getElementById("cv");
     const host = MC.ui.$("#asPreview");
     if (cv && host) { this._home = cv.parentElement; host.appendChild(cv); }
+    { const w = MC.ui.$("#asWhat");
+      if (w) w.textContent = MC.ui.autoWhatText(); }
     el.hidden = false;
     document.body.classList.add("mz-auto-stage");
     /* role="dialog" aria-modal を名乗る以上、フォーカスも中へ移す。
@@ -4103,16 +4121,30 @@ MC.ui.setFinishPickInert = on => {
   }
 };
 
+/* 「仕上げの好み」の持ち物。おすすめの状態を毎回ここから作り直す。
+   ★ pending(割り当ての途中)は廃止した(2026-08-04 優さん「順番の入れ替えが
+     わかりにくい」)。いまはどの札もいつでも直接タップできて、常に全員に役がある */
+MC.ui.newFinishPrefs = () => ({
+  color: "cinema",
+  level: MC.ui.AUTO.cutLevel,
+  tilt: true,                        // 傾きの自動補正(既定ON)
+  order: MC.ui.finishDefaultOrder(),
+  focus: null,                       // 描き直したあとに焦点を戻す先
+  changed: false,
+});
+
 MC.ui.openFinishPick = () => {
   const el = MC.ui.$("#finishPick");
   if (!el || !el.hidden) return;
   /* おすすめは毎回ここで選び直す(色・頻度は S の残り値を見ない)。
      前回の±1(remakeWithDensity)や前回の色が、新しいおまかせへ黙って
      漏れ戻らないため(2026-08-03 push前レビューの承継。applyAutoChoices 参照) */
-  MC.ui._fp = { color: "cinema", level: MC.ui.AUTO.cutLevel,
-                order: MC.ui.finishDefaultOrder(), pending: null, changed: false };
+  MC.ui._fp = MC.ui.newFinishPrefs();
   MC.preview.pause();   // 選択画面の裏で音が鳴り続けないように(モード選択と同じ)
   el.hidden = false;
+  /* ★ 開くたび先頭へ戻す(2026-08-04)。前に送った位置が残っていると、
+     「仕上げの好み」の見出しを飛ばして途中から出る。中身が伸びるほど効く */
+  el.scrollTop = 0;
   document.body.classList.add("mz-finish-pick");
   MC.ui.setFinishPickInert(true);
   MC.ui.renderFinishPick();
@@ -4131,8 +4163,7 @@ MC.ui.closeFinishPick = () => {
 MC.ui.renderFinishPick = () => {
   const el = MC.ui.$("#finishPick");
   if (!el) return;
-  const fp = MC.ui._fp || (MC.ui._fp = { color: "cinema", level: MC.ui.AUTO.cutLevel,
-    order: MC.ui.finishDefaultOrder(), pending: null, changed: false });
+  const fp = MC.ui._fp || (MC.ui._fp = MC.ui.newFinishPrefs());
   const kind = MC.ui.$("#fpKind");
   if (kind) kind.textContent = MC.ui.modeConf().label;
   /* --- 配置(縦型/ワイプだけ) --- */
@@ -4144,42 +4175,58 @@ MC.ui.renderFinishPick = () => {
   if (showPlace) {
     /* 開いている間に素材が増減したら、割り当てを既定から作り直す */
     const ids = cards.map(c => c.id);
-    if ((fp.pending == null && fp.order.length !== ids.length)
-        || fp.order.some(id => !ids.includes(id))) {
-      fp.order = MC.ui.finishDefaultOrder(); fp.pending = null;
+    if (fp.order.length !== ids.length || fp.order.some(id => !ids.includes(id))) {
+      fp.order = MC.ui.finishDefaultOrder(); fp.focus = null;
     }
+    /* 見出しは役の性質で変える。縦型は「並び順」、ワイプは「配置」 */
+    { const t = MC.ui.$("#fpPlaceTitle");
+      if (t) t.textContent = MC.S.mode === "vertical" ? "動画の並び順" : "カメラの配置"; }
     const hint = MC.ui.$("#fpHint");
-    if (hint) hint.textContent = fp.pending != null
-      ? `つぎに「${roles[fp.pending]}」にする動画をタップ`
-      : `変えるなら「${roles[0]}」にする動画からタップ`;
+    if (hint) hint.textContent = MC.S.mode === "vertical"
+      ? "上から出る順に並んでいます。位置をタップすると入れ替わります"
+      : "位置をタップすると入れ替わります";
     const box = MC.ui.$("#fpCards");
     if (!box) return;   // HTMLとJSの版がずれても renderClips ごと落とさない
     box.innerHTML = "";
-    for (const c of cards) {
-      const at = fp.order.indexOf(c.id);   // pending中は order=選び終えた分だけ
-      const btn = document.createElement("button");
-      btn.type = "button";
+    /* ★ 役の順に並べる(2026-08-04)。縦型なら、この一覧の並びが
+       そのまま出来上がりの上下になる ─ 説明しなくても対応が見える */
+    const byId = new Map(cards.map(c => [c.id, c]));
+    fp.order.forEach((id, at) => {
+      const c = byId.get(id);
+      if (!c) return;
+      const card = document.createElement("div");
       /* ★ 青リングはワイプの「メイン」のときだけ(2026-08-03 レビュー)。
-         旧ワイプ画面(1枚だけメインを選ぶ)の名残で、3枚とも役が付く縦型でも
-         先頭にリングが出ていた ─ 縦型の「上」はメインではないので階層の嘘になる */
-      btn.className = "wp-card"
+         縦型の「上」はメインではないので、付けると階層の嘘になる */
+      card.className = "wp-card"
         + (MC.S.mode === "wipeCam" && at === 0 ? " wp-card--main" : "");
-      /* ★ aria-pressed は使わない(2026-08-03 レビュー)。これはトグルではなく
-         「役の割り当て」で、3枚とも札が付いているのに先頭だけ true になり
-         読み上げが「中、未押下」と事実に反していた。役を名前に込めて言う */
-      btn.setAttribute("aria-label", at >= 0
-        ? `${c.name}、いまは「${roles[at]}」`
-        : `${c.name}、役はこれから`);
-      btn.innerHTML = `
+      card.innerHTML = `
         <span class="wp-thumb-wrap">${c.thumb
           ? `<img class="wp-thumb" src="${c.thumb}" alt="">`
           : '<span class="wp-thumb wp-thumb--empty"></span>'}</span>
         <span class="wp-main"><span class="wp-name">${MC.ui.esc(c.name)}</span>
-          <span class="wp-meta">${c.isImage ? "写真" : MC.ui.fmtTime(c.duration)}</span></span>
-        <span class="fp-chip${at >= 0 ? "" : " fp-chip--empty"}">${at >= 0 ? MC.ui.esc(roles[at]) : "？"}</span>`;
-      btn.onclick = () => MC.ui.finishPickTap(c.id);
-      box.appendChild(btn);
-    }
+          <span class="wp-meta">${c.isImage ? "写真" : MC.ui.fmtTime(c.duration)}</span></span>`;
+      /* 役そのものを押せるようにする。押した役へこの動画が移り、
+         そこに居た動画が入れ替わりでこちらへ来る(必ず全員に役がある) */
+      const seg = document.createElement("span");
+      seg.className = "fp-roles";
+      seg.setAttribute("role", "radiogroup");
+      seg.setAttribute("aria-label", `${c.name} の位置`);
+      roles.forEach((label, i) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "fp-role" + (i === at ? " on" : "");
+        b.setAttribute("role", "radio");
+        b.setAttribute("aria-checked", i === at ? "true" : "false");
+        b.setAttribute("aria-label", `${c.name} を「${label}」にする`);
+        b.dataset.id = String(id);
+        b.dataset.at = String(i);
+        b.textContent = label;
+        b.onclick = () => MC.ui.finishSetRole(id, i);
+        seg.appendChild(b);
+      });
+      card.appendChild(seg);
+      box.appendChild(card);
+    });
   }
   /* --- 切り替えの多さ(自動スイッチングだけ) --- */
   const lvSec = MC.ui.$("#fpLevelSec");
@@ -4199,12 +4246,30 @@ MC.ui.renderFinishPick = () => {
       box.appendChild(b);
     }
   }
+  /* --- 傾きの自動補正(全モード共通・2026-08-04 優さん指示) --- */
+  { const box = MC.ui.$("#fpTilt");
+    if (box) {
+      box.innerHTML = "";
+      for (const [on, label, reco] of [[true, "直す", true], [false, "そのまま", false]]) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "fp-seg-btn" + (fp.tilt === on ? " on" : "");
+        b.setAttribute("role", "radio");
+        b.setAttribute("aria-checked", fp.tilt === on ? "true" : "false");
+        b.innerHTML = MC.ui.esc(label)
+          + (reco ? '<span class="fp-reco">おすすめ</span>' : "");
+        b.onclick = () => { if (fp.tilt === on) return;
+          fp.tilt = on; fp.changed = true; fp.focus = null;
+          MC.ui.buzz([10]); MC.ui.renderFinishPick(); };
+        box.appendChild(b);
+      }
+    } }
   /* --- 色(全モード共通) --- */
   const cbox = MC.ui.$("#fpColors");
   if (cbox) {
     cbox.innerHTML = "";
     for (const [key, name, desc, reco] of [
-      ["cinema", "シネマティック", "MarchinZの色に整えます", true],
+      ["cinema", "シネマティック", "MarchinZオリジナルのカラー", true],
       ["natural", "ナチュラル", "撮ったままの色。カメラの色だけそろえます", false],
     ]) {
       const b = document.createElement("button");
@@ -4221,10 +4286,10 @@ MC.ui.renderFinishPick = () => {
       cbox.appendChild(b);
     }
   }
-  /* --- 進むボタン。配置の選び直し中(pending)は押させない --- */
+  /* --- 進むボタン。どの瞬間も割り当ては完成しているので常に押せる --- */
   const go = MC.ui.$("#fpGo");
   if (go) {
-    go.disabled = fp.pending != null;
+    go.disabled = false;
     go.textContent = fp.changed ? "これで進む" : "このまま進む";
   }
   MC.ui.keepFinishPickFocus();
@@ -4248,35 +4313,33 @@ MC.ui.keepFinishPickFocus = () => {
   if (a && a !== document.body && el.contains(a)) return;   // まだ中に居る
   const fp = MC.ui._fp;
   let next = null;
-  if (fp && fp.pending != null) {
-    const cards = MC.ui.finishCards();
-    const id = (cards.find(c => !fp.order.includes(c.id)) || {}).id;
-    if (id != null) {
-      const i = cards.findIndex(c => c.id === id);
-      next = el.querySelectorAll("#fpCards .wp-card")[i] || null;
-    }
+  /* 押した役の札そのものへ戻す。札は描き直しで作り直されるので、
+     要素ではなく (どの動画・どの役) で引き当てる */
+  if (fp && fp.focus) {
+    next = [...el.querySelectorAll("#fpCards .fp-role")].find(
+      b => b.dataset.id === String(fp.focus.id) && b.dataset.at === String(fp.focus.at)) || null;
   }
   const go = MC.ui.$("#fpGo");
   const to = next || (go && !go.disabled ? go : MC.ui.$("#fpBack"));
   try { if (to) to.focus({ preventScroll: true }); } catch (e) {}
 };
 
-/* 配置カードのタップ。割り当て済みからのタップ=そのカードを1番目にして
-   選び直し開始。残り1枚は自動で最後の役へ入る(2本なら1タップで入れ替わる) */
-MC.ui.finishPickTap = id => {
+/* 役の札のタップ(2026-08-04 優さん「順番の入れ替えがわかりにくい」)。
+
+   旧: 1枚タップ→全員の役が消えて「？」になり、最後まで順に選ばされる。
+       途中でやめられず、1か所だけ直すこともできなかった。
+   新: 押した役へこの動画が移り、そこに居た動画と**入れ替わる**だけ。
+       どの瞬間も全員に役があり、1タップが必ず完結する。 */
+MC.ui.finishSetRole = (id, at) => {
   const fp = MC.ui._fp;
   if (!fp) return;
-  const ids = MC.ui.finishCards().map(c => c.id);
-  if (fp.pending == null) {
-    fp.order = [id]; fp.pending = 1;
-  } else {
-    if (fp.order.includes(id)) { MC.ui.buzz([30]); return; }   // もう選んだカード
-    fp.order.push(id); fp.pending++;
-  }
-  if (ids.length - fp.order.length === 1) {
-    fp.order.push(ids.find(x => !fp.order.includes(x)));
-  }
-  if (fp.order.length >= ids.length) { fp.pending = null; fp.changed = true; }
+  const cur = fp.order.indexOf(id);
+  if (cur < 0 || at < 0 || at >= fp.order.length) return;
+  fp.focus = { id, at };            // 描き直したあと、押した札へ焦点を戻す
+  if (cur === at) { MC.ui.keepFinishPickFocus(); return; }   // すでにその役
+  fp.order[cur] = fp.order[at];
+  fp.order[at] = id;
+  fp.changed = true;
   MC.ui.buzz([10]);
   MC.ui.renderFinishPick();
 };
@@ -4284,7 +4347,8 @@ MC.ui.finishPickTap = id => {
 /* 「このまま進む/これで進む」。選んだ好みを既存フラグへ書き、自走を再開する */
 MC.ui.finishPickGo = () => {
   const fp = MC.ui._fp;
-  if (!fp || fp.pending != null) return;
+  if (!fp) return;
+  MC.S.autoTilt = fp.tilt !== false;   // 傾きの自動補正(2026-08-04 優さん指示)
   /* 色: 既存の filterId/colorOn に接続(新しい色処理は作らない)。
      ナチュラル=フィルターなし。カメラ間の色合わせ(colorOn)はどちらでも残す */
   MC.S.filterId = fp.color === "natural" ? "none" : MC.ui.AUTO.filterId;
@@ -4540,7 +4604,7 @@ MC.ui.runEasy = async (opt) => {
   const syncSteps = vids.length >= 2 ? 1 : 0;
   /* おまかせは傾きを自動で当てる段が1つ増える(2026-08-01)。
      ★ 数え忘れると「3/2」になる。分母は下の分岐と必ず揃えること */
-  const tiltSteps = auto ? 1 : 0;
+  const tiltSteps = (auto && MC.S.autoTilt !== false) ? 1 : 0;
   /* 音声選択で一度止まるか。おまかせは止まらない(先に自動で決める)ので、
      解析の段まで必ず走る ─ ここを auto で見ないと分母が足りなくなる */
   const goesOn = auto || !(vids.length >= 2 && !MC.S.audioDecided);
@@ -4560,14 +4624,23 @@ MC.ui.runEasy = async (opt) => {
   try {
     if (auto) {
       /* 傾きは同期より先に当てる。同期は音だけを見るので順序はどちらでもよいが、
-         先に映像を触っておくと、あとの映像解析でデコーダが温まっている */
-      p.step(1, "傾きを直しています…").pulse("傾きを直しています…", { sub: MC.ui.autoSub() });
-      MC.ui.autoStage.step("tilt", `${vids.length}本`);
-      await MZP.paint();
-      const fixed = await MC.ui.autoHorizon(p);
-      MC.log("auto: 傾きを直した本数=" + fixed);
-      MC.ui.renderClips();
-      MC.ui.autoStage.mark("tilt", fixed ? `${fixed}本` : "そのままでOK");
+         先に映像を触っておくと、あとの映像解析でデコーダが温まっている。
+         ★「そのまま」を選んだ回は丸ごと飛ばす(2026-08-04 優さん指示) */
+      if (MC.S.autoTilt !== false) {
+        p.step(1, "傾きを直しています…").pulse("傾きを直しています…", { sub: MC.ui.autoSub() });
+        MC.ui.autoStage.step("tilt", `${vids.length}本`);
+        await MZP.paint();
+        const fixed = await MC.ui.autoHorizon(p);
+        MC.log("auto: 傾きを直した本数=" + fixed);
+        MC.ui.renderClips();
+        MC.ui.autoStage.mark("tilt", fixed ? `${fixed}本` : "そのままでOK");
+      } else {
+        /* 直さないだけで「傾きの工程は済み」の扱いにする ─ こだわりへ
+           切り替えたときに未確認のゲートで止めない(autoHorizon と同じ印) */
+        MC.S.tiltSkipped = true;
+        MC.saveState();
+        MC.log("auto: 傾きは直さない設定");
+      }
       /* ★ ここでプレビューを実際に流す(2026-08-01 レビュー14件)。autoStage.open() の
          play() は、この直後に走る runEasy 先頭の pause() が**同期的に**
          打ち消していた(最初の await より前)ので、主役のプレビューは
