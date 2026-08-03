@@ -1854,6 +1854,12 @@ async function countSamples(ns, file, fromSec) {
     eb.onclick = () => log.push("export");
     eb.disabled = false;
     w.MC.ui._autoFlow = true;
+    /* ★ 仕上げの好み(2026-08-03)以降、色/頻度の決め打ちは「画面を通らない
+       経路」(finishPicked=false)だけが当てる。compReset は門を開けるために
+       true を入れるので、ここでは実物の初回どおり false へ倒して
+       保険経路の決め打ち(marchinz/おすすめ)が生きていることを測る。
+       画面を通った値が潰されないことは㊵の変異つき試験が受け持つ */
+    S.finishPicked = false;
     try {
       await w.MC.ui.runAuto();
     } finally {
@@ -5558,12 +5564,17 @@ async function countSamples(ns, file, fromSec) {
       }
       if (!/おまかせ/.test(txt2)) throw new Error("登録済み×スマホに、いま使える道(おまかせ)を示していない");
       L.member = false;
-      /* おまかせは今までどおり誰でも使える。仕上げの好みは選択済みの前提にして
-         門の先(自走)まで届くかを測る(門そのものは㊵で試す) */
-      w.MC.S.finishPicked = true;
-      d.querySelector('#modeSelect .mode-card[data-flow="easy"]').click();
+      /* おまかせは今までどおり誰でも使える。入口は finishPicked を毎回倒す
+         (2026-08-03 push前レビュー)ので、素材ありなら「仕上げの好み」が開くのが
+         正しい着地。画面を開こうとした=自走の道に乗った、とみなす
+         (門の中身そのものは㊵で試す) */
+      const keepOpen = w.MC.ui.openFinishPick;
+      let fpOpens = 0; w.MC.ui.openFinishPick = () => { fpOpens++; };
+      try {
+        d.querySelector('#modeSelect .mode-card[data-flow="easy"]').click();
+      } finally { w.MC.ui.openFinishPick = keepOpen; }
       if (d.getElementById("workspace").hidden) throw new Error("ゲストがおまかせにも入れない");
-      if (!autoRuns) throw new Error("ゲストのおまかせが走り出さない");
+      if (!autoRuns && !fpOpens) throw new Error("ゲストのおまかせが走り出さない(仕上げの好みも開かない)");
       /* 登録すれば選べる */
       w.MC.ui.showModeSelect();
       L.proAllowed = true;
@@ -5577,7 +5588,7 @@ async function countSamples(ns, file, fromSec) {
       proBtn.click();
       if (d.getElementById("workspace").hidden) throw new Error("登録済みなのにこだわりへ入れない");
       eq(w.MC.ui._setupTab, "pro", "選んだ進め方");
-      return `ゲスト=止めて案内 / 登録×スマホ=PC案内(登録誘導なし) / おまかせは通す(自走${autoRuns}回) / 可なら入れる`;
+      return `ゲスト=止めて案内 / 登録×スマホ=PC案内(登録誘導なし) / おまかせは通す(自走${autoRuns}回・好み画面${fpOpens}回) / 可なら入れる`;
     } finally {
       L.proAllowed = keepPro; L.member = keepMem; L.unlimited = keepUnl;
       w.MC.ui.runAuto = keepAuto; w.MC.ui.showModeSelect();
@@ -6557,6 +6568,45 @@ async function countSamples(ns, file, fromSec) {
       eq(S2.slots.join(","), "1,2,1", "2本のスロット(中央=2本目/上下=1本目)");
     } finally { w.MC.ui.runAuto = realRun; w.MC.ui.closeFinishPick(); w.MC.ui._autoFlow = false; compReset(w); }
     return "3本=タップ2回で並べ替え(画素で確認) / 2本=1タップで中央が入れ替わる";
+  });
+
+  await test("★入口を通り直した新規おまかせは、もう一度好み画面が挟まる(前回の選択を持ち越さない)", async () => {
+    /* 2026-08-03 push前レビューの実バグ: finishPicked は完走後も立ったままなので、
+       「種類を選び直す」→ 別の種類(例: ワイプ)×おまかせ が画面を挟まず走っていた。
+       ワイプならメイン/右下を誰も選ばないまま(2026-08-02 優さん指示への退行)、
+       前回の色/±1も applyAutoChoices のガードに守られて漏れ戻る。
+       入口(進め方カード)が finishPicked を倒すことで、素材が残っていても
+       毎回おすすめ選択済みの1画面から始まる */
+    const w = await compEnv();
+    const S = compReset(w);
+    const d = w.document;
+    const keepAuto = w.MC.ui.runAuto, keepOpen = w.MC.ui.openFinishPick;
+    let ran = 0, opened = 0;
+    w.MC.ui.runAuto = () => { ran++; };
+    w.MC.ui.openFinishPick = () => { opened++; };
+    try {
+      /* 前回: 自動SWのおまかせを完走した体(finishPicked が立ったまま残っている) */
+      S.mode = "switch"; S.layoutId = "switch"; S.finishPicked = true;
+      S.filterId = "none"; S.cutLevel = 3;   // 前回の選択(ナチュラル+多め)の名残
+      w.MC.ui.showModeSelect();
+      w.MC.ui._pendingMode = "wipeCam";
+      w.MC.ui.showModeStep("flow");
+      d.querySelector('#modeSelect .mode-card[data-flow="easy"]').click();
+      eq(opened, 1, "好み画面を挟む回数");
+      eq(ran, 0, "画面の前に始まった自走の回数");
+      if (S.finishPicked) throw new Error("入口で finishPicked が倒れない(前回の選択を黙って持ち越す)");
+      /* 倒れていれば、画面を通らない保険経路(applyAutoChoices)も決め打ちへ戻せる */
+      w.MC.ui.applyAutoChoices();
+      eq(S.filterId, "marchinz", "前回のナチュラルが漏れ戻らない");
+      eq(S.cutLevel, 2, "前回の±1が漏れ戻らない");
+      return "入口で finishPicked が倒れる → 画面が挟まり、前回の色/±1も漏れ戻らない";
+    } finally {
+      w.MC.ui.runAuto = keepAuto; w.MC.ui.openFinishPick = keepOpen;
+      w.MC.ui.closeFinishPick(); w.MC.ui._autoFlow = false;
+      /* compEnv は共有 iframe。クリックで wipeCam に替わったモードを既定へ戻す */
+      w.MC.ui.chooseMode("switch", { silent: true });
+      compReset(w); w.MC.ui.showModeSelect();
+    }
   });
 
   /* ============ ㉟ 凍結でデコーダが回収されても、作り直して続きから ============
