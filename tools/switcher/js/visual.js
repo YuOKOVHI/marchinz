@@ -498,9 +498,18 @@ MC.visual._finalize = V => {
   V.actMed = med(V.act);
   V.moEMed = med(V.moE);
   V.shakeMed = med(V.shake);
-  V.overheadFixed = !V.operated && V.shakeMed <= MC.visual.TH_FIXED_SHAKE
+  /* ★ サンプルが足りないクリップは「性格なし」にする(2026-08-03 レビュー)。
+     med() は空配列で 0 を返し、movingFrac も 0 なので operated=false。
+     下限が無いと **1点も測れなかったクリップが staticScene=true** になり、
+     「解析できなかった」を「人が動かない定点」と読み替えて -0.4 の減点を受けていた
+     (実測: 空サンプルで staticScene=true / 素点0.35 → -0.05 で実質出番ゼロ)。
+     analyzeClipSeek は窓がクリップ末尾に近いと1点も取らずに _finalize を通すので、
+     これは実素材で起きうる。判定は中央値なので3点あれば意味を持つ */
+  const nSample = Math.min(V.act.length, V.moE.length);
+  const enough = nSample >= 3;
+  V.overheadFixed = enough && !V.operated && V.shakeMed <= MC.visual.TH_FIXED_SHAKE
     && V.actMed >= MC.visual.TH_WIDE_ACT;
-  V.staticScene = !V.operated && V.actMed < MC.visual.TH_STATIC_ACT
+  V.staticScene = enough && !V.operated && V.actMed < MC.visual.TH_STATIC_ACT
     && V.moEMed < MC.visual.TH_STATIC_MOE;
 };
 

@@ -1368,6 +1368,13 @@ async function countSamples(ns, file, fromSec) {
        全部この画面で止まってしまう */
     S.finishPicked = true;
     w.MC.ui._autoFlow = false;
+    /* ★ 進め方のタブも戻す(2026-08-03)。_autoFlow だけ戻して _setupTab を
+       置き去りにしていたため、こだわりを踏んだ試験(㊳の権限・㉚の「自分で仕上げる」)の
+       "pro" が後続へ漏れていた。製品では入口が2つを必ず一緒に決める
+       (setSetupTab(flow === "easy" ? "easy" : "pro"))ので、片方だけ残るのは
+       試験だけが作る嘘の状態。needsFinishPick が _setupTab を見るようになって
+       表面化した ─ 導出に効く状態は全部戻す、というこの関数の約束どおりにする */
+    w.MC.ui._setupTab = "easy";
     w.MC.ui._fp = null;
     if (w.MC.ui.closeFinishPick) w.MC.ui.closeFinishPick();
     w.MC.exporter.lastResult = null;
@@ -3846,7 +3853,25 @@ async function countSamples(ns, file, fromSec) {
     if (norm.overheadFixed || norm.staticScene) throw new Error("普通のカメラに性格が付いた");
     /* 操作カメラは広く動いて見えても俯瞰扱いしない(パンで全面が動くだけ) */
     const oper = fin({ act: 0.30, moE: 0.03, over: { dxs: fill(5) } });
-    if (oper.overheadFixed) throw new Error("操作カメラまで俯瞰固定になっている");
+    if (oper.overheadFixed) throw new Error("操作カメラまで俯瞰扱いになっている");
+    /* ★ 測れなかったクリップに性格を付けない(2026-08-03 レビュー実測)。
+       med() は空配列で 0 を返し movingFrac も 0 なので operated=false になり、
+       **1点も測れなかったクリップが staticScene=true** で -0.4 の減点を受けていた。
+       「解析できなかった」を「人が動かない定点」と読み替えるのは嘘。
+       analyzeClipSeek は窓がクリップ末尾に近いと1点も取らずに _finalize を通すので
+       実素材で起きうる(WebCodecs 経路は 2点未満で throw するので通らない)。
+       中央値の判定なので3点を下限にする ─ 境界の 2/3 を両方見る */
+    const raw = o => { const V = { dxs: o.n ? new Array(o.n).fill(0) : [],
+      sharp: [], act: new Array(o.n).fill(o.act), moE: new Array(o.n).fill(o.moE),
+      shake: new Array(o.n).fill(0.005) };
+      w.MC.visual._finalize(V); return V; };
+    const none = raw({ n: 0, act: 0, moE: 0 });
+    if (none.staticScene || none.overheadFixed)
+      throw new Error("サンプル0本のクリップに性格が付く(解析できなかった=定点、の誤読)");
+    const two = raw({ n: 2, act: 0.02, moE: 0.005 });
+    if (two.staticScene) throw new Error("サンプル2本で定点と決めつけている");
+    const three = raw({ n: 3, act: 0.02, moE: 0.005 });
+    if (!three.staticScene) throw new Error("サンプル3本の定点を推定できない(下限が厳しすぎる)");
     /* --- 採点: _rank の順位が性格で動く --- */
     const m = maxF => ({ shakeP75: .03, shakeCamP75: .03, flipRatio: 0, panRatio: 0,
       operated: false, settled: true, sharpMean: 50, sharpMed: 50,
@@ -6358,12 +6383,29 @@ async function countSamples(ns, file, fromSec) {
       }
       w.MC.ui._autoFlow = false;   // こだわり
       if (w.MC.ui.needsFinishPick()) throw new Error("こだわりなのに選択が挟まる");
-      /* 動画1本では選びようがない(2本の門 needSecondVideo が先に止める) */
+      /* ★ こだわりへ「落ちた」人(2026-08-03 レビュー)。ここが本当に踏む状態で、
+         _autoFlow=false の綺麗なこだわりしか見ていなかったので退行が通り抜けた。
+         中止・失敗・「自分で仕上げる」の3経路は setSetupTab("pro") を呼ぶだけで
+         _autoFlow を倒さないため、**_autoFlow は true のまま _setupTab==="pro"** になる。
+         v1.85.0 の needsWipePick は先頭が mode==="wipeCam" だったので事実上
+         かからなかったが、3モード共通にした v1.86.0 では縦型・自動SWまで
+         おまかせ専用の全画面がかぶさっていた(プレビューまで止まる) */
       w.MC.ui._autoFlow = true;
+      const keepTab = w.MC.ui._setupTab;
+      w.MC.ui._setupTab = "pro";
+      for (const m of ["vertical", "switch", "wipeCam"]) {
+        S.mode = m;
+        if (w.MC.ui.needsFinishPick()) {
+          throw new Error(`こだわりへ落ちた人(${m})に、おまかせ専用の選択が割り込む`);
+        }
+      }
+      w.MC.ui._setupTab = keepTab;
+      /* 動画1本では選びようがない(2本の門 needSecondVideo が先に止める) */
+      S.mode = "switch";
       S.clips = S.clips.slice(0, 1);
       if (w.MC.ui.needsFinishPick()) throw new Error("動画1本なのに選択が挟まる");
-    } finally { w.MC.ui._autoFlow = false; }
-    return "3モードのおまかせ=挟まる / こだわり・1本=素通り";
+    } finally { w.MC.ui._autoFlow = false; w.MC.ui._setupTab = "easy"; }
+    return "3モードのおまかせ=挟まる / こだわり(綺麗・落ちた人とも)・1本=素通り";
   });
 
   await test("★左下ワイプが実際に左下へ描かれる(画素・書き出しと同じ drawComposite)", async () => {
@@ -6432,6 +6474,105 @@ async function countSamples(ns, file, fromSec) {
       }
       return `カード ${Math.round(cw)}px ≤ 画面 ${host}px・横スクロール無し・ボタン44pt`;
     } finally { w.MC.ui.closeFinishPick(); w.MC.ui._autoFlow = false; }
+  });
+
+  await test("★「このまま進む」が iPhone SE の初期表示に入る(縦の折り目・変異つき)", async () => {
+    /* 2026-08-03 レビュー実測: 縦型・ワイプの3本は中身が 648px あり、
+       iOS Safari の実効ビューポート 375×553(iPhone SE2/3)では進むボタンが
+       折り目の 71px 下に落ちていた。1タップで自走が始まることだけが
+       存在理由の画面で、その的が初期表示に無いのは哲学が効いていないのと同じ。
+       ★ 既存の「はみ出さない」試験は**横しか測っていない**(iframeも844pxと背が高い)ので
+         すり抜けた。ここは iframe を SE の実寸へ縮めて縦を測る */
+    const w = await compEnv();
+    const fr = w.frameElement;
+    const keepH = fr.style.height, keepW = fr.style.width;
+    const S = compReset(w);
+    const d = w.document;
+    try {
+      fr.style.width = "375px"; fr.style.height = "553px";
+      const seen = {};
+      for (const [mode, layout] of [["vertical", "v3"], ["wipeCam", "wipe"], ["switch", "switch"]]) {
+        S.mode = mode; S.layoutId = layout;
+        S.clips.forEach((c, i) => { c.name = `IMG_0${140 + i}.MOV`; });
+        w.MC.ui._autoFlow = true; w.MC.ui._setupTab = "easy";
+        S.finishPicked = false; w.MC.ui._fp = null;
+        w.MC.ui.closeFinishPick();
+        w.MC.ui.openFinishPick();
+        const go = d.getElementById("fpGo").getBoundingClientRect();
+        const vh = w.innerHeight;
+        seen[mode] = Math.round(go.bottom);
+        if (go.bottom > vh + 1 || go.top < 0) {
+          throw new Error(`${mode}: 進むボタンが初期表示に無い(下端 ${Math.round(go.bottom)}px > 画面 ${vh}px)`);
+        }
+        /* スクロールし切ったとき、色カードがフッタの下に隠れ残らないこと */
+        const sec = d.getElementById("finishPick");
+        sec.scrollTop = sec.scrollHeight;
+        const colors = d.getElementById("fpColors").getBoundingClientRect();
+        const foot = sec.querySelector(".wp-foot").getBoundingClientRect();
+        if (colors.bottom > foot.top + 1) {
+          throw new Error(`${mode}: 末尾まで送っても色カードがボタンの下に隠れる`);
+        }
+      }
+      /* 変異の歯: 貼り付けを外すと(=直す前の姿)、縦型が折り目の下へ落ちる */
+      const foot = d.querySelector("#finishPick .wp-foot");
+      const keepPos = foot.style.position;
+      foot.style.position = "static";
+      S.mode = "vertical"; S.layoutId = "v3";
+      S.finishPicked = false; w.MC.ui._fp = null;
+      w.MC.ui.closeFinishPick(); w.MC.ui.openFinishPick();
+      const mutated = d.getElementById("fpGo").getBoundingClientRect();
+      const fell = mutated.bottom > w.innerHeight + 1;
+      d.querySelector("#finishPick .wp-foot").style.position = keepPos;
+      if (!fell) throw new Error("変異(sticky を外す)でも落ちない ─ 試験に歯が無い");
+      return `375×553 で進むボタンが見える: 縦型${seen.vertical} / ワイプ${seen.wipeCam} / 自動SW${seen.switch}px ≤ 553 / 変異=落ちる`;
+    } finally {
+      w.MC.ui.closeFinishPick(); w.MC.ui._autoFlow = false;
+      fr.style.width = keepW; fr.style.height = keepH;
+      compReset(w);
+    }
+  });
+
+  await test("★好み画面は外を触らせず、Escape でも同じ着地(ダイアログの作法)", async () => {
+    /* 2026-08-03 レビュー実測: role="dialog" aria-modal="true" を名乗りながら
+       ダイアログ外に14個のタブ可能要素が残り、Escape でも閉じなかった。
+       さらに配置カードを1枚タップして「進む」が disabled になった瞬間、
+       焦点が <body> へ落ちて読み上げ位置がダイアログの外へ飛んでいた */
+    const w = await compEnv();
+    const S = compReset(w);
+    const d = w.document;
+    try {
+      S.mode = "vertical"; S.layoutId = "v3";
+      w.MC.ui._autoFlow = true; w.MC.ui._setupTab = "easy";
+      S.finishPicked = false; w.MC.ui._fp = null; w.MC.ui._repickHold = false;
+      w.MC.ui.openFinishPick();
+      const sec = d.getElementById("finishPick");
+      /* ① 背後が inert で、外のボタンへ焦点が移らない */
+      const inerted = [...d.body.children].filter(e => e !== sec && e.hasAttribute("inert")).length;
+      if (!inerted) throw new Error("背後に inert が当たっていない");
+      const outside = d.getElementById("modeBackBtn");
+      if (outside) {
+        outside.focus();
+        if (d.activeElement === outside) throw new Error("ダイアログの外へ焦点が移せてしまう");
+      }
+      /* ② 進むを無効にするとき、焦点はダイアログの中に留まる */
+      eq(d.activeElement.id, "fpGo", "開いた直後の焦点");
+      sec.querySelectorAll(".wp-card")[1].click();
+      if (!d.getElementById("fpGo").disabled) throw new Error("選び直しの途中なのに進める");
+      if (!sec.contains(d.activeElement)) {
+        throw new Error("進むを無効にした瞬間、焦点がダイアログの外へ落ちた");
+      }
+      /* ③ Escape は「戻る」と同じ着地(素材工程+保留)。閉じたら inert も外れる */
+      d.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      if (!sec.hidden) throw new Error("Escape で閉じない");
+      eq(w.MC.ui._viewPhase, "mat", "Escape の着地");
+      eq(w.MC.ui._repickHold, true, "Escape 後の保留");
+      eq([...d.body.children].filter(e => e.hasAttribute("inert")).length, 0, "閉じた後に残る inert");
+      return `背後 inert ${inerted}個・外へ焦点が移らない / 無効化しても焦点は中 / Escape=素材工程へ着地`;
+    } finally {
+      w.MC.ui.closeFinishPick();
+      w.MC.ui._autoFlow = false; w.MC.ui._repickHold = false;
+      compReset(w); w.MC.ui.refreshJourney();
+    }
   });
 
   /* ============ ㊵ 仕上げの好み(2026-08-03 優さん承認案) ============
@@ -6553,7 +6694,7 @@ async function countSamples(ns, file, fromSec) {
       near(r.px(W / 2, 8), CAM[2], 8, "上の帯");
       near(r.px(W / 2, H / 2), CAM[3], 8, "中の帯");
       near(r.px(W / 2, H - 8), CAM[1], 8, "下の帯");
-      /* --- 2本: 役は 中央/上・下。1タップで中央が入れ替わる --- */
+      /* --- 2本: 役は 中/上と下。1タップでまん中が入れ替わる --- */
       const S2 = compReset(w);
       S2.mode = "vertical"; S2.layoutId = "v3";
       S2.clips = S2.clips.slice(0, 2);
@@ -6562,8 +6703,8 @@ async function countSamples(ns, file, fromSec) {
       w.MC.ui.openFinishPick();
       const cards2 = () => [...w.document.querySelectorAll("#fpCards .wp-card")];
       eq(cards2().map(c => c.querySelector(".fp-chip").textContent).join(","),
-         "中央,上・下", "既定の札(2本)");
-      cards2()[1].click();   // 中央=動画2(残りは自動で上・下)
+         "中,上と下", "既定の札(2本)");
+      cards2()[1].click();   // 中=動画2(残りは自動で上と下)
       w.document.getElementById("fpGo").click();
       eq(S2.slots.join(","), "1,2,1", "2本のスロット(中央=2本目/上下=1本目)");
     } finally { w.MC.ui.runAuto = realRun; w.MC.ui.closeFinishPick(); w.MC.ui._autoFlow = false; compReset(w); }
@@ -6624,12 +6765,10 @@ async function countSamples(ns, file, fromSec) {
     try {
       S.mode = "wipeCam"; S.layoutId = "wipe";
       w.MC.ui._autoFlow = true; S.finishPicked = false; w.MC.ui._repickHold = false;
-      /* ★ タブも「おまかせ」に揃える(2026-08-03)。compReset は _setupTab を戻さないので、
-         こだわりを踏んだ先行試験(㊴ 権限の3段など)の "pro" が漏れてくる ─ そのとき
-         行動バーは「分析を開始」になり、この試験だけが自分で詰みを作っていた。
-         製品では入口が _autoFlow と _setupTab を必ず一緒に決める(ui.js の
-         setSetupTab(flow === "easy" ? "easy" : "pro"))ので、おまかせ×proは実在しない。
-         ここを揃えるのは前提の再現であって、見張りを緩めるものではない */
+      /* タブも「おまかせ」に揃える(2026-08-03)。おまかせ×pro は製品に実在しない
+         (入口が _autoFlow と _setupTab を必ず一緒に決める)。compReset も戻すが、
+         この試験は行動バーの見た目まで測るので前提を明示しておく ─
+         "pro" が漏れると行動バーが「分析を開始」になり、試験が自分で詰みを作る */
       w.MC.ui._setupTab = "easy";
       /* ★ 進捗ドック(MZP)も畳んでおく(2026-08-03)。updateActionBar は
          「進捗ドック表示中はドックに場所を譲る」設計で、run/pulse/frozen が

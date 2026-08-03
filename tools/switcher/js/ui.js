@@ -4011,8 +4011,16 @@ MC.ui.SyncDoubt = class extends Error {
    おすすめが選択済みで出て、「このまま進む」1タップで従来と同じ結果のまま
    自走が始まる(タップ0回の哲学)。状態は既存フラグ(slots・wipe系・cutLevel・
    filterId)に載せ、増やすのは「選び終わったか」(S.finishPicked・非永続)の1つだけ */
+/* ★ こだわり(pro)には挟まない(2026-08-03 レビュー)。v1.85.0 の needsWipePick は
+   先頭が `mode === "wipeCam"` だったので、こだわりへ落ちた人には事実上かからなかった。
+   3モード共通にした v1.86.0 で門が `_autoFlow` だけになり、対象が3倍に増えている。
+   ところが _autoFlow は「こだわりへ逃がす」3経路(中止・失敗・自分で仕上げる)の
+   どれでも倒れないので、こだわりで作業中に動画を1本外しただけで
+   resetEasyDone → focusNextAction → おまかせ専用の全画面がかぶさり、
+   見ていたプレビューまで止まっていた(実測)。
+   判定は refreshJourney の傾き工程(_setupTab を見る)と同じ作法に揃える */
 MC.ui.needsFinishPick = () =>
-  !!MC.ui._autoFlow && !MC.S.finishPicked
+  !!MC.ui._autoFlow && MC.ui._setupTab !== "pro" && !MC.S.finishPicked
   && MC.S.clips.filter(c => !c.isImage && !c.isAudio).length >= 2;
 
 /* 配置カードの候補。縦型は帯に写真も置けるのでスロット素材ぜんぶ、
@@ -4022,11 +4030,14 @@ MC.ui.finishCards = () => {
   return (MC.S.mode === "vertical" ? s : s.filter(c => !c.isImage)).slice(0, 3);
 };
 
-/* 帯/役の名前(タップした順にこの役へ入る)。切り替え(switch)は配置なし */
+/* 帯/役の名前(タップした順にこの役へ入る)。切り替え(switch)は配置なし。
+   ★ 2本と3本で語を揃える(2026-08-03 レビュー)。まん中を指す語が 中/中央 で
+     揺れていた。2本目は上と下の**両方**に入るので「上か下のどちらか」に
+     読まれないよう「上と下」と書く */
 MC.ui.finishRoles = () => {
   const n = MC.ui.finishCards().length;
   if (MC.S.mode === "wipeCam") return n >= 3 ? ["メイン", "右下", "左下"] : ["メイン", "右下"];
-  if (MC.S.mode === "vertical") return n >= 3 ? ["上", "中", "下"] : ["中央", "上・下"];
+  if (MC.S.mode === "vertical") return n >= 3 ? ["上", "中", "下"] : ["中", "上と下"];
   return [];
 };
 
@@ -4049,6 +4060,19 @@ MC.ui.finishDefaultOrder = () => {
   return order;
 };
 
+/* ダイアログの外を触れなくする(2026-08-03 レビュー)。role="dialog" aria-modal="true"
+   を名乗りながら、実測でダイアログ外に14個のタブ可能要素が残り、Tab で背後の画面を
+   操作できていた。inert は iOS Safari 16.4+ で効き、未対応環境では単に無視されるので
+   壊れ方が安全(既存の #exportOverlay と作法を揃える) */
+MC.ui.setFinishPickInert = on => {
+  const el = MC.ui.$("#finishPick");
+  for (const n of document.body.children) {
+    if (n === el) continue;
+    if (on) n.setAttribute("inert", "");
+    else n.removeAttribute("inert");
+  }
+};
+
 MC.ui.openFinishPick = () => {
   const el = MC.ui.$("#finishPick");
   if (!el || !el.hidden) return;
@@ -4060,6 +4084,7 @@ MC.ui.openFinishPick = () => {
   MC.preview.pause();   // 選択画面の裏で音が鳴り続けないように(モード選択と同じ)
   el.hidden = false;
   document.body.classList.add("mz-finish-pick");
+  MC.ui.setFinishPickInert(true);
   MC.ui.renderFinishPick();
   /* 焦点は「このまま進む」へ ─ いちばん多い操作(0決定)を最短にする */
   try { const b = MC.ui.$("#fpGo"); if (b) b.focus({ preventScroll: true }); } catch (e) {}
@@ -4070,6 +4095,7 @@ MC.ui.closeFinishPick = () => {
   if (!el || el.hidden) return;
   el.hidden = true;
   document.body.classList.remove("mz-finish-pick");
+  MC.ui.setFinishPickInert(false);
 };
 
 MC.ui.renderFinishPick = () => {
@@ -4097,13 +4123,23 @@ MC.ui.renderFinishPick = () => {
       ? `つぎに「${roles[fp.pending]}」にする動画をタップ`
       : `変えるなら「${roles[0]}」にする動画からタップ`;
     const box = MC.ui.$("#fpCards");
+    if (!box) return;   // HTMLとJSの版がずれても renderClips ごと落とさない
     box.innerHTML = "";
     for (const c of cards) {
       const at = fp.order.indexOf(c.id);   // pending中は order=選び終えた分だけ
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "wp-card" + (at === 0 ? " wp-card--main" : "");
-      btn.setAttribute("aria-pressed", at === 0 ? "true" : "false");
+      /* ★ 青リングはワイプの「メイン」のときだけ(2026-08-03 レビュー)。
+         旧ワイプ画面(1枚だけメインを選ぶ)の名残で、3枚とも役が付く縦型でも
+         先頭にリングが出ていた ─ 縦型の「上」はメインではないので階層の嘘になる */
+      btn.className = "wp-card"
+        + (MC.S.mode === "wipeCam" && at === 0 ? " wp-card--main" : "");
+      /* ★ aria-pressed は使わない(2026-08-03 レビュー)。これはトグルではなく
+         「役の割り当て」で、3枚とも札が付いているのに先頭だけ true になり
+         読み上げが「中、未押下」と事実に反していた。役を名前に込めて言う */
+      btn.setAttribute("aria-label", at >= 0
+        ? `${c.name}、いまは「${roles[at]}」`
+        : `${c.name}、役はこれから`);
       btn.innerHTML = `
         <span class="wp-thumb-wrap">${c.thumb
           ? `<img class="wp-thumb" src="${c.thumb}" alt="">`
@@ -4158,7 +4194,18 @@ MC.ui.renderFinishPick = () => {
   /* --- 進むボタン。配置の選び直し中(pending)は押させない --- */
   const go = MC.ui.$("#fpGo");
   if (go) {
-    go.disabled = fp.pending != null;
+    const willDisable = fp.pending != null;
+    /* ★ 無効化する前に焦点を逃がす(2026-08-03 レビュー実測)。
+       開いた直後は #fpGo に焦点がある。カードを1枚タップして pending に入ると
+       ここで disabled になり、焦点が <body> へ落ちていた ─ 読み上げ位置が
+       ダイアログの外(先頭)へ飛ぶ。次に押すべきカードへ渡す */
+    if (willDisable && !go.disabled && document.activeElement === go) {
+      const next = MC.ui.$("#fpCards") &&
+        [...MC.ui.$("#fpCards").querySelectorAll(".wp-card")]
+          .find(b => /？/.test(b.textContent));
+      try { (next || MC.ui.$("#fpBack")).focus({ preventScroll: true }); } catch (e) {}
+    }
+    go.disabled = willDisable;
     go.textContent = fp.changed ? "これで進む" : "このまま進む";
   }
 };
@@ -4209,12 +4256,21 @@ MC.ui.finishPickGo = () => {
   MC.ui.runAuto();   // ここから先は今までどおり書き出しまで自走
 };
 
+/* 好み画面の「← 動画を選び直す」と Escape の共通の出口。
+   閉じるだけでは、押した人が現在地「同期と分析」(5工程)に置き去りになる
+   (2026-08-03 push前レビューの実測)。全画面の選び直しと同じ着地へ渡す ─
+   finishPicked は倒れたままなので、再開すればこの画面がまた開く */
+MC.ui.finishPickBack = () => {
+  MC.ui.closeFinishPick();
+  MC.ui.repickLand("動画を入れ替えたら「これでOK、おまかせを再開」を押してください");
+};
+
 /* 「動画を選び直す」で止まったあとの着地(2026-08-02 優さん指示)。
    素材の工程に立たせ、取り込み済みの動画は**残す**(数GBの再取り込みは重い)。
    タブはおまかせのまま ─ こだわりへ飛ばすと、入れ替えたいだけの人が
    5工程の画面に置き去りになる。再開は行動バーの「これでOK、おまかせを再開」。
    QA もこの関数で着地の実体を測る(runAuto の catch と同じ経路) */
-MC.ui.repickLand = () => {
+MC.ui.repickLand = (msg) => {
   MC.ui._repickAfterCancel = false;
   MC.ui._repickHold = true;   // 外す/追加が済むまで focusNextAction は自走を再開しない
   /* ★ 先に一度追従させてから素材工程を立てる(2026-08-03 push前レビュー)。
@@ -4226,7 +4282,10 @@ MC.ui.repickLand = () => {
   MC.ui.refreshJourney();
   MC.ui._viewPhase = "mat";
   MC.ui.refreshJourney();
-  MC.ui.toast("やめました。動画は残っています ─ ✕で外して入れ替えられます");
+  /* 言うことは呼び元で変える(2026-08-03 レビュー)。同じ着地でも、
+     中止から来た人には「やめました」、好み画面の「動画を選び直す」から
+     来た人には**やめていない**ので選び直しの手順を言う */
+  MC.ui.toast(msg || "やめました。動画は残っています ─ ✕で外して入れ替えられます");
   window.scrollTo({ top: 0, behavior: "smooth" });
 };
 
@@ -5088,7 +5147,16 @@ MC.ui.wire = () => {
        行動バーの「これでOK、おまかせを再開」で戻れるようにする ─
        finishPicked は倒れたままなので、再開すればこの画面がまた開く */
   { const b = MC.ui.$("#fpBack");
-    if (b) b.onclick = () => { MC.ui.closeFinishPick(); MC.ui.repickLand(); }; }
+    if (b) b.onclick = () => MC.ui.finishPickBack(); }
+  /* ★ Escape でも同じ着地(2026-08-03 レビュー)。aria-modal を名乗る以上、
+     閉じる手が要る ─ 書き出しの全画面(#exportOverlay)と作法を揃える */
+  document.addEventListener("keydown", e => {
+    if (e.key !== "Escape") return;
+    const el = MC.ui.$("#finishPick");
+    if (!el || el.hidden) return;
+    e.preventDefault();
+    MC.ui.finishPickBack();
+  });
   { const g = MC.ui.$("#fpGo");
     if (g) g.onclick = () => MC.ui.finishPickGo(); }
   /* おまかせ全画面の中止。走っている処理にも止まれと伝える */
@@ -5133,14 +5201,13 @@ MC.ui.wire = () => {
   { const b = MC.ui.$("#asRepick");
     if (b) b.onclick = () => {
       MC.ui.autoStage.close();
-      /* ★ 保留を立てる(2026-08-02)。無いと、間違った動画を✕で外した瞬間に
-         focusNextAction が残り2本で自走を再開してしまい、
-         入れ替える隙が無かった(ワイプだけ割り当て画面に救われていた) */
-      MC.ui._repickHold = true;
-      MC.ui._viewPhase = "mat";
-      MC.ui.refreshJourney();
-      MC.ui.toast("動画を入れ替えてください（同じ演奏を撮ったものどうしだと同期できます）");
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      /* ★ 着地は repickLand に一本化(2026-08-03 レビュー)。保留を立てて素材工程へ
+         という同じ手順が2箇所に複製されていて、しかもここは refreshJourney が
+         1回だけだった ─ 到達点が動いた回に _viewPhase が消される罠(ui.js:1876)は
+         この経路にも当てはまる。いまは runAuto の finally が先に到達点を
+         落ち着かせているので偶然助かっているだけで、そこを触ると再発する。
+         (保留が無いと、間違った動画を✕で外した瞬間に自走が再開してしまう 2026-08-02) */
+      MC.ui.repickLand("動画を入れ替えてください（同じ演奏を撮ったものどうしだと同期できます）");
     }; }
   /* 失敗の顔の2つのボタン。もう一度おまかせ / 自分で仕上げる */
   { const r = MC.ui.$("#asRetry");
