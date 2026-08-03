@@ -700,13 +700,16 @@ MC.ui.renderSceneOffers = () => {
     }
     const [s0] = MC.ui.showRange();
     /* ★ ゲストが1本を使い切ったら、候補の代わりに登録の誘いを1行だけ(⑭)。
-       責めずに、登録で何ができるかだけを言う */
+       責めずに、登録で何ができるかだけを言う。
+       ★ 枠は「切り替えの多い/少ない」でも使う(2026-08-03)ので、シーンだけの
+       言い方にしない ─ 切り替え変更で使い切った人には、いま消えた2択の
+       行き先もこの1行が説明する */
     if (MC.ui.extraScenesLeft() <= 0) {
       el.classList.remove("mzso-hold");
       el.innerHTML =
         '<p class="mzso-title"><i class="fa-solid fa-clapperboard" aria-hidden="true"></i> '
-        + '別のシーンも作れます<span class="mzso-note">'
-        + '登録すると、別のシーンを何本でも作れます</span></p>'
+        + '別のシーンも、切り替えの変更も<span class="mzso-note">'
+        + '登録すると、何本でも作り直せます</span></p>'
         + '<a class="mzso-signup" href="/#signup">無料登録する</a>';
       continue;
     }
@@ -3525,6 +3528,7 @@ MC.ui.AUTO = {
   preset: "short",        // 完成60秒(実尺は上限で丸まる)
   startKey: "climax",     // 盛り上がるシーン
   filterId: "marchinz",   // MarchinZカラー
+  cutLevel: 2,            // 切り替えは「おすすめ」
 };
 
 /* おまかせで決め打ちにする設定を当てる。呼ぶのは自走の入口だけ */
@@ -3535,6 +3539,12 @@ MC.ui.applyAutoChoices = () => {
   MC.S.filterId = MC.ui.AUTO.filterId;
   MC.S.colorOn = true;
   MC.S.horizonOn = true;
+  /* ★ 切替頻度も決め打ちに戻す(2026-08-03 push前レビュー)。
+     完成画面の「もっと多く/少なく」(remakeWithDensity)は cutLevel を
+     ±1して saveState する ─ その値は localStorage に残り、リセットや
+     再訪のあとの**新規おまかせ**まで「多め/少なめ」を黙って引き継いでいた。
+     作り直し(scene 付き)はこの関数を通らないので、±1はそのまま生きる */
+  MC.S.cutLevel = MC.ui.AUTO.cutLevel;
 };
 
 /* 傾きを自動で当てる。検出できた本だけ回し、できなかった本は0のまま。

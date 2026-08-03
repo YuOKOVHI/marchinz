@@ -6201,7 +6201,18 @@ async function countSamples(ns, file, fromSec) {
       U.remakeWithDensity(-1);
       if (ran !== 1) throw new Error("枠ゼロなのに直接呼びで作り直せる(門が無い)");
       eq(S.cutLevel, 3, "枠ゼロでは密度も動かさない");
-      return "自動SWのみ / 別のシーンの下 / ±1と両端 / scene引き継ぎ / 枠1本を共有";
+      /* ±1は saveState まで届く(localStorage に残る)。新規おまかせの入口
+         (applyAutoChoices)が「おすすめ」へ戻さないと、次のプロジェクトまで
+         多め/少なめを黙って引き継ぐ(2026-08-03 push前レビューで実バグ) */
+      const keep2 = { ep: S.exportPreset, fi: S.filterId, co: S.colorOn, ho: S.horizonOn };
+      try {
+        U.applyAutoChoices();
+        eq(S.cutLevel, 2, "新規おまかせは「おすすめ」に戻る(±1を持ち越さない)");
+      } finally {
+        S.exportPreset = keep2.ep; S.filterId = keep2.fi;
+        S.colorOn = keep2.co; S.horizonOn = keep2.ho;
+      }
+      return "自動SWのみ / 別のシーンの下 / ±1と両端 / scene引き継ぎ / 枠1本を共有 / 新規おまかせはおすすめへ";
     } finally {
       w.MZ_LIMITS.maxExtraScenes = keep.max; U._extraScenesMade = keep.made;
       U.runAuto = keep.auto; S.cutLevel = keep.lv; S.mode = keep.mode;
