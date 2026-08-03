@@ -25,3 +25,6 @@ scripts/reports/
 
 # ローカル丸ごとバックアップ(スナップショット群)
 backups/
+
+# メディア更新チェックが Issue 本文用に吐く一時ファイル
+media-update-issue.md

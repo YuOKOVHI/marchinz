@@ -1,0 +1,83 @@
+# メディアページの紙もの2誌に新刊が出ていないかを見張る(2026-08-04 優さん指示)
+#
+#   Laundry Day!!          週1回  公式ページ(marching-matsuri.com)
+#   マーチングエクスプレス21   月1回  Amazon の検索結果
+#
+# ★ サイトのファイルは一切書き換えない。見つけたら Issue を立てるだけ。
+#   表紙画像だけは自動で取れないので、掲載は優さんが手で行う。
+#   コミットしないので Netlify のビルドクレジットも減らない。
+name: メディア更新チェック (Laundry Day!! / マーチングエクスプレス21)
+
+on:
+  schedule:
+    # 毎週月曜 06:00 JST (日曜 21:00 UTC) — Laundry Day!!
+    - cron: "0 21 * * 0"
+    # 毎月2日 06:00 JST (1日 21:00 UTC) — マーチングエクスプレス21
+    - cron: "0 21 1 * *"
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "調べる対象"
+        type: choice
+        options: [all, laundry, express]
+        default: all
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: media-update-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # cron が2本あるので、どちらで起きたのかで対象を分ける。
+      # 手で回したとき(workflow_dispatch)は入力どおり、既定は両方。
+      - name: 対象を決める
+        id: pick
+        env:
+          SCHEDULE: ${{ github.event.schedule }}
+          INPUT_TARGET: ${{ github.event.inputs.target }}
+        run: |
+          case "$SCHEDULE" in
+            "0 21 * * 0") target=laundry ;;
+            "0 21 1 * *") target=express ;;
+            *)            target="${INPUT_TARGET:-all}" ;;
+          esac
+          # 想定の3語以外は受け付けない(run: へ値を渡す前にここで閉じる)
+          case "$target" in
+            all|laundry|express) ;;
+            *) echo "知らない対象: $target" >&2; exit 1 ;;
+          esac
+          echo "対象: $target"
+          echo "target=$target" >> "$GITHUB_OUTPUT"
+
+      # 取得や解析に失敗したらここで赤くなる。
+      # 「黙って“変わりなし”に見える」のが一番まずいので、握りつぶさない。
+      - name: 更新チェック
+        id: check
+        env:
+          TARGET: ${{ steps.pick.outputs.target }}
+        run: python3 check_media_updates.py --target "$TARGET" --github-output
+
+      - name: 新刊があれば Issue を立てる
+        if: steps.check.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TITLE: ${{ steps.check.outputs.issue_title }}
+        run: |
+          # 同じ題の Issue が開いたままなら重ねて立てない(毎週鳴り続けるのを防ぐ)
+          if gh issue list --state open --limit 100 --json title --jq '.[].title' | grep -Fxq "$TITLE"; then
+            echo "同じ Issue が開いています。何もしません: $TITLE"
+            exit 0
+          fi
+          gh issue create --title "$TITLE" --body-file media-update-issue.md

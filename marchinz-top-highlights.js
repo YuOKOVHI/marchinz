@@ -9,7 +9,8 @@
 
   var FRESH_LIMIT = 4;
   var YT_LIMIT = 4;
-  var NOTE_TOP_LIMIT = 4;
+  var MEDIA_NOTE_LIMIT = 2;      /* TOP「新着メディア」の note 枠 */
+  var MEDIA_LAUNDRY_LIMIT = 2;   /* 同 Laundry Day!! 枠 */
 
   function extractVideoId(url) {
     if (!url) return null;
@@ -166,26 +167,61 @@
     if (section) section.hidden = false;
   }
 
-  function renderTopNotes() {
+  /* メディアページ(#page-webmagazine)の Laundry Day!! グリッドから先頭 limit 枚を読む。
+
+     ★ 号のデータは index.html のカードが正本。ここに号数や表紙のリストを別に持つと
+       必ずどちらかが古くなるので、二重管理しない。#page-webmagazine は hidden だが
+       DOM には常にあるので、TOPを見ている状態でもそのまま読める。
+     ★ 新刊が出たときは index.html にカードを1枚足すだけで、TOPにも自動で出る。 */
+  function laundryTopItems(limit) {
+    var grid = document.getElementById("laundry-grid");
+    if (!grid) return [];
+    var cards = grid.querySelectorAll("a.magazine-card");
+    var out = [];
+    for (var i = 0; i < cards.length && out.length < limit; i++) {
+      var card = cards[i];
+      var title = card.querySelector(".magazine-title");
+      if (!card.href || !title || !title.textContent.trim()) continue;
+      var img = card.querySelector(".magazine-thumb img");
+      var meta = card.querySelector(".magazine-meta");
+      out.push({
+        url: card.href,
+        /* 属性の生値を使う(相対パス + ?v= のまま同じページで読ませる) */
+        thumb: img ? img.getAttribute("src") : "",
+        title: title.textContent.trim(),
+        channelName: "Laundry Day!!（NPO法人マーチング祭）",
+        meta: meta ? meta.textContent.trim() : "",
+      });
+    }
+    return out;
+  }
+
+  /* TOPの「新着メディア」バンド(2026-08-04 優さん指示で「新着note」から拡張)。
+     note の最新2件 + Laundry Day!! の最新2件 = 4枚。
+     DOM の id が mz-top-note-* のままなのは、CSS(スマホ2×2の指定)を巻き込まないため。 */
+  function renderTopMedia() {
     var grid = document.getElementById("mz-top-note-grid");
-    var notes = window.__MARCHINZ_NOTES;
-    if (!grid || !Array.isArray(notes) || !notes.length) return;
+    if (!grid) return;
+    var notes = Array.isArray(window.__MARCHINZ_NOTES) ? window.__MARCHINZ_NOTES : [];
     var items = notes
       .slice()
       .sort(function (a, b) { return parseDate(b.pubDate) - parseDate(a.pubDate); })
-      .slice(0, NOTE_TOP_LIMIT);
-    if (!items.length) return;
-    grid.replaceChildren();
-    items.forEach(function (n) {
-      grid.appendChild(
-        buildVideoCard({
+      .slice(0, MEDIA_NOTE_LIMIT)
+      .map(function (n) {
+        return {
           url: n.url,
           thumb: n.thumb,
           title: n.title || "note",
           channelName: n.accountLabel || "",
           meta: daysAgoLabel(parseDate(n.pubDate)),
-        })
-      );
+        };
+      })
+      /* note の取得が全滅していても Laundry Day!! だけで出せるようにする */
+      .concat(laundryTopItems(MEDIA_LAUNDRY_LIMIT));
+    if (!items.length) return;
+    grid.replaceChildren();
+    items.forEach(function (it) {
+      grid.appendChild(buildVideoCard(it));
     });
     grid.hidden = false;
     var section = grid.closest("[data-mz-top-section]");
@@ -580,7 +616,7 @@
       renderDigest();
       renderFreshVideos();
       renderYoutubeFresh();
-      renderTopNotes();
+      renderTopMedia();
       loadUpcomingEvents();
       // 練習ツール(メトロノーム/チューナー)ブロック。ログイン不要(v1.34)
       window.MarchinZBase?.mountTools?.(document.getElementById("mz-top-tools"));
@@ -622,7 +658,7 @@
       renderDigest();
       renderFreshVideos();
       renderYoutubeFresh();
-      renderTopNotes();
+      renderTopMedia();
     } catch (err) {
       if (window.console && console.warn) console.warn("[mz-top-highlights] refresh", err);
     }
