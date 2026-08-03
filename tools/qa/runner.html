@@ -6348,20 +6348,23 @@ async function countSamples(ns, file, fromSec) {
       eq(cards().length, 3, "カード数");
       /* ★ 新UI(2026-08-04): カードは役の順に並び、各カードが役の札を持つ。
          どの札もいつでも押せて、押した先に居た動画と入れ替わるだけ */
+      /* ★ カードは素材の順で固定(2026-08-04)。動くのは札の点灯だけなので、
+         「どのカードがどの役を持っているか」を役の番号で測る。
+         役の並びそのもの(上,中,下…)は描画の構造上いつでも一致するので測る意味が無い。
+         クリップ名(c1.mp4…)には寄りかからない */
       const names = () => cards().map(c => c.querySelector(".wp-name").textContent);
-      const roles = () => cards().map(c => (c.querySelector(".fp-role.on") || {}).textContent);
-      eq(roles().join(","), "メイン,右下,左下", "既定の札(役の順に並ぶ)");
+      const onAt = () => cards().map(c =>
+        [...c.querySelectorAll(".fp-role")].findIndex(b => b.classList.contains("on")));
+      eq(onAt().join(","), "0,1,2", "既定の割り当て(1枚目=メイン/2枚目=右下/3枚目=左下)");
       const go = w.document.getElementById("fpGo");
       if (go.disabled) throw new Error("既定のまま進めない(おすすめ選択済みの約束が破れている)");
       const before = names();
-      /* 2番目の動画の「メイン」を押す → 1番目と入れ替わる(1タップで完結) */
+      /* 2枚目の「メイン」を押す → 1枚目と入れ替わる(1タップで完結) */
       cards()[1].querySelectorAll(".fp-role")[0].click();
       if (go.disabled) throw new Error("入れ替えの途中で進めなくなった(常に割り当ては完成しているはず)");
-      eq(roles().join(","), "メイン,右下,左下", "入れ替えても役の並びは動かない");
-      const after = names();
-      if (after[0] !== before[1] || after[1] !== before[0] || after[2] !== before[2]) {
-        throw new Error(`入れ替わり方が違う: ${before.join(",")} -> ${after.join(",")}`);
-      }
+      /* ★ カードの並びは動かない ─ 押した札が指の下から逃げない約束 */
+      eq(names().join(","), before.join(","), "カードの並び(動いてはいけない)");
+      eq(onAt().join(","), "1,0,2", "入れ替え後(1枚目=右下/2枚目=メイン)");
       go.click();
       eq(S.wipeMainId, 2, "メイン");
       eq(S.wipeClipId, 1, "右下ワイプ");
@@ -6655,6 +6658,26 @@ async function countSamples(ns, file, fromSec) {
       const noRole = [...sec.querySelectorAll("#fpCards .wp-card")]
         .filter(c => !c.querySelector(".fp-role.on")).length;
       eq(noRole, 0, "役の付いていないカード数");
+      /* ★ 素タップの型も見る(2026-08-04 レビュー)。iOS Safari はボタンを
+         タップしても焦点を立てないので、焦点は #fpGo に居たまま札が押される。
+         この回に焦点を動かしてしまうと、指と読み上げの位置がずれる */
+      d.getElementById("fpGo").focus();
+      roleBtns(1)[2].click();
+      eq(d.activeElement.id, "fpGo", "素タップの回は焦点が動かない");
+      /* 焦点がダイアログの外(body)へ落ちた回は、押した札へ戻ること */
+      if (d.activeElement.blur) d.activeElement.blur();
+      roleBtns(0)[1].click();
+      if (!sec.contains(d.activeElement)) {
+        throw new Error("body から押した回に焦点がダイアログへ戻らない");
+      }
+      /* ★ 色を押したのに、前へ押した札へ焦点が飛び戻らないこと。
+         fp.focus の消し忘れ(色・切り替えのハンドラ)を捕まえる歯 */
+      { const cb = sec.querySelectorAll("#fpColors .fp-color")[1];
+        cb.focus(); cb.click();
+        const a2 = d.activeElement;
+        if (a2 && a2.closest && a2.closest("#fpCards")) {
+          throw new Error("色を押したのに焦点が並び順の札へ飛んだ(fp.focus の消し忘れ)");
+        } }
       /* ③ Escape は「戻る」と同じ着地(素材工程+保留)。閉じたら inert も外れる */
       d.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
       if (!sec.hidden) throw new Error("Escape で閉じない");
@@ -6773,13 +6796,28 @@ async function countSamples(ns, file, fromSec) {
       w.MC.ui.openFinishPick();
       const el = w.document.getElementById("finishPick");
       const cards = () => [...el.querySelectorAll("#fpCards .wp-card")];
-      const roles = () => cards().map(c => (c.querySelector(".fp-role.on") || {}).textContent);
-      eq(roles().join(","), "上,中,下", "既定の札(3本・役の順に並ぶ)");
-      /* 2番目(動画2)を「上」へ → [2,1,3]。つぎに3番目に来た動画3を「中」へ → [2,3,1] */
-      cards()[1].querySelectorAll(".fp-role")[0].click();
+      const names = () => cards().map(c => c.querySelector(".wp-name").textContent);
+      const onAt = () => cards().map(c =>
+        [...c.querySelectorAll(".fp-role")].findIndex(b => b.classList.contains("on")));
+      const before = names();
+      eq(onAt().join(","), "0,1,2", "既定の割り当て(3本)");
+      /* ★ 非隣接のタップを必ず通す(2026-08-04 レビュー)。隣り合う入れ替えだけだと
+         「入れ替え(swap)」と「移動(splice)」が同じ結果になり、実装がどちらへ転んでも
+         試験が通ってしまう。1枚目を「下」へ送るここだけが両者を分ける:
+           order [1,2,3] → 入れ替え=[3,2,1](役番号 2,1,0) / 移動=[2,3,1](役番号 2,0,1) */
+      cards()[0].querySelectorAll(".fp-role")[2].click();
       if (w.document.getElementById("fpGo").disabled) throw new Error("入れ替えの途中で進めなくなった");
-      cards()[2].querySelectorAll(".fp-role")[1].click();
-      eq(roles().join(","), "上,中,下", "入れ替えても役の並びは動かない");
+      eq(names().join(","), before.join(","), "カードの並び(動いてはいけない)");
+      eq(onAt().join(","), "2,1,0", "非隣接の入れ替え(移動になっていたら 2,0,1 になる)");
+      /* 2枚目を「上」へ。ここで 上=2本目 / 中=3本目 / 下=1本目 に揃う */
+      cards()[1].querySelectorAll(".fp-role")[0].click();
+      eq(onAt().join(","), "2,0,1", "2タップ後の割り当て");
+      /* ★ pending が消えた代わりに守るべき不変条件:
+         fp.order はどの瞬間も「カードの完全な置換」(重複も欠けも無い) */
+      const ids = S.clips.map(c => c.id).slice().sort().join(",");
+      eq(w.MC.ui._fp.order.slice().sort().join(","), ids, "order は完全な置換のまま");
+      eq(w.document.getElementById("fpGo").disabled, false, "入れ替えたあとの進むボタン");
+      eq(cards().filter(c => !c.querySelector(".fp-role.on")).length, 0, "役の付いていないカード数");
       w.document.getElementById("fpGo").click();
       eq(S.slots.join(","), "2,3,1", "スロット");
       /* 画素: 書き出しと同じ drawComposite で 上=CAM2 / 中=CAM3 / 下=CAM1 */
@@ -6842,8 +6880,19 @@ async function countSamples(ns, file, fromSec) {
       A.open(); const on = A.STEPS.map(s => s.key); A.close();
       if (!on.includes("tilt")) throw new Error("ONなのに傾きの段が無い: " + on.join(","));
       eq(on.length - off.length, 1, "段の数の差");
+      /* ★ 「そのまま」は検出をやめるだけでは足りない(2026-08-04 レビュー)。
+         前の回に autoHorizon が入れた角度は clip.rot に残って**保存され**、
+         horizonOn は常にONなので、放っておくと「そのまま」を選んだ人の映像が
+         前回のとおり回り続ける。本人が見ていない自動値だけ戻ること */
+      const S3 = compReset(w);
+      S3.clips[0].rot = -1.8; S3.clips[0].tiltOk = false;   // 自動で入った値
+      S3.clips[1].rot = 2.4;  S3.clips[1].tiltOk = true;    // こだわりで本人が直した値
+      S3.clips[2].rot = 0;    S3.clips[2].tiltOk = false;   // もともと0(数えない)
+      eq(w.MC.ui.dropAutoTilt(), 1, "戻した本数");
+      eq(S3.clips[0].rot, 0, "自動で入れた角度は戻る");
+      eq(S3.clips[1].rot, 2.4, "手で直した角度は残る");
       /* ④ 「何を預けたか」の一行も選択に追従する(固定文だと選択と食い違う) */
-      S.autoTilt = false; S.filterId = "none";
+      S3.autoTilt = false; S3.filterId = "none";
       const t = w.MC.ui.autoWhatText();
       if (!/傾きはそのまま/.test(t) || !/撮ったままの色/.test(t)) {
         throw new Error("預けた内容の一行が選択に追従しない: " + t);

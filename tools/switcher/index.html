@@ -156,13 +156,20 @@
       <div id="fpLevels" class="fp-seg" role="radiogroup" aria-label="カメラの切り替えの多さ"></div>
     </div>
     <div class="fp-sec">
-      <h3 class="fp-sec-title">傾きの自動補正</h3>
-      <p class="fp-hint">手ぶれで傾いた映像を、まっすぐに直します</p>
-      <div id="fpTilt" class="fp-seg fp-seg--2" role="radiogroup" aria-label="傾きの自動補正"></div>
-    </div>
-    <div class="fp-sec">
       <h3 class="fp-sec-title">色</h3>
       <div id="fpColors" class="fp-colors" role="radiogroup" aria-label="色の仕上げ"></div>
+    </div>
+    <!-- ★ 傾きは「色」のあと(2026-08-04 レビュー)。色より前へ入れたら、
+         初期表示で色の段が可視0pxになり完全に隠れた(実測 973px中 745px地点)。
+         あとから足した段が、元からあった段を画面外へ押し出してはいけない -->
+    <div class="fp-sec">
+      <h3 class="fp-sec-title">傾きの自動補正</h3>
+      <!-- ★ 直しているのは「手ぶれ」ではない。horizon.js は3フレームが±0.6°で
+           一致したときだけ提案する = フレームごとに変わる揺れは捨て、ずっと同じ
+           角度で傾いているもの(構えの傾き)だけを直す。まわりが切れる副作用も言う -->
+      <p id="fpTiltHint" class="fp-hint">カメラが傾いたまま撮れた映像を、まっすぐに直します（まわりが少し切れます）</p>
+      <div id="fpTilt" class="fp-seg fp-seg--2" role="radiogroup"
+           aria-label="傾きの自動補正" aria-describedby="fpTiltHint"></div>
     </div>
     <div class="wp-foot">
       <!-- 押し間違いの逃げ道。閉じるだけで、取り込んだ動画はそのまま(戻る=左) -->

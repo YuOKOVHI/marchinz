@@ -385,9 +385,11 @@ html:has(body.mz-finish-pick), body.mz-finish-pick {
      長い名前のとき 375px で横スクロールになる(2026-08-02 レビュー実測で発見) */
   min-width: 0;
   padding: 10px; background: var(--panel); border: 1px solid var(--line);
-  border-radius: 14px; box-shadow: var(--shadow-card); cursor: pointer;
+  border-radius: 14px; box-shadow: var(--shadow-card);
+  /* ★ cursor:pointer と :hover の青枠は外した(2026-08-04 レビュー)。
+     カードは <button> をやめて器になったので、全体が押せそうに見えるのは嘘。
+     押せるのは中の .fp-role だけ */
   font-family: inherit; transition: .15s; }
-.wp-card:hover { border-color: var(--acc); }
 .wp-card--main { border-color: var(--acc); box-shadow: 0 0 0 2px var(--acc) inset; }
 .wp-thumb-wrap { position: relative; flex: 0 0 96px; }
 .wp-thumb { display: block; width: 96px; height: 56px; object-fit: cover;
@@ -401,6 +403,10 @@ html:has(body.mz-finish-pick), body.mz-finish-pick {
 /* 旧「役の札」(.fp-chip)は撤去。役はカードごとの .fp-role で直接押す(2026-08-04) */
 .fp-seg { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
 .fp-seg--2 { grid-template-columns: 1fr 1fr; }
+/* 貼り付いたフッタの上に薄いぼかしを敷き、下に続きがあることを見せる(2026-08-04) */
+.wp-foot::before { content: ""; position: absolute; left: 0; right: 0; bottom: 100%;
+  height: 16px; pointer-events: none;
+  background: linear-gradient(to top, #eef2f8, rgba(238,242,248,0)); }
 /* 役の札(2026-08-04)。カードごとに「上/中/下」を直接押して入れ替える。
    どれか1つが必ず点いていて、押した瞬間に入れ替わりが完了する */
 .fp-roles { flex: 0 0 auto; display: flex; gap: 6px; }

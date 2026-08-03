@@ -3602,6 +3602,20 @@ MC.ui.autoHorizon = async p => {
   return fixed;
 };
 
+/* 「そのまま」を選んだときに、前の回 autoHorizon が入れた角度を戻す。
+   ★ 検出をやめるだけでは足りない ─ clip.rot は保存され、horizonOn は常にONなので、
+     放っておくと「そのまま」を選んだ人の映像が前回のとおり回り続ける。
+   ★ 戻すのは**本人が見ていない自動値だけ**。tiltOk はこだわりで本人が確認した印で、
+     autoHorizon は立てないので、手で直した値はここでは消えない。
+   戻した本数を返す。 */
+MC.ui.dropAutoTilt = () => {
+  let n = 0;
+  for (const c of MC.ui.tiltCams()) {
+    if (!c.tiltOk && c.rot) { c.rot = 0; n++; }
+  }
+  return n;
+};
+
 /* おまかせ画面でプレビューを流す。音は鳴らさない ─ 解析中に音だけ流れると驚く。
    ★ 消音は play() の**後**で当てる。play() の中の applyMute が
      「音声担当だけ鳴らす」で上書きするため、先に消しても戻る */
@@ -4178,22 +4192,23 @@ MC.ui.renderFinishPick = () => {
     if (fp.order.length !== ids.length || fp.order.some(id => !ids.includes(id))) {
       fp.order = MC.ui.finishDefaultOrder(); fp.focus = null;
     }
-    /* 見出しは役の性質で変える。縦型は「並び順」、ワイプは「配置」 */
+    /* 見出しは役の性質で変える。★2本の縦型は役が「中 / 上と下」で順序ではないので
+       「並び順」と呼ぶと嘘になる(3本のときだけ 上→中→下 の順序) */
     { const t = MC.ui.$("#fpPlaceTitle");
-      if (t) t.textContent = MC.S.mode === "vertical" ? "動画の並び順" : "カメラの配置"; }
+      if (t) t.textContent = (MC.S.mode === "vertical" && cards.length >= 3)
+        ? "動画の並び順" : (MC.S.mode === "vertical" ? "動画の配置" : "カメラの配置"); }
     const hint = MC.ui.$("#fpHint");
-    if (hint) hint.textContent = MC.S.mode === "vertical"
-      ? "上から出る順に並んでいます。位置をタップすると入れ替わります"
-      : "位置をタップすると入れ替わります";
+    if (hint) hint.textContent = "位置をタップすると入れ替わります";
     const box = MC.ui.$("#fpCards");
     if (!box) return;   // HTMLとJSの版がずれても renderClips ごと落とさない
     box.innerHTML = "";
-    /* ★ 役の順に並べる(2026-08-04)。縦型なら、この一覧の並びが
-       そのまま出来上がりの上下になる ─ 説明しなくても対応が見える */
-    const byId = new Map(cards.map(c => [c.id, c]));
-    fp.order.forEach((id, at) => {
-      const c = byId.get(id);
-      if (!c) return;
+    /* ★ カードは素材の順で固定する(2026-08-04 優さん判断)。
+       役の順に並べ替えると、押した札が画面内を大きく動き(実測287px)、
+       「効いたか確かめよう」と同じ場所をもう一度押すと取り消しになる。
+       動くのは札の点灯だけ ─ 押した指の下は何も動かない */
+    cards.forEach(c => {
+      const id = c.id;
+      const at = fp.order.indexOf(c.id);
       const card = document.createElement("div");
       /* ★ 青リングはワイプの「メイン」のときだけ(2026-08-03 レビュー)。
          縦型の「上」はメインではないので、付けると階層の嘘になる */
@@ -4242,7 +4257,8 @@ MC.ui.renderFinishPick = () => {
       b.setAttribute("aria-checked", fp.level === lv ? "true" : "false");
       b.textContent = label;
       b.onclick = () => { if (fp.level === lv) return;
-        fp.level = lv; fp.changed = true; MC.ui.buzz([10]); MC.ui.renderFinishPick(); };
+        fp.level = lv; fp.changed = true; fp.focus = null;
+        MC.ui.buzz([10]); MC.ui.renderFinishPick(); };
       box.appendChild(b);
     }
   }
@@ -4282,7 +4298,8 @@ MC.ui.renderFinishPick = () => {
         <span class="fp-color-desc">${desc}</span>
         <i class="fa-solid fa-circle-check fp-check" aria-hidden="true"></i>`;
       b.onclick = () => { if (fp.color === key) return;
-        fp.color = key; fp.changed = true; MC.ui.buzz([10]); MC.ui.renderFinishPick(); };
+        fp.color = key; fp.changed = true; fp.focus = null;
+        MC.ui.buzz([10]); MC.ui.renderFinishPick(); };
       cbox.appendChild(b);
     }
   }
@@ -4613,7 +4630,8 @@ MC.ui.runEasy = async (opt) => {
   const p = MZP.start({ mount: "#easyStatus",
                         chapter: auto ? "おまかせ" : "同期", delay: 0,
                         steps: tiltSteps + syncSteps + (goesOn ? MC.ui.scanSteps() : 0),
-                        label: auto ? "傾きを直しています…" : "音を合わせています…" });
+                        label: (auto && MC.S.autoTilt !== false)
+                          ? "傾きを直しています…" : "音を合わせています…" });
   /* おまかせは書き出しまで一度も止まらない。あと何分かを出さないと
      「進んでいるのか固まったのか」が分からない(2026-08-01)。
 
@@ -4635,11 +4653,19 @@ MC.ui.runEasy = async (opt) => {
         MC.ui.renderClips();
         MC.ui.autoStage.mark("tilt", fixed ? `${fixed}本` : "そのままでOK");
       } else {
+        /* ★ 検出をやめるだけでは足りない(2026-08-04 レビュー)。前の回に
+           autoHorizon が入れた角度は clip.rot に残り、しかも保存される。
+           horizonOn は常にONなので、そのままだと「そのまま」を選んだ人の映像が
+           前回のとおり回り続ける。**本人が見ていない自動値だけ**戻す ─
+           tiltOk はこだわりで本人が確認した印で、autoHorizon は立てないので、
+           手で直した値は残る */
+        const cleared = MC.ui.dropAutoTilt();
+        if (cleared) MC.ui.renderClips();
         /* 直さないだけで「傾きの工程は済み」の扱いにする ─ こだわりへ
            切り替えたときに未確認のゲートで止めない(autoHorizon と同じ印) */
         MC.S.tiltSkipped = true;
         MC.saveState();
-        MC.log("auto: 傾きは直さない設定");
+        MC.log("auto: 傾きは直さない設定(自動で入れた角度を戻した本数=" + cleared + ")");
       }
       /* ★ ここでプレビューを実際に流す(2026-08-01 レビュー14件)。autoStage.open() の
          play() は、この直後に走る runEasy 先頭の pause() が**同期的に**
