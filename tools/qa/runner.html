@@ -4196,19 +4196,26 @@ async function countSamples(ns, file, fromSec) {
         const len = end - cuts[i].t;
         if (len > 5.01) throw new Error(`ショットが${len.toFixed(1)}秒(ソフト上限5秒超)`);
       }
-      /* ② 同一カメラの連続オンエアは sameSec(5秒)以内 */
+      /* ② 同一カメラの連続オンエア: この試験は feature=1(曲じゅうソロ)なので、
+         上限はソロ例外の8秒(2026-08-04 優さん決定②: 有限の sameSec×1.6 を
+         8で頭打ち)。非ソロの5秒はこの合成条件では踏めない(ソロでないのに
+         1台が常勝する素材を作れないため)が、門は同じ式の分岐なので、
+         8秒の検査が「時間の門そのものが生きているか」を保証する */
+      const soloCap = Math.min(8, w.MC.director.LEVELS[2].sameSec * 1.6);
       const worst = Math.max(...runs(cuts));
-      if (worst > w.MC.director.LEVELS[2].sameSec + 0.01) {
-        throw new Error(`同一カメラが${worst.toFixed(1)}秒続く(上限${w.MC.director.LEVELS[2].sameSec}秒)`);
+      if (worst > soloCap + 0.01) {
+        throw new Error(`同一カメラが${worst.toFixed(1)}秒続く(ソロ中の上限${soloCap}秒)`);
       }
-      /* ③ 変異: 時間上限と回数・飢餓の門を全部外すと4秒超えの張り付きが実際に出る
-         (=この見張りに検出力がある証明) */
+      /* ③ 変異: 時間上限と回数・飢餓の門を全部外すとソロ上限(8秒)超えの
+         張り付きが実際に出る(=この見張りに検出力がある証明)。
+         ★ sameSec=Infinity でソロ上限が8に化けないこと(有限のときだけ緩める)も
+           この変異が同時に見張る ─ 化けると worstMut が 8 で止まって落ちる */
       w.MC.director.LEVELS[2].sameSec = Infinity;
       w.MC.director.MAX_RUN = Infinity;
       w.MC.director.STARVE = Infinity;
       w.MC.director.generate();
       const worstMut = Math.max(...runs(S.cutList));
-      if (!(worstMut > 5.01)) throw new Error("変異(上限なし)でも張り付きが出ない=見張りが空回り: " + worstMut.toFixed(1));
+      if (!(worstMut > soloCap + 0.01)) throw new Error("変異(上限なし)でも張り付きが出ない=見張りが空回り: " + worstMut.toFixed(1));
       w.MC.director.LEVELS[2].sameSec = keep.same;
       w.MC.director.MAX_RUN = keep.run;
       w.MC.director.STARVE = keep.stv;
@@ -4421,7 +4428,8 @@ async function countSamples(ns, file, fromSec) {
     const M = { 1: dciSeg(.30, true), 2: dciSeg(.223, true), 3: dciSeg(.05) };
     const keep = { seg: w.MC.visual.seg, cls: w.MC.sections.classify,
                    sal: w.MC.director._salute, tw: w.MC.director.TUTTI_WIDE,
-                   wide: w.MC.director.LEVELS[2].wide };
+                   wide: w.MC.director.LEVELS[2].wide,
+                   front: w.MC.director.LEVELS[2].front };
     const run = () => { S.cutList = []; w.MC.director.generate(); return S.cutList.slice(); };
     try {
       w.MC.visual.seg = clip => M[clip.id];
@@ -4435,8 +4443,10 @@ async function countSamples(ns, file, fromSec) {
       if (bad) throw new Error(`全奏なのに寄りが${bad}枚出ている`);
       const wl = dciLens(wideCuts, 60);
       const wMin = Math.min(...wl.slice(0, -1));       // 末尾はトリム端で短くなる
-      if (wMin < w.MC.director.LEVELS[2].wide.min - 0.01) {
-        throw new Error(`引きが${wMin}秒(下限${w.MC.director.LEVELS[2].wide.min}秒)`);
+      /* 全奏(カンパニーフロント)の引きは front レンジ(おすすめ6〜8秒)。
+         2026-08-04 優さん決定①: 全体の隊形変化は4〜6秒では見切れない */
+      if (wMin < w.MC.director.LEVELS[2].front.min - 0.01) {
+        throw new Error(`カンパニーフロントの引きが${wMin}秒(下限${w.MC.director.LEVELS[2].front.min}秒)`);
       }
 
       /* ② 寄り(feature .9): 寄りの長さの上限を超えない */
@@ -4460,12 +4470,22 @@ async function countSamples(ns, file, fromSec) {
       w.MC.director.TUTTI_WIDE = keep.tw;
       if (!mutA) throw new Error("変異(しきい値1.1)でも寄りが1枚も出ない=ハード規則を測っていない");
 
-      /* ④ 変異B: 引きの長さレンジを外すと、引きが短くなる */
-      delete w.MC.director.LEVELS[2].wide;
+      /* ④ 変異B: カンパニーフロントのレンジ(front)を外すと、全奏の引きが
+         wide(4〜6秒)へ落ちて短くなる(=frontの枝が生きている証明。
+         さらに wide も外すと基準レンジ(2〜4秒)まで落ちる) */
+      delete w.MC.director.LEVELS[2].front;
       const mutB = Math.min(...dciLens(run(), 60).slice(0, -1));
-      w.MC.director.LEVELS[2].wide = keep.wide;
+      w.MC.director.LEVELS[2].front = keep.front;
       if (!(mutB < wMin)) {
-        throw new Error(`変異(引きレンジなし)でも引きが短くならない(${mutB}秒 vs ${wMin}秒)`);
+        throw new Error(`変異(frontレンジなし)でも引きが短くならない(${mutB}秒 vs ${wMin}秒)`);
+      }
+      delete w.MC.director.LEVELS[2].front;
+      delete w.MC.director.LEVELS[2].wide;
+      const mutB2 = Math.min(...dciLens(run(), 60).slice(0, -1));
+      w.MC.director.LEVELS[2].front = keep.front;
+      w.MC.director.LEVELS[2].wide = keep.wide;
+      if (!(mutB2 < mutB)) {
+        throw new Error(`変異(wideレンジなし)でも引きが短くならない(${mutB2}秒 vs ${mutB}秒)`);
       }
       return `全奏=引き${wideCuts.length}枚(最短${wMin}秒) / 寄り最長${cMax}秒 / `
         + `変異A=寄り${mutA}枚・変異B=引き${mutB}秒`;
@@ -4473,6 +4493,7 @@ async function countSamples(ns, file, fromSec) {
       w.MC.visual.seg = keep.seg; w.MC.sections.classify = keep.cls;
       w.MC.director._salute = keep.sal; w.MC.director.TUTTI_WIDE = keep.tw;
       w.MC.director.LEVELS[2].wide = keep.wide;
+      w.MC.director.LEVELS[2].front = keep.front;
       compReset(w);
     }
   });

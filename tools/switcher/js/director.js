@@ -36,16 +36,24 @@ MC.director = {
        sameSec は「同じカメラが**続く**時間」の門なので単発の引きは通る ─
        ここは 2026-08-03「4秒以上は同じのにしない」と正面から当たる箇所で、
        引きだけ例外にするのが今回の指示(P2改)。寄り側は 2〜4秒のまま。 */
+  /* ★ front = カンパニーフロント(全奏)の引き専用レンジ(2026-08-04 優さん決定①)。
+     全体の隊形変化は4〜6秒では見切れない ─ 全奏で引きに座る回だけ
+     さらに長く読ませる(おすすめで6〜8秒)。「4秒以上は同じのにしない」
+     (2026-08-03)の明示的な例外。他の引き(楽章の切れ目・織り込み)は wide のまま。
+     多め(3)を選んだ人に8秒は選択の否定なので、レベル内でスケールさせる */
   LEVELS: {
     // 少なめ(ゆったり)
     1: { base: 5.0, min: 3.5, max: 7.0, sameSec: 8.0, interleave: 2,
-         wide: { base: 6.5, min: 5.0, max: 8.0 }, close: { base: 4.0, min: 3.5, max: 5.0 } },
+         wide: { base: 6.5, min: 5.0, max: 8.0 }, close: { base: 4.0, min: 3.5, max: 5.0 },
+         front: { base: 8.0, min: 6.5, max: 9.5 } },
     // おすすめ(2〜4秒)
     2: { base: 3.0, min: 2.0, max: 4.0, sameSec: 5.0, interleave: 3,
-         wide: { base: 5.0, min: 4.0, max: 6.0 }, close: { base: 2.8, min: 2.0, max: 4.0 } },
+         wide: { base: 5.0, min: 4.0, max: 6.0 }, close: { base: 2.8, min: 2.0, max: 4.0 },
+         front: { base: 7.0, min: 6.0, max: 8.0 } },
     // 多め(細かい)
     3: { base: 2.4, min: 1.8, max: 3.0, sameSec: 4.0, interleave: 4,
-         wide: { base: 3.6, min: 3.0, max: 4.5 }, close: { base: 2.2, min: 1.8, max: 3.0 } },
+         wide: { base: 3.6, min: 3.0, max: 4.5 }, close: { base: 2.2, min: 1.8, max: 3.0 },
+         front: { base: 5.2, min: 4.5, max: 6.5 } },
   },
   /* 素材ごとの出番の希望(clip.freq)をスコアへ足す量。
      「少なめ」は下の登場間隔ボーナス(最大0.48)より小さくして、
@@ -585,7 +593,10 @@ MC.director.generate = () => {
        引きに限定される回に加え、織り込み間隔で引きへ回る回も「引きの長さ」 */
     const wideTurn = !!ctx.forceWide
       || (!isOpening && !probeFeat && ctx.segsSinceWide >= ctx.interleave);
-    const R = wideTurn ? (L.wide || L)
+    /* カンパニーフロント(全奏)で座る引きだけ front(おすすめ6〜8秒)。
+       楽章の切れ目・サリュート・織り込みの引きは wide(4〜6秒)のまま
+       (2026-08-04 優さん決定①) */
+    const R = wideTurn ? ((ctx.forceWide === "全奏" && L.front) ? L.front : (L.wide || L))
       : (probeFeat && L.close) ? L.close : L;
     /* ★ 引きの回は「大きい音ほど短く」を弱める(2026-08-04 実測)。
        mod は音圧が高いほど小さくなるが、引きに座る理由そのものが
@@ -712,8 +723,20 @@ MC.director.generate = () => {
          実質「同じカメラは1ショット強まで」= 4秒目安のソフト上限が効く
          (最短2秒×2本=4秒だけは収まる。LEVELS の注記参照)。
          MAX_RUN(回数)は時間が測れない異常系の保険として残す */
+      /* ★ ソロ・ソリの最中だけ同一カメラを長く許す(2026-08-04 優さん決定②)。
+         「4秒以上は同じのにしない」(2026-08-03)の明示的な例外 ─ 抜いている
+         奏者の画を時間の都合で断ち切らない。おすすめ5秒→8秒
+         (レベル内でスケール: 多め6.4秒・少なめは元々8秒)。
+         回数の保険(MAX_RUN)は触らない ─ 時間が主・回数は異常系の従のまま */
+      const sameBase = L.sameSec || Infinity;
+      /* ★ 有限のときだけ緩める ─ Infinity(門を外した状態=QAの変異)に 1.6 を
+         掛けても Infinity で、min(8, Infinity)=8 が新しい門になってしまう。
+         門を外したら外れたままであるべき(2026-08-04、modeCapped の教訓と同型) */
+      const sameCap = featNow && Number.isFinite(sameBase)
+        ? Math.min(8.0, sameBase * 1.6)
+        : sameBase;
       if (top.id === ctx.prevId
-          && (ctx.runSec + (tNext - t) > (L.sameSec || Infinity)
+          && (ctx.runSec + (tNext - t) > sameCap
               || ctx.runLen >= MC.director.MAX_RUN)) {
         const alt = ranked.find(r => r.id !== ctx.prevId && !r.dq);
         if (alt) {
