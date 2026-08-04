@@ -1370,10 +1370,25 @@
         window.open(`https://twitter.com/intent/tweet?text=${encX}`, "_blank", "noopener,noreferrer");
         break;
       }
-      case "line":
+      case "line": {
         trackEvent("share_click", { kind, target });
-        window.open(`https://line.me/R/msg/text/?${enc}`, "_blank", "noopener,noreferrer");
+        /* ★ LINEへ送るときだけ openExternalBrowser=1 を付ける(2026-08-04 優さん判断)。
+           行き先が LINE だと確定している**唯一の経路**で、この印が実際に効くのはここだけ ─
+           LINEのトークから開いたとき、アプリ内ブラウザではなく Safari/Chrome が起動する。
+           アプリ内ブラウザだと ログイン / ホーム画面に追加 / オフラインキャッシュ が
+           使えないので、LINEから来た人はここで外へ出しておく。
+           ほかの経路(コピー・X・Facebook)は行き先が分からないので付けない ─
+           付けても無視されるだけでURLが24文字伸びる(2026-08-04 「なるべく短く」)。
+           ★ 本文に埋まっているURLを差し替える。url が空/変化なしのときは本文をそのまま */
+        const urlLine = withOpenExternalBrowserParam(url);
+        const textLine = url && urlLine !== url ? text.split(url).join(urlLine) : text;
+        window.open(
+          `https://line.me/R/msg/text/?${encodeURIComponent(textLine)}`,
+          "_blank",
+          "noopener,noreferrer"
+        );
         break;
+      }
       case "facebook":
         trackEvent("share_click", { kind, target });
         window.open(
