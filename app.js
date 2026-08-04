@@ -1136,6 +1136,34 @@
    * フロー: `load` → `rebuildMarchinzOrgMaps` → `readUrlState`（`o` は CSV 団体 ID 優先の逆引き）。
    * 共有: `buildShareUrl` / `syncUrlState` はここ経由。団体は `marchinzNameToOrgId` があれば `o=`、なければ `t=`。
    */
+  /* いま出ている団体が1つだけで、かつ**その名前で検索し直しても1つのまま**なら
+     その団体名を返す(2026-08-04 優さん指示)。
+     ★ 他団体の名前がこの名前を含んでいる場合(「X」と「X ジュニア」のような関係)は
+       検索し直すと相手も戻ってくるので null を返し、除外リストのURLを保つ。
+       照合は applyFilter と同じ normalizeTeamSearchKey / includes を使う ─
+       ここで別の判定を書くと「URLを開いたら結果が違う」が起きる */
+  function soleVisibleOrgTeam() {
+    if (state.exactOrgTeam !== null) return null;
+    const orgs = new Set(
+      state.filtered.map((r) => String(rowOrgTeam(r) ?? "").trim()).filter(Boolean)
+    );
+    if (orgs.size !== 1) return null;
+    const only = [...orgs][0];
+    const key = normalizeTeamSearchKey(only);
+    if (!key) return null;
+    for (const row of state.rows) {
+      const org = String(rowOrgTeam(row) ?? "").trim();
+      if (!org || org === only) continue;
+      if (
+        normalizeTeamSearchKey(org).includes(key) ||
+        normalizeTeamSearchKey(rowDisplayName(row)).includes(key)
+      ) {
+        return null;
+      }
+    }
+    return only;
+  }
+
   function buildShareSearchParams() {
     const p = new URLSearchParams();
     if (state.tab === "スリークロスチーム") {
@@ -1164,7 +1192,24 @@
     if (state.page > 1) p.set("p", String(state.page));
     if (state.pageSize !== 10) p.set("z", String(state.pageSize));
     if (state.excludedOrgTeams.size > 0) {
-      p.set("ex", [...state.excludedOrgTeams].join("|"));
+      /* ★ 他の団体を消して1団体だけになったら、その団体のURLにする
+         (2026-08-04 優さん指示「他の団体を削除したら、URLも変更するように」)。
+         「検索語 + 消した団体の一覧」のままだと:
+           ・共有された人にはURLを見ても何の団体か分からない
+           ・消した団体の**名前が変わると除外が黙って外れ**、また出てくる
+             (名前で照合しているため)
+           ・団体が増えるほどURLが伸びる
+         1団体に絞れているなら、その団体のURLで同じ結果を再現できる */
+      const only = soleVisibleOrgTeam();
+      if (only) {
+        p.delete("t");
+        p.delete("o");
+        const oid = marchinzNameToOrgId.get(only);
+        if (oid) p.set("o", oid);
+        else p.set("t", only);
+      } else {
+        p.set("ex", [...state.excludedOrgTeams].join("|"));
+      }
     }
     return p;
   }
