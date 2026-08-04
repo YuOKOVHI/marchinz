@@ -2241,7 +2241,20 @@ async function countSamples(ns, file, fromSec) {
       const t = i / sr;
       pcm[i] = t < 60  ? 0.02 * Math.sin(i / 40)
              : t < 120 ? (i % 900 < 60 ? 0.55 : 0.04) * rnd()
-             : t < 180 ? 0.5 * (Math.sin(i / 12) + Math.sin(i / 25) + Math.sin(i / 9)) / 3
+             /* ★ 全奏は「音程もの＋打楽器」でないと本物にならない(2026-08-04)。
+                元は正弦波3本だけで、調波性 harm が 0.69 まで上がる ─ これは
+                実素材の全奏(バッテリーの広帯域成分が入るので harm 0.3前後)ではなく、
+                **少人数の和音**の数値。全奏らしさ full = dyn×(1-0.5×harm) を
+                入れたことで、この違いが表に出た(実測: 雑音0%→full 0.66・帯は無色 /
+                45%→harm 0.32・full 0.84・帯は全奏)。
+                コードではなく試験データが実素材から外れていた ─
+                ②の打楽器区間で同じ理由の修正を既に一度している。
+                ★係数は「元と同じ音量のまま音色だけ変える」ように実測で決めた。
+                最初 0.55/0.225 にしたら全奏が27%大きくなり、正規化(パーセンタイル)が
+                動いて**打楽器の区間が「静か」に落ちた** ─ 直した先と違う場所が壊れる。
+                a=0.327 / b=0.268 なら4区間(静か/打楽器/全奏/静か)とも言い当てる */
+             : t < 180 ? 0.327 * (Math.sin(i / 12) + Math.sin(i / 25) + Math.sin(i / 9)) / 3
+                         + 0.268 * rnd()
              :           0.03 * Math.sin(i / 45);
     }
     const c = w.MC.getClip(1);
@@ -4236,6 +4249,176 @@ async function countSamples(ns, file, fromSec) {
       w.MC.visual.seg = keep.seg; w.MC.sections.classify = keep.cls;
       w.MC.director._salute = keep.sal;
       w.MC.director.DISSOLVE_MIN = keep.lo; w.MC.director.DISSOLVE_MAX = keep.hi;
+      compReset(w);
+    }
+  });
+
+
+  await test("★全奏は「音量」ではなく「音量×厚み」で決める(フォルテのソロを引きにしない)", async () => {
+    /* 2026-08-04 DCIディレクターの回答①。旧: 全奏の判断は tutti(=dyn)。
+       これだとフォルテのソロが全奏と同じ点になり、「全奏は絶対に引き」の
+       ハード規則が、いちばん寄りで見せたい聴かせどころを引きにしてしまう。
+       厚みの手がかりは調波性(harm) ─ 単独楽器は自己相関のピークが高い。
+       ★ 本物の classify を通して測る(式のコピーを試験側に持たない) */
+    const w = await compEnv();
+    const S = compReset(w);
+    /* rms と harm だけを狙って作る sections。他は classify が使う分だけ埋める */
+    const mkSec = (rms, harm) => {
+      const n = 40, z = k => new Array(n).fill(k);
+      return { hop: 0.5, t: Array.from({ length: n }, (_, i) => i * 0.5 + 0.5),
+               rms: z(rms), onset: z(0.5), centroid: z(1000), harm: z(harm),
+               rmsLo: 0, rmsHi: 1, onLo: 0, onHi: 1, cenMed: 500, cenHi: 2000,
+               bpmT: [0], bpmV: [120] };
+    };
+    const clip = w.MC.getClip(1);
+    const keep = clip.sections;
+    const tuttiOf = (rms, harm) => {
+      clip.sections = mkSec(rms, harm);
+      return w.MC.sections.classify(clip, 5, 8).full;
+    };
+    try {
+      const TW = w.MC.director.TUTTI_WIDE;
+      const full = tuttiOf(0.95, 0.30);      // フル(多数の音程+打楽器 → 調波性は低い)
+      const solo = tuttiOf(0.95, 0.80);      // フォルテのソロ(単独楽器 → 調波性が高い)
+      if (!(full >= TW)) throw new Error(`全奏が引きに限定されない(tutti=${full.toFixed(2)} 閾値${TW})`);
+      if (solo >= TW) throw new Error(`フォルテのソロまで引きに限定される(tutti=${solo.toFixed(2)})`);
+      /* ★ 変異の意味を持つ assert: 旧式(tutti=dyn)なら音圧が同じ0.95で
+         **同じ点**になる。差が付いていること自体が「厚みを見ている」証拠 */
+      if (Math.abs(full - solo) < 0.15) {
+        throw new Error(`音圧が同じなら同じ点になっている(=旧式のまま): ${full.toFixed(2)} vs ${solo.toFixed(2)}`);
+      }
+      /* 静かなところが全奏に化けないことも見る(上端だけ守って下を壊さない) */
+      const quiet = tuttiOf(0.15, 0.40);
+      if (quiet >= TW) throw new Error(`静かな区間が全奏になっている(${quiet.toFixed(2)})`);
+      return `フル=${full.toFixed(2)} / フォルテのソロ=${solo.toFixed(2)} / 静か=${quiet.toFixed(2)}(閾値${TW})`;
+    } finally {
+      clip.sections = keep;
+      compReset(w);
+    }
+  });
+
+  await test("★楽章・セクションの切れ目で一度引きへリセットする(変異つき)", async () => {
+    /* 2026-08-04 DCIディレクターの回答C。手がかりは音だけから2つ取れる:
+       静けさの谷から戻った瞬間 / 局所テンポが大きく変わった瞬間。
+       ★ この試験は**テンポ変化だけ**(音圧は一定=衝撃は起きない)で測る ─
+         静けさの谷は「切れ目」と「衝撃」が同じ出来事になり、
+         衝撃の2拍前に座る規則(P1)が先に効くので、切れ目単独を測れない。
+       ★ 引きが出る理由を切れ目だけに絞るため、飢餓ガードと引きの織り込みを止める。
+         止めないと cam3(唯一の引き)が切れ目と無関係に定期的に出てきて、
+         変異が効かなくなる(実測で確認済み) */
+    const w = await compEnv();
+    const S = compReset(w);
+    S.audioClipId = 1; S.trimIn = 0; S.trimOut = 60; S.cutLevel = 2;
+    const n = 120;
+    const sec = { hop: 0.5, t: Array.from({ length: n }, (_, i) => i * 0.5 + 0.5),
+                  rms: new Array(n).fill(0.55), rmsLo: 0, rmsHi: 1,
+                  bpmT: [], bpmV: [] };
+    for (let k = 0; k < 15; k++) { sec.bpmT.push(k * 4 + 6); sec.bpmV.push(k * 4 + 6 < 30 ? 120 : 156); }
+    Object.assign(w.MC.getClip(1), { beatsData: dciBeats(), sections: sec });
+    /* ★ cam1とcam2は見分けられる画にする。同形だとジャンプカット防止が発火し、
+       切れ目と無関係に cam3 が押し出されてこの試験が別のものを測る */
+    const shp = { 1: { close: .90, wide: .05, nF: 2 },
+                  2: { close: .60, wide: .15, nF: 9 },
+                  3: { close: .05, wide: .90, nF: 0 } };
+    const keep = { seg: w.MC.visual.seg, ss: w.MC.visual.shotScores,
+                   cls: w.MC.sections.classify, sal: w.MC.director._salute,
+                   stv: w.MC.director.STARVE, il: w.MC.director.LEVELS[2].interleave,
+                   br: w.MC.director.BREAK_BPM_RATIO };
+    try {
+      w.MC.director._salute = null;
+      w.MC.sections.classify = () => ({ feature: 0.9, percussion: 0, tutti: 0.2, pit: 0,
+                                        bpm: 120, dyn: 0.4, quiet: 0.3 });
+      w.MC.visual.seg = c => ({ id: c.id, nF: shp[c.id].nF });
+      w.MC.visual.shotScores = m => ({ close: shp[m.id].close, group: 0.2,
+                                       wide: shp[m.id].wide, ensemble: 0 });
+      w.MC.director.STARVE = Infinity;
+      w.MC.director.LEVELS[2].interleave = 999;
+
+      const grid = w.MC.director._grid(w.MC.getClip(1), 0, 60);
+      const breaks = w.MC.director._breaks(w.MC.getClip(1), grid, 0, 60);
+      if (!breaks.length) throw new Error("テンポ変化を切れ目として拾えない");
+      const impacts = w.MC.director._impacts(w.MC.getClip(1), grid, 0, 60);
+      if (impacts.length) throw new Error("音圧一定なのに衝撃を拾っている(試験の前提が崩れた): " + impacts);
+
+      const run = () => { S.cutList = []; w.MC.director.generate(); return S.cutList.slice(); };
+      const cuts = run();
+      const at = b => cuts.find(c => Math.abs(c.t - b) < 0.05);
+      for (const b of breaks) {
+        const c = at(b);
+        if (!c) throw new Error(`切れ目${b.toFixed(1)}sちょうどにカットが無い`);
+        if (c.clipId !== 3) throw new Error(`切れ目${b.toFixed(1)}sが引きでない(cam${c.clipId})`);
+      }
+      /* 変異: 切れ目を検出できなくすると、そこは寄りのまま通過する */
+      w.MC.director.BREAK_BPM_RATIO = 9;
+      const mut = run();
+      w.MC.director.BREAK_BPM_RATIO = keep.br;
+      const still = breaks.filter(b => {
+        const c = mut.find(x => Math.abs(x.t - b) < 0.05);
+        return c && c.clipId === 3;
+      }).length;
+      if (still === breaks.length) {
+        throw new Error("変異(切れ目を検出しない)でも全部の切れ目で引きになる=切れ目を測っていない");
+      }
+      return `切れ目${breaks.length}箇所すべてでカット＋引き / 変異では${still}/${breaks.length}`;
+    } finally {
+      w.MC.visual.seg = keep.seg; w.MC.visual.shotScores = keep.ss;
+      w.MC.sections.classify = keep.cls; w.MC.director._salute = keep.sal;
+      w.MC.director.STARVE = keep.stv; w.MC.director.LEVELS[2].interleave = keep.il;
+      w.MC.director.BREAK_BPM_RATIO = keep.br;
+      compReset(w);
+    }
+  });
+
+  await test("★切り替わったと分からない画へは切らない(ジャンプカット防止・変異つき)", async () => {
+    /* 2026-08-04 DCIディレクターの回答A。カメラの位置関係を持っていないので、
+       位置の代わりに**画の似かた**(画角と写っている人数)で見る。
+       直前とほぼ同じ絵へ切ると、見ている人には切り替わっていないように見える。
+       ★ 減点であって失格にしない ─ 3台とも似た引き、という素材は普通にあり、
+         失格にすると切り替え自体が止まる。だから「減る」ことを測る(0にはならない) */
+    const w = await compEnv();
+    const S = compReset(w);
+    S.audioClipId = 1; S.trimIn = 0; S.trimOut = 60; S.cutLevel = 2;
+    Object.assign(w.MC.getClip(1), { beatsData: dciBeats(), sections: {} });
+    // cam1 と cam2 はそっくり。cam3 だけ画が違う
+    const shp = { 1: { close: .60, wide: .30, nF: 6 },
+                  2: { close: .62, wide: .31, nF: 6 },
+                  3: { close: .20, wide: .75, nF: 1 } };
+    const keep = { seg: w.MC.visual.seg, ss: w.MC.visual.shotScores,
+                   cls: w.MC.sections.classify, sal: w.MC.director._salute,
+                   pen: w.MC.director.JUMP_PENALTY };
+    const twins = cuts => {
+      let k = 0;
+      for (let i = 1; i < cuts.length; i++) {
+        const a = cuts[i - 1].clipId, b = cuts[i].clipId;
+        if ((a === 1 && b === 2) || (a === 2 && b === 1)) k++;
+      }
+      return k;
+    };
+    const run = () => { S.cutList = []; w.MC.director.generate(); return S.cutList.slice(); };
+    try {
+      w.MC.director._salute = null;
+      w.MC.sections.classify = () => ({ feature: 0, percussion: 0, tutti: 0.3, pit: 0,
+                                        bpm: 120, dyn: 0.5, quiet: 0.2 });
+      w.MC.visual.seg = c => ({ id: c.id, nF: shp[c.id].nF });
+      w.MC.visual.shotScores = m => ({ close: shp[m.id].close, group: 0.2,
+                                       wide: shp[m.id].wide, ensemble: 0 });
+      const cuts = run();
+      const real = twins(cuts);
+      /* 3台とも出る(防止が切り替えそのものを止めていない) */
+      const used = new Set(cuts.map(c => c.clipId));
+      if (used.size !== 3) throw new Error(`防止のせいで${used.size}台しか出ない`);
+      /* 変異: 減点を0にすると、そっくり同士の切り替えが実際に増える */
+      w.MC.director.JUMP_PENALTY = 0;
+      const mutN = twins(run());
+      w.MC.director.JUMP_PENALTY = keep.pen;
+      if (!(real < mutN)) {
+        throw new Error(`変異(減点0)でもそっくり同士の切り替えが増えない(本番${real} / 変異${mutN})`);
+      }
+      return `そっくり同士の切り替え 本番${real}回 → 変異(減点0)${mutN}回 / 3台とも出る`;
+    } finally {
+      w.MC.visual.seg = keep.seg; w.MC.visual.shotScores = keep.ss;
+      w.MC.sections.classify = keep.cls; w.MC.director._salute = keep.sal;
+      w.MC.director.JUMP_PENALTY = keep.pen;
       compReset(w);
     }
   });

@@ -111,6 +111,20 @@ MC.director = {
   IMPACT_RISE: 0.22,
   IMPACT_GAP: 4.0,
   SEAT_BEATS: 2,
+  /* ★ 楽章・セクションの切れ目(2026-08-04 DCIディレクターの回答C) */
+  BREAK_LOW: 0.30,        // これ未満を「静けさ」とみなす
+  BREAK_HIGH: 0.50,       // ここまで戻ったら「また始まった」
+  BREAK_MIN_SEC: 1.2,     // 静けさがこの秒数続いて初めて切れ目とみなす
+  BREAK_BPM_RATIO: 0.18,  // 局所BPMがこの割合以上変わったら切れ目
+  BREAK_GAP: 10.0,        // 近すぎる切れ目はまとめる(秒)
+  /* ★ 切り替わったと分からない画へは切らない(2026-08-04 DCIディレクターの回答A)。
+     カメラの位置関係を持っていないので、位置の代わりに**画の似かた**で見る ─
+     直前と画角・人数がほぼ同じカメラへ切ると、見ている人には
+     「切り替わっていない」ようにしか見えない(いわゆるジャンプカット)。
+     ★ 減点であって失格にはしない。3台とも似た引き、という素材は普通にあり、
+       失格にすると切り替え自体が止まってしまう */
+  JUMP_NEAR: 0.35,        // 画の隔たりがこれ未満なら「似すぎ」
+  JUMP_PENALTY: 0.55,     // 似ているほど最大この幅で減点
   _salute: null,
 };
 
@@ -248,6 +262,57 @@ MC.director._impacts = (audioClip, grid, tIn, tOut) => {
   return out;
 };
 
+/* ---------- 楽章・セクションの切れ目 ---------- */
+/* ★ 2026-08-04 DCIディレクターの回答C「楽章が変わる瞬間は、必ず一度引きで
+   リセットする」。ショウは1曲ではなく複数の楽章で、切れ目で場面が変わる ─
+   そこを寄りのまま通過すると、見ている人は「まだ同じ場面」だと思い続ける。
+   手がかりは2つとも音だけから取れる:
+     ① 静けさの谷 … 音が BREAK_LOW 未満へ落ちて BREAK_MIN_SEC 以上続き、
+                     そのあと BREAK_HIGH を超えて戻る(楽章の間)
+     ② テンポの変化 … 隣り合う局所BPMが BREAK_BPM_RATIO 以上変わる
+   衝撃(_impacts)と違い、こちらは**曲の構造**を見ている。 */
+MC.director._breaks = (audioClip, grid, tIn, tOut) => {
+  const S = audioClip.sections;
+  if (!S || !S.rms || !S.t || !S.t.length) return [];
+  const lo = S.rmsLo, hi = S.rmsHi;
+  if (!(hi > lo)) return [];
+  const dyn = i => Math.max(0, Math.min(1, (S.rms[i] - lo) / (hi - lo)));
+  const raw = [];
+  // ① 静けさの谷から戻ってきた瞬間
+  let lowFrom = -1;
+  for (let i = 0; i < S.t.length; i++) {
+    const v = dyn(i);
+    if (v < MC.director.BREAK_LOW) { if (lowFrom < 0) lowFrom = i; continue; }
+    if (lowFrom >= 0) {
+      const len = (i - lowFrom) * (S.hop || 0.5);
+      if (len >= MC.director.BREAK_MIN_SEC && v >= MC.director.BREAK_HIGH) {
+        raw.push(S.t[i] + audioClip.offset);
+      }
+      lowFrom = -1;
+    }
+  }
+  // ② 局所テンポが変わった瞬間
+  if (S.bpmT && S.bpmV) {
+    for (let k = 1; k < S.bpmV.length; k++) {
+      const a = S.bpmV[k - 1], b = S.bpmV[k];
+      if (a > 0 && Math.abs(b - a) / a >= MC.director.BREAK_BPM_RATIO) {
+        raw.push(S.bpmT[k] + audioClip.offset);
+      }
+    }
+  }
+  // 小節頭へ寄せ、近すぎるものはまとめる
+  const out = [];
+  for (const t0 of raw.sort((x, y) => x - y)) {
+    let tt = t0, bd = Infinity, best = null;
+    for (const b of grid.bars) { const d = Math.abs(b - t0); if (d < bd) { bd = d; best = b; } }
+    if (best != null && bd <= grid.period * 2) tt = best;
+    if (tt < tIn + 1 || tt > tOut - 1) continue;
+    if (out.length && tt - out[out.length - 1] < MC.director.BREAK_GAP) continue;
+    out.push(tt);
+  }
+  return out;
+};
+
 /* ---------- セグメントのカメラ採点 ---------- */
 /* 戻り値: {id, score, wideChosen} のリスト(スコア降順) */
 MC.director._rank = (g0, g1, cls, ctx) => {
@@ -261,7 +326,10 @@ MC.director._rank = (g0, g1, cls, ctx) => {
     // ソロ・ソリ(誰かが抜かれている場面)は、抜いているカメラをかなり強く優先する
     wClose = 0.30 + 0.95 * cls.feature;
     wGroup = 0.25 + 0.60 * cls.percussion;
-    wWide = 0.25 + 0.45 * cls.tutti;
+    /* 引きの重みも「全奏らしさ」で見る(2026-08-04)。音圧だけだと
+       フォルテのソロで引きへ引っぱられる。cls.full が無い呼び出し
+       (試験のスタブ等)は従来どおり tutti へ落ちる */
+    wWide = 0.25 + 0.45 * (cls.full != null ? cls.full : cls.tutti);
     // 聴かせどころでは引きに逃げない(引きの織り込み圧力もここでは弱める)
     if (cls.feature > 0.45) wWide *= 0.5;
   } else {
@@ -334,7 +402,20 @@ MC.director._rank = (g0, g1, cls, ctx) => {
     if (c.id === ctx.prevId) score -= 0.9;
     if (c.id === ctx.prev2Id) score -= 0.25;
     score += 0.06 * Math.min(8, ctx.sinceUse.get(c.id) || 0);   // 出番が空くほど戻りやすく(最大0.48)
-    ranked.push({ id: c.id, score, wideChosen: sh.wide >= 0.5, dq, dqWhy: dqWhy });
+    /* ★ 直前の画と似すぎているカメラへは切らない(2026-08-04)。
+       画角(寄り/引き)と写っている人数がほぼ同じなら、切り替えたことが
+       伝わらない。ctx.prevShot は generate() が採用した1台ぶんだけ持つ */
+    const nF = m && m.nF > 0 ? m.nF : 0;
+    if (ctx.prevShot && c.id !== ctx.prevId) {
+      const d = Math.abs(sh.close - ctx.prevShot.close)
+        + Math.abs(sh.wide - ctx.prevShot.wide)
+        + Math.min(1, Math.abs(nF - ctx.prevShot.nF) / 4);
+      if (d < MC.director.JUMP_NEAR) {
+        score -= MC.director.JUMP_PENALTY * (MC.director.JUMP_NEAR - d) / MC.director.JUMP_NEAR;
+      }
+    }
+    ranked.push({ id: c.id, score, wideChosen: sh.wide >= 0.5, dq, dqWhy: dqWhy,
+                  close: sh.close, wide: sh.wide, nF });
   }
   ranked.sort((a, b) => b.score - a.score);
 
@@ -379,9 +460,12 @@ MC.director.generate = () => {
     forceWide: null,    // この区間を引きに限定する理由(2026-08-04)。null=従来どおり
     starveDefer: 0,     // ソロ中に飢餓ガードを見送った連続ショット数
     saluteDone: false,  // サリュート直後の1カット目を出したか
+    prevShot: null,     // 直前に採用した画の形{close,wide,nF}(ジャンプカット防止)
   };
   /* ★ 衝撃の先読み(P1)。カット割の前に一度だけ拾う */
   const impacts = MC.director._impacts(audioClip, grid, tIn, tOut);
+  /* ★ 楽章・セクションの切れ目(2026-08-04 回答C)。ここでも一度だけ拾う */
+  const breaks = MC.director._breaks(audioClip, grid, tIn, tOut);
   const period = grid.period || 0.5;
   const musicStart = MC.director._salute ? MC.director._salute.musicStart : null;
   const cuts = [];
@@ -425,11 +509,21 @@ MC.director.generate = () => {
       && t >= musicStart - 0.25;
 
     /* ③ カンパニーフロント(全奏)は絶対に引き(P1) */
-    const tuttiWide = !!(probe && probe.tutti >= MC.director.TUTTI_WIDE);
+    /* ★ full が無いときは tutti へ落ちる(2026-08-04)。
+       audioClip.sections はキャッシュされるので、full を持たない古い解析結果が
+       復元セッションから戻ってくる。undefined >= 0.7 は常に false になり、
+       「全奏は絶対に引き」が黙って効かなくなる ─ 静かに壊れる型なので必ず落とす */
+    const fullNow = probe ? (probe.full != null ? probe.full : probe.tutti) : null;
+    const tuttiWide = !!(fullNow != null && fullNow >= MC.director.TUTTI_WIDE);
+
+    /* ④ 楽章・セクションの切れ目は、一度引きでリセットする(回答C)。
+       この区間が切れ目そのものから始まるときだけ */
+    const breakWide = !isOpening && breaks.some(b => Math.abs(b - t) < 0.3);
 
     ctx.forceWide = isOpening ? null
       : seatWide ? "衝撃の2拍前"
       : saluteWide ? "サリュート直後"
+      : breakWide ? "楽章の切れ目"
       : tuttiWide ? "全奏" : null;
 
     /* ④ ショット種 → 長さの目標レンジ(P2改)。
@@ -458,8 +552,15 @@ MC.director.generate = () => {
        これが無いと、直前のショットが演奏開始を跨いで伸び、全景が1秒遅れて
        入る(実測: musicStart=10.0 に対し 11.0)。サリュートは「開始の瞬間に
        セットを見せる」のが値打ちなので、開始点はカット点として最優先で拾う */
-    const landOn = (musicStart != null && !ctx.saluteDone
+    let landOn = (musicStart != null && !ctx.saluteDone
       && musicStart > t + R.min && musicStart <= t + R.max + 1.0) ? musicStart : null;
+    /* 楽章の切れ目にもカット点を置く(回答C)。置かないと直前のショットが
+       切れ目を跨いで伸び、リセットの引きが遅れて入る */
+    if (landOn == null) {
+      for (const b of breaks) {
+        if (b > t + R.min && b <= t + R.max + 1.0) { landOn = b; break; }
+      }
+    }
 
     /* ⑤ 衝撃に間に合わせる(P1)。
        ・まだ座る時刻が先 → **そこでちょうど切る**(次の区間が引きで座る回になる)
@@ -591,6 +692,9 @@ MC.director.generate = () => {
     ctx.sinceUse.set(top.id, 0);
     ctx.prev2Id = ctx.prevId;
     ctx.prevId = top.id;
+    /* ジャンプカット防止のため、採用した画の形を覚える(2026-08-04) */
+    ctx.prevShot = (top.close != null)
+      ? { close: top.close, wide: top.wide, nF: top.nF || 0 } : null;
     ctx.segsSinceWide = top.wideChosen ? 0 : ctx.segsSinceWide + 1;
     t = tNext;
   }
@@ -604,7 +708,9 @@ MC.director.generate = () => {
   MC.log(`director: level=${MC.S.cutLevel} ${cuts.length}カット(ディゾルブ${nDissolve}`
     + `${forcedN ? `・強制切替${forcedN}` : ""}${wideN ? `・引き限定${wideN}(${whyTxt})` : ""}`
     + `${deferN ? `・ソロで繰り延べ${deferN}` : ""}) bpm=${bpmAll.toFixed(1)}`
-    + `${impacts.length ? ` 衝撃${impacts.length}箇所` : ""}`);
+    + `${impacts.length ? ` 衝撃${impacts.length}箇所` : ""}`
+    + `${breaks.length ? ` 切れ目${breaks.length}箇所` : ""}`);
   return { segments: cuts.length, bpm: bpmAll, dissolves: nDissolve,
-           impacts: impacts.length, wideForced: wideN, starveDeferred: deferN };
+           impacts: impacts.length, breaks: breaks.length,
+           wideForced: wideN, starveDeferred: deferN };
 };
