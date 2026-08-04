@@ -385,12 +385,30 @@
       "このアカウントは現在ご利用いただけません。お問い合わせは「運営」のフォームからご連絡ください。",
     withdrawNeedReauth:
       "退会を完了するには、Googleアカウントの再認証が必要です。キャンセルした場合、退会は実行されません。",
+    /* ★ 文言を実際の道に合わせた(2026-08-05)。以前は「いったんログアウトし、
+       再ログイン後にもう一度『退会』を」と書いていたが、その再ログインが
+       withdrawn の判定で塞がれていて、案内どおりにすると詰んでいた。
+       いまは失敗してもサインインを保つので、その場で押し直せる。
+       閉じてしまっても、次のログインで「退会を完了しますか」を出す */
     withdrawRetryAfterRelogin:
-      "Google連携の解除に失敗しました。いったんログアウトし、再ログイン後にもう一度「退会」をお試しください。",
+      "Google連携の解除に失敗しました。",
     withdrawPartialFailure:
       "退会処理の途中でエラーが発生しました。一部のみ処理されている可能性があります。時間をおいて再実行してください。",
     withdrawNeedsFirebaseAuth:
       "退会は Firebase に Google でログインしているときのみ実行できます。\nlocalhost の開発者用ログインだけの状態では、認証ユーザーが存在しないため完了できません。",
+    /* ★ 退会が途中で止まった人の復帰(2026-08-05 優さん決定=(a)「退会を完了する」)。
+       データは既に消えているので「復活」はできない ─ 残っているのは
+       Google連携の解除だけなので、それを終わらせる道を出す */
+    withdrawResumeAsk:
+      "前回の退会が途中で止まっています。\n\n"
+      + "・プロフィール、MarchinZ Note、MarchinZ Log、マイリストは削除済みです\n"
+      + "・残っているのは Google アカウントとの連携解除だけです\n\n"
+      + "いま退会を完了しますか？\n"
+      + "（キャンセルするとログアウトします。次回ログイン時にまたお尋ねします）",
+    withdrawResumeDone:
+      "退会が完了しました。ご利用ありがとうございました。",
+    withdrawResumeFailed:
+      "退会を完了できませんでした。時間をおいて、もう一度ログインからお試しください。",
   };
 
   /**
@@ -2479,18 +2497,52 @@
             }
           }
 
-          if (authEntryMode === "login") {
-            const isUnregistered = !banSnap.exists || Boolean(banSnap.data()?.withdrawn);
-            if (isUnregistered) {
-              await auth.signOut();
-              currentUser = null;
-              rawAuthUserForAdmin = null;
-              showLoggedOut();
-              openIntentMismatchDialog();
-              window.dispatchEvent(new CustomEvent("mll-auth-changed", { detail: { user: null, isAdmin: false } }));
-              scheduleMllEventFormResync();
-              return;
+          /* ★ 「プロフィールが無い人」と「退会が途中で止まっている人」を分ける
+             (2026-08-05 レビュー反映・優さん決定=(a)「退会を完了する」)。
+             どちらも isUnregistered としてまとめて追い返していたが、
+             後者は **Auth アカウントが残っているのにプロフィールは withdrawn**
+             という状態で、withdrawn を false へ戻す経路がどこにも無いため
+             二度と入れない詰みになっていた(退会の最後の firebaseUser.delete()
+             が失敗すると必ずこの状態になる)。
+             ★ 退会は「withdrawn を立てる → データを消す → Auth を消す」の順なので、
+               この状態の人のデータは**もう消えている**。復活させる中身が無いので、
+               残った連携解除を終わらせる道を出す。
+             ★ いま Google で入り直した直後なので、requires-recent-login の
+               条件は満たされている ─ ここが唯一やり直せる場所。 */
+          const withdrawnHere = banSnap.exists && Boolean(banSnap.data()?.withdrawn);
+          if (withdrawnHere) {
+            const fbUser = auth.currentUser;
+            let finished = false;
+            if (fbUser && window.confirm(AUTH_MESSAGE.withdrawResumeAsk)) {
+              try {
+                await fbUser.delete();
+                finished = true;
+              } catch (e) {
+                console.error("[MarchinZ withdraw] 再開に失敗", e);
+                MZToast.err(AUTH_MESSAGE.withdrawResumeFailed);
+              }
             }
+            try { await auth.signOut(); } catch { /* 既に消えていれば失敗する */ }
+            currentUser = null;
+            rawAuthUserForAdmin = null;
+            showLoggedOut();
+            if (finished) MZToast.ok(AUTH_MESSAGE.withdrawResumeDone);
+            window.dispatchEvent(new CustomEvent("mll-auth-changed", { detail: { user: null, isAdmin: false } }));
+            scheduleMllEventFormResync();
+            return;
+          }
+
+          /* プロフィールが無い＝本当に未登録。「ログイン」から来た人にだけ
+             登録を促す(「新規登録」から来た人はこの後の作成経路へ進む) */
+          if (authEntryMode === "login" && !banSnap.exists) {
+            await auth.signOut();
+            currentUser = null;
+            rawAuthUserForAdmin = null;
+            showLoggedOut();
+            openIntentMismatchDialog();
+            window.dispatchEvent(new CustomEvent("mll-auth-changed", { detail: { user: null, isAdmin: false } }));
+            scheduleMllEventFormResync();
+            return;
           }
         } catch {
           // Firestore 未設定・一時障害時はログイン継続。凍結の書き込みはルールで拒否される。

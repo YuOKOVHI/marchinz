@@ -5137,8 +5137,15 @@ async function countSamples(ns, file, fromSec) {
     const w = await compEnv();
     compReset(w);
     const A = w.MC.ui.autoStage;
+    /* ★ この試験の主語は「再描画で DOM を作り直さないこと」で、段の構成ではない。
+       finish 段は 2026-08-05 から**実際に走る仕事が0段なら出ない**(縦型で色オフなど)。
+       compReset は colorOn=false にするので、モードを決めずに開くと finish が
+       消えて、下の対照(段が進めば反映)が別の理由で落ちる ─
+       前提を明示して、測りたいものだけを測る */
+    w.MC.S.mode = "switch";
     A.open();
     try {
+      if (!A.STEPS.some(x => x.key === "finish")) throw new Error("前提: finish 段が出ていない");
       A.step("scan");
       const host = w.document.getElementById("asSteps");
       const nodes = [...host.children];

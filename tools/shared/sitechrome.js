@@ -241,6 +241,12 @@ window.MZSiteChrome = (() => {
     // 「無料・すべて端末内で処理」はページの下(フッター直前)へ(2026-07-19 優さん指定)
     const disc = document.querySelector(".beta-disclaimer");
     if (disc) body.insertBefore(disc, foot);
+    /* ★ ロゴの断りは、その帯のすぐ下(2026-08-05 優さん指示)。
+       HTML では帯の直後に置いてあるが、上でその帯だけを下へ移すため、
+       置いていくと**離ればなれになる**(帯は最下部・断りは最上部)。
+       ここで一緒に連れていく。Switcher にしか無いので見つからなければ何もしない */
+    const logoNote = document.querySelector(".mode-tip--logo");
+    if (disc && logoNote) body.insertBefore(logoNote, foot);
     // 下部タブバー(スマホ)。本体と同じ6枠で、ツールからも迷わず戻れるように
     const tab = document.createElement("div");
     tab.innerHTML = tabbarHtml();

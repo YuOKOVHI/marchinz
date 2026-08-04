@@ -2945,7 +2945,6 @@ MC.ui.wireTiltSec = () => {
 MC.ui.renderEasyLead = () => {
   const el = document.querySelector(".easy-lead");
   if (!el) return;
-  const cutMode = MC.S.mode === "switch";   // カット割の説明は③だけ(2026-07-24)
   /* 完了後は完了カード(easyStatus)が同じことを言うので、リード文は畳む
      (同じ表示を2箇所に出さない。失敗時は markExportFailed がここへ書く) */
   /* リード文はもう出さない(2026-07-28)。すぐ上のタブ説明
@@ -2966,7 +2965,10 @@ MC.ui.markExportFailed = () => {
     lead.hidden = false;   // 完了時は畳んでいるので、失敗表示のときは開く
     /* まず「何が残っているか」を言う。失敗の告知だけだと、
        最初からやり直しだと思わせてしまう(2026-07-23 Phase 2) */
-    lead.innerHTML = '<span class="err"><b>同期・カット割・書き出し範囲は残っています。</b>'
+    /* ★ 縦型・ワイプにカット割は無い(2026-08-05)。残っているものだけを言う */
+    lead.innerHTML = '<span class="err"><b>'
+      + (MC.S.mode === "switch" ? "同期・カット割・書き出し範囲" : "同期と書き出し範囲")
+      + 'は残っています。</b>'
       + '書き出しだけが失敗しました。ボタンからもう一度お試しください'
       + '(原因は下の「詳しいログ」に出ています)。</span>';
   }
@@ -3107,9 +3109,13 @@ MC.ui.refreshSetupTabs = () => {
   }
   const lead = MC.ui.$("#setupTabsLead");
   if (lead) {
+    /* ★ カット割を回すのは自動スイッチングだけ(2026-08-05)。
+       縦型・ワイプで「カット割も自動で」と言うと、やらない仕事を約束することになる */
     lead.textContent = MC.ui._setupTab === "pro"
       ? "同期・レイアウト・仕上げを自分で決めます"
-      : "おまかせ＝同期もカット割も自動で仕上げます";
+      : (MC.S.mode === "switch"
+          ? "おまかせ＝同期もカット割も自動で仕上げます"
+          : "おまかせ＝同期も色そろえも自動で仕上げます");
   }
   MC.ui.setSetupTab(MC.ui._setupTab || "easy");
 };
@@ -3939,6 +3945,14 @@ MC.ui.autoStage = {
     { key: "sync",   label: "音を合わせる",       done: "音がそろいました",     w: 10 },
     { key: "audio",  label: "良い音を選ぶ",       done: "良い音を選びました",     w: 2 },
     { key: "scan",   label: "見どころを探す",      done: "見どころが決まりました", w: 16 },
+    /* ★ finish 段の名前と重みはモードで変わる(2026-08-05 優さん決定)。
+       中身は runEasyFinish で、カット割(director)を回すのは
+       **自動スイッチングのときだけ**(ui.js の `mode === "switch"` の枝)。
+       縦型・ワイプは色そろえしか走らないのに「カメラを切り替える」と名乗り、
+       しかも全6段でいちばん重い w:30 を占めていた ─ 名前も進み方も嘘だった。
+       ワイプも director を通らない(layout.js「カット割・シーン分析なし」)。
+       ★ 0段のとき(色オフ・動画1本)は open() が段ごと落とす。
+         やらない仕事のチェックが点くのは嘘、という上の方針をここでも守る */
     { key: "finish", label: "カメラを切り替える",   done: "カメラ割りができました", w: 30 },
     { key: "export", label: "動画を書き出す",      done: "書き出しました",       w: 30 },
   ],
@@ -3960,7 +3974,13 @@ MC.ui.autoStage = {
        _sub を戻していなかったため、前の段の文字が次の段に居座っていた
        (「カメラを切り替える  音を読み込み中 100%」のような表示) */
     /* 段は開くたびに組み直す。傾きを直さない設定ならその段は出さない */
-    this.STEPS = this.ALL_STEPS.filter(s => s.key !== "tilt" || MC.S.autoTilt !== false);
+    this.STEPS = this.ALL_STEPS
+      .filter(s => s.key !== "tilt" || MC.S.autoTilt !== false)
+      /* finish は「実際に走る仕事」で名前・重みを決め、0段なら出さない */
+      .filter(s => s.key !== "finish" || MC.ui.finishSteps() > 0)
+      .map(s => (s.key === "finish" && MC.S.mode !== "switch")
+        ? { ...s, label: "色をそろえる", done: "色がそろいました", w: 10 }
+        : s);
     this._done = []; this._now = null;
     this._sub = null; this._doneSub = {}; this._inner = 0; this._innerRaw = 0; this._fail = null;
     this._failedStep = null; this._wakeWarn = 0; this._ask = false;
@@ -4951,9 +4971,19 @@ MC.ui.runAuto = async (opt) => {
     MC.ui.refreshJourney();
     await MC.ui.runEasyFinish();
     if (MC.ui._autoCancel) throw new MC.ui.AutoCancelled();
-    if (!MC.S.easyDone) throw new Error("カメラの切り替えを決められませんでした");
-    MC.ui.autoStage.mark("finish",
-      `${((MC.S.cutList || []).length) || 0}カット`);
+    /* ★ 失敗の言い方もモードで変える(2026-08-05)。縦型・ワイプは
+       カット割を回していないので、「カメラの切り替え」と言われても
+       何が起きたのか本人には結びつかない */
+    if (!MC.S.easyDone) {
+      throw new Error(MC.S.mode === "switch"
+        ? "カメラの切り替えを決められませんでした"
+        : "仕上げを終えられませんでした");
+    }
+    /* ★ 成果もモードで変える(2026-08-05)。カット数が意味を持つのは
+       自動スイッチングだけで、縦型・ワイプでは必ず「0カット」と出ていた */
+    MC.ui.autoStage.mark("finish", MC.S.mode === "switch"
+      ? `${((MC.S.cutList || []).length) || 0}カット`
+      : `${MC.S.clips.filter(c => !c.isAudio && !c.isImage).length}本ぶん`);
     MC.ui.refreshJourney();
     /* ★ 6段目のチェックを点け、「できました」を一拍だけ見せてから畳む
        (2026-08-01 レビュー14件)。ここが無いと finishAll() が一度も呼ばれず、

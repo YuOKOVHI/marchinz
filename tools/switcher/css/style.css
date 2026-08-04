@@ -2110,7 +2110,17 @@ html:has(body.mz-auto-stage), body.mz-auto-stage {
 }
 .mode-tip i { margin-right: 7px; color: var(--acc); }
 .mode-tip b { color: var(--tx); }
-.mode-tip--logo { background: transparent; border-style: dashed; }
+/* ★ ロゴの断りは #modeSelect の外(無料の帯の直下)へ出した(2026-08-05 優さん指示)。
+   .mode-select が持っていた左右の余白(16px)が効かなくなるので、ここで自前に持つ。
+   375px で端に張り付かないよう、auto ではなく左右16pxを明示する */
+.mode-tip--logo {
+  background: transparent; border-style: dashed;
+  margin: 8px 16px 0; max-width: calc(34rem - 32px);
+}
+@media (min-width: 608px) {
+  /* 34rem+32px を超えたら中央寄せに戻す(帯と同じ見え方にそろえる) */
+  .mode-tip--logo { margin: 8px auto 0; max-width: 34rem; }
+}
 @media (max-width: 460px) {
   .mode-tip { font-size: 12px; padding: 9px 11px; }
 }
