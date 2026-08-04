@@ -939,6 +939,11 @@ MC.visual.dqReason = (m, role) => {
   if (m.shakeCamP75 != null ? m.shakeCamP75 > MC.visual.TH_SHAKE
                             : m.shakeP75 > MC.visual.TH_SHAKE) return "手ブレ";
   if (m.sharpMed > 40 && m.sharpMean < m.sharpMed * 0.30) return "フォーカス外れ";
+  /* ★ 急ズーム(スマホのデジタルズーム暴走)。パン検出はズームを拾えない ─
+     ズーム中はシャープネスが急落しつつ画面全体が動く(act高)。
+     フォーカス外れ(0.30未満)まで落ち切らない 0.30〜0.45 の帯でも、
+     動きを伴っていればズーム中とみなして使わない(2026-08-04 DCI防御4) */
+  if (m.sharpMed > 40 && m.sharpMean < m.sharpMed * 0.45 && m.act > 0.45) return "急ズーム疑い";
   if (MC.visual.isPanning(m)) return "カメラを振っている";
   if (MC.visual.noSubject(m, role)) return "人が写っていない";
   return null;

@@ -79,6 +79,19 @@ MC.director = {
        登場間隔ボーナス(最大+0.48)と飢餓ガード(STARVE)が最低保証を担う */
   OVERHEAD_BONUS: 0.15,
   STATIC_BIAS: -0.4,
+  /* ===== カメラの種類(5択・2026-08-04 DCI配信ディレクター協議) ===== */
+  /* 逆サイド: イマジナリーライン越え(カットの瞬間に隊列の進行方向が反転して
+     見える)ため、場面の変わり目(全奏・楽章の切れ目)×直前が引き のときだけ。
+     dq にはしない ─ 黒画面よりはまし、の最後の砦としては残す */
+  OPPOSITE_PENALTY: 3.0,
+  /* スパイス(メジャー・ピット): 鳴っている時・指している時だけ。
+     上限は全尺の10%(効かせるから旨い)。条件外は role=pit の -0.35 に上乗せ */
+  SPICE_PENALTY: 1.5,
+  SPICE_CAP_RATIO: 0.10,
+  /* 歩き撮り: 良い区間だけの飛び道具。乱発させないクールダウン(秒) */
+  ROAM_BONUS: 0.6,
+  ROAM_PENALTY: 3.0,
+  ROAM_COOLDOWN: 20,
   /* ★ 出番を控えるカメラの飢餓の間隔を伸ばす(2026-08-04 優さん指示
      「ドラムメジャーやフロントピットなど、対象のドリル・MMがない固定カメラは
      使用する頻度を少なめに」)。
@@ -399,6 +412,10 @@ MC.director._rank = (g0, g1, cls, ctx) => {
   // 引き画の織り込み圧力(interleaveショットごとに1回は引きへ)
   const pw = ctx.segsSinceWide / ctx.interleave;
   wWide += pw >= 1 ? 1.0 : 0.5 * pw;
+  /* ★ 山へ向かって寄りで煽る(2026-08-04 DCI規則3)。クレッシェンドの最中は
+     引きへの圧力を弱めて寄りを立てる。山そのもの(全奏)に着いたら
+     既存のハード規則(引き限定)が受ける ─ 「緊張は寄り、解決は引き」 */
+  if (ctx.dynRising) { wClose += 0.35; wWide *= 0.7; }
   const pitSeg = !opening && cls && cls.pit > 0.45 && ctx.hasPitCam;
 
   // 素材範囲: 全区間カバー→中点カバー→全クリップ の順で候補を確保
@@ -435,6 +452,45 @@ MC.director._rank = (g0, g1, cls, ctx) => {
     if (c.role === "pit") score += pitSeg ? 1.2 : -0.35;
     // 素材ごとの出番の希望(少なめ/おまかせ/多め)
     score += MC.director.FREQ_BIAS[c.freq] || 0;
+
+    /* ===== カメラの種類(5択)の規則(2026-08-04 DCI配信ディレクター協議) ===== */
+    if (ctx.oppositeIds && ctx.oppositeIds.has(c.id)) {
+      /* 逆サイド: 場面の変わり目(全奏・楽章の切れ目)で、直前が引きのときだけ。
+         寄り(③④⑤)から直カットすると進行方向が反転して見える ─ 必ず①を挟む */
+      const sceneChange = ctx.forceWide === "全奏" || ctx.forceWide === "楽章の切れ目";
+      const prevWide = ctx.prevId == null || (ctx.wideIds && ctx.wideIds.has(ctx.prevId));
+      if (!(sceneChange && prevWide)) score -= MC.director.OPPOSITE_PENALTY;
+    }
+    if (ctx.spiceIds && ctx.spiceIds.has(c.id)) {
+      /* スパイスは鳴っている時だけ:
+         ピット規則 = ピット音×静かめ(バラードで効く。全奏は引き限定が締め出す)
+         メジャー規則 = サリュートや楽章の切れ目の近く(指揮の見せ場)
+         さらに 全尺10%上限・スパイス→別スパイスの連続禁止 */
+      const pitOk = pitSeg && cls && (cls.quiet > 0.3 || cls.dyn < 0.5);
+      const ok = (pitOk || ctx.spiceWindow) && !ctx.spiceCapHit
+        && !(ctx.prevWasSpice && c.id !== ctx.prevId);
+      /* ★ 上限到達後は罰を倍にする ─ ピットの見せ場が続く曲では
+         +1.2(pit加点)が単発の罰を食い破り、10%を大きく超えて出続けた
+         (QA変異で実測14秒/上限6秒)。見せ場の途中でも上限は上限 */
+      if (!ok) score -= MC.director.SPICE_PENALTY * (ctx.spiceCapHit ? 2 : 1);
+    }
+    if (ctx.roamIds && ctx.roamIds.has(c.id)) {
+      /* 歩き撮り: いまの窓の実測が良い(据わっていて・ブレが小さく・普段より
+         シャープ)ときだけ、使いどころ(楽章の頭・盛り上がりの助走)で浮かせる。
+         クールダウンで乱発を防ぐ。衝撃の前後は座り(forceWide=引き限定)が
+         そもそも締め出す ─ 「飛び道具を衝撃前に置くな」はそこで担保される */
+      const shakeHere = m && (m.shakeCamP75 != null ? m.shakeCamP75 : m.shakeP75);
+      const good = m && !dq && m.settled !== false
+        && shakeHere <= MC.visual.TH_SHAKE * 0.6
+        && (!m.sharpMed || m.sharpMean >= m.sharpMed * 0.9);
+      const wanted = ctx.roamMoment && g0 >= (ctx.roamReadyAt || 0);
+      if (!good) score -= MC.director.ROAM_PENALTY;
+      else score += wanted ? MC.director.ROAM_BONUS : -MC.director.ROAM_BONUS;
+    }
+    /* 遮蔽疑い(観客席の引きにありがちな前の人の頭・手すり):
+       顔ゼロ+動きが無い+普段より甘い引きは、少しだけ引っ込める(失格にはしない) */
+    if (m && c.role === "wide" && m.nF === 0 && m.act < 0.15
+        && m.sharpMed > 0 && m.sharpMean < m.sharpMed * 0.8) score -= 0.15;
     /* ★ カメラの性格で出番を重み付け(2026-08-03 優さん指示②)。
        クリップ全体の性格(visual._finalize が推定)を読むだけ ─
        俯瞰固定=控えめに加点 / 人が動かない定点=減点(ゼロにはしない。
@@ -525,6 +581,24 @@ MC.director.generate = () => {
     saluteDone: false,  // サリュート直後の1カット目を出したか
     prevShot: null,     // 直前に採用した画の形{close,wide,nF}(ジャンプカット防止)
   };
+  /* ===== カメラの種類(5択・2026-08-04 DCI協議)を一度だけ仕分ける =====
+     kind が無い旧データは role から寄せる(wide→全景/close→追いかけ/pit は
+     従来の pit 規則のままにし、スパイスの新しい縛りは kind 明示だけに掛ける ─
+     既存ユーザーの挙動を黙って厳しくしない)。
+     ★ 歩き撮りへの自動降格: 「追いかけ」や「指定なし」でも、クリップ全体の
+       ブレ中央値が失格しきい値を超える手持ちは、素材の半分以上が使えない ─
+       種類を間違えても厳選の門に入れる(選択ミスの保険) */
+  const vidsAll = MC.S.clips.filter(c => !c.isAudio && !c.isImage);
+  const kindOf = c => (c.kind && c.kind !== "auto") ? c.kind
+    : c.role === "wide" ? "wide" : c.role === "close" ? "follow" : "auto";
+  ctx.oppositeIds = new Set(vidsAll.filter(c => kindOf(c) === "opposite").map(c => c.id));
+  ctx.wideIds = new Set(vidsAll.filter(c => kindOf(c) === "wide" || kindOf(c) === "opposite").map(c => c.id));
+  ctx.spiceIds = new Set(vidsAll.filter(c => c.kind === "spice").map(c => c.id));
+  ctx.roamIds = new Set(vidsAll.filter(c => c.kind === "roam"
+    || (["follow", "auto"].includes(kindOf(c)) && c.visual && c.visual.operated
+        && c.visual.shakeMed > MC.visual.TH_SHAKE)).map(c => c.id));
+  ctx.spiceSec = 0; ctx.spiceCapHit = false; ctx.prevWasSpice = false;
+  ctx.roamReadyAt = 0; ctx.roamMoment = false; ctx.spiceWindow = false; ctx.dynRising = false;
   /* ★ 衝撃の先読み(P1)。カット割の前に一度だけ拾う */
   const impacts = MC.director._impacts(audioClip, grid, tIn, tOut);
   /* ★ 楽章・セクションの切れ目(2026-08-04 回答C)。ここでも一度だけ拾う */
@@ -556,6 +630,16 @@ MC.director.generate = () => {
        カメラの採点結果を使うと鶏と卵になる */
     const isOpening = musicStart != null && t < musicStart - 0.5;
     const probeFeat = !!(probe && probe.feature > 0.45);
+
+    /* ★ 種類規則の区間材料(2026-08-04 DCI協議)。
+       dynRising: 直前4秒より音圧がはっきり上がっている=クレッシェンドの最中
+       spiceWindow: サリュートや楽章の切れ目の近く=指揮の見せ場
+       roamMoment: 楽章の頭・盛り上がりの助走=歩き撮りの使いどころ */
+    const before4 = t - 4 > tIn ? MC.sections.classify(audioClip, t - 4, t) : null;
+    ctx.dynRising = !!(probe && before4 && !probeFeat && (probe.dyn - before4.dyn) > 0.12);
+    ctx.spiceWindow = (musicStart != null && Math.abs(t - musicStart) < 5)
+      || breaks.some(b => Math.abs(b - t) < 2.5);
+    ctx.roamMoment = ctx.dynRising || breaks.some(b => b > t - 0.5 && b < t + 2);
 
     /* ① 衝撃の2拍前に座る(P1)。次の衝撃と、その2拍前=座る時刻を出す */
     let impAt = null, seatAt = null, seatWide = false;
@@ -591,8 +675,10 @@ MC.director.generate = () => {
 
     /* ④ ショット種 → 長さの目標レンジ(P2改)。
        引きに限定される回に加え、織り込み間隔で引きへ回る回も「引きの長さ」 */
+    /* ★ クレッシェンドの最中は引きの織り込みを止める(DCI規則3の片翼)。
+       助走を引きで邪魔しない ─ 山に着けば forceWide(全奏)が引きで受ける */
     const wideTurn = !!ctx.forceWide
-      || (!isOpening && !probeFeat && ctx.segsSinceWide >= ctx.interleave);
+      || (!isOpening && !probeFeat && !ctx.dynRising && ctx.segsSinceWide >= ctx.interleave);
     /* カンパニーフロント(全奏)で座る引きだけ front(おすすめ6〜8秒)。
        楽章の切れ目・サリュート・織り込みの引きは wide(4〜6秒)のまま
        (2026-08-04 優さん決定①) */
@@ -605,14 +691,20 @@ MC.director.generate = () => {
        「引きは読ませる」というP2改の狙いが消える。
        効きを4割に薄めて、4〜6秒の中で音楽に応じて揺れるようにする */
     const modR = wideTurn ? 1 + (mod - 1) * 0.4 : mod;
-    const target = Math.max(R.min, Math.min(R.max, R.base * modR));
+    /* ★ 静けさでは切らない(2026-08-04 DCI規則4)。バラードで忙しく切るのは
+       素人編集の最大の特徴 ─ 静けさはショットの長さで表現する。
+       静かで音圧が低い区間はレンジを2倍(ただし12秒で頭打ち=静止画防止)。
+       ソロ中は伸ばさない(既にソロの規則が粘りを持っている) */
+    const calmK = (probe && probe.quiet > 0.5 && probe.dyn < 0.35 && !probeFeat) ? 2 : 1;
+    const maxHere = Math.min(12, R.max * calmK);
+    const target = Math.max(R.min, Math.min(maxHere, R.base * modR * calmK));
     let tNext = MC.director._snap(grid, t + target, t + R.min);
     tNext = Math.min(tNext, tOut);
     if (tNext <= t + 0.5) tNext = Math.min(tOut, t + R.min);
     /* ★ ソフト上限(2026-08-03 優さん①+補足)。小節スナップの都合で max を
        多少(+1秒まで)超えるのは許す ─ 音楽的な区切りを優先する。
        それすら無い(小節が遠い)ときだけ、区切りより長さを採って max で切る */
-    if (tNext - t > R.max + 1.0) tNext = Math.min(tOut, t + R.max);
+    if (tNext - t > maxHere + 1.0) tNext = Math.min(tOut, t + maxHere);
 
     /* ⑤-0 演奏開始そのものにカットを置く(P2)。
        これが無いと、直前のショットが演奏開始を跨いで伸び、全景が1秒遅れて
@@ -636,7 +728,9 @@ MC.director.generate = () => {
     } else if (!seatWide && seatAt != null && seatAt > t + R.min && seatAt <= t + R.max + 1.0) {
       tNext = Math.min(tOut, MC.director._snapBeat(grid, seatAt, t + R.min));
     } else if (seatWide && impAt != null) {
-      const need = impAt + period;
+      /* ★ 衝撃の直後に切ると余韻が死ぬ(2026-08-04 DCI規則2)。
+         座った引きはヒットを受けて+2秒(最低でも2拍)は保持する。旧値は1拍 */
+      const need = impAt + Math.max(2.0, period * 2);
       if (tNext < need) {
         tNext = Math.min(tOut, MC.director._snapBeat(grid, need, t + R.min));
         if (tNext - t > R.max + 1.5) tNext = Math.min(tOut, t + R.max + 1.5);
@@ -695,7 +789,15 @@ MC.director.generate = () => {
          減点だけでは飢餓ガードが素通しするので、回数が減らなかった */
       const starveOf = id => MC.director._quietCam(MC.getClip(id))
         ? MC.director.STARVE * MC.director.QUIET_STARVE_MULT : MC.director.STARVE;
+      /* ★ 歩き撮り・逆サイド・スパイスは出番保証の対象外(2026-08-04 DCI規則5)。
+         義務で悪い画・場違いな画を出すと1カットで全体の信頼が壊れる ─
+         それぞれの使いどころ(良い区間・場面の変わり目・ピットの見せ場)が
+         来れば採点で自然に出る。来なければ出さないのが正しく、
+         出なかった理由は完了時に一覧で言う(義務は本編でなく説明で果たす) */
       const starving = ranked.find(r => !r.dq && r.id !== top.id
+        && !(ctx.roamIds && ctx.roamIds.has(r.id))
+        && !(ctx.oppositeIds && ctx.oppositeIds.has(r.id))
+        && !(ctx.spiceIds && ctx.spiceIds.has(r.id))
         && Math.min(ctx.sinceUse.get(r.id) || 0, cuts.length) >= starveOf(r.id));
       /* ★ ソロ・ソリの最中は繰り延べる(2026-08-04 P3改)。
          抜いている奏者の画を、出番の都合だけで途中で断ち切らない。
@@ -767,6 +869,19 @@ MC.director.generate = () => {
     if (saluteWide) ctx.saluteDone = true;
     cuts.push({ t, clipId: top.id, trans, dur });
 
+    /* ★ 種類規則の記帳(2026-08-04 DCI協議)。
+       スパイス: 使った秒数を数え、全尺10%で打ち止め。直後は引きで受ける
+       (segsSinceWide を満了させ、次の区間を引きの織り込みにする)。
+       歩き撮り: 使ったらクールダウン(乱発防止) */
+    ctx.prevWasSpice = !!(ctx.spiceIds && ctx.spiceIds.has(top.id));
+    if (ctx.prevWasSpice) {
+      ctx.spiceSec += (tNext - t);
+      if (ctx.spiceSec > (tOut - tIn) * MC.director.SPICE_CAP_RATIO) ctx.spiceCapHit = true;
+      ctx.segsSinceWide = ctx.interleave;
+    }
+    if (ctx.roamIds && ctx.roamIds.has(top.id)) {
+      ctx.roamReadyAt = tNext + MC.director.ROAM_COOLDOWN;
+    }
     // 文脈更新
     ctx.runSec = top.id === ctx.prevId ? ctx.runSec + (tNext - t) : (tNext - t);
     ctx.runLen = top.id === ctx.prevId ? ctx.runLen + 1 : 1;
@@ -784,6 +899,23 @@ MC.director.generate = () => {
   // 末尾の短すぎるセグメントは1つ前と統合
   if (cuts.length > 1 && tOut - cuts[cuts.length - 1].t < 1.5) cuts.pop();
   MC.S.cutList = cuts;
+  /* ★ 出なかったカメラの理由(2026-08-04 DCI規則5)。出番の義務をやめた
+     代わりに、出せなかった理由をここで言う(撮影者の心情ケアは本編でなく一覧で)。
+     UI(renderCutSummary 系)が完了時に表示する */
+  {
+    const usedIds = new Set(cuts.map(x => x.clipId));
+    MC.S.unusedCams = vidsAll.filter(c => !usedIds.has(c.id)).map(c => ({
+      id: c.id, name: c.name,
+      why: ctx.roamIds.has(c.id) ? "ブレの少ない良い場面が見つからなかったため"
+        : ctx.spiceIds.has(c.id) ? "ピットや指揮の見せ場に良い区間が無かったため"
+        : ctx.oppositeIds.has(c.id) ? "場面の変わり目(逆サイドの使いどころ)が無かったため"
+        : "他のカメラの画が優先されたため",
+    }));
+    if (MC.S.unusedCams.length) {
+      MC.log("director: 未使用カメラ "
+        + MC.S.unusedCams.map(u => `${u.name}(${u.why})`).join(" / "));
+    }
+  }
   MC.saveState();
   const nDissolve = cuts.filter(c => c.trans === "dissolve").length;
   /* ★ 実素材でしきい値を詰めるための根拠を残す(2026-08-04)。

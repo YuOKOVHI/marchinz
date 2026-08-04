@@ -409,18 +409,20 @@ html:has(body.mz-finish-pick), body.mz-finish-pick {
   background: linear-gradient(to top, #eef2f8, rgba(238,242,248,0)); }
 /* 役の札(2026-08-04)。カードごとに「上/中/下」を直接押して入れ替える。
    どれか1つが必ず点いていて、押した瞬間に入れ替わりが完了する */
-.fp-roles { flex: 0 0 auto; display: flex; gap: 6px; }
+.fp-roles { flex: 0 0 auto; display: flex; gap: 6px;
+  /* 5択化(2026-08-04)で札が6枚になった。1行に収まらない幅では折り返す */
+  flex-wrap: wrap; }
 .fp-role { min-height: 44px; padding: 0 12px; border-radius: 10px;
   border: 1px solid var(--line); background: var(--panel2); color: var(--tx2);
   font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
 .fp-role:hover { border-color: var(--acc); }
 .fp-role.on { border-color: var(--acc); box-shadow: 0 0 0 2px var(--acc) inset;
   color: var(--navy); background: var(--panel); }
-/* 狭い画面では札を2段目へ回して、横に潰さない */
+/* 狭い画面では札を2段目へ回して、横に潰さない(6枚=3枚×2段) */
 @media (max-width: 460px) {
   .wp-card { flex-wrap: wrap; }
   .fp-roles { flex: 1 0 100%; }
-  .fp-role { flex: 1; padding: 0 6px; }
+  .fp-role { flex: 1 1 30%; padding: 0 4px; }
 }
 .fp-seg-btn { min-height: 44px; border-radius: 12px; border: 1px solid var(--line);
   background: var(--panel); box-shadow: var(--shadow-card); font-family: inherit;

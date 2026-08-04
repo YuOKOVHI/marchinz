@@ -152,6 +152,40 @@ MC.activeClips = () => {
   return ids.map(MC.getClip).filter(Boolean);
 };
 
+/* ============ カメラの種類(2026-08-04 DCI配信ディレクター協議で5択化) ============
+   これまで「役割・出番・撮り方」の3セレクトに分かれていて、素人には
+   組み合わせが見えなかった。1回の選択(5択+指定なし)に畳み、
+   選んだ瞬間に3つへ展開する(保存データは互換のまま)。
+   ★「全景メイン/サブ」を分けて聞かない ─ どちらが背骨かは素材の長さから
+     自動で決められる(聞くほど価値のある区別ではない)。
+   ★「逆サイド」だけは人にしか分からないので独立の選択肢にする ─
+     イマジナリーライン越え(カットの瞬間に隊列の進行方向が反転して見える)を
+     機械は検出できない。使いどころは director.js が楽章の切れ目と全奏に限る */
+MC.KINDS = [
+  { v: "auto",     label: "指定なし",       hint: "自動で判断します" },
+  { v: "wide",     label: "全景",           hint: "全体が写る。カット割りの背骨" },
+  { v: "opposite", label: "逆サイド",       hint: "メインと反対側から撮った全景。場面の変わり目だけ使います" },
+  { v: "follow",   label: "追いかけ",       hint: "演者を追いかけたカメラ。ソロ・見せ場の主役" },
+  { v: "spice",    label: "メジャー・ピット", hint: "指揮や前列の打楽器。鳴っている時だけ短く使います" },
+  { v: "roam",     label: "歩き撮り",       hint: "歩き/動きながら撮った。ブレの少ない良い場面だけ使います(迷ったら「追いかけ」)" },
+];
+
+/* kind → 役割/出番/撮り方 への展開。「指定なし」は何も触らない(自動判定へ委ねる) */
+MC.applyKind = c => {
+  const k = c.kind || "auto";
+  if (k === "auto") return;
+  const map = {
+    wide:     { role: "wide",  freq: "auto", rig: "auto" },
+    opposite: { role: "wide",  freq: "less", rig: "auto" },
+    follow:   { role: "close", freq: "auto", rig: "auto" },
+    spice:    { role: "pit",   freq: "less", rig: "auto" },
+    /* 歩き撮り: 役は決めない(引きにも寄りにもなる)。出番は少なめ、
+       撮り方=手持ちを明示(operated の自動判定を待たずに厳選の門へ入れる) */
+    roam:     { role: "auto",  freq: "less", rig: "operated" },
+  }[k];
+  if (map) { c.role = map.role; c.freq = map.freq; c.rig = map.rig; }
+};
+
 MC.saveState = () => {
   try {
     /* ---- 再読込直後に「前回のつづき」を自分で消さない(2026-07-29 優さん実機) ----
@@ -169,6 +203,7 @@ MC.saveState = () => {
     const clipsNow = MC.S.clips.map(c => ({
       key: MC.clipKey(c), offset: c.offset, confidence: c.confidence,
       syncMethod: c.syncMethod, pan: c.pan,
+      kind: c.kind || "auto",
       role: c.role || "auto", freq: c.freq || "auto", rig: c.rig || "auto",
       colorT: c.colorT || null, rot: c.rot || 0, tiltOk: !!c.tiltOk,
     }));
@@ -222,6 +257,7 @@ MC.restoreClipState = clip => {
       clip.confidence = hit.confidence;
       clip.syncMethod = hit.syncMethod || "未同期";
       clip.pan = hit.pan == null ? 0.5 : hit.pan;
+      clip.kind = hit.kind || "auto";
       clip.role = hit.role || "auto";
       clip.freq = hit.freq || "auto";
       clip.rig = hit.rig || "auto";

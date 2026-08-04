@@ -2403,22 +2403,28 @@ ${c.isImage ? "" : (c.tiltOk
         ${!pro ? "" : `
         <div class="pan-row">横位置 <input type="range" class="pan" min="0" max="1" step="0.01" value="${c.pan}"></div>`}
         ${(pro && MC.S.mode === "switch") ? `
-        <div class="pan-row">役割 <select class="role-sel select-mini" title="自動カット割でこのカメラをどう扱うか">
-          <option value="auto" ${c.role === "auto" ? "selected" : ""}>自動判定</option>
-          <option value="wide" ${c.role === "wide" ? "selected" : ""}>引き（全体）</option>
-          <option value="close" ${c.role === "close" ? "selected" : ""}>寄り（アップ）</option>
-          <option value="pit" ${c.role === "pit" ? "selected" : ""}>フロントピット</option>
+        <div class="pan-row">種類 <select class="kind-sel select-mini" title="このカメラはどんなカメラか。選ぶと役割・出番・撮り方へ展開します">
+          ${MC.KINDS.map(k => `<option value="${k.v}" ${(c.kind || "auto") === k.v ? "selected" : ""}>${k.label}</option>`).join("")}
         </select></div>
-        <div class="pan-row">出番 <select class="freq-sel select-mini" title="自動カット割でこのカメラをどのくらい使うか">
-          <option value="less" ${c.freq === "less" ? "selected" : ""}>少なめ</option>
-          <option value="auto" ${!c.freq || c.freq === "auto" ? "selected" : ""}>おまかせ</option>
-          <option value="more" ${c.freq === "more" ? "selected" : ""}>多め</option>
-        </select></div>
-        <div class="pan-row">撮り方 <select class="rig-sel select-mini" title="定点固定か、人が操作しているか。カット割の扱いが変わります">
-          <option value="auto" ${!c.rig || c.rig === "auto" ? "selected" : ""}>自動判定</option>
-          <option value="fixed" ${c.rig === "fixed" ? "selected" : ""}>置いて撮影</option>
-          <option value="operated" ${c.rig === "operated" ? "selected" : ""}>手でもって撮影</option>
-        </select>${MC.ui.rigBadge(c)}</div>` : ""}
+        <details class="clip-fine">
+          <summary>じぶんで微調整する</summary>
+          <div class="pan-row">役割 <select class="role-sel select-mini" title="自動カット割でこのカメラをどう扱うか">
+            <option value="auto" ${c.role === "auto" ? "selected" : ""}>自動判定</option>
+            <option value="wide" ${c.role === "wide" ? "selected" : ""}>引き（全体）</option>
+            <option value="close" ${c.role === "close" ? "selected" : ""}>寄り（アップ）</option>
+            <option value="pit" ${c.role === "pit" ? "selected" : ""}>フロントピット</option>
+          </select></div>
+          <div class="pan-row">出番 <select class="freq-sel select-mini" title="自動カット割でこのカメラをどのくらい使うか">
+            <option value="less" ${c.freq === "less" ? "selected" : ""}>少なめ</option>
+            <option value="auto" ${!c.freq || c.freq === "auto" ? "selected" : ""}>おまかせ</option>
+            <option value="more" ${c.freq === "more" ? "selected" : ""}>多め</option>
+          </select></div>
+          <div class="pan-row">撮り方 <select class="rig-sel select-mini" title="定点固定か、人が操作しているか。カット割の扱いが変わります">
+            <option value="auto" ${!c.rig || c.rig === "auto" ? "selected" : ""}>自動判定</option>
+            <option value="fixed" ${c.rig === "fixed" ? "selected" : ""}>置いて撮影</option>
+            <option value="operated" ${c.rig === "operated" ? "selected" : ""}>手でもって撮影</option>
+          </select>${MC.ui.rigBadge(c)}</div>
+        </details>` : ""}
       </div>
       <button class="clip-remove" title="削除">✕</button>`;
     card.querySelectorAll(".nudge button").forEach(b =>
@@ -2427,6 +2433,21 @@ ${c.isImage ? "" : (c.tiltOk
     if (listen) listen.onclick = () => MC.sync.listenCheck(c.id);
     const panEl = card.querySelector(".pan");   // おまかせでは出さないので必ず確かめる
     if (panEl) panEl.oninput = e => { c.pan = parseFloat(e.target.value); MC.saveState(); };
+    /* 種類(5択)。選んだら役割/出番/撮り方へ展開して描き直す。
+       微調整セレクトを直接触ったら kind は "auto" に戻さない ─
+       表示上は種類が残るが、実体は3セレクトが勝つ(展開は選んだ瞬間の1回だけ) */
+    const kindSel = card.querySelector(".kind-sel");
+    if (kindSel) kindSel.onchange = e => {
+      c.kind = e.target.value;
+      MC.applyKind(c);
+      MC.saveState();
+      MC.ui.renderClips();
+      if ((c.kind === "wide" || c.kind === "opposite") && c.height > c.width) {
+        MC.ui.toast("縦向きの動画です。全景に使うと左右が切れるため、隊形が読みづらいかもしれません");
+      } else if (MC.S.cutList.length) {
+        MC.ui.toast("種類を変えました。「自動カット割」で割り直せます");
+      }
+    };
     const roleSel = card.querySelector(".role-sel");
     if (roleSel) roleSel.onchange = e => { c.role = e.target.value; MC.saveState(); };
     const freqSel = card.querySelector(".freq-sel");
@@ -4433,30 +4454,28 @@ MC.ui.newFinishPrefs = fromState => ({
   changed: false,
 });
 
-/* いまの clip.role を id→役 の対応にして預かる。既定は "auto"(自動判定) */
+/* いまの clip.kind を id→種類 の対応にして預かる。既定は "auto"(指定なし)。
+   ★旧保存(kind無し・roleのみ)との互換: role から種類を推定して札に点灯する
+     (wide→全景 / close→追いかけ / pit→メジャー・ピット) */
 MC.ui.finishRoleMap = () => {
   const m = {};
-  for (const c of MC.ui.finishCards()) m[c.id] = c.role || "auto";
+  const legacy = { wide: "wide", close: "follow", pit: "spice" };
+  for (const c of MC.ui.finishCards()) {
+    m[c.id] = c.kind && c.kind !== "auto" ? c.kind : (legacy[c.role] || "auto");
+  }
   return m;
 };
-/* 選べる役。★フロントピットが本命 ─ director.js の +1.2 はこのタグでしか立たない。
-   ★ラベルは短く: 375px では4つの札が1行を分け合う(.fp-role は flex:1)。
-     「フロントピット」(7字)は入らないので「ピット」にする。
+/* 選べる種類は MC.KINDS が正本(2026-08-04 DCI協議で5択化)。
    ★意味は札ではなく見出し下の1行で言う(2026-08-04 レビュー) ─
      以前は title 属性に入れていたが、**iPhoneのタッチでは title は永久に
      表示されない**。最優先端末で一度も読まれない場所に説明を置かない。
    ★「おまかせ」とは呼ばない ─ 道の名前そのものが「おまかせ」で、
-     おまかせの中に「おまかせ」が4個並ぶ。pro タブと同じ意味で「指定なし」 */
-MC.ui.FINISH_ROLES = [
-  { v: "auto", label: "指定なし", hint: "自動で判断します" },
-  { v: "wide", label: "引き", hint: "全体が写る" },
-  { v: "close", label: "寄り", hint: "アップ" },
-  { v: "pit", label: "ピット", hint: "前に並ぶ打楽器" },
-];
-/* 見出し下の説明。★FINISH_ROLES から作る ─ 札とこの行が別々の言葉に
+     おまかせの中に「おまかせ」が並ぶ。pro タブと同じ意味で「指定なし」 */
+MC.ui.FINISH_ROLES = MC.KINDS;
+/* 見出し下の説明。★MC.KINDS から作る ─ 札とこの行が別々の言葉に
    ずれると、どちらが正しいのか誰にも分からなくなる */
 MC.ui.finishRoleHint = () => MC.ui.FINISH_ROLES.filter(r => r.v !== "auto")
-  .map(r => `${r.label}＝${r.hint}`).join("・");
+  .map(r => `${r.label}＝${r.hint}`).join(" ／ ");
 
 MC.ui.openFinishPick = opts => {
   const el = MC.ui.$("#finishPick");
@@ -4721,7 +4740,10 @@ MC.ui.renderFinishRoles = (fp, cards) => {
   for (const id of Object.keys(fp.roles)) {
     if (!cards.some(c => String(c.id) === String(id))) delete fp.roles[id];
   }
-  for (const c of cards) if (!(c.id in fp.roles)) fp.roles[c.id] = c.role || "auto";
+  { const legacy = { wide: "wide", close: "follow", pit: "spice" };
+    for (const c of cards) if (!(c.id in fp.roles)) {
+      fp.roles[c.id] = c.kind && c.kind !== "auto" ? c.kind : (legacy[c.role] || "auto");
+    } }
   /* 意味は札ではなくこの1行で言う(iPhoneのタッチでは title が読まれない) */
   { const h = MC.ui.$("#fpRoleHint"); if (h) h.textContent = MC.ui.finishRoleHint(); }
   box.innerHTML = "";
@@ -4752,6 +4774,12 @@ MC.ui.renderFinishRoles = (fp, cards) => {
       b.onclick = () => {
         fp.roles[c.id] = r.v;
         fp.changed = true;
+        /* 縦向き動画を全景系にすると左右が切れて隊形が読めない(2026-08-04 DCI)。
+           選択は妨げない ─ 事実だけ言う */
+        const clip = MC.getClip(c.id);
+        if ((r.v === "wide" || r.v === "opposite") && clip && clip.height > clip.width) {
+          MC.ui.toast("縦向きの動画です。全景に使うと左右が切れるため、隊形が読みづらいかもしれません");
+        }
         /* ★ 自分だけ描き直さない(2026-08-04 レビュー)。
            #fpGo の文言を持っているのは renderFinishPick で、
            切り替え・色・傾きは全部そちらを呼んでいる。ここだけ約束を変えると、
@@ -4773,13 +4801,14 @@ MC.ui.renderFinishRoles = (fp, cards) => {
 MC.ui.finishPickGo = () => {
   const fp = MC.ui._fp;
   if (!fp) return;
-  /* ★ 役割を clip へ書き戻す(2026-08-04)。ここで初めて書く ─
+  /* ★ カメラの種類を clip へ書き戻す(2026-08-04)。ここで初めて書く ─
      「やめる」で戻ってきた人の設定は変えない。
+     kind を書き、applyKind が役割/出番/撮り方へ展開する(5択化)。
      これで hasPitCam が立ち、director.js の +1.2 が初めて効く */
   if (MC.S.mode === "switch" && fp.roles) {
     for (const c of MC.S.clips) {
       const v = fp.roles[c.id];
-      if (v) c.role = v;
+      if (v) { c.kind = v; MC.applyKind(c); }
     }
   }
   MC.S.autoTilt = fp.tilt !== false;   // 傾きの自動補正(2026-08-04 優さん指示)
@@ -6320,8 +6349,14 @@ MC.ui.wire = () => {
     await MZP.paint();
     try {
       const r = await MC.director.run(p);
+      /* ★ 出なかったカメラは理由ごと言う(2026-08-04 DCI規則5)。
+         出番の義務で悪い画を混ぜる代わりに、なぜ出なかったかをここで説明する */
+      const unused = (MC.S.unusedCams || [])
+        .map(u => `${MC.shortName ? MC.shortName(u.name) : u.name}は${u.why}未使用`)
+        .join("。");
       p.done(`${r.bpm.toFixed(0)} BPM・${r.segments}カットを作りました`,
-             { sub: `ディゾルブ${r.dissolves}回・帯をタップするとそこへ移動します` });
+             { sub: `ディゾルブ${r.dissolves}回・帯をタップするとそこへ移動します`
+                    + (unused ? `\n${unused}` : "") });
       /* ★ 人を待つ瞬間(2026-08-02)。映像解析はいちばん重く、終わったあとは
          カット割を本人が見て直す ─ 戻ってこないと先へ進まない */
       MC.ui.notifyUserTurn({
