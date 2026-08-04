@@ -34,20 +34,23 @@ MC.ui.showExportLimitHelp = (wantSec, lim) => {
   /* ★ モードの天井が効いているときは、登録の案内をしない(2026-08-04)。
      登録しても30秒は伸びない ─ ここで「無料登録すると2分」と言うのは嘘。
      伸ばす道はパソコンで開くことだけなので、それだけを言う */
+  /* ★ 伸ばす道は MZ_LIMITS.exportUpgradeHint() に聞く(2026-08-05 レビュー反映)。
+     以前はここで「パソコンで開くと10分」を直書きしており、**ゲストに対して
+     主語が落ちていた** ─ ゲストはパソコンで開いても30秒のままで、10分に
+     なるのは登録×パソコンだけ。道の有無と言い方は1箇所(limits.js)で決める */
+  const upgrade = lim.exportUpgradeHint ? lim.exportUpgradeHint(MC.S.mode) : "";
   if (capped) {
     note.textContent = back
-      + "自動スイッチングはスマホでは30秒までです（そのぶん高画質で書き出します）。"
-      + "パソコンで開くと、もっと長く書き出せます。";
-  } else if (lim.unlimited) {
-    note.textContent = back;
-  } else if (lim.member && lim.mobile) {
-    note.textContent = back + "パソコンで開くと10分まで書き出せます（ショウ全体が入ります）。";
-  } else if (lim.member) {
-    note.textContent = back;
+      + `自動スイッチングはスマホでは${lim.SWITCH_MOBILE_SEC || 30}秒までです（そのぶん高画質で書き出します）。`
+      + upgrade;
+  } else if (lim.unlimited || lim.member) {
+    note.textContent = back + upgrade;
   } else {
+    /* ★ スマホのゲストにだけ「この端末で登録したらどうなるか」を先に言う。
+       パソコンのゲストは登録=10分で upgrade と同じ文になるため、繰り返さない */
     note.innerHTML = MC.ui.esc(back)
-      + `無料登録すると${MC.ui.esc(lim.memberExportLabel)}まで書き出せます。`
-      + (lim.mobile ? "パソコンで開けば10分まで（ショウ全体が入ります）。" : "")
+      + (lim.mobile ? `無料登録すると${MC.ui.esc(lim.memberExportLabel)}まで書き出せます。` : "")
+      + MC.ui.esc(upgrade)
       + ' <a href="/#signup">無料登録</a>';
   }
 };
@@ -1383,12 +1386,14 @@ MC.ui.renderLimitWhy = () => {
        いまはスマホ5分・パソコン15分なので、8分半のランスルーはスマホに入らない。
        入らない人に「長くても構わない」と言うのは嘘なので、
        **その端末で本当のこと**だけを言い、伸ばす道があるならそれを添える */
-    const shortSrc = L2.mobile && !L2.unlimited;
+    /* ★ 伸ばす道は MZ_LIMITS.sourceUpgradeHint() に聞く(2026-08-05 レビュー反映)。
+       以前は `L2.mobile` だけを見ていたため、**ゲスト×パソコン**が
+       「長い録画でも構いません」の枝に落ちていた ─ 実際は5分なので嘘。
+       もう最大の人(登録×パソコン・管理者)にだけ「長くても構いません」と言う */
+    const upgrade = L2.sourceUpgradeHint ? L2.sourceUpgradeHint() : "";
     el.innerHTML = icon
       + `<b>3本まで・1本${MC.ui.esc(L2.sourceLimitLabel)}まで</b>取り込めます。`
-      + (shortSrc
-          ? "<b>パソコンで開くと15分</b>まで取り込めます。"
-          : "長い録画でも構いません。")
+      + (upgrade ? MC.ui.esc(upgrade) : "長い録画でも構いません。")
       + "<b>どこを何分使うか</b>は、この後で選びます。"
       /* 端末のメモリで書き出しが頭打ちになる環境だけ、その理由も添える。
          ★ モードの天井が理由のときは、短さだけを告げない(2026-08-04 レビュー反映)。
@@ -1584,7 +1589,10 @@ MC.ui.showUnlockHelp = p => {
     el.innerHTML = title
       + `<p class="lun-body">カメラを何台も同時に処理するため、`
       + `スマホでは<b>${MC.ui.esc(nowLabel)}</b>までです。そのぶん高画質で書き出します。<br>`
-      + `パソコンで開くと、もっと長く作れます。</p>`
+      /* ★ 伸ばす道は limits.js に聞く(2026-08-05 レビュー反映)。
+         「パソコンで開くと、もっと長く作れます」はゲストには嘘だった ─
+         ゲストはパソコンでも30秒で、伸びるのは**登録 × パソコン**のときだけ */
+      + `${MC.ui.esc(L.exportUpgradeHint ? L.exportUpgradeHint(MC.S.mode) : "")}</p>`
       + `<button type="button" class="lun-btn" id="lunCopyPc">`
       + `<i class="fa-solid fa-link" aria-hidden="true"></i>パソコン用にリンクをコピー</button>`;
     const cp = el.querySelector("#lunCopyPc");
@@ -3901,7 +3909,19 @@ MC.ui.autoEtaSec = () => {
 /* おまかせ全画面の「何を預けたか」。固定文だと、仕上げの好みで選んだ内容と
    食い違う(ナチュラルを選んでも「MarchinZカラー」と出ていた) */
 MC.ui.autoWhatText = () => {
-  const parts = ["60秒のハイライト", "盛り上がるところから"];
+  /* ★ 長さは固定文にしない(2026-08-05 レビュー反映)。ゲストは30秒・
+     自動スイッチング×スマホも30秒なのに「60秒のハイライト」と出続けていた。
+     数分待たせる全画面の一等地なので、その人・その端末・そのモードの値で言う
+     (#flowEasyDesc は同じ理由で直したが、ここが取り残されていた) */
+  const L = window.MZ_LIMITS;
+  /* 実際に切り出す長さが決まっていればそれを言う。まだなら、その人・その端末・
+     そのモードの上限で言う(どちらも無ければ長さには触れない) */
+  const span = MC.trimRange ? (() => { const [a, b] = MC.trimRange(); return b - a; })() : 0;
+  const lenLabel = (span > 0 && MC.ui.fmtLen)
+    ? `${MC.ui.fmtLen(span)}のハイライト`
+    : (L && L.exportLimitLabelFor)
+      ? `${L.exportLimitLabelFor(MC.S.mode)}のハイライト` : "見どころ";
+  const parts = [lenLabel, "盛り上がるところから"];
   parts.push(MC.S.filterId === "none" ? "撮ったままの色" : "MarchinZカラー");
   if (MC.S.autoTilt === false) parts.push("傾きはそのまま");
   return parts.join("・");
@@ -5618,8 +5638,20 @@ MC.ui.showModeStep = step => {
   /* ★「フルショウはパソコンから」の案内はスマホのときだけ(2026-08-05 優さん指示)。
      パソコンで見ている人に「パソコンから作れます」と言っても意味が無い。
      上限なし(管理者・手元)にも出さない ─ その人には当てはまらない */
+  /* ★ 登録済みの人に「無料登録」と言わない(2026-08-05 レビュー反映)。
+     以前は member を見ずに出していたため、ログイン済みのスマホの人にも
+     「無料登録＋パソコンから作れます」と勧め続けていた */
   { const tip = MC.ui.$("#mzModeTip"), L = window.MZ_LIMITS;
-    if (tip) tip.hidden = !(L && L.mobile && !L.unlimited); }
+    if (tip) {
+      const show = !!(L && L.mobile && !L.unlimited);
+      tip.hidden = !show;
+      const b = show ? tip.querySelector("b") : null;
+      if (b) {
+        b.textContent = L.member
+          ? "フルショウのランスルーは、パソコンから作れます。"
+          : "フルショウのランスルーは、無料登録＋パソコンから作れます。";
+      }
+    } }
   /* おまかせの説明にある長さも、その人・その端末の値にする(2026-08-05)。
      静的に「60秒」と書いてあったが、ゲストは30秒なので嘘だった */
   { const d = MC.ui.$("#flowEasyDesc"), L = window.MZ_LIMITS;

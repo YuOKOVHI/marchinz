@@ -184,6 +184,37 @@ async function countSamples(ns, file, fromSec) {
     });
   }
 
+  await test("★同じ共有ファイルは、4ツールとも同じ版番を指していること", async () => {
+    /* ★ 2026-08-05 レビューで発覚した構造的な穴の見張り。
+       上の試験は「?v= が**付いているか**」しか見ておらず、**その値が最新か**は
+       見ていなかった。そのため limits.js が5回変わるあいだ、
+       switcher だけ最新・vlog/privacy/reangle は 1.70.0 のまま、という状態が
+       ずっと緑だった。実害:
+         session.js  … 消灯抑止の代役動画(v1.75.0)が3ツールへ届いていなかった
+         mp4source.js… 再シーク直後のデルタ混入の修正(v1.74.0)が届いていない
+         progress.js … 「Privacy案内を全員から削除」(v1.72.0)が届いていない
+       ★ git を読めないので「最新か」は直接測れない。代わりに
+         **「同じファイルを読む全ページが同じ版番であること」**を測る ─
+         1ツールだけ上げた瞬間に落ちるので、揃え忘れが必ず捕まる。 */
+    const pins = {};   // ファイル名 → { 版番: [ツール名] }
+    for (const tool of TOOLS) {
+      const html = await (await fetch(`../${tool}/index.html`)).text();
+      for (const m of html.matchAll(/\/tools\/shared\/([A-Za-z0-9_.-]+\.(?:js|css))\?v=([0-9.]+)/g)) {
+        const [, file, ver] = m;
+        (pins[file] || (pins[file] = {}))[ver] = (pins[file][ver] || []).concat(tool);
+      }
+    }
+    const files = Object.keys(pins);
+    if (!files.length) throw new Error("共有資産の版番が1つも読めない(試験が空回りしている)");
+    const split = files.filter(f => Object.keys(pins[f]).length > 1);
+    if (split.length) {
+      const detail = split.map(f => `${f}: `
+        + Object.entries(pins[f]).map(([v, ts]) => `${v}(${ts.join(",")})`).join(" / ")).join("  ");
+      throw new Error("同じ共有ファイルに別の版番が付いている＝古いJSを掴むツールがある: " + detail);
+    }
+    return `${files.length}ファイルが4ツールで一致`;
+  });
+
   group("① 静かな黒抜け: samples(trackId, 0) が 0 件を返さないこと");
   await test(`共有版: moov末尾 × fromSec=0 で ${N} サンプル読める`, async () => {
     const M = await loadShared();
@@ -3445,6 +3476,8 @@ async function countSamples(ns, file, fromSec) {
        addFiles を通すと <video> のメタデータ読み込みが要るので、
        そこだけ差し替えて**断りの判断と文言は本物**を通す */
     const msgs = [];
+    let trueHint = "";   /* ★ 役の中で捕まえる。finally の外で聞くと、役が戻った
+                            あとの値(手元環境=上限なし=空文字)を見てしまう */
     const keepToast = w.MC.ui.toast;
     const keepCreate = w.document.createElement.bind(w.document);
     w.MC.ui.toast = t => { msgs.push(String(t)); };
@@ -3471,6 +3504,7 @@ async function countSamples(ns, file, fromSec) {
         mobile: true, bigDevice: false, maxSourceSec: 300.5, sourceLimitLabel: "5分",
         maxExportSec: 30, exportLimitLabel: "30秒", maxVideoSec: 300.5, videoLimitLabel: "5分" }, async () => {
         if (!w.MC.media.tooLong(510)) throw new Error("8分30秒がスマホで通っている");
+        trueHint = w.MZ_LIMITS.sourceUpgradeHint();
         /* ★ 3本の門より先に当たらないよう空にする(2026-08-05 変異で判明)。
            compReset は3本入れるので、そのままだと「素材は3つまでです」で
            弾かれ、長さの断り文に一度も到達しない ─ 別の理由で落ちる試験になる */
@@ -3488,8 +3522,19 @@ async function countSamples(ns, file, fromSec) {
       });
     } finally { w.MC.ui.toast = keepToast; w.document.createElement = keepCreate; }
     const said = msgs.join(" ");
-    if (!/パソコン/.test(said)) throw new Error("弾いたのにパソコンへの道を言っていない: " + said);
-    if (!/15分/.test(said)) throw new Error("パソコンで何分まで使えるかを言っていない: " + said);
+    /* ★ 「パソコン」と「15分」が入っていることだけを見ていた版は、**製品の嘘を
+       正解として固定していた**(2026-08-05 レビューで発覚)。当時の製品は
+       `MZ_LIMITS.mobile` だけを見て「パソコンで開くと15分まで」と言っており、
+       15分になるのは登録×パソコンだけなので**ゲストには嘘**。試験はそれを通した。
+       ★ いまは「その人にとって本当の道」を limits.js に聞き、製品が
+       **その一文をそのまま言うか**を見る。文言は試験の中で組み立てない。 */
+    if (!trueHint) throw new Error("ゲスト×スマホなのに上げる道が無いと言っている");
+    if (!/無料登録/.test(trueHint) || !/パソコン/.test(trueHint)) {
+      throw new Error("ゲスト×スマホは登録とパソコンの両方が要るのに、片方しか言っていない: " + trueHint);
+    }
+    if (said.indexOf(trueHint) < 0) {
+      throw new Error(`弾いたのに本当の道を言っていない。期待「${trueHint}」/ 実際「${said}」`);
+    }
     /* ③ 読み込み画面(選ぶ前)にも、スマホにはパソコンの道が書いてあること */
     const txt = withRole(w, { unlimited: false, local: false, admin: false, member: false,
       mobile: true, bigDevice: false, maxExportSec: 30, maxVideoSec: 300.5,
@@ -3504,6 +3549,99 @@ async function countSamples(ns, file, fromSec) {
     if (/長い録画でも構いません/.test(txt)) throw new Error("5分なのに「長くても構わない」と言っている: " + txt);
     if (!/(あと|後)で?[^。]*選/.test(txt)) throw new Error("あとで範囲を選べることを言っていない: " + txt);
     return "スマホ5分/PC15分 / 弾くときも選ぶ前もパソコンの道を言う / 嘘の一文は無い";
+  });
+
+  await test("★パソコンのゲストも、弾かれたら逃げ道を言われる(行き止まりを作らない)", async () => {
+    /* ★ 2026-08-05 レビューで発覚: media.js の逃げ道が `MZ_LIMITS.mobile` の
+       ときだけ出ていたため、**パソコンのゲスト**(取り込み5分)は弾かれても
+       次の一手が画面に一度も出なかった。「フルショウはパソコンから」の案内を
+       見て素直に移動した人が、いちばん最初に当たる行き止まりだった。 */
+    const w = await compEnv();
+    compReset(w);
+    const msgs = [];
+    const keepToast = w.MC.ui.toast;
+    const keepCreate = w.document.createElement.bind(w.document);
+    w.MC.ui.toast = t => { msgs.push(String(t)); };
+    w.document.createElement = tag => {
+      const el = keepCreate(tag);
+      if (String(tag).toLowerCase() === "video") {
+        Object.defineProperty(el, "duration", { get: () => 510, configurable: true });
+        Object.defineProperty(el, "videoWidth", { get: () => 1920, configurable: true });
+        Object.defineProperty(el, "videoHeight", { get: () => 1080, configurable: true });
+        Object.defineProperty(el, "src", { configurable: true, get: () => "blob:fake",
+          set: () => { setTimeout(() => { if (el.onloadedmetadata) el.onloadedmetadata(); }, 0); } });
+      }
+      return el;
+    };
+    let hint = "";
+    try {
+      await withRoleAsync(w, { unlimited: false, local: false, admin: false, member: false,
+        mobile: false, bigDevice: true, maxSourceSec: 300.5, sourceLimitLabel: "5分",
+        maxExportSec: 30, exportLimitLabel: "30秒", maxVideoSec: 300.5, videoLimitLabel: "5分" }, async () => {
+        hint = w.MZ_LIMITS.sourceUpgradeHint();
+        w.MC.S.clips = [];
+        const head = new Uint8Array(32);
+        head.set([0x66, 0x74, 0x79, 0x70], 4);
+        await w.MC.media.addFiles([new w.File([head], "show.mp4", { type: "video/mp4" })]);
+        if (w.MC.S.clips.length !== 0) throw new Error("9分の動画がパソコンのゲストに通った");
+      });
+    } finally { w.MC.ui.toast = keepToast; w.document.createElement = keepCreate; }
+    const said = msgs.join(" ");
+    if (!hint) throw new Error("ゲスト×PCなのに上げる道が無いと言っている");
+    if (/パソコンで開く/.test(hint)) throw new Error("パソコンの人に「パソコンで開く」と言っている: " + hint);
+    if (said.indexOf(hint) < 0) {
+      throw new Error(`弾いたのに逃げ道が無い。期待「${hint}」/ 実際「${said}」`);
+    }
+    return `ゲスト×PC: ${hint}`;
+  });
+
+  await test("★鍵つきの札が約束する道は、本当にその鍵を開ける(約束の検算)", async () => {
+    /* ★ 2026-08-05 レビューで見つかった P0 の再発防止。
+       limits.js の modeCapped が `<`(厳密)だったため、
+       ゲスト×スマホ×自動スイッチング(maxExportSec=30・天井=30)が
+       「天井ではない」と判定され、札に「無料登録で60秒まで」と出ていた。
+       登録しても 30 のままなので、代価を払わせて何も変わらない案内だった。
+       ★ 文言を検査しても捕まらない(「登録」と書いてあることしか分からない)。
+         **約束の先へ行った人の実際の上限**を4ペルソナの実計算で引き、
+         その札が本当に開くかを検算する。 */
+    const P = {
+      "ゲスト×スマホ": { member: false, mobile: true },
+      "ゲスト×PC":     { member: false, mobile: false },
+      "登録×スマホ":   { member: true,  mobile: true },
+      "登録×PC":       { member: true,  mobile: false },
+    };
+    const L = {};
+    for (const k of Object.keys(P)) L[k] = await loadLimits(P[k]);
+    const reach = (member, mobile, mode) =>
+      L[`${member ? "登録" : "ゲスト"}×${mobile ? "スマホ" : "PC"}`].maxExportSecFor(mode);
+    let checked = 0, silent = 0;
+    for (const [who, o] of Object.entries(P)) {
+      for (const mode of ["switch", "vertical", "wipe"]) {
+        for (const p of L[who].exportPresetsFor(mode)) {
+          if (!p.locked) continue;
+          const saysMember = /登録/.test(p.unlock || "");
+          const saysPc = /パソコン/.test(p.unlock || "");
+          /* 何も約束していない(天井の説明だけ)なら、ここでは検算しない ─
+             ただし「天井が理由」でないのに黙るのは行き止まりなので落とす */
+          if (!saysMember && !saysPc) {
+            if (!L[who].modeCapped(mode)) {
+              throw new Error(`${who}/${mode}/${p.id}: 天井が理由でないのに道を言っていない`);
+            }
+            silent++; continue;
+          }
+          const m = saysMember ? true : o.member;
+          const mob = saysPc ? false : o.mobile;
+          const got = reach(m, mob, mode);
+          if (!(p.sec <= got)) {
+            throw new Error(`${who}/${mode}/${p.id}(${p.sec}秒): 「${p.unlock}」と言うが、`
+              + `その先でも${got}秒までしか出せない`);
+          }
+          checked++;
+        }
+      }
+    }
+    if (!checked) throw new Error("検算できる約束が1つも無い(試験が空回りしている)");
+    return `${checked}件の約束を検算 / 天井で黙るのは${silent}件`;
   });
   await test("★10分の素材からでも、長さと始まりを選んで書き出せる", async () => {
     const w = await compEnv();

@@ -90,9 +90,14 @@ MC.media.addFiles = async files => {
          **次にどうすればよいかを同時に言う**こと ─ スマホには
          「パソコンで開くと15分まで」を必ず添える。QAがこの一文を見張る */
     if (MC.media.tooLong(v.duration)) {
+      /* ★ 逃げ道は MZ_LIMITS.sourceUpgradeHint() に聞く(2026-08-05 レビュー反映)。
+         以前はここで `MZ_LIMITS.mobile` だけを見て「パソコンで開くと15分まで」と
+         直書きしていた ─ 15分になるのは**登録×パソコン**だけなので、
+         ゲストには嘘だった(ゲストはパソコンでも5分)。さらに条件が mobile だけ
+         だったため、**パソコンのゲストには逃げ道が1つも出ず**行き止まりだった。 */
       MC.ui.toast(`⚠ ${f.name} は約${Math.round(v.duration / 60)}分です。`
         + `この端末で扱えるのは1本${MZ_LIMITS.sourceLimitLabel}までです。`
-        + (MZ_LIMITS.mobile ? "パソコンで開くと15分まで使えます。" : "")
+        + MZ_LIMITS.sourceUpgradeHint()
         + "長い録画は、先に前半・後半などに分けてからお試しください");
       URL.revokeObjectURL(clip.url);
       continue;

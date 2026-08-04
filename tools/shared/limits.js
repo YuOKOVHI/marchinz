@@ -205,10 +205,53 @@ window.MZ_LIMITS = (() => {
     (mode === "switch" && mobile && !unlimited) ? L.SWITCH_MOBILE_SEC : Infinity;
   /* いまの人・いまの端末・いまのモードで書き出せる秒数 */
   L.maxExportSecFor = mode => Math.min(L.maxExportSec, L.modeCapSec(mode));
-  /* モードの天井が効いているか(＝登録しても伸びない状況か) */
-  L.modeCapped = mode => L.modeCapSec(mode) < L.maxExportSec;
+  /* モードの天井が効いているか(＝登録しても伸びない状況か)。
+     ★ 2026-08-05 レビューで発覚: ここが `<` だと**ゲストの境界を落とす**。
+       ゲスト×スマホ×自動スイッチングは maxExportSec=30・modeCapSec=30 なので
+       `30 < 30 = false` となり「天井ではない」と判定され、下の枝で
+       「無料登録で60秒まで」と案内していた ─ 登録しても 30 のままなので嘘。
+       天井と同値のときも**天井は効いている**(登録しても伸びない)ので `<=` が正しい。
+     ★ ただし `<=` だけにすると、天井の無い人(modeCapSec=Infinity)が
+       maxExportSec=Infinity(管理者・手元環境)のとき `Infinity <= Infinity` で
+       真になってしまう。天井が**有限のときだけ**効いていると数える。 */
+  L.modeCapped = mode => {
+    const cap = L.modeCapSec(mode);
+    return Number.isFinite(cap) && cap <= L.maxExportSec;
+  };
   L.exportLimitLabelFor = mode =>
     L.modeCapped(mode) ? `${L.SWITCH_MOBILE_SEC}秒` : L.exportLimitLabel;
+
+  /* ---- 「上げる道」を1文で返す正本(2026-08-05 レビュー反映) ----
+     ★ これを作った理由: 「パソコンで開くと15分」という一文が media.js・ui.js・
+       index.html など7箇所に直書きされ、そのうち2箇所が **member を見ていなかった**。
+       15分/10分になるのは **登録 × パソコン** の人だけなので、ゲストに
+       「パソコンで開くと15分」と言うと嘘になる(ゲストはパソコンでも5分)。
+       しかもゲスト×パソコンには逃げ道が1つも出ず、行き止まりになっていた。
+     ★ 判定の正本をここ1箇所に置き、呼ぶ側は文を組み立てない。
+       もう最大の人には空文字を返す(自分に関係ない案内を読ませない)。 */
+  const MAX_SOURCE_LABEL = "15分";   // 登録×パソコンの取り込み上限(maxSourceSec 900.5)と対
+  const MAX_EXPORT_LABEL = "10分";   // 登録×パソコンの書き出し上限(maxExportSec 600)と対
+
+  /* 取り込める長さを上げる道。「無料登録」と「パソコン」の要る/要らないで4通り。
+     ★ 閉じ込めた変数ではなく **L の属性**を読む ─ QAが withRole で役を
+       差し替えたとき、案内だけ元の役のまま返ると試験が製品を測れなくなる */
+  L.sourceUpgradeHint = () => {
+    if (L.unlimited || (L.member && L.bigDevice)) return "";                // もう最大
+    if (L.member) return `パソコンで開くと${MAX_SOURCE_LABEL}まで使えます。`;      // 登録×スマホ
+    if (L.bigDevice) return `無料登録すると${MAX_SOURCE_LABEL}まで使えます。`;     // ゲスト×パソコン
+    return `無料登録してパソコンで開くと${MAX_SOURCE_LABEL}まで使えます。`;        // ゲスト×スマホ
+  };
+
+  /* 書き出せる長さを上げる道。モードの天井(自動スイッチング×スマホ)が
+     効いていても、**登録×パソコンへ行けば伸びる**ので道そのものは在る ─
+     天井のときに黙るのはプリセットの札の上だけで、押した先では道を示す */
+  L.exportUpgradeHint = mode => {
+    if (L.unlimited || (L.member && L.bigDevice)) return "";                // もう最大
+    if (L.member) return `パソコンで開くと${MAX_EXPORT_LABEL}まで書き出せます。`;   // 登録×スマホ
+    if (L.bigDevice) return `無料登録すると${MAX_EXPORT_LABEL}まで書き出せます。`;  // ゲスト×パソコン
+    /* ゲスト×スマホ。モードの天井があってもこの道は本当に開く(登録×PC=600秒) */
+    return `無料登録してパソコンで開くと${MAX_EXPORT_LABEL}まで書き出せます。`;
+  };
 
   /* いまの人・いまの端末で使えるかを添えて返す。
      locked のときは「何をすれば使えるか」を1文で持たせる */
