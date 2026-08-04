@@ -222,14 +222,25 @@
     return Math.random().toString(36).slice(2, 10);
   }
 
-  async function uploadDiaryJpegs(storage, uid, eventId, blobs) {
+  /** @param {(n: number, total: number) => void} [onStep] */
+  async function uploadDiaryJpegs(storage, uid, eventId, blobs, onStep) {
     const out = [];
-    for (let i = 0; i < blobs.length; i += 1) {
-      const blob = blobs[i];
-      const path = `mll_event_diary_media/${uid}/${eventId}_${Date.now()}_${i}_${rnd()}.jpg`;
-      const ref = storage.ref(path);
-      await ref.put(blob, { contentType: "image/jpeg", cacheControl: "public,max-age=31536000" });
-      out.push(await ref.getDownloadURL());
+    const doneRefs = [];
+    try {
+      for (let i = 0; i < blobs.length; i += 1) {
+        onStep?.(i + 1, blobs.length);
+        const blob = blobs[i];
+        const path = `mll_event_diary_media/${uid}/${eventId}_${Date.now()}_${i}_${rnd()}.jpg`;
+        const ref = storage.ref(path);
+        await ref.put(blob, { contentType: "image/jpeg", cacheControl: "public,max-age=31536000" });
+        doneRefs.push(ref);
+        out.push(await ref.getDownloadURL());
+      }
+    } catch (e) {
+      /* ★ 途中失敗でアップ済み分を残さない(2026-08-06)。失敗した投稿の
+         画像が Storage に孤児として残っていた。消してから投げ直す */
+      await Promise.all(doneRefs.map((r) => r.delete().catch(() => {})));
+      throw e;
     }
     return out;
   }
@@ -1264,6 +1275,7 @@
         return;
       }
       saveBtn.disabled = true;
+      const saveBtnLabel = saveBtn.textContent; // アップロード進捗表示から戻す用
       try {
         const R = window.MarchinZMllRole;
         const partUiLabel = readParticipationLabel();
@@ -1299,7 +1311,9 @@
               blobs.push(await compressDiaryImage(f));
             }
           }
-          const uploaded = await uploadDiaryJpegs(storage, user.id, row.eventId, blobs);
+          const uploaded = await uploadDiaryJpegs(storage, user.id, row.eventId, blobs, (n, total) => {
+            saveBtn.textContent = `写真をアップロード中… ${n}/${total}`;
+          });
           nextUrls = userNotePhotoUrls(nextUrls.concat(uploaded));
         }
         nextUrls = userNotePhotoUrls(nextUrls);
@@ -1364,6 +1378,7 @@
         err.hidden = false;
       } finally {
         saveBtn.disabled = false;
+        saveBtn.textContent = saveBtnLabel;
       }
     }
 
@@ -1389,6 +1404,24 @@
       }
     }
 
+    /* ★ 書きかけの Note を無警告で消さない(2026-08-06)。編集フォームが
+       開いていて内容が変わっていれば、閉じる前に一度確認する
+       (Note に自動下書き保存は無いので、閉じる=破棄)。
+       判定関数は paintDialog の編集枝が root._eldComposeDirty に載せ、
+       保存/削除の成功経路は closeDialog を直接呼ぶので確認は出ない */
+    function confirmDiscardIfComposing() {
+      const fn = root._eldComposeDirty;
+      /* 新規 Note の工程2(参加スタイル画面)では入力が state.composeDraft に
+         退避されており、編集枝の判定関数が載っていない ─ そちらも見る */
+      const draft = state?.composeDraft;
+      const draftDirty = Boolean(
+        draft && (String(draft.title || "").trim() || String(draft.body || "").trim()),
+      );
+      const dirty = (typeof fn === "function" && fn()) || draftDirty;
+      return !dirty || window.confirm("入力中の内容は保存されません。閉じてよろしいですか？");
+    }
+    root._eldConfirmDiscard = confirmDiscardIfComposing;
+
     function closeDialog() {
       try {
         dialog.close();
@@ -1396,6 +1429,7 @@
         //
       }
       state = null;
+      root._eldComposeDirty = null;
       pendingFiles = [];
       const hp =
         typeof window.MarchinZProfileHashParams === "function"
@@ -1417,8 +1451,9 @@
       const host = q(dialog, "[data-eld-dialog-body]");
       if (!host) return;
       const xTop = q(dialog, "[data-eld-dialog-close]");
-      if (xTop) xTop.onclick = () => closeDialog();
+      if (xTop) xTop.onclick = () => { if (confirmDiscardIfComposing()) closeDialog(); };
       const { row, diary, mode } = state;
+      root._eldComposeDirty = null; // 編集枝だけが下で載せ直す(閲覧モードでは確認しない)
       const d = diary;
       const bodyText = String(d?.body || "");
       const vis =
@@ -1896,6 +1931,18 @@
         phoRow.appendChild(coverPick);
         shell.appendChild(phoRow);
 
+        /* 破棄確認の判定材料(2026-08-06)。開いた時点の値と比べる。
+           「次へ」で描き直すと composeDraft が基準になるが、それも
+           「いま画面にある入力」を守る向きで正しい */
+        const dirtyBaseTitle = titleIn.value;
+        const dirtyBaseBody = ta.value;
+        const dirtyBaseUrlCount = editUrls.length;
+        root._eldComposeDirty = () =>
+          titleIn.value !== dirtyBaseTitle ||
+          ta.value !== dirtyBaseBody ||
+          pendingFiles.length > 0 ||
+          editUrls.length !== dirtyBaseUrlCount;
+
         const saveRow = document.createElement("div");
         saveRow.className = "eld-save-row";
         const saveBtn = document.createElement("button");
@@ -2005,7 +2052,7 @@
       close.type = "button";
       close.className = "eld-dialog-close";
       close.textContent = "閉じる";
-      close.addEventListener("click", () => closeDialog());
+      close.addEventListener("click", () => { if (confirmDiscardIfComposing()) closeDialog(); });
       host.appendChild(close);
     }
 
@@ -2489,7 +2536,17 @@
         root.dataset.eldDlgWired = "1";
         const dlg = /** @type {HTMLDialogElement|null} */ (root.querySelector("[data-eld-dialog]"));
         dlg?.addEventListener("click", (ev) => {
-          if (ev.target === dlg) root._eldCloseDialog?.();
+          if (ev.target === dlg) {
+            if (root._eldConfirmDiscard && !root._eldConfirmDiscard()) return;
+            root._eldCloseDialog?.();
+          }
+        });
+        /* ESC は <dialog> の cancel 経由。破棄確認を通し、閉じるときは
+           closeDialog に後始末(state リセット等)をさせる(2026-08-06) */
+        dlg?.addEventListener("cancel", (ev) => {
+          ev.preventDefault();
+          if (root._eldConfirmDiscard && !root._eldConfirmDiscard()) return;
+          root._eldCloseDialog?.();
         });
       }
       const result = await render(root, ctx, mountGen);

@@ -58,12 +58,12 @@ RA.ui.loadFile = file => {
       if (video.duration > MZ_LIMITS.maxVideoSec) {
         URL.revokeObjectURL(url);
         video.remove();
-        /* 上限は「会員種別 × 端末」で決まる(2026-07-31)。スマホは登録しても
-           5分のままなので、「無料登録で12分」と言い切ると嘘になる */
+        /* 上げる道の文言は sourceUpgradeHint が正本(2026-08-06)。
+           旧: 「12分」直書き(正は15分)+ 会員×スマホにも「無料登録すると」と
+           出る二重の誤案内だった。もう最大の人には空文字が返る */
         reject(new Error(`この動画は約${Math.round(video.duration / 60)}分です。`
           + `動画は${MZ_LIMITS.videoLimitLabel}までです。`
-          + (!MZ_LIMITS.member && MZ_LIMITS.bigDevice ? "無料登録すると12分まで使えます。"
-             : MZ_LIMITS.mobile ? "パソコンで開いて無料登録すると12分まで使えます。" : "")
+          + MZ_LIMITS.sourceUpgradeHint()
           + "見せたい場面だけ短く切り出してからお試しください"));
         return;
       }
@@ -75,6 +75,7 @@ RA.ui.loadFile = file => {
         height: video.videoHeight,
       };
       RA.log(`loaded: ${file.name} ${video.videoWidth}x${video.videoHeight} ${video.duration.toFixed(1)}s`);
+      { const note = $("loadErrNote"); if (note) note.hidden = true; }
       $("dropSection").hidden = true;
       $("editorSection").hidden = false;
       $("doneCard").hidden = true;
@@ -155,11 +156,13 @@ RA.ui.trackJourneyHeight = () => {
 RA.ui.initJourney = () => {
   MZJourney.init({
     container: document.querySelector("main"),
+    /* shortLabel は狭い画面(375px)で現在地以外に出す2文字の短縮名(2026-08-06)。
+       無いと journey.css の max-width:2.4em で「四…」のように潰れる */
     phases: [
-      { id: "pick",    label: "動画",         hint: "斜めから撮った動画を選んでください" },
-      { id: "corners", label: "四角を合わせる", hint: "床の四角を合わせるほど仕上がりがきれいです" },
-      { id: "tune",    label: "見え方",       hint: "補正の強さ・見せ方を整えます" },
-      { id: "save",    label: "保存",         hint: "「書き出して保存」を押してください" },
+      { id: "pick",    label: "動画",         shortLabel: "動画", hint: "斜めから撮った動画を選んでください" },
+      { id: "corners", label: "四角を合わせる", shortLabel: "四角", hint: "床の四角を合わせるほど仕上がりがきれいです" },
+      { id: "tune",    label: "見え方",       shortLabel: "見え", hint: "補正の強さ・見せ方を整えます" },
+      { id: "save",    label: "保存",         shortLabel: "保存", hint: "「書き出して保存」を押してください" },
     ],
     doneHint: "保存できました。続けて別の動画もどうぞ",
     autoState: () => {
@@ -326,9 +329,16 @@ window.addEventListener("DOMContentLoaded", async () => {
   RA.testHomography();
 
   // ファイル選択+ドラッグ&ドロップ
+  /* 断り文はトースト(4秒で消える)だけでなく画面にも残す(2026-08-06)。
+     上限で断られた人が理由を読み直せないと、ただ壊れたように見える */
+  const showLoadError = err => {
+    RA.ui.toast(`⚠ ${err.message}`);
+    const note = $("loadErrNote");
+    if (note) { note.textContent = `⚠ ${err.message}`; note.hidden = false; }
+  };
   $("pickBtn").onclick = () => $("fileInput").click();
   $("fileInput").onchange = e => {
-    if (e.target.files[0]) RA.ui.loadFile(e.target.files[0]).catch(err => RA.ui.toast(`⚠ ${err.message}`));
+    if (e.target.files[0]) RA.ui.loadFile(e.target.files[0]).catch(showLoadError);
   };
   const dz = $("dropSection");
   dz.addEventListener("dragover", e => { e.preventDefault(); dz.classList.add("drag"); });
@@ -337,7 +347,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     e.preventDefault();
     dz.classList.remove("drag");
     const f = [...e.dataTransfer.files].find(f => RA.ui.isVideoFile(f));
-    if (f) RA.ui.loadFile(f).catch(err => RA.ui.toast(`⚠ ${err.message}`));
+    if (f) RA.ui.loadFile(f).catch(showLoadError);
     else RA.ui.toast("動画ファイルを入れてください");
   });
 

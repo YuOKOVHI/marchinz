@@ -409,6 +409,11 @@
       "退会が完了しました。ご利用ありがとうございました。",
     withdrawResumeFailed:
       "退会を完了できませんでした。時間をおいて、もう一度ログインからお試しください。",
+    /* ★ セッション復元(ページを開き直した状態)から復帰を選んだ場合、
+       直近ログインではないため delete() は requires-recent-login でほぼ必ず落ちる。
+       このとき「時間をおいて」は誤案内 ─ すぐ入り直せばその場で完了する */
+    withdrawResumeNeedsFreshLogin:
+      "ログインしてから時間が経っているため完了できませんでした。いまもう一度ログインすると、その場で退会を完了できます。",
   };
 
   /**
@@ -775,16 +780,36 @@
     closeMobileSiteDrawer();
   }
 
+  /* ★ モーダル中の背景固定(2026-08-06)。旧: top:"0" 固定だったため、
+     開いた瞬間にスクロールが先頭へ飛び、閉じても元の位置に戻らなかった
+     (375pxで最も体感が痛い)。いまの位置のまま固定し、閉じるときに戻す */
+  function lockBodyScrollForDialog() {
+    if ("mzDialogScrollY" in document.body.dataset) return; // 既に固定中(二重ロックで0を覚えない)
+    const y = window.scrollY || 0;
+    document.body.dataset.mzDialogScrollY = String(y);
+    document.body.style.overflow = "hidden";
+    document.body.style.position = "fixed";
+    document.body.style.width = "100%";
+    document.body.style.top = `-${y}px`;
+  }
+  function unlockBodyScrollForDialog() {
+    const had = "mzDialogScrollY" in document.body.dataset;
+    const y = Number(document.body.dataset.mzDialogScrollY || "0");
+    delete document.body.dataset.mzDialogScrollY;
+    document.body.style.overflow = "";
+    document.body.style.position = "";
+    document.body.style.width = "";
+    document.body.style.top = "";
+    if (had) window.scrollTo(0, y); // 固定していないのに0へ飛ばさない
+  }
+
   function closeProfileDialog(force = false) {
     if (profileSetupRequired && !force) return;
     if (profileCropGateActive) return;
     if (profileDialog) profileDialog.hidden = true;
     document.documentElement.classList.remove("mz-profile-dialog-open");
     document.body.classList.remove("mz-profile-dialog-open");
-    document.body.style.overflow = "";
-    document.body.style.position = "";
-    document.body.style.width = "";
-    document.body.style.top = "";
+    unlockBodyScrollForDialog();
   }
 
   /** 保存成功など短いメッセージ（ダイアログを閉じた後も視認できるよう body 直下に表示） */
@@ -1022,10 +1047,7 @@
     if (profileDialog) profileDialog.hidden = false;
     document.documentElement.classList.add("mz-profile-dialog-open");
     document.body.classList.add("mz-profile-dialog-open");
-    document.body.style.overflow = "hidden";
-    document.body.style.position = "fixed";
-    document.body.style.width = "100%";
-    document.body.style.top = "0";
+    lockBodyScrollForDialog();
     closeAccountDropdown();
     closeMobileSiteDrawer();
     void hydrateProfileForm().catch(() => {});
@@ -1036,10 +1058,7 @@
     if (settingsDialog) settingsDialog.hidden = true;
     document.documentElement.classList.remove("mz-settings-dialog-open");
     document.body.classList.remove("mz-settings-dialog-open");
-    document.body.style.overflow = "";
-    document.body.style.position = "";
-    document.body.style.width = "";
-    document.body.style.top = "";
+    unlockBodyScrollForDialog();
   }
 
   function closeWithdrawDoneDialog() {
@@ -1102,10 +1121,7 @@
     if (settingsDialog) settingsDialog.hidden = false;
     document.documentElement.classList.add("mz-settings-dialog-open");
     document.body.classList.add("mz-settings-dialog-open");
-    document.body.style.overflow = "hidden";
-    document.body.style.position = "fixed";
-    document.body.style.width = "100%";
-    document.body.style.top = "0";
+    lockBodyScrollForDialog();
     closeAccountDropdown();
     closeMobileSiteDrawer();
     void hydrateLikeShowForm().catch(() => {});
@@ -1860,7 +1876,12 @@
     }
     setAuthEntryBusy(true);
     const remember = Boolean(authLoginRememberSession?.checked);
-    const persistence = window.firebase.auth.Auth.Persistence.LOCAL;
+    /* ★「ログイン状態を保持する」を実際に効かせる(2026-08-06)。
+       旧: LOCAL 固定で、チェックを外しても共用PCで永続ログインのままだった。
+       SESSION はタブを閉じるまで(リダイレクト認証は同一タブで戻るので成立する) */
+    const persistence = remember
+      ? window.firebase.auth.Auth.Persistence.LOCAL
+      : window.firebase.auth.Auth.Persistence.SESSION;
     try {
       localStorage.setItem(AUTH_REMEMBER_STORAGE_KEY, remember ? "1" : "0");
     } catch {
@@ -2519,7 +2540,13 @@
                 finished = true;
               } catch (e) {
                 console.error("[MarchinZ withdraw] 再開に失敗", e);
-                MZToast.err(AUTH_MESSAGE.withdrawResumeFailed);
+                /* セッション復元経由(=直近ログインでない)は requires-recent-login で
+                   落ちるのが正常系。入り直せば成功するので、その道を正しく案内する */
+                MZToast.err(
+                  String(e?.code || "") === "auth/requires-recent-login"
+                    ? AUTH_MESSAGE.withdrawResumeNeedsFreshLogin
+                    : AUTH_MESSAGE.withdrawResumeFailed,
+                );
               }
             }
             try { await auth.signOut(); } catch { /* 既に消えていれば失敗する */ }

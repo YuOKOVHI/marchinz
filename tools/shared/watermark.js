@@ -15,9 +15,33 @@ window.MZWM = (() => {
   const ALPHA = 0.35;
   const img = new Image();
   let ready = false;
+  const SRC = new URL("/tools/shared/marchinz-wm.png", location.href).href;
+  let tries = 0;
   img.onload = () => { ready = true; };
-  img.onerror = () => { /* ロゴが読めなくても機能自体は続行 */ };
-  img.src = new URL("/tools/shared/marchinz-wm.png", location.href).href;
+  img.onerror = () => {
+    /* ★ 読めないままだと draw が黙って素通りし「ロゴ無しの完成品」になる。
+       v1.99.3 で「ロゴが表示されます」と全員に掲示したため、静かな失敗は
+       嘘になる(2026-08-06)。少し待って読み直し(3回まで)、それでも駄目なら
+       whenReady() が false を返して書き出し側が事前に言えるようにする */
+    if (tries < 3) {
+      tries += 1;
+      setTimeout(() => { img.src = `${SRC}?retry=${tries}`; }, 800 * tries);
+    }
+  };
+  img.src = SRC;
+
+  /* 書き出し直前の確認用。ready になったら即 true、timeoutMs 待っても
+     駄目なら false(呼ぶ側が「ロゴなしになります」と断る) */
+  function whenReady(timeoutMs = 3000) {
+    if (ready) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const t0 = Date.now();
+      const iv = setInterval(() => {
+        if (ready) { clearInterval(iv); resolve(true); }
+        else if (Date.now() - t0 >= timeoutMs) { clearInterval(iv); resolve(false); }
+      }, 100);
+    });
+  }
 
   /* キャンバス(W×H)の右上へ描く。プレビュー/書き出しの両方から毎フレーム呼べる軽さ */
   function draw(ctx, W, H) {
@@ -53,5 +77,5 @@ window.MZWM = (() => {
     el.style.top = (sp.top * (W / sp.refW) / H * 100) + "%";
   }
 
-  return { draw, overlay, get ready() { return ready; } };
+  return { draw, overlay, whenReady, get ready() { return ready; } };
 })();

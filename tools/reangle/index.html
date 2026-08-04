@@ -16,11 +16,12 @@
 
 <header class="topbar">
   <div class="head-left">
+    <!-- 戻るは左端(2026-08-02 優さん指示⑨、Switcher と同じ位置に統一 2026-08-06) -->
+    <a href="/#creators" class="back-link">← 戻る</a>
     <h1 class="tool-name">ReAngle<span class="beta-badge">ベータ版</span></h1>
   </div>
   <div class="head-right">
     <div id="statusPill" class="caps-badge">準備中…</div>
-    <a href="/#creators" class="back-link">← 戻る</a>
   </div>
 </header>
 
@@ -37,8 +38,12 @@
     <p class="hint">キレイに補正できるのは軽〜中度の歪みまでです。元動画が大きく歪んでいる場合、補正が上手くいきません。ご了承ください。</p>
     <button id="pickBtn" class="big-btn">動画を選ぶ</button>
     <input id="fileInput" type="file" accept="video/*" hidden>
+    <!-- 取り込みを断った理由の置き場。トーストは4秒で消えるため、ここに残す(2026-08-06) -->
+    <p id="loadErrNote" class="hint load-err-note" role="alert" hidden></p>
     <p class="note">すべてスマホ/PCの中だけで処理します。動画はどこにも送信されません。無料です。</p>
-    <div data-mz-plan="video"></div>
+    <!-- ReAngle は取り込みにだけ上限がある(書き出し上限なし)。"video" だと
+         「完成は30秒まで」と嘘が出るため専用種別(2026-08-06) -->
+    <div data-mz-plan="video-import"></div>
   </section>
 
   <!-- ② プレビュー+調整+書き出し -->
@@ -168,10 +173,10 @@
 <div id="toast"></div>
 <div id="loupe" hidden><canvas width="240" height="240"></canvas></div>
 
-<script src="/tools/shared/limits.js?v=1.99.3"></script>
+<script src="/tools/shared/limits.js?v=1.99.4"></script>
 <script src="/tools/shared/sitechrome.js?v=1.99.3"></script>
 <script src="/tools/shared/journey.js?v=1.99.3"></script>
-<script src="/tools/shared/watermark.js?v=1.99.3"></script>
+<script src="/tools/shared/watermark.js?v=1.99.4"></script>
 <script src="/tools/shared/mp4source.js?v=1.99.3"></script>
 <script src="/tools/shared/session.js?v=1.99.3"></script>
 <script src="vendor/mp4box.all.min.js"></script>

@@ -74,11 +74,13 @@ MV.ui.initJourney = () => {
   if (!window.MZJourney) return;
   MZJourney.init({
     container: MV.ui.$("#workspace"),
+    /* shortLabel は狭い画面(375px)で現在地以外に出す2文字の短縮名(2026-08-06)。
+       無いと journey.css の max-width:2.4em で「組…」のように潰れる */
     phases: [
-      { id: "mat",   label: "素材",   hint: "インタビュー・インサート映像を枠に入れてください" },
-      { id: "build", label: "組み立て", hint: "「Vlog自動編集」で構成に沿って並びます" },
-      { id: "check", label: "見て直す", hint: "できあがりを確認してください" },
-      { id: "save",  label: "書き出す", hint: "MP4で保存します" },
+      { id: "mat",   label: "素材",   shortLabel: "素材", hint: "インタビュー・インサート映像を枠に入れてください" },
+      { id: "build", label: "組み立て", shortLabel: "組立", hint: "「Vlog自動編集」で構成に沿って並びます" },
+      { id: "check", label: "見て直す", shortLabel: "確認", hint: "できあがりを確認してください" },
+      { id: "save",  label: "書き出す", shortLabel: "書出", hint: "MP4で保存します" },
     ],
     doneHint: "できあがりました。別の雰囲気でも試せます",
     /* 画面の状態から現在フェーズを導出する(遷移箇所ごとの呼び忘れが起きない)。

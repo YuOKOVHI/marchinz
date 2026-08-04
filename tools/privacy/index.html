@@ -25,11 +25,12 @@
 
 <header class="topbar">
   <div class="head-left">
+    <!-- 戻るは左端(2026-08-02 優さん指示⑨、Switcher と同じ位置に統一 2026-08-06) -->
+    <a href="/#creators" class="back-link">← 戻る</a>
     <h1 class="tool-name">Privacy<span class="beta-badge">ベータ版</span></h1>
   </div>
   <div class="head-right">
     <span id="statusPill" class="pill">読み込み中…</span>
-    <a href="/#creators" class="back-link">← 戻る</a>
   </div>
 </header>
 
@@ -43,13 +44,14 @@
   <section id="dropSection" class="card drop step-card">
     <h2 class="step-title">写真を取り込む</h2>
     <p class="step-lead">取り込むと、顔を自動で見つけてモザイクがかかります。</p>
-    <div data-mz-plan="photo"></div>
     <p class="hint">遠くの小さな顔や後ろ向きの顔は、まれに自動で見つからないことがあります。その場合も、あとから<strong>顔をタップするだけ</strong>で追加できます。</p>
     <button id="pickBtn" class="big-btn">写真を選ぶ</button>
     <button id="pickVideoBtn" class="mini-btn admin-video-btn" hidden><i class="fa-solid fa-video"></i> 動画を選ぶ〈管理者テスト用〉</button>
     <input id="videoInput" type="file" accept="video/*" hidden>
     <input id="fileInput" type="file" accept="image/*" multiple hidden>
     <p class="note">すべてスマホ/PCの中だけで処理します。写真はどこにも送信されません。無料です。</p>
+    <!-- 上限の話は主CTA(写真を選ぶ)の後(2026-08-06、「まず一歩→その後に上限」で3ツール統一) -->
+    <div data-mz-plan="photo"></div>
   </section>
 
   <!-- ⓪.5 範囲選択フェーズ(60秒超の動画のみ・インスタのストーリー風トリム) -->
@@ -175,7 +177,7 @@
 
 <div id="toast"></div>
 
-<script src="/tools/shared/limits.js?v=1.99.3"></script>
+<script src="/tools/shared/limits.js?v=1.99.4"></script>
 <script src="/tools/shared/sitechrome.js?v=1.99.3"></script>
 <script src="/tools/shared/progress.js?v=1.99.3"></script>
 <script src="/tools/shared/journey.js?v=1.99.3"></script>

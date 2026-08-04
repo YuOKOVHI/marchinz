@@ -26,6 +26,11 @@ RA.exporter.probeCaps = async () => {
 RA.exporter.run = async onProgress => {
   const clip = RA.S.clip;
   if (!clip) throw new Error("素材がありません");
+  /* ロゴ画像が読めていないと draw が黙って素通りし「ロゴ無し完成」になる。
+     少し待ち、駄目なら黙らずに断る(2026-08-06) */
+  if (window.MZWM && !(await MZWM.whenReady(3000))) {
+    RA.ui.toast("⚠ ロゴ画像を読み込めなかったため、ロゴなしで書き出します");
+  }
   if (RA.caps.h264) {
     try {
       return await RA.exporter.exportMP4(clip, onProgress);

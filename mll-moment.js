@@ -40,6 +40,15 @@
     }
   }
 
+  /* ★ 入力が残ったままの Moment 作成ダイアログを閉じてよいか(2026-08-06)。
+     背景タップ・ESC・×・キャンセルのどこから閉じても同じ確認を通す。
+     判定関数は openCompose が dialog._mlmComposeDirty に載せる
+     (Moment に下書き保存は無いので、閉じる=破棄) */
+  function confirmMomentComposeDiscard(dialog) {
+    const dirty = typeof dialog?._mlmComposeDirty === "function" && dialog._mlmComposeDirty();
+    return !dirty || window.confirm("入力中の内容は保存されません。閉じてよろしいですか？");
+  }
+
   /** @param {HTMLDialogElement|null|undefined} dialog */
   function hideMomentDialog(dialog) {
     if (!dialog) return;
@@ -76,15 +85,26 @@
     return new File([blob], `${base}.jpg`, { type: "image/jpeg", lastModified: Date.now() });
   }
 
-  /** @param {FirebaseStorage.Storage} storage @param {string} uid @param {string} momentId @param {Blob[]} blobs */
-  async function uploadMomentJpegs(storage, uid, momentId, blobs) {
+  /** @param {FirebaseStorage.Storage} storage @param {string} uid @param {string} momentId @param {Blob[]} blobs @param {(n: number, total: number) => void} [onStep] */
+  async function uploadMomentJpegs(storage, uid, momentId, blobs, onStep) {
     const out = [];
-    for (let i = 0; i < blobs.length; i += 1) {
-      const blob = blobs[i];
-      const path = `mll_moment_media/${uid}/${momentId}_${Date.now()}_${i}_${rnd()}.jpg`;
-      const ref = storage.ref(path);
-      await ref.put(blob, { contentType: "image/jpeg", cacheControl: "public,max-age=31536000" });
-      out.push(await ref.getDownloadURL());
+    const doneRefs = [];
+    try {
+      for (let i = 0; i < blobs.length; i += 1) {
+        onStep?.(i + 1, blobs.length);
+        const blob = blobs[i];
+        const path = `mll_moment_media/${uid}/${momentId}_${Date.now()}_${i}_${rnd()}.jpg`;
+        const ref = storage.ref(path);
+        await ref.put(blob, { contentType: "image/jpeg", cacheControl: "public,max-age=31536000" });
+        doneRefs.push(ref);
+        out.push(await ref.getDownloadURL());
+      }
+    } catch (e) {
+      /* ★ 途中失敗でアップ済み分を残さない(2026-08-06)。3枚目で失敗すると
+         1〜2枚目が Storage に孤児として残り、誰からも参照されないまま
+         容量を食い続けていた。消してから投げ直す(削除の失敗は握る) */
+      await Promise.all(doneRefs.map((r) => r.delete().catch(() => {})));
+      throw e;
     }
     return out;
   }
@@ -809,7 +829,18 @@
 
     const closeDialog = () => hideMomentDialog(dialog);
 
-    cancelBtn.addEventListener("click", closeDialog);
+    /* 破棄確認の判定材料。保存/削除の成功時は null に戻してから閉じる */
+    const initialBody = String(d?.body || "").trim();
+    const initialUrlCount = editUrls.length;
+    dialog._mlmComposeDirty = () =>
+      String(ta.value || "").trim() !== initialBody ||
+      photoEditor.pendingFiles.length > 0 ||
+      photoEditor.editUrls.length !== initialUrlCount;
+
+    cancelBtn.addEventListener("click", () => {
+      if (!confirmMomentComposeDiscard(dialog)) return;
+      closeDialog();
+    });
 
     saveBtn.addEventListener("click", () => {
       void (async () => {
@@ -839,7 +870,9 @@
               else if (f.size <= 400 * 1024 && f.type === "image/jpeg") blobs.push(f);
               else blobs.push(await compressImage(f));
             }
-            const uploaded = await uploadMomentJpegs(storage, me.id, momentId, blobs);
+            const uploaded = await uploadMomentJpegs(storage, me.id, momentId, blobs, (n, total) => {
+              saveBtn.textContent = `写真をアップロード中… ${n}/${total}`;
+            });
             nextUrls = userPhotoUrls(nextUrls.concat(uploaded));
           }
           nextUrls = userPhotoUrls(nextUrls);
@@ -874,6 +907,7 @@
             is_new: isEdit ? 0 : 1,
           });
           window.MarchinZEphemeralMessage?.(isEdit ? "保存しました" : "投稿しました");
+          dialog._mlmComposeDirty = null; // 保存済みなので破棄確認は不要
           closeDialog();
           await refresh();
           window.dispatchEvent(new CustomEvent("marchinz-mll-updated", { detail: { userId: me.id } }));
@@ -883,6 +917,7 @@
           err.hidden = false;
         } finally {
           saveBtn.disabled = false;
+          saveBtn.textContent = isEdit ? "保存する" : "投稿する"; // アップロード進捗表示から戻す
         }
       })();
     });
@@ -902,6 +937,7 @@
             .doc(existing.momentId)
             .delete();
           window.MarchinZEphemeralMessage?.("削除しました");
+          dialog._mlmComposeDirty = null; // 実体を削除済みなので破棄確認は不要
           closeDialog();
           await refresh();
         } catch (e) {
@@ -1200,14 +1236,25 @@
         d.removeAttribute("open");
       });
       d.addEventListener("click", (ev) => {
-        if (ev.target === d) hideMomentDialog(d);
+        if (ev.target === d) {
+          if (id === "mlm-moment-compose" && !confirmMomentComposeDiscard(d)) return;
+          hideMomentDialog(d);
+        }
       });
+      if (id === "mlm-moment-compose") {
+        /* ESC は <dialog> の cancel 経由で閉じる。破棄確認で止められるように */
+        d.addEventListener("cancel", (ev) => {
+          if (!confirmMomentComposeDiscard(d)) ev.preventDefault();
+        });
+      }
     }
     document
       .getElementById("mlm-moment-compose")
       ?.querySelector("[data-mlm-compose-close]")
       ?.addEventListener("click", () => {
-        hideMomentDialog(/** @type {HTMLDialogElement|null} */ (document.getElementById("mlm-moment-compose")));
+        const dlg = /** @type {HTMLDialogElement|null} */ (document.getElementById("mlm-moment-compose"));
+        if (!confirmMomentComposeDiscard(dlg)) return;
+        hideMomentDialog(dlg);
       });
     document.getElementById("mlm-moment-viewer")?.querySelector("[data-mlm-viewer-close]")?.addEventListener("click", () => {
       hideMomentDialog(/** @type {HTMLDialogElement|null} */ (document.getElementById("mlm-moment-viewer")));

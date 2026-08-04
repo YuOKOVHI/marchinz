@@ -7643,7 +7643,9 @@ body.mz-photo-lightbox-open {
 }
 
 .user-profile-mylist-overflow .community-post-overflow-trigger {
-  min-width: 2rem;
+  /* タップ目標44px(カレンダー側 2026-08-04 と同じ値に統一 2026-08-06) */
+  min-width: 2.75rem;
+  min-height: 2.75rem;
   padding: 0.2rem 0.45rem;
 }
 
@@ -11883,6 +11885,8 @@ body.mix3-about-active {
   background: var(--panel);
   cursor: pointer;
   font-size: 0.88rem;
+  /* タップ目標44px(iOS基準)。375pxで37.4pxしかなかった(2026-08-06、3画面共通) */
+  min-height: 44px;
 }
 
 .calendar-att-opt-btn:hover {
@@ -14723,7 +14727,9 @@ html[data-mz-prof-guest-preview="1"] .user-profile-layout {
 }
 
 .user-profile-mll-share-row-overflow .community-post-overflow-trigger {
-  min-height: 2.35rem;
+  /* タップ目標44px(2026-08-06) */
+  min-height: 2.75rem;
+  min-width: 2.75rem;
   padding: 0.35rem 0.55rem;
   border-radius: 999px;
   border: 1px solid var(--border);
@@ -15051,7 +15057,9 @@ dialog.user-profile-mll-participation-dialog::backdrop {
 }
 
 .user-profile-mll-overflow .community-post-overflow-trigger {
-  min-width: 2.25rem;
+  /* タップ目標44px(2026-08-06、ここだけ36pxだった) */
+  min-width: 2.75rem;
+  min-height: 2.75rem;
   padding: 0.2rem 0.45rem;
 }
 

@@ -468,7 +468,9 @@
   setupMobileDrawer();
 
   const navLinks = document.querySelectorAll(
-    ".site-nav a[data-page], .footer-nav a[data-page], .site-mobile-drawer-nav a[data-page], .mz-tabbar a[data-page]",
+    /* フッターの実体は nav.mz-footer-grid（.footer-nav は index.html に存在せず、
+       13本が未配線=押してもスクロールが最下部のままだった。2026-08-06修正） */
+    ".site-nav a[data-page], .mz-footer-grid a[data-page], .site-mobile-drawer-nav a[data-page], .mz-tabbar a[data-page]",
   );
 
   /** ヘッダー／フッター／ドロワー：同一タブでハッシュ遷移（意図しない新規タブを防ぐ） */
@@ -779,19 +781,15 @@
       document.title = `MarchinZ/マーチンズ — ${titles[id] || titles.mll}`;
     }
     updateMetaForPage(id, routeOpts);
-    if (
-      id === "terms" ||
-      id === "privacy" ||
-      id === "login" ||
-      id === "signup" ||
-      id === "profile" ||
-      id === "ugc" ||
-      id === "ugc-tools" ||
-      id === "admin" ||
-      (id === "community" &&
-        (normalizeCommunityTab(routeOpts.communityTab ?? "events") === "notes" ||
-          normalizeCommunityTab(routeOpts.communityTab ?? "events") === "moments"))
-    ) {
+    /* ページが変わったら先頭へ(2026-08-06、許可リスト→除外リストへ反転)。
+       旧: 許可リストに creators/videos/youtube/webmagazine が無く、
+       未配線リンク(フッター等)から移ると最下部に取り残された。
+       除外は2つだけ:
+       ・初回表示(prevPageId が空) ─ 再読込時のブラウザのスクロール復元を殺さない
+       ・community 内のタブ移動 ─ タブ切替でスクロールを据え置く */
+    const prevPageId = mzLastRoute.pageId;
+    const isCommunityTabMove = id === "community" && prevPageId === "community";
+    if (prevPageId !== "" && !isCommunityTabMove) {
       requestAnimationFrame(() => {
         window.scrollTo({ top: 0, behavior: "auto" });
       });

@@ -1871,6 +1871,13 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle, opts) => {
        短い書き出し(135秒以下)はそもそも分割へ入らないので、
        もし短い尺で落ちているなら原因は下の従来経路の側にある */
   const noParts = !!(opts && opts.noParts);
+  /* ロゴ画像が読めていないと draw が黙って素通りし「ロゴ無し完成」になる
+     (v1.99.3 で「ロゴが表示されます」と全員に掲示済み)。少し待ち、
+     駄目なら黙らずに断ってから続ける(2026-08-06)。分割へ入る回も
+     ここを必ず通る(exportMP4Parts はこの下から呼ばれる) */
+  if (!noParts && window.MZWM && !(await MZWM.whenReady(3000))) {
+    MC.ui.toast("⚠ ロゴ画像を読み込めなかったため、ロゴなしで書き出します");
+  }
   /* 長い書き出しはパート方式へ。従来の一気書きはそのまま残す ─
      短い書き出し・ディスク直書き(PC)・OPFS無し端末が通る */
   {
@@ -2358,6 +2365,10 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle, opts) => {
 
 /* ---- リアルタイム録画fallback(Safariはmp4、Chromeはwebm) ---- */
 MC.exporter.exportRealtime = async onProgress => {
+  /* ロゴ未読込のまま録ると「ロゴ無し完成」になる。exportMP4 と同じ確認(2026-08-06) */
+  if (window.MZWM && !(await MZWM.whenReady(3000))) {
+    MC.ui.toast("⚠ ロゴ画像を読み込めなかったため、ロゴなしで書き出します");
+  }
   // プレビュー専用の重ね描き(カメラ名バッジ・範囲外の案内)は録画へ焼き込まない。
   // このcanvasをそのまま録るため、必ず finally で戻す
   MC.preview.overlayOn = false;

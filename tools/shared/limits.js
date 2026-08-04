@@ -311,7 +311,26 @@ window.MZ_LIMITS = (() => {
   L.renderPlanNote = () => {
     const hosts = document.querySelectorAll("[data-mz-plan]");
     if (!hosts.length) return;
-    const kind = hosts[0].getAttribute("data-mz-plan");   // "video" | "photo" | "vlog"
+    const kind = hosts[0].getAttribute("data-mz-plan");   // "video" | "video-import" | "photo" | "vlog"
+    if (kind === "video-import") {
+      /* ★ 取り込みにだけ上限があるツール(ReAngle)用(2026-08-06)。
+         ReAngle は maxExportSec を参照せず、取り込めた動画は全長書き出される。
+         なのに "video" の文で「完成は30秒まで」と出し、ゲストが
+         「30秒しか作れない」と誤解して離れていた ─ 完成の話は一切しない */
+      /* ゲスト×パソコンは下に renderSignupPerks の箱(5分→15分+登録ボタン)が
+         出るので、同じ内容を2回言わない(2026-08-06 重複解消)。
+         ゲスト×スマホは perks 箱が出ない(登録しても伸びない)ため、
+         こちらの1文だけが上限の説明になる */
+      const guestPerksBoxHere = !L.member && !L.unlimited && L.bigDevice;
+      const html = L.unlimited
+        ? '<p class="mz-plan">上限なしで使えます。</p>'
+        : guestPerksBoxHere
+          ? ""
+          : `<p class="mz-plan">動画は${L.videoLimitLabel}まで取り込めます。${L.sourceUpgradeHint()}`
+            + (L.member ? "</p>" : ' <a href="/#signup">無料登録</a></p>');
+      hosts.forEach(el => { el.innerHTML = html; });
+      return;
+    }
     if (kind === "vlog") {
       // Vlogは上限が複数種あるため専用の文言にする
       const html = L.unlimited
@@ -342,8 +361,9 @@ window.MZ_LIMITS = (() => {
           + (mobile ? "パソコンで開くと素材15分・完成10分になります。" : "")
           + "</p>";
     } else if (kind === "photo") {
-      html = `<p class="mz-plan">ゲストは${g}まで、登録ユーザーは${m}まで。`
-        + ' <a href="/#signup">無料登録</a></p>';
+      /* ゲスト: 下に renderSignupPerks の箱(1枚→5枚+登録ボタン)が必ず出る。
+         同じ内容をひと画面で2回言わない(2026-08-06 重複解消) */
+      html = "";
     } else {
       /* ★ 伸びるものだけを言う(2026-08-02 ⑬)。ゲストが3分になった結果、
          スマホでは登録しても完成が伸びない(3分→3分)。「登録すると3分に」と
@@ -384,9 +404,12 @@ window.MZ_LIMITS = (() => {
         bigDevice ? null : "パソコンで開くと、10分まで書き出せます",
         bigDevice ? "「こだわり」設定(同期・レイアウト・仕上げの調整)" : null,
       ].filter(Boolean),
+      /* ★ ReAngle に書き出し上限は無い(maxExportSec 参照ゼロ)。eLine を
+         入れると存在しない「30秒の壁」を宣伝してしまう(2026-08-06)。
+         スマホは vLine も null なので箱ごと出ない ─ それが正しい
+         (スマホでは登録しても ReAngle は何も伸びない) */
       reangle: [
         vLine,
-        eLine,
       ].filter(Boolean),
       privacy: [
         "一度に扱える写真: 1枚 → 5枚",

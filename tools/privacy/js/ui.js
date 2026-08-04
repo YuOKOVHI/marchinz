@@ -272,11 +272,13 @@ MZ.ui.setStep = n => {
 MZ.ui.initJourney = () => {
   MZJourney.init({
     container: document.querySelector("main"),
+    /* shortLabel は狭い画面(375px)で現在地以外に出す2文字の短縮名(2026-08-06)。
+       無いと journey.css の max-width:2.4em で「取…」のように潰れる */
     phases: [
-      { id: "pick",  label: "取り込む", hint: "写真を選ぶと、顔に自動でモザイクがかかります" },
-      { id: "check", label: "顔を確認", hint: "かかっていない顔はタップで追加できます" },
-      { id: "tune",  label: "調整",     hint: "隠しかた・濃さ・広げ幅を整えます" },
-      { id: "save",  label: "保存",     hint: "「モザイクをかけて保存」を押してください" },
+      { id: "pick",  label: "取り込む", shortLabel: "取込", hint: "写真を選ぶと、顔に自動でモザイクがかかります" },
+      { id: "check", label: "顔を確認", shortLabel: "顔",   hint: "かかっていない顔はタップで追加できます" },
+      { id: "tune",  label: "調整",     shortLabel: "調整", hint: "隠しかた・濃さ・広げ幅を整えます" },
+      { id: "save",  label: "保存",     shortLabel: "保存", hint: "「モザイクをかけて保存」を押してください" },
     ],
     doneHint: "保存できました。続けて別の写真もどうぞ",
     /* 画面の表示状態から現在フェーズを導出(遷移箇所ごとの呼び忘れが起きない) */
