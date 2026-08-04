@@ -2099,3 +2099,18 @@ html:has(body.mz-auto-stage), body.mz-auto-stage {
   .as-bar-fill { transition: none; }
   .as-step i { animation: none !important; }
 }
+
+/* ★ 種類を選ぶ画面の案内(2026-08-05 優さん指示)。
+   「フルショウはパソコンから」と「右上にロゴが入る」を、選ぶ前に伝える。
+   カードより前に読ませたいが主役ではないので、文字は小さく行間は広く */
+.mode-tip {
+  max-width: 34rem; margin: 8px auto 0; padding: 10px 12px;
+  border-radius: 10px; background: var(--panel2); border: 1px solid var(--line);
+  color: var(--tx2); font-size: 12.5px; line-height: 1.7; text-align: left;
+}
+.mode-tip i { margin-right: 7px; color: var(--acc); }
+.mode-tip b { color: var(--tx); }
+.mode-tip--logo { background: transparent; border-style: dashed; }
+@media (max-width: 460px) {
+  .mode-tip { font-size: 12px; padding: 9px 11px; }
+}

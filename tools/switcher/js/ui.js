@@ -1190,8 +1190,8 @@ MC.ui.checkExportable = () => {
      書き出せる長さを超えたときだけ、ここで知らせて詰める(優さん指示)。
      効く上限は2つあり、厳しい方が効く:
        hardMax … 端末のメモリから来る物理上限(iPhoneで約8分41秒)
-       roleMax … 会員種別と端末の上限(2026-07-31: ゲスト1分未満 /
-                 登録×スマホ3分 / 登録×パソコン10分 / 管理者は無制限) */
+       roleMax … 会員種別と端末の上限(2026-08-05: ゲスト30秒 /
+                 登録×スマホ60秒 / 登録×パソコン10分 / 管理者は無制限) */
   const hardMax = MC.exporter.maxExportableSec();
   const roleMax = (window.MZ_LIMITS && MZ_LIMITS.maxExportSecFor)
     ? MZ_LIMITS.maxExportSecFor(MC.S.mode)
@@ -1370,7 +1370,7 @@ MC.ui.renderLimitWhy = () => {
   /* ★ この文はいちばん最初の「動画を選ぶ」画面に出る(index.html:101)。
      だから言うべきは**取り込める長さ**であって、書き出しの上限ではない。
      ここを maxExportSec で書いていたため、ゲストのスマホでは
-     読み込み画面に「3本まで・59秒まで」と出ていた ─ 取り込みは5分なのに。
+     読み込み画面に「3本まで・59秒まで」と出ていた ─ 取り込みは別枠なのに。
      地区大会レベルの顧問レビューで「意味が通らない」と指摘された(2026-07-31) */
   const srcMax = (window.MZ_LIMITS && MZ_LIMITS.maxSourceSec) || Infinity;
   if (isFinite(srcMax)) {
@@ -1379,9 +1379,17 @@ MC.ui.renderLimitWhy = () => {
        ★ 言うのは「長くても入る」こと。使う範囲はあとで選べるので、
          ここで身構えさせない(2026-07-31 4団体レビュー) */
     const L2 = window.MZ_LIMITS;
+    /* ★「長い録画でも構いません」は取り込みが20分あった頃の文(2026-08-05 改)。
+       いまはスマホ5分・パソコン15分なので、8分半のランスルーはスマホに入らない。
+       入らない人に「長くても構わない」と言うのは嘘なので、
+       **その端末で本当のこと**だけを言い、伸ばす道があるならそれを添える */
+    const shortSrc = L2.mobile && !L2.unlimited;
     el.innerHTML = icon
       + `<b>3本まで・1本${MC.ui.esc(L2.sourceLimitLabel)}まで</b>取り込めます。`
-      + "長い録画でも構いません。<b>どこを何分使うか</b>は、この後で選びます。"
+      + (shortSrc
+          ? "<b>パソコンで開くと15分</b>まで取り込めます。"
+          : "長い録画でも構いません。")
+      + "<b>どこを何分使うか</b>は、この後で選びます。"
       /* 端末のメモリで書き出しが頭打ちになる環境だけ、その理由も添える。
          ★ モードの天井が理由のときは、短さだけを告げない(2026-08-04 レビュー反映)。
            ここが上限との初対面なので、失う話(30秒)と得る話(高画質)を一緒に置く */
@@ -1457,7 +1465,7 @@ MC.ui.coverRange = (s0, s1) => {
      同じ数字のカードが3枚並ぶ(2026-07-31 レビューで実測)。
    ★ 鍵の判定も**実尺**でやり直す。limits.js は代表値(まるごと=510秒)で
      比べるので、45秒の演奏でもゲストには「まるごと」が鍵つきに見えていた ─
-     45秒なら上限(59秒)に収まるので、本当は使える。 */
+     45秒なら上限(60秒)に収まるので、本当は使える。 */
 MC.ui.usablePresets = showLen => {
   /* ★ モード込みで聞く(2026-08-04)。自動スイッチング×スマホは30秒 */
   const all = (window.MZ_LIMITS && MZ_LIMITS.exportPresetsFor)
@@ -5607,6 +5615,19 @@ MC.ui.showModeStep = step => {
   if (!kind || !flow) return;
   kind.hidden = step !== "kind";
   flow.hidden = step !== "flow";
+  /* ★「フルショウはパソコンから」の案内はスマホのときだけ(2026-08-05 優さん指示)。
+     パソコンで見ている人に「パソコンから作れます」と言っても意味が無い。
+     上限なし(管理者・手元)にも出さない ─ その人には当てはまらない */
+  { const tip = MC.ui.$("#mzModeTip"), L = window.MZ_LIMITS;
+    if (tip) tip.hidden = !(L && L.mobile && !L.unlimited); }
+  /* おまかせの説明にある長さも、その人・その端末の値にする(2026-08-05)。
+     静的に「60秒」と書いてあったが、ゲストは30秒なので嘘だった */
+  { const d = MC.ui.$("#flowEasyDesc"), L = window.MZ_LIMITS;
+    if (d && L && L.exportLimitLabelFor) {
+      const lab = L.exportLimitLabelFor(MC.ui._pendingMode || MC.S.mode);
+      d.innerHTML = `動画を選ぶだけ。<b>${MC.ui.esc(lab)}</b>までの見どころを、`
+        + "傾きも色も整えて自動で書き出します";
+    } }
   if (step === "flow") {
     const lead = MC.ui.$("#flowLead");
     const m = MC.ui.MODES[MC.ui._pendingMode] || MC.ui.modeConf();

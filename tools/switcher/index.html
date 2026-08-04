@@ -1,14 +1,14 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-app-v="1.97.0">
+<html lang="ja" data-mz-app-v="1.98.0">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>MarchinZ Switcher — ランスルー同期・自動スイッチング〈ベータ版〉</title>
 <meta name="description" content="みんなで撮ったランスルー動画を音で自動同期。自動スイッチング・ワイプでMP4に。MarchinZの無料クリエイターツール。">
 <meta name="theme-color" content="#fefcef">
-<link rel="icon" type="image/x-icon" href="/favicon.ico?v=1.97.0">
-<link rel="icon" type="image/png" href="/favicon.png?v=1.97.0">
-<link rel="apple-touch-icon" href="/pwa/apple-touch-icon.png?v=1.97.0">
+<link rel="icon" type="image/x-icon" href="/favicon.ico?v=1.98.0">
+<link rel="icon" type="image/png" href="/favicon.png?v=1.98.0">
+<link rel="apple-touch-icon" href="/pwa/apple-touch-icon.png?v=1.98.0">
 <meta property="og:title" content="MarchinZ Switcher — ランスルー同期・自動スイッチング">
 <meta property="og:description" content="みんなで撮ったランスルー動画を音で自動同期。自動スイッチング・ワイプでMP4に。MarchinZの無料クリエイターツール。">
 <meta property="og:type" content="website">
@@ -16,10 +16,10 @@
 <meta property="og:image" content="https://marchinz.netlify.app/ogp-card.png">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
-<link rel="stylesheet" href="/tools/shared/progress.css?v=1.97.0">
-<link rel="stylesheet" href="/tools/shared/journey.css?v=1.97.0">
-<link rel="stylesheet" href="css/style.css?v=1.97.0">
-<link rel="stylesheet" href="/tools/shared/sitechrome.css?v=1.97.0">
+<link rel="stylesheet" href="/tools/shared/progress.css?v=1.98.0">
+<link rel="stylesheet" href="/tools/shared/journey.css?v=1.98.0">
+<link rel="stylesheet" href="css/style.css?v=1.98.0">
+<link rel="stylesheet" href="/tools/shared/sitechrome.css?v=1.98.0">
 </head>
 <body data-mz-tool="switcher">
 <header class="topbar">
@@ -50,6 +50,21 @@
     <p class="mode-step-no">1 / 2</p>
     <h2 class="mode-title">作る動画を選ぶ</h2>
     <p class="mode-lead">あとから切り替えられます</p>
+    <!-- ★ 選ぶ前に「できること」と「映像に入るもの」を言う(2026-08-05 優さん指示)。
+         スマホは取り込み5分・書き出し30〜60秒なので8分半のフルショウは通せない。
+         作ったあとに気づくのではなく、ここで道を示す。
+         ★ #mzModeTip はスマホのときだけ出す(ui.js)。パソコンで見ている人に
+           「パソコンから作れます」と言うのは意味が無い。
+         ★ 絵文字は使わない(UIアイコンはFont Awesomeのモノクロで統一) -->
+    <p id="mzModeTip" class="mode-tip" hidden>
+      <i class="fa-regular fa-lightbulb" aria-hidden="true"></i>
+      <b>フルショウのランスルーは、無料登録＋パソコンから作れます。</b>
+      パソコンなら1本15分まで取り込めて、10分までの動画を作成できます。
+    </p>
+    <p class="mode-tip mode-tip--logo">
+      <i class="fa-solid fa-image" aria-hidden="true"></i>
+      作成した映像には、<b>右上にMarchinZのロゴ</b>が入ります。
+    </p>
     <div class="mode-cards">
       <button type="button" class="mode-card" data-mode="vertical">
         <span class="mode-card-icon" aria-hidden="true">
@@ -107,7 +122,10 @@
           </svg>
         </span>
         <span class="mode-card-name">おまかせ</span>
-        <span class="mode-card-desc">動画を選ぶだけ。<b>60秒</b>の見どころを、傾きも色も整えて自動で書き出します</span>
+        <!-- ★ 長さは人と端末で変わるので静的に書かない(2026-08-05)。
+             ゲストは30秒、登録×スマホは30/60秒、パソコンは10分まで ─
+             「60秒」と決め打つと、ゲストには嘘になる。ui.js が入れる -->
+        <span class="mode-card-desc" id="flowEasyDesc">動画を選ぶだけ。見どころを、傾きも色も整えて自動で書き出します</span>
       </button>
       <button type="button" class="mode-card" data-flow="pro">
         <span class="mode-card-icon" aria-hidden="true">
@@ -730,38 +748,38 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="/tools/shared/limits.js?v=1.97.0"></script>
-<script src="/tools/shared/sitechrome.js?v=1.97.0"></script>
-<script src="/tools/shared/progress.js?v=1.97.0"></script>
-<script src="/tools/shared/journey.js?v=1.97.0"></script>
-<script src="/tools/shared/watermark.js?v=1.97.0"></script>
-<script src="/tools/shared/mp4source.js?v=1.97.0"></script>
-<script src="/tools/shared/session.js?v=1.97.0"></script>
+<script src="/tools/shared/limits.js?v=1.98.0"></script>
+<script src="/tools/shared/sitechrome.js?v=1.98.0"></script>
+<script src="/tools/shared/progress.js?v=1.98.0"></script>
+<script src="/tools/shared/journey.js?v=1.98.0"></script>
+<script src="/tools/shared/watermark.js?v=1.98.0"></script>
+<script src="/tools/shared/mp4source.js?v=1.98.0"></script>
+<script src="/tools/shared/session.js?v=1.98.0"></script>
 <script src="vendor/mp4box.all.min.js"></script>
 <script src="vendor/mp4-muxer.min.js"></script>
 <script src="vendor/fft.js"></script>
-<script src="js/state.js?v=1.97.0"></script>
-<script src="js/layout.js?v=1.97.0"></script>
-<script src="js/media.js?v=1.97.0"></script>
-<script src="js/audio.js?v=1.97.0"></script>
-<script src="js/sync.js?v=1.97.0"></script>
-<script src="js/beats.js?v=1.97.0"></script>
-<script src="js/sections.js?v=1.97.0"></script>
-<script src="js/highlight.js?v=1.97.0"></script>
-<script src="js/visual.js?v=1.97.0"></script>
-<script src="js/director.js?v=1.97.0"></script>
-<script src="js/colormatch.js?v=1.97.0"></script>
+<script src="js/state.js?v=1.98.0"></script>
+<script src="js/layout.js?v=1.98.0"></script>
+<script src="js/media.js?v=1.98.0"></script>
+<script src="js/audio.js?v=1.98.0"></script>
+<script src="js/sync.js?v=1.98.0"></script>
+<script src="js/beats.js?v=1.98.0"></script>
+<script src="js/sections.js?v=1.98.0"></script>
+<script src="js/highlight.js?v=1.98.0"></script>
+<script src="js/visual.js?v=1.98.0"></script>
+<script src="js/director.js?v=1.98.0"></script>
+<script src="js/colormatch.js?v=1.98.0"></script>
 <!-- horizon.js(自動傾き検出)を読み込みに戻した(2026-08-01 優さん指示
      「おまかせは傾き補正も自動で行う」)。2026-07-28 に外したのは
      **こだわりで自動提案をやめた**ためで、実装自体は生きていた。
      こだわりでは今も提案しない ─ 使うのは おまかせ の自走だけ -->
-<script src="js/horizon.js?v=1.97.0"></script>
-<script src="js/salute.js?v=1.97.0"></script>
-<script src="js/preview.js?v=1.97.0"></script>
-<script src="js/timeline.js?v=1.97.0"></script>
-<script src="js/cutmode.js?v=1.97.0"></script>
-<script src="js/exporter.js?v=1.97.0"></script>
-<script src="js/ui.js?v=1.97.0"></script>
-<script src="js/app.js?v=1.97.0"></script>
+<script src="js/horizon.js?v=1.98.0"></script>
+<script src="js/salute.js?v=1.98.0"></script>
+<script src="js/preview.js?v=1.98.0"></script>
+<script src="js/timeline.js?v=1.98.0"></script>
+<script src="js/cutmode.js?v=1.98.0"></script>
+<script src="js/exporter.js?v=1.98.0"></script>
+<script src="js/ui.js?v=1.98.0"></script>
+<script src="js/app.js?v=1.98.0"></script>
 </body>
 </html>

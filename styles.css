@@ -16052,3 +16052,11 @@ button.mz-site-announcement-banner-link {
   padding: 0;
   list-style: none;
 }
+
+/* クリエイターページの「無料登録＋パソコンでできること」(2026-08-05 優さん指示) */
+.mz-ctools-note--tip {
+  margin-top: 6px; padding: 10px 12px; border-radius: 10px;
+  background: rgba(30, 79, 214, 0.06); border: 1px solid rgba(30, 79, 214, 0.18);
+  line-height: 1.8;
+}
+.mz-ctools-note--tip i { margin-right: 7px; }

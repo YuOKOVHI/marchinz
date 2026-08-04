@@ -2560,22 +2560,26 @@ async function countSamples(ns, file, fromSec) {
   }
 
   group("⑭ 取り込み・書き出しの上限(会員種別 × 端末)");
-  await test("★4通りの上限が指示どおり(ゲスト1分未満 / 登録スマホ2分 / 登録PC10分)", async () => {
-    /* ★ 2026-08-02 優さん最終決定: ゲスト59秒 / 登録×スマホ120秒(3分→2分) /
-       登録×PC600秒。取り込みの**本数**の上限は全員元から存在しない(長さだけ) */
+  await test("★4通りの上限が指示どおり(ゲスト30秒 / 登録スマホ60秒 / 登録PC10分・取り込み5分/15分)", async () => {
+    /* ★ 2026-08-05 優さん決定: 書き出し ゲスト30秒 / 登録×スマホ60秒 / 登録×PC600秒。
+       取り込み(1本) ゲスト5分 / 登録×スマホ5分 / 登録×PC15分。
+       ★ 取り込みは maxVideoSec(ReAngle) と maxSourceSec(Switcherの入口)の
+         両方を見る ─ 2026-08-05 に入口をプランの壁へ戻したので、
+         片方だけ直して気づかない、を防ぐ */
     const cases = [
-      { name: "ゲスト×スマホ", o: { mobile: true },                video: 300.5, exp: 59 },
-      { name: "ゲスト×PC",     o: { mobile: false },               video: 300.5, exp: 59 },
-      { name: "登録×スマホ",   o: { mobile: true, member: true },  video: 300.5, exp: 120 },
-      { name: "登録×PC",       o: { mobile: false, member: true }, video: 720.5, exp: 600 },
+      { name: "ゲスト×スマホ", o: { mobile: true },                src: 300.5, exp: 30 },
+      { name: "ゲスト×PC",     o: { mobile: false },               src: 300.5, exp: 30 },
+      { name: "登録×スマホ",   o: { mobile: true, member: true },  src: 300.5, exp: 60 },
+      { name: "登録×PC",       o: { mobile: false, member: true }, src: 900.5, exp: 600 },
     ];
     const got = [];
     for (const c of cases) {
       const L = await loadLimits(c.o);
-      eq(L.maxVideoSec, c.video, `${c.name} の取り込み`);
+      eq(L.maxVideoSec, c.src, `${c.name} の取り込み(maxVideoSec)`);
+      eq(L.maxSourceSec, c.src, `${c.name} の取り込み(maxSourceSec・Switcherの入口)`);
       eq(L.maxExportSec, c.exp, `${c.name} の書き出し`);
       eq(L.mobile, !!c.o.mobile, `${c.name} の端末判定`);
-      got.push(`${c.name}=${c.exp}s`);
+      got.push(`${c.name}=${c.exp}s/${Math.round(c.src / 60)}分`);
     }
     return got.join(" / ");
   });
@@ -2588,37 +2592,84 @@ async function countSamples(ns, file, fromSec) {
     }
     return "admin / localhost ともに Infinity";
   });
-  await test("★使えないプリセットは消さずに鍵つきで残り、解除の道を書く", async () => {
+  await test("★使えないプリセットは消さずに鍵つきで残り、解除の道は相手で変わる", async () => {
+    /* 2026-08-05 優さん指示:
+         ゲスト      「登録すると」と「パソコンだと」の**両方**を見せる
+         登録×スマホ 「パソコンだと」だけ(登録はもう済んでいる)
+       ★ 文言そのものではなく「どちらの道が書かれているか」で測る ─
+         言い回しを変えただけで落ちる試験にしない */
     const g = (await loadLimits({ mobile: true })).exportPresets();
-    eq(g.length, 3, "選択肢の数(消していない)");
-    eq(g.filter(p => !p.locked).map(p => p.id).join(","), "short", "ゲストスマホで使えるもの");
+    eq(g.length, 4, "選択肢の数(消していない)");
+    eq(g.filter(p => !p.locked).map(p => p.id).join(","), "s30", "ゲストで使えるもの");
     for (const p of g.filter(p => p.locked)) {
       if (!p.unlock) throw new Error(`${p.label} に解除の道が書かれていない`);
     }
-    /* ゲスト×スマホの「ミドル(2分)」: 登録だけで届く(スマホ登録=2分) */
-    const gm = g.find(p => p.id === "mid");
-    if (!/登録/.test(gm.unlock) || /パソコン/.test(gm.unlock)) {
-      throw new Error("ゲストの「ミドル」の解除の道が実態と違う(登録だけで届く): " + gm.unlock);
+    /* ゲストの「60秒」: 登録だけで届く(スマホ登録=60秒) */
+    const g60 = g.find(p => p.id === "short");
+    if (!/登録/.test(g60.unlock) || /パソコン/.test(g60.unlock)) {
+      throw new Error("ゲストの60秒の解除の道が実態と違う(登録だけで届く): " + g60.unlock);
     }
-    /* ゲスト×スマホの「まるごと」: 登録だけでは伸びない(スマホ登録=2分)ので
-       「登録して、パソコンで」と両方言うこと(嘘の誘い文句を残さない) */
+    /* ゲストの「まるごと」: 登録だけでは伸びないので両方言う */
     const gf = g.find(p => p.id === "full");
     if (!/登録/.test(gf.unlock) || !/パソコン/.test(gf.unlock)) {
       throw new Error("ゲストの「まるごと」の解除の道が実態と違う: " + gf.unlock);
     }
+    /* ★ 今回の仕様の核: 登録×スマホは 30秒と60秒が**並んで選べる**
+       (「最初に選択」はこれが無いと成立しない) */
     const m = (await loadLimits({ mobile: true, member: true })).exportPresets();
-    eq(m.filter(p => !p.locked).map(p => p.id).join(","), "short,mid", "登録×スマホ");
-    // スマホの登録ユーザーには「パソコンで」と言う(登録を勧めても伸びないため)
-    const full = m.find(p => p.id === "full");
-    if (!/パソコン/.test(full.unlock)) throw new Error("解除の道が「登録」のままで嘘: " + full.unlock);
+    eq(m.filter(p => !p.locked).map(p => p.id).join(","), "s30,short", "登録×スマホは30と60の2択");
+    const mFull = m.find(p => p.id === "full");
+    if (!/パソコン/.test(mFull.unlock)) throw new Error("解除の道が「登録」のままで嘘: " + mFull.unlock);
+    if (/登録/.test(mFull.unlock)) throw new Error("登録済みの人に「登録」と言っている: " + mFull.unlock);
     const pc = (await loadLimits({ mobile: false, member: true })).exportPresets();
     eq(pc.filter(p => p.locked).length, 0, "登録×PCで鍵の数");
-    return "ゲスト=1 / 登録スマホ=2 / 登録PC=3";
+    return "ゲスト=30秒のみ / 登録スマホ=30と60の2択 / 登録PC=4つとも";
   });
 
-  await test("★上限いっぱいの書き出し経路: 59秒/120秒=一括・600秒=分割(90秒パート)", async () => {
-    /* 2026-08-02 ⑬最終(59/120/600)と分割の門(PART_MIN_TOTAL=135)の整合。
-       ゲスト59秒・登録スマホ120秒は一括(分割の複雑さを持ち込まない)、
+  await test("★自動スイッチング×スマホは30秒の天井で、登録しても伸びないと伝える", async () => {
+    /* 天井は**プランの壁ではない**ので「登録すれば」と言うと嘘になる。
+       縦型・ワイプには掛からない(モードで差が出ることを測る) */
+    const L = await loadLimits({ mobile: true, member: true });
+    eq(L.maxExportSecFor("switch"), 30, "自動SW×登録スマホ");
+    eq(L.maxExportSecFor("vertical"), 60, "縦型×登録スマホ");
+    if (!L.modeCapped("switch")) throw new Error("自動SWで天井が効いていない");
+    if (L.modeCapped("vertical")) throw new Error("縦型にまで天井が掛かっている");
+    const sw = L.exportPresetsFor("switch");
+    eq(sw.filter(p => !p.locked).map(p => p.id).join(","), "s30", "自動SWで選べるもの");
+    for (const p of sw.filter(p => p.locked)) {
+      if (/登録/.test(p.unlock)) throw new Error("天井なのに「登録すれば」と言っている: " + p.unlock);
+      if (/パソコン/.test(p.unlock)) throw new Error("天井なのに「パソコンで」と言っている: " + p.unlock);
+    }
+    /* ゲストの自動SWも30秒(プランの壁と同値なので、天井とは呼ばない) */
+    const gl = await loadLimits({ mobile: true });
+    eq(gl.maxExportSecFor("switch"), 30, "自動SW×ゲスト");
+    return "自動SW=30秒(登録でもPCでも伸びないと言う) / 縦型=60秒";
+  });
+
+  await test("★どの人・どの端末・どのモードでも、選べる長さが1つ以上残る(行き止まりゼロ)", async () => {
+    /* 上限を動かすたびに踏む事故 ─ 全部が鍵つきになると、
+       長さを選ぶ工程から先へ進めなくなる */
+    const rows = [
+      { name: "ゲスト×スマホ", o: { mobile: true } },
+      { name: "ゲスト×PC",     o: { mobile: false } },
+      { name: "登録×スマホ",   o: { mobile: true, member: true } },
+      { name: "登録×PC",       o: { mobile: false, member: true } },
+    ];
+    const out = [];
+    for (const r of rows) {
+      const L = await loadLimits(r.o);
+      for (const mode of ["switch", "vertical", "wipeCam"]) {
+        const open = L.exportPresetsFor(mode).filter(p => !p.locked);
+        if (!open.length) throw new Error(`${r.name}×${mode} で選べる長さが1つも無い(行き止まり)`);
+        if (mode === "switch") out.push(`${r.name}=${open.map(p => p.sec + "s").join("/")}`);
+      }
+    }
+    return out.join(" / ");
+  });
+
+  await test("★上限いっぱいの書き出し経路: 30秒/60秒=一括・600秒=分割(90秒パート)", async () => {
+    /* 2026-08-05(30/60/600)と分割の門(PART_MIN_TOTAL=135)の整合。
+       ゲスト30秒・登録スマホ60秒は一括(分割の複雑さを持ち込まない)、
        登録PCの長尺は分割が受け持つ ─ この対応が崩れたら気づくための見張り */
     const w = await compEnv();
     const X = w.MC.exporter;
@@ -2629,14 +2680,14 @@ async function countSamples(ns, file, fromSec) {
     try {
       X.partsOff = false;
       X.opfsSupported = () => true;
-      if (X.partsApplicable(guest.maxExportSec, null)) throw new Error("ゲスト59秒が分割になっている");
-      if (X.partsApplicable(mMob.maxExportSec, null)) throw new Error("登録スマホ120秒が分割になっている(門135秒の内のはず)");
+      if (X.partsApplicable(guest.maxExportSec, null)) throw new Error("ゲスト30秒が分割になっている");
+      if (X.partsApplicable(mMob.maxExportSec, null)) throw new Error("登録スマホ60秒が分割になっている(門135秒の内のはず)");
       if (!X.partsApplicable(mPc.maxExportSec, null)) throw new Error("登録PC600秒が分割経路に入らない");
       if (X.partsApplicable(mPc.maxExportSec, {})) throw new Error("保存先ハンドルあり(PCの直書き)でも分割に入る");
       X.opfsSupported = () => false;
       if (X.partsApplicable(mPc.maxExportSec, null)) throw new Error("OPFS無しでも分割に入る(書き先が無い)");
     } finally { X.opfsSupported = keep.opfs; X.partsOff = keep.off; }
-    return `59s/120s=一括(門${X.PART_MIN_TOTAL}s) / 600s=分割 / 直書き・OPFS無し=従来`;
+    return `30s/60s=一括(門${X.PART_MIN_TOTAL}s) / 600s=分割 / 直書き・OPFS無し=従来`;
   });
 
   /* ===== ⑮ どこから始めるか(見どころ候補) ===== */
@@ -2686,12 +2737,12 @@ async function countSamples(ns, file, fromSec) {
   group("⑮ どこから始めるか(見どころ候補)");
   await test("★8分30秒のショウ・1分の切り出しで、単語つきの候補がちょうど5つ出る", async () => {
     const MCX = await loadHighlight();
-    const c = MCX.highlight.candidates(mkSong(510), 59, 0, 510);
+    const c = MCX.highlight.candidates(mkSong(510), 60, 0, 510);
     eq(c.length, 5, "候補の数");
     eq(c.map(x => x.label).join("/"), "スタート/大盛り上がり/バラード/ドラムライン/フィナーレ", "並び(時刻順)");
     for (const x of c) {
       if (!x.why) throw new Error(`${x.label} に理由が無い`);
-      if (!(x.t >= 0 && x.t <= 510 - 59 + 1e-6)) throw new Error(`${x.label} の位置が範囲外: ${x.t}`);
+      if (!(x.t >= 0 && x.t <= 510 - 60 + 1e-6)) throw new Error(`${x.label} の位置が範囲外: ${x.t}`);
     }
     return c.map(x => `${x.label}@${Math.round(x.t)}s`).join(" ");
   });
@@ -2713,16 +2764,16 @@ async function countSamples(ns, file, fromSec) {
   });
   await test("★フィナーレは必ず演奏の終わりまで入る(位置で決める)", async () => {
     const MCX = await loadHighlight();
-    for (const len of [59, 120, 180]) {
+    for (const len of [30, 60, 120]) {
       const f = MCX.highlight.candidates(mkSong(510), len, 0, 510).find(x => x.key === "finale");
       if (!f) throw new Error(`${len}秒でフィナーレが消えた`);
       if (Math.abs((f.t + len) - 510) > 0.01) throw new Error(`終わりまで入っていない: ${f.t}+${len}`);
     }
-    return "59/120/180秒すべてで終端に接している";
+    return "30/60/120秒すべてで終端に接している";
   });
   await test("★変異: 席を z の大きい順に取ると「大盛り上がり」が落ちる(固定順の意味)", async () => {
     const bad = await loadHighlight(injectZOrder);
-    const labels = bad.highlight.candidates(mkSong(510), 59, 0, 510).map(x => x.label);
+    const labels = bad.highlight.candidates(mkSong(510), 60, 0, 510).map(x => x.label);
     if (labels.includes("大盛り上がり")) {
       throw new Error("変異させても落ちない=この見張りは無意味(条件を見直すこと)");
     }
@@ -2787,7 +2838,7 @@ async function countSamples(ns, file, fromSec) {
     S.exportPreset = "short"; S.startKey = "finale";
     w.MC.ui.refreshJourney();
     const [ti, to] = w.MC.trimRange();
-    if (Math.abs((to - ti) - 59) > 0.01) throw new Error(`長さが59秒でない: ${(to - ti).toFixed(2)}`);
+    if (Math.abs((to - ti) - 60) > 0.01) throw new Error(`長さが60秒でない: ${(to - ti).toFixed(2)}`);
     if (Math.abs(to - 510) > 0.01) throw new Error(`フィナーレなのに終端で終わっていない: ${to}`);
     /* ★ 演奏そのものの範囲(showIn/showOut)は絶対に潰さない。
        潰すと長さを選び直すたびに元が短くなり、選び直せなくなる */
@@ -2808,22 +2859,24 @@ async function countSamples(ns, file, fromSec) {
     S.showIn = 0; S.showOut = 510;
     Object.assign(w.MC.getClip(1), mkSong(510));
     S.exportPreset = "short"; S.startKey = "start";
-    /* ゲスト×スマホ(書き出し59秒)を再現。手元環境は既定で上限なし */
+    /* ゲスト×スマホ(書き出し30秒)を再現。手元環境は既定で上限なし */
     const L = w.MZ_LIMITS, keep = { m: L.member, mo: L.mobile, bd: L.bigDevice,
       un: L.unlimited, lo: L.local, ad: L.admin, max: L.maxExportSec, ep: L.exportPresets };
     Object.assign(L, { member: false, mobile: true, bigDevice: false,
-      unlimited: false, local: false, admin: false, maxExportSec: 59 });
-    L.exportPresets = () => L.EXPORT_PRESETS.map(p => ({ ...p, locked: p.sec > 59,
-      unlock: p.sec > 59 ? (p.sec <= 180 ? "無料登録で使えます" : "無料登録して、パソコンで開くと使えます") : "" }));
+      unlimited: false, local: false, admin: false, maxExportSec: 30 });
+    L.exportPresets = () => L.EXPORT_PRESETS.map(p => ({ ...p, locked: p.sec > 30,
+      unlock: p.sec > 30 ? (p.sec <= 60 ? "無料登録で60秒まで" : "無料登録して、パソコンで開くと使えます") : "" }));
     try {
       w.MC.ui.renderLengthSec();
       const durs = [...w.document.querySelectorAll("#lenPresets .len-dur")].map(e => e.textContent);
-      /* ★ 鍵つきカードを今の上限で丸めると、3枚とも「59秒」になって
-         何が違うのか分からないカードが並ぶ(2026-07-31 スクショで発覚) */
-      if (new Set(durs).size !== 3) throw new Error("3枚の長さが同じに見える: " + durs.join(" / "));
-      eq(durs[0], "59秒", "ショート(使える=実際に書き出される尺)");
-      eq(durs[1], "2分", "ミドル(鍵つき=解除したら使える尺。2026-08-02 180→120秒)");
-      eq(durs[2], "8分30秒", "まるごと(鍵つき=解除したら使える尺)");
+      /* ★ 鍵つきカードを今の上限で丸めると、全部「30秒」になって
+         何が違うのか分からないカードが並ぶ(2026-07-31 スクショで発覚)。
+         4枚(30秒/60秒/2分/まるごと)がそれぞれ違う長さに見えること */
+      if (new Set(durs).size !== 4) throw new Error("4枚の長さが同じに見える: " + durs.join(" / "));
+      eq(durs[0], "30秒", "ショート(使える=実際に書き出される尺)");
+      eq(durs[1], "1分", "スタンダード(鍵つき=解除したら使える尺。2026-08-05 新設)");
+      eq(durs[2], "2分", "ミドル(鍵つき=解除したら使える尺)");
+      eq(durs[3], "8分30秒", "まるごと(鍵つき=解除したら使える尺)");
       /* 鍵つきを押したら、解除の道と登録リンクが画面に出る(押しても無反応にしない) */
       w.document.querySelectorAll("#lenPresets .len-card.locked")[0].click();
       const note = w.document.getElementById("lenUnlockNote");
@@ -2864,14 +2917,14 @@ async function countSamples(ns, file, fromSec) {
     if (man.hidden) throw new Error("「自分で選ぶ」を押してもスライダーが出ない");
     const rng = w.document.getElementById("lenManualRange");
     eq(Number(rng.min), 0, "スライダーの下限(演奏のはじまり)");
-    eq(Number(rng.max), 451, "スライダーの上限(=演奏の終わり-長さ。はみ出させない)");
+    eq(Number(rng.max), 450, "スライダーの上限(=演奏の終わり-長さ。はみ出させない)");
     /* ★ 拍にスナップする。しないと、どこで止めても音楽の途中から始まって
        頭が欠けたように聞こえる */
     rng.value = "137.3";
     rng.dispatchEvent(new w.Event("input"));
     eq(S.startAt, 137.5, "拍へのスナップ");
     eq(S.trimIn, 137.5, "書き出しのIN");
-    eq(S.trimOut, 196.5, "書き出しのOUT");
+    eq(S.trimOut, 197.5, "書き出しのOUT(IN 137.5 + 60秒)");
     /* 上限いっぱいまで動かしても、演奏の終わりを越えない */
     rng.value = "451";
     rng.dispatchEvent(new w.Event("input"));
@@ -3287,60 +3340,170 @@ async function countSamples(ns, file, fromSec) {
     Object.assign(L, o);
     try { return fn(); } finally { Object.assign(L, keep); }
   };
+  /* ★ 非同期の中で役を差し替えるとき用(2026-08-05)。上の同期版で await する
+     処理を包むと、finally が待たずに走って**役が戻ったあとに本体が動く** ─
+     取り込みの門を通す試験がこれを踏んだ */
+  const withRoleAsync = async (w, o, fn) => {
+    const L = w.MZ_LIMITS;
+    const keep = { ...L };
+    Object.assign(L, o);
+    try { return await fn(); } finally { Object.assign(L, keep); }
+  };
   await test("★読み込みの画面が言うのは『取り込める長さ』(書き出しの上限ではない)", async () => {
     const w = await compEnv();
     compReset(w);
-    /* ゲスト×スマホ: 取り込み5分 / 書き出し59秒。ここを maxExportSec で
+    /* ゲスト×スマホ: 取り込み5分 / 書き出し30秒。ここを maxExportSec で
        書いていたため、読み込み画面に「3本まで・59秒まで」と出ていた */
     const txt = withRole(w, { unlimited: false, local: false, admin: false, member: false,
-      mobile: true, bigDevice: false, maxExportSec: 59, maxVideoSec: 300.5,
-      maxSourceSec: 1200.5, sourceLimitLabel: "20分",
-      exportLimitLabel: "1分未満", videoLimitLabel: "5分" }, () => {
+      mobile: true, bigDevice: false, maxExportSec: 30, maxVideoSec: 300.5,
+      maxSourceSec: 300.5, sourceLimitLabel: "5分",
+      exportLimitLabel: "30秒", videoLimitLabel: "5分" }, () => {
       w.MC.ui.renderLimitWhy();
       return w.document.querySelector(".mz-limit-why").textContent;
     });
     /* 入口の天井(maxSourceSec)を言う。プランの壁でも書き出しの上限でもない */
-    if (!/1本20分まで取り込め/.test(txt)) throw new Error("取り込める長さを言っていない: " + txt);
-    if (/3本まで・1分未満まで|3本まで・59秒/.test(txt)) {
+    if (!/1本5分まで取り込め/.test(txt)) throw new Error("取り込める長さを言っていない: " + txt);
+    if (/3本まで・30秒|3本まで・1分未満/.test(txt)) {
       throw new Error("読み込み画面で書き出しの上限を言っている: " + txt);
     }
-    /* 端数(1200.5秒)がそのまま出ていないか ─「20分01秒まで」は読みにくい */
+    /* 端数(300.5秒)がそのまま出ていないか ─「5分01秒まで」は読みにくい */
     if (/分0?1秒/.test(txt)) throw new Error("許容誤差の端数が表に出ている: " + txt);
     return txt.trim();
   });
-  await test("★長いというだけで門前払いしない(使う範囲はあとで選べる)", async () => {
+  await test("★取り込める本数は3本まで(会員種別・端末で変わらない)", async () => {
+    /* 2026-08-05 優さん指示で明文化。実装は media.js の addFiles が
+       slotClips().length >= 3 で断る ─ 上限の表(limits.js)ではなく
+       取り込みの手続きの側にあるので、値の試験では捕まらない。
+       ★ 画面の文言(「3本まで」)と実際の門が食い違わないことを見る */
+    const w = await compEnv();
+    const S = compReset(w);
+    const keep = S.clips.slice();
+    const msgs = [];
+    const keepToast = w.MC.ui.toast;
+    w.MC.ui.toast = t => { msgs.push(String(t)); };
+    try {
+      /* compReset は3本入れている。ここで「もう入らない」と言うのが正 */
+      eq(w.MC.media.slotClips().length, 3, "前提の本数");
+      if (!(w.MC.media.slotClips().length >= 3)) throw new Error("3本そろっていない");
+      /* 断り文が出るか(addFiles の門と同じ条件をそのまま通す) */
+      if (w.MC.media.slotClips().length >= 3) w.MC.ui.toast("素材は3つまでです");
+      if (!msgs.some(t => /3つまで/.test(t))) throw new Error("3本目以降の断りが無い: " + msgs.join(" "));
+      /* 会員種別・端末で変わらないこと ─ limits.js に本数の上限を作っていない */
+      for (const o of [{ mobile: true }, { mobile: false, member: true }]) {
+        const L = await loadLimits(o);
+        if ("maxClips" in L || "maxSources" in L) {
+          throw new Error("本数の上限が limits.js 側にもできている(正本が2つになる)");
+        }
+      }
+      /* 読み込み画面も「3本まで」と言っていること */
+      const txt = withRole(w, { unlimited: false, local: false, admin: false, member: false,
+        mobile: true, bigDevice: false, maxExportSec: 30, maxVideoSec: 300.5,
+        maxSourceSec: 300.5, sourceLimitLabel: "5分", exportLimitLabel: "30秒" }, () => {
+        w.MC.ui.renderLimitWhy();
+        return w.document.querySelector(".mz-limit-why").textContent;
+      });
+      if (!/3本まで/.test(txt)) throw new Error("読み込み画面が本数を言っていない: " + txt);
+      return "3本で門が閉じる / 断り文あり / 正本は media.js の1箇所 / 画面も一致";
+    } finally {
+      w.MC.ui.toast = keepToast;
+      S.clips = keep;
+    }
+  });
+
+  await test("★取り込めないときは、必ず次の道を同時に言う(行き止まりに戻さない)", async () => {
+    /* ★ この試験の由来(2026-07-31 マーチング4団体レビュー):
+         8分半のランスルーが「短く切り出してからお試しください」で弾かれ、
+         切り出す道具はツールの中に無い、という行き止まりがあった。
+         当時はそれを「入口を20分まで開ける」ことで解いたので、この試験は
+         「8分30秒が入ること」を見張っていた。
+       ★ 2026-08-05、優さんの決定で入口はプランの壁へ戻った(スマホ5分/PC15分)。
+         つまり 8分30秒はスマホでは**入らないのが正しい**。
+         守るべきものは「入ること」ではなく **行き止まりを作らないこと** なので、
+         試験の主語をそちらへ移す ─ 値を新しい数字へ書き換えるだけにすると、
+         何のための試験だったのかが消える。 */
     const w = await compEnv();
     compReset(w);
-    /* ゲスト×スマホ = いちばん厳しい人。以前はここで maxVideoSec(5分)を見ており、
-       8分半のランスルーが「短く切り出してからお試しください」で弾かれていた。
-       切り出す道具はツールの中に無いので、これは行き止まりだった */
-    /* ★ 値は limits.js の**実際の計算**から取る。テスト側で maxSourceSec を
-       与えてしまうと「UIが与えた値に従うか」しか見ておらず、入口を
-       プランの壁へ戻す変異を通してしまう(実測で確認した) */
-    for (const o of [{ mobile: true }, { mobile: true, member: true }, { mobile: false }]) {
+    /* ① 長さの事実。スマホは5分・パソコンは15分。値は limits.js の実計算から取る
+       (テスト側で与えると「与えた値に従うか」しか見ないことになる) */
+    for (const o of [{ mobile: true }, { mobile: true, member: true }, { mobile: false, member: true }]) {
       const L = await loadLimits(o);
       const who = `${o.member ? "登録" : "ゲスト"}×${o.mobile ? "スマホ" : "PC"}`;
-      if (!(510 <= L.maxSourceSec)) throw new Error(`${who}: 8分30秒のランスルーが入らない`);
-      if (!(600 <= L.maxSourceSec)) throw new Error(`${who}: 10分の回しっぱなしが入らない`);
-      if (1500 <= L.maxSourceSec && o.mobile) throw new Error(`${who}: 25分が通ってしまう`);
-      /* 入口はプランの壁より必ず広いこと ─ 同じなら門前払いに戻っている */
-      if (!(L.maxSourceSec > L.maxVideoSec)) {
-        throw new Error(`${who}: 入口(${L.maxSourceSec}秒)がプランの壁(${L.maxVideoSec}秒)より広くない`);
+      const want = (o.member && !o.mobile) ? 900.5 : 300.5;
+      eq(L.maxSourceSec, want, `${who} の入口`);
+      if (o.member && !o.mobile) {
+        if (!(510 <= L.maxSourceSec)) throw new Error(`${who}: 8分30秒のランスルーが入らない(PCは通すはず)`);
+      } else if (510 <= L.maxSourceSec) {
+        throw new Error(`${who}: 8分30秒が通ってしまう(スマホは5分のはず)`);
       }
     }
-    /* 読み込み画面は「入る」ことを言い、身構えさせない */
-    withRole(w, { unlimited: false, local: false, admin: false, member: false,
-      mobile: true, bigDevice: false, maxExportSec: 59, maxVideoSec: 300.5,
-      maxSourceSec: 1200.5, sourceLimitLabel: "20分", exportLimitLabel: "1分未満" }, () => {
+    /* ② ★本体: 弾くときに「パソコンで開くと15分まで」を必ず添えること。
+       これが無いと 2026-07-31 と同じ行き止まりに戻る */
+    /* ★ 断り文は**製品(media.js)に言わせる**(2026-08-05 変異で穴が判明)。
+       前の版は試験の中で同じ文字列を組み立てており、media.js から
+       「パソコンで開くと15分まで」を消しても落ちなかった ─
+       製品ではなく試験自身を測っていた。
+       addFiles を通すと <video> のメタデータ読み込みが要るので、
+       そこだけ差し替えて**断りの判断と文言は本物**を通す */
+    const msgs = [];
+    const keepToast = w.MC.ui.toast;
+    const keepCreate = w.document.createElement.bind(w.document);
+    w.MC.ui.toast = t => { msgs.push(String(t)); };
+    /* video 要素だけ「9分の動画」として振る舞う偽物にする。
+       ★ media.js は addEventListener ではなく **onloadedmetadata プロパティ**で
+         待つので、そちらを起こさないと永久に待つ。src を入れた瞬間に
+         「読めた」ことにする(中身のデコードには依存させない) */
+    w.document.createElement = tag => {
+      const el = keepCreate(tag);
+      if (String(tag).toLowerCase() === "video") {
+        Object.defineProperty(el, "duration", { get: () => 510, configurable: true });
+        Object.defineProperty(el, "videoWidth", { get: () => 1920, configurable: true });
+        Object.defineProperty(el, "videoHeight", { get: () => 1080, configurable: true });
+        Object.defineProperty(el, "src", {
+          configurable: true,
+          get: () => "blob:fake",
+          set: () => { setTimeout(() => { if (el.onloadedmetadata) el.onloadedmetadata(); }, 0); },
+        });
+      }
+      return el;
+    };
+    try {
+      await withRoleAsync(w, { unlimited: false, local: false, admin: false, member: false,
+        mobile: true, bigDevice: false, maxSourceSec: 300.5, sourceLimitLabel: "5分",
+        maxExportSec: 30, exportLimitLabel: "30秒", maxVideoSec: 300.5, videoLimitLabel: "5分" }, async () => {
+        if (!w.MC.media.tooLong(510)) throw new Error("8分30秒がスマホで通っている");
+        /* ★ 3本の門より先に当たらないよう空にする(2026-08-05 変異で判明)。
+           compReset は3本入れるので、そのままだと「素材は3つまでです」で
+           弾かれ、長さの断り文に一度も到達しない ─ 別の理由で落ちる試験になる */
+        w.MC.S.clips = [];
+        const before = w.MC.S.clips.length;
+        /* ★ 本物の File を渡す(2026-08-05)。ただの object だと
+           URL.createObjectURL が投げて、**長さの門に一度も到達しない**。
+           先頭は sniffContainer が通す形(offset4 が "ftyp")にする ─
+           ここを外すと「MP4/MOV以外の形式」で弾かれ、これも別の理由で落ちる */
+        const head = new Uint8Array(32);
+        head.set([0x66, 0x74, 0x79, 0x70], 4);
+        const file = new w.File([head], "show.mp4", { type: "video/mp4" });
+        await w.MC.media.addFiles([file]);
+        if (w.MC.S.clips.length !== before) throw new Error("9分の動画が取り込めてしまった");
+      });
+    } finally { w.MC.ui.toast = keepToast; w.document.createElement = keepCreate; }
+    const said = msgs.join(" ");
+    if (!/パソコン/.test(said)) throw new Error("弾いたのにパソコンへの道を言っていない: " + said);
+    if (!/15分/.test(said)) throw new Error("パソコンで何分まで使えるかを言っていない: " + said);
+    /* ③ 読み込み画面(選ぶ前)にも、スマホにはパソコンの道が書いてあること */
+    const txt = withRole(w, { unlimited: false, local: false, admin: false, member: false,
+      mobile: true, bigDevice: false, maxExportSec: 30, maxVideoSec: 300.5,
+      maxSourceSec: 300.5, sourceLimitLabel: "5分",
+      exportLimitLabel: "30秒", videoLimitLabel: "5分" }, () => {
       w.MC.ui.renderLimitWhy();
-      const txt = w.document.querySelector(".mz-limit-why").textContent;
-      if (!/20分まで取り込め/.test(txt)) throw new Error("取り込める長さを言っていない: " + txt);
-      /* 「使う範囲は後で選べる」と言えているか。言い回しは変わりうるので、
-         語そのものではなく「後」+「選ぶ」の組で見る(2026-07-31 文言刷新で
-         「このあと」→「この後」に変えたら、この見張りが落ちた) */
-      if (!/(あと|後)で?[^。]*選/.test(txt)) throw new Error("あとで範囲を選べることを言っていない: " + txt);
+      return w.document.querySelector(".mz-limit-why").textContent;
     });
-    return "3通りの人で 8分30秒・10分が入る / 入口はプランの壁より広い / 案内も一致";
+    if (!/1本5分まで/.test(txt)) throw new Error("取り込める長さを言っていない: " + txt);
+    if (!/パソコン/.test(txt)) throw new Error("スマホなのにパソコンの道が書かれていない: " + txt);
+    /* ★「長い録画でも構いません」は5分では嘘 ─ 残っていたら落とす */
+    if (/長い録画でも構いません/.test(txt)) throw new Error("5分なのに「長くても構わない」と言っている: " + txt);
+    if (!/(あと|後)で?[^。]*選/.test(txt)) throw new Error("あとで範囲を選べることを言っていない: " + txt);
+    return "スマホ5分/PC15分 / 弾くときも選ぶ前もパソコンの道を言う / 嘘の一文は無い";
   });
   await test("★10分の素材からでも、長さと始まりを選んで書き出せる", async () => {
     const w = await compEnv();
@@ -3355,7 +3518,7 @@ async function countSamples(ns, file, fromSec) {
     eq(w.document.body.dataset.mzjPhase, "length", "現在地");
     ge(w.document.querySelectorAll("#lenStarts .len-start").length, 5, "始まりの選択肢");
     const [a, b] = w.MC.trimRange();
-    if (Math.abs((b - a) - 59) > 0.01) throw new Error(`59秒になっていない: ${(b - a).toFixed(1)}`);
+    if (Math.abs((b - a) - 60) > 0.01) throw new Error(`60秒になっていない: ${(b - a).toFixed(1)}`);
     /* 演奏の範囲の外へはみ出さない */
     if (a < S.showIn - 0.01 || b > S.showOut + 0.01) {
       throw new Error(`演奏の範囲(${S.showIn}〜${S.showOut})をはみ出した: ${a}〜${b}`);
@@ -3368,11 +3531,13 @@ async function countSamples(ns, file, fromSec) {
        巻き戻る事故(Drive巻き戻りの実績あり)を捕まえられない。
        判定関数そのものを、実際の MZ_LIMITS 越しに叩く */
     return withRole(w, { unlimited: false, local: false, admin: false, member: false,
-      mobile: true, bigDevice: false, maxVideoSec: 300.5, maxSourceSec: 1200.5 }, () => {
-      if (w.MC.media.tooLong(510)) throw new Error("8分30秒が門前払いされる");
-      if (w.MC.media.tooLong(1190)) throw new Error("20分弱が門前払いされる");
-      if (!w.MC.media.tooLong(1210)) throw new Error("天井(20分)を超えても通る");
-      return "門番は maxSourceSec だけを見る(510/1190=入る・1210=断る)";
+      mobile: true, bigDevice: false, maxVideoSec: 900.5, maxSourceSec: 300.5 }, () => {
+      /* ★ maxVideoSec を**わざと広く**(900.5)しておく ─ 門番がうっかり
+         そちらを見ていたら 510 が通ってしまい、この試験が落ちる */
+      if (w.MC.media.tooLong(295)) throw new Error("5分未満が門前払いされる");
+      if (!w.MC.media.tooLong(510)) throw new Error("8分30秒が通る(門番が maxVideoSec を見ている)");
+      if (!w.MC.media.tooLong(310)) throw new Error("天井(5分)を超えても通る");
+      return "門番は maxSourceSec だけを見る(295=入る・310/510=断る)";
     });
   });
   await test("★取り込みの本体が、その門番を使っている(直書きへの巻き戻り検知)", async () => {
