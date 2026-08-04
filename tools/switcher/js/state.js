@@ -164,28 +164,45 @@ MC.TARGETS = [
   { v: "altwide",  label: "他の場所からの全体", hint: "側面・俯瞰など別の場所からの全体(固定なら1〜2番手として使います)" },
   { v: "spice",    label: "メジャー・ピット",   hint: "指揮や前列の打楽器(見せ場だけ・全体の1割まで)" },
   { v: "operator", label: "カメラマン操作",     hint: "演者を追いかけて抜くカメラ(ソロでは必ず使います)" },
+  /* プレイヤー視点(2026-08-05 優さん追加指示)。奏者装着のPOV。隊形は見えず
+     臨場感が売り ─ 厳選門(良い窓だけ・クールダウン)で短い差し込みとして扱う */
+  { v: "pov",      label: "プレイヤー視点",     hint: "奏者につけたカメラ(見せ場に短く差し込みます)" },
 ];
+/* 撮り方は現場の言葉で(2026-08-05 優さん実機指示「三脚/ジンバル/カメラマン/
+   どれでもない」)。内部の rig へは applyAxes が畳む */
 MC.MOTIONS = [
-  { v: "auto",   label: "自動判定", hint: "映像から判定します" },
-  { v: "fixed",  label: "固定",     hint: "三脚などに置いて撮った" },
-  { v: "moving", label: "動きあり", hint: "手持ち・ジンバル・パンやズームをした" },
+  { v: "auto",      label: "自動判定",   hint: "映像から判定します" },
+  { v: "tripod",    label: "三脚",       hint: "置いて固定で撮った" },
+  { v: "gimbal",    label: "ジンバル",   hint: "歩き・移動しながら撮った" },
+  { v: "cameraman", label: "カメラマン", hint: "三脚ごしにパン・ズームで追った" },
+  /* アクションカメラ(2026-08-05 優さん追加指示)。体・楽器に装着 */
+  { v: "action",    label: "アクションカメラ", hint: "体や楽器につけて撮った" },
+  { v: "other",     label: "どれでもない", hint: "当てはまらない・分からない" },
 ];
 
 /* 2軸 → 役割/出番/撮り方 への展開。「指定なし/自動判定」は触らない(自動へ委ねる) */
 MC.applyAxes = c => {
   const t = c.target || "auto";
-  const roleMap = { front: "wide", altwide: "wide", spice: "pit", operator: "close" };
+  /* pov は役を決めない ─ 引き/寄りの物差しで測らず、厳選門の専用規則で扱う */
+  const roleMap = { front: "wide", altwide: "wide", spice: "pit", operator: "close", pov: "auto" };
   if (t !== "auto") {
     c.role = roleMap[t];
-    c.freq = t === "spice" ? "less" : "auto";
+    c.freq = (t === "spice" || t === "pov") ? "less" : "auto";
   }
   const m = c.motion || "auto";
-  if (m !== "auto") c.rig = m === "fixed" ? "fixed" : "operated";
+  if (m !== "auto") {
+    /* fixed/moving は v1.101.0 の旧値(互換のため受ける) */
+    c.rig = (m === "tripod" || m === "fixed") ? "fixed"
+          : m === "other" ? "auto" : "operated";
+  }
 };
 
-/* 旧データの移行: v1.100.0 の kind(5択)と、それ以前の role だけの保存を
-   2軸へ写す。読むだけで書き戻しはしない(次の saveState が新形式で保存する) */
+/* 旧データの移行: v1.100.0 の kind(5択)・v1.101.0 の motion(固定/動きあり)・
+   それ以前の role だけの保存を現形式へ写す。読むだけで書き戻しはしない
+   (次の saveState が新形式で保存する) */
 MC.migrateAxes = c => {
+  if (c.motion === "fixed") c.motion = "tripod";
+  else if (c.motion === "moving") c.motion = "gimbal";
   if (c.target) return;
   const k = c.kind;
   const fromKind = {
@@ -193,7 +210,7 @@ MC.migrateAxes = c => {
     opposite: ["altwide", null],
     follow:   ["operator", null],
     spice:    ["spice", null],
-    roam:     ["operator", "moving"],
+    roam:     ["operator", "gimbal"],
   }[k];
   if (fromKind) { c.target = fromKind[0]; if (fromKind[1]) c.motion = fromKind[1]; return; }
   const fromRole = { wide: "front", close: "operator", pit: "spice" }[c.role];

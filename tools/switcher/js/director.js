@@ -85,10 +85,11 @@ MC.director = {
      合計が全尺の4割を超えたら強く引っ込める */
   ALT_WIDE_CAP: 0.40,
   ALT_WIDE_PENALTY: 3.0,
-  /* スパイス(メジャー・ピット): 「10のうち1あれば十分」。鳴っている時だけ・
-     上限は全尺の10%。条件外は role=pit の -0.35 に上乗せ */
+  /* スパイス(メジャー・ピット): 「10のうち1あれば十分」→実機で
+     「頻度が多すぎる。全体で5-10%前後に」(2026-08-05 優さん)。
+     上限8%(5〜10%の中央寄り)+発火条件も下で締めた。条件外は role=pit の -0.35 に上乗せ */
   SPICE_PENALTY: 1.5,
-  SPICE_CAP_RATIO: 0.10,
+  SPICE_CAP_RATIO: 0.08,
   /* ソロは操作カメラで抜く(「ソロを抜いていたら必ず使う」)。
      失格(ブレ・パン)していれば使わない ─ その判定は dq が担う */
   SOLO_OPERATOR: true,
@@ -97,6 +98,9 @@ MC.director = {
   ROAM_BONUS: 0.6,
   ROAM_PENALTY: 3.0,
   ROAM_COOLDOWN: 20,
+  /* アクションカメラ・プレイヤー視点は全尺の5〜15%(2026-08-05 優さん指示)。
+     上限15%で打ち止め。下限側は「良い窓なら中立で採点勝負」(下の gate)が支える */
+  ACTION_CAP_RATIO: 0.15,
   /* ★ 出番を控えるカメラの飢餓の間隔を伸ばす(2026-08-04 優さん指示
      「ドラムメジャーやフロントピットなど、対象のドリル・MMがない固定カメラは
      使用する頻度を少なめに」)。
@@ -447,7 +451,10 @@ MC.director._rank = (g0, g1, cls, ctx) => {
     if (c.role === "wide") sh.wide = Math.max(sh.wide, 0.8);
     if (c.role === "close") sh.close = Math.max(sh.close, 0.7);
     let score = 0;
-    const dqWhy = MC.visual.dqReason(m, c.role);
+    let dqWhy = MC.visual.dqReason(m, c.role);
+    /* プレイヤー視点は「人が写っていない」を失格にしない(2026-08-05) ─
+       自分の視点なので人が写らないのが普通。ブレ・パンの失格はそのまま */
+    if (dqWhy === "人が写っていない" && ctx.povIds && ctx.povIds.has(c.id)) dqWhy = null;
     const dq = dqWhy != null;
     if (dq) score -= 1000;      // 絶対条件: 採用不可(全滅時の比較用に相対値は残す)
     score += wClose * sh.close + wGroup * sh.group + wWide * sh.wide;
@@ -470,7 +477,9 @@ MC.director._rank = (g0, g1, cls, ctx) => {
          ピット規則 = ピット音×静かめ(バラードで効く。全奏は引き限定が締め出す)
          メジャー規則 = サリュートや楽章の切れ目の近く(指揮の見せ場)
          さらに 全尺10%上限・スパイス→別スパイスの連続禁止 */
-      const pitOk = pitSeg && cls && (cls.quiet > 0.3 || cls.dyn < 0.5);
+      /* 実機「頻度が多すぎる」(2026-08-05)を受けて静かめの条件を締めた
+         (quiet 0.3→0.35 / dyn 0.5→0.45) */
+      const pitOk = pitSeg && cls && (cls.quiet > 0.35 || cls.dyn < 0.45);
       const ok = (pitOk || ctx.spiceWindow) && !ctx.spiceCapHit
         && !(ctx.prevWasSpice && c.id !== ctx.prevId);
       /* ★ 上限到達後は罰を倍にする ─ ピットの見せ場が続く曲では
@@ -488,8 +497,12 @@ MC.director._rank = (g0, g1, cls, ctx) => {
         && shakeHere <= MC.visual.TH_SHAKE * 0.6
         && (!m.sharpMed || m.sharpMean >= m.sharpMed * 0.9);
       const wanted = ctx.roamMoment && g0 >= (ctx.roamReadyAt || 0);
+      const isAction = ctx.actionIds && ctx.actionIds.has(c.id);
       if (!good) score -= MC.director.ROAM_PENALTY;
-      else score += wanted ? MC.director.ROAM_BONUS : -MC.director.ROAM_BONUS;
+      else if (isAction && ctx.actionCapHit) score -= MC.director.ROAM_PENALTY;  // 15%で打ち止め
+      /* アクション枠は良い窓なら中立で採点勝負(5〜15%へ寄せる。2026-08-05)。
+         選択ミス保険で門に入った素材は従来どおり控えめ */
+      else score += wanted ? MC.director.ROAM_BONUS : (isAction ? 0 : -MC.director.ROAM_BONUS);
     }
     /* 遮蔽疑い(観客席の引きにありがちな前の人の頭・手すり):
        顔ゼロ+動きが無い+普段より甘い引きは、少しだけ引っ込める(失格にはしない) */
@@ -607,14 +620,22 @@ MC.director.generate = () => {
   ctx.wideIds = new Set([...ctx.frontIds, ...ctx.altWideIds]);
   ctx.spiceIds = new Set(vidsAll.filter(c => targetOf(c) === "spice").map(c => c.id));
   ctx.operatorIds = new Set(vidsAll.filter(c => targetOf(c) === "operator").map(c => c.id));
+  /* プレイヤー視点(奏者装着POV)は常に厳選門(2026-08-05 優さん追加指示)。
+     隊形は見えず臨場感が売り ─ 良い窓だけを見せ場に短く差し込む */
+  ctx.povIds = new Set(vidsAll.filter(c => targetOf(c) === "pov").map(c => c.id));
   ctx.roamIds = new Set(vidsAll.filter(c => {
     const t = targetOf(c);
+    if (t === "pov") return true;                       // POVは無条件で厳選門
+    if (c.motion === "action") return true;             // アクションカメラも同様
     if (t === "front" || t === "altwide" || t === "spice") return false;
     const moving = c.motion === "moving" || c.rig === "operated" || (c.visual && c.visual.operated);
     return moving && c.visual && c.visual.shakeMed > MC.visual.TH_SHAKE;
   }).map(c => c.id));
   ctx.spiceSec = 0; ctx.spiceCapHit = false; ctx.prevWasSpice = false;
   ctx.altWideSec = 0; ctx.altWideCapHit = false;
+  /* アクション枠 = 装着カメラ(motion=action)+プレイヤー視点 */
+  ctx.actionIds = new Set(vidsAll.filter(c => c.motion === "action" || targetOf(c) === "pov").map(c => c.id));
+  ctx.actionSec = 0; ctx.actionCapHit = false;
   ctx.roamReadyAt = 0; ctx.roamMoment = false; ctx.spiceWindow = false; ctx.dynRising = false;
   /* ★ 衝撃の先読み(P1)。カット割の前に一度だけ拾う */
   const impacts = MC.director._impacts(audioClip, grid, tIn, tOut);
@@ -654,8 +675,9 @@ MC.director.generate = () => {
        roamMoment: 楽章の頭・盛り上がりの助走=歩き撮りの使いどころ */
     const before4 = t - 4 > tIn ? MC.sections.classify(audioClip, t - 4, t) : null;
     ctx.dynRising = !!(probe && before4 && !probeFeat && (probe.dyn - before4.dyn) > 0.12);
-    ctx.spiceWindow = (musicStart != null && Math.abs(t - musicStart) < 5)
-      || breaks.some(b => Math.abs(b - t) < 2.5);
+    /* 窓も締めた(サリュート±5→±4秒 / 切れ目±2.5→±2秒。2026-08-05 実機) */
+    ctx.spiceWindow = (musicStart != null && Math.abs(t - musicStart) < 4)
+      || breaks.some(b => Math.abs(b - t) < 2);
     ctx.roamMoment = ctx.dynRising || breaks.some(b => b > t - 0.5 && b < t + 2);
 
     /* ① 衝撃の2拍前に座る(P1)。次の衝撃と、その2拍前=座る時刻を出す */
@@ -903,6 +925,10 @@ MC.director.generate = () => {
     if (ctx.roamIds && ctx.roamIds.has(top.id)) {
       ctx.roamReadyAt = tNext + MC.director.ROAM_COOLDOWN;
     }
+    if (ctx.actionIds && ctx.actionIds.has(top.id)) {
+      ctx.actionSec += (tNext - t);
+      if (ctx.actionSec > (tOut - tIn) * MC.director.ACTION_CAP_RATIO) ctx.actionCapHit = true;
+    }
     // 文脈更新
     ctx.runSec = top.id === ctx.prevId ? ctx.runSec + (tNext - t) : (tNext - t);
     ctx.runLen = top.id === ctx.prevId ? ctx.runLen + 1 : 1;
@@ -927,7 +953,8 @@ MC.director.generate = () => {
     const usedIds = new Set(cuts.map(x => x.clipId));
     MC.S.unusedCams = vidsAll.filter(c => !usedIds.has(c.id)).map(c => ({
       id: c.id, name: c.name,
-      why: ctx.roamIds.has(c.id) ? "ブレの少ない良い場面が見つからなかったため"
+      why: ctx.povIds && ctx.povIds.has(c.id) ? "差し込みに向く落ち着いた場面が見つからなかったため"
+        : ctx.roamIds.has(c.id) ? "ブレの少ない良い場面が見つからなかったため"
         : ctx.spiceIds.has(c.id) ? "ピットや指揮の見せ場に良い区間が無かったため"
         : "他のカメラの画が優先されたため",
     }));

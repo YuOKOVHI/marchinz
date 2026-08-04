@@ -722,11 +722,11 @@ MC.ui.sceneOffers = () => {
       return ov < c.dur * 0.85;
     };
     const out = cands.filter(notSame);
-    if (out.length) return out;
-    /* ★ 素材が書き出し長より十分長い(=別の場面が物理的にある)のに候補が
-       立たないときは、機械的な窓で必ず提示する(2026-08-05 優さん指示
-       「1分ちょっとの素材でない限り、必ず提示」)。名前は場所で言う */
-    if (c1 - c0 >= lenSec + 15) {
+    /* ★ 3つ前後を必ず出す(2026-08-05 優さん実機「1つしか表示されていない。
+       3つ前後を。一部箇所が重複してもよい」)。特徴の候補(盛り上がり・バラード等)が
+       足りなければ、機械的な窓(前半/まんなか/後半)で3つまで補う。
+       補えないのは素材が書き出し長+15秒未満(=1分ちょっと)のときだけ */
+    if (out.length < 3 && c1 - c0 >= lenSec + 15) {
       const span = (c1 - c0) - lenSec;
       const mech = [
         { key: "early", label: "前半",  why: "演奏の前半から", icon: "fa-backward-step",
@@ -736,13 +736,15 @@ MC.ui.sceneOffers = () => {
         { key: "late",  label: "後半",  why: "演奏の後半から", icon: "fa-forward-step",
           t: c0 + span, dur: lenSec, z: 0 },
       ].filter(notSame);
-      /* 窓どうしがほぼ同じ(素材がぎりぎり)なら1つに畳む */
-      const uniq = [];
       for (const m of mech) {
-        if (!uniq.some(u => Math.abs(u.t - m.t) < lenSec * 0.3)) uniq.push(m);
+        if (out.length >= 3) break;
+        /* 既にある候補と窓がほぼ同じなら足さない(名前だけ違う同じ場面を並べない) */
+        if (out.some(o => Math.abs(o.t - m.t) < lenSec * 0.3)) continue;
+        out.push(m);
       }
-      if (uniq.length) return uniq;
+      out.sort((a, b) => a.t - b.t);
     }
+    if (out.length) return out;
     /* ここまで来たら本当に「いま作ったところしかない」(1分ちょっとの素材) */
     return no(cands.length ? "overlap" : "none");
   } catch (e) { MC.log("sceneOffers: " + e.message); return no("error"); }
@@ -2423,10 +2425,10 @@ ${c.isImage ? "" : (c.tiltOk
         ${!pro ? "" : `
         <div class="pan-row">横位置 <input type="range" class="pan" min="0" max="1" step="0.01" value="${c.pan}"></div>`}
         ${(pro && MC.S.mode === "switch") ? `
-        <div class="pan-row">撮影対象 <select class="target-sel select-mini" title="このカメラは何を撮ったか。選ぶと役割・出番へ展開します">
+        <div class="pan-row">被写体 <select class="target-sel select-mini" title="このカメラは何を撮ったか。選ぶと役割・出番へ展開します">
           ${MC.TARGETS.map(k => `<option value="${k.v}" ${(c.target || "auto") === k.v ? "selected" : ""}>${k.label}</option>`).join("")}
         </select></div>
-        <div class="pan-row">撮り方 <select class="motion-sel select-mini" title="固定か、動きながら撮ったか">
+        <div class="pan-row">固定or手持ち <select class="motion-sel select-mini" title="三脚/ジンバル/カメラマンのどれで撮ったか">
           ${MC.MOTIONS.map(k => `<option value="${k.v}" ${(c.motion || "auto") === k.v ? "selected" : ""}>${k.label}</option>`).join("")}
         </select></div>
         <details class="clip-fine">
@@ -4492,10 +4494,7 @@ MC.ui.finishAxesMap = () => {
   return m;
 };
 /* 選べる値は MC.TARGETS / MC.MOTIONS が正本(2026-08-05 優さん指示で2軸化)。
-   ★意味はプルダウンではなく見出し下の1行で言う(2026-08-04 レビュー) ─
-     title 属性は iPhone のタッチでは永久に表示されない */
-MC.ui.finishRoleHint = () => MC.TARGETS.filter(r => r.v !== "auto")
-  .map(r => `${r.label}＝${r.hint}`).join(" ／ ");
+   長い説明文は出さない(2026-08-05 優さん実機「説明テキストは削除」) */
 
 MC.ui.openFinishPick = opts => {
   const el = MC.ui.$("#finishPick");
@@ -4764,8 +4763,6 @@ MC.ui.renderFinishRoles = (fp, cards) => {
     MC.migrateAxes(clip);
     fp.axes[c.id] = { target: clip.target || "auto", motion: clip.motion || "auto" };
   }
-  /* 意味はプルダウンではなくこの1行で言う(iPhoneのタッチでは title が読まれない) */
-  { const h = MC.ui.$("#fpRoleHint"); if (h) h.textContent = MC.ui.finishRoleHint(); }
   box.innerHTML = "";
   /* 2軸プルダウン(2026-08-05 優さん指示)。①撮影対象 ②固定/動きあり */
   const mkSel = (list, cur, aria, onPick) => {
@@ -4808,12 +4805,23 @@ MC.ui.renderFinishRoles = (fp, cards) => {
          select は自分の状態を保つので、描き直しても選択は失われない */
       MC.ui.renderFinishPick();
     };
-    const selT = mkSel(MC.TARGETS, cur.target, `${c.name} の撮影対象`, pick("target"));
+    /* ラベルを添える(2026-08-05 優さん実機「被写体 / 固定or手持ち のラベルを」) */
+    const labeled = (text, sel) => {
+      const box = document.createElement("span");
+      box.className = "fp-axis";
+      const lab = document.createElement("span");
+      lab.className = "fp-axis-label";
+      lab.textContent = text;
+      box.appendChild(lab);
+      box.appendChild(sel);
+      return box;
+    };
+    const selT = mkSel(MC.TARGETS, cur.target, `${c.name} の被写体`, pick("target"));
     selT.dataset.id = String(c.id); selT.dataset.axis = "target";
-    const selM = mkSel(MC.MOTIONS, cur.motion, `${c.name} の固定/動きあり`, pick("motion"));
+    const selM = mkSel(MC.MOTIONS, cur.motion, `${c.name} の固定or手持ち`, pick("motion"));
     selM.dataset.id = String(c.id); selM.dataset.axis = "motion";
-    seg.appendChild(selT);
-    seg.appendChild(selM);
+    seg.appendChild(labeled("被写体", selT));
+    seg.appendChild(labeled("固定or手持ち", selM));
     card.appendChild(seg);
     box.appendChild(card);
   });
@@ -5816,6 +5824,21 @@ MC.ui.showModeSelect = () => {
 /* --- イベント配線 --- */
 MC.ui.wire = () => {
   const $ = MC.ui.$;
+
+  /* ★ ヘッダーの「← 戻る」を文脈で分ける(2026-08-05 優さん実機
+     「戻るで、スイッチャーの各ツールのページに戻らない」)。
+     作業中(縦型・自動SW・ワイプの工程内)に押すとサイトへ飛んでいた ─
+     期待は「作る動画を選ぶ」(種類選択)へ戻ること。
+     種類選択の画面にいるときだけ、従来どおりサイトのクリエイターページへ。
+     素材は showModeSelect が保つ(消すのは「最初からやり直す」だけ) */
+  { const backLink = document.querySelector(".topbar .back-link");
+    if (backLink) backLink.addEventListener("click", e => {
+      const modeSel = $("#modeSelect");
+      if (modeSel && modeSel.hidden) {
+        e.preventDefault();
+        MC.ui.showModeSelect();
+      }
+    }); }
 
   /* ★ 効果音の解錠(2026-08-02)。iOS Safari は AudioContext をタップ起点でしか
      作れない/再開できない。どのタップでも unlock しておけば、数分後の完了時に

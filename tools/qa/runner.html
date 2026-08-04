@@ -4755,7 +4755,7 @@ async function countSamples(ns, file, fromSec) {
     }
   });
 
-  await test("★スパイス(メジャー・ピット)は鳴っている時だけ・全尺10%まで(変異つき)", async () => {
+  await test("★スパイス(メジャー・ピット)は鳴っている時だけ・全尺5〜10%(変異つき)", async () => {
     /* 2026-08-04 DCI協議。スパイスは効かせるから旨い ─ ピット音×静かめの
        区間だけで出し、合計は全尺の10%で打ち止め。条件外では画が良くても出さない */
     const w = await compEnv();
@@ -4791,11 +4791,12 @@ async function countSamples(ns, file, fromSec) {
       if (!b.some(c => c.clipId === 2 && (c.t < 17 || c.t > 32))) {
         throw new Error("変異(罰なし)でも見せ場の外に出ない=規則が空回り");
       }
-      /* ③ 曲じゅうピットの見せ場でも、合計は全尺10%(6秒)+1ショットで打ち止め */
+      /* ③ 曲じゅうピットの見せ場でも、合計は全尺8%(4.8秒)+1ショットで打ち止め
+         (2026-08-05 実機「頻度が多すぎる。5-10%前後に」で 10%→8%) */
       w.MC.sections.classify = () => ({ feature: 0, percussion: 0, tutti: 0.1, pit: 0.6,
                                         bpm: 100, dyn: 0.3, quiet: 0.5 });
       const cReal = spiceSec(run());
-      if (cReal > 12) throw new Error(`スパイス合計${cReal.toFixed(1)}秒(10%上限が効いていない)`);
+      if (cReal > 10.5) throw new Error(`スパイス合計${cReal.toFixed(1)}秒(8%上限が効いていない)`);
       /* ④ 変異B: 上限を外すと合計がはっきり伸びる(=上限に歯がある) */
       w.MC.director.SPICE_CAP_RATIO = 10;
       const cMut = spiceSec(run());
@@ -4803,7 +4804,7 @@ async function countSamples(ns, file, fromSec) {
       if (!(cMut > cReal * 1.8)) {
         throw new Error(`変異(上限なし)でも伸びない(${cReal.toFixed(1)}→${cMut.toFixed(1)}秒)`);
       }
-      return `見せ場の外=0枚 / 変異A=出る / 10%上限=${cReal.toFixed(1)}秒 / 変異B=${cMut.toFixed(1)}秒`;
+      return `見せ場の外=0枚 / 変異A=出る / 8%上限=${cReal.toFixed(1)}秒 / 変異B=${cMut.toFixed(1)}秒`;
     } finally {
       w.MC.visual.seg = keep.seg; w.MC.sections.classify = keep.cls;
       w.MC.director._salute = keep.sal;
@@ -7695,7 +7696,10 @@ async function countSamples(ns, file, fromSec) {
       U.coverRange = (a, b) => [a, b];
       H.candidates = () => [{ key: "start", label: "スタート", t: 0, dur: 60 }];
       S.trimIn = 300; S.trimOut = 360;          // いま作ったのは 300〜360 秒
-      if (U.sceneOffers().length !== 1) throw new Error("重ならない候補が消えている");
+      /* ★ 3つ前後を必ず(2026-08-05 優さん実機)。特徴候補1つ+機械的な窓で3つに補われる */
+      const filled = U.sceneOffers();
+      if (filled.length !== 3) throw new Error(`候補が3つに補われない: ${filled.length}`);
+      if (!filled.some(c => c.key === "start")) throw new Error("特徴候補(start)が消えている");
       if (U._sceneWhy !== null) throw new Error("成功したのに理由が残る: " + U._sceneWhy);
 
       /* ★ 新契約(2026-08-05 優さん指示): 素材が長ければ、候補が全部いまの窓と
