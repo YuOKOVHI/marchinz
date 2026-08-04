@@ -3911,6 +3911,336 @@ async function countSamples(ns, file, fromSec) {
 
 
 
+  /* ============================================================
+     DCI配信ディレクターのレビュー(2026-08-04)で入れた5件の見張り。
+     総評「音楽を後追いしている」に対する手当てなので、見るのは
+     **音より先に座れているか**。全件わざと壊して落ちることを確かめてある。 */
+
+  /* 共通の下ごしらえ: 120BPM・小節2秒の拍グリッド */
+  const dciBeats = () => ({ bpm: 120, period: 0.5, hopSec: 0.05,
+    beats: Array.from({ length: 119 }, (_, i) => (i + 1) * 0.5),
+    env: new Array(1200).fill(1) });
+  /* 顔の大きさで寄り/引きを作る(visual.shotScores の実物を通す)。
+     maxF .30=寄り / .05=引き(wide 0.7) */
+  const dciSeg = (maxF, operated) => ({
+    shakeP75: .03, shakeCamP75: .03, flipRatio: 0, panRatio: 0,
+    operated: !!operated, settled: true, sharpMean: 50, sharpMed: 50,
+    moE: 0, act: .1, actNear: .5, nF: 1, maxF, faceOK: true, n: 10 });
+  /* 音圧の列。impactsAt の位置だけ跳ね上げる(＝衝撃) */
+  const dciSections = (base, impactsAt, hi) => {
+    const n = 120, t = [], rms = [];
+    for (let i = 0; i < n; i++) { t.push(i * 0.5 + 0.5); rms.push(base); }
+    impactsAt.forEach(x => {
+      for (let i = 0; i < n; i++) if (t[i] >= x + 0.25 && t[i] < x + 3.0) rms[i] = hi;
+    });
+    return { rms, t, rmsLo: 0, rmsHi: 1, hop: 0.5 };
+  };
+  /* 各カットの尺 */
+  const dciLens = (cuts, tOut) => cuts.map((c, i) =>
+    +(((i + 1 < cuts.length ? cuts[i + 1].t : tOut) - c.t).toFixed(3)));
+  /* 時刻 tt にオンエアされているカット */
+  const dciOnAir = (cuts, tt) => {
+    let e = null;
+    for (const c of cuts) if (c.t <= tt + 1e-6) e = c;
+    return e;
+  };
+
+  await test("★衝撃の2拍前に引きへ座る(音を追わず先に座る・変異つき)", async () => {
+    /* 2026-08-04 DCI配信ディレクター P1「いまはヒットの後追い。音圧の急上昇を
+       先読みし2拍前に俯瞰へ座る」。★この試験は tutti を低いまま(0.2)に保つ ─
+       全奏ハード規則(P1のもう1件)で引きになったのでは意味が無く、
+       **先読みだけ**で座れることを見たいため */
+    const w = await compEnv();
+    const S = compReset(w);
+    const IMP = [12, 30, 48];
+    S.audioClipId = 1; S.trimIn = 0; S.trimOut = 60; S.cutLevel = 2;
+    Object.assign(w.MC.getClip(1), { beatsData: dciBeats(),
+      sections: dciSections(0.25, IMP, 0.95) });
+    const M = { 1: dciSeg(.30, true), 2: dciSeg(.223, true), 3: dciSeg(.05) };
+    const keep = { seg: w.MC.visual.seg, cls: w.MC.sections.classify,
+                   sal: w.MC.director._salute, hi: w.MC.director.IMPACT_HIGH };
+    try {
+      w.MC.visual.seg = clip => M[clip.id];
+      for (const id of Object.keys(M)) {
+        const why = w.MC.visual.dqReason(M[id], "auto");
+        if (why) throw new Error(`試験の前提が崩れた: cam${id} が失格(${why})`);
+      }
+      /* cam3 だけが引き。寄り2台のほうが素の採点では強い状況を作る */
+      const sc3 = w.MC.visual.shotScores(M[3]);
+      if (!(sc3.wide >= 0.5)) throw new Error("試験の前提が崩れた: cam3 が引きに見えない " + sc3.wide);
+      w.MC.director._salute = null;
+      w.MC.sections.classify = () => ({ feature: 0, percussion: 0, tutti: 0.2, pit: 0,
+                                        bpm: 120, dyn: 0.25, quiet: 0.2 });
+
+      const grid = w.MC.director._grid(w.MC.getClip(1), 0, 60);
+      const det = w.MC.director._impacts(w.MC.getClip(1), grid, 0, 60);
+      if (JSON.stringify(det) !== JSON.stringify(IMP)) {
+        throw new Error(`衝撃の検出が ${JSON.stringify(det)}(正解 ${JSON.stringify(IMP)})`);
+      }
+
+      /* ① 本番: 3つとも「2拍前ちょうど」にカットがあり、そこが引き */
+      w.MC.director.generate();
+      const cuts = S.cutList.slice();
+      const seatOf = im => {
+        const want = im - 2 * grid.period;          // 2拍前 = 1.0秒前
+        return cuts.find(c => Math.abs(c.t - want) < 0.05) || null;
+      };
+      const ok = [];
+      for (const im of IMP) {
+        const c = seatOf(im);
+        if (!c) throw new Error(`衝撃${im}s の2拍前(${(im - 1).toFixed(1)}s)にカットが無い`);
+        if (c.clipId !== 3) throw new Error(`衝撃${im}s の2拍前が引きでない(cam${c.clipId})`);
+        const air = dciOnAir(cuts, im);
+        if (!air || air.clipId !== 3) {
+          throw new Error(`衝撃${im}s の瞬間に引きが乗っていない(cam${air && air.clipId})`);
+        }
+        ok.push(`${im}s→${c.t.toFixed(1)}s`);
+      }
+
+      /* ② 変異: 衝撃を検出できなくする(しきい値を届かない値へ)と、
+         2拍前ちょうどのカットは揃わなくなる = この見張りに歯がある */
+      w.MC.director.IMPACT_HIGH = 2;
+      w.MC.director.generate();
+      const mut = S.cutList.slice();
+      const seated = IMP.filter(im => {
+        const c = mut.find(x => Math.abs(x.t - (im - 1.0)) < 0.05);
+        return c && c.clipId === 3;
+      }).length;
+      if (seated === IMP.length) {
+        throw new Error("変異(先読みなし)でも3つとも2拍前に座れている=先読みを測っていない");
+      }
+      return `2拍前に着席 ${ok.join(" / ")} / 変異(先読みなし)では ${seated}/${IMP.length} だけ`;
+    } finally {
+      w.MC.visual.seg = keep.seg; w.MC.sections.classify = keep.cls;
+      w.MC.director._salute = keep.sal; w.MC.director.IMPACT_HIGH = keep.hi;
+      compReset(w);
+    }
+  });
+
+  await test("★カンパニーフロント(全奏)は絶対に引き / 引きは長く・寄りは短く(変異つき)", async () => {
+    /* 2026-08-04 P1「tutti>0.7 は候補を引きに限定するハード規則」
+       + P2改「引きは読ませ、寄りは短く回す」。
+       旧来は ensemble×0.3×wide の弱い後押しだけで、操作カメラの寄り加点に負けていた */
+    const w = await compEnv();
+    const S = compReset(w);
+    S.audioClipId = 1; S.trimIn = 0; S.trimOut = 60; S.cutLevel = 2;
+    Object.assign(w.MC.getClip(1), { beatsData: dciBeats(), sections: {} });
+    const M = { 1: dciSeg(.30, true), 2: dciSeg(.223, true), 3: dciSeg(.05) };
+    const keep = { seg: w.MC.visual.seg, cls: w.MC.sections.classify,
+                   sal: w.MC.director._salute, tw: w.MC.director.TUTTI_WIDE,
+                   wide: w.MC.director.LEVELS[2].wide };
+    const run = () => { S.cutList = []; w.MC.director.generate(); return S.cutList.slice(); };
+    try {
+      w.MC.visual.seg = clip => M[clip.id];
+      w.MC.director._salute = null;
+
+      /* ① 全奏(tutti .85): 引き以外は1枚も出ない */
+      w.MC.sections.classify = () => ({ feature: 0, percussion: 0, tutti: 0.85, pit: 0,
+                                        bpm: 120, dyn: 0.85, quiet: 0 });
+      const wideCuts = run();
+      const bad = wideCuts.filter(c => c.clipId !== 3).length;
+      if (bad) throw new Error(`全奏なのに寄りが${bad}枚出ている`);
+      const wl = dciLens(wideCuts, 60);
+      const wMin = Math.min(...wl.slice(0, -1));       // 末尾はトリム端で短くなる
+      if (wMin < w.MC.director.LEVELS[2].wide.min - 0.01) {
+        throw new Error(`引きが${wMin}秒(下限${w.MC.director.LEVELS[2].wide.min}秒)`);
+      }
+
+      /* ② 寄り(feature .9): 寄りの長さの上限を超えない */
+      w.MC.sections.classify = () => ({ feature: 0.9, percussion: 0, tutti: 0.2, pit: 0,
+                                        bpm: 120, dyn: 0.4, quiet: 0.3 });
+      const closeCuts = run();
+      const cl = dciLens(closeCuts, 60);
+      const cMax = Math.max(...cl);
+      if (cMax > w.MC.director.LEVELS[2].close.max + 1.01) {
+        throw new Error(`寄りが${cMax}秒(上限${w.MC.director.LEVELS[2].close.max}+1秒)`);
+      }
+      if (!(wMin > cMax)) {
+        throw new Error(`引き(最短${wMin}秒)が寄り(最長${cMax}秒)より長くない=種と長さが連動していない`);
+      }
+
+      /* ③ 変異A: しきい値を届かない値にすると、全奏でも寄りが勝つ */
+      w.MC.director.TUTTI_WIDE = 1.1;
+      w.MC.sections.classify = () => ({ feature: 0, percussion: 0, tutti: 0.85, pit: 0,
+                                        bpm: 120, dyn: 0.85, quiet: 0 });
+      const mutA = run().filter(c => c.clipId !== 3).length;
+      w.MC.director.TUTTI_WIDE = keep.tw;
+      if (!mutA) throw new Error("変異(しきい値1.1)でも寄りが1枚も出ない=ハード規則を測っていない");
+
+      /* ④ 変異B: 引きの長さレンジを外すと、引きが短くなる */
+      delete w.MC.director.LEVELS[2].wide;
+      const mutB = Math.min(...dciLens(run(), 60).slice(0, -1));
+      w.MC.director.LEVELS[2].wide = keep.wide;
+      if (!(mutB < wMin)) {
+        throw new Error(`変異(引きレンジなし)でも引きが短くならない(${mutB}秒 vs ${wMin}秒)`);
+      }
+      return `全奏=引き${wideCuts.length}枚(最短${wMin}秒) / 寄り最長${cMax}秒 / `
+        + `変異A=寄り${mutA}枚・変異B=引き${mutB}秒`;
+    } finally {
+      w.MC.visual.seg = keep.seg; w.MC.sections.classify = keep.cls;
+      w.MC.director._salute = keep.sal; w.MC.director.TUTTI_WIDE = keep.tw;
+      w.MC.director.LEVELS[2].wide = keep.wide;
+      compReset(w);
+    }
+  });
+
+  await test("★サリュート直後の1カット目は全景でセットを見せる(変異つき)", async () => {
+    /* 2026-08-04 P2。演奏開始の瞬間そのものをカット点として拾う ─
+       これが無いと直前のショットが開始を跨いで伸び、全景が遅れて入る
+       (実装前の実測: musicStart=10.0 に対し 11.0 から) */
+    const w = await compEnv();
+    const S = compReset(w);
+    const START = 10.0;
+    S.audioClipId = 1; S.trimIn = 4; S.trimOut = 60; S.cutLevel = 2;
+    Object.assign(w.MC.getClip(1), { beatsData: dciBeats(), sections: {} });
+    const M = { 1: dciSeg(.30, true), 2: dciSeg(.223, true), 3: dciSeg(.05) };
+    const keep = { seg: w.MC.visual.seg, cls: w.MC.sections.classify,
+                   sal: w.MC.director._salute };
+    try {
+      w.MC.visual.seg = clip => M[clip.id];
+      /* 寄りが強い曲想にしておく ─ 全景が出るなら規則のおかげだと言い切れる */
+      w.MC.sections.classify = () => ({ feature: 0.9, percussion: 0, tutti: 0.2, pit: 0,
+                                        bpm: 120, dyn: 0.4, quiet: 0.3 });
+
+      w.MC.director._salute = { musicStart: START };
+      S.cutList = []; w.MC.director.generate();
+      const cuts = S.cutList.slice();
+      const first = cuts.find(c => Math.abs(c.t - START) < 0.05);
+      if (!first) {
+        throw new Error(`演奏開始(${START}s)ちょうどにカットが無い: `
+          + JSON.stringify(cuts.map(c => +c.t.toFixed(1))));
+      }
+      if (first.clipId !== 3) throw new Error(`開始の1カット目が全景でない(cam${first.clipId})`);
+      /* 演奏前(オープニング)は従来どおり寄り優先のまま ─ 全部が引きになっていない */
+      const pre = cuts.filter(c => c.t < START - 0.5);
+      if (pre.length && pre.every(c => c.clipId === 3)) {
+        throw new Error("演奏前まで全景になっている(オープニングのDM優先が壊れた)");
+      }
+
+      /* 変異: サリュートが取れなかったことにすると、開始の全景は出ない */
+      w.MC.director._salute = null;
+      S.cutList = []; w.MC.director.generate();
+      const mut = S.cutList.find(c => Math.abs(c.t - START) < 0.05);
+      if (mut && mut.clipId === 3) {
+        throw new Error("変異(サリュート無し)でも開始ちょうどに全景が出る=規則を測っていない");
+      }
+      return `開始${START}sちょうどに全景(cam3) / 演奏前は寄り${pre.length}枚 / `
+        + `変異(サリュート無し)=${mut ? "cam" + mut.clipId : "カット無し"}`;
+    } finally {
+      w.MC.visual.seg = keep.seg; w.MC.sections.classify = keep.cls;
+      w.MC.director._salute = keep.sal;
+      compReset(w);
+    }
+  });
+
+  await test("★ソロ中は出番の割り込みを繰り延べる ─ ただし上限つき(変異つき)", async () => {
+    /* 2026-08-04 P3改。抜いている奏者の画を出番の都合で断ち切らない。
+       ★ただし待てるのは STARVE_DEFER ショットまで。
+       feature が曲じゅう高止まりする実素材があり(2026-08-02 優さん実機)、
+       無条件に見送ると「3本入れて2台」の不具合がそのまま戻る ─
+       変異でそれが本当に戻ることを見る。
+       実測(2026-08-04): 繰り延べ0→cam3が5回 / 2→4回 / 3→3回(試験のしきい値割れ) /
+       無制限→2台。2 は「歯止めが利く最後の値」ではなく、
+       0との差が1回しか無い(=保証をほとんど削らない)ので選んでいる */
+    const w = await compEnv();
+    const S = compReset(w);
+    S.audioClipId = 1; S.trimIn = 0; S.trimOut = 60; S.cutLevel = 2;
+    Object.assign(w.MC.getClip(1), { beatsData: dciBeats(), sections: {} });
+    const M = { 1: dciSeg(.30, true), 2: dciSeg(.223, true), 3: dciSeg(.16) };
+    const keep = { seg: w.MC.visual.seg, cls: w.MC.sections.classify,
+                   sal: w.MC.director._salute, df: w.MC.director.STARVE_DEFER };
+    const runCase = () => {
+      S.cutList = [];
+      const r = w.MC.director.generate();
+      const by = {};
+      S.cutList.forEach(c => { by[c.clipId] = (by[c.clipId] || 0) + 1; });
+      return { r, by, used: Object.keys(by).length, n: S.cutList.length };
+    };
+    try {
+      w.MC.visual.seg = clip => M[clip.id];
+      w.MC.director._salute = null;
+      // 曲じゅうソロ扱い(実素材で起きる feature の高止まりの再現)
+      w.MC.sections.classify = () => ({ feature: 1, percussion: 0, tutti: 0, pit: 0,
+                                        bpm: 120, dyn: 0.5, quiet: 0 });
+
+      /* ① 本番: 繰り延べは実際に効いている(0回では試験が空回り)、
+         それでも3台とも出る */
+      const a = runCase();
+      if (!(a.r.starveDeferred > 0)) {
+        throw new Error("ソロ中なのに繰り延べが0回=この試験は繰り延べを測っていない");
+      }
+      if (a.used !== 3) throw new Error(`3台出ていない(${a.used}台): ${JSON.stringify(a.by)}`);
+
+      /* ② 変異: 上限を外すと「N本入れてN-1台」(2026-08-02の不具合)が戻る */
+      w.MC.director.STARVE_DEFER = Infinity;
+      const b = runCase();
+      w.MC.director.STARVE_DEFER = keep.df;
+      if (b.used >= 3) {
+        throw new Error(`変異(繰り延べ無制限)でも3台出る=上限を測っていない: ${JSON.stringify(b.by)}`);
+      }
+      return `繰り延べ${a.r.starveDeferred}回でも3台(${JSON.stringify(a.by)}) / `
+        + `変異(無制限)=${b.used}台(${JSON.stringify(b.by)})`;
+    } finally {
+      w.MC.visual.seg = keep.seg; w.MC.sections.classify = keep.cls;
+      w.MC.director._salute = keep.sal; w.MC.director.STARVE_DEFER = keep.df;
+      compReset(w);
+    }
+  });
+
+  await test("★バラードのディゾルブは1.0〜2.0秒(速いクロスフェードで済ませない・変異つき)", async () => {
+    /* 2026-08-04 P3改。旧値は 0.5〜0.9秒 ─「ゆったり見せる」ために
+       ディゾルブを選んでいるのに、実際は速いクロスフェードにしかなっていなかった */
+    const w = await compEnv();
+    const S = compReset(w);
+    S.audioClipId = 1; S.trimIn = 0; S.trimOut = 60; S.cutLevel = 2;
+    Object.assign(w.MC.getClip(1), { beatsData: dciBeats(), sections: {} });
+    const M = { 1: dciSeg(.20), 2: dciSeg(.18), 3: dciSeg(.16) };
+    const keep = { seg: w.MC.visual.seg, cls: w.MC.sections.classify,
+                   sal: w.MC.director._salute,
+                   lo: w.MC.director.DISSOLVE_MIN, hi: w.MC.director.DISSOLVE_MAX };
+    const run = () => { S.cutList = []; w.MC.director.generate(); return S.cutList.slice(); };
+    try {
+      w.MC.visual.seg = clip => M[clip.id];
+      w.MC.director._salute = null;
+      w.MC.sections.classify = () => ({ feature: 0, percussion: 0, tutti: 0.1, pit: 0,
+                                        bpm: 70, dyn: 0.1, quiet: 0.9 });
+      const cuts = run();
+      const lens = dciLens(cuts, 60);
+      const dis = cuts.map((c, i) => ({ c, len: lens[i] })).filter(x => x.c.trans === "dissolve");
+      if (dis.length < 3) throw new Error(`バラードなのにディゾルブが${dis.length}回`);
+      for (const x of dis) {
+        if (x.c.dur < w.MC.director.DISSOLVE_MIN - 1e-6 && x.c.dur < x.len * 0.6 - 1e-6) {
+          throw new Error(`ディゾルブが${x.c.dur.toFixed(2)}秒(下限${w.MC.director.DISSOLVE_MIN}秒)`);
+        }
+        if (x.c.dur > w.MC.director.DISSOLVE_MAX + 1e-6) {
+          throw new Error(`ディゾルブが${x.c.dur.toFixed(2)}秒(上限${w.MC.director.DISSOLVE_MAX}秒)`);
+        }
+        // ショットの6割を超えて混ぜない(1枚まるごと混色にしない)
+        if (x.c.dur > x.len * 0.6 + 1e-6) {
+          throw new Error(`ディゾルブ${x.c.dur.toFixed(2)}秒がショット${x.len}秒の6割を超える`);
+        }
+      }
+      const shortest = Math.min(...dis.map(x => x.c.dur));
+
+      /* 変異: 旧値(0.5〜0.9秒)へ戻すと、下限1.0秒を割る = この見張りに歯がある */
+      w.MC.director.DISSOLVE_MIN = 0.5; w.MC.director.DISSOLVE_MAX = 0.9;
+      const mut = run().filter(c => c.trans === "dissolve");
+      w.MC.director.DISSOLVE_MIN = keep.lo; w.MC.director.DISSOLVE_MAX = keep.hi;
+      const mutMax = Math.max(...mut.map(c => c.dur));
+      if (!(mutMax < 1.0)) {
+        throw new Error(`変異(旧値)でも1.0秒以上のディゾルブが出る(${mutMax.toFixed(2)}秒)`);
+      }
+      return `ディゾルブ${dis.length}回・最短${shortest.toFixed(2)}秒(1.0〜2.0秒の中) / `
+        + `変異(旧値0.5〜0.9)=最長${mutMax.toFixed(2)}秒`;
+    } finally {
+      w.MC.visual.seg = keep.seg; w.MC.sections.classify = keep.cls;
+      w.MC.director._salute = keep.sal;
+      w.MC.director.DISSOLVE_MIN = keep.lo; w.MC.director.DISSOLVE_MAX = keep.hi;
+      compReset(w);
+    }
+  });
+
+
   group("㉚ おまかせが黙って死なない(2026-08-01 レビュー14件の見張り)");
 
   await test("★書き出しは自走から本当に起動できる(鍵を返してから押す)", async () => {

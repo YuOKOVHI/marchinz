@@ -26,10 +26,26 @@ MC.director = {
      実質「同じカメラの連続は1ショット強」。最短ショット(2秒)どうしなら
      2本(計4秒)までは収まる ─ それでも4秒目安の趣旨の中にある。
      多め(3)=目安2〜3秒でさらに短く / 少なめ(1)=従来寄り(5〜7秒・上限も緩い) */
+  /* ★ ショット種と長さの連動(2026-08-04 DCI配信ディレクター P2改
+     「引きは4〜8秒読ませ、寄りは2〜4秒で回す」)。
+     引き(隊列・フォーメーション)は形を読む時間が要るので長く、
+     寄り(奏者の表情)は情報が早く出尽くすので短く回す。
+     ★ 目標値は**切替頻度レベルの中で**スケールさせる ─ 「多め」を選んだ人に
+       8秒の引きを出すのは選択の否定になる。おすすめ(2)で引き4〜6秒/寄り2〜4秒。
+     ★ 引きは L.sameSec(同一カメラの連続オンエア上限)を1ショットで超えうる。
+       sameSec は「同じカメラが**続く**時間」の門なので単発の引きは通る ─
+       ここは 2026-08-03「4秒以上は同じのにしない」と正面から当たる箇所で、
+       引きだけ例外にするのが今回の指示(P2改)。寄り側は 2〜4秒のまま。 */
   LEVELS: {
-    1: { base: 5.0, min: 3.5, max: 7.0, sameSec: 8.0, interleave: 2 },  // 少なめ(ゆったり)
-    2: { base: 3.0, min: 2.0, max: 4.0, sameSec: 5.0, interleave: 3 },  // おすすめ(2〜4秒)
-    3: { base: 2.4, min: 1.8, max: 3.0, sameSec: 4.0, interleave: 4 },  // 多め(細かい)
+    // 少なめ(ゆったり)
+    1: { base: 5.0, min: 3.5, max: 7.0, sameSec: 8.0, interleave: 2,
+         wide: { base: 6.5, min: 5.0, max: 8.0 }, close: { base: 4.0, min: 3.5, max: 5.0 } },
+    // おすすめ(2〜4秒)
+    2: { base: 3.0, min: 2.0, max: 4.0, sameSec: 5.0, interleave: 3,
+         wide: { base: 5.0, min: 4.0, max: 6.0 }, close: { base: 2.8, min: 2.0, max: 4.0 } },
+    // 多め(細かい)
+    3: { base: 2.4, min: 1.8, max: 3.0, sameSec: 4.0, interleave: 4,
+         wide: { base: 3.6, min: 3.0, max: 4.5 }, close: { base: 2.2, min: 1.8, max: 3.0 } },
   },
   /* 素材ごとの出番の希望(clip.freq)をスコアへ足す量。
      「少なめ」は下の登場間隔ボーナス(最大0.48)より小さくして、
@@ -66,7 +82,35 @@ MC.director = {
      採点の細かい優劣より価値が高い(優さんの用途判断)。
      値4: おすすめ(基準4秒)でおよそ20秒に1回は必ず巡ってくる間隔 */
   STARVE: 4,
+  /* ★ ソロ・ソリの最中は飢餓ガードを何ショットまで我慢するか(2026-08-04 P3改)。
+     抜いている画を見せ切りたいので待たせるが、**無制限にはしない** ─
+     2026-08-02 の実機不具合(3本入れて2台)は feature が曲じゅう高止まりして
+     起きており、ソロ中は無条件で見送る作りにすると、あの不具合がそのまま戻る。
+     待てるのはここまで、と上限で縛ることで「本物のソロは伸ばす／
+     高止まりでは戻る」を両立させる。2 = STARVE(4)と合わせて最大6ショット待ち */
+  STARVE_DEFER: 2,
   DISSOLVE_BPM: 92,    // これ未満の局所BPMはディゾルブ候補
+  /* ★ バラードのディゾルブは1.0〜2.0秒(2026-08-04 P3改)。
+     旧値(0.5〜0.9秒)は「ゆったり見せる」ために選んだ演出なのに、
+     実際は速いクロスフェードにしかなっていなかった。
+     ショット長の6割を上限にする(短いショットを丸ごと混ぜない) */
+  DISSOLVE_MIN: 1.0,
+  DISSOLVE_MAX: 2.0,
+  /* ★ カンパニーフロント(全奏)は絶対に引き(2026-08-04 P1)。
+     tutti(=音圧dyn)がこの値以上の区間は、候補を引きの画に限定するハード規則。
+     旧来は score += ensemble*0.3*wide 程度の弱い後押しで、
+     操作カメラの寄り加点に負けて「いちばん見せ場で寄り」が普通に起きていた */
+  TUTTI_WIDE: 0.7,
+  /* ★ インパクト(衝撃)の先読み(2026-08-04 P1・いちばん化ける)。
+     いまのカット割は音圧が上がったのを**見てから**引きへ行く=後追い。
+     中継は「音楽より先に座る」ので、衝撃のSEAT_BEATS拍前に引きへ切っておく。
+     IMPACT_HIGH  : この音圧に達していなければ衝撃と呼ばない
+     IMPACT_RISE  : 直前3点の平均からの上げ幅
+     IMPACT_GAP   : 近すぎる衝撃はまとめる(秒) */
+  IMPACT_HIGH: 0.62,
+  IMPACT_RISE: 0.22,
+  IMPACT_GAP: 4.0,
+  SEAT_BEATS: 2,
   _salute: null,
 };
 
@@ -159,6 +203,49 @@ MC.director._snap = (grid, tTarget, minT) => {
     }
   }
   return best != null ? best : Math.max(minT, tTarget);
+};
+
+/* tTarget に最も近い「拍」(minT より後)。小節を優先する _snap と違い、
+   衝撃の2拍前という**拍単位の狙い**を鈍らせないために拍だけを見る */
+MC.director._snapBeat = (grid, tTarget, minT) => {
+  let best = null, bd = Infinity;
+  for (const b of grid.beats) {
+    if (b < minT) continue;
+    const d = Math.abs(b - tTarget);
+    if (d < bd) { bd = d; best = b; }
+  }
+  return best != null ? best : Math.max(minT, tTarget);
+};
+
+/* ---------- 衝撃(インパクト)の時刻 ---------- */
+/* 音圧(dyn)の急上昇＝ヒットの瞬間を、カット割の前にまとめて拾っておく。
+   ★ 時刻の精度について正直に書く: sections の rms は1.0秒窓の**中央**時刻を
+     持つので、立ち上がりは実際より約0.25秒後ろに出る。差し引いたうえで
+     最寄りの拍へスナップして吸収する(マーチングの衝撃は拍に乗る)。
+     拍から1拍以上離れていればスナップしない(拍の推定が外れている場面)。
+   sections が無い/スタブのときは空配列 ─ 先読みは黙って効かなくなるだけで
+   カット割自体は従来どおり動く */
+MC.director._impacts = (audioClip, grid, tIn, tOut) => {
+  const S = audioClip.sections;
+  if (!S || !S.rms || !S.t || !S.t.length) return [];
+  const lo = S.rmsLo, hi = S.rmsHi;
+  if (!(hi > lo)) return [];
+  const dyn = i => Math.max(0, Math.min(1, (S.rms[i] - lo) / (hi - lo)));
+  const out = [];
+  for (let i = 3; i < S.t.length; i++) {
+    const now = dyn(i);
+    if (now < MC.director.IMPACT_HIGH) continue;
+    const before = (dyn(i - 1) + dyn(i - 2) + dyn(i - 3)) / 3;
+    if (now - before < MC.director.IMPACT_RISE) continue;
+    let tt = S.t[i] + audioClip.offset - MC.sections.WIN / 4;   // 窓の遅れぶん戻す
+    let best = null, bd = Infinity;
+    for (const b of grid.beats) { const d = Math.abs(b - tt); if (d < bd) { bd = d; best = b; } }
+    if (best != null && bd <= grid.period) tt = best;
+    if (tt < tIn + 1 || tt > tOut - 0.5) continue;
+    if (out.length && tt - out[out.length - 1] < MC.director.IMPACT_GAP) continue;
+    out.push(tt);
+  }
+  return out;
 };
 
 /* ---------- セグメントのカメラ採点 ---------- */
@@ -259,7 +346,13 @@ MC.director._rank = (g0, g1, cls, ctx) => {
   // ただしソロ・ソリの最中は引きへ戻さない(抜いている画を見せ切る)。
   // segsSinceWide は増え続けるので、聴かせどころが終わった直後に引きへ戻る
   const featuring = cls && cls.feature > 0.45;
-  if (!opening && !featuring && ctx.segsSinceWide >= ctx.interleave) {
+  /* ★ ctx.forceWide は織り込み間隔より強く、ソロの例外も貫く(2026-08-04)。
+     全奏(tutti≥TUTTI_WIDE)・衝撃の2拍前・サリュート直後の1カット目は、
+     「いま抜いている奏者」より隊列を見せることが上位だとディレクターが言う
+     場面。generate() が区間ごとに理由の文字列を入れる(null なら従来どおり) */
+  const hardWide = !opening &&
+    (!!ctx.forceWide || (!featuring && ctx.segsSinceWide >= ctx.interleave));
+  if (hardWide) {
     const wides = ranked.filter(r => r.wideChosen && !r.dq);
     if (wides.length) return wides;
   }
@@ -283,11 +376,21 @@ MC.director.generate = () => {
     interleave: L.interleave,
     sinceUse: new Map(MC.S.clips.map(c => [c.id, 99])),
     hasPitCam: MC.S.clips.some(c => c.role === "pit"),
+    forceWide: null,    // この区間を引きに限定する理由(2026-08-04)。null=従来どおり
+    starveDefer: 0,     // ソロ中に飢餓ガードを見送った連続ショット数
+    saluteDone: false,  // サリュート直後の1カット目を出したか
   };
+  /* ★ 衝撃の先読み(P1)。カット割の前に一度だけ拾う */
+  const impacts = MC.director._impacts(audioClip, grid, tIn, tOut);
+  const period = grid.period || 0.5;
+  const musicStart = MC.director._salute ? MC.director._salute.musicStart : null;
   const cuts = [];
   /* 失格で見送った区間の集計。実素材でしきい値を詰めるための根拠を残す */
   const dqTally = { total: 0, by: {} };
   let forcedN = 0;   // 連続上限による強制切替の回数(実素材で偏りを読む根拠)
+  let deferN = 0;    // ソロ・ソリのため飢餓ガードを繰り延べた回数
+  let wideN = 0;     // 引きに限定した回数(理由の内訳つき)
+  const wideWhy = {};
   let t = tIn;
   let guard = 0;
   while (t < tOut - L.min && guard++ < 2000) {
@@ -298,14 +401,81 @@ MC.director.generate = () => {
       const tempoN = probe.bpm ? Math.max(0, Math.min(1, (probe.bpm - 90) / 60)) : 0.5;
       mod = Math.max(0.6, Math.min(1.5, 1.3 - 0.5 * probe.dyn - 0.3 * tempoN));
     }
-    const target = Math.max(L.min, Math.min(L.max, L.base * mod));
-    let tNext = MC.director._snap(grid, t + target, t + L.min);
+
+    /* ★★ ここから: 引きに座るべき区間かを、カメラを選ぶ**前に**決める(2026-08-04)。
+       ショット長も引き/寄りで変える(P2改)ので、順番が
+       「種を決める → 長さを決める → カメラを選ぶ」になる。
+       材料は probe(この時点で分かる音の性格)と ctx だけ ─
+       カメラの採点結果を使うと鶏と卵になる */
+    const isOpening = musicStart != null && t < musicStart - 0.5;
+    const probeFeat = !!(probe && probe.feature > 0.45);
+
+    /* ① 衝撃の2拍前に座る(P1)。次の衝撃と、その2拍前=座る時刻を出す */
+    let impAt = null, seatAt = null, seatWide = false;
+    if (impacts.length) {
+      for (const x of impacts) { if (x > t + 0.05) { impAt = x; break; } }
+      if (impAt != null) seatAt = impAt - MC.director.SEAT_BEATS * period;
+    }
+    /* 座る時刻が「もう来ている」or「近すぎて切り分けられない」なら、この区間が
+       座る回。2拍前より早く座るのは構わない(遅れるのだけが失敗) */
+    if (seatAt != null && !isOpening && seatAt <= t + L.min) seatWide = true;
+
+    /* ② サリュート直後の1カット目は全景でセットを見せる(P2) */
+    const saluteWide = musicStart != null && !ctx.saluteDone && !isOpening
+      && t >= musicStart - 0.25;
+
+    /* ③ カンパニーフロント(全奏)は絶対に引き(P1) */
+    const tuttiWide = !!(probe && probe.tutti >= MC.director.TUTTI_WIDE);
+
+    ctx.forceWide = isOpening ? null
+      : seatWide ? "衝撃の2拍前"
+      : saluteWide ? "サリュート直後"
+      : tuttiWide ? "全奏" : null;
+
+    /* ④ ショット種 → 長さの目標レンジ(P2改)。
+       引きに限定される回に加え、織り込み間隔で引きへ回る回も「引きの長さ」 */
+    const wideTurn = !!ctx.forceWide
+      || (!isOpening && !probeFeat && ctx.segsSinceWide >= ctx.interleave);
+    const R = wideTurn ? (L.wide || L)
+      : (probeFeat && L.close) ? L.close : L;
+    /* ★ 引きの回は「大きい音ほど短く」を弱める(2026-08-04 実測)。
+       mod は音圧が高いほど小さくなるが、引きに座る理由そのものが
+       「音圧が高い(全奏・衝撃)」なので、素の mod を掛けると
+       目標がいつも下限(おすすめなら4.0秒)へ張り付き、
+       「引きは読ませる」というP2改の狙いが消える。
+       効きを4割に薄めて、4〜6秒の中で音楽に応じて揺れるようにする */
+    const modR = wideTurn ? 1 + (mod - 1) * 0.4 : mod;
+    const target = Math.max(R.min, Math.min(R.max, R.base * modR));
+    let tNext = MC.director._snap(grid, t + target, t + R.min);
     tNext = Math.min(tNext, tOut);
-    if (tNext <= t + 0.5) tNext = Math.min(tOut, t + L.min);
+    if (tNext <= t + 0.5) tNext = Math.min(tOut, t + R.min);
     /* ★ ソフト上限(2026-08-03 優さん①+補足)。小節スナップの都合で max を
        多少(+1秒まで)超えるのは許す ─ 音楽的な区切りを優先する。
        それすら無い(小節が遠い)ときだけ、区切りより長さを採って max で切る */
-    if (tNext - t > L.max + 1.0) tNext = Math.min(tOut, t + L.max);
+    if (tNext - t > R.max + 1.0) tNext = Math.min(tOut, t + R.max);
+
+    /* ⑤-0 演奏開始そのものにカットを置く(P2)。
+       これが無いと、直前のショットが演奏開始を跨いで伸び、全景が1秒遅れて
+       入る(実測: musicStart=10.0 に対し 11.0)。サリュートは「開始の瞬間に
+       セットを見せる」のが値打ちなので、開始点はカット点として最優先で拾う */
+    const landOn = (musicStart != null && !ctx.saluteDone
+      && musicStart > t + R.min && musicStart <= t + R.max + 1.0) ? musicStart : null;
+
+    /* ⑤ 衝撃に間に合わせる(P1)。
+       ・まだ座る時刻が先 → **そこでちょうど切る**(次の区間が引きで座る回になる)
+       ・もう座っている   → 衝撃を1拍ぶん見せ切るまで引っぱる */
+    if (landOn != null) {
+      tNext = Math.min(tOut, MC.director._snapBeat(grid, landOn, t + R.min));
+    } else if (!seatWide && seatAt != null && seatAt > t + R.min && seatAt <= t + R.max + 1.0) {
+      tNext = Math.min(tOut, MC.director._snapBeat(grid, seatAt, t + R.min));
+    } else if (seatWide && impAt != null) {
+      const need = impAt + period;
+      if (tNext < need) {
+        tNext = Math.min(tOut, MC.director._snapBeat(grid, need, t + R.min));
+        if (tNext - t > R.max + 1.5) tNext = Math.min(tOut, t + R.max + 1.5);
+      }
+    }
+    if (tNext <= t + 0.5) tNext = Math.min(tOut, t + R.min);
 
     // このセグメントのカメラを選ぶ
     const cls = MC.sections.classify(audioClip, t, tNext);
@@ -356,10 +526,25 @@ MC.director.generate = () => {
          STARVE カット目以降にしか成立しない */
       const starving = ranked.find(r => !r.dq && r.id !== top.id
         && Math.min(ctx.sinceUse.get(r.id) || 0, cuts.length) >= MC.director.STARVE);
+      /* ★ ソロ・ソリの最中は繰り延べる(2026-08-04 P3改)。
+         抜いている奏者の画を、出番の都合だけで途中で断ち切らない。
+         ただし待てるのは STARVE_DEFER ショットまで ─ feature が曲じゅう
+         高止まりする実素材があり(2026-08-02 実機)、無条件に見送ると
+         「N本入れてN-1台」の不具合がそのまま戻る */
+      const featNow = cls && cls.feature > 0.45;
+      if (!featNow) ctx.starveDefer = 0;
       if (starving) {
-        forcedN++;
-        MC.log(`director: ${t.toFixed(1)}s〜 ${ctx.sinceUse.get(starving.id)}ショット出ていないカメラを出す`);
-        top = starving;
+        if (featNow && ctx.starveDefer < MC.director.STARVE_DEFER) {
+          ctx.starveDefer++;
+          deferN++;
+          MC.log(`director: ${t.toFixed(1)}s〜 ソロ・ソリのため出番の割り込みを繰り延べ`
+            + `(${ctx.starveDefer}/${MC.director.STARVE_DEFER})`);
+        } else {
+          ctx.starveDefer = 0;
+          forcedN++;
+          MC.log(`director: ${t.toFixed(1)}s〜 ${ctx.sinceUse.get(starving.id)}ショット出ていないカメラを出す`);
+          top = starving;
+        }
       }
       /* ② 連続上限: **時間が主・回数は従**(2026-08-03 優さん指示①)。
          同じカメラの連続オンエアが L.sameSec を超える見込みなら別カメラへ。
@@ -386,9 +571,17 @@ MC.director.generate = () => {
       const quiet = cls && cls.quiet > 0.55;
       if (slow || quiet) {
         trans = "dissolve";
-        dur = Math.min(0.9, Math.max(0.5, (tNext - t) / 4));
+        /* ★ 1.0〜2.0秒(2026-08-04 P3改)。旧値0.5〜0.9秒では
+           「ゆったり見せる」意図に対して速すぎた。
+           ただしショット長の6割を超えない(短い1枚を丸ごと混色にしない) */
+        const len = tNext - t;
+        dur = Math.max(MC.director.DISSOLVE_MIN,
+                       Math.min(MC.director.DISSOLVE_MAX, len / 3));
+        dur = Math.min(dur, len * 0.6);
       }
     }
+    if (ctx.forceWide) { wideN++; wideWhy[ctx.forceWide] = (wideWhy[ctx.forceWide] || 0) + 1; }
+    if (saluteWide) ctx.saluteDone = true;
     cuts.push({ t, clipId: top.id, trans, dur });
 
     // 文脈更新
@@ -407,7 +600,11 @@ MC.director.generate = () => {
   MC.S.cutList = cuts;
   MC.saveState();
   const nDissolve = cuts.filter(c => c.trans === "dissolve").length;
+  const whyTxt = Object.entries(wideWhy).map(([k, v]) => `${k}×${v}`).join("/");
   MC.log(`director: level=${MC.S.cutLevel} ${cuts.length}カット(ディゾルブ${nDissolve}`
-    + `${forcedN ? `・強制切替${forcedN}` : ""}) bpm=${bpmAll.toFixed(1)}`);
-  return { segments: cuts.length, bpm: bpmAll, dissolves: nDissolve };
+    + `${forcedN ? `・強制切替${forcedN}` : ""}${wideN ? `・引き限定${wideN}(${whyTxt})` : ""}`
+    + `${deferN ? `・ソロで繰り延べ${deferN}` : ""}) bpm=${bpmAll.toFixed(1)}`
+    + `${impacts.length ? ` 衝撃${impacts.length}箇所` : ""}`);
+  return { segments: cuts.length, bpm: bpmAll, dissolves: nDissolve,
+           impacts: impacts.length, wideForced: wideN, starveDeferred: deferN };
 };
