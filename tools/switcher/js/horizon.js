@@ -96,15 +96,17 @@ MC.horizon.analyzeFrame = async (clip, frac) => {
   const acc = new Float64Array(nC);
   const bMin = new Float64Array(nC);   // そのビンを支える点の x 範囲(=線の長さ)
   const bMax = new Float64Array(nC);
+  const bCnt = new Float64Array(nC);   // 支持点の数(スパンの中の詰まり具合)
   for (let ti = 0; ti < nTh; ti++) {
     const th = (ti * STEP - RANGE) * Math.PI / 180;
     const tan = Math.tan(th);
-    acc.fill(0); bMin.fill(Infinity); bMax.fill(-Infinity);
+    acc.fill(0); bMin.fill(Infinity); bMax.fill(-Infinity); bCnt.fill(0);
     for (let k = 0; k < ex.length; k++) {
       const c = ey[k] - ex[k] * tan;
       const bi = Math.round((c + maxOff) / CB);
       if (bi >= 0 && bi < nC) {
         acc[bi] += ew[k];
+        bCnt[bi] += 1;
         if (ex[k] < bMin[bi]) bMin[bi] = ex[k];
         if (ex[k] > bMax[bi]) bMax[bi] = ex[k];
       }
@@ -114,12 +116,16 @@ MC.horizon.analyzeFrame = async (clip, frac) => {
        フィールドのライン・地平線のような**画面の半分以上に伸びる線**。
        楽器(トロンボーンの管・マリンバの枠)やフラッグのポールは強いエッジだが
        短い ─ 支持点の x 方向スパンが狭いビンは、比例して信用を下げる。
-       密集テクスチャ(観客席)が1ビンに集まっても、幅が無ければ効かない */
+       ★ 端点距離だけだと「画面の左右に離れた短い線2本」が同じビンに落ちた
+         ときフル信用になる(レビューP2) ─ スパンの中の**詰まり具合**も掛ける。
+         本物の長い線は列ごとに点が並ぶ(スパンの1/4以上)。飛び飛びなら疑う */
     const top = [0, 0, 0, 0, 0];
     for (let i = 0; i < nC; i++) {
       if (!acc[i]) continue;
       const span = bMax[i] - bMin[i];
-      const val = acc[i] * Math.min(1, span / (w * 0.5));
+      const spanF = Math.min(1, span / (w * 0.5));
+      const covF = span > 0 ? Math.min(1, bCnt[i] / (span * 0.25)) : 0;
+      const val = acc[i] * spanF * covF;
       if (val > top[4]) {
         top[4] = val;
         top.sort((a, b) => b - a);

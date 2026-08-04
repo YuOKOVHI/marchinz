@@ -467,6 +467,9 @@ MC.director._rank = (g0, g1, cls, ctx) => {
     score += MC.director.FREQ_BIAS[c.freq] || 0;
 
     /* ===== カメラの属性2軸の規則(2026-08-05 優さん指示で改訂) ===== */
+    /* 正面全体は「背骨・多めに使います」(UIの約束)。控えめな加点で常に一歩前へ
+       (2026-08-05 レビューP2: frontIds が定義だけで未参照=約束が未実装だった) */
+    if (ctx.frontIds && ctx.frontIds.has(c.id)) score += 0.1;
     if (ctx.altWideIds && ctx.altWideIds.has(c.id)) {
       /* 他の場所からの全体: 引きのローテーションに普通に参加(10のうち2〜4が目安)。
          合計が全尺の4割を超えたら強く引っ込める。
@@ -583,9 +586,12 @@ MC.director._rank = (g0, g1, cls, ctx) => {
       && ctx.operatorIds && ctx.operatorIds.size) {
     /* ★ 厳選門で「悪い窓」と判定された operator(action/ブレ多の自動降格)は
        強制しない(2026-08-05 レビューP1)。「ブレが多いところは使わない」が
-       ハード選抜より上 ─ 良い窓の operator が居なければ通常の順位へ落ちる */
+       ハード選抜より上 ─ 良い窓の operator が居なければ通常の順位へ落ちる。
+       ★ ops だけを返すと飢餓ガード・連続上限(sameSec)の切替先まで消え、
+         feature が高止まりする実素材で1台張り付きが再発する(レビューP1)。
+         全候補を full に添えて返し、探索はそちらを見る */
     const ops = ranked.filter(r => ctx.operatorIds.has(r.id) && !r.dq && !r.roamBad);
-    if (ops.length) return ops;
+    if (ops.length) { ops.full = ranked; return ops; }
   }
   return ranked;
 };
@@ -808,6 +814,20 @@ MC.director.generate = () => {
         // 連続オンエア秒だけは足す ─ 延長は sameSec を超えうるが、
         // 「振っている絵は絶対に入れない」(絶対条件)が時間上限より強い
         ctx.runSec += (tNext - t);
+        /* ★ 延長ぶんも配分の記帳に載せる(2026-08-05 レビューP2)。
+           載せないと、ブレの多い素材でスパイス等の実オンエアが上限を超える */
+        if (ctx.spiceIds && ctx.spiceIds.has(ctx.prevId)) {
+          ctx.spiceSec += (tNext - t);
+          if (ctx.spiceSec > (tOut - tIn) * MC.director.SPICE_CAP_RATIO) ctx.spiceCapHit = true;
+        }
+        if (ctx.altWideIds && ctx.altWideIds.has(ctx.prevId)) {
+          ctx.altWideSec += (tNext - t);
+          if (ctx.altWideSec > (tOut - tIn) * MC.director.ALT_WIDE_CAP) ctx.altWideCapHit = true;
+        }
+        if (ctx.actionIds && ctx.actionIds.has(ctx.prevId)) {
+          ctx.actionSec += (tNext - t);
+          if (ctx.actionSec > (tOut - tIn) * MC.director.ACTION_CAP_RATIO) ctx.actionCapHit = true;
+        }
         t = tNext;
         continue;
       }
@@ -841,7 +861,8 @@ MC.director.generate = () => {
          全体の信頼が壊れる ─ 使いどころが来れば採点で自然に出る。
          出なかった理由は完了時に一覧で言う。
          他の場所からの全体は通常のローテーションに参加するので対象のまま */
-      const starving = ranked.find(r => !r.dq && r.id !== top.id
+      const rankedAll = ranked.full || ranked;   // ソロ選抜中も全候補を見る(2026-08-05)
+      const starving = rankedAll.find(r => !r.dq && r.id !== top.id
         && !(ctx.roamIds && ctx.roamIds.has(r.id))
         && !(ctx.spiceIds && ctx.spiceIds.has(r.id))
         && Math.min(ctx.sinceUse.get(r.id) || 0, cuts.length) >= starveOf(r.id));
@@ -886,7 +907,7 @@ MC.director.generate = () => {
       if (top.id === ctx.prevId
           && (ctx.runSec + (tNext - t) > sameCap
               || ctx.runLen >= MC.director.MAX_RUN)) {
-        const alt = ranked.find(r => r.id !== ctx.prevId && !r.dq);
+        const alt = (ranked.full || ranked).find(r => r.id !== ctx.prevId && !r.dq);
         if (alt) {
           forcedN++;
           MC.log(`director: ${t.toFixed(1)}s〜 連続${ctx.runSec.toFixed(1)}秒/${ctx.runLen}ショットのため別カメラへ強制切替`);

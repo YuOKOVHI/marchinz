@@ -4862,6 +4862,62 @@ async function countSamples(ns, file, fromSec) {
     }
   });
 
+  await test("★プレイヤー視点は「人が写っていない」で失格しない(変異つき)", async () => {
+    /* 2026-08-05 優さん追加指示のPOV(奏者装着)。自分の視点なので人が写らない
+       (nF=0)のが普通 ─ noSubject の失格を免除しないと一度も出られない。
+       ブレ・パンの失格はそのまま効く(免除は「人が写っていない」だけ) */
+    const w = await compEnv();
+    const S = compReset(w);
+    S.audioClipId = 1; S.trimIn = 0; S.trimOut = 60; S.cutLevel = 2;
+    Object.assign(w.MC.getClip(1), { beatsData: dciBeats(), sections: {} });
+    /* cam2=POV: 顔ゼロ+動きも静か(=通常なら noSubject 失格の条件)だが良い窓 */
+    const povSeg = { ...dciSeg(.0, true), nF: 0, maxF: 0, act: .02, actNear: .02 };
+    const M = { 1: dciSeg(.13), 2: povSeg, 3: dciSeg(.05) };
+    const keep = { seg: w.MC.visual.seg, cls: w.MC.sections.classify,
+                   sal: w.MC.director._salute,
+                   st: S.clips.map(c => [c.target, c.motion, c.role, c.freq, c.rig]) };
+    const run = () => { S.cutList = []; w.MC.director.generate(); return S.cutList.slice(); };
+    try {
+      w.MC.visual.seg = clip => M[clip.id];
+      w.MC.director._salute = null;
+      S.clips[2].target = "front"; w.MC.applyAxes(S.clips[2]);
+      S.clips[1].target = "pov"; w.MC.applyAxes(S.clips[1]);
+      S.clips[0].target = "operator"; w.MC.applyAxes(S.clips[0]);
+      w.MC.sections.classify = () => ({ feature: 0, percussion: 0, tutti: 0.2, pit: 0,
+                                        bpm: 120, dyn: 0.4, quiet: 0 });
+      /* ① 前提の検算: この画は素の判定なら「人が写っていない」で失格する形 */
+      const rawWhy = w.MC.visual.dqReason(povSeg, "auto");
+      if (rawWhy !== "人が写っていない") {
+        throw new Error("試験の前提が崩れた: povSeg が素で失格しない(" + rawWhy + ")");
+      }
+      /* ② _rank を直接呼び、POV は dq でない(免除)ことを見る ─
+         「実際に出るか」は採点次第で揺れるため、門そのものを測る */
+      const povId = S.clips[1].id;
+      const cls = { feature: 0, percussion: 0, tutti: 0.2, pit: 0, bpm: 120, dyn: 0.4, quiet: 0 };
+      const mkCtx = withPov => ({
+        prevId: null, prev2Id: null, segsSinceWide: 0, interleave: 3,
+        sinceUse: new Map(S.clips.map(c => [c.id, 99])), hasPitCam: false,
+        forceWide: null, prevShot: null,
+        povIds: withPov ? new Set([povId]) : new Set(),
+        roamIds: new Set([povId]), actionIds: new Set([povId]),
+      });
+      const a = w.MC.director._rank(10, 13, cls, mkCtx(true));
+      const pa = a.find(r => r.id === povId);
+      if (!pa) throw new Error("POVが候補に居ない(素材範囲の前提が崩れた)");
+      if (pa.dq) throw new Error("POVなのに失格のまま=noSubject免除が効いていない: " + pa.dqWhy);
+      /* ③ 変異: povIds から外すと、同じ画は「人が写っていない」で失格する */
+      const b = w.MC.director._rank(10, 13, cls, mkCtx(false));
+      const pb = b.find(r => r.id === povId);
+      if (!pb || !pb.dq) throw new Error("POVでないのに失格しない=noSubjectが壊れている");
+      return "素の判定=失格を検算 / POV指定なら失格が外れる / 指定を外すと失格(変異)";
+    } finally {
+      w.MC.visual.seg = keep.seg; w.MC.sections.classify = keep.cls;
+      w.MC.director._salute = keep.sal;
+      S.clips.forEach((c, i) => { [c.target, c.motion, c.role, c.freq, c.rig] = keep.st[i]; });
+      compReset(w);
+    }
+  });
+
   await test("★静けさでは切らない(バラードはショットを長く・比較で測る)", async () => {
     /* 2026-08-04 DCI規則4。バラードで忙しく切るのは素人編集の最大の特徴 ─
        静けさはショットの長さで表現する。同じ素材で「静かな曲」と「普通の曲」を

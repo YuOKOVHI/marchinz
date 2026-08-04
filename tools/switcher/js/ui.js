@@ -4704,9 +4704,10 @@ MC.ui.keepFinishPickFocus = () => {
     /* ★ 探す先は配置と役割の両方(2026-08-04 レビュー)。
        #fpCards だけを見ていたため、あとから足した役割の段(#fpRoleCards)は
        この対策の外に出ていて、札を押すたび焦点が <body> へ落ちていた */
-    next = fp.focus.kind === "role"
-      ? [...el.querySelectorAll("#fpRoleCards .fp-role")].find(
-          b => b.dataset.id === String(fp.focus.id) && b.dataset.role === fp.focus.role) || null
+    /* 2軸プルダウン(axis)は select を探す。旧「役割の札」(role)分岐は
+       2軸化で死にコードになっていた(2026-08-05 レビューP1: 毎回 #fpGo へ焦点が飛ぶ) */
+    next = fp.focus.kind === "axis"
+      ? el.querySelector(`#fpRoleCards .fp-axis-sel[data-id="${fp.focus.id}"][data-axis="${fp.focus.axis}"]`)
       : [...el.querySelectorAll("#fpCards .fp-role")].find(
           b => b.dataset.id === String(fp.focus.id) && b.dataset.at === String(fp.focus.at)) || null;
   }
@@ -4802,26 +4803,41 @@ MC.ui.renderFinishRoles = (fp, cards) => {
       }
       MC.ui.buzz([10]);
       /* #fpGo の文言(このまま進む/同じ設定で作り直す)は renderFinishPick が持つ。
-         select は自分の状態を保つので、描き直しても選択は失われない */
+         select は自分の状態を保つが、描き直しで要素は作り直されるため
+         焦点の戻し先を預ける(預けないと毎回 #fpGo へ飛ぶ) */
+      fp.focus = { kind: "axis", id: c.id, axis };
       MC.ui.renderFinishPick();
     };
-    /* ラベルを添える(2026-08-05 優さん実機「被写体 / 固定or手持ち のラベルを」) */
-    const labeled = (text, sel) => {
+    /* ラベルを添える(2026-08-05 優さん実機「被写体 / 固定or手持ち のラベルを」)。
+       ★選択中の項目の hint を1行だけ下に出す(2026-08-05 レビューP1)。
+         一覧の長文説明は削除済みで、iPhone では title が読まれないため、
+         選んだものの意味がどこにも出ていなかった。既定(指定なし/自動判定)は出さない */
+    const labeled = (text, sel, list) => {
       const box = document.createElement("span");
       box.className = "fp-axis";
       const lab = document.createElement("span");
       lab.className = "fp-axis-label";
       lab.textContent = text;
+      const hint = document.createElement("span");
+      hint.className = "fp-axis-hint";
+      const syncHint = () => {
+        const o = list.find(x => x.v === sel.value);
+        hint.textContent = (o && o.v !== "auto") ? o.hint : "";
+        hint.hidden = !hint.textContent;
+      };
+      sel.addEventListener("change", syncHint);
+      syncHint();
       box.appendChild(lab);
       box.appendChild(sel);
+      box.appendChild(hint);
       return box;
     };
     const selT = mkSel(MC.TARGETS, cur.target, `${c.name} の被写体`, pick("target"));
     selT.dataset.id = String(c.id); selT.dataset.axis = "target";
     const selM = mkSel(MC.MOTIONS, cur.motion, `${c.name} の固定or手持ち`, pick("motion"));
     selM.dataset.id = String(c.id); selM.dataset.axis = "motion";
-    seg.appendChild(labeled("被写体", selT));
-    seg.appendChild(labeled("固定or手持ち", selM));
+    seg.appendChild(labeled("被写体", selT, MC.TARGETS));
+    seg.appendChild(labeled("固定or手持ち", selM, MC.MOTIONS));
     card.appendChild(seg);
     box.appendChild(card);
   });

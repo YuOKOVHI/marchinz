@@ -481,3 +481,15 @@ body.mz-focus.mzsc-has-tabbar .mzp-dock { bottom: calc(8px + env(safe-area-inset
 }
 /* 押せないときは強調しない(できない約束をしない) */
 .big-btn:disabled, .btn.primary:disabled, .btn.primary.big:disabled { box-shadow: none; }
+
+/* ---- 保存の局面では光るボタンを1つに(2026-08-05 レビューP1) ----
+   完成カード(#doneCard)が出ている間は、再書き出し側の強調リングを外して
+   「保存」だけを立たせる(誤タップで数分の書き出しをやり直させない)。
+   :has は採用基準の iOS Safari 16+ で使える。#doneCard が無いツールでは無反応 */
+[data-mz-block="output"]:has(#doneCard:not([hidden])) #exportBtn {
+  box-shadow: 0 3px 10px rgba(30, 79, 214, 0.18);
+}
+/* Vlog: 書き出しが押せる状態では、組み立てボタンを一段落とす(2灯を1灯に) */
+body:has(#exportBtn:not(:disabled)) #buildBtn {
+  box-shadow: 0 3px 10px rgba(30, 79, 214, 0.18);
+}
