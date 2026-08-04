@@ -61,6 +61,15 @@ MC.visual = {
   TH_STATIC_ACT: 0.05,
   TH_STATIC_MOE: 0.012,
   TH_FIXED_SHAKE: 0.02,
+  /* ★ 「対象のドリル・MMがない」定点の見分け(2026-08-04 優さん指示)。
+     ドラムメジャー・フロントピットは**その場で動く**が画面の中を移動しない ─
+     動くセルが毎回おなじ数個に固定される。対してドリルを撮っているカメラは
+     隊列が画面を横切るので、動くセルが入れ替わっていく。
+     TH_HOT_CELLS: 全24セルのうち「4分の1以上のサンプルで動いた」セルの数が
+       これ以下なら「その場で動いているだけ」。8 = 24セルの1/3。
+       ★ この値は実素材で詰める必要がある(合成素材では当てられない) ─
+         書き出しログに毎回 hotCells を出すので、そこが調整の根拠になる */
+  TH_HOT_CELLS: 8,
 };
 
 /* ---------- 顔検出の実行場所(3段構え) ----------
@@ -431,14 +440,18 @@ MC.visual.residualGrid = (A, B, dx, dy) => {
       cellN[i]++;
     }
   }
-  let active = 0, total = 0, cells = 0;
+  let active = 0, total = 0, cells = 0, mask = 0;
   for (let i = 0; i < GX * GY; i++) {
     if (!cellN[i]) continue;
     const e = cellE[i] / cellN[i] / 255;   // 0..1
     total += e; cells++;
-    if (e > 0.055) active++;
+    /* ★ どのセルが動いたかを残す(2026-08-04)。割合(act)だけでは
+       「毎回ちがう場所が動く(＝被写体が画面を移動している)」のか
+       「毎回おなじ場所が動く(＝その場で動いているだけ)」のかが分からない。
+       6×4=24セルなので 1つの整数にビットで収まる */
+    if (e > 0.055) { active++; mask |= (1 << i); }
   }
-  return { moE: cells ? total / cells : 0, act: cells ? active / cells : 0 };
+  return { moE: cells ? total / cells : 0, act: cells ? active / cells : 0, mask };
 };
 
 /* ---------- クリップ解析(メイン) ---------- */
@@ -456,6 +469,7 @@ MC.visual._samplePoint = (V, A, B, faces, t, dt) => {
   V.sharp.push(MC.visual.sharpness(A));
   V.moE.push(res.moE);
   V.act.push(res.act);
+  if (V.amask) V.amask.push(res.mask || 0);
   V.nF.push(faces ? faces.length : -1);           // -1 = この点は未検出
   V.maxF.push(faces && faces.length ? Math.max(...faces.map(f => f.h)) : (faces ? 0 : -1));
 };
@@ -511,6 +525,26 @@ MC.visual._finalize = V => {
     && V.actMed >= MC.visual.TH_WIDE_ACT;
   V.staticScene = enough && !V.operated && V.actMed < MC.visual.TH_STATIC_ACT
     && V.moEMed < MC.visual.TH_STATIC_MOE;
+  /* ★ 「その場で動いているだけ」の定点(2026-08-04 優さん指示)。
+     staticScene は「ほとんど何も動かない」しか捕まえないので、
+     腕を振り続けるドラムメジャーや、マレットが動くフロントピットは
+     すり抜けていた(実素材で -0.40 が一度も効いていない疑い)。
+     ここでは**動く場所が固定されているか**を見る。
+     ★ セルの割合(act)ではなく位置を見る理由: 引きで隊形全体が動く画は
+       act が大きいが、動きの中心は画面中央のまま ─ 中心の位置だけを見ると
+       「動いていない」と誤読する。どのセルが動いたかを数えれば取り違えない */
+  if (V.amask && V.amask.length >= 3) {
+    const NC = MC.visual.GRID_X * MC.visual.GRID_Y;
+    const cnt = new Array(NC).fill(0);
+    for (const m of V.amask) for (let i = 0; i < NC; i++) if ((m >> i) & 1) cnt[i]++;
+    const need = V.amask.length * 0.25;
+    V.hotCells = cnt.filter(c => c >= need).length;
+    V.staticSubject = !V.operated && V.hotCells > 0
+      && V.hotCells <= MC.visual.TH_HOT_CELLS;
+  } else {
+    V.hotCells = null;          // 測れていない ─ 性格は付けない
+    V.staticSubject = false;
+  }
 };
 
 /* 入口: WebCodecs逐次デコード(速い)を試し、開けない素材・失敗は
@@ -583,7 +617,8 @@ MC.visual.analyzeClipWC = async (clip, l0, l1, prog) => {
   const dec = new VideoDecoder({ output: f => outQ.push(f), error: e => { decErr = e; } });
   dec.configure(cfg);
 
-  const V = { key, t: [], shake: [], dxs: [], sharp: [], moE: [], act: [], nF: [], maxF: [], faceOK };
+  const V = { key, t: [], shake: [], dxs: [], sharp: [], moE: [], act: [], amask: [],
+              nF: [], maxF: [], faceOK };
   const colorAcc = wantColor ? MC.color.statsAcc() : null;
   const pending = {};      // ペア1枚目の保管: i -> {A, tA, tWant, facesP}
   const deferred = [];     // 組み立て待ちのサンプル(順序保持。Phase 3)
@@ -730,7 +765,7 @@ MC.visual.analyzeClipSeek = async (clip, l0, l1, prog) => {
   catch (e) { faceOK = false; MC.log("visual: 顔検出なしで続行:", e.message); }
 
   const V = {
-    key, t: [], shake: [], dxs: [], sharp: [], moE: [], act: [],
+    key, t: [], shake: [], dxs: [], sharp: [], moE: [], act: [], amask: [],
     nF: [], maxF: [], faceOK,
   };
   for (let i = 0; i < n; i++) {

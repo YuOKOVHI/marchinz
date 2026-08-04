@@ -4424,6 +4424,147 @@ async function countSamples(ns, file, fromSec) {
   });
 
 
+  await test("★その場で動くだけの定点(DM・フロントピット)を見分ける — 引きの全面運動と取り違えない", async () => {
+    /* 2026-08-04 優さん指示「ドラムメジャーやフロントピットなど、対象のドリル・MMが
+       ない固定カメラは使用する頻度を少なめに」。
+       既存の staticScene は「ほとんど何も動かない」しか捕まえないので、
+       腕を振り続けるDMやマレットが動くピットはすり抜けていた。
+       ★ 見るのは「動く場所が固定されているか」。6×4=24セルのうち
+         4分の1以上のサンプルで動いたセル(hotCells)を数える。
+       ★ いちばん危ない誤検出は「引きで全面が動く画」─ 動きの中心だけを見ると
+         いつも画面中央で「動いていない」と読めてしまう。セルの数で見れば取り違えない */
+    const w = await compEnv();
+    compReset(w);
+    const NC = w.MC.visual.GRID_X * w.MC.visual.GRID_Y;
+    if (NC !== 24) throw new Error("グリッドが6×4でない: " + NC);
+    const mk = masks => {
+      const n = masks.length;
+      const V = { dxs: new Array(n).fill(0), sharp: new Array(n).fill(50),
+                  act: new Array(n).fill(0.2), moE: new Array(n).fill(0.05),
+                  shake: new Array(n).fill(0.005), amask: masks };
+      w.MC.visual._finalize(V);
+      return V;
+    };
+    const bits = arr => arr.reduce((m, i) => m | (1 << i), 0);
+    const rep = (m, n) => new Array(n).fill(m);
+    try {
+      /* ① ドラムメジャー: 毎回おなじ3セルだけが動く */
+      const dm = mk(rep(bits([8, 9, 14]), 12));
+      if (dm.hotCells !== 3) throw new Error(`DMの動くセルが${dm.hotCells}(3のはず)`);
+      if (!dm.staticSubject) throw new Error("DMを「その場で動くだけ」と見分けられない");
+
+      /* ② フロントピット: 下段の6セルが毎回動く(人数がいるぶん広い) */
+      const pit = mk(rep(bits([18, 19, 20, 21, 22, 23]), 12));
+      if (!pit.staticSubject) throw new Error(`ピットを見分けられない(hotCells=${pit.hotCells})`);
+
+      /* ③ ドリル: 隊列が画面を横切る = 動くセルが毎回入れ替わる。
+         どのセルも「4分の1以上のサンプル」には届かない */
+      const drill = mk(Array.from({ length: 12 }, (_, k) =>
+        bits([k % 6, 6 + (k % 6), 12 + (k % 6)])));
+      if (drill.staticSubject) {
+        throw new Error(`ドリルのカメラを定点扱いしている(hotCells=${drill.hotCells})`);
+      }
+
+      /* ④ ★誤検出の本命: 引きで全面が動く画。動きの中心は常に画面中央だが、
+         動いているセルは24個ある ─ 定点扱いしてはいけない */
+      const wide = mk(rep((1 << NC) - 1, 12));
+      if (wide.hotCells !== NC) throw new Error(`全面運動のhotCellsが${wide.hotCells}`);
+      if (wide.staticSubject) throw new Error("引きの全面運動を定点扱いしている(誤検出)");
+
+      /* ⑤ 操作カメラ(手持ち)は対象外 ─ 振っている画は別の規則で失格になる */
+      const oper = { dxs: new Array(12).fill(9), sharp: new Array(12).fill(50),
+                     act: new Array(12).fill(0.2), moE: new Array(12).fill(0.05),
+                     shake: new Array(12).fill(0.005), amask: rep(bits([8, 9, 14]), 12) };
+      w.MC.visual._finalize(oper);
+      if (!oper.operated) throw new Error("試験の前提が崩れた: 操作カメラと判定されない");
+      if (oper.staticSubject) throw new Error("操作カメラを定点扱いしている");
+
+      /* ⑥ 測れなかったクリップに性格を付けない(2026-08-03 と同じ約束) */
+      const few = mk(rep(bits([8]), 2));
+      if (few.staticSubject) throw new Error("サンプル2本で定点と決めつけている");
+      if (few.hotCells !== null) throw new Error("測れていないのに hotCells を出している");
+
+      return `DM=3セル / ピット=${pit.hotCells}セル / ドリル=${drill.hotCells}セル(対象外) / `
+        + `全面運動=${wide.hotCells}セル(対象外) / 操作カメラ・サンプル不足も対象外`;
+    } finally {
+      compReset(w);
+    }
+  });
+
+  await test("★出番を控えるカメラは本当に回数が減る(減点だけでは減らない・変異つき)", async () => {
+    /* 2026-08-04 優さん指示。★ここが本丸:
+       減点(STATIC_BIAS -0.40 / FREQ_BIAS.less -0.35)は**採点の話**でしかなく、
+       飢餓ガードは採点を無視して STARVE ショットごとに強制的に出す。
+       つまり「少なめ」と指定しても出番の**回数**は変わっていなかった。
+       控えたいカメラは飢餓とみなす間隔そのものを伸ばす。
+       ★ cam3 を「唯一の引き」にしない ─ 引きの織り込み規則が採点とも飢餓とも
+         無関係に3ショットごとに引っぱり込み、減ったかどうかを測れなくなる
+         (実測でこれを踏んだ)。cam3 は DM 相当の**寄りの定点**にする */
+    const w = await compEnv();
+    const S = compReset(w);
+    S.audioClipId = 1; S.trimIn = 0; S.trimOut = 60; S.cutLevel = 2;
+    Object.assign(w.MC.getClip(1), { beatsData: dciBeats(), sections: {} });
+    // cam1=ドリルの引き / cam2=ドリルの寄り / cam3=DM相当の寄りの定点(3台とも見分けられる形)
+    const shp = { 1: { close: .10, wide: .85, nF: 12 },
+                  2: { close: .80, wide: .10, nF: 3 },
+                  3: { close: .55, wide: .15, nF: 1 } };
+    const keep = { seg: w.MC.visual.seg, ss: w.MC.visual.shotScores,
+                   cls: w.MC.sections.classify, sal: w.MC.director._salute,
+                   mult: w.MC.director.QUIET_STARVE_MULT };
+    const run = () => {
+      S.cutList = []; w.MC.director.generate();
+      const by = {}; S.cutList.forEach(c => { by[c.clipId] = (by[c.clipId] || 0) + 1; });
+      return { n: S.cutList.length, by, cam3: by[3] || 0, used: Object.keys(by).length };
+    };
+    const setCam3 = (visual, freq) => {
+      const c = w.MC.getClip(3);
+      if (visual) c.visual = visual; else delete c.visual;
+      c.freq = freq || "auto";
+    };
+    try {
+      w.MC.director._salute = null;
+      w.MC.sections.classify = () => ({ feature: 0, percussion: 0, tutti: 0.3, full: 0.3,
+                                        pit: 0, bpm: 120, dyn: 0.5, quiet: 0.2 });
+      w.MC.visual.seg = c => ({ id: c.id, nF: shp[c.id].nF });
+      w.MC.visual.shotScores = m => ({ close: shp[m.id].close, group: 0.2,
+                                       wide: shp[m.id].wide, ensemble: 0 });
+
+      setCam3(null); const base = run();
+      setCam3({ staticSubject: true }); const quiet = run();
+      if (!(quiet.cam3 < base.cam3 * 0.7)) {
+        throw new Error(`控えても出番が減っていない(素${base.cam3}回 → 控えめ${quiet.cam3}回)`);
+      }
+      /* ★ 出番ゼロにはしない。全員の視点が見えることは 2026-08-02 の実機指摘 */
+      if (quiet.used !== 3) throw new Error(`控えた結果${quiet.used}台しか出ない`);
+      if (quiet.cam3 < 2) throw new Error(`控えすぎて出番が${quiet.cam3}回`);
+
+      /* 人が「少なめ」と指定した場合も同じ扱い */
+      setCam3(null, "less"); const less = run();
+      if (!(less.cam3 < base.cam3)) {
+        throw new Error(`「少なめ」指定で減らない(素${base.cam3} → ${less.cam3})`);
+      }
+
+      /* 変異: 飢餓の間隔を伸ばす手当てを外す(=2026-08-03 のまま)と、
+         減点だけでは回数がほとんど減らない */
+      w.MC.director.QUIET_STARVE_MULT = 1;
+      setCam3({ staticSubject: true }); const mut = run();
+      w.MC.director.QUIET_STARVE_MULT = keep.mult;
+      if (!(mut.cam3 > quiet.cam3)) {
+        throw new Error(`変異(間隔そのまま)でも出番が増えない=飢餓の間隔を測っていない`
+          + `(本番${quiet.cam3} / 変異${mut.cam3})`);
+      }
+      return `素${base.cam3}回 → 控えめ${quiet.cam3}回(全${base.n}カット中) / `
+        + `「少なめ」指定${less.cam3}回 / 変異(間隔そのまま)${mut.cam3}回 / 3台とも出る`;
+    } finally {
+      w.MC.visual.seg = keep.seg; w.MC.visual.shotScores = keep.ss;
+      w.MC.sections.classify = keep.cls; w.MC.director._salute = keep.sal;
+      w.MC.director.QUIET_STARVE_MULT = keep.mult;
+      const c3 = w.MC.getClip(3); if (c3) { delete c3.visual; c3.freq = "auto"; }
+      compReset(w);
+    }
+  });
+
+
   group("㉚ おまかせが黙って死なない(2026-08-01 レビュー14件の見張り)");
 
   await test("★書き出しは自走から本当に起動できる(鍵を返してから押す)", async () => {

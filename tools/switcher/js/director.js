@@ -71,6 +71,16 @@ MC.director = {
        登場間隔ボーナス(最大+0.48)と飢餓ガード(STARVE)が最低保証を担う */
   OVERHEAD_BONUS: 0.15,
   STATIC_BIAS: -0.4,
+  /* ★ 出番を控えるカメラの飢餓の間隔を伸ばす(2026-08-04 優さん指示
+     「ドラムメジャーやフロントピットなど、対象のドリル・MMがない固定カメラは
+     使用する頻度を少なめに」)。
+     ★ ここが本丸: 減点(STATIC_BIAS -0.40 / FREQ_BIAS.less -0.35)は
+       **採点の話**でしかなく、飢餓ガードは採点を無視して STARVE ショットごとに
+       強制的に出す。つまり「少なめ」と指定しても、出番の**回数**は
+       他のカメラと変わっていなかった(2026-08-03に減点を入れて以来ずっと)。
+       控えたいカメラは、飢餓とみなすまでの間隔そのものを伸ばす。
+     2倍 = おすすめ(基準3秒)でおよそ50秒に1回へ(標準は25秒に1回) */
+  QUIET_STARVE_MULT: 2,
   /* ★ 出番の飢餓ガード(2026-08-02 優さん実機: 「3本入れたのに2台しか出ない」。
      N本入れるとN-1台になる規則性)。原因はスコアの構造 ─ 上位2台は
      「直前 -0.9 / 2つ前 -0.25」の罰を交互に払いながら回るが、3台目は
@@ -262,6 +272,17 @@ MC.director._impacts = (audioClip, grid, tIn, tOut) => {
   return out;
 };
 
+/* 出番を控えるカメラか(2026-08-04 優さん指示)。
+   ・人が「少なめ」と指定した素材(自動判定より人の指定が上)
+   ・解析で「その場で動いているだけ」と推定された定点(DM・フロントピット等)
+   ・解析で「ほとんど何も動かない」と推定された定点 */
+MC.director._quietCam = c => {
+  if (!c) return false;
+  if (c.freq === "less") return true;
+  const V = c.visual;
+  return !!(V && (V.staticScene || V.staticSubject));
+};
+
 /* ---------- 楽章・セクションの切れ目 ---------- */
 /* ★ 2026-08-04 DCIディレクターの回答C「楽章が変わる瞬間は、必ず一度引きで
    リセットする」。ショウは1曲ではなく複数の楽章で、切れ目で場面が変わる ─
@@ -381,7 +402,9 @@ MC.director._rank = (g0, g1, cls, ctx) => {
     const Vc = c.visual;
     if (Vc) {
       if (Vc.overheadFixed) score += MC.director.OVERHEAD_BONUS;
-      if (Vc.staticScene) score += MC.director.STATIC_BIAS;
+      /* 「ほとんど動かない」か「その場で動いているだけ」なら減点(2026-08-04)。
+         二重には引かない */
+      if (Vc.staticScene || Vc.staticSubject) score += MC.director.STATIC_BIAS;
     }
     // 画質(セグメント内シャープネスがクリップ中央値に対して高いか)
     if (m && m.sharpMed > 1e-6) score += 0.1 * Math.min(1.2, m.sharpMean / m.sharpMed);
@@ -625,8 +648,12 @@ MC.director.generate = () => {
          DM・サリュート最優先=採点ルール②が常に破られる)。
          「実際に経過したショット数」で数えれば、飢餓は本来どおり
          STARVE カット目以降にしか成立しない */
+      /* ★ 出番を控えるカメラは飢餓の間隔を伸ばす(2026-08-04 優さん指示)。
+         減点だけでは飢餓ガードが素通しするので、回数が減らなかった */
+      const starveOf = id => MC.director._quietCam(MC.getClip(id))
+        ? MC.director.STARVE * MC.director.QUIET_STARVE_MULT : MC.director.STARVE;
       const starving = ranked.find(r => !r.dq && r.id !== top.id
-        && Math.min(ctx.sinceUse.get(r.id) || 0, cuts.length) >= MC.director.STARVE);
+        && Math.min(ctx.sinceUse.get(r.id) || 0, cuts.length) >= starveOf(r.id));
       /* ★ ソロ・ソリの最中は繰り延べる(2026-08-04 P3改)。
          抜いている奏者の画を、出番の都合だけで途中で断ち切らない。
          ただし待てるのは STARVE_DEFER ショットまで ─ feature が曲じゅう
@@ -704,6 +731,13 @@ MC.director.generate = () => {
   MC.S.cutList = cuts;
   MC.saveState();
   const nDissolve = cuts.filter(c => c.trans === "dissolve").length;
+  /* ★ 実素材でしきい値を詰めるための根拠を残す(2026-08-04)。
+     「どのカメラを控えめにしたか」と、その判断のもとになった hotCells */
+  const quiet = MC.S.clips.filter(c => !c.isAudio && !c.isImage && MC.director._quietCam(c))
+    .map(c => `${MC.shortName ? MC.shortName(c.name) : c.name}`
+      + `(${c.freq === "less" ? "指定" : "推定"}`
+      + `${c.visual && c.visual.hotCells != null ? `・動くセル${c.visual.hotCells}/24` : ""})`);
+  if (quiet.length) MC.log(`director: 出番を控えるカメラ ${quiet.join(" / ")}`);
   const whyTxt = Object.entries(wideWhy).map(([k, v]) => `${k}×${v}`).join("/");
   MC.log(`director: level=${MC.S.cutLevel} ${cuts.length}カット(ディゾルブ${nDissolve}`
     + `${forcedN ? `・強制切替${forcedN}` : ""}${wideN ? `・引き限定${wideN}(${whyTxt})` : ""}`
