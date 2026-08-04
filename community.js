@@ -1824,13 +1824,14 @@
       saveLocalPosts(next.map(normalizePostDoc));
       return;
     }
-    try {
-      await db.collection("mll_community_posts").doc(updated.id).set(doc, { merge: true });
-    } catch {
-      const posts = loadLocalPosts();
-      const next = posts.map((p) => (p.id === updated.id ? mapPost(doc) : p));
-      saveLocalPosts(next.map(normalizePostDoc));
-    }
+    /* ★ Firestore が失敗したらローカルに逃がさず、そのまま投げる
+       (2026-08-05 レビュー反映。writePost が 2026-07-25 に直した形へ揃える)。
+       以前はここで catch して localStorage に積んでいたため、呼び出し側は
+       成功と見なして「更新しました」と出し、直後の refreshAll() が
+       Firestore を読み直して元に戻していた ─ 管理者は対処済みだと誤認する。
+       db 自体が無い場合(上のif)だけは従来どおりローカル保存する
+       (Firebase未設定のローカル開発用の経路) */
+    await db.collection("mll_community_posts").doc(updated.id).set(doc, { merge: true });
   }
 
   async function removeThreadAll(threadRootId) {
@@ -1839,14 +1840,17 @@
       saveLocalPosts(loadLocalPosts().filter((p) => p.thread_root_id !== threadRootId));
       return;
     }
-    try {
-      const snap = await db.collection("mll_community_posts").where("thread_root_id", "==", threadRootId).get();
-      const batch = db.batch();
-      snap.docs.forEach((d) => batch.delete(d.ref));
-      await batch.commit();
-    } catch {
-      saveLocalPosts(loadLocalPosts().filter((p) => p.thread_root_id !== threadRootId));
-    }
+    /* ★ Firestore が失敗したらローカルに逃がさず、そのまま投げる
+       (2026-08-05 レビュー反映。writePost が 2026-07-25 に直した形へ揃える)。
+       以前はここで catch して localStorage に積んでいたため、呼び出し側は
+       成功と見なして「削除しました」と出し、直後の refreshAll() が
+       Firestore を読み直して元に戻していた ─ 管理者は対処済みだと誤認する。
+       db 自体が無い場合(上のif)だけは従来どおりローカル保存する
+       (Firebase未設定のローカル開発用の経路) */
+    const snap = await db.collection("mll_community_posts").where("thread_root_id", "==", threadRootId).get();
+    const batch = db.batch();
+    snap.docs.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
   }
 
   function buildChildrenMapThread(threadRootId) {
@@ -1888,18 +1892,20 @@
       return;
     }
     const CHUNK = 400;
-    try {
-      for (let i = 0; i < uniq.length; i += CHUNK) {
-        const slice = uniq.slice(i, i + CHUNK);
-        const batch = db.batch();
-        for (const id of slice) {
-          batch.delete(db.collection("mll_community_posts").doc(id));
-        }
-        await batch.commit();
+    /* ★ Firestore が失敗したらローカルに逃がさず、そのまま投げる
+       (2026-08-05 レビュー反映。writePost が 2026-07-25 に直した形へ揃える)。
+       以前はここで catch して localStorage に積んでいたため、呼び出し側は
+       成功と見なして「N件を非表示にしました」と出し、直後の refreshAll() が
+       Firestore を読み直して元に戻していた ─ 管理者は対処済みだと誤認する。
+       db 自体が無い場合(上のif)だけは従来どおりローカル保存する
+       (Firebase未設定のローカル開発用の経路) */
+    for (let i = 0; i < uniq.length; i += CHUNK) {
+      const slice = uniq.slice(i, i + CHUNK);
+      const batch = db.batch();
+      for (const id of slice) {
+        batch.delete(db.collection("mll_community_posts").doc(id));
       }
-    } catch {
-      const drop = new Set(uniq);
-      saveLocalPosts(loadLocalPosts().filter((p) => !drop.has(p.id)));
+      await batch.commit();
     }
   }
 
@@ -1925,7 +1931,14 @@
       hidden_reason: hide ? reason : "",
       updated_at: new Date().toISOString(),
     };
-    await updatePost(updated);
+    /* ★ 失敗を握り潰さない(2026-08-05 レビュー反映)。updatePost が投げるように
+       なったので、ここで受けて画面に出す。出さないと押しても何も起きない */
+    try {
+      await updatePost(updated);
+    } catch (e) {
+      setMsg(communityFriendlyErrorMessage(e, hide ? "非表示にできませんでした。" : "復元できませんでした。"), true);
+      return;
+    }
     setMsg(hide ? "投稿を非表示にしました。" : "投稿を復元しました。");
     await refreshAll();
   }
@@ -1949,10 +1962,12 @@
         },
         { merge: true },
       );
-    } catch {
-      const reports = loadLocalReports();
-      reports.unshift(report);
-      saveLocalReports(reports.slice(0, 300));
+    } catch (e) {
+      /* ★ 通報だけは投稿より重い ─ 届かなかったものを localStorage に積むと
+         「受け付けました」と出たまま**誰の目にも触れず消える**(readReports は
+         db がある限りローカル控えを読まない)。そのまま投げて呼び出し側に出す
+         (2026-08-05 レビュー反映) */
+      throw e;
     }
   }
 
@@ -2020,10 +2035,17 @@
         : "この返信を削除しますか？";
     const ok = window.confirm(msg);
     if (!ok) return;
-    if (isRootPost) {
-      await removeThreadAll(post.thread_root_id);
-    } else {
-      await removePostIds(subtreeIds);
+    /* ★ 消えていないのに「削除しました」と出さない(2026-08-05 レビュー反映)。
+       直後の refreshAll() が読み直して元に戻すので、誤認が一番起きやすい場所 */
+    try {
+      if (isRootPost) {
+        await removeThreadAll(post.thread_root_id);
+      } else {
+        await removePostIds(subtreeIds);
+      }
+    } catch (e) {
+      setMsg(communityFriendlyErrorMessage(e, "削除できませんでした。時間をおいてお試しください。"), true);
+      return;
     }
     setMsg(isRootPost ? "話題を削除しました。" : "返信を削除しました。");
     await refreshAll();
@@ -2059,7 +2081,15 @@
       reason: String(reason).trim().slice(0, 500),
       created_at: new Date().toISOString(),
     };
-    await writeReport(report);
+    /* ★ 届いていないのに「受け付けました」と言わない(2026-08-05 レビュー反映)。
+       以前は writeReport が失敗を localStorage へ逃がしていたため、
+       その通報は誰の目にも触れずに消えていた */
+    try {
+      await writeReport(report);
+    } catch (e) {
+      setMsg(communityFriendlyErrorMessage(e, "通報を送れませんでした。時間をおいてお試しください。"), true);
+      return;
+    }
     window.MarchinZTrackEvent?.("report_submit", { target_type: "community" });
     setMsg("通報を受け付けました。運営側で確認します。");
   }
@@ -2349,19 +2379,32 @@
   const bulkHideBtn = document.getElementById("moderation-bulk-hide");
   if (bulkHideBtn) {
     bulkHideBtn.addEventListener("click", async () => {
+      /* ★ 表示の出し分けだけに頼らない(2026-08-05 レビュー反映)。
+         単体の非表示/削除には isAdmin() の門があるのに、一括2ボタンだけ
+         抜けていた。過去に「CSSのdisplay指定が hidden 属性を殺して
+         権限UIが全員に露出する」事故があるため、手続きの側にも門を置く */
+      if (!isAdmin()) { setMsg("この操作は管理者のみ実行できます。", true); return; }
       const ids = getSelectedPostIds();
       if (!ids.length || !confirm(`${ids.length}件を一括非表示にしますか？`)) return;
       bulkHideBtn.disabled = true;
+      /* ★ 途中で失敗したら、そこまでの件数を正直に言う(2026-08-05 レビュー反映)。
+         以前は catch が無く、10件目で失敗しても成功メッセージに到達しないだけで
+         **何も表示されなかった**。件数も「選んだ数」を出しており、
+         実際に非表示にできた数とは別物だった */
+      let done = 0;
       try {
         const me = currentUser();
-        const db = getDb();
         for (const id of ids) {
           const post = cachedPosts.find((x) => x.id === id);
           if (!post || post.hidden) continue;
           const updated = { ...post, hidden: true, hidden_at: new Date().toISOString(), hidden_by: me?.id || "", hidden_reason: "一括非表示", updated_at: new Date().toISOString() };
           await updatePost(updated);
+          done += 1;
         }
-        setMsg(`${ids.length}件を非表示にしました。`);
+        setMsg(`${done}件を非表示にしました。`);
+        await refreshAll();
+      } catch (e) {
+        setMsg(communityFriendlyErrorMessage(e, `${done}件まで非表示にしましたが、途中で失敗しました。`), true);
         await refreshAll();
       } finally {
         bulkHideBtn.disabled = false;
@@ -2372,23 +2415,39 @@
   const bulkDeleteBtn = document.getElementById("moderation-bulk-delete");
   if (bulkDeleteBtn) {
     bulkDeleteBtn.addEventListener("click", async () => {
+      /* ★ 表示の出し分けだけに頼らない(2026-08-05 レビュー反映)。
+         単体の非表示/削除には isAdmin() の門があるのに、一括2ボタンだけ
+         抜けていた。過去に「CSSのdisplay指定が hidden 属性を殺して
+         権限UIが全員に露出する」事故があるため、手続きの側にも門を置く */
+      if (!isAdmin()) { setMsg("この操作は管理者のみ実行できます。", true); return; }
       const ids = getSelectedPostIds();
       if (!ids.length || !confirm(`${ids.length}件を一括削除しますか？この操作は取り消せません。`)) return;
       bulkDeleteBtn.disabled = true;
+      /* ★ 途中で失敗したら、そこまでの件数を正直に言う(2026-08-05 レビュー反映)。
+         以前は catch が無く、batch.commit() が投げると成功メッセージに到達せず
+         **何も表示されないままボタンだけ戻った**。取り消せない操作なので、
+         どこまで進んだかを必ず出す */
+      let done = 0;
       try {
         const db = getDb();
         if (db) {
           const CHUNK = 400;
           for (let i = 0; i < ids.length; i += CHUNK) {
+            const slice = ids.slice(i, i + CHUNK);
             const batch = db.batch();
-            ids.slice(i, i + CHUNK).forEach((id) => batch.delete(db.collection("mll_community_posts").doc(id)));
+            slice.forEach((id) => batch.delete(db.collection("mll_community_posts").doc(id)));
             await batch.commit();
+            done += slice.length;
           }
         } else {
           const drop = new Set(ids);
           saveLocalPosts(loadLocalPosts().filter((p) => !drop.has(p.id)));
+          done = ids.length;
         }
-        setMsg(`${ids.length}件を削除しました。`);
+        setMsg(`${done}件を削除しました。`);
+        await refreshAll();
+      } catch (e) {
+        setMsg(communityFriendlyErrorMessage(e, `${done}件まで削除しましたが、途中で失敗しました。`), true);
         await refreshAll();
       } finally {
         bulkDeleteBtn.disabled = false;

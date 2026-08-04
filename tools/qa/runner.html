@@ -260,6 +260,38 @@ async function countSamples(ns, file, fromSec) {
     return `${jsKeys.size}項目が auth.js と rules ${blocks.length}箇所で一致`;
   });
 
+  await test("★掲示板の書き込みが失敗したとき、localStorage へ逃がしていないこと", async () => {
+    /* ★ 2026-08-05 レビュー反映。writePost は 2026-07-25 に
+       「Firestoreへの書き込みが失敗したらローカルに逃がさず、そのまま投げる」
+       へ直され、その理由もコメントで残っている ─ 届いていないのに
+       「投稿しました」と出るのが最悪の失敗の仕方だから。
+       ところが updatePost / removeThreadAll / removePostIds / writeReport の
+       4つは旧いまま残っており、非表示・削除・通報が
+       **成功トーストを出しながら何も起きていない**状態だった
+       (直後の refreshAll() が読み直して元に戻す＝管理者は対処済みと誤認)。
+       ★ 挙動の試験はログインが要って書けないので、構造で見張る:
+         catch の中で saveLocalPosts/saveLocalReports を呼んでいたら落とす。
+         `if (!db)` のローカル開発用経路は catch の外なので当たらない。 */
+    const src = await (await fetch("/community.js")).text();
+    const bad = [];
+    for (const m of src.matchAll(/catch\s*(?:\([^)]*\))?\s*\{([\s\S]{0,400}?)\}/g)) {
+      if (/saveLocal(?:Posts|Reports)\s*\(/.test(m[1])) {
+        bad.push("行" + src.slice(0, m.index).split("\n").length);
+      }
+    }
+    if (bad.length) {
+      throw new Error("失敗をlocalStorageへ逃がす catch が復活している（届いていないのに成功に見える）: "
+        + bad.join(" / "));
+    }
+    /* 逃がさない代わりに、呼ぶ側が受けていること（受けないと押しても無反応） */
+    for (const fn of ["updatePost", "removeThreadAll", "removePostIds", "writeReport"]) {
+      if (!new RegExp(`await ${fn}\\(`).test(src)) throw new Error(`${fn} の呼び出しが消えている`);
+    }
+    const guarded = (src.match(/communityFriendlyErrorMessage\(/g) || []).length;
+    if (guarded < 5) throw new Error(`失敗を画面に出す箇所が ${guarded} 件しかない(受け止めが外れた?)`);
+    return `逃がす catch 0件 / 失敗を出す箇所 ${guarded}件`;
+  });
+
   group("① 静かな黒抜け: samples(trackId, 0) が 0 件を返さないこと");
   await test(`共有版: moov末尾 × fromSec=0 で ${N} サンプル読める`, async () => {
     const M = await loadShared();

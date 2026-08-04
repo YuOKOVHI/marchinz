@@ -2924,20 +2924,25 @@
       } catch (e) {
         const code = String(e?.code || "");
         const msg = String(e?.message || e || "");
-        if (code === "auth/requires-recent-login") {
-          MZToast.err(AUTH_MESSAGE.withdrawRetryAfterRelogin);
-        } else {
-          MZToast.err(`${AUTH_MESSAGE.withdrawPartialFailure}${msg ? `（${msg}）` : ""}`);
-        }
-        try {
-          await auth.signOut();
-        } catch {
-          //
-        }
-        currentUser = null;
-        rawAuthUserForAdmin = null;
-        showLoggedOut();
-        window.dispatchEvent(new CustomEvent("mll-auth-changed", { detail: { user: null, isAdmin: false } }));
+        /* ★ 失敗したときにサインアウトしない(2026-08-05 レビュー反映)。
+           退会は「withdrawn を立てる → データを消す → Auth アカウントを消す」の順。
+           最後の firebaseUser.delete() が失敗した時点で、profile は withdrawn=true・
+           データは消済み・Auth アカウントは残る、という状態になる。
+           ここでサインアウトすると、次にログインしたとき auth.js の
+           `isUnregistered = !banSnap.exists || withdrawn` が真になって追い返され、
+           **二度と入れなくなる**(withdrawn を false へ戻す経路はどこにも無い)。
+           requires-recent-login のときに「入り直してください」と案内していたが、
+           その入り直し自体が塞がっていた。
+           ★ サインインを保ったままにすれば、その場で「退会する」を押し直せる
+             (profileNeedsWithdrawRepair の枝を通って続きから再開する)。
+           ★ ページを閉じてしまった場合の復帰は、ログイン側の作り込みが要る
+             (「退会を完了する」のか「アカウントを復活させる」のかは決めごと)。
+             ここでは**新しく詰みを作らないこと**だけを担保する。 */
+        const stuck = code === "auth/requires-recent-login"
+          ? AUTH_MESSAGE.withdrawRetryAfterRelogin
+          : `${AUTH_MESSAGE.withdrawPartialFailure}${msg ? `（${msg}）` : ""}`;
+        MZToast.err(`${stuck} このページを閉じずに、もう一度「退会する」を押してください。`);
+        console.error("[MarchinZ withdraw] 未完了のまま停止(サインインは保持)", { code, msg });
         return;
       } finally {
         hideProcessingOverlay();

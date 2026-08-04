@@ -1945,7 +1945,18 @@
           try {
             const R = window.MarchinZMllRole;
             if (R?.removeUserInvolvementForCalendarEvent) {
-              await R.removeUserInvolvementForCalendarEvent(
+              /* ★ Note だけを消す(2026-08-05 レビュー反映)。
+                 以前は {deleteLogs:true, deleteAttendance:true, deleteDiary:true} を
+                 渡しており、「日記を削除」というボタンで**このイベントの
+                 MarchinZ Log 全件と参加記録まで**消えていた ─ 確認文も
+                 「この MarchinZ Note を削除しますか？」としか言わず、取り消せない。
+                 mll-role.js の用途別ラッパを見ると意図は明らかで、
+                 「未記入に戻す」(clearCommunityAttendanceForEvent)は
+                 deleteDiary:false ＝ Note を残す。ここはその逆で Note だけ。
+                 下の fallback 分岐(役モジュールが無いとき)も元から Note だけ消す。
+                 ★ deleteAttendance は既定が true(`!== false`)なので、
+                   明示的に false を渡さないと参加記録が消える。 */
+              const res = await R.removeUserInvolvementForCalendarEvent(
                 db,
                 targetUid,
                 {
@@ -1953,8 +1964,15 @@
                   eventDate: String(row.date || "").trim(),
                   eventName: String(row.title || row.eventName || "").trim(),
                 },
-                { deleteLogs: true, deleteAttendance: true, deleteDiary: true },
+                { deleteLogs: false, deleteAttendance: false, deleteDiary: true },
               );
+              /* ★ 消えなかったのに「消えました」の顔をしない(2026-08-05 レビュー反映)。
+                 removeUserInvolvement は失敗を console.warn で握り潰して
+                 diaryRemoved:false を返すだけなので、呼ぶ側が見ないと
+                 一覧から消えて実データは残る、というズレが起きる */
+              if (!res || res.diaryRemoved !== true) {
+                throw new Error("削除できませんでした。時間をおいてお試しください。");
+              }
             } else {
               await db
                 .collection("mll_profiles")
