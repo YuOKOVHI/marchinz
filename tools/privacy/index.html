@@ -19,7 +19,7 @@
 <link rel="stylesheet" href="/tools/shared/progress.css?v=1.99.3">
 <link rel="stylesheet" href="/tools/shared/journey.css?v=1.99.3">
 <link rel="stylesheet" href="css/style.css">
-<link rel="stylesheet" href="/tools/shared/sitechrome.css?v=1.99.3">
+<link rel="stylesheet" href="/tools/shared/sitechrome.css?v=1.102.0">
 </head>
 <body data-mz-tool="privacy">
 
@@ -41,7 +41,7 @@
 
 <main>
   <!-- ⓪ 取り込みフェーズ -->
-  <section id="dropSection" class="card drop step-card">
+  <section id="dropSection" data-mz-block="intake" class="card drop step-card">
     <h2 class="step-title">写真を取り込む</h2>
     <p class="step-lead">取り込むと、顔を自動で見つけてモザイクがかかります。</p>
     <p class="hint">遠くの小さな顔や後ろ向きの顔は、まれに自動で見つからないことがあります。その場合も、あとから<strong>顔をタップするだけ</strong>で追加できます。</p>
@@ -55,7 +55,7 @@
   </section>
 
   <!-- ⓪.5 範囲選択フェーズ(60秒超の動画のみ・インスタのストーリー風トリム) -->
-  <section id="rangeSection" class="card step-card" hidden>
+  <section id="rangeSection" data-mz-block="intake" class="card step-card" hidden>
     <h2 class="step-title">使う範囲を選ぶ</h2>
     <p class="step-lead">長い動画は、モザイクをかける範囲を選んで作業します(最大60秒)。</p>
     <div class="preview-wrap range-preview">
@@ -96,7 +96,7 @@
       </div>
     </div>
 
-    <div id="panelStep1" class="card step-card">
+    <div id="panelStep1" data-mz-block="tune" class="card step-card">
       <h2 class="step-title">顔にかかっているか確認する</h2>
       <p class="step-lead video-only">再生して、すべての顔にモザイクがかかっているか確認してください。</p>
       <p class="step-lead image-only">顔に自動でモザイクがかかっています。掛かり漏れがないか確認してください。</p>
@@ -110,7 +110,7 @@
       <button id="toStep2Btn" class="big-btn step-next">確認した、隠しかたの調整へ <i class="fa-solid fa-arrow-right"></i></button>
     </div>
 
-    <div id="panelStep2" class="card step-card" hidden>
+    <div id="panelStep2" data-mz-block="tune" class="card step-card" hidden>
       <h2 class="step-title">隠しかたを調整する</h2>
       <p class="step-lead">プレビューを見ながら、隠しかたと強さを整えます。</p>
       <div class="setting">
@@ -141,7 +141,7 @@
       </div>
     </div>
 
-    <div id="panelStep3" class="card step-card" hidden>
+    <div id="panelStep3" data-mz-block="output" class="card step-card" hidden>
       <h2 class="step-title">書き出して保存する</h2>
       <p class="step-lead">仕上がりを確認したら書き出します。</p>
       <div class="setting row video-only">

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-app-v="1.101.0">
+<html lang="ja" data-mz-app-v="1.102.0">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -19,7 +19,7 @@
 <link rel="stylesheet" href="/tools/shared/progress.css?v=1.99.3">
 <link rel="stylesheet" href="/tools/shared/journey.css?v=1.99.3">
 <link rel="stylesheet" href="css/style.css?v=1.101.0">
-<link rel="stylesheet" href="/tools/shared/sitechrome.css?v=1.99.3">
+<link rel="stylesheet" href="/tools/shared/sitechrome.css?v=1.102.0">
 </head>
 <body data-mz-tool="switcher">
 <header class="topbar">
@@ -234,7 +234,7 @@
       <p id="setupTabsLead" class="setup-tabs-lead"></p>
     </div>
 
-    <section class="panel" id="dropSec">
+    <section class="panel" id="dropSec" data-mz-block="intake">
       <!-- 「(3本まで)」は外した(2026-07-28)。上限は端末やログイン状態で変わるので、
            下の .mz-limit-why が動的に1文で言う。固定文を併記すると
            「(3本まで)」と「本数・長さの上限なし」が同じ画面に同時に出て矛盾する -->
@@ -258,7 +258,7 @@
          0.1度きざみ。プレビューはその動画を単独表示(soloId)+画面上部に固定
          (mz-pin-force)。1画面に1本ぶんだけを出し、動画1 → 動画2 と送る。
          表示・非表示は applySteps(工程の出し分け)が受け持つので hidden は付けない -->
-    <section class="panel" id="tiltSec">
+    <section class="panel" id="tiltSec" data-mz-block="tune">
       <h2>傾きを直す</h2>
       <p class="sec-lead">黄色い線を目安に、1本ずつ傾きを直します。</p>
       <div class="tilt-stage">
@@ -296,7 +296,7 @@
       </div>
     </section>
 
-    <section class="panel" id="placeSec" hidden>
+    <section class="panel" id="placeSec" data-mz-block="tune" hidden>
       <h2><span class="place-title">カメラの配置</span></h2>
       <p class="sec-lead place-lead">画面のどこに置くかを確認します。入れ替えできます。</p>
       <div id="placeRows" class="place-rows"></div>
@@ -304,7 +304,7 @@
 
     <!-- 音声を選ぶ(独立フェーズ 2026-07-24 優さん指示)。分析(同期)のあとに
          試聴して決める。動画1本ならフェーズごとスキップされる -->
-    <section class="panel" id="audioSec">
+    <section class="panel" id="audioSec" data-mz-block="intake">
       <h2>使う音声を選ぶ</h2>
       <div id="audioChoices" class="audio-choices"></div>
       <div class="row" style="margin-top:10px">
@@ -320,7 +320,7 @@
          音楽の解析だけ先に済ませ、「何分にするか」と「どこから始めるか」を
          選んでもらう。重い映像解析はここで決まった範囲だけを見るので、
          1分を選べば分析も書き出しも1分ぶんで済む -->
-    <section class="panel" id="lengthSec">
+    <section class="panel" id="lengthSec" data-mz-block="tune">
       <h2>長さと開始位置</h2>
       <p class="sec-lead">どこから何秒分を書き出すか決めます。</p>
 
@@ -367,7 +367,7 @@
          1枚も表示されなかった ─ ジャーニーが現在地だと言っている工程の中身が
          画面に存在しない状態。工程の出し分けは applySteps に一本化し、
          おまかせ/こだわりの出し分けは body.tab-easy / body.tab-pro で行う -->
-    <section class="panel" id="syncSec">
+    <section class="panel" id="syncSec" data-mz-block="tune">
       <h2>同期 <span class="hint">音の波形で自動合わせ</span></h2>
       <div class="row">
         <button id="syncBtn" class="btn primary" disabled><i class="fa-solid fa-wave-square"></i> 波形で同期する</button>
@@ -375,7 +375,7 @@
       <div id="syncStatus" class="status"></div>
     </section>
 
-    <section class="panel" id="layoutSec">
+    <section class="panel" id="layoutSec" data-mz-block="tune">
       <h2>レイアウト</h2>
       <div class="row preset-row" id="presetRow"></div>
       <select id="layoutSelect" class="select"></select>
@@ -434,7 +434,7 @@
       </div>
     </section>
 
-    <section class="panel" id="finishSec">
+    <section class="panel" id="finishSec" data-mz-block="tune">
       <h2>仕上げ <span class="hint">色とフィルター</span></h2>
       <div class="row">
         <button id="colorMatchBtn" class="btn"><i class="fa-solid fa-palette"></i> カメラの色を合わせる</button>
@@ -470,7 +470,7 @@
       </button>
     </div>
 
-    <section class="panel" id="exportSec">
+    <section class="panel" id="exportSec" data-mz-block="output">
       <h2>書き出し</h2>
       <!-- ロゴの説明はプレビューの下へ移した(2026-08-01)。
            layout.js:170,181,210 はプレビューと書き出しで**同じ関数**を呼んでおり、

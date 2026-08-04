@@ -19,7 +19,7 @@
 <link rel="stylesheet" href="/tools/shared/progress.css?v=1.99.3">
 <link rel="stylesheet" href="/tools/shared/journey.css?v=1.99.3">
 <link rel="stylesheet" href="css/style.css">
-<link rel="stylesheet" href="/tools/shared/sitechrome.css?v=1.99.3">
+<link rel="stylesheet" href="/tools/shared/sitechrome.css?v=1.102.0">
 </head>
 <body data-mz-tool="vlog">
 <header class="topbar">
@@ -44,7 +44,7 @@
   <div class="col">
 
     <!-- 雰囲気(いつでも切り替えられる。あとから変えても素材はそのまま) -->
-    <section class="panel" id="moodSec">
+    <section class="panel" id="moodSec" data-mz-block="tune">
       <h2><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> 雰囲気</h2>
       <p class="sec-lead">あとから切り替えられます</p>
       <div class="mode-cards mode-cards--compact" role="radiogroup" aria-label="Vlogの雰囲気">
@@ -74,7 +74,7 @@
     </section>
 
     <!-- 誰に見てほしいか(大石さんレビュー: これを決めると選ぶ素材が変わる) -->
-    <section class="panel" id="whomSec">
+    <section class="panel" id="whomSec" data-mz-block="tune">
       <div class="field">
         <label for="forWhomSelect">この動画、いちばん見てほしい人は？</label>
         <select id="forWhomSelect">
@@ -90,7 +90,7 @@
     </section>
 
     <!-- インタビュー(任意・先に置く) -->
-    <section class="panel" id="itvSec">
+    <section class="panel" id="itvSec" data-mz-block="intake">
       <h2><i class="fa-solid fa-comment-dots" aria-hidden="true"></i> インタビュー <span class="req-badge">必須</span>
         <span class="hint" data-limit-note data-limit-note-member="(3人まで)">(ゲストは1人・無料登録で3人)</span></h2>
       <p class="sec-lead">Vlogは語りが主役です。まずここから。1人いれば作れます。</p>
@@ -102,7 +102,7 @@
     </section>
 
     <!-- インサート映像(Bロール・必須) -->
-    <section class="panel" id="insSec">
+    <section class="panel" id="insSec" data-mz-block="intake">
       <h2><i class="fa-solid fa-photo-film" aria-hidden="true"></i> インサート映像（Bロール） <span class="hint">（任意）</span>
         <span class="hint" data-limit-note data-limit-note-member="(8本まで)">(ゲストは4本・無料登録で8本)</span></h2>
       <p class="sec-lead">語りの上に重ねる映像です。無くても作れますが、3本あると見違えます。順番は自動で決めます。</p>
@@ -118,7 +118,7 @@
     </section>
 
     <!-- BGM -->
-    <section class="panel" id="audioSec">
+    <section class="panel" id="audioSec" data-mz-block="intake">
       <h2><i class="fa-solid fa-music" aria-hidden="true"></i> BGM</h2>
       <div class="choice" role="radiogroup" aria-label="BGMの使い方">
         <button type="button" class="choice-item" data-audio="bgm" role="radio" aria-checked="false">
@@ -145,7 +145,7 @@
     </section>
 
     <!-- ロゴ・団体名(任意。ロゴ画像は無料登録が必要) -->
-    <details class="panel" id="logoSec">
+    <details class="panel" id="logoSec" data-mz-block="intake">
       <summary><i class="fa-solid fa-certificate" aria-hidden="true"></i> ロゴ
         <span class="hint">（任意）</span></summary>
       <p class="sec-lead">無くても大丈夫です。あれば右上と最後に表示します。</p>
@@ -171,7 +171,7 @@
     </details>
 
     <!-- 仕上げ -->
-    <section class="panel" id="finishSec">
+    <section class="panel" id="finishSec" data-mz-block="output">
       <h2><i class="fa-solid fa-flag-checkered" aria-hidden="true"></i> 仕上げ</h2>
 
       <div class="field">

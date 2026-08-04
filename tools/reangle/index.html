@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
 <link rel="stylesheet" href="/tools/shared/journey.css?v=1.99.3">
 <link rel="stylesheet" href="css/style.css">
-<link rel="stylesheet" href="/tools/shared/sitechrome.css?v=1.99.3">
+<link rel="stylesheet" href="/tools/shared/sitechrome.css?v=1.102.0">
 </head>
 <body data-mz-tool="reangle">
 
@@ -32,7 +32,7 @@
 
 <main>
   <!-- ① 動画を選ぶ -->
-  <section id="dropSection" class="card drop">
+  <section id="dropSection" data-mz-block="intake" class="card drop">
     <h2 class="step-title">斜め撮りを、正面から。</h2>
     <p class="step-lead">斜めから撮った動画を、正面から撮ったように補正します。</p>
     <p class="hint">キレイに補正できるのは軽〜中度の歪みまでです。元動画が大きく歪んでいる場合、補正が上手くいきません。ご了承ください。</p>
@@ -66,7 +66,7 @@
     </div>
 
 
-    <div id="panelStep1" class="card step-card">
+    <div id="panelStep1" data-mz-block="tune" class="card step-card">
       <h2 class="step-title">基準の四角を合わせる</h2>
       <p class="step-lead">補正の基準になる「床の四角」を決めます。ここが合うほど仕上がりがきれいです。</p>
       <p id="detectStatus" class="detect-status" aria-live="polite"></p>
@@ -78,7 +78,7 @@
       <button id="toStep2Btn" class="big-btn step-next">四角はこれでOK、見え方の調整へ <i class="fa-solid fa-arrow-right"></i></button>
     </div>
 
-    <div id="panelStep2" class="card step-card" hidden>
+    <div id="panelStep2" data-mz-block="tune" class="card step-card" hidden>
       <h2 class="step-title">見え方を調整する</h2>
       <p class="step-lead">プレビューを見ながら、好みの見え方に整えます。</p>
 
@@ -137,7 +137,7 @@
       </div>
     </div>
 
-    <div id="panelStep3" class="card step-card" hidden>
+    <div id="panelStep3" data-mz-block="output" class="card step-card" hidden>
       <h2 class="step-title">書き出して保存する</h2>
       <p class="step-lead">仕上がりを確認したら、動画に書き出します。</p>
       <div class="setting row">

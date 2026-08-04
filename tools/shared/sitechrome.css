@@ -439,3 +439,45 @@ body.mz-focus .mzsc-brand,
 body.mz-focus .mzsc-tabbar,
 body.mz-focus .mzsc-foot { display: none !important; }
 body.mz-focus.mzsc-has-tabbar .mzp-dock { bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
+
+
+/* ============ ブロックの色分けと、押してほしいボタンの強調 ============
+   2026-08-05 優さん指示「ブロックごとに薄く背景色を入れてわかりやすく。
+   次のボタンや押してほしいボタンはすこし強調色。サイトのトンマナを守る」。
+
+   ★ 色はサイト本体のトークンと同値(白/クリーム基調・ネイビー文字・
+     ブルー #1e4fd6 が主・アンバー #d97706 が第3色)。新しい色は増やさない。
+   ★ 塗りは「極薄(2〜4%)+左の色バー4px」だけ。白基調を壊さず、
+     ブロックの切れ目と役割が一目で分かる濃さに留める。
+   ★ 役割は HTML の data-mz-block で示す(intake=取り込み / tune=調整 /
+     output=書き出し・保存)。クラス名はツールごとに違う(.card/.panel/
+     .step-card)ため、意味を持つ属性を正本にする ─ 新しいブロックが
+     増えても、属性を付けるだけで同じ規則に乗る。 */
+:root {
+  --mzt-intake-bg: #f4f8ff;  --mzt-intake-bar: #1e4fd6;   /* 素材を入れる = 主色の青 */
+  --mzt-tune-bg:   #fbfaf6;  --mzt-tune-bar: rgba(15, 33, 56, 0.28);  /* 整える = ネイビー薄 */
+  --mzt-output-bg: #fefcef;  --mzt-output-bar: #d97706;   /* 仕上げ・保存 = クリーム+アンバー */
+}
+[data-mz-block] { border-left: 4px solid transparent; }
+[data-mz-block="intake"] { background: var(--mzt-intake-bg); border-left-color: var(--mzt-intake-bar); }
+[data-mz-block="tune"]   { background: var(--mzt-tune-bg);   border-left-color: var(--mzt-tune-bar); }
+[data-mz-block="output"] { background: var(--mzt-output-bg); border-left-color: var(--mzt-output-bar); }
+
+/* ---- 押してほしいボタン ----
+   ふだんの主ボタン(青)はそのまま。「次へ進む」「書き出す」など
+   **その画面でいちばん押してほしい1つ**にだけ、アンバーの細いリングを添えて
+   青の中からさらに立たせる。色そのものは変えない ─ 主色が2つになると
+   どちらが本命か分からなくなる(2026-08-05)。 */
+/* 補助の主ボタン(1画面に複数出る)は、青の柔らかい影だけ */
+.btn.primary { box-shadow: 0 3px 10px rgba(30, 79, 214, 0.18); }
+/* ★ その画面でいちばん押してほしい1つ。
+   ReAngle/Privacy は .big-btn(1ブロックに1つだけ置く約束)、
+   Switcher/Vlog は .btn.primary.big が「次へ進む」の器 */
+.big-btn, .btn.primary.big {
+  box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.22), 0 6px 18px rgba(30, 79, 214, 0.26);
+}
+.big-btn:hover:not(:disabled), .btn.primary.big:hover:not(:disabled) {
+  box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.34), 0 8px 22px rgba(30, 79, 214, 0.3);
+}
+/* 押せないときは強調しない(できない約束をしない) */
+.big-btn:disabled, .btn.primary:disabled, .btn.primary.big:disabled { box-shadow: none; }
