@@ -20,14 +20,25 @@ MC.ui.showExportLimitHelp = (wantSec, lim) => {
   $("#doneCard").hidden = false;
   $("#saveBtn").style.display = "none";
   const dl = $("#downloadBtn"); if (dl) dl.style.display = "none";
+  /* ★ ラベルはモードで変わる(2026-08-04)。自動スイッチング×スマホは30秒 */
+  const label = lim.exportLimitLabelFor
+    ? lim.exportLimitLabelFor(MC.S.mode) : lim.exportLimitLabel;
+  const capped = lim.modeCapped ? lim.modeCapped(MC.S.mode) : false;
   $("#doneText").innerHTML =
-    `<span class="warn">書き出せるのは${MC.ui.esc(lim.exportLimitLabel)}までです`
+    `<span class="warn">書き出せるのは${MC.ui.esc(label)}までです`
     + `（今の範囲は${MC.ui.fmtTime(wantSec)}）</span>`;
   const note = $("#doneNote");
   /* 上限は「会員種別 × 端末」で決まる(2026-07-31)。次の一手も相手で変える ─
      スマホの登録ユーザーに「無料登録すると」と言っても、登録済みなので伸びない */
   const back = "「長さと開始位置」に戻ると、収まる長さを選び直せます。";
-  if (lim.unlimited) {
+  /* ★ モードの天井が効いているときは、登録の案内をしない(2026-08-04)。
+     登録しても30秒は伸びない ─ ここで「無料登録すると2分」と言うのは嘘。
+     伸ばす道はパソコンで開くことだけなので、それだけを言う */
+  if (capped) {
+    note.textContent = back
+      + "自動スイッチングはスマホでは30秒までです（そのぶん高画質で書き出します）。"
+      + "パソコンで開くと、もっと長く書き出せます。";
+  } else if (lim.unlimited) {
     note.textContent = back;
   } else if (lim.member && lim.mobile) {
     note.textContent = back + "パソコンで開くと10分まで書き出せます（ショウ全体が入ります）。";
@@ -694,6 +705,168 @@ MC.ui.extraScenesLeft = () => {
   return (lim == null ? Infinity : lim) - (MC.ui._extraScenesMade || 0);
 };
 
+/* ============ 開始時点の「全景カメラ」とサムネイル(2026-08-04 優さん指示) ============
+   シーン候補に、そのシーンが始まる瞬間の絵を小さく添える ─
+   「大盛り上がり」「バラード」という名前だけでは、どの場面か思い出せない。
+   ★ 引きのカメラを選ぶ理由: 寄りの絵はその瞬間たまたま抜いていた奏者しか
+     写らず、場面の手がかりにならない。隊形が見える引きが「どこの場面か」を
+     いちばんよく伝える。
+   選び方は3段構え(人の指定 > 推定した性格 > 実際の引きスコア)。 */
+MC.ui.wideCamAt = t => {
+  const pool = MC.S.clips.filter(c => !c.isAudio && !c.isImage
+    && c.video && t >= c.offset && t <= c.offset + c.duration);
+  if (!pool.length) return null;
+  // ① 人が「引き」と指定したカメラ(自動判定より人の指定が上)
+  const tagged = pool.find(c => c.role === "wide");
+  if (tagged) return tagged;
+  // ② 解析で俯瞰・定点の引きと推定されたカメラ
+  const over = pool.find(c => c.visual && c.visual.overheadFixed);
+  if (over) return over;
+  // ③ その瞬間の引きスコアがいちばん高いカメラ(解析済みのときだけ)
+  let best = null, bs = -1;
+  for (const c of pool) {
+    let s = -1;
+    try {
+      const m = MC.visual.seg(c, t, t + 1);
+      if (m) s = MC.visual.shotScores(m).wide;
+    } catch (e) { s = -1; }
+    if (s > bs) { bs = s; best = c; }
+  }
+  return best || pool[0];
+};
+
+/* シーン候補のサムネイル(JPEG data URL)。作れなければ null。
+   ★ 再生中は作らない ─ seek で画面が乱れる(cutmode.makeThumb と同じ約束)。
+   ★ 1度作ったら覚える(候補は描き直しのたびに再生成しない) */
+MC.ui._sceneThumbs = new Map();
+MC.ui.sceneThumbKey = t => `t${Math.round(t * 10)}`;
+MC.ui.makeSceneThumb = async t => {
+  const key = MC.ui.sceneThumbKey(t);
+  if (MC.ui._sceneThumbs.has(key)) return MC.ui._sceneThumbs.get(key);
+  if (MC.S.playing) return null;
+  const clip = MC.ui.wideCamAt(t);
+  if (!clip || !clip.video) return null;
+  const v = clip.video;
+  if (!v.videoWidth) return null;
+  const local = Math.max(0, Math.min(clip.duration - 0.05, t - clip.offset));
+  try {
+    await new Promise(res => {
+      const done = () => { clearTimeout(tm); v.removeEventListener("seeked", done); res(); };
+      const tm = setTimeout(done, 1800);
+      v.addEventListener("seeked", done, { once: true });
+      v.currentTime = local;
+    });
+    const cv = document.createElement("canvas");
+    cv.width = 96; cv.height = 54;
+    const s = Math.max(cv.width / v.videoWidth, cv.height / v.videoHeight);
+    cv.getContext("2d").drawImage(v,
+      (cv.width - v.videoWidth * s) / 2, (cv.height - v.videoHeight * s) / 2,
+      v.videoWidth * s, v.videoHeight * s);
+    const url = cv.toDataURL("image/jpeg", 0.6);
+    MC.ui._sceneThumbs.set(key, url);
+    return url;
+  } catch (e) { return null; }
+};
+
+/* 描いたあとで、候補のサムネイルを1つずつ埋める(描画は待たせない)。
+   ★ 直列に回す ─ 同じ <video> を同時に seek すると取り違える */
+MC.ui.fillSceneThumbs = async () => {
+  if (MC.ui._fillingThumbs) return;
+  MC.ui._fillingThumbs = true;
+  try {
+    const slots = document.querySelectorAll(".mzso-thumb[data-t]:not([data-done])");
+    for (const el of slots) {
+      const t = parseFloat(el.dataset.t);
+      if (!isFinite(t)) continue;
+      const url = await MC.ui.makeSceneThumb(t);
+      el.setAttribute("data-done", "1");
+      if (url) { el.style.backgroundImage = `url(${url})`; el.classList.add("has-img"); }
+    }
+  } catch (e) { MC.log("sceneThumb: " + e.message); }
+  finally { MC.ui._fillingThumbs = false; }
+};
+
+/* ============ 開始時点の「全景カメラ」とサムネイル(2026-08-04 優さん指示) ============
+   シーン候補に、そのシーンが始まる瞬間の絵を小さく添える ─
+   「大盛り上がり」「バラード」という名前だけでは、どの場面か思い出せない。
+   ★ 引きのカメラを選ぶ理由: 寄りの絵はその瞬間たまたま抜いていた奏者しか
+     写らず、場面の手がかりにならない。隊形が見える引きが「どこの場面か」を
+     いちばんよく伝える。
+   選び方は3段構え(人の指定 > 推定した性格 > 実際の引きスコア)。 */
+MC.ui.wideCamAt = t => {
+  const pool = MC.S.clips.filter(c => !c.isAudio && !c.isImage
+    && c.video && t >= c.offset && t <= c.offset + c.duration);
+  if (!pool.length) return null;
+  // ① 人が「引き」と指定したカメラ(自動判定より人の指定が上)
+  const tagged = pool.find(c => c.role === "wide");
+  if (tagged) return tagged;
+  // ② 解析で俯瞰・定点の引きと推定されたカメラ
+  const over = pool.find(c => c.visual && c.visual.overheadFixed);
+  if (over) return over;
+  // ③ その瞬間の引きスコアがいちばん高いカメラ(解析済みのときだけ)
+  let best = null, bs = -1;
+  for (const c of pool) {
+    let s = -1;
+    try {
+      const m = MC.visual.seg(c, t, t + 1);
+      if (m) s = MC.visual.shotScores(m).wide;
+    } catch (e) { s = -1; }
+    if (s > bs) { bs = s; best = c; }
+  }
+  return best || pool[0];
+};
+
+/* シーン候補のサムネイル(JPEG data URL)。作れなければ null。
+   ★ 再生中は作らない ─ seek で画面が乱れる(cutmode.makeThumb と同じ約束)。
+   ★ 1度作ったら覚える(候補は描き直しのたびに再生成しない) */
+MC.ui._sceneThumbs = new Map();
+MC.ui.sceneThumbKey = t => `t${Math.round(t * 10)}`;
+MC.ui.makeSceneThumb = async t => {
+  const key = MC.ui.sceneThumbKey(t);
+  if (MC.ui._sceneThumbs.has(key)) return MC.ui._sceneThumbs.get(key);
+  if (MC.S.playing) return null;
+  const clip = MC.ui.wideCamAt(t);
+  if (!clip || !clip.video) return null;
+  const v = clip.video;
+  if (!v.videoWidth) return null;
+  const local = Math.max(0, Math.min(clip.duration - 0.05, t - clip.offset));
+  try {
+    await new Promise(res => {
+      const done = () => { clearTimeout(tm); v.removeEventListener("seeked", done); res(); };
+      const tm = setTimeout(done, 1800);
+      v.addEventListener("seeked", done, { once: true });
+      v.currentTime = local;
+    });
+    const cv = document.createElement("canvas");
+    cv.width = 96; cv.height = 54;
+    const s = Math.max(cv.width / v.videoWidth, cv.height / v.videoHeight);
+    cv.getContext("2d").drawImage(v,
+      (cv.width - v.videoWidth * s) / 2, (cv.height - v.videoHeight * s) / 2,
+      v.videoWidth * s, v.videoHeight * s);
+    const url = cv.toDataURL("image/jpeg", 0.6);
+    MC.ui._sceneThumbs.set(key, url);
+    return url;
+  } catch (e) { return null; }
+};
+
+/* 描いたあとで、候補のサムネイルを1つずつ埋める(描画は待たせない)。
+   ★ 直列に回す ─ 同じ <video> を同時に seek すると取り違える */
+MC.ui.fillSceneThumbs = async () => {
+  if (MC.ui._fillingThumbs) return;
+  MC.ui._fillingThumbs = true;
+  try {
+    const slots = document.querySelectorAll(".mzso-thumb[data-t]:not([data-done])");
+    for (const el of slots) {
+      const t = parseFloat(el.dataset.t);
+      if (!isFinite(t)) continue;
+      const url = await MC.ui.makeSceneThumb(t);
+      el.setAttribute("data-done", "1");
+      if (url) { el.style.backgroundImage = `url(${url})`; el.classList.add("has-img"); }
+    }
+  } catch (e) { MC.log("sceneThumb: " + e.message); }
+  finally { MC.ui._fillingThumbs = false; }
+};
+
 /* 完成カードへ「別のシーンも作る」を実らせる。
    見た目は最小限(並行のデザイン作業がこの画面を触っているため、
    構造だけ置いて整えは委ねる)。候補が無ければ何も出さない */
@@ -723,7 +896,7 @@ MC.ui.renderSceneOffers = () => {
       el.classList.remove("mzso-hold");
       el.innerHTML =
         '<p class="mzso-title"><i class="fa-solid fa-clapperboard" aria-hidden="true"></i> '
-        + '別のシーンも、切り替えの変更も<span class="mzso-note">'
+        + '別のシーンも、設定の変更も<span class="mzso-note">'
         + '登録すると、何本でも作り直せます</span></p>'
         + '<a class="mzso-signup" href="/#signup">無料登録する</a>';
       continue;
@@ -736,7 +909,7 @@ MC.ui.renderSceneOffers = () => {
     el.classList.toggle("mzso-hold", hold);
     el.innerHTML =
       '<p class="mzso-title"><i class="fa-solid fa-clapperboard" aria-hidden="true"></i> '
-      + '別のシーンも作れます<span class="mzso-note">'
+      + '同じ動画から別のシーンを作成<span class="mzso-note">'
       + (hold ? "先に「動画を保存」を押してください" : "前回の解析を使うため速い")
       + "</span></p>"
       + (hold
@@ -749,6 +922,9 @@ MC.ui.renderSceneOffers = () => {
         : '<div class="mzso-list" role="group" aria-label="別のシーンの候補">'
           + offers.map((c, i) =>
               `<button type="button" class="mzso-btn" data-scene="${i}">`
+              /* 開始時点の全景を小さく添える(2026-08-04 優さん指示)。
+                 絵が入るまでは枠だけ ─ 入ってから .has-img が付く */
+              + `<span class="mzso-thumb" data-t="${c.t}" aria-hidden="true"></span>`
               + `<i class="fa-solid ${MC.ui.esc(c.icon || "fa-flag")}" aria-hidden="true"></i> `
               + `${MC.ui.esc(c.label)}`
               + `<span class="mzso-t">${MC.ui.fmtLen ? MC.ui.fmtLen(Math.max(0, c.t - s0)) : ""}〜</span>`
@@ -760,9 +936,11 @@ MC.ui.renderSceneOffers = () => {
     const rev = el.querySelector(".mzso-reveal");
     if (rev) rev.onclick = () => { MC.ui._scenesRevealed = true; MC.ui.renderSceneOffers(); };
   }
-  /* 切り替えの多い/少ない版(2026-08-03)。別のシーンの下に出すので、
+  /* 「同じシーンを別設定で作成」(2026-08-04)。別のシーンの下に出すので、
      シーン候補の描画が終わったここで毎回並べ直す */
-  MC.ui.renderDensityOffers();
+  MC.ui.renderRemakeOffer();
+  /* 絵は後追いで埋める(描画をサムネイル生成で待たせない) */
+  MC.ui.fillSceneThumbs();
 };
 
 /* ★ 保存が済んだら「このツールを友達にシェア」を保存バンドの直下へ持ち上げる
@@ -852,24 +1030,22 @@ MC.ui.shareTool = async () => {
   return ok ? "copied" : "failed";
 };
 
-/* ============ 切り替えの多い/少ない版を作り直す(2026-08-03 優さん指示
-   「他のシーンの下に、切り替えをもっと多くする、もっと少なくする もできるように」) ============
-   同じシーン・同じ設定のまま、カット密度(cutLevel 1〜3)だけ±1して再書き出しする。
-   解析は使い回し(=別のシーンと同じ高速経路。カット割りと書き出しだけやり直す)。
-   ・表示は自動スイッチング(mode==="switch")のときだけ(縦型・ワイプはカット割が主役でない)
-   ・両端(1/3)に達したら、その方向のボタンは静かに消す
+/* ============ 同じシーンを別設定で作成(2026-08-04 優さん指示) ============
+   前身は「切り替えをもっと多く/少なく」の2択(2026-08-03)だったが、
+   変えられるのが頻度だけで、配置・傾き・色は完成後に変えようがなかった。
+   ★ 新しい設定画面は作らない ─ 「仕上げの好み」(#finishPick)を開き直す。
+     あの画面は既に 配置 / 切り替えの回数 / 色 / 傾きの自動補正 の4つを
+     持っている。同じことを2枚のUIで言うと、必ず片方が古くなる。
+   ・シーンは変えない(startKey/startAt をそのまま渡す=解析使い回しの高速経路)
    ・★ 回数は「別のシーン」と**同じ勘定**(maxExtraScenes/_extraScenesMade)。
-     ゲスト1本の枠を消費する ─ 枠の思想(完成後の作り直しは1本)を単純に保つ */
-MC.ui.renderDensityOffers = () => {
+     ただし枠を減らすのは**実際に作り直したとき**だけ ─ 設定画面を開いて
+     やめた人から枠を取らない(前身は押した瞬間に減らしていた) */
+MC.ui.renderRemakeOffer = () => {
   const hosts = [
-    { scenes: "doneScenes", note: MC.ui.$("#doneNote"), id: "doneDensity" },
-    { scenes: "eoDoneScenes", note: MC.ui.$("#eoDoneNote"), id: "eoDoneDensity" },
+    { scenes: "doneScenes", note: MC.ui.$("#doneNote"), id: "doneRemake" },
+    { scenes: "eoDoneScenes", note: MC.ui.$("#eoDoneNote"), id: "eoDoneRemake" },
   ];
-  const cur = MC.S.cutLevel || 2;
-  const canMore = cur < 3, canLess = cur > 1;
-  const show = MC.S.mode === "switch"
-    && (canMore || canLess)
-    && MC.ui.extraScenesLeft() > 0
+  const show = MC.ui.extraScenesLeft() > 0
     && !(!MC.ui._saved && !MC.ui._scenesRevealed);   // 保存前は候補と同じく畳む(誤タップ防止)
   for (const h of hosts) {
     let el = document.getElementById(h.id);
@@ -879,36 +1055,29 @@ MC.ui.renderDensityOffers = () => {
     if (!anchor) continue;
     if (!el) { el = document.createElement("div"); el.id = h.id; el.className = "mz-scene-offers"; }
     anchor.insertAdjacentElement("afterend", el);
+    /* 何を変えられるかはモードで違う。嘘を書かないため、その場で数え上げる */
+    const items = [];
+    if (MC.ui.finishRoles().length && MC.ui.finishCards().length >= 2) items.push("配置");
+    if (MC.S.mode === "switch") items.push("切り替えの回数");
+    items.push("色", "傾き");
     el.innerHTML =
-      '<p class="mzso-title"><i class="fa-solid fa-shuffle" aria-hidden="true"></i> '
-      + 'カメラの切り替え<span class="mzso-note">同じシーンのまま、切り替えの回数だけ変えて作り直します</span></p>'
-      + '<div class="mzso-list" role="group" aria-label="切り替えの回数">'
-      + (canMore ? '<button type="button" class="mzso-btn" data-density="1">'
-          + '<i class="fa-solid fa-plus" aria-hidden="true"></i> 切り替えをもっと多くする</button>' : "")
-      + (canLess ? '<button type="button" class="mzso-btn" data-density="-1">'
-          + '<i class="fa-solid fa-minus" aria-hidden="true"></i> 切り替えをもっと少なくする</button>' : "")
+      '<p class="mzso-title"><i class="fa-solid fa-sliders" aria-hidden="true"></i> '
+      + '同じシーンを別設定で作成<span class="mzso-note">'
+      + MC.ui.esc(items.join("・")) + 'を選び直します</span></p>'
+      + '<div class="mzso-list" role="group" aria-label="別設定で作り直す">'
+      + '<button type="button" class="mzso-btn" data-remake="1">'
+      + '<i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> 設定を選び直す</button>'
       + "</div>";
-    el.querySelectorAll("[data-density]").forEach(b => {
-      b.onclick = () => MC.ui.remakeWithDensity(parseInt(b.dataset.density, 10));
-    });
+    el.querySelectorAll("[data-remake]").forEach(b => { b.onclick = () => MC.ui.openRemakeSettings(); });
   }
 };
 
-MC.ui.remakeWithDensity = delta => {
+/* 「設定を選び直す」= 仕上げの好みを、いまの設定を入れた状態で開く。
+   ここでは枠を消費しない(進むボタンを押して初めて1本ぶん減る) */
+MC.ui.openRemakeSettings = () => {
   if (MC.ui._busy || (MC.exporter && MC.exporter.running)) return;
-  const cur = MC.S.cutLevel || 2;
-  const next = Math.min(3, Math.max(1, cur + delta));
-  if (next === cur) return;
-  /* 回数の門は「別のシーン」と共通(上の設計コメント参照) */
   if (MC.ui.extraScenesLeft() <= 0) { MC.ui.renderSceneOffers(); return; }
-  MC.ui._extraScenesMade = (MC.ui._extraScenesMade || 0) + 1;
-  MC.S.cutLevel = next;
-  MC.saveState();
-  MC.ui.exportOverlay.close();
-  const dc = MC.ui.$("#doneCard"); if (dc) dc.hidden = true;
-  /* 同じシーンを scene 指定で渡す → runAuto の高速経路(解析使い回し)に乗り、
-     applyLengthChoice が同じ startKey/startAt から同じ窓を引き直す */
-  MC.ui.runAuto({ scene: { key: MC.S.startKey || "start", t: MC.S.startAt } });
+  MC.ui.openFinishPick({ remake: true });
 };
 
 /* 候補を押したら、解析は使い回して書き出しまで自走する */
@@ -1011,7 +1180,9 @@ MC.ui.checkExportable = () => {
        roleMax … 会員種別と端末の上限(2026-07-31: ゲスト1分未満 /
                  登録×スマホ3分 / 登録×パソコン10分 / 管理者は無制限) */
   const hardMax = MC.exporter.maxExportableSec();
-  const roleMax = (window.MZ_LIMITS && MZ_LIMITS.maxExportSec) || Infinity;
+  const roleMax = (window.MZ_LIMITS && MZ_LIMITS.maxExportSecFor)
+    ? MZ_LIMITS.maxExportSecFor(MC.S.mode)
+    : ((window.MZ_LIMITS && MZ_LIMITS.maxExportSec) || Infinity);
   const limit = Math.min(hardMax, roleMax);
   if (!isFinite(limit)) return;                    // どちらも無制限(Macの管理者等)
   const [tIn, tOut] = MC.trimRange();
@@ -1174,7 +1345,9 @@ MC.ui.renderLimitWhy = () => {
   const el = document.querySelector(".mz-limit-why");
   if (!el) return;
   const hardMax = MC.exporter.maxExportableSec();
-  const roleMax = (window.MZ_LIMITS && MZ_LIMITS.maxExportSec) || Infinity;
+  const roleMax = (window.MZ_LIMITS && MZ_LIMITS.maxExportSecFor)
+    ? MZ_LIMITS.maxExportSecFor(MC.S.mode)
+    : ((window.MZ_LIMITS && MZ_LIMITS.maxExportSec) || Infinity);
   const mmss = sec => {
     if (!isFinite(sec)) return "";
     const m = Math.floor(sec / 60), ss = Math.round(sec % 60);
@@ -1199,7 +1372,9 @@ MC.ui.renderLimitWhy = () => {
       /* 端末のメモリで書き出しが頭打ちになる環境だけ、その理由も添える */
       + (isFinite(hardMax) && hardMax <= roleMax
           ? `（この端末で書き出せるのは${mmss(hardMax)}までです）`
-          : isFinite(roleMax) ? `（書き出せるのは${MC.ui.esc(L2.exportLimitLabel)}までです）` : "");
+          : isFinite(roleMax)
+            ? `（書き出せるのは${MC.ui.esc(L2.exportLimitLabelFor
+                ? L2.exportLimitLabelFor(MC.S.mode) : L2.exportLimitLabel)}までです）` : "");
     return;
   }
   /* 上限が外れている端末(手元の環境・管理者)。ここで「3本まで」と言うと、
@@ -1266,11 +1441,17 @@ MC.ui.coverRange = (s0, s1) => {
      比べるので、45秒の演奏でもゲストには「まるごと」が鍵つきに見えていた ─
      45秒なら上限(59秒)に収まるので、本当は使える。 */
 MC.ui.usablePresets = showLen => {
-  const all = (window.MZ_LIMITS && MZ_LIMITS.exportPresets) ? MZ_LIMITS.exportPresets() : [];
+  /* ★ モード込みで聞く(2026-08-04)。自動スイッチング×スマホは30秒 */
+  const all = (window.MZ_LIMITS && MZ_LIMITS.exportPresetsFor)
+    ? MZ_LIMITS.exportPresetsFor(MC.S.mode)
+    : ((window.MZ_LIMITS && MZ_LIMITS.exportPresets) ? MZ_LIMITS.exportPresets() : []);
   if (!all.length) return [];
   const hard = (MC.exporter && MC.exporter.maxExportableSec)
     ? MC.exporter.maxExportableSec() : Infinity;
-  const cap = Math.min(MZ_LIMITS.maxExportSec == null ? Infinity : MZ_LIMITS.maxExportSec, hard);
+  const roleCap = MZ_LIMITS.maxExportSecFor
+    ? MZ_LIMITS.maxExportSecFor(MC.S.mode)
+    : (MZ_LIMITS.maxExportSec == null ? Infinity : MZ_LIMITS.maxExportSec);
+  const cap = Math.min(roleCap, hard);
   const rated = all.map(p => {
     const want = p.whole ? (showLen || p.sec) : p.sec;
     const locked = want > cap + 0.01;
@@ -1370,8 +1551,11 @@ MC.ui.showUnlockHelp = p => {
        登録×スマホが3分止まりの本当の理由はプランの壁。嘘をつかない */
     + (needsPc && !(MC.exporter && MC.exporter.opfsSupported && MC.exporter.opfsSupported())
         ? "この端末は動画を丸ごとメモリに載せるため、長い書き出しが途中で止まってしまいます。" : "")
-    + `いまは<b>${MC.ui.esc(L.exportLimitLabel || "")}</b>まで作れます。</p>`
-    + (L.member ? "" : '<a class="lun-btn" href="/#signup">無料登録する</a>');
+    + `いまは<b>${MC.ui.esc((L.exportLimitLabelFor
+        ? L.exportLimitLabelFor(MC.S.mode) : L.exportLimitLabel) || "")}</b>まで作れます。</p>`
+    /* モードの天井が理由のときは登録を勧めない(登録しても伸びない) */
+    + (L.member || (L.modeCapped && L.modeCapped(MC.S.mode))
+        ? "" : '<a class="lun-btn" href="/#signup">無料登録する</a>');
 };
 
 MC.ui.renderLengthSec = () => {
@@ -3571,8 +3755,8 @@ MC.ui.applyAutoChoices = () => {
      入れ直すので、finishPicked が立っている間はここで上書きしない
      (ナチュラルを選んだ直後に marchinz へ戻す事故の防止)。
      立っていない経路(画面を通らず runAuto へ来た保険)では従来どおり
-     決め打ちへ戻す ─ 完成画面の「もっと多く/少なく」(remakeWithDensity)の
-     ±1が localStorage に残り、リセットや再訪のあとの新規おまかせまで
+     決め打ちへ戻す ─ 完成画面の「別設定で作成」(openRemakeSettings)で選んだ
+     頻度が localStorage に残り、リセットや再訪のあとの新規おまかせまで
      「多め/少なめ」を黙って引き継ぐ穴(2026-08-03 push前レビュー)はこれで
      塞いだまま。作り直し(scene 付き)はこの関数を通らないので±1は生きる */
   if (!MC.S.finishPicked) {
@@ -4138,22 +4322,31 @@ MC.ui.setFinishPickInert = on => {
 /* 「仕上げの好み」の持ち物。おすすめの状態を毎回ここから作り直す。
    ★ pending(割り当ての途中)は廃止した(2026-08-04 優さん「順番の入れ替えが
      わかりにくい」)。いまはどの札もいつでも直接タップできて、常に全員に役がある */
-MC.ui.newFinishPrefs = () => ({
-  color: "cinema",
-  level: MC.ui.AUTO.cutLevel,
-  tilt: true,                        // 傾きの自動補正(既定ON)
+/* fromState=true(完成後の「別設定で作成」)のときだけ、いま使った設定を入れて開く。
+   ★ 通常のおまかせでは決して S を読まない ─ 前回の色や頻度が新しいおまかせへ
+     黙って漏れ戻るのを防ぐため(2026-08-03 push前レビュー)。
+     作り直しは「いまの設定を変える」操作なので、そこだけ例外にする */
+MC.ui.newFinishPrefs = fromState => ({
+  color: fromState && MC.S.filterId === "none" ? "natural" : "cinema",
+  level: fromState ? (MC.S.cutLevel || MC.ui.AUTO.cutLevel) : MC.ui.AUTO.cutLevel,
+  tilt: fromState ? MC.S.autoTilt !== false : true,   // 傾きの自動補正(既定ON)
   order: MC.ui.finishDefaultOrder(),
   focus: null,                       // 描き直したあとに焦点を戻す先
   changed: false,
 });
 
-MC.ui.openFinishPick = () => {
+MC.ui.openFinishPick = opts => {
   const el = MC.ui.$("#finishPick");
   if (!el || !el.hidden) return;
+  /* 完成後の「別設定で作成」から来たか(2026-08-04)。
+     見出し・ボタンの文言と、進んだあとの行き先が変わる */
+  const remake = !!(opts && opts.remake);
+  MC.ui._fpRemake = remake;
   /* おすすめは毎回ここで選び直す(色・頻度は S の残り値を見ない)。
-     前回の±1(remakeWithDensity)や前回の色が、新しいおまかせへ黙って
-     漏れ戻らないため(2026-08-03 push前レビューの承継。applyAutoChoices 参照) */
-  MC.ui._fp = MC.ui.newFinishPrefs();
+     前回の色が、新しいおまかせへ黙って漏れ戻らないため
+     (2026-08-03 push前レビューの承継。applyAutoChoices 参照)。
+     作り直しのときだけ、いまの設定を入れて開く */
+  MC.ui._fp = MC.ui.newFinishPrefs(remake);
   MC.preview.pause();   // 選択画面の裏で音が鳴り続けないように(モード選択と同じ)
   el.hidden = false;
   /* ★ 開くたび先頭へ戻す(2026-08-04)。前に送った位置が残っていると、
@@ -4286,7 +4479,7 @@ MC.ui.renderFinishPick = () => {
     cbox.innerHTML = "";
     for (const [key, name, desc, reco] of [
       ["cinema", "シネマティック", "MarchinZオリジナルのカラー", true],
-      ["natural", "ナチュラル", "撮ったままの色。カメラの色だけそろえます", false],
+      ["natural", "ナチュラル", "自然な色に合わせます", false],
     ]) {
       const b = document.createElement("button");
       b.type = "button";
@@ -4304,10 +4497,22 @@ MC.ui.renderFinishPick = () => {
     }
   }
   /* --- 進むボタン。どの瞬間も割り当ては完成しているので常に押せる --- */
+  /* ★ 文言は必ずここで決める(2026-08-04)。openFinishPick で1度書いても、
+     この関数が描き直すたびに上書きしてしまう ─ #fpGo の所有者はここ。
+     作り直し(完成後の「別設定で作成」)では、行き先が違うので言葉も変える */
+  const remake = !!MC.ui._fpRemake;
+  const lead = el.querySelector(".mode-lead");
+  if (lead) lead.textContent = remake
+    ? "いまの設定が入っています。変えたいところだけタップ"
+    : "おすすめを選んであります。変えたいところだけタップ";
+  const back = MC.ui.$("#fpBack");
+  if (back) back.textContent = remake ? "← やめる" : "← 動画を選び直す";
   const go = MC.ui.$("#fpGo");
   if (go) {
     go.disabled = false;
-    go.textContent = fp.changed ? "これで進む" : "このまま進む";
+    go.textContent = remake
+      ? (fp.changed ? "この設定で作り直す" : "同じ設定で作り直す")
+      : (fp.changed ? "これで進む" : "このまま進む");
   }
   MC.ui.keepFinishPickFocus();
 };
@@ -4385,6 +4590,19 @@ MC.ui.finishPickGo = () => {
   MC.S.finishPicked = true;
   MC.saveState();
   MC.ui.closeFinishPick();
+  /* ★ 完成後の「別設定で作成」から来たときは、同じシーンのまま作り直す
+     (2026-08-04)。枠を減らすのはここ ─ 開いてやめた人からは取らない */
+  if (MC.ui._fpRemake) {
+    MC.ui._fpRemake = false;
+    if (MC.ui.extraScenesLeft() <= 0) { MC.ui.renderSceneOffers(); return; }
+    MC.ui._extraScenesMade = (MC.ui._extraScenesMade || 0) + 1;
+    MC.ui.exportOverlay.close();
+    const dc = MC.ui.$("#doneCard"); if (dc) dc.hidden = true;
+    /* 同じシーンを scene 指定で渡す → runAuto の高速経路(解析使い回し)に乗り、
+       applyLengthChoice が同じ startKey/startAt から同じ窓を引き直す */
+    MC.ui.runAuto({ scene: { key: MC.S.startKey || "start", t: MC.S.startAt } });
+    return;
+  }
   MC.ui.runAuto();   // ここから先は今までどおり書き出しまで自走
 };
 
@@ -4393,6 +4611,14 @@ MC.ui.finishPickGo = () => {
    (2026-08-03 push前レビューの実測)。全画面の選び直しと同じ着地へ渡す ─
    finishPicked は倒れたままなので、再開すればこの画面がまた開く */
 MC.ui.finishPickBack = () => {
+  /* ★ 作り直しの途中でやめたら、完成画面へそのまま戻す(2026-08-04)。
+     素材の工程へ着地させると、出来上がった動画を残したまま最初の画面に
+     立たされて「保存したのに消えた?」になる */
+  if (MC.ui._fpRemake) {
+    MC.ui._fpRemake = false;
+    MC.ui.closeFinishPick();
+    return;
+  }
   MC.ui.closeFinishPick();
   MC.ui.repickLand("動画を入れ替えたら「これでOK、おまかせを再開」を押してください");
 };
@@ -5649,7 +5875,9 @@ MC.ui.wire = () => {
       const lim = window.MZ_LIMITS;
       const [tI, tO] = MC.trimRange();
       const wantSec = Math.max(0, tO - tI);
-      if (lim && wantSec > lim.maxExportSec) {
+      const planMax = lim && lim.maxExportSecFor
+        ? lim.maxExportSecFor(MC.S.mode) : (lim && lim.maxExportSec);
+      if (lim && wantSec > planMax) {
         MC.ui.showExportLimitHelp(wantSec, lim);
         $("#exportBtn").disabled = !MC.S.clips.length;
         $("#cancelBtn").style.display = "none";

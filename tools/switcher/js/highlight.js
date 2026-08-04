@@ -194,7 +194,11 @@ MC.highlight.presetSec = (preset, showSec) => {
   const lim = window.MZ_LIMITS || {};
   const hard = MC.exporter && MC.exporter.maxExportableSec
     ? MC.exporter.maxExportableSec() : Infinity;
-  const cap = Math.min(lim.maxExportSec == null ? Infinity : lim.maxExportSec, hard);
+  /* ★ モード込みで聞く(2026-08-04)。自動スイッチング×スマホは30秒 */
+  const roleCap = lim.maxExportSecFor
+    ? lim.maxExportSecFor(MC.S.mode)
+    : (lim.maxExportSec == null ? Infinity : lim.maxExportSec);
+  const cap = Math.min(roleCap, hard);
   const want = preset && preset.whole ? (showSec || preset.sec) : preset.sec;
   return Math.max(5, Math.min(want, cap, showSec || want));
 };

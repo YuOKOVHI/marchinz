@@ -6525,76 +6525,116 @@ async function countSamples(ns, file, fromSec) {
     }
   });
 
-  await test("★完成画面の「切り替えをもっと多く/少なく」— 自動SWだけ・±1・両端は消す・ゲスト枠を消費", async () => {
-    /* 2026-08-03 優さん指示「他のシーンの下に、切り替え(スイッチ)をもっと多くする、
-       もっと少なくする もできるように」。同じシーンのまま cutLevel±1 で作り直す。
-       回数は「別のシーン」と同じ勘定(枠の思想を単純に保つ) */
+  await test("★完成画面の「同じシーンを別設定で作成」— いまの設定入りで開く・進んで初めて枠を使う(変異つき)", async () => {
+    /* 2026-08-04 優さん指示。前身は「切り替えをもっと多く/少なく」の2択で、
+       変えられるのが頻度だけだった(配置・傾き・色は完成後に変えようがない)。
+       新しい設定画面は作らず「仕上げの好み」(#finishPick)を開き直す。
+       ★ 前身との契約の違いを2つとも測る:
+         ① 開いた画面には**いまの設定**が入っている(おすすめへ戻らない)
+         ② 枠が減るのは**進んだとき**だけ(開いてやめた人から取らない) */
     const e = await doneEnv();
     const w = e.w, d = w.document, U = e.U, S = w.MC.S;
     const keep = { max: w.MZ_LIMITS.maxExtraScenes, made: U._extraScenesMade,
-                   auto: U.runAuto, lv: S.cutLevel, mode: S.mode,
-                   sk: S.startKey, sa: S.startAt };
+                   auto: U.runAuto, lv: S.cutLevel, mode: S.mode, fid: S.filterId,
+                   tilt: S.autoTilt, sk: S.startKey, sa: S.startAt, fp: U._fp };
     let ran = 0, got = null;
     U.runAuto = async opt => { ran++; got = opt; };
+    const openIt = () => {
+      U.renderSceneOffers();
+      const host = d.getElementById("eoDoneRemake");
+      if (!host) throw new Error("完成画面に「別設定で作成」が無い");
+      const b = host.querySelector("[data-remake]");
+      if (!b) throw new Error("「設定を選び直す」ボタンが無い");
+      b.click();
+      return d.getElementById("finishPick");
+    };
     try {
-      S.mode = "switch"; S.cutLevel = 2; S.startKey = "climax"; S.startAt = null;
+      /* いま使った設定 = 多め(3)・ナチュラル・傾きOFF。おすすめ(2/シネマ/ON)とは全部違う */
+      S.mode = "switch"; S.cutLevel = 3; S.filterId = "none"; S.autoTilt = false;
+      S.startKey = "climax"; S.startAt = null;
       w.MZ_LIMITS.maxExtraScenes = 1; U._extraScenesMade = 0;
       U.setSaveState(true);
-      U.renderSceneOffers();
-      const el = d.getElementById("eoDoneDensity");
-      if (!el) throw new Error("完成画面に切り替えの2択が無い");
-      /* 置き場所は「別のシーン」の下 */
-      const sc = d.getElementById("eoDoneScenes");
-      if (sc && el.previousElementSibling !== sc) throw new Error("別のシーンの下に居ない");
-      if (!el.querySelector('[data-density="1"]') || !el.querySelector('[data-density="-1"]')) {
-        throw new Error("中間段(おすすめ)なのに2択が揃っていない");
+
+      /* ① 自動スイッチング以外にも出る(配置・色・傾きは全モードで変えられる) */
+      S.mode = "vertical"; U.renderSceneOffers();
+      if (!d.getElementById("eoDoneRemake")) throw new Error("縦型に出ていない(配置・色・傾きは変えられるはず)");
+      /* 見出しの項目はモードで変わる ─ 縦型に「切り替えの回数」と書かない */
+      const vTxt = d.getElementById("eoDoneRemake").textContent;
+      if (/切り替えの回数/.test(vTxt)) throw new Error("縦型なのに「切り替えの回数」と書いている: " + vTxt);
+      S.mode = "switch"; U.renderSceneOffers();
+      if (!/切り替えの回数/.test(d.getElementById("eoDoneRemake").textContent)) {
+        throw new Error("自動スイッチングなのに「切り替えの回数」が項目に無い");
       }
-      /* 両端: そのボタンだけ静かに消える */
-      S.cutLevel = 3; U.renderDensityOffers();
-      if (d.querySelector('#eoDoneDensity [data-density="1"]')) throw new Error("上端でも「もっと多く」が出ている");
-      if (!d.querySelector('#eoDoneDensity [data-density="-1"]')) throw new Error("上端で「少なく」まで消えた");
-      S.cutLevel = 1; U.renderDensityOffers();
-      if (d.querySelector('#eoDoneDensity [data-density="-1"]')) throw new Error("下端でも「もっと少なく」が出ている");
-      /* 自動スイッチング以外には出さない */
-      S.mode = "vertical"; U.renderDensityOffers();
-      if (d.getElementById("eoDoneDensity")) throw new Error("縦型にも出ている");
-      S.mode = "switch"; S.cutLevel = 2; U.renderDensityOffers();
-      /* 押すと同じシーンのまま密度±1で自走(解析使い回しの scene 経路) */
-      d.querySelector('#eoDoneDensity [data-density="1"]').click();
-      eq(S.cutLevel, 3, "密度が+1される");
-      eq(ran, 1, "作り直しが走る");
+
+      /* ② 開くと、いまの設定が入っている(おすすめへ戻らない) */
+      const fpEl = openIt();
+      if (!fpEl || fpEl.hidden) throw new Error("仕上げの好みが開かない");
+      const fp = U._fp;
+      if (fp.level !== 3) throw new Error(`切り替えの回数が引き継がれない(${fp.level})`);
+      if (fp.color !== "natural") throw new Error(`色が引き継がれない(${fp.color})`);
+      if (fp.tilt !== false) throw new Error(`傾きの設定が引き継がれない(${fp.tilt})`);
+      /* 進むボタンの文言も作り直しの言葉になる */
+      if (!/作り直す/.test(d.getElementById("fpGo").textContent)) {
+        throw new Error("進むボタンが作り直しの文言でない: " + d.getElementById("fpGo").textContent);
+      }
+
+      /* ③ ここでやめる → 枠は減らない・完成画面へ戻る(素材工程へ飛ばさない) */
+      U.finishPickBack();
+      if (!d.getElementById("finishPick").hidden) throw new Error("やめても閉じない");
+      if (U._extraScenesMade !== 0) throw new Error("開いてやめただけで枠が減った");
+      if (ran !== 0) throw new Error("やめたのに作り直しが走った");
+
+      /* ④ もう一度開いて進む → 同じシーンのまま作り直し、枠を1つ使う */
+      openIt();
+      U._fp.level = 1;                       // 頻度だけ変えてみる
+      U.finishPickGo();
+      if (ran !== 1) throw new Error("作り直しが走らない");
       if (!got || !got.scene || got.scene.key !== "climax") {
         throw new Error("同じシーンを引き継いでいない: " + JSON.stringify(got));
       }
-      eq(U._extraScenesMade, 1, "ゲストの枠(別のシーンと同じ勘定)を消費する");
-      /* 枠を使い切ったら: 2択は消え、直接呼んでも走らない(変異=UI飛ばし) */
+      if (S.cutLevel !== 1) throw new Error(`選んだ頻度が入っていない(${S.cutLevel})`);
+      eq(U._extraScenesMade, 1, "進んだときに枠を1つ使う");
+
+      /* ⑤ 枠を使い切ったら: 入口が消え、直接呼びでも開かない(UI飛ばしの門) */
       U.exportOverlay.open(); U.showDone(e.res); U.setSaveState(true); U.renderSceneOffers();
-      if (d.getElementById("eoDoneDensity")) throw new Error("枠ゼロでも2択が出ている");
-      U.remakeWithDensity(-1);
-      if (ran !== 1) throw new Error("枠ゼロなのに直接呼びで作り直せる(門が無い)");
-      eq(S.cutLevel, 3, "枠ゼロでは密度も動かさない");
-      /* ±1は saveState まで届く(localStorage に残る)。新規おまかせが「おすすめ」へ
-         戻さないと、次のプロジェクトまで多め/少なめを黙って引き継ぐ
-         (2026-08-03 push前レビューで実バグ)。2026-08-03 の「仕上げの好み」以降、
-         戻す役は2枚: ①画面(毎回おすすめから出直す=㊵で確認) ②画面を通らない
-         保険経路の applyAutoChoices(finishPicked が寝ているときだけ決め打ち)。
-         ここでは②を測る。選択済み(finishPicked=true)のときに上書きしないことは
-         ㊵の変異つき試験が受け持つ */
-      const keep2 = { ep: S.exportPreset, fi: S.filterId, co: S.colorOn, ho: S.horizonOn,
-                      fp: S.finishPicked };
-      try {
-        S.finishPicked = false;
-        U.applyAutoChoices();
-        eq(S.cutLevel, 2, "新規おまかせは「おすすめ」に戻る(±1を持ち越さない)");
-      } finally {
-        S.exportPreset = keep2.ep; S.filterId = keep2.fi;
-        S.colorOn = keep2.co; S.horizonOn = keep2.ho; S.finishPicked = keep2.fp;
+      if (d.getElementById("eoDoneRemake")) throw new Error("枠ゼロでも入口が出ている");
+      U.openRemakeSettings();
+      if (!d.getElementById("finishPick").hidden) throw new Error("枠ゼロなのに直接呼びで開ける(門が無い)");
+
+      /* ⑥ 変異A: いまの設定を読まない作りへ戻すと、おすすめに化ける
+             (=②が本当に「引き継ぎ」を測っている証明) */
+      U._extraScenesMade = 0; U.setSaveState(true);
+      const realPrefs = U.newFinishPrefs;
+      U.newFinishPrefs = () => realPrefs(false);      // fromState を握りつぶす
+      openIt();
+      const mutFp = U._fp;
+      U.newFinishPrefs = realPrefs;
+      U.finishPickBack();
+      if (mutFp.level === 1 && mutFp.color === "natural" && mutFp.tilt === false) {
+        throw new Error("変異(設定を読まない)でも引き継がれる=②が空回り");
       }
-      return "自動SWのみ / 別のシーンの下 / ±1と両端 / scene引き継ぎ / 枠1本を共有 / 新規おまかせはおすすめへ";
+
+      /* ⑦ 変異B: シーンを渡さないと別のシーンになる(=④が経路を測っている証明) */
+      U._extraScenesMade = 0; U.setSaveState(true);
+      const realGo = U.runAuto;
+      let got2 = null;
+      U.runAuto = async opt => { got2 = opt === undefined ? "指定なし" : opt; };
+      openIt();
+      const realKey = S.startKey; S.startKey = null; S.startAt = null;
+      U.finishPickGo();
+      S.startKey = realKey; U.runAuto = realGo;
+      if (got2 && got2.scene && got2.scene.key === "climax") {
+        throw new Error("変異(開始位置なし)でも同じシーンが渡る=④が空回り");
+      }
+      return "全モードに出る / いまの設定入りで開く / やめても枠は減らない / "
+        + "進むと同じシーンで作り直し / 枠ゼロは直接呼びも門 / 変異2件とも落ちる";
     } finally {
       w.MZ_LIMITS.maxExtraScenes = keep.max; U._extraScenesMade = keep.made;
       U.runAuto = keep.auto; S.cutLevel = keep.lv; S.mode = keep.mode;
-      S.startKey = keep.sk; S.startAt = keep.sa;
+      S.filterId = keep.fid; S.autoTilt = keep.tilt;
+      S.startKey = keep.sk; S.startAt = keep.sa; U._fp = keep.fp;
+      U._fpRemake = false;
+      try { U.closeFinishPick(); } catch (_) {}
       e.restore();
     }
   });
@@ -7038,7 +7078,7 @@ async function countSamples(ns, file, fromSec) {
       for (const [mode, layout] of [["switch", "switch"], ["vertical", "v3"], ["wipeCam", "wipe"]]) {
         const S = compReset(w);
         S.mode = mode; S.layoutId = layout;
-        /* 前回の残り値(remakeWithDensityの±1・こだわりの色)を装う ─
+        /* 前回の残り値(完成画面の「別設定で作成」で選んだ頻度・こだわりの色)を装う ─
            画面は毎回おすすめから出直し、残り値を引き継がない約束 */
         S.cutLevel = 3; S.filterId = "none"; S.colorOn = false;
         w.MC.ui._autoFlow = true; S.finishPicked = false;

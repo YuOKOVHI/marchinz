@@ -194,21 +194,52 @@ window.MZ_LIMITS = (() => {
     { id: "full",  label: "まるごと",   sec: 510, hint: "演奏全体", whole: true },
   ];
 
+  /* ---- モードごとの天井(2026-08-04 優さん指示) ----
+     「自動スイッチングはスマホでは30秒までに。その分高性能にする」。
+     ★ これは**プランの壁ではなく技術的な天井**なので、登録しても伸びない。
+       自動スイッチングは全カメラを並行してデコードし、切り替えのたびに
+       別のカメラへシークする ─ Switcher の3モードの中でいちばん重い。
+       縦型・ワイプは1〜2台しか同時に触らないので、この天井は掛けない。
+     ★ 使い方: Switcher 側は maxExportSec を直接読まず、
+       maxExportSecFor(MC.S.mode) で聞く。判定の正本はここ1箇所に置く
+       (条件のコピーを増やすと、片方を変えたときもう片方が嘘になる) */
+  L.SWITCH_MOBILE_SEC = 30;
+  /* mode: "switch" | "vertical" | "wipe" | null(モードを問わない) */
+  L.modeCapSec = mode =>
+    (mode === "switch" && mobile && !unlimited) ? L.SWITCH_MOBILE_SEC : Infinity;
+  /* いまの人・いまの端末・いまのモードで書き出せる秒数 */
+  L.maxExportSecFor = mode => Math.min(L.maxExportSec, L.modeCapSec(mode));
+  /* モードの天井が効いているか(＝登録しても伸びない状況か) */
+  L.modeCapped = mode => L.modeCapSec(mode) < L.maxExportSec;
+  L.exportLimitLabelFor = mode =>
+    L.modeCapped(mode) ? `${L.SWITCH_MOBILE_SEC}秒` : L.exportLimitLabel;
+
   /* いまの人・いまの端末で使えるかを添えて返す。
      locked のときは「何をすれば使えるか」を1文で持たせる */
-  L.exportPresets = () => {
+  L.exportPresetsFor = mode => {
     const memberHere = bigDevice ? 600 : 120;   // いまの端末で登録したときの上限
-    return L.EXPORT_PRESETS.map(p => {
-      const locked = p.sec > L.maxExportSec;
+    const cap = L.maxExportSecFor(mode);
+    const capped = L.modeCapped(mode);
+    return L.EXPORT_PRESETS.map(p0 => {
+      /* ★ モードの天井が効くときは、いちばん短い選択肢をその天井まで縮める。
+         そうしないと 59/120/510 が全部鍵つきになり、選べるものが1つも
+         残らない(長さを選ぶ工程で行き止まりになる) */
+      const p = (capped && p0.id === "short")
+        ? { ...p0, sec: L.SWITCH_MOBILE_SEC } : p0;
+      const locked = p.sec > cap;
       let unlock = "";
       if (locked) {
-        if (!member && p.sec <= memberHere) unlock = "無料登録で使えます";
+        /* 天井が理由のときは「登録すれば」と言わない ─ 登録しても伸びないので嘘になる */
+        if (capped) unlock = `自動スイッチングはスマホでは${L.SWITCH_MOBILE_SEC}秒までです`;
+        else if (!member && p.sec <= memberHere) unlock = "無料登録で使えます";
         else if (!member) unlock = "無料登録して、パソコンで開くと使えます";
         else unlock = "パソコンで開くと使えます";
       }
       return { ...p, locked, unlock };
     });
   };
+  // 他ツール(Privacy/Vlog/ReAngle)はモードを持たないので、従来どおりの入口を残す
+  L.exportPresets = () => L.exportPresetsFor(null);
 
   /* 上限なし: 上限の文言([data-limit-note])を隠して帯を出す。
      登録ユーザー: 文言を data-limit-note-member の内容(静的テキスト)に差し替える */

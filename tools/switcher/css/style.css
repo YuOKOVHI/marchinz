@@ -993,6 +993,12 @@ html, body { max-width: 100%; overflow-x: clip; }
   color: var(--navy); background: var(--panel); border: 1px solid var(--line);
   border-radius: 10px; cursor: pointer; text-align: left; }
 .mzso-btn i { color: var(--acc); width: 16px; text-align: center; flex: none; }
+/* シーン候補の小さなサムネイル(2026-08-04)。開始時点の全景カメラの絵。
+   絵が入るまでは枠だけ出す ─ 入った瞬間に行の高さが変わると、
+   読んでいる最中に候補が飛ぶ(先に場所を取っておく) */
+.mzso-thumb { flex: none; width: 48px; height: 27px; border-radius: 4px;
+  background: var(--line); background-size: cover; background-position: center; }
+.mzso-thumb.has-img { background-color: transparent; }
 .mzso-btn:active { transform: scale(.98); }
 .mzso-btn:hover { border-color: var(--acc); }
 .mzso-t { margin-left: auto; padding-left: 8px; flex: none;
