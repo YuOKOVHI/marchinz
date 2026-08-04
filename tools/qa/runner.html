@@ -6530,6 +6530,7 @@ async function countSamples(ns, file, fromSec) {
       }
       return { m, x0, x1, y0, y1 };
     };
+    const ratio = {};
     for (const [W, H, name] of [[1080, 1920, "9:16"], [1920, 1080, "16:9"]]) {
       const { m, x0, x1, y0, y1 } = draw(W, H, true);
       if (!m) throw new Error(name + ": 寸法が返らない(レイアウトの実測ができない)");
@@ -6553,6 +6554,22 @@ async function countSamples(ns, file, fromSec) {
       /* ゲージ自体は大きいまま(直径が短辺の3割前後) */
       const dia = (m.r * 2) / m.base;
       if (dia < 0.28 || dia > 0.5) throw new Error(`${name}: 輪の直径が短辺の${(dia * 100).toFixed(0)}%(縮んだ/膨れた)`);
+      ratio[name] = { t: m.titleFont / W, s: m.subFont / W };
+    }
+    /* ★ 文字の見かけの大きさは、比率が同じなら**幅**に対して同じ(2026-08-04
+       優さん実機指摘「縦動画だけ読み込み中の文字が大きい」)。
+       base = min(W,H) は 9:16 も 16:9 もどちらも1080なので、短辺だけで
+       上限を決めると両方まったく同じ絶対pxになり、画面幅に対応するのは W の
+       ほうなので縦型でだけ1.78倍に見えていた。
+       ★ 輪ではなく文字だけを見る ─ 輪は「特に縦型は大きく」の指示で
+         わざと大きい(すぐ上の rp < rl の見張りがそれを守っている) */
+    for (const k of ["t", "s"]) {
+      const p = ratio["9:16"][k], l = ratio["16:9"][k];
+      if (!(Math.abs(p - l) / l <= 0.12)) {
+        throw new Error(`${k === "t" ? "説明" : "動画タイトル"}の文字が、幅に対して`
+          + `縦型${(p * 100).toFixed(2)}% / 横型${(l * 100).toFixed(2)}% とずれている`
+          + `(${(p / l).toFixed(2)}倍)`);
+      }
     }
     /* 縦型のゲージは16:9より小さくない(「特に縦型は大きく」の据え置き) */
     const rp = draw(1080, 1920, true).m.r, rl = draw(1920, 1080, true).m.r;
@@ -6963,6 +6980,103 @@ async function countSamples(ns, file, fromSec) {
     }
   });
 
+  await test("★別のシーンが0個でも黙って消さない(理由を出す・別設定は道連れにしない)", async () => {
+    /* 2026-08-04 優さん実機指摘「別のシーンがまだ見えない」。
+       0個のとき段ごと remove していたため、作れないのか壊れているのか
+       画面から区別が付かなかった。
+       ★ あわせて「同じシーンを別設定で作成」を巻き込まないことも見る ─
+         実機では別設定は見えていた=そこは動いている。消してはいけない */
+    const e = await doneEnv({ offers: [] });
+    const w = e.w, d = w.document, U = e.U;
+    const keep = { made: U._extraScenesMade, max: w.MZ_LIMITS.maxExtraScenes };
+    try {
+      w.MZ_LIMITS.maxExtraScenes = 1; U._extraScenesMade = 0;
+      /* ★ 未保存でも見出しは出す(2026-08-04 レビュー)。
+         段の有無そのものが候補の有無を漏らすと、「作れないのか壊れているのか
+         分からない」が未保存側に残る。副文だけ保存の合図に切り替える */
+      U.setSaveState(false); U._scenesRevealed = false;
+      U.renderSceneOffers();
+      const el0 = d.getElementById("eoDoneScenes");
+      if (!el0) throw new Error("未保存だと段が消える(候補の有無が段の有無で漏れる)");
+      if (!/動画を保存/.test(el0.textContent)) {
+        throw new Error("未保存の副文が保存の合図でない: " + el0.textContent);
+      }
+      if (/いま作ったところ|探せませんでした/.test(el0.textContent)) {
+        throw new Error("押せない扉の説明を先に読ませている: " + el0.textContent);
+      }
+      /* 保存すると、0個でも見出しと理由が出る。
+         ★ setSaveState は状態を持つだけで描き直さない ─ 製品側も
+           保存の3経路すべてが setSaveState(true) の直後に renderSceneOffers を
+           呼んでいる(ui.js:478/509/614)。試験も同じ順で通す */
+      U.setSaveState(true);
+      U.renderSceneOffers();
+      const el = d.getElementById("eoDoneScenes");
+      if (!el) throw new Error("0個だと段ごと消える(実機で見えなかった形)");
+      if (!/別のシーン/.test(el.textContent)) throw new Error("見出しが無い: " + el.textContent);
+      if (!/いま作ったところ|短|決まって|探せ/.test(el.textContent)) {
+        throw new Error("理由が書かれていない: " + el.textContent);
+      }
+      if (el.querySelectorAll(".mzso-btn").length) throw new Error("0個なのに押せる候補がある");
+      /* ★ 別設定は道連れにしない */
+      if (!d.getElementById("eoDoneRemake")) throw new Error("別設定まで消えた(道連れ)");
+      return "未保存でも見出しは出る / 0個でも見出し+理由 / 押せる候補は0 / 別設定は残る";
+    } finally {
+      U._extraScenesMade = keep.made; w.MZ_LIMITS.maxExtraScenes = keep.max;
+      U._scenesRevealed = false;
+      e.restore();
+    }
+  });
+
+  await test("★候補0個の理由は、道ごとに違うキーで残る(文言ではなくキーで測る)", async () => {
+    /* ★ 前の版はこの検証を doneEnv の中でやろうとして空回りしていた ─
+       doneEnv は sceneOffers を**関数ごと差し替える**ので、本物が一度も走らず
+       _sceneWhy は null のまま。SCENE_WHY[null] のフォールバックが受け止めて
+       いつも同じ文が出ていた。しかも say は5つのうち3つが同じ文言なので、
+       文言の正規表現で見るかぎり入れ替えても気づけない。
+       → 本物の sceneOffers を通し、**キーそのもの**を見る */
+    const w = await compEnv();
+    const S = compReset(w);
+    const U = w.MC.ui, H = w.MC.highlight;
+    const keep = { range: U.showRange, preset: U.currentPreset, cover: U.coverRange,
+                   cands: H.candidates, psec: H.presetSec,
+                   tIn: S.trimIn, tOut: S.trimOut };
+    const why = () => { U.sceneOffers(); return U._sceneWhy; };
+    try {
+      U.showRange = () => [0, 510];
+      U.currentPreset = () => ({ id: "p60" });
+      H.presetSec = () => 60;
+      U.coverRange = (a, b) => [a, b];
+      H.candidates = () => [{ key: "start", label: "スタート", t: 0, dur: 60 }];
+      S.trimIn = 300; S.trimOut = 360;          // いま作ったのは 300〜360 秒
+      if (U.sceneOffers().length !== 1) throw new Error("重ならない候補が消えている");
+      if (U._sceneWhy !== null) throw new Error("成功したのに理由が残る: " + U._sceneWhy);
+
+      S.trimIn = 0; S.trimOut = 60;             // いま作ったのが候補そのもの
+      if (why() !== "overlap") throw new Error("重なりが overlap にならない: " + U._sceneWhy);
+
+      H.candidates = () => [];
+      if (why() !== "none") throw new Error("候補ゼロが none にならない: " + U._sceneWhy);
+
+      U.coverRange = (a) => [a, a + 0.5];       // 重なりが1秒以下
+      if (why() !== "cover") throw new Error("cover にならない: " + U._sceneWhy);
+
+      U.coverRange = keep.cover; U.currentPreset = () => null;
+      if (why() !== "preset") throw new Error("preset にならない: " + U._sceneWhy);
+
+      U.currentPreset = () => ({ id: "p60" }); U.showRange = () => [0, 0];
+      if (why() !== "range") throw new Error("range にならない: " + U._sceneWhy);
+
+      U.showRange = () => { throw new Error("わざと"); };
+      if (why() !== "error") throw new Error("例外が error にならない: " + U._sceneWhy);
+      return "成功=null / overlap / none / cover / preset / range / error の7通りを"
+        + "キーで区別する(文言は畳んでも落ちない)";
+    } finally {
+      U.showRange = keep.range; U.currentPreset = keep.preset; U.coverRange = keep.cover;
+      H.candidates = keep.cands; H.presetSec = keep.psec;
+      S.trimIn = keep.tIn; S.trimOut = keep.tOut; U._sceneWhy = null;
+    }
+  });
+
   await test("★カメラの役割を「おまかせ」でも選べる(ピットの+1.2が初めて発火する)", async () => {
     /* 2026-08-04 三者レビュー。役割タグは設定画面の pro タブの中にしかなく、
        こだわり自体が パソコン+登録 限定だったため、おまかせとスマホからは
@@ -6978,9 +7092,14 @@ async function countSamples(ns, file, fromSec) {
        「好み画面が挟まらない」と誤検出させる(この試験を書いた初回に実際に4件巻き込んだ) */
     /* ★ finishPickBack は repickLand を通り、_repickHold(自走を再開しない保留)を
        立てる。戻さないと後続の「好み画面が挟まる」試験が全部 0回になる */
+    /* ★ finishPickGo は autoTilt / filterId / colorOn / cutLevel も書く。
+       compReset が戻すのは filterId と colorOn だけで、cutLevel と autoTilt は
+       戻さない ─ 隣の作り直し試験と同じように、書かれるものは全部控える */
     const keep = { mode: S.mode, fp: U._fp, roles: S.clips.map(c => c.role),
                    picked: S.finishPicked, auto: U.runAuto,
-                   hold: U._repickHold, vp: U._viewPhase, rac: U._repickAfterCancel };
+                   hold: U._repickHold, vp: U._viewPhase, rac: U._repickAfterCancel,
+                   lv: S.cutLevel, tilt: S.autoTilt, fid: S.filterId, con: S.colorOn,
+                   remake: U._fpRemake };
     let ran = 0;
     U.runAuto = async () => { ran++; };
     try {
@@ -7028,7 +7147,9 @@ async function countSamples(ns, file, fromSec) {
          finishPicked と _repickHold は、どちらも「自走を止める」向きに効く */
       S.finishPicked = keep.picked;
       U._repickHold = keep.hold; U._viewPhase = keep.vp;
-      U._repickAfterCancel = keep.rac;
+      U._repickAfterCancel = keep.rac; U._fpRemake = keep.remake;
+      S.cutLevel = keep.lv; S.autoTilt = keep.tilt;
+      S.filterId = keep.fid; S.colorOn = keep.con;
       S.clips.forEach((c, i) => { c.role = keep.roles[i]; });
       try { U.closeFinishPick(); } catch (_) {}
     }
@@ -7051,12 +7172,18 @@ async function countSamples(ns, file, fromSec) {
       let i = 0;
       w.MC.sections.classify = () => {
         const k = i++;
+        /* ★ しきい値ちょうどを1区間ずつ混ぜる(2026-08-04 レビュー)。
+           0.9/0.1 だけだと > と >= を入れ替えても数が変わらず、
+           境界の扱いを一切測れない。
+           pit は > 0.45(ちょうどは数えない) / full は >= 0.7(ちょうども数える) */
+        if (k === 9) return { pit: 0.45, full: 0.7, feature: 0.1, percussion: 0.1 };
         return { pit: k < 3 ? 0.9 : 0.1, full: k < 5 ? 0.9 : 0.1,
                  feature: k < 1 ? 0.9 : 0.1, percussion: 0.1 };
       };
       const line = D._clsTally(clip, 0, 10);
       if (!/pit≧0\.45=3\/10\(30%/.test(line)) throw new Error("pitの数が合わない: " + line);
-      if (!/full≧0\.7=5\/10\(50%/.test(line)) throw new Error("fullの数が合わない: " + line);
+      /* full は >= なので、ちょうど0.7 の1区間も数える → 5+1=6 */
+      if (!/full≧0\.7=6\/10\(60%/.test(line)) throw new Error("fullの数が合わない: " + line);
       if (!/feature≧0\.45=1\/10/.test(line)) throw new Error("featureの数が合わない: " + line);
       if (!/percussion≧0\.4=0\/10/.test(line)) throw new Error("percussionの数が合わない: " + line);
       /* 変異: しきい値を動かすと数が変わる(＝閾値を本当に見ている証明) */

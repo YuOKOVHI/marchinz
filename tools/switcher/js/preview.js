@@ -439,8 +439,20 @@ MC.preview = {
            「フェーズの文字が大きくて見えない」)。ゲージ拡大の係数 F を
            文字にそのまま掛けると、縦型では説明が幅からはみ出す */
       const TOP = -Math.PI / 2;              // 真上(12時)
-      const tFont = Math.min(Math.round(base * 0.05 * F), Math.round(base * 0.058));
-      const sFont = Math.min(Math.round(base * 0.034 * F), Math.round(base * 0.042));
+      /* ★ 上限は**幅**でも抑える(2026-08-04 優さん実機指摘「縦動画だけ
+         読み込み中の文字が大きい。自動スイッチングは問題なし」)。
+         base = min(W,H) は 9:16 も 16:9 もどちらも 1080 なので、
+         短辺だけで上限を決めると**両方まったく同じ絶対px**になる。
+         ところが画面幅に対応するのは W のほうなので、
+           縦型 9:16(W=1080) … 45.4px ＝ 幅の 4.20%
+           横型16:9(W=1920) … 45.4px ＝ 幅の 2.36%   ← 縦型は 1.78倍
+         と、短辺＝幅になる縦型でだけ相対的に肥大していた。
+         輪(r)は「特に縦型は大きく」の指示どおり base×F のまま触らない ─
+         大きくしたかったのはゲージであって、文字ではない */
+      const tFont = Math.min(Math.round(base * 0.05 * F), Math.round(base * 0.058),
+                             Math.round(W * 0.033));
+      const sFont = Math.min(Math.round(base * 0.034 * F), Math.round(base * 0.042),
+                             Math.round(W * 0.024));
       const r = base * 0.09 * F;             // 輪の大きさは F(6〜7割指示)に連動
       const cx = W / 2, cyS = H / 2 - base * 0.02;
       const gap = base * 0.035;

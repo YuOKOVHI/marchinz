@@ -6242,10 +6242,15 @@ body.mz-photo-lightbox-open {
 }
 
 .community-post-overflow-item {
-  display: block;
+  /* ★ 44px 以上にする(2026-08-04 レビュー)。「コピーして作成」が増えて
+     3項目になり、その真下が「削除する」になった ─ 指1つぶん外すと
+     取り消せない操作に届く。高さはタップの安全余裕そのもの */
+  display: flex;
+  align-items: center;
+  min-height: 44px;
   width: 100%;
   text-align: left;
-  padding: 0.45rem 0.75rem;
+  padding: 0.7rem 0.9rem;
   border: none;
   background: transparent;
   font: inherit;
@@ -11413,7 +11418,12 @@ body.mix3-about-active {
 }
 
 .calendar-ev-overflow .community-post-overflow-trigger {
-  min-width: 2.25rem;
+  /* 触る的も 44px 未満だった(2026-08-04 レビュー) */
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 0.2rem 0.45rem;
 }
 
@@ -11978,6 +11988,16 @@ body.mix3-about-active {
 a.user-account-dropdown-link {
   text-decoration: none;
   box-sizing: border-box;
+}
+
+/* ★ 登録直後の注目(2026-08-04 レビュー)。地図から着地したときの
+   --highlight は #c62828 = 削除ボタンと同系の赤で、登録の成功に使うと
+   「何か失敗した」に読める。成功はアクセントの青で示す */
+.calendar-ev-card--just-added {
+  outline: 3px solid var(--mz-accent, #1e4fd6);
+  outline-offset: 3px;
+  border-radius: 8px;
+  transition: outline-color 0.35s ease;
 }
 
 .calendar-ev-card--highlight {

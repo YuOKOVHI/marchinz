@@ -3751,6 +3751,10 @@
   /** @type {"owner" | "other_user"} 本人プロフィール上の表示プレビュー（他人のプロフィールを見ているときは常に owner 扱い） */
   let previewMode = "owner";
   let profileLoadSeq = 0;
+  /* 認証の復帰待ちの見張り(2026-08-04)。待ちに入ったら1本だけ張り、
+     決着したら止める。あきらめたら二度と待たない */
+  let authWaitTimer = null;
+  let authWaitGaveUp = false;
 
   /** @param {number} gen @param {string} targetUid */
   function isProfileLoadStale(gen, targetUid) {
@@ -3771,8 +3775,10 @@
   async function loadAndRender() {
     const gen = ++profileLoadSeq;
     const targetUid = uidFromRoute();
+    /** 認証の復帰待ちで抜けたか。待っている間は読み込み中の見た目を保つ */
+    let pendingAuth = false;
     try {
-      await loadAndRenderCore(gen, targetUid);
+      pendingAuth = (await loadAndRenderCore(gen, targetUid)) === "auth-pending";
     } catch (e) {
       console.warn("[profile] load", e);
       // 古いロードの例外が新しい画面にエラーメッセージを出さないよう、最新ロードのときだけ表示
@@ -3780,7 +3786,7 @@
         setText("#prof-load-msg", "読み込みに失敗しました。時間をおいて再度お試しください。");
       }
     } finally {
-      if (gen === profileLoadSeq) {
+      if (gen === profileLoadSeq && !pendingAuth) {
         root?.querySelector(".user-profile-layout")?.classList.remove("user-profile-layout--loading");
       }
     }
@@ -3788,6 +3794,51 @@
 
   /** @param {number} gen @param {string} targetUid */
   async function loadAndRenderCore(gen, targetUid) {
+    /* ★ 認証の復帰を待つ(2026-08-04 優さん実機指摘
+       「マイページが1回で綺麗に表示されない・MarchinZ Log が0になる」)。
+       マイページ(#profile・uid無し)の targetUid は、ログイン中の本人の id。
+       ところが Firebase の認証復帰は非同期なので、ルーターが先に走ると
+       getUser() がまだ null で targetUid が空になる。
+       そのまま下の枝へ落ちると、
+         ・件数を全部 0 で描く
+         ・「表示するユーザーを指定できません」を出す
+       という**空のマイページ**を1回描き、そのあと mll-auth-changed で
+       描き直していた。0 が見えるのはこの1回目。
+       ★ 直し方は「0を描かない」であって、描き直しを速くすることではない ─
+         再描画は元から動いている(だから2回目は正しい)。
+       ★ 待つのは uid がハッシュに無いときだけ。他人のプロフィールは
+         認証と無関係に引けるので、待たせると遅くなるだけ。
+       ★ 置き場所は関数の先頭 ─ あらゆるDOM書き込みより前(2026-08-04 再検証)。
+         最初はもっと下に置いていて、その前に data-mz-prof-visitor / 見出し
+         「プロフィール」/ 本人用UIの hidden を realIsOwner=false(まだ null)の
+         まま書いてしまい、**他人のプロフィールの顔で1回描いてからマイページへ
+         化け直す**チラつきが残っていた。0だけでなく、他人の顔も描かない */
+    const authPending =
+      !targetUid
+      && !authWaitGaveUp
+      && !String(window.MarchinZProfileUidFromHash?.() || "").trim()
+      && window.MLL_AUTH?.isAuthResolved?.() === false;
+    if (authPending) {
+      setProfileChromeVisible(true);
+      root?.querySelector(".user-profile-layout")?.classList.add("user-profile-layout--loading");
+      setText("#prof-load-msg", "読み込み中…");
+      /* ★ 見張り: 復帰の知らせが来ないまま黙って読み込み中で固まらせない。
+         mll-auth-changed は必ず来るはずだが、それが来ない事故のときに
+         画面が永久に回り続けるのがいちばん困る。
+         一度あきらめたら二度と待たない(authWaitGaveUp)ので、
+         そのあとは従来どおり「特定できません」まで進む */
+      if (authWaitTimer == null) {
+        authWaitTimer = window.setTimeout(() => {
+          authWaitTimer = null;
+          authWaitGaveUp = true;
+          void loadAndRender().catch(() => {});
+        }, 8000);
+      }
+      /* ★ --loading は解除しない。包み側(loadAndRender)の finally が
+         無条件に外してしまうので、「待っている」ことを戻り値で伝える */
+      return "auth-pending";
+    }
+
     const db = getDb();
     const viewer = window.MLL_AUTH?.getUser?.() || null;
     const realViewerId = viewer?.id || null;
@@ -3823,6 +3874,10 @@
     const headingJa = el("#prof-page-heading");
     if (labelEn) labelEn.textContent = realIsOwner ? "My Page" : "Profile";
     if (headingJa) headingJa.textContent = realIsOwner ? "マイページ" : "プロフィール";
+
+
+    /* 決着した(または uid が渡ってきた)ので見張りは要らない */
+    if (authWaitTimer != null) { window.clearTimeout(authWaitTimer); authWaitTimer = null; }
 
     setText("#prof-load-msg", !targetUid ? "表示するユーザーを指定できません（ログインするか、共有されたプロフィールリンクを開いてください）。" : "");
 

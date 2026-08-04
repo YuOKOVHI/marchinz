@@ -671,12 +671,35 @@ MC.ui.downloadResult = () => {
    個数は素材(演奏区間)の長さから自然に決まる: 短ければスタートの1個だけ、
    長ければ最大5個(highlight.MAX)。名前も candidates の語彙をそのまま使う
    (「大盛り上がり」「バラード」「ドラムライン」「ソロ」「フィナーレ」)。 */
+/* 候補が0個になった理由。★ユーザーに見せる1文と、ログに残す技術的な理由を分ける。
+   0個のとき段ごと消していたため、実機で「別のシーンが見えない」となり、
+   見えないのが「作れないから」なのか「壊れているから」なのか誰にも分からなかった
+   (2026-08-04 優さん実機指摘)。空を返すときは必ずここに理由を置く */
+MC.ui._sceneWhy = null;
+/* ★ log は5つに分ける(切り分けの根拠)が、say は2つに畳む(2026-08-04 レビュー)。
+   この段が出るのは**書き出しが終わった画面**。そこで
+   「演奏の範囲が決まっていません」「長さが決まっていません」と言われると、
+   いま動画ができた直後なので**故障の宣告**に読まれる。
+   「動画が重なっている時間が短すぎます」は、いま成功した素材を否定するので
+   矛盾に見える。ユーザーに見せて意味があるのは overlap と error だけ。 */
+MC.ui.SCENE_WHY = {
+  range:  { log: "演奏の範囲が未確定(showRange)", say: "別のシーンを探せませんでした" },
+  preset: { log: "長さのプリセットが無い(currentPreset)", say: "別のシーンを探せませんでした" },
+  cover:  { log: "全動画が重なる区間が1秒以下(coverRange)", say: "別のシーンを探せませんでした" },
+  none:   { log: "候補が1本も立たない(highlight.candidates が空)",
+            say: "演奏が短く、いま作ったところしかありません" },
+  overlap:{ log: "候補が全部いまの動画と重なる(半分以上同じ絵)",
+            say: "演奏が短く、いま作ったところしかありません" },
+  error:  { log: "例外", say: "別のシーンを探せませんでした" },
+};
 MC.ui.sceneOffers = () => {
+  const no = k => { MC.ui._sceneWhy = k; return []; };
   try {
+    MC.ui._sceneWhy = null;
     const [s0, s1] = MC.ui.showRange();
-    if (!(s1 > s0)) return [];
+    if (!(s1 > s0)) return no("range");
     const preset = MC.ui.currentPreset(s1 - s0);
-    if (!preset) return [];
+    if (!preset) return no("preset");
     const lenSec = MC.highlight.presetSec(preset, s1 - s0);
     const audioClip = MC.getClip(MC.S.audioClipId);
     /* ★ 候補窓は「全動画が重なっている区間」に制限(2026-08-02 優さん指摘⑤
@@ -684,15 +707,22 @@ MC.ui.sceneOffers = () => {
        あり、音だけで探すと動画の無い時間帯に窓を置いてしまう。
        共通部分が短ければ、作れる分だけ(candidates が自然に減らす) */
     const [c0, c1] = MC.ui.coverRange(s0, s1);
-    if (!(c1 > c0 + 1)) return [];
+    if (!(c1 > c0 + 1)) return no("cover");
     const cands = MC.highlight.candidates(audioClip, lenSec, c0, c1);
+    /* ★ 候補が最初から無い場合と、絞った結果0になった場合を分ける(2026-08-04 レビュー)。
+       兼ねると「候補が全部いまの動画と重なる」と嘘のログが出て、
+       この機能の目的(原因の切り分け)を自分で削ることになる */
+    if (!cands.length) return no("none");
     const pIn = MC.S.trimIn != null ? MC.S.trimIn : s0;
     const pOut = MC.S.trimOut != null ? MC.S.trimOut : pIn + lenSec;
-    return cands.filter(c => {
+    const out = cands.filter(c => {
       const ov = Math.min(c.t + c.dur, pOut) - Math.max(c.t, pIn);
       return ov < c.dur * 0.5;   // 半分以上同じ絵になる候補は出さない
     });
-  } catch (e) { MC.log("sceneOffers: " + e.message); return []; }
+    /* ★ 候補が全部いま作った窓と重なった。演奏が短いとここへ落ちる ─
+       候補が「スタート」しか立たず、そのスタートで作ったばかり、という形 */
+    return out.length ? out : no("overlap");
+  } catch (e) { MC.log("sceneOffers: " + e.message); return no("error"); }
 };
 
 /* ============ 別のシーンの回数(2026-08-02 優さん決定⑭) ============
@@ -796,16 +826,73 @@ MC.ui.fillSceneThumbs = async () => {
 /* 完成カードへ「別のシーンも作る」を実らせる。
    見た目は最小限(並行のデザイン作業がこの画面を触っているため、
    構造だけ置いて整えは委ねる)。候補が無ければ何も出さない */
+/* 枠を使い切った人に出す1行。★候補が0個のときも同じものを出すので、
+   2か所で同じ文言を書かない(片方だけ直すと、もう片方が古い言葉のまま残る)。
+   責めずに、登録で何ができるかだけを言う。
+   ★ 枠は「切り替えの多い/少ない」でも使う(2026-08-03)ので、シーンだけの
+     言い方にしない ─ 切り替え変更で使い切った人には、いま消えた2択の
+     行き先もこの1行が説明する */
+MC.ui.sceneSignupHtml = () =>
+  '<p class="mzso-title"><i class="fa-solid fa-clapperboard" aria-hidden="true"></i> '
+  + '別のシーンも、設定の変更も<span class="mzso-note">'
+  + '登録すると、何本でも作り直せます</span></p>'
+  + '<a class="mzso-signup" href="/#signup">無料登録する</a>';
+
 MC.ui.renderSceneOffers = () => {
   const offers = MC.ui.sceneOffers();
   const hosts = [
     { after: MC.ui.$("#doneNote"), id: "doneScenes" },
     { after: MC.ui.$("#eoDoneNote"), id: "eoDoneScenes" },
   ];
+  /* ★ 0個でも段を消さない(2026-08-04 優さん実機指摘 → レビューで穴を1つ塞いだ)。
+     消すと「別のシーン」という見出しごと画面から無くなり、
+     作れないのか壊れているのか区別が付かない。
+     ★ 最初の直しは「未保存なら消す」を残していたが、それでは
+       **段の有無そのものが候補の有無を漏らす**。
+                 候補あり        候補0個
+         未保存   段が見える     段が消える  ← 消したかった不安がここに残る
+         保存後   候補が並ぶ     理由が出る
+       見出しは常に出し、副文だけ状態で切り替える。これで段が消える経路がゼロになる。
+     ★ 未保存のときの副文は hold と同じ「先に保存を」─ 押せない扉の説明を
+       先に読ませない、という当初の条件はそのまま満たす */
+  if (!offers.length) {
+    const hold = !MC.ui._saved && !MC.ui._scenesRevealed;
+    const why = MC.ui.SCENE_WHY[MC.ui._sceneWhy] || MC.ui.SCENE_WHY.overlap;
+    /* ★ 理由が変わったときだけ出す(2026-08-04 レビュー)。
+       renderSceneOffers は保存・描き直しのたびに走るので、
+       毎回出すとログが同じ行で埋まって切り分けの役に立たない */
+    if (MC.ui._sceneWhyLogged !== MC.ui._sceneWhy) {
+      MC.ui._sceneWhyLogged = MC.ui._sceneWhy;
+      MC.log("sceneOffers: 候補0個 ─ " + why.log);
+    }
+    /* ★ 枠を使い切っている人には、候補の有無より先に登録の誘いを出す
+       (2026-08-04 レビュー)。この枝を先に置いたせいで、枠切れの案内と
+       登録リンクが「探せませんでした」に食われていた */
+    const capped = MC.ui.extraScenesLeft() <= 0;
+    for (const h of hosts) {
+      if (!h.after) continue;
+      let el = document.getElementById(h.id);
+      if (!el) {
+        el = document.createElement("div");
+        el.id = h.id;
+        el.className = "mz-scene-offers";
+        h.after.insertAdjacentElement("afterend", el);
+      }
+      el.classList.remove("mzso-hold");   // 押せる候補が無いので畳む意味が無い
+      el.innerHTML = capped ? MC.ui.sceneSignupHtml()
+        : ('<p class="mzso-title"><i class="fa-solid fa-clapperboard" aria-hidden="true"></i> '
+          + '同じ動画から別のシーンを作成<span class="mzso-note">'
+          + MC.ui.esc(hold ? "先に「動画を保存」を押してください" : why.say) + "</span></p>");
+    }
+    /* ★ ここで return しない ─ 「同じシーンを別設定で作成」は候補の有無と
+       無関係に出す(別のシーンが作れなくても、設定は変えられる)。
+       飛ばすと、いま動いている出口まで道連れに消える */
+    MC.ui.renderRemakeOffer();
+    return;
+  }
   for (const h of hosts) {
     if (!h.after) continue;
     let el = document.getElementById(h.id);
-    if (!offers.length) { if (el) el.remove(); continue; }
     if (!el) {
       el = document.createElement("div");
       el.id = h.id;
@@ -820,11 +907,7 @@ MC.ui.renderSceneOffers = () => {
        行き先もこの1行が説明する */
     if (MC.ui.extraScenesLeft() <= 0) {
       el.classList.remove("mzso-hold");
-      el.innerHTML =
-        '<p class="mzso-title"><i class="fa-solid fa-clapperboard" aria-hidden="true"></i> '
-        + '別のシーンも、設定の変更も<span class="mzso-note">'
-        + '登録すると、何本でも作り直せます</span></p>'
-        + '<a class="mzso-signup" href="/#signup">無料登録する</a>';
+      el.innerHTML = MC.ui.sceneSignupHtml();
       continue;
     }
     /* ★ 保存が済むまでは畳んでおく(2026-08-02 優さん実機指摘)。
@@ -984,6 +1067,10 @@ MC.ui.renderRemakeOffer = () => {
     /* 何を変えられるかはモードで違う。嘘を書かないため、その場で数え上げる */
     const items = [];
     if (MC.ui.finishRoles().length && MC.ui.finishCards().length >= 2) items.push("配置");
+    /* ★ 役割も数える(2026-08-04 レビュー)。renderFinishRoles は switch で
+       必ず出るのに、ここが数え落としていて「その場で数え上げる」という
+       宣言のほうが嘘になっていた。出す条件は向こうと同じ形で書く */
+    if (MC.S.mode === "switch" && MC.ui.finishCards().length >= 2) items.push("カメラの役割");
     if (MC.S.mode === "switch") items.push("切り替えの回数");
     items.push("色", "傾き");
     el.innerHTML =
@@ -4306,13 +4393,22 @@ MC.ui.finishRoleMap = () => {
 };
 /* 選べる役。★フロントピットが本命 ─ director.js の +1.2 はこのタグでしか立たない。
    ★ラベルは短く: 375px では4つの札が1行を分け合う(.fp-role は flex:1)。
-     「フロントピット」(7字)は入らないので「ピット」にする */
+     「フロントピット」(7字)は入らないので「ピット」にする。
+   ★意味は札ではなく見出し下の1行で言う(2026-08-04 レビュー) ─
+     以前は title 属性に入れていたが、**iPhoneのタッチでは title は永久に
+     表示されない**。最優先端末で一度も読まれない場所に説明を置かない。
+   ★「おまかせ」とは呼ばない ─ 道の名前そのものが「おまかせ」で、
+     おまかせの中に「おまかせ」が4個並ぶ。pro タブと同じ意味で「指定なし」 */
 MC.ui.FINISH_ROLES = [
-  { v: "auto", label: "おまかせ", hint: "自動で判断します" },
-  { v: "wide", label: "引き", label2: "全体が写る", hint: "隊形が見える引きの画" },
-  { v: "close", label: "寄り", label2: "アップ", hint: "奏者に寄った画" },
-  { v: "pit", label: "ピット", label2: "前の方", hint: "フロントピット(前に並ぶ打楽器)" },
+  { v: "auto", label: "指定なし", hint: "自動で判断します" },
+  { v: "wide", label: "引き", hint: "全体が写る" },
+  { v: "close", label: "寄り", hint: "アップ" },
+  { v: "pit", label: "ピット", hint: "前に並ぶ打楽器" },
 ];
+/* 見出し下の説明。★FINISH_ROLES から作る ─ 札とこの行が別々の言葉に
+   ずれると、どちらが正しいのか誰にも分からなくなる */
+MC.ui.finishRoleHint = () => MC.ui.FINISH_ROLES.filter(r => r.v !== "auto")
+  .map(r => `${r.label}＝${r.hint}`).join("・");
 
 MC.ui.openFinishPick = opts => {
   const el = MC.ui.$("#finishPick");
@@ -4519,8 +4615,14 @@ MC.ui.keepFinishPickFocus = () => {
   /* 押した役の札そのものへ戻す。札は描き直しで作り直されるので、
      要素ではなく (どの動画・どの役) で引き当てる */
   if (fp && fp.focus) {
-    next = [...el.querySelectorAll("#fpCards .fp-role")].find(
-      b => b.dataset.id === String(fp.focus.id) && b.dataset.at === String(fp.focus.at)) || null;
+    /* ★ 探す先は配置と役割の両方(2026-08-04 レビュー)。
+       #fpCards だけを見ていたため、あとから足した役割の段(#fpRoleCards)は
+       この対策の外に出ていて、札を押すたび焦点が <body> へ落ちていた */
+    next = fp.focus.kind === "role"
+      ? [...el.querySelectorAll("#fpRoleCards .fp-role")].find(
+          b => b.dataset.id === String(fp.focus.id) && b.dataset.role === fp.focus.role) || null
+      : [...el.querySelectorAll("#fpCards .fp-role")].find(
+          b => b.dataset.id === String(fp.focus.id) && b.dataset.at === String(fp.focus.at)) || null;
   }
   const go = MC.ui.$("#fpGo");
   const to = next || (go && !go.disabled ? go : MC.ui.$("#fpBack"));
@@ -4563,10 +4665,17 @@ MC.ui.renderFinishRoles = (fp, cards) => {
   const box = MC.ui.$("#fpRoleCards");
   if (!box) return;
   if (!fp.roles) fp.roles = MC.ui.finishRoleMap();
-  /* 開いている間に素材が増減したら、いまの素材ぶんだけに作り直す */
+  /* 開いている間に素材が増減したら、いまの素材ぶんだけに作り直す。
+     ★ 減った側を消すだけでは足りない(2026-08-04 レビュー) ─ 増えた素材が
+       fp.roles に無いと、札は「指定なし」に点灯するのに finishPickGo の
+       `if (v)` が undefined を素通りさせ、clip の役は前のまま残る。
+       画面と実体が食い違うので、足りない側も必ず埋める */
   for (const id of Object.keys(fp.roles)) {
     if (!cards.some(c => String(c.id) === String(id))) delete fp.roles[id];
   }
+  for (const c of cards) if (!(c.id in fp.roles)) fp.roles[c.id] = c.role || "auto";
+  /* 意味は札ではなくこの1行で言う(iPhoneのタッチでは title が読まれない) */
+  { const h = MC.ui.$("#fpRoleHint"); if (h) h.textContent = MC.ui.finishRoleHint(); }
   box.innerHTML = "";
   cards.forEach(c => {
     const cur = fp.roles[c.id] || "auto";
@@ -4592,11 +4701,19 @@ MC.ui.renderFinishRoles = (fp, cards) => {
       b.dataset.id = String(c.id);
       b.dataset.role = r.v;
       b.textContent = r.label;
-      b.title = r.hint;
       b.onclick = () => {
         fp.roles[c.id] = r.v;
         fp.changed = true;
-        MC.ui.renderFinishRoles(fp, MC.ui.finishCards());
+        /* ★ 自分だけ描き直さない(2026-08-04 レビュー)。
+           #fpGo の文言を持っているのは renderFinishPick で、
+           切り替え・色・傾きは全部そちらを呼んでいる。ここだけ約束を変えると、
+           役割を変えた人のボタンが「このまま進む」「同じ設定で作り直す」の
+           まま残り、ラベルが事実と食い違う。
+           ★ innerHTML を捨てるので、焦点の戻し先も預ける
+             (預けないと押すたびに焦点が <body> へ落ちる) */
+        MC.ui.buzz([10]);
+        fp.focus = { kind: "role", id: c.id, role: r.v };
+        MC.ui.renderFinishPick();
       };
       seg.appendChild(b);
     });

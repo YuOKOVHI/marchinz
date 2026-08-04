@@ -116,6 +116,12 @@
   /** メールは画面・getUser には出さず、管理者判定だけ raw の Auth から読む */
   let rawAuthUserForAdmin = null;
   let currentUser = null;
+  /* 認証の復帰が一度でも決着したか(2026-08-04)。onAuthStateChanged は
+     ログイン済みでも未ログインでも必ず1回は呼ばれるので、その入口で立てる。
+     ★ 一度 true にしたら二度と false へ戻さない ─ ログアウトは
+       「分からない」ではなく「決着してログインしていない」であり、
+       戻すと画面が読み込み中へ後退する */
+  let authResolved = false;
 
   let currentProfileWithdrawn = false;
   /** ヘッダー・UGC 等で使う mll_profiles の表示名（ニックネーム）。Google 表示名は使わない */
@@ -1489,6 +1495,9 @@
       getStorage: () => null,
       getUser: () => null,
       getDisplayName: () => "",
+      /* firebase が無い環境では、待っても何も来ない = 決着済みとして扱う。
+         ここを false にすると、マイページが永久に読み込み中で止まる */
+      isAuthResolved: () => true,
       isAdmin: () => false,
       firebaseAuthAvailable: false,
       isAppCheckActive: () => false,
@@ -1885,6 +1894,14 @@
     getDb: () => db,
     getStorage: () => storage,
     getUser: () => currentUser,
+    /* ★ 認証の復帰が終わったか(2026-08-04 優さん実機指摘「マイページが1回で
+       綺麗に表示されない・Logが0になる」)。
+       getUser() が null を返す理由は2つある ─ **まだ分からない**のと
+       **ログインしていない**。この2つを区別できないため、マイページは
+       認証が戻る前に「ユーザーを特定できない」枝へ落ちて件数を0で描き、
+       そのあと mll-auth-changed で描き直していた(0が見えるのはその1回目)。
+       false の間は「まだ分からない」= 0を描かずに待つ、と判断できる */
+    isAuthResolved: () => authResolved,
     getDisplayName: () => currentProfileDisplayName,
     isAdmin: () => isAdminUser(),
     firebaseAuthAvailable: true,
@@ -3696,6 +3713,10 @@
   });
 
   auth.onAuthStateChanged((rawUser) => {
+    /* ★ ここが「決着した」唯一の地点。ログイン済み・未ログインの
+       どちらの枝より前で立てる ─ 下の分岐は途中 return が多く、
+       枝ごとに書くと必ずどれか1つ書き漏らす */
+    authResolved = true;
     rawAuthUserForAdmin = rawUser;
     const user = mapFirebaseUser(rawUser);
     if (!user) {

@@ -534,7 +534,12 @@
     }
   }
 
-  async function syncUserInvolvementForCalendar(db, user, eventId, ev, participationValue) {
+  /* opts.confetti === false で紙吹雪だけ止める(2026-08-04 優さん指示)。
+     イベント登録の直後には出さない ─ 一覧からの参加表明では従来どおり出す。
+     ★ 既定は true。呼び出しは7か所(mll.js / event-log-diary.js /
+       calendar-events.js×3 / この中×2)あり、渡すのは登録経路の1か所だけ。
+       省略した6か所の挙動は1バイトも変わらない */
+  async function syncUserInvolvementForCalendar(db, user, eventId, ev, participationValue, opts) {
     const uid = String(user?.id || "").trim();
     const eid = String(eventId || "").trim();
     const pv = String(participationValue || "").trim();
@@ -581,7 +586,7 @@
     const logId = existing?.id || `${uid}_${Date.now()}`;
     const isNewLog = !existing;
     await db.collection("mll_logs").doc(logId).set(logPayload, { merge: true });
-    if (isNewLog) window.MarchinZConfetti?.burst();
+    if (isNewLog && !(opts && opts.confetti === false)) window.MarchinZConfetti?.burst();
     if (isNewLog && window.MarchinZAdminUgcLog?.recordMllLog) {
       const actorName = String(window.MLL_AUTH?.getDisplayName?.() || "").trim();
       void window.MarchinZAdminUgcLog.recordMllLog({

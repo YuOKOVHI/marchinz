@@ -544,6 +544,18 @@
   /** @type {Promise<void>|null} */
   let loadEventsInflight = null;
 
+  /* 編集ダイアログのメッセージ。★登録フォームの #calendar-ev-form-msg とは別物
+     (2026-08-04 レビュー)。編集中は登録フォームが隠れているため、
+     そちらへ書くと「保存を押しても何も起きない」ように見える。
+     編集の検証エラーと保存失敗は必ずこちらへ出す */
+  const editMsgEl = document.getElementById("calendar-edit-msg");
+  function setEditMsg(text, isErr) {
+    if (!editMsgEl) { setFormMsg(text, isErr); return; }   // HTMLが古くても黙らせない
+    editMsgEl.textContent = text || "";
+    editMsgEl.hidden = !text;
+    editMsgEl.style.color = isErr ? "#b71c1c" : "";
+  }
+
   function setFormMsg(text, isErr) {
     if (!formMsg) return;
     formMsg.textContent = text || "";
@@ -2218,6 +2230,7 @@
     if (!canManageEvent(ev) || !editOverlay || !editDate || !editTitle) return;
     closeCalendarEventOverflowMenus();
     hideRegisterSuccessToast();
+    setEditMsg("");   // 前回の編集で出したエラーを持ち越さない
     const me = getUser();
     if (
       ev.created_by &&
@@ -2327,26 +2340,42 @@
     const participation_format = resolveParticipationForFirestore(editParticipation?.value);
     const editKindEl = document.getElementById("calendar-edit-kind");
     const nextKind = editKindEl ? String(editKindEl.value || "").trim() : "";
-    const end_date = String(editDateEnd?.value || "").trim();
+    /* ★ 複数日の登録はやめた(2026-08-04 優さん指示)ので、入力欄は無い。
+       ただし**すでに複数日で登録されているイベント**は残っている ─
+       欄が無いからと "" を書くと、編集しただけで終了日が黙って消える。
+       欄があればそれを、無ければ**いまの値をそのまま**引き継ぐ */
+    let end_date = editDateEnd
+      ? String(editDateEnd.value || "").trim()
+      : String(ev.end_date || "").trim();
+    /* ★ 引き継いだ終了日が開催日に追い越されたら、黙って1日だけにする
+       (2026-08-04 レビュー)。欄を消した以上、下の検証に落とすと詰む ─
+         ・「終了日は開催日より後に」と言われるが、その欄は画面に無い
+         ・「1日だけなら空欄でOK」と言われるが、空欄にする操作が無い
+         ・しかもこの文の出し先は登録フォーム側で、編集中は隠れている
+           ＝ 押しても何も起きない
+       複数日は「残っているものは守るが、積極的には維持しない」が筋。
+       ★ 消すのは引き継いだ値だけ。欄がある間(将来また出す場合)は
+         人が入れた値なので、従来どおり検証で止める */
+    if (!editDateEnd && end_date && end_date <= date) end_date = "";
     const venue_name = String(editVenueName?.value || "").trim().slice(0, 120);
     const start_time = String(editTime?.value || "").trim();
     if (!date || !title || !venue_pref || !CALENDAR_KIND_CREATE_OPTIONS.includes(nextKind)) {
-      setFormMsg("開催日・種別・開催地・イベント名はすべて必須です。", true);
+      setEditMsg("開催日・種別・開催地・イベント名はすべて必須です。", true);
       return;
     }
     /* 開催日だけ後ろへずらすと終了日を追い越して「8/20〜8/10」になる。
        登録時と同じ検証を編集にも置く(2026-07-22 レビュー) */
     if (end_date && end_date <= date) {
-      setFormMsg("終了日は開催日より後の日付にしてください（1日だけなら空欄でOKです）。", true);
+      setEditMsg("終了日は開催日より後の日付にしてください（1日だけなら空欄でOKです）。", true);
       return;
     }
     if (start_time && !/^\d{2}:\d{2}$/.test(start_time)) {
-      setFormMsg("開演時間の形式が正しくありません。", true);
+      setEditMsg("開演時間の形式が正しくありません。", true);
       return;
     }
     /** 運用で URL 長過ぎを防ぐ */
     if (event_url.length > 2000) {
-      setFormMsg("URL が長すぎます。", true);
+      setEditMsg("URL が長すぎます。", true);
       return;
     }
     const patch = {
@@ -2381,7 +2410,7 @@
       }
     } catch (e) {
       console.warn(e);
-      setFormMsg(String(e?.message || "更新に失敗しました。"), true);
+      setEditMsg(String(e?.message || "更新に失敗しました。"), true);
     } finally {
       if (editSaveBtn) editSaveBtn.disabled = false;
     }
@@ -2468,6 +2497,14 @@
         variant: "default",
         onClick: () => void openEditDialog(ev),
       },
+      /* ★ 複数日の登録をやめたぶんの受け皿(2026-08-04 優さん指示)。
+         2日目・3日目は「1日目をコピーして日付だけ変える」で作る。
+         並びは 編集する → コピーして作成 → 削除する ─ 危ないものを端に置く */
+      {
+        label: "コピーして作成",
+        variant: "default",
+        onClick: () => void openRegisterFormWithCopy(ev),
+      },
       {
         label: "削除する",
         variant: "danger",
@@ -2523,13 +2560,62 @@
       else selectVenue.value = "";
     }
     if (inputUrl) inputUrl.value = String(ev.event_url || "").trim();
+    /* ★ 会場名と開演時間も写す(2026-08-04 レビュー)。この関数は元々
+       統合(merge)用に書かれていて、この2つが抜けていた。
+       いまの用途は「同じ会場・同じ時間の2日目を作る」なので、
+       いちばん写したい2項目が落ちていては、複数日欄を消したぶんの
+       手間がそのまま戻ってくる */
+    if (inputVenueName) inputVenueName.value = String(ev.venue_name || "").trim();
+    if (inputTime) inputTime.value = String(ev.start_time || "").trim();
     const pf = String(ev.participation_format || "").trim();
     if (selectParticipation) fillMllParticipationSelect(selectParticipation, pf);
     if (selectKind) {
       const k = String(ev.kind || "").trim();
       selectKind.value = CALENDAR_KIND_CREATE_OPTIONS.includes(k) ? k : "";
     }
-    setFormMsg("イベント情報を複製しました。内容を確認して保存してください。", false);
+    /* 文言は呼び元(openRegisterFormWithCopy)が出す ─
+       ここで書いても必ず上書きされる死んだ行だった */
+  }
+
+  /* YYYY-MM-DD の翌日。★UTCで数える ─ ローカル時刻の Date に
+     "2026-08-04" を渡すと環境によっては前日の15:00として解釈され、
+     +1日しても同じ日付が返る(月末・年末で特に出る)。
+     形が違えば "" を返し、呼び元が元の日付を使う */
+  function nextYmd(ymd) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd || "").trim());
+    if (!m) return "";
+    const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+    if (Number.isNaN(d.getTime())) return "";
+    d.setUTCDate(d.getUTCDate() + 1);
+    const p = (n) => String(n).padStart(2, "0");
+    return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`;
+  }
+
+  /* 3点リーダーの「コピーして作成」(2026-08-04 優さん指示)。
+     複数日の登録をやめたぶん、2日目・3日目はここから作る。
+     ★ 日付は翌日へ送る(2026-08-04 優さん指示)。この機能が置き換えたのは
+       「複数日開催」なので、次に作るのは**翌日**であることがほとんど。
+       違う日にしたい人はその場で直せる ─ 直す手間より、
+       毎回同じ1日を送る手間のほうが多い。
+     ★ 中身を入れる処理は prefillCreateFormFromEvent が既にあった(未使用)。
+       新しく書かずにそれを使う ─ 同じことを2か所に書かない */
+  function openRegisterFormWithCopy(ev) {
+    if (!ev) return;
+    prefillCreateFormFromEvent(ev);
+    const next = nextYmd(ev.date);
+    if (inputDate && next) inputDate.value = next;
+    setFormMsg(
+      next
+        ? "コピーしました。日付は翌日にしています（変えられます）。"
+        : "コピーしました。日付を確かめて保存してください。",
+      false,
+    );
+    requestAnimationFrame(() => {
+      try {
+        form.scrollIntoView({ block: "start", behavior: "smooth" });
+        if (inputDate) inputDate.focus({ preventScroll: true });
+      } catch { /* 画面外でも落とさない */ }
+    });
   }
 
   function setMergeSource(ev) {
@@ -2830,6 +2916,7 @@
     }
 
     applyCalendarEventHighlight();
+    applyPendingFocus();   // 登録直後の注目を、描き直しのたびに付け直す
   }
 
 
@@ -3250,7 +3337,55 @@
   syncSortBar();
 
   /** 登録成功後: モーダルを閉じて一覧を更新し、ページ上に完了メッセージを表示 */
-  async function completeEventRegistrationAfterSave(user, pfRaw) {
+  /* 登録したイベントの場所まで一覧を送る(2026-08-04 優さん指示B)。
+     ★ 見つからないときは一覧の先頭へ落とす ─ 種別タブや絞り込みの状態に
+       よっては、いま登録したイベントがそもそも一覧に出ていない。
+       そこで黙って何もしないと「登録できたのか分からない」に戻る。
+     既存の applyCalendarEventHighlight とは別に持つ ─ あちらは
+     sessionStorage 経由で他ページから来た人のためのもので、
+     見つからないときは何もしないのが正しい(戻し先が無いため) */
+  /* ★ 1回だけ付けると、自分の再描画で消える(2026-08-04 レビュー)。
+     「関わり方」を選んで登録すると marchinz-mll-updated が飛び、
+     受け手がもう一度 loadEventsAndAttendees() を走らせて
+     listEl.innerHTML = "" で作り直す ─ ハイライトを付けた行ごと捨てられる。
+     結果「関わり方を選んだ人だけ一瞬で消える」という分かりにくい差になる。
+     → 期限つきの予約にして、描き直しのたびに付け直す。
+       スクロールは1回だけ(何度も動かすと酔う) */
+  let pendingFocus = null;   // {id, until, scrolled}
+  function focusCalendarEventOrList(eventId) {
+    pendingFocus = { id: String(eventId || ""), until: Date.now() + 2500, scrolled: false };
+    applyPendingFocus();
+  }
+  function applyPendingFocus() {
+    const pf = pendingFocus;
+    if (!pf) return;
+    if (Date.now() > pf.until) { pendingFocus = null; return; }
+    requestAnimationFrame(() => {
+      if (pendingFocus !== pf) return;   // 新しい予約に置き換わっていたら何もしない
+      let row = null;
+      try {
+        row = pf.id ? listEl.querySelector(`[data-cal-event-id="${CSS.escape(pf.id)}"]`) : null;
+      } catch { row = null; }
+      if (row) {
+        if (!pf.scrolled) { pf.scrolled = true; row.scrollIntoView({ block: "center", behavior: "smooth" }); }
+        /* ★ 地図から着地したときの --highlight は #c62828(削除ボタンと同系の赤)。
+           登録の成功にその赤を使うと「何か失敗した」に読める(2026-08-04 レビュー)。
+           登録直後は専用のクラスにする */
+        row.classList.add("calendar-ev-card--just-added");
+        window.setTimeout(() => row.classList.remove("calendar-ev-card--just-added"), 4200);
+        return;
+      }
+      /* 一覧に出ていない(絞り込み・開催年・検索語で外れている等) → 一覧の頭へ。
+         ★ カレンダー表示では listEl が hidden で scrollIntoView が無音の空振りに
+           なるので、包みの方へ送る */
+      if (pf.scrolled) return;
+      pf.scrolled = true;
+      const to = (listEl && !listEl.hidden) ? listEl : (listWrapEl || listEl);
+      try { to?.scrollIntoView({ block: "start", behavior: "smooth" }); } catch { /* 無視 */ }
+    });
+  }
+
+  async function completeEventRegistrationAfterSave(user, pfRaw, eventId) {
     inputTitle.value = "";
     if (inputUrl) inputUrl.value = "";
     if (selectParticipation) selectParticipation.value = "";
@@ -3262,7 +3397,23 @@
     clearCalendarEventDraft();
     closeRegisterForm({ skipPersist: true });
     await loadEventsAndAttendees();
-    showRegisterSuccessToast("登録しました。");
+    /* ★ お礼を言う(2026-08-04 優さん指示)。「登録しました。」は
+       起きた事実を報告しているだけで、手間をかけた相手への言葉が無い。
+       イベントは他の人のために登録してもらっているので、そこに触れる */
+    /* ★ 固定表示の器へ載せる(2026-08-04 レビュー)。
+       これまでの #calendar-ev-register-success はページ内の <p> で、
+       直後に走る一覧へのスクロールに追い越されて画面の上へ消えていた
+       ─ つまり感謝の言葉は、ほとんどの人に一度も読まれていなかった。
+       ★ 文言は「みんなの役に立ちます」と言い切らない ─ まだ誰の役にも
+         立っていない時点での断言は、運営の都合に聞こえる。
+         登録された情報がこれから何をするかだけを言う */
+    const cheer = window.MarchinZBase?.showCheer;
+    if (typeof cheer === "function") {
+      cheer("登録していただいたイベントは、これを探している人に届きます。", [], "ありがとうございます");
+    } else {
+      showRegisterSuccessToast("イベント登録ありがとうございます。");
+    }
+    focusCalendarEventOrList(eventId);
     if (pfRaw) {
       window.dispatchEvent(new CustomEvent("marchinz-mll-updated", { detail: { userId: user.id } }));
     }
@@ -3342,9 +3493,13 @@
         actorName: displayNameFromUser(user),
       });
       if (pfRaw && mllRoleApi()?.syncUserInvolvementForCalendar) {
-        await mllRoleApi().syncUserInvolvementForCalendar(db, user, docRef.id, { id: docRef.id, ...payload }, pfRaw);
+        /* ★ 紙吹雪は出さない(2026-08-04 優さん指示)。この関数は一覧からの
+           参加表明でも通るので、関数ごと消さずに**この経路だけ**黙らせる ─
+           参加表明の紙吹雪は残す */
+        await mllRoleApi().syncUserInvolvementForCalendar(
+          db, user, docRef.id, { id: docRef.id, ...payload }, pfRaw, { confetti: false });
       }
-      await completeEventRegistrationAfterSave(user, pfRaw);
+      await completeEventRegistrationAfterSave(user, pfRaw, docRef.id);
       return;
     } catch (err) {
       console.warn(err);

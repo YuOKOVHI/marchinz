@@ -2345,7 +2345,11 @@
     loadAll(uid);
   }
 
-  window.MarchinZBase = { mount, mountTools };
+  /* ★ 感謝・ねぎらいの器を外へ出す(2026-08-04 レビュー)。
+     イベント登録の「ありがとうございます」も、ページ内の <p> ではなく
+     この固定表示に載せる ─ ページ内だと直後のスクロールで画面外へ流れ、
+     ほとんどの人が一度も読まないまま消えていた */
+  window.MarchinZBase = { mount, mountTools, showCheer: showCheerToast };
 })();
 
 /* ============ MarchinZ Vlog の開発中ゲート(TOPのカード) ============
