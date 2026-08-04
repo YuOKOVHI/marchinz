@@ -215,6 +215,51 @@ async function countSamples(ns, file, fromSec) {
     return `${files.length}ファイルが4ツールで一致`;
   });
 
+  await test("★mll_profiles の項目表が auth.js と firestore.rules で一致していること", async () => {
+    /* ★ 2026-08-05 レビューで見つかった無音のデータ損失の見張り。
+       auth.js の MLL_PROFILE_ROOT_ALLOWED_KEYS に**無い**キーは、
+       プロフィール保存のたびに FieldValue.delete() で消される。
+       rules 側にだけ `user_type` を足してあったため、クリエイターを選んだ人が
+       自己紹介を1文字直して保存すると user_type が消えていた ─
+       localStorage が覆い隠すので画面は変わらず、別端末でログインした
+       瞬間に「ファン」で確定する（元の選択は復元できない）。
+       ★ 正本が auth.js / rules(2ブロック) の3箇所に手書きで散っているのが
+         根本原因。一致していることを試験にして、次のずれを必ず捕まえる。
+       ★ この試験は switcher 専用だったランナーを本体サイト側へ1歩広げたもの。
+         auth.js / calendar-events.js / user-profile-page.js は
+         これまで自動試験の外だった（回帰を誰も見張っていない領域）。 */
+    const js = await (await fetch("/auth.js")).text();
+    const m = js.match(/MLL_PROFILE_ROOT_ALLOWED_KEYS\s*=\s*new Set\(\[([\s\S]*?)\]\)/);
+    if (!m) throw new Error("auth.js の項目表が読めない(名前が変わった?)");
+    const jsKeys = new Set((m[1].match(/"([a-z_0-9]+)"/g) || []).map(s => s.slice(1, -1)));
+    if (jsKeys.size < 20) throw new Error(`auth.js の項目表が ${jsKeys.size} 件しか読めない(読み取りが壊れている)`);
+
+    const rules = await (await fetch("/firebase/firestore.rules")).text();
+    /* mll_profiles の項目表は「20件超のキーを並べた hasOnly/hasAll」で見分ける
+       (他の hasOnly は liked_by や sort_index など数件のもの) */
+    const blocks = [];
+    for (const b of rules.matchAll(/(?:hasOnly|hasAll)\(\[([\s\S]*?)\]\)/g)) {
+      const keys = (b[1].match(/'([a-z_0-9]+)'/g) || []).map(s => s.slice(1, -1));
+      if (keys.length > 20) blocks.push({ keys: new Set(keys), at: rules.slice(0, b.index).split("\n").length });
+    }
+    if (blocks.length < 2) throw new Error(`rules の項目表が ${blocks.length} 箇所しか見つからない(2箇所のはず)`);
+
+    const diff = (a, b) => [...a].filter(k => !b.has(k)).sort();
+    for (const blk of blocks) {
+      const missingInJs = diff(blk.keys, jsKeys);
+      const missingInRules = diff(jsKeys, blk.keys);
+      if (missingInJs.length) {
+        throw new Error(`rules(${blk.at}行目)にあって auth.js に無い＝保存のたびに消える: `
+          + missingInJs.join(","));
+      }
+      if (missingInRules.length) {
+        throw new Error(`auth.js にあって rules(${blk.at}行目)に無い＝保存が無音で拒否される: `
+          + missingInRules.join(","));
+      }
+    }
+    return `${jsKeys.size}項目が auth.js と rules ${blocks.length}箇所で一致`;
+  });
+
   group("① 静かな黒抜け: samples(trackId, 0) が 0 件を返さないこと");
   await test(`共有版: moov末尾 × fromSec=0 で ${N} サンプル読める`, async () => {
     const M = await loadShared();

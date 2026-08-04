@@ -1938,9 +1938,18 @@
   applyLocalDevLoginFromQuery();
   syncInAppBrowserAuthGate();
 
-  /** Firestore ルール `mllProfileKeysAllowlisted` と同期 */
+  /** Firestore ルール `mllProfileKeysAllowlisted` と同期
+      ★ ここに無いキーは、プロフィール保存のたびに **FieldValue.delete() で
+        消される**(buildProfileRootSavePatch)。ルール側に足しただけでは足りず、
+        この Set にも足さないと、正規の項目が無音で消え続ける。
+        2026-08-05 レビューで `user_type` の欠落が判明 ─ クリエイターを選んだ人が
+        自己紹介を1文字直して保存すると user_type が消え、localStorage が
+        覆い隠すため気づけず、別端末でログインした瞬間に「ファン」で確定していた。
+      ★ この一致は QA(⑭群「allowlistが3箇所で一致」)が見張る。
+        正本が auth.js / rules(2ブロック) の3箇所に手書きで散っているのが根本原因。 */
   const MLL_PROFILE_ROOT_ALLOWED_KEYS = new Set([
     "id",
+    "user_type",
     "display_name",
     "avatar_url",
     "cover_image_url",
