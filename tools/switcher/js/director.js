@@ -79,16 +79,21 @@ MC.director = {
        登場間隔ボーナス(最大+0.48)と飢餓ガード(STARVE)が最低保証を担う */
   OVERHEAD_BONUS: 0.15,
   STATIC_BIAS: -0.4,
-  /* ===== カメラの種類(5択・2026-08-04 DCI配信ディレクター協議) ===== */
-  /* 逆サイド: イマジナリーライン越え(カットの瞬間に隊列の進行方向が反転して
-     見える)ため、場面の変わり目(全奏・楽章の切れ目)×直前が引き のときだけ。
-     dq にはしない ─ 黒画面よりはまし、の最後の砦としては残す */
-  OPPOSITE_PENALTY: 3.0,
-  /* スパイス(メジャー・ピット): 鳴っている時・指している時だけ。
-     上限は全尺の10%(効かせるから旨い)。条件外は role=pit の -0.35 に上乗せ */
+  /* ===== カメラの属性2軸(2026-08-05 優さん指示で改訂) ===== */
+  /* 他の場所からの全体: 「固定であれば10のうち2〜4」。引きのローテーションに
+     普通に参加させ(前版の「場面の変わり目だけ」の縛りは廃止)、
+     合計が全尺の4割を超えたら強く引っ込める */
+  ALT_WIDE_CAP: 0.40,
+  ALT_WIDE_PENALTY: 3.0,
+  /* スパイス(メジャー・ピット): 「10のうち1あれば十分」。鳴っている時だけ・
+     上限は全尺の10%。条件外は role=pit の -0.35 に上乗せ */
   SPICE_PENALTY: 1.5,
   SPICE_CAP_RATIO: 0.10,
-  /* 歩き撮り: 良い区間だけの飛び道具。乱発させないクールダウン(秒) */
+  /* ソロは操作カメラで抜く(「ソロを抜いていたら必ず使う」)。
+     失格(ブレ・パン)していれば使わない ─ その判定は dq が担う */
+  SOLO_OPERATOR: true,
+  /* 動きあり×ブレ多の素材(旧・歩き撮り): 良い区間だけの飛び道具。
+     乱発させないクールダウン(秒) */
   ROAM_BONUS: 0.6,
   ROAM_PENALTY: 3.0,
   ROAM_COOLDOWN: 20,
@@ -453,13 +458,12 @@ MC.director._rank = (g0, g1, cls, ctx) => {
     // 素材ごとの出番の希望(少なめ/おまかせ/多め)
     score += MC.director.FREQ_BIAS[c.freq] || 0;
 
-    /* ===== カメラの種類(5択)の規則(2026-08-04 DCI配信ディレクター協議) ===== */
-    if (ctx.oppositeIds && ctx.oppositeIds.has(c.id)) {
-      /* 逆サイド: 場面の変わり目(全奏・楽章の切れ目)で、直前が引きのときだけ。
-         寄り(③④⑤)から直カットすると進行方向が反転して見える ─ 必ず①を挟む */
-      const sceneChange = ctx.forceWide === "全奏" || ctx.forceWide === "楽章の切れ目";
-      const prevWide = ctx.prevId == null || (ctx.wideIds && ctx.wideIds.has(ctx.prevId));
-      if (!(sceneChange && prevWide)) score -= MC.director.OPPOSITE_PENALTY;
+    /* ===== カメラの属性2軸の規則(2026-08-05 優さん指示で改訂) ===== */
+    if (ctx.altWideIds && ctx.altWideIds.has(c.id)) {
+      /* 他の場所からの全体: 引きのローテーションに普通に参加(10のうち2〜4が目安)。
+         合計が全尺の4割を超えたら強く引っ込める。
+         動きあり×ブレ多の素材は roam の厳選門が別に掛かる */
+      if (ctx.altWideCapHit) score -= MC.director.ALT_WIDE_PENALTY;
     }
     if (ctx.spiceIds && ctx.spiceIds.has(c.id)) {
       /* スパイスは鳴っている時だけ:
@@ -556,6 +560,15 @@ MC.director._rank = (g0, g1, cls, ctx) => {
     const wides = ranked.filter(r => r.wideChosen && !r.dq);
     if (wides.length) return wides;
   }
+  /* ★ ソロは操作カメラで抜く(2026-08-05 優さん指示「ソロを抜いていたら必ず使う」)。
+     feature が立っている区間では、「カメラマン操作」のカメラが失格でなければ
+     必ずそこから選ぶ。ブレて失格なら普通の順位へ落ちる(「ブレが多いところは
+     使わない」)。全奏・衝撃前の引き限定(forceWide)はこれより上位 */
+  if (MC.director.SOLO_OPERATOR && featuring && !ctx.forceWide
+      && ctx.operatorIds && ctx.operatorIds.size) {
+    const ops = ranked.filter(r => ctx.operatorIds.has(r.id) && !r.dq);
+    if (ops.length) return ops;
+  }
   return ranked;
 };
 
@@ -581,23 +594,27 @@ MC.director.generate = () => {
     saluteDone: false,  // サリュート直後の1カット目を出したか
     prevShot: null,     // 直前に採用した画の形{close,wide,nF}(ジャンプカット防止)
   };
-  /* ===== カメラの種類(5択・2026-08-04 DCI協議)を一度だけ仕分ける =====
-     kind が無い旧データは role から寄せる(wide→全景/close→追いかけ/pit は
-     従来の pit 規則のままにし、スパイスの新しい縛りは kind 明示だけに掛ける ─
-     既存ユーザーの挙動を黙って厳しくしない)。
-     ★ 歩き撮りへの自動降格: 「追いかけ」や「指定なし」でも、クリップ全体の
-       ブレ中央値が失格しきい値を超える手持ちは、素材の半分以上が使えない ─
-       種類を間違えても厳選の門に入れる(選択ミスの保険) */
+  /* ===== カメラの属性2軸(2026-08-05 優さん指示)を一度だけ仕分ける =====
+     旧データ(kind 5択や role のみ)は migrateAxes が2軸へ写す。
+     ★ 厳選門(旧・歩き撮り)への自動振り分け: 「動きあり」(明示 or 実測)で、
+       クリップ全体のブレ中央値が失格しきい値を超える素材は、半分以上が
+       使えない ─ 良い窓だけの飛び道具として扱う(全体・スパイス指定は除く) */
   const vidsAll = MC.S.clips.filter(c => !c.isAudio && !c.isImage);
-  const kindOf = c => (c.kind && c.kind !== "auto") ? c.kind
-    : c.role === "wide" ? "wide" : c.role === "close" ? "follow" : "auto";
-  ctx.oppositeIds = new Set(vidsAll.filter(c => kindOf(c) === "opposite").map(c => c.id));
-  ctx.wideIds = new Set(vidsAll.filter(c => kindOf(c) === "wide" || kindOf(c) === "opposite").map(c => c.id));
-  ctx.spiceIds = new Set(vidsAll.filter(c => c.kind === "spice").map(c => c.id));
-  ctx.roamIds = new Set(vidsAll.filter(c => c.kind === "roam"
-    || (["follow", "auto"].includes(kindOf(c)) && c.visual && c.visual.operated
-        && c.visual.shakeMed > MC.visual.TH_SHAKE)).map(c => c.id));
+  vidsAll.forEach(c => MC.migrateAxes(c));
+  const targetOf = c => c.target || "auto";
+  ctx.frontIds = new Set(vidsAll.filter(c => targetOf(c) === "front").map(c => c.id));
+  ctx.altWideIds = new Set(vidsAll.filter(c => targetOf(c) === "altwide").map(c => c.id));
+  ctx.wideIds = new Set([...ctx.frontIds, ...ctx.altWideIds]);
+  ctx.spiceIds = new Set(vidsAll.filter(c => targetOf(c) === "spice").map(c => c.id));
+  ctx.operatorIds = new Set(vidsAll.filter(c => targetOf(c) === "operator").map(c => c.id));
+  ctx.roamIds = new Set(vidsAll.filter(c => {
+    const t = targetOf(c);
+    if (t === "front" || t === "altwide" || t === "spice") return false;
+    const moving = c.motion === "moving" || c.rig === "operated" || (c.visual && c.visual.operated);
+    return moving && c.visual && c.visual.shakeMed > MC.visual.TH_SHAKE;
+  }).map(c => c.id));
   ctx.spiceSec = 0; ctx.spiceCapHit = false; ctx.prevWasSpice = false;
+  ctx.altWideSec = 0; ctx.altWideCapHit = false;
   ctx.roamReadyAt = 0; ctx.roamMoment = false; ctx.spiceWindow = false; ctx.dynRising = false;
   /* ★ 衝撃の先読み(P1)。カット割の前に一度だけ拾う */
   const impacts = MC.director._impacts(audioClip, grid, tIn, tOut);
@@ -789,14 +806,13 @@ MC.director.generate = () => {
          減点だけでは飢餓ガードが素通しするので、回数が減らなかった */
       const starveOf = id => MC.director._quietCam(MC.getClip(id))
         ? MC.director.STARVE * MC.director.QUIET_STARVE_MULT : MC.director.STARVE;
-      /* ★ 歩き撮り・逆サイド・スパイスは出番保証の対象外(2026-08-04 DCI規則5)。
-         義務で悪い画・場違いな画を出すと1カットで全体の信頼が壊れる ─
-         それぞれの使いどころ(良い区間・場面の変わり目・ピットの見せ場)が
-         来れば採点で自然に出る。来なければ出さないのが正しく、
-         出なかった理由は完了時に一覧で言う(義務は本編でなく説明で果たす) */
+      /* ★ 厳選門の素材(動きあり×ブレ多)とスパイスは出番保証の対象外
+         (2026-08-04 DCI規則5)。義務で悪い画・場違いな画を出すと1カットで
+         全体の信頼が壊れる ─ 使いどころが来れば採点で自然に出る。
+         出なかった理由は完了時に一覧で言う。
+         他の場所からの全体は通常のローテーションに参加するので対象のまま */
       const starving = ranked.find(r => !r.dq && r.id !== top.id
         && !(ctx.roamIds && ctx.roamIds.has(r.id))
-        && !(ctx.oppositeIds && ctx.oppositeIds.has(r.id))
         && !(ctx.spiceIds && ctx.spiceIds.has(r.id))
         && Math.min(ctx.sinceUse.get(r.id) || 0, cuts.length) >= starveOf(r.id));
       /* ★ ソロ・ソリの最中は繰り延べる(2026-08-04 P3改)。
@@ -869,15 +885,20 @@ MC.director.generate = () => {
     if (saluteWide) ctx.saluteDone = true;
     cuts.push({ t, clipId: top.id, trans, dur });
 
-    /* ★ 種類規則の記帳(2026-08-04 DCI協議)。
+    /* ★ 属性規則の記帳(2026-08-05 改訂)。
        スパイス: 使った秒数を数え、全尺10%で打ち止め。直後は引きで受ける
        (segsSinceWide を満了させ、次の区間を引きの織り込みにする)。
-       歩き撮り: 使ったらクールダウン(乱発防止) */
+       他の場所からの全体: 使った秒数を数え、全尺40%で打ち止め。
+       厳選門(動きあり×ブレ多): 使ったらクールダウン(乱発防止) */
     ctx.prevWasSpice = !!(ctx.spiceIds && ctx.spiceIds.has(top.id));
     if (ctx.prevWasSpice) {
       ctx.spiceSec += (tNext - t);
       if (ctx.spiceSec > (tOut - tIn) * MC.director.SPICE_CAP_RATIO) ctx.spiceCapHit = true;
       ctx.segsSinceWide = ctx.interleave;
+    }
+    if (ctx.altWideIds && ctx.altWideIds.has(top.id)) {
+      ctx.altWideSec += (tNext - t);
+      if (ctx.altWideSec > (tOut - tIn) * MC.director.ALT_WIDE_CAP) ctx.altWideCapHit = true;
     }
     if (ctx.roamIds && ctx.roamIds.has(top.id)) {
       ctx.roamReadyAt = tNext + MC.director.ROAM_COOLDOWN;
@@ -908,7 +929,6 @@ MC.director.generate = () => {
       id: c.id, name: c.name,
       why: ctx.roamIds.has(c.id) ? "ブレの少ない良い場面が見つからなかったため"
         : ctx.spiceIds.has(c.id) ? "ピットや指揮の見せ場に良い区間が無かったため"
-        : ctx.oppositeIds.has(c.id) ? "場面の変わり目(逆サイドの使いどころ)が無かったため"
         : "他のカメラの画が優先されたため",
     }));
     if (MC.S.unusedCams.length) {

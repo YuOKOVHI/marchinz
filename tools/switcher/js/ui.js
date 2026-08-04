@@ -712,19 +712,39 @@ MC.ui.sceneOffers = () => {
     const [c0, c1] = MC.ui.coverRange(s0, s1);
     if (!(c1 > c0 + 1)) return no("cover");
     const cands = MC.highlight.candidates(audioClip, lenSec, c0, c1);
-    /* ★ 候補が最初から無い場合と、絞った結果0になった場合を分ける(2026-08-04 レビュー)。
-       兼ねると「候補が全部いまの動画と重なる」と嘘のログが出て、
-       この機能の目的(原因の切り分け)を自分で削ることになる */
-    if (!cands.length) return no("none");
     const pIn = MC.S.trimIn != null ? MC.S.trimIn : s0;
     const pOut = MC.S.trimOut != null ? MC.S.trimOut : pIn + lenSec;
-    const out = cands.filter(c => {
+    /* ★ 重複は構わない(2026-08-05 優さん指示)。除くのは「ほぼ同じ窓」だけ ─
+       いま作ったものと85%以上重なる候補を別のシーンと呼ぶのは嘘になる。
+       旧: 半分重なったら落としていて、候補が全滅しがちだった */
+    const notSame = c => {
       const ov = Math.min(c.t + c.dur, pOut) - Math.max(c.t, pIn);
-      return ov < c.dur * 0.5;   // 半分以上同じ絵になる候補は出さない
-    });
-    /* ★ 候補が全部いま作った窓と重なった。演奏が短いとここへ落ちる ─
-       候補が「スタート」しか立たず、そのスタートで作ったばかり、という形 */
-    return out.length ? out : no("overlap");
+      return ov < c.dur * 0.85;
+    };
+    const out = cands.filter(notSame);
+    if (out.length) return out;
+    /* ★ 素材が書き出し長より十分長い(=別の場面が物理的にある)のに候補が
+       立たないときは、機械的な窓で必ず提示する(2026-08-05 優さん指示
+       「1分ちょっとの素材でない限り、必ず提示」)。名前は場所で言う */
+    if (c1 - c0 >= lenSec + 15) {
+      const span = (c1 - c0) - lenSec;
+      const mech = [
+        { key: "early", label: "前半",  why: "演奏の前半から", icon: "fa-backward-step",
+          t: c0, dur: lenSec, z: 0 },
+        { key: "mid",   label: "まんなか", why: "演奏の中ほどから", icon: "fa-circle-half-stroke",
+          t: c0 + span * 0.5, dur: lenSec, z: 0 },
+        { key: "late",  label: "後半",  why: "演奏の後半から", icon: "fa-forward-step",
+          t: c0 + span, dur: lenSec, z: 0 },
+      ].filter(notSame);
+      /* 窓どうしがほぼ同じ(素材がぎりぎり)なら1つに畳む */
+      const uniq = [];
+      for (const m of mech) {
+        if (!uniq.some(u => Math.abs(u.t - m.t) < lenSec * 0.3)) uniq.push(m);
+      }
+      if (uniq.length) return uniq;
+    }
+    /* ここまで来たら本当に「いま作ったところしかない」(1分ちょっとの素材) */
+    return no(cands.length ? "overlap" : "none");
   } catch (e) { MC.log("sceneOffers: " + e.message); return no("error"); }
 };
 
@@ -2403,8 +2423,11 @@ ${c.isImage ? "" : (c.tiltOk
         ${!pro ? "" : `
         <div class="pan-row">横位置 <input type="range" class="pan" min="0" max="1" step="0.01" value="${c.pan}"></div>`}
         ${(pro && MC.S.mode === "switch") ? `
-        <div class="pan-row">種類 <select class="kind-sel select-mini" title="このカメラはどんなカメラか。選ぶと役割・出番・撮り方へ展開します">
-          ${MC.KINDS.map(k => `<option value="${k.v}" ${(c.kind || "auto") === k.v ? "selected" : ""}>${k.label}</option>`).join("")}
+        <div class="pan-row">撮影対象 <select class="target-sel select-mini" title="このカメラは何を撮ったか。選ぶと役割・出番へ展開します">
+          ${MC.TARGETS.map(k => `<option value="${k.v}" ${(c.target || "auto") === k.v ? "selected" : ""}>${k.label}</option>`).join("")}
+        </select></div>
+        <div class="pan-row">撮り方 <select class="motion-sel select-mini" title="固定か、動きながら撮ったか">
+          ${MC.MOTIONS.map(k => `<option value="${k.v}" ${(c.motion || "auto") === k.v ? "selected" : ""}>${k.label}</option>`).join("")}
         </select></div>
         <details class="clip-fine">
           <summary>じぶんで微調整する</summary>
@@ -2433,21 +2456,24 @@ ${c.isImage ? "" : (c.tiltOk
     if (listen) listen.onclick = () => MC.sync.listenCheck(c.id);
     const panEl = card.querySelector(".pan");   // おまかせでは出さないので必ず確かめる
     if (panEl) panEl.oninput = e => { c.pan = parseFloat(e.target.value); MC.saveState(); };
-    /* 種類(5択)。選んだら役割/出番/撮り方へ展開して描き直す。
-       微調整セレクトを直接触ったら kind は "auto" に戻さない ─
-       表示上は種類が残るが、実体は3セレクトが勝つ(展開は選んだ瞬間の1回だけ) */
-    const kindSel = card.querySelector(".kind-sel");
-    if (kindSel) kindSel.onchange = e => {
-      c.kind = e.target.value;
-      MC.applyKind(c);
+    /* 2軸(撮影対象・撮り方)。選んだら役割/出番/撮り方へ展開して描き直す。
+       微調整セレクトを直接触っても2軸は戻さない ─ 展開は選んだ瞬間の1回だけで、
+       実体は3セレクト(微調整)が勝つ */
+    const onAxis = (field, value) => {
+      c[field] = value;
+      MC.applyAxes(c);
       MC.saveState();
       MC.ui.renderClips();
-      if ((c.kind === "wide" || c.kind === "opposite") && c.height > c.width) {
-        MC.ui.toast("縦向きの動画です。全景に使うと左右が切れるため、隊形が読みづらいかもしれません");
+      if (field === "target" && (value === "front" || value === "altwide") && c.height > c.width) {
+        MC.ui.toast("縦向きの動画です。全体に使うと左右が切れるため、隊形が読みづらいかもしれません");
       } else if (MC.S.cutList.length) {
-        MC.ui.toast("種類を変えました。「自動カット割」で割り直せます");
+        MC.ui.toast("カメラの属性を変えました。「自動カット割」で割り直せます");
       }
     };
+    const targetSel = card.querySelector(".target-sel");
+    if (targetSel) targetSel.onchange = e => onAxis("target", e.target.value);
+    const motionSel = card.querySelector(".motion-sel");
+    if (motionSel) motionSel.onchange = e => onAxis("motion", e.target.value);
     const roleSel = card.querySelector(".role-sel");
     if (roleSel) roleSel.onchange = e => { c.role = e.target.value; MC.saveState(); };
     const freqSel = card.querySelector(".freq-sel");
@@ -4450,31 +4476,25 @@ MC.ui.newFinishPrefs = fromState => ({
   /* ★ カメラの役割(2026-08-04)。ここで預かって finishPickGo で clip へ書く。
      直に c.role を書かないのは、「やめる」で戻れなくなるため
      ─ 開いてやめた人の設定は変えない、という他の項目と同じ約束 */
-  roles: MC.ui.finishRoleMap(),
+  axes: MC.ui.finishAxesMap(),
   changed: false,
 });
 
-/* いまの clip.kind を id→種類 の対応にして預かる。既定は "auto"(指定なし)。
-   ★旧保存(kind無し・roleのみ)との互換: role から種類を推定して札に点灯する
-     (wide→全景 / close→追いかけ / pit→メジャー・ピット) */
-MC.ui.finishRoleMap = () => {
+/* いまの clip の2軸(撮影対象×固定/動きあり)を id→{target,motion} で預かる。
+   旧保存(kind/roleのみ)は migrateAxes が2軸へ写してから読む(2026-08-05) */
+MC.ui.finishAxesMap = () => {
   const m = {};
-  const legacy = { wide: "wide", close: "follow", pit: "spice" };
   for (const c of MC.ui.finishCards()) {
-    m[c.id] = c.kind && c.kind !== "auto" ? c.kind : (legacy[c.role] || "auto");
+    const clip = MC.getClip(c.id) || c;
+    MC.migrateAxes(clip);
+    m[c.id] = { target: clip.target || "auto", motion: clip.motion || "auto" };
   }
   return m;
 };
-/* 選べる種類は MC.KINDS が正本(2026-08-04 DCI協議で5択化)。
-   ★意味は札ではなく見出し下の1行で言う(2026-08-04 レビュー) ─
-     以前は title 属性に入れていたが、**iPhoneのタッチでは title は永久に
-     表示されない**。最優先端末で一度も読まれない場所に説明を置かない。
-   ★「おまかせ」とは呼ばない ─ 道の名前そのものが「おまかせ」で、
-     おまかせの中に「おまかせ」が並ぶ。pro タブと同じ意味で「指定なし」 */
-MC.ui.FINISH_ROLES = MC.KINDS;
-/* 見出し下の説明。★MC.KINDS から作る ─ 札とこの行が別々の言葉に
-   ずれると、どちらが正しいのか誰にも分からなくなる */
-MC.ui.finishRoleHint = () => MC.ui.FINISH_ROLES.filter(r => r.v !== "auto")
+/* 選べる値は MC.TARGETS / MC.MOTIONS が正本(2026-08-05 優さん指示で2軸化)。
+   ★意味はプルダウンではなく見出し下の1行で言う(2026-08-04 レビュー) ─
+     title 属性は iPhone のタッチでは永久に表示されない */
+MC.ui.finishRoleHint = () => MC.TARGETS.filter(r => r.v !== "auto")
   .map(r => `${r.label}＝${r.hint}`).join(" ／ ");
 
 MC.ui.openFinishPick = opts => {
@@ -4731,24 +4751,38 @@ MC.ui.renderFinishRoles = (fp, cards) => {
   if (!show) return;
   const box = MC.ui.$("#fpRoleCards");
   if (!box) return;
-  if (!fp.roles) fp.roles = MC.ui.finishRoleMap();
+  if (!fp.axes) fp.axes = MC.ui.finishAxesMap();
   /* 開いている間に素材が増減したら、いまの素材ぶんだけに作り直す。
      ★ 減った側を消すだけでは足りない(2026-08-04 レビュー) ─ 増えた素材が
-       fp.roles に無いと、札は「指定なし」に点灯するのに finishPickGo の
-       `if (v)` が undefined を素通りさせ、clip の役は前のまま残る。
-       画面と実体が食い違うので、足りない側も必ず埋める */
-  for (const id of Object.keys(fp.roles)) {
-    if (!cards.some(c => String(c.id) === String(id))) delete fp.roles[id];
+       fp.axes に無いと、画面は「指定なし」なのに finishPickGo が素通りさせ、
+       clip の設定は前のまま残る。足りない側も必ず埋める */
+  for (const id of Object.keys(fp.axes)) {
+    if (!cards.some(c => String(c.id) === String(id))) delete fp.axes[id];
   }
-  { const legacy = { wide: "wide", close: "follow", pit: "spice" };
-    for (const c of cards) if (!(c.id in fp.roles)) {
-      fp.roles[c.id] = c.kind && c.kind !== "auto" ? c.kind : (legacy[c.role] || "auto");
-    } }
-  /* 意味は札ではなくこの1行で言う(iPhoneのタッチでは title が読まれない) */
+  for (const c of cards) if (!(c.id in fp.axes)) {
+    const clip = MC.getClip(c.id) || c;
+    MC.migrateAxes(clip);
+    fp.axes[c.id] = { target: clip.target || "auto", motion: clip.motion || "auto" };
+  }
+  /* 意味はプルダウンではなくこの1行で言う(iPhoneのタッチでは title が読まれない) */
   { const h = MC.ui.$("#fpRoleHint"); if (h) h.textContent = MC.ui.finishRoleHint(); }
   box.innerHTML = "";
+  /* 2軸プルダウン(2026-08-05 優さん指示)。①撮影対象 ②固定/動きあり */
+  const mkSel = (list, cur, aria, onPick) => {
+    const sel = document.createElement("select");
+    sel.className = "fp-axis-sel select-mini";
+    sel.setAttribute("aria-label", aria);
+    list.forEach(o => {
+      const op = document.createElement("option");
+      op.value = o.v; op.textContent = o.label;
+      if (o.v === cur) op.selected = true;
+      sel.appendChild(op);
+    });
+    sel.onchange = e => onPick(e.target.value);
+    return sel;
+  };
   cards.forEach(c => {
-    const cur = fp.roles[c.id] || "auto";
+    const cur = fp.axes[c.id];
     const card = document.createElement("div");
     card.className = "wp-card";
     card.innerHTML = `
@@ -4758,41 +4792,28 @@ MC.ui.renderFinishRoles = (fp, cards) => {
       <span class="wp-main"><span class="wp-name">${MC.ui.esc(c.name)}</span>
         <span class="wp-meta">${c.isImage ? "写真" : MC.ui.fmtTime(c.duration)}</span></span>`;
     const seg = document.createElement("span");
-    seg.className = "fp-roles";
-    seg.setAttribute("role", "radiogroup");
-    seg.setAttribute("aria-label", `${c.name} の役割`);
-    MC.ui.FINISH_ROLES.forEach(r => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "fp-role" + (r.v === cur ? " on" : "");
-      b.setAttribute("role", "radio");
-      b.setAttribute("aria-checked", r.v === cur ? "true" : "false");
-      b.setAttribute("aria-label", `${c.name} を「${r.label}」にする（${r.hint}）`);
-      b.dataset.id = String(c.id);
-      b.dataset.role = r.v;
-      b.textContent = r.label;
-      b.onclick = () => {
-        fp.roles[c.id] = r.v;
-        fp.changed = true;
-        /* 縦向き動画を全景系にすると左右が切れて隊形が読めない(2026-08-04 DCI)。
-           選択は妨げない ─ 事実だけ言う */
-        const clip = MC.getClip(c.id);
-        if ((r.v === "wide" || r.v === "opposite") && clip && clip.height > clip.width) {
-          MC.ui.toast("縦向きの動画です。全景に使うと左右が切れるため、隊形が読みづらいかもしれません");
-        }
-        /* ★ 自分だけ描き直さない(2026-08-04 レビュー)。
-           #fpGo の文言を持っているのは renderFinishPick で、
-           切り替え・色・傾きは全部そちらを呼んでいる。ここだけ約束を変えると、
-           役割を変えた人のボタンが「このまま進む」「同じ設定で作り直す」の
-           まま残り、ラベルが事実と食い違う。
-           ★ innerHTML を捨てるので、焦点の戻し先も預ける
-             (預けないと押すたびに焦点が <body> へ落ちる) */
-        MC.ui.buzz([10]);
-        fp.focus = { kind: "role", id: c.id, role: r.v };
-        MC.ui.renderFinishPick();
-      };
-      seg.appendChild(b);
-    });
+    seg.className = "fp-axes";
+    const pick = axis => v => {
+      cur[axis] = v;
+      fp.changed = true;
+      /* 縦向き動画を全体系にすると左右が切れて隊形が読めない(2026-08-04 DCI)。
+         選択は妨げない ─ 事実だけ言う */
+      const clip = MC.getClip(c.id);
+      if (axis === "target" && (v === "front" || v === "altwide")
+          && clip && clip.height > clip.width) {
+        MC.ui.toast("縦向きの動画です。全体に使うと左右が切れるため、隊形が読みづらいかもしれません");
+      }
+      MC.ui.buzz([10]);
+      /* #fpGo の文言(このまま進む/同じ設定で作り直す)は renderFinishPick が持つ。
+         select は自分の状態を保つので、描き直しても選択は失われない */
+      MC.ui.renderFinishPick();
+    };
+    const selT = mkSel(MC.TARGETS, cur.target, `${c.name} の撮影対象`, pick("target"));
+    selT.dataset.id = String(c.id); selT.dataset.axis = "target";
+    const selM = mkSel(MC.MOTIONS, cur.motion, `${c.name} の固定/動きあり`, pick("motion"));
+    selM.dataset.id = String(c.id); selM.dataset.axis = "motion";
+    seg.appendChild(selT);
+    seg.appendChild(selM);
     card.appendChild(seg);
     box.appendChild(card);
   });
@@ -4801,14 +4822,14 @@ MC.ui.renderFinishRoles = (fp, cards) => {
 MC.ui.finishPickGo = () => {
   const fp = MC.ui._fp;
   if (!fp) return;
-  /* ★ カメラの種類を clip へ書き戻す(2026-08-04)。ここで初めて書く ─
-     「やめる」で戻ってきた人の設定は変えない。
-     kind を書き、applyKind が役割/出番/撮り方へ展開する(5択化)。
+  /* ★ カメラの2軸(撮影対象×固定/動きあり)を clip へ書き戻す(2026-08-05)。
+     ここで初めて書く ─「やめる」で戻ってきた人の設定は変えない。
+     applyAxes が役割/出番/撮り方へ展開する。
      これで hasPitCam が立ち、director.js の +1.2 が初めて効く */
-  if (MC.S.mode === "switch" && fp.roles) {
+  if (MC.S.mode === "switch" && fp.axes) {
     for (const c of MC.S.clips) {
-      const v = fp.roles[c.id];
-      if (v) { c.kind = v; MC.applyKind(c); }
+      const a = fp.axes[c.id];
+      if (a) { c.target = a.target; c.motion = a.motion; MC.applyAxes(c); }
     }
   }
   MC.S.autoTilt = fp.tilt !== false;   // 傾きの自動補正(2026-08-04 優さん指示)

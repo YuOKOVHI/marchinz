@@ -412,6 +412,15 @@ html:has(body.mz-finish-pick), body.mz-finish-pick {
 .fp-roles { flex: 0 0 auto; display: flex; gap: 6px;
   /* 5択化(2026-08-04)で札が6枚になった。1行に収まらない幅では折り返す */
   flex-wrap: wrap; }
+/* 2軸プルダウン(2026-08-05 優さん指示)。撮影対象×固定/動きあり */
+.fp-axes { flex: 0 0 auto; display: flex; gap: 6px; flex-wrap: wrap; }
+.fp-axis-sel { min-height: 44px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--panel2); color: var(--navy); font-size: 13px; font-weight: 700;
+  padding: 0 8px; }
+@media (max-width: 460px) {
+  .fp-axes { flex: 1 0 100%; }
+  .fp-axis-sel { flex: 1; min-width: 0; }
+}
 .fp-role { min-height: 44px; padding: 0 12px; border-radius: 10px;
   border: 1px solid var(--line); background: var(--panel2); color: var(--tx2);
   font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }

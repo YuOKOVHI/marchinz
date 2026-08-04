@@ -94,19 +94,32 @@ MC.horizon.analyzeFrame = async (clip, frac) => {
   const nTh = Math.round(2 * RANGE / STEP) + 1;
   const scores = new Float64Array(nTh);
   const acc = new Float64Array(nC);
+  const bMin = new Float64Array(nC);   // そのビンを支える点の x 範囲(=線の長さ)
+  const bMax = new Float64Array(nC);
   for (let ti = 0; ti < nTh; ti++) {
     const th = (ti * STEP - RANGE) * Math.PI / 180;
     const tan = Math.tan(th);
-    acc.fill(0);
+    acc.fill(0); bMin.fill(Infinity); bMax.fill(-Infinity);
     for (let k = 0; k < ex.length; k++) {
       const c = ey[k] - ex[k] * tan;
       const bi = Math.round((c + maxOff) / CB);
-      if (bi >= 0 && bi < nC) acc[bi] += ew[k];
+      if (bi >= 0 && bi < nC) {
+        acc[bi] += ew[k];
+        if (ex[k] < bMin[bi]) bMin[bi] = ex[k];
+        if (ex[k] > bMax[bi]) bMax[bi] = ex[k];
+      }
     }
-    // 上位5ピークの合計(複数の平行線[スタンド・ライン等]に頑健)
+    /* ★ 線の長さで重み付け(2026-08-05 優さん指摘「楽器の直線に惑わされず、
+       景色などで判定を」)。傾きの根拠になってよいのは、スタンドの手すり・
+       フィールドのライン・地平線のような**画面の半分以上に伸びる線**。
+       楽器(トロンボーンの管・マリンバの枠)やフラッグのポールは強いエッジだが
+       短い ─ 支持点の x 方向スパンが狭いビンは、比例して信用を下げる。
+       密集テクスチャ(観客席)が1ビンに集まっても、幅が無ければ効かない */
     const top = [0, 0, 0, 0, 0];
     for (let i = 0; i < nC; i++) {
-      const val = acc[i];
+      if (!acc[i]) continue;
+      const span = bMax[i] - bMin[i];
+      const val = acc[i] * Math.min(1, span / (w * 0.5));
       if (val > top[4]) {
         top[4] = val;
         top.sort((a, b) => b - a);

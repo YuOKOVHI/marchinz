@@ -4654,47 +4654,103 @@ async function countSamples(ns, file, fromSec) {
     }
   });
 
-  await test("★逆サイドは場面の変わり目だけ・飢餓ガードでも強制しない(変異つき)", async () => {
-    /* 2026-08-04 DCI協議。逆サイドはイマジナリーライン越え ─ 寄りから直に
-       切ると隊列の進行方向が反転して見える。全奏・楽章の切れ目×直前が引き
-       のときだけ使い、普段はどれだけ画が良くても出さない。
-       出番保証(飢餓ガード)の対象からも外す(義務で場違いな画を出さない) */
+  await test("★他の場所からの全体は普通に混ざり、全尺40%で打ち止め(変異つき)", async () => {
+    /* 2026-08-05 優さん指示「他の場所からの全体は、固定であれば10のうち2〜4」。
+       前版の「場面の変わり目だけ」の縛りは廃止 ─ 引きのローテーションに
+       普通に参加し、合計が全尺の4割を超えたら引っ込める */
     const w = await compEnv();
     const S = compReset(w);
     S.audioClipId = 1; S.trimIn = 0; S.trimOut = 60; S.cutLevel = 2;
     Object.assign(w.MC.getClip(1), { beatsData: dciBeats(), sections: {} });
-    /* cam3=全景メイン(少し甘い) / cam2=逆サイド(いちばん良く撮れている) / cam1=寄り */
+    /* cam3=正面全体 / cam2=他の場所からの全体(よく撮れている) / cam1=寄り */
     const M = { 1: dciSeg(.30, true), 2: { ...dciSeg(.05), sharpMean: 60 },
                 3: { ...dciSeg(.05), sharpMean: 30 } };
     const keep = { seg: w.MC.visual.seg, cls: w.MC.sections.classify,
-                   sal: w.MC.director._salute, pen: w.MC.director.OPPOSITE_PENALTY,
-                   st: S.clips.map(c => [c.kind, c.role, c.freq, c.rig]) };
+                   sal: w.MC.director._salute, cap: w.MC.director.ALT_WIDE_CAP,
+                   st: S.clips.map(c => [c.target, c.motion, c.role, c.freq, c.rig]) };
+    const run = () => { S.cutList = []; w.MC.director.generate(); return S.cutList.slice(); };
+    const altSec = cuts => dciLens(cuts, 60).reduce((sum, len, i) =>
+      sum + (cuts[i].clipId === 2 ? len : 0), 0);
+    try {
+      w.MC.visual.seg = clip => M[clip.id];
+      w.MC.director._salute = null;
+      S.clips[2].target = "front"; w.MC.applyAxes(S.clips[2]);
+      S.clips[1].target = "altwide"; S.clips[1].motion = "fixed"; w.MC.applyAxes(S.clips[1]);
+      S.clips[0].target = "operator"; w.MC.applyAxes(S.clips[0]);
+      /* 全奏も切れ目も無い普通の曲 ─ それでも(旧制限と違って)出ること */
+      w.MC.sections.classify = () => ({ feature: 0, percussion: 0, tutti: 0.2, pit: 0,
+                                        bpm: 120, dyn: 0.4, quiet: 0 });
+      const a = run();
+      const aSec = altSec(a);
+      if (!(aSec > 0)) throw new Error("場面の変わり目が無いと出ない(旧・逆サイド制限が残っている)");
+      if (aSec > 60 * w.MC.director.ALT_WIDE_CAP + 7) {
+        throw new Error(`他の場所からの全体が${aSec.toFixed(1)}秒(40%上限が効いていない)`);
+      }
+      /* 変異: 上限を0にすると、記帳の門が最初のショットで閉まりほぼ出なくなる
+         (=上限の配線が生きている証明) */
+      w.MC.director.ALT_WIDE_CAP = 0;
+      const b = run();
+      w.MC.director.ALT_WIDE_CAP = keep.cap;
+      const bSec = altSec(b);
+      if (!(bSec < aSec)) {
+        throw new Error(`変異(上限0)でも減らない(${aSec.toFixed(1)}→${bSec.toFixed(1)}秒)`);
+      }
+      return `参加=${aSec.toFixed(1)}秒(上限${(60 * keep.cap).toFixed(0)}秒以内) / 変異(上限0)=${bSec.toFixed(1)}秒`;
+    } finally {
+      w.MC.visual.seg = keep.seg; w.MC.sections.classify = keep.cls;
+      w.MC.director._salute = keep.sal; w.MC.director.ALT_WIDE_CAP = keep.cap;
+      S.clips.forEach((c, i) => { [c.target, c.motion, c.role, c.freq, c.rig] = keep.st[i]; });
+      compReset(w);
+    }
+  });
+
+  await test("★ソロは操作カメラで必ず抜く・失格なら普通に戻る(変異つき)", async () => {
+    /* 2026-08-05 優さん指示「カメラマン操作はソロを抜いていたら必ず使う。
+       逆にブレが多いところは使わない」。feature が立つ区間では、
+       採点で負けていても操作カメラを使う。失格(ブレ)なら強制しない */
+    const w = await compEnv();
+    const S = compReset(w);
+    S.audioClipId = 1; S.trimIn = 0; S.trimOut = 60; S.cutLevel = 2;
+    Object.assign(w.MC.getClip(1), { beatsData: dciBeats(), sections: {} });
+    /* cam1=操作カメラ(採点は弱い) / cam2=強い寄り / cam3=正面全体 */
+    const M = { 1: dciSeg(.10, true), 2: dciSeg(.30, true), 3: dciSeg(.05) };
+    const keep = { seg: w.MC.visual.seg, cls: w.MC.sections.classify,
+                   sal: w.MC.director._salute, so: w.MC.director.SOLO_OPERATOR,
+                   st: S.clips.map(c => [c.target, c.motion, c.role, c.freq, c.rig]) };
     const run = () => { S.cutList = []; w.MC.director.generate(); return S.cutList.slice(); };
     try {
       w.MC.visual.seg = clip => M[clip.id];
       w.MC.director._salute = null;
-      S.clips[2].kind = "wide"; w.MC.applyKind(S.clips[2]);
-      S.clips[1].kind = "opposite"; w.MC.applyKind(S.clips[1]);
-      S.clips[1].freq = "auto";     // 微調整で出番を戻した体(=罰だけが門になる)
-      S.clips[0].kind = "follow"; w.MC.applyKind(S.clips[0]);
-      /* 全奏も切れ目も無い普通の曲(引きの織り込みはある) */
-      w.MC.sections.classify = () => ({ feature: 0, percussion: 0, tutti: 0.2, pit: 0,
-                                        bpm: 120, dyn: 0.4, quiet: 0 });
+      S.clips[0].target = "operator"; w.MC.applyAxes(S.clips[0]);
+      S.clips[2].target = "front"; w.MC.applyAxes(S.clips[2]);
+      /* ソロが 20〜32秒だけの曲 */
+      w.MC.sections.classify = (clip, t0) => (t0 >= 20 && t0 < 32)
+        ? { feature: 0.9, percussion: 0, tutti: 0.1, pit: 0, bpm: 120, dyn: 0.4, quiet: 0.2 }
+        : { feature: 0, percussion: 0, tutti: 0.2, pit: 0, bpm: 120, dyn: 0.4, quiet: 0 };
       const a = run();
-      if (a.some(c => c.clipId === 2)) {
-        throw new Error("場面の変わり目が無いのに逆サイドが出た(飢餓ガードの強制も疑う)");
+      for (const tt of [23, 27, 31]) {
+        const air = dciOnAir(a, tt);
+        if (!air || air.clipId !== 1) {
+          throw new Error(`ソロ中(${tt}s)に操作カメラが乗っていない(cam${air && air.clipId})`);
+        }
       }
-      /* 変異: 罰を消すと、良く撮れた逆サイドが引きの織り込みへ出てくる */
-      w.MC.director.OPPOSITE_PENALTY = 0;
+      /* 変異A: 規則を切ると、採点の強い cam2 がソロを奪う */
+      w.MC.director.SOLO_OPERATOR = false;
       const b = run();
-      w.MC.director.OPPOSITE_PENALTY = keep.pen;
-      const nMut = b.filter(c => c.clipId === 2).length;
-      if (!nMut) throw new Error("変異(罰なし)でも逆サイドが出ない=規則が空回り");
-      return `本番=逆サイド0枚(60秒・飢餓でも強制されない) / 変異=出る(${nMut}枚)`;
+      w.MC.director.SOLO_OPERATOR = keep.so;
+      const stole = [23, 27, 31].some(tt => { const air = dciOnAir(b, tt); return air && air.clipId !== 1; });
+      if (!stole) throw new Error("変異(規則オフ)でも操作カメラが独占=規則が仕事をしていない");
+      /* 変異B: 操作カメラがソロ中ブレて失格なら、強制しない(ブレは使わない) */
+      w.MC.visual.seg = (clip, g0) => clip.id === 1 && g0 >= 19 && g0 < 33
+        ? { ...dciSeg(.10, true), shakeP75: .3, shakeCamP75: .3 } : M[clip.id];
+      const c = run();
+      const bad = [23, 27, 31].filter(tt => { const air = dciOnAir(c, tt); return air && air.clipId === 1; });
+      if (bad.length) throw new Error(`ブレて失格なのにソロで強制された(${bad.join(",")}s)`);
+      return "ソロ3点とも操作カメラ / 変異(規則オフ)=奪われる / ブレ失格なら強制しない";
     } finally {
       w.MC.visual.seg = keep.seg; w.MC.sections.classify = keep.cls;
-      w.MC.director._salute = keep.sal; w.MC.director.OPPOSITE_PENALTY = keep.pen;
-      S.clips.forEach((c, i) => { [c.kind, c.role, c.freq, c.rig] = keep.st[i]; });
+      w.MC.director._salute = keep.sal; w.MC.director.SOLO_OPERATOR = keep.so;
+      S.clips.forEach((c, i) => { [c.target, c.motion, c.role, c.freq, c.rig] = keep.st[i]; });
       compReset(w);
     }
   });
@@ -4711,16 +4767,16 @@ async function countSamples(ns, file, fromSec) {
     const keep = { seg: w.MC.visual.seg, cls: w.MC.sections.classify,
                    sal: w.MC.director._salute,
                    pen: w.MC.director.SPICE_PENALTY, cap: w.MC.director.SPICE_CAP_RATIO,
-                   st: S.clips.map(c => [c.kind, c.role, c.freq, c.rig]) };
+                   st: S.clips.map(c => [c.target, c.motion, c.role, c.freq, c.rig]) };
     const run = () => { S.cutList = []; w.MC.director.generate(); return S.cutList.slice(); };
     const spiceSec = cuts => dciLens(cuts, 60).reduce((s, len, i) =>
       s + (cuts[i].clipId === 2 ? len : 0), 0);
     try {
       w.MC.visual.seg = clip => M[clip.id];
       w.MC.director._salute = null;
-      S.clips[2].kind = "wide"; w.MC.applyKind(S.clips[2]);
-      S.clips[1].kind = "spice"; w.MC.applyKind(S.clips[1]);
-      S.clips[0].kind = "follow"; w.MC.applyKind(S.clips[0]);
+      S.clips[2].target = "front"; w.MC.applyAxes(S.clips[2]);
+      S.clips[1].target = "spice"; w.MC.applyAxes(S.clips[1]);
+      S.clips[0].target = "operator"; w.MC.applyAxes(S.clips[0]);
       /* ① ピットの見せ場が 20〜30秒だけの曲: スパイスはそこ以外に出ない */
       w.MC.sections.classify = (clip, t0) => (t0 >= 20 && t0 < 30)
         ? { feature: 0, percussion: 0, tutti: 0.1, pit: 0.6, bpm: 100, dyn: 0.3, quiet: 0.5 }
@@ -4752,7 +4808,7 @@ async function countSamples(ns, file, fromSec) {
       w.MC.visual.seg = keep.seg; w.MC.sections.classify = keep.cls;
       w.MC.director._salute = keep.sal;
       w.MC.director.SPICE_PENALTY = keep.pen; w.MC.director.SPICE_CAP_RATIO = keep.cap;
-      S.clips.forEach((c, i) => { [c.kind, c.role, c.freq, c.rig] = keep.st[i]; });
+      S.clips.forEach((c, i) => { [c.target, c.motion, c.role, c.freq, c.rig] = keep.st[i]; });
       compReset(w);
     }
   });
@@ -4772,15 +4828,19 @@ async function countSamples(ns, file, fromSec) {
     const M = { 1: dciSeg(.13), 3: dciSeg(.05) };
     const keep = { seg: w.MC.visual.seg, cls: w.MC.sections.classify,
                    sal: w.MC.director._salute, pen: w.MC.director.ROAM_PENALTY,
-                   st: S.clips.map(c => [c.kind, c.role, c.freq, c.rig]) };
+                   vis: S.clips.map(c => c.visual),
+                   st: S.clips.map(c => [c.target, c.motion, c.role, c.freq, c.rig]) };
     const run = () => { S.cutList = []; w.MC.director.generate(); return S.cutList.slice(); };
     try {
       w.MC.visual.seg = (clip, g0) => clip.id === 2
         ? ((g0 >= 20 && g0 < 32) ? good : bad) : M[clip.id];
       w.MC.director._salute = null;
-      S.clips[2].kind = "wide"; w.MC.applyKind(S.clips[2]);
-      S.clips[1].kind = "roam"; w.MC.applyKind(S.clips[1]);
-      S.clips[0].kind = "follow"; w.MC.applyKind(S.clips[0]);
+      S.clips[2].target = "front"; w.MC.applyAxes(S.clips[2]);
+      /* 厳選門は「動きあり×クリップ全体でブレ多」から自動で導出される(2026-08-05)。
+         明示の選択肢は無い ─ 操作カメラ+動きあり+ブレ中央値が失格級、で入る */
+      S.clips[1].target = "operator"; S.clips[1].motion = "moving"; w.MC.applyAxes(S.clips[1]);
+      S.clips[1].visual = { operated: true, shakeMed: 0.15 };
+      S.clips[0].target = "operator"; w.MC.applyAxes(S.clips[0]);
       w.MC.sections.classify = () => ({ feature: 0, percussion: 0, tutti: 0.2, pit: 0,
                                         bpm: 120, dyn: 0.4, quiet: 0 });
       const a = run();
@@ -4796,7 +4856,7 @@ async function countSamples(ns, file, fromSec) {
     } finally {
       w.MC.visual.seg = keep.seg; w.MC.sections.classify = keep.cls;
       w.MC.director._salute = keep.sal; w.MC.director.ROAM_PENALTY = keep.pen;
-      S.clips.forEach((c, i) => { [c.kind, c.role, c.freq, c.rig] = keep.st[i]; });
+      S.clips.forEach((c, i) => { [c.target, c.motion, c.role, c.freq, c.rig] = keep.st[i]; c.visual = keep.vis[i]; });
       compReset(w);
     }
   });
@@ -7638,7 +7698,18 @@ async function countSamples(ns, file, fromSec) {
       if (U.sceneOffers().length !== 1) throw new Error("重ならない候補が消えている");
       if (U._sceneWhy !== null) throw new Error("成功したのに理由が残る: " + U._sceneWhy);
 
+      /* ★ 新契約(2026-08-05 優さん指示): 素材が長ければ、候補が全部いまの窓と
+         重なっていても、機械的な窓(前半/まんなか/後半)で必ず提示する */
       S.trimIn = 0; S.trimOut = 60;             // いま作ったのが候補そのもの
+      const mech = U.sceneOffers();
+      if (!mech.length) throw new Error("素材510秒で候補0(「必ず提示」の新契約に反する)");
+      if (U._sceneWhy !== null) throw new Error("機械候補を出したのに理由が残る: " + U._sceneWhy);
+      if (!mech.every(m => ["early", "mid", "late"].includes(m.key))) {
+        throw new Error("機械候補のキーが想定外: " + mech.map(m => m.key).join(","));
+      }
+
+      /* overlap の理由が立つのは「本当に他の場面が無い」短い素材だけ(1分ちょっと) */
+      U.showRange = () => [0, 65];
       if (why() !== "overlap") throw new Error("重なりが overlap にならない: " + U._sceneWhy);
 
       H.candidates = () => [];
@@ -7655,8 +7726,8 @@ async function countSamples(ns, file, fromSec) {
 
       U.showRange = () => { throw new Error("わざと"); };
       if (why() !== "error") throw new Error("例外が error にならない: " + U._sceneWhy);
-      return "成功=null / overlap / none / cover / preset / range / error の7通りを"
-        + "キーで区別する(文言は畳んでも落ちない)";
+      return "成功=null / 長い素材=機械候補(early/mid/late) / overlap / none / cover / "
+        + "preset / range / error をキーで区別する(文言は畳んでも落ちない)";
     } finally {
       U.showRange = keep.range; U.currentPreset = keep.preset; U.coverRange = keep.cover;
       H.candidates = keep.cands; H.presetSec = keep.psec;
@@ -7664,7 +7735,7 @@ async function countSamples(ns, file, fromSec) {
     }
   });
 
-  await test("★カメラの種類(5択)を「おまかせ」でも選べる(spice→pit展開で+1.2が発火する)", async () => {
+  await test("★カメラの属性2軸(対象×固定/動きあり)を「おまかせ」でも選べる(spice→pit展開)", async () => {
     /* 2026-08-04 三者レビュー。役割タグは設定画面の pro タブの中にしかなく、
        こだわり自体が パソコン+登録 限定だったため、おまかせとスマホからは
        一度も設定できなかった。結果 hasPitCam が常に false で、
@@ -7683,7 +7754,8 @@ async function countSamples(ns, file, fromSec) {
        compReset が戻すのは filterId と colorOn だけで、cutLevel と autoTilt は
        戻さない ─ 隣の作り直し試験と同じように、書かれるものは全部控える */
     const keep = { mode: S.mode, fp: U._fp, roles: S.clips.map(c => c.role),
-                   kinds: S.clips.map(c => c.kind), freqs: S.clips.map(c => c.freq),
+                   targets: S.clips.map(c => c.target), motions: S.clips.map(c => c.motion),
+                   freqs: S.clips.map(c => c.freq),
                    picked: S.finishPicked, auto: U.runAuto,
                    hold: U._repickHold, vp: U._viewPhase, rac: U._repickAfterCancel,
                    lv: S.cutLevel, tilt: S.autoTilt, fid: S.filterId, con: S.colorOn,
@@ -7696,33 +7768,37 @@ async function countSamples(ns, file, fromSec) {
       const sec = d.getElementById("fpRoleSec");
       if (!sec) throw new Error("役割の段がHTMLに無い");
       if (sec.hidden) throw new Error("自動スイッチングなのに役割の段が出ない");
-      /* ① 3台ぶんの札が出て、既定は全部「指定なし」。札は5択+指定なし=6枚 */
+      /* ① 3台ぶんのカードが出て、各カードにプルダウン2個(対象×固定/動きあり)。
+         既定は両方「指定なし/自動判定」 */
       const cards = d.querySelectorAll("#fpRoleCards .wp-card");
       if (cards.length !== 3) throw new Error(`カードが3枚でない: ${cards.length}`);
-      const per = cards[0].querySelectorAll(".fp-role").length;
-      if (per !== w.MC.KINDS.length) throw new Error(`札が${per}枚(MC.KINDS=${w.MC.KINDS.length}枚のはず)`);
-      const on0 = [...d.querySelectorAll("#fpRoleCards .fp-role.on")].map(b => b.dataset.role);
-      if (on0.length !== 3 || on0.some(v => v !== "auto")) {
-        throw new Error("既定が全部「指定なし」でない: " + on0.join(","));
+      const sels0 = cards[0].querySelectorAll(".fp-axis-sel");
+      if (sels0.length !== 2) throw new Error(`プルダウンが${sels0.length}個(2個のはず)`);
+      const defs = [...d.querySelectorAll("#fpRoleCards .fp-axis-sel")].map(x => x.value);
+      if (defs.length !== 6 || defs.some(v => v !== "auto")) {
+        throw new Error("既定が全部「指定なし/自動判定」でない: " + defs.join(","));
       }
-      /* ② 「メジャー・ピット」(spice)の札を押す。押しただけでは clip に書かない */
-      const pitBtn = d.querySelector('#fpRoleCards .fp-role[data-role="spice"]');
-      if (!pitBtn) throw new Error("「メジャー・ピット」の札が無い");
-      const targetId = pitBtn.dataset.id;
-      pitBtn.click();
+      const optN = sels0[0].options.length;
+      if (optN !== w.MC.TARGETS.length) throw new Error(`対象の選択肢が${optN}個(MC.TARGETS=${w.MC.TARGETS.length}個のはず)`);
+      /* ② 対象を「メジャー・ピット」にする。選んだだけでは clip に書かない */
+      const sel = cards[0].querySelector('.fp-axis-sel[data-axis="target"]');
+      const targetId = sel.dataset.id;
+      sel.value = "spice";
+      sel.onchange({ target: sel });
       const clip = S.clips.find(c => String(c.id) === String(targetId));
-      if (clip.role !== "auto" || (clip.kind && clip.kind !== "auto")) {
-        throw new Error("押しただけで clip に書かれた(やめても戻らない)");
+      if (clip.role !== "auto" || (clip.target && clip.target !== "auto")) {
+        throw new Error("選んだだけで clip に書かれた(やめても戻らない)");
       }
       /* ③ やめる → 変わらない */
       U.finishPickBack();
       if (clip.role !== "auto") throw new Error("やめたのに役割が変わった: " + clip.role);
-      /* ④ もう一度押して進む → kind が入り、applyKind が role=pit へ展開して
+      /* ④ もう一度選んで進む → target が入り、applyAxes が role=pit へ展開して
          director の前提(hasPitCam)が立つ。出番も「少なめ」に畳まれる */
       U.openFinishPick();
-      d.querySelector('#fpRoleCards .fp-role[data-role="spice"]').click();
+      { const s2 = d.querySelector(`#fpRoleCards .fp-axis-sel[data-axis="target"][data-id="${targetId}"]`);
+        s2.value = "spice"; s2.onchange({ target: s2 }); }
       U.finishPickGo();
-      if (clip.kind !== "spice") throw new Error("進んだのに種類が入らない: " + clip.kind);
+      if (clip.target !== "spice") throw new Error("進んだのに対象が入らない: " + clip.target);
       if (clip.role !== "pit") throw new Error("spice が role=pit へ展開されない: " + clip.role);
       if (clip.freq !== "less") throw new Error("spice が freq=less へ展開されない: " + clip.freq);
       const hasPitCam = S.clips.some(c => c.role === "pit");
@@ -7745,7 +7821,7 @@ async function countSamples(ns, file, fromSec) {
       U._repickAfterCancel = keep.rac; U._fpRemake = keep.remake;
       S.cutLevel = keep.lv; S.autoTilt = keep.tilt;
       S.filterId = keep.fid; S.colorOn = keep.con;
-      S.clips.forEach((c, i) => { c.role = keep.roles[i]; c.kind = keep.kinds[i]; c.freq = keep.freqs[i]; });
+      S.clips.forEach((c, i) => { c.role = keep.roles[i]; c.target = keep.targets[i]; c.motion = keep.motions[i]; c.freq = keep.freqs[i]; });
       try { U.closeFinishPick(); } catch (_) {}
     }
   });

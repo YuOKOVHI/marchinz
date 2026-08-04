@@ -152,38 +152,52 @@ MC.activeClips = () => {
   return ids.map(MC.getClip).filter(Boolean);
 };
 
-/* ============ カメラの種類(2026-08-04 DCI配信ディレクター協議で5択化) ============
-   これまで「役割・出番・撮り方」の3セレクトに分かれていて、素人には
-   組み合わせが見えなかった。1回の選択(5択+指定なし)に畳み、
-   選んだ瞬間に3つへ展開する(保存データは互換のまま)。
-   ★「全景メイン/サブ」を分けて聞かない ─ どちらが背骨かは素材の長さから
-     自動で決められる(聞くほど価値のある区別ではない)。
-   ★「逆サイド」だけは人にしか分からないので独立の選択肢にする ─
-     イマジナリーライン越え(カットの瞬間に隊列の進行方向が反転して見える)を
-     機械は検出できない。使いどころは director.js が楽章の切れ目と全奏に限る */
-MC.KINDS = [
-  { v: "auto",     label: "指定なし",       hint: "自動で判断します" },
-  { v: "wide",     label: "全景",           hint: "全体が写る。カット割りの背骨" },
-  { v: "opposite", label: "逆サイド",       hint: "メインと反対側から撮った全景。場面の変わり目だけ使います" },
-  { v: "follow",   label: "追いかけ",       hint: "演者を追いかけたカメラ。ソロ・見せ場の主役" },
-  { v: "spice",    label: "メジャー・ピット", hint: "指揮や前列の打楽器。鳴っている時だけ短く使います" },
-  { v: "roam",     label: "歩き撮り",       hint: "歩き/動きながら撮った。ブレの少ない良い場面だけ使います(迷ったら「追いかけ」)" },
+/* ============ カメラの属性は2軸(2026-08-05 優さん指示) ============
+   「①固定カメラか動きありか」「②撮影対象」をプルダウン2つで選ぶ。
+   前版の5択(1択に全部畳む形)は、撮り方と対象が1つの軸に混ざって
+   「三脚の寄りだけど途中から手持ちにした」が選べなかった。
+   ★ 歩き撮りは選択肢から消えた ─ 「動きあり×ブレが多い」から自動で
+     導出する(director.js の厳選門)。人に聞く必要がない */
+MC.TARGETS = [
+  { v: "auto",     label: "指定なし",           hint: "自動で判断します" },
+  { v: "front",    label: "正面全体",           hint: "正面から全体が写る。カット割りの背骨(多めに使います)" },
+  { v: "altwide",  label: "他の場所からの全体", hint: "側面・俯瞰など別の場所からの全体(固定なら1〜2番手として使います)" },
+  { v: "spice",    label: "メジャー・ピット",   hint: "指揮や前列の打楽器(見せ場だけ・全体の1割まで)" },
+  { v: "operator", label: "カメラマン操作",     hint: "演者を追いかけて抜くカメラ(ソロでは必ず使います)" },
+];
+MC.MOTIONS = [
+  { v: "auto",   label: "自動判定", hint: "映像から判定します" },
+  { v: "fixed",  label: "固定",     hint: "三脚などに置いて撮った" },
+  { v: "moving", label: "動きあり", hint: "手持ち・ジンバル・パンやズームをした" },
 ];
 
-/* kind → 役割/出番/撮り方 への展開。「指定なし」は何も触らない(自動判定へ委ねる) */
-MC.applyKind = c => {
-  const k = c.kind || "auto";
-  if (k === "auto") return;
-  const map = {
-    wide:     { role: "wide",  freq: "auto", rig: "auto" },
-    opposite: { role: "wide",  freq: "less", rig: "auto" },
-    follow:   { role: "close", freq: "auto", rig: "auto" },
-    spice:    { role: "pit",   freq: "less", rig: "auto" },
-    /* 歩き撮り: 役は決めない(引きにも寄りにもなる)。出番は少なめ、
-       撮り方=手持ちを明示(operated の自動判定を待たずに厳選の門へ入れる) */
-    roam:     { role: "auto",  freq: "less", rig: "operated" },
+/* 2軸 → 役割/出番/撮り方 への展開。「指定なし/自動判定」は触らない(自動へ委ねる) */
+MC.applyAxes = c => {
+  const t = c.target || "auto";
+  const roleMap = { front: "wide", altwide: "wide", spice: "pit", operator: "close" };
+  if (t !== "auto") {
+    c.role = roleMap[t];
+    c.freq = t === "spice" ? "less" : "auto";
+  }
+  const m = c.motion || "auto";
+  if (m !== "auto") c.rig = m === "fixed" ? "fixed" : "operated";
+};
+
+/* 旧データの移行: v1.100.0 の kind(5択)と、それ以前の role だけの保存を
+   2軸へ写す。読むだけで書き戻しはしない(次の saveState が新形式で保存する) */
+MC.migrateAxes = c => {
+  if (c.target) return;
+  const k = c.kind;
+  const fromKind = {
+    wide:     ["front", null],
+    opposite: ["altwide", null],
+    follow:   ["operator", null],
+    spice:    ["spice", null],
+    roam:     ["operator", "moving"],
   }[k];
-  if (map) { c.role = map.role; c.freq = map.freq; c.rig = map.rig; }
+  if (fromKind) { c.target = fromKind[0]; if (fromKind[1]) c.motion = fromKind[1]; return; }
+  const fromRole = { wide: "front", close: "operator", pit: "spice" }[c.role];
+  if (fromRole) c.target = fromRole;
 };
 
 MC.saveState = () => {
@@ -203,7 +217,7 @@ MC.saveState = () => {
     const clipsNow = MC.S.clips.map(c => ({
       key: MC.clipKey(c), offset: c.offset, confidence: c.confidence,
       syncMethod: c.syncMethod, pan: c.pan,
-      kind: c.kind || "auto",
+      target: c.target || "auto", motion: c.motion || "auto",
       role: c.role || "auto", freq: c.freq || "auto", rig: c.rig || "auto",
       colorT: c.colorT || null, rot: c.rot || 0, tiltOk: !!c.tiltOk,
     }));
@@ -257,10 +271,13 @@ MC.restoreClipState = clip => {
       clip.confidence = hit.confidence;
       clip.syncMethod = hit.syncMethod || "未同期";
       clip.pan = hit.pan == null ? 0.5 : hit.pan;
-      clip.kind = hit.kind || "auto";
+      clip.target = hit.target || null;
+      clip.motion = hit.motion || null;
+      clip.kind = hit.kind || null;          // 旧5択(v1.100.0)の保存。移行にだけ使う
       clip.role = hit.role || "auto";
       clip.freq = hit.freq || "auto";
       clip.rig = hit.rig || "auto";
+      MC.migrateAxes(clip);                  // 旧kind/roleの保存を2軸へ写す(2026-08-05)
       clip.colorT = hit.colorT || null;
       clip.rot = hit.rot || 0;
       clip.tiltOk = !!hit.tiltOk;
