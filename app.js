@@ -1238,7 +1238,19 @@
     } else {
       url = `${window.location.origin}${window.location.pathname}${qs ? `?${qs}` : ""}${hash}`;
     }
-    return withOpenExternalBrowserParam(url);
+    /* ★ openExternalBrowser=1 は付けない(2026-08-04 優さん指示「なるべく短くしたい」)。
+       あれは LINE 独自のパラメータで、LINEのトークから開いたときだけ
+       アプリ内ブラウザではなく Safari/Chrome を起動させる印。
+       ・シェアされたリンクの用途は**見ること**(動画一覧・プロフィール・マイリスト)で、
+         これは LINE のアプリ内ブラウザでも普通に動く
+       ・困るのは ログイン / ホーム画面に追加 / オフラインキャッシュ で、
+         そこは「アプリ内ブラウザで開かれている」と気づいた時点で
+         site-nav.js の案内バーと auth.js の「URLをコピー」が
+         **付きのURL**を渡して逃がす(＝必要な場面には残してある)
+       ・外部ブラウザへ飛ばすと LINE に戻りにくくなる副作用もあるので、
+         全部のシェアに一律で付ける方が不利
+       共有URLが24文字短くなる */
+    return url;
   }
 
   /**
@@ -1261,7 +1273,8 @@
     } else {
       url = `${window.location.origin}${window.location.pathname}${h}`;
     }
-    return withOpenExternalBrowserParam(url);
+    // openExternalBrowser=1 は付けない(理由は buildShareUrl のコメント)
+    return url;
   }
 
   /** @param {string} urlStr @returns {string} */
