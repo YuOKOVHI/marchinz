@@ -6963,6 +6963,114 @@ async function countSamples(ns, file, fromSec) {
     }
   });
 
+  await test("★カメラの役割を「おまかせ」でも選べる(ピットの+1.2が初めて発火する)", async () => {
+    /* 2026-08-04 三者レビュー。役割タグは設定画面の pro タブの中にしかなく、
+       こだわり自体が パソコン+登録 限定だったため、おまかせとスマホからは
+       一度も設定できなかった。結果 hasPitCam が常に false で、
+       director.js の +1.2(全加点で最大)が一度も発火していなかった。
+       ★ 代入で c.role を書いて確かめない ─ 実際に札を**押して**通す。
+         押せる札がDOMに無ければ、この機能は存在しないのと同じ */
+    const w = await compEnv();
+    const S = compReset(w);
+    const d = w.document, U = w.MC.ui;
+    /* ★ finishPickGo は最後に runAuto を呼び、S.finishPicked を立てる。
+       止めずに呼ぶと自走が走り、立てたフラグが後続の試験へ漏れて
+       「好み画面が挟まらない」と誤検出させる(この試験を書いた初回に実際に4件巻き込んだ) */
+    /* ★ finishPickBack は repickLand を通り、_repickHold(自走を再開しない保留)を
+       立てる。戻さないと後続の「好み画面が挟まる」試験が全部 0回になる */
+    const keep = { mode: S.mode, fp: U._fp, roles: S.clips.map(c => c.role),
+                   picked: S.finishPicked, auto: U.runAuto,
+                   hold: U._repickHold, vp: U._viewPhase, rac: U._repickAfterCancel };
+    let ran = 0;
+    U.runAuto = async () => { ran++; };
+    try {
+      S.mode = "switch";
+      U.openFinishPick();
+      const sec = d.getElementById("fpRoleSec");
+      if (!sec) throw new Error("役割の段がHTMLに無い");
+      if (sec.hidden) throw new Error("自動スイッチングなのに役割の段が出ない");
+      /* ① 3台ぶんの札が出て、既定は全部「おまかせ」 */
+      const cards = d.querySelectorAll("#fpRoleCards .wp-card");
+      if (cards.length !== 3) throw new Error(`カードが3枚でない: ${cards.length}`);
+      const on0 = [...d.querySelectorAll("#fpRoleCards .fp-role.on")].map(b => b.dataset.role);
+      if (on0.length !== 3 || on0.some(v => v !== "auto")) {
+        throw new Error("既定が全部「おまかせ」でない: " + on0.join(","));
+      }
+      /* ② 「ピット」の札を押す。押しただけでは clip に書かない(やめれば戻せる) */
+      const pitBtn = d.querySelector('#fpRoleCards .fp-role[data-role="pit"]');
+      if (!pitBtn) throw new Error("「ピット」の札が無い");
+      const targetId = pitBtn.dataset.id;
+      pitBtn.click();
+      const clip = S.clips.find(c => String(c.id) === String(targetId));
+      if (clip.role !== "auto") throw new Error("押しただけで clip に書かれた(やめても戻らない)");
+      /* ③ やめる → 変わらない */
+      U.finishPickBack();
+      if (clip.role !== "auto") throw new Error("やめたのに役割が変わった: " + clip.role);
+      /* ④ もう一度押して進む → clip に入り、director の前提(hasPitCam)が立つ */
+      U.openFinishPick();
+      d.querySelector('#fpRoleCards .fp-role[data-role="pit"]').click();
+      U.finishPickGo();
+      if (clip.role !== "pit") throw new Error("進んだのに役割が入らない: " + clip.role);
+      const hasPitCam = S.clips.some(c => c.role === "pit");
+      if (!hasPitCam) throw new Error("hasPitCam が立たない(=+1.2 の前提が満たされない)");
+      /* ⑤ 縦型・ワイプでは出さない(カット割りをしないので使い道が無い) */
+      for (const m of ["vertical", "wipeCam"]) {
+        S.mode = m;
+        U.openFinishPick();
+        if (!d.getElementById("fpRoleSec").hidden) throw new Error(m + " で役割の段が出ている");
+        U.finishPickBack();
+      }
+      return "既定はおまかせ / 押しただけでは書かない / やめると戻る / "
+        + `進むと入って hasPitCam が立つ(自走${ran}回) / 縦型・ワイプでは出ない`;
+    } finally {
+      S.mode = keep.mode; U._fp = keep.fp; U.runAuto = keep.auto;
+      /* ★触った状態は全部戻す(後続への漏れ止め)。
+         finishPicked と _repickHold は、どちらも「自走を止める」向きに効く */
+      S.finishPicked = keep.picked;
+      U._repickHold = keep.hold; U._viewPhase = keep.vp;
+      U._repickAfterCancel = keep.rac;
+      S.clips.forEach((c, i) => { c.role = keep.roles[i]; });
+      try { U.closeFinishPick(); } catch (_) {}
+    }
+  });
+
+  await test("★音の判定の発火数を数える(実素材でしきい値を詰める根拠・変異つき)", async () => {
+    /* +1.2 という全加点で最大の値を支えている pit 判定は、
+       sections.js 自身が「発火しすぎの可能性がある側」と書いたまま
+       合成素材でしか確かめられていない。実素材の数字を出す。
+       ★ しきい値は読むたびに引く ─ 定数を配列へ写し取ると、
+         TUTTI_WIDE を変えたときログだけが古い値を報告する */
+    const w = await compEnv();
+    const D = w.MC.director;
+    const keepTW = D.TUTTI_WIDE;
+    /* classify を差し替えて、狙った発火数になる音を作る。
+       hop=1秒・10区間で、pit は3区間だけ 0.45 を超える */
+    const keepCls = w.MC.sections.classify;
+    const clip = { offset: 0, sections: { hop: 1, t: [], rms: [] } };
+    try {
+      let i = 0;
+      w.MC.sections.classify = () => {
+        const k = i++;
+        return { pit: k < 3 ? 0.9 : 0.1, full: k < 5 ? 0.9 : 0.1,
+                 feature: k < 1 ? 0.9 : 0.1, percussion: 0.1 };
+      };
+      const line = D._clsTally(clip, 0, 10);
+      if (!/pit≧0\.45=3\/10\(30%/.test(line)) throw new Error("pitの数が合わない: " + line);
+      if (!/full≧0\.7=5\/10\(50%/.test(line)) throw new Error("fullの数が合わない: " + line);
+      if (!/feature≧0\.45=1\/10/.test(line)) throw new Error("featureの数が合わない: " + line);
+      if (!/percussion≧0\.4=0\/10/.test(line)) throw new Error("percussionの数が合わない: " + line);
+      /* 変異: しきい値を動かすと数が変わる(＝閾値を本当に見ている証明) */
+      i = 0; D.TUTTI_WIDE = 0.05;
+      const m = D._clsTally(clip, 0, 10);
+      if (!/full≧0\.05=10\/10/.test(m)) throw new Error("TUTTI_WIDEを下げても数が変わらない: " + m);
+      /* 解析が無ければ黙って測れないと言う(落とさない) */
+      i = 0;
+      if (!/測れず/.test(D._clsTally({ offset: 0 }, 0, 10))) throw new Error("解析なしで測れずと言わない");
+      return "pit 3/10・full 5/10・feature 1/10・percussion 0/10 / "
+        + "しきい値を動かすと数も動く / 解析なしは測れず";
+    } finally { D.TUTTI_WIDE = keepTW; w.MC.sections.classify = keepCls; }
+  });
+
   await test("★ビットレートは12Mbps一本(画質・比率・端末で変えない。例外は旧端末のメモリ制約3.8Mbpsのみ)", async () => {
     /* 2026-08-03 優さん指示「12だけに統一！スマホも12だけに」。
        SNSがゴール=投稿時に再エンコードされるため12以上は視覚差なし */

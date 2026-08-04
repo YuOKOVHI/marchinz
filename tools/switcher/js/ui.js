@@ -4291,8 +4291,28 @@ MC.ui.newFinishPrefs = fromState => ({
   tilt: fromState ? MC.S.autoTilt !== false : true,   // 傾きの自動補正(既定ON)
   order: MC.ui.finishDefaultOrder(),
   focus: null,                       // 描き直したあとに焦点を戻す先
+  /* ★ カメラの役割(2026-08-04)。ここで預かって finishPickGo で clip へ書く。
+     直に c.role を書かないのは、「やめる」で戻れなくなるため
+     ─ 開いてやめた人の設定は変えない、という他の項目と同じ約束 */
+  roles: MC.ui.finishRoleMap(),
   changed: false,
 });
+
+/* いまの clip.role を id→役 の対応にして預かる。既定は "auto"(自動判定) */
+MC.ui.finishRoleMap = () => {
+  const m = {};
+  for (const c of MC.ui.finishCards()) m[c.id] = c.role || "auto";
+  return m;
+};
+/* 選べる役。★フロントピットが本命 ─ director.js の +1.2 はこのタグでしか立たない。
+   ★ラベルは短く: 375px では4つの札が1行を分け合う(.fp-role は flex:1)。
+     「フロントピット」(7字)は入らないので「ピット」にする */
+MC.ui.FINISH_ROLES = [
+  { v: "auto", label: "おまかせ", hint: "自動で判断します" },
+  { v: "wide", label: "引き", label2: "全体が写る", hint: "隊形が見える引きの画" },
+  { v: "close", label: "寄り", label2: "アップ", hint: "奏者に寄った画" },
+  { v: "pit", label: "ピット", label2: "前の方", hint: "フロントピット(前に並ぶ打楽器)" },
+];
 
 MC.ui.openFinishPick = opts => {
   const el = MC.ui.$("#finishPick");
@@ -4395,6 +4415,8 @@ MC.ui.renderFinishPick = () => {
       box.appendChild(card);
     });
   }
+  /* --- それぞれのカメラの役割(自動スイッチングだけ) --- */
+  MC.ui.renderFinishRoles(fp, cards);
   /* --- 切り替えの多さ(自動スイッチングだけ) --- */
   const lvSec = MC.ui.$("#fpLevelSec");
   if (lvSec) lvSec.hidden = MC.S.mode !== "switch";
@@ -4526,9 +4548,75 @@ MC.ui.finishSetRole = (id, at) => {
 };
 
 /* 「このまま進む/これで進む」。選んだ好みを既存フラグへ書き、自走を再開する */
+/* それぞれのカメラの役割。★配置(#fpPlaceSec)とは別もの ─
+   配置は「1台につき1つの席を入れ替える」順列だが、役割は独立して選ぶ
+   (2台とも「引き」でよいし、全部「おまかせ」でもよい)。
+   そのため同じ器を使い回さず、別の段として描く。
+   自動スイッチングのときだけ出す ─ 縦型・ワイプはカット割りをしないので
+   役割を聞いても使い道が無い(聞くだけ聞いて捨てるのは不誠実) */
+MC.ui.renderFinishRoles = (fp, cards) => {
+  const sec = MC.ui.$("#fpRoleSec");
+  if (!sec) return;                       // HTMLとJSの版がずれても落とさない
+  const show = MC.S.mode === "switch" && cards.length >= 2;
+  sec.hidden = !show;
+  if (!show) return;
+  const box = MC.ui.$("#fpRoleCards");
+  if (!box) return;
+  if (!fp.roles) fp.roles = MC.ui.finishRoleMap();
+  /* 開いている間に素材が増減したら、いまの素材ぶんだけに作り直す */
+  for (const id of Object.keys(fp.roles)) {
+    if (!cards.some(c => String(c.id) === String(id))) delete fp.roles[id];
+  }
+  box.innerHTML = "";
+  cards.forEach(c => {
+    const cur = fp.roles[c.id] || "auto";
+    const card = document.createElement("div");
+    card.className = "wp-card";
+    card.innerHTML = `
+      <span class="wp-thumb-wrap">${c.thumb
+        ? `<img class="wp-thumb" src="${c.thumb}" alt="">`
+        : '<span class="wp-thumb wp-thumb--empty"></span>'}</span>
+      <span class="wp-main"><span class="wp-name">${MC.ui.esc(c.name)}</span>
+        <span class="wp-meta">${c.isImage ? "写真" : MC.ui.fmtTime(c.duration)}</span></span>`;
+    const seg = document.createElement("span");
+    seg.className = "fp-roles";
+    seg.setAttribute("role", "radiogroup");
+    seg.setAttribute("aria-label", `${c.name} の役割`);
+    MC.ui.FINISH_ROLES.forEach(r => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "fp-role" + (r.v === cur ? " on" : "");
+      b.setAttribute("role", "radio");
+      b.setAttribute("aria-checked", r.v === cur ? "true" : "false");
+      b.setAttribute("aria-label", `${c.name} を「${r.label}」にする（${r.hint}）`);
+      b.dataset.id = String(c.id);
+      b.dataset.role = r.v;
+      b.textContent = r.label;
+      b.title = r.hint;
+      b.onclick = () => {
+        fp.roles[c.id] = r.v;
+        fp.changed = true;
+        MC.ui.renderFinishRoles(fp, MC.ui.finishCards());
+      };
+      seg.appendChild(b);
+    });
+    card.appendChild(seg);
+    box.appendChild(card);
+  });
+};
+
 MC.ui.finishPickGo = () => {
   const fp = MC.ui._fp;
   if (!fp) return;
+  /* ★ 役割を clip へ書き戻す(2026-08-04)。ここで初めて書く ─
+     「やめる」で戻ってきた人の設定は変えない。
+     これで hasPitCam が立ち、director.js の +1.2 が初めて効く */
+  if (MC.S.mode === "switch" && fp.roles) {
+    for (const c of MC.S.clips) {
+      const v = fp.roles[c.id];
+      if (v) c.role = v;
+    }
+  }
   MC.S.autoTilt = fp.tilt !== false;   // 傾きの自動補正(2026-08-04 優さん指示)
   /* 色: 既存の filterId/colorOn に接続(新しい色処理は作らない)。
      ナチュラル=フィルターなし。カメラ間の色合わせ(colorOn)はどちらでも残す */

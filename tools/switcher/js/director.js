@@ -334,6 +334,38 @@ MC.director._breaks = (audioClip, grid, tIn, tOut) => {
   return out;
 };
 
+/* ---------- 音の判定が実素材で何区間立つか ---------- */
+/* しきい値は director が実際に使っている値。ここで別の値を書くと、
+   ログが「実際に効いている判定」ではなく別のものを報告することになる。
+   percussion だけは閾値を持たない重み(wGroup)なので、報告用の 0.40 を置く。
+   数え方: 解析の窓(S.hop)ごとに1区間。カットの採否は見ない。 */
+/* ★ しきい値は「読むたびに」引く ─ 定数を配列へ写し取ると、
+   TUTTI_WIDE を変えたときログだけが古い値を報告する(嘘をつく) */
+MC.director.TALLY = [
+  { key: "pit", th: () => 0.45, hit: (v, th) => v > th, note: "+1.2" },
+  { key: "full", th: () => MC.director.TUTTI_WIDE, hit: (v, th) => v >= th, note: "引き限定" },
+  { key: "feature", th: () => 0.45, hit: (v, th) => v > th, note: "寄り" },
+  { key: "percussion", th: () => 0.40, hit: (v, th) => v > th, note: "報告のみ" },
+];
+MC.director._clsTally = (audioClip, tIn, tOut) => {
+  const S = audioClip && audioClip.sections;
+  if (!S || !S.hop || !(tOut > tIn)) return "測れず(解析なし)";
+  const hop = S.hop;
+  const T = MC.director.TALLY;
+  const th = T.map(d => d.th());
+  const hit = T.map(() => 0);
+  let n = 0;
+  for (let t = tIn; t < tOut; t += hop) {
+    const cls = MC.sections.classify(audioClip, t, Math.min(tOut, t + hop));
+    if (!cls) continue;
+    n++;
+    for (let i = 0; i < T.length; i++) if (T[i].hit(cls[T[i].key], th[i])) hit[i]++;
+  }
+  if (!n) return "測れず(区間なし)";
+  return T.map((d, i) => `${d.key}≧${th[i]}=${hit[i]}/${n}`
+    + `(${Math.round(hit[i] / n * 100)}%・${d.note})`).join(" ");
+};
+
 /* ---------- セグメントのカメラ採点 ---------- */
 /* 戻り値: {id, score, wideChosen} のリスト(スコア降順) */
 MC.director._rank = (g0, g1, cls, ctx) => {
@@ -738,6 +770,16 @@ MC.director.generate = () => {
       + `(${c.freq === "less" ? "指定" : "推定"}`
       + `${c.visual && c.visual.hotCells != null ? `・動くセル${c.visual.hotCells}/24` : ""})`);
   if (quiet.length) MC.log(`director: 出番を控えるカメラ ${quiet.join(" / ")}`);
+  /* ★ 音の判定が実素材で何区間立つかを出す(2026-08-04 三者レビュー)。
+     いちばん強い加点(pit の +1.2)が、いちばん検証されていない ─
+     sections.js 自身が「発火しすぎの可能性がある側」と書いたまま
+     合成素材でしか確かめられていない(101分割中24区間)。
+     ★ カットの結果ではなく音の判定そのものを数える。
+       採用されたカットだけを見ると、飢餓ガードや引き限定に消された
+       ぶんが見えず「判定が出ていない」と読み違える。
+     しきい値は director が実際に使っている値と同じものを使う
+     (percussion だけは閾値を持たない重みなので、報告用に0.40を置く) */
+  MC.log(`director: 音の判定 ${MC.director._clsTally(audioClip, tIn, tOut)}`);
   const whyTxt = Object.entries(wideWhy).map(([k, v]) => `${k}×${v}`).join("/");
   MC.log(`director: level=${MC.S.cutLevel} ${cuts.length}カット(ディゾルブ${nDissolve}`
     + `${forcedN ? `・強制切替${forcedN}` : ""}${wideN ? `・引き限定${wideN}(${whyTxt})` : ""}`
