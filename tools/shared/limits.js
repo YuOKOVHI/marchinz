@@ -229,8 +229,12 @@ window.MZ_LIMITS = (() => {
       const locked = p.sec > cap;
       let unlock = "";
       if (locked) {
-        /* 天井が理由のときは「登録すれば」と言わない ─ 登録しても伸びないので嘘になる */
-        if (capped) unlock = `自動スイッチングはスマホでは${L.SWITCH_MOBILE_SEC}秒までです`;
+        /* 天井が理由のときは「登録すれば」と言わない ─ 登録しても伸びないので嘘になる。
+           ★ 短く言い切る(2026-08-04 レビュー反映) ─ この一文は鍵つきカード2枚に
+             並ぶので、長いと「ダメ」を何度も突きつける画面になる。
+             失う話(30秒)と得る話(高画質)を同じ一行に置き、
+             理由と次の一手は押したときの案内(showUnlockHelp)に持たせる */
+        if (capped) unlock = `スマホでは${L.SWITCH_MOBILE_SEC}秒まで（そのぶん高画質）`;
         else if (!member && p.sec <= memberHere) unlock = "無料登録で使えます";
         else if (!member) unlock = "無料登録して、パソコンで開くと使えます";
         else unlock = "パソコンで開くと使えます";

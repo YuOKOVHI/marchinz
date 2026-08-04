@@ -771,11 +771,17 @@ MC.ui.makeSceneThumb = async t => {
 /* 描いたあとで、候補のサムネイルを1つずつ埋める(描画は待たせない)。
    ★ 直列に回す ─ 同じ <video> を同時に seek すると取り違える */
 MC.ui.fillSceneThumbs = async () => {
-  if (MC.ui._fillingThumbs) return;
+  /* ★ 二重起動を止めるだけでは足りない ─ 埋めている最中(候補5個で最長9秒)に
+     「動画を保存」などで候補が描き直されると innerHTML ごと入れ替わる。
+     いま回っているループは画面に無い要素を埋めて終わり、新しい行を埋め直す
+     呼び出しはもう誰からも来ないため、灰色の箱が残ったままになる。
+     → 断らずに「終わったらもう一周」を予約する */
+  if (MC.ui._fillingThumbs) { MC.ui._fillAgain = true; return; }
   MC.ui._fillingThumbs = true;
   try {
     const slots = document.querySelectorAll(".mzso-thumb[data-t]:not([data-done])");
     for (const el of slots) {
+      if (!el.isConnected) continue;   // 描き直しで捨てられた行に seek を使わない
       const t = parseFloat(el.dataset.t);
       if (!isFinite(t)) continue;
       const url = await MC.ui.makeSceneThumb(t);
@@ -784,87 +790,7 @@ MC.ui.fillSceneThumbs = async () => {
     }
   } catch (e) { MC.log("sceneThumb: " + e.message); }
   finally { MC.ui._fillingThumbs = false; }
-};
-
-/* ============ 開始時点の「全景カメラ」とサムネイル(2026-08-04 優さん指示) ============
-   シーン候補に、そのシーンが始まる瞬間の絵を小さく添える ─
-   「大盛り上がり」「バラード」という名前だけでは、どの場面か思い出せない。
-   ★ 引きのカメラを選ぶ理由: 寄りの絵はその瞬間たまたま抜いていた奏者しか
-     写らず、場面の手がかりにならない。隊形が見える引きが「どこの場面か」を
-     いちばんよく伝える。
-   選び方は3段構え(人の指定 > 推定した性格 > 実際の引きスコア)。 */
-MC.ui.wideCamAt = t => {
-  const pool = MC.S.clips.filter(c => !c.isAudio && !c.isImage
-    && c.video && t >= c.offset && t <= c.offset + c.duration);
-  if (!pool.length) return null;
-  // ① 人が「引き」と指定したカメラ(自動判定より人の指定が上)
-  const tagged = pool.find(c => c.role === "wide");
-  if (tagged) return tagged;
-  // ② 解析で俯瞰・定点の引きと推定されたカメラ
-  const over = pool.find(c => c.visual && c.visual.overheadFixed);
-  if (over) return over;
-  // ③ その瞬間の引きスコアがいちばん高いカメラ(解析済みのときだけ)
-  let best = null, bs = -1;
-  for (const c of pool) {
-    let s = -1;
-    try {
-      const m = MC.visual.seg(c, t, t + 1);
-      if (m) s = MC.visual.shotScores(m).wide;
-    } catch (e) { s = -1; }
-    if (s > bs) { bs = s; best = c; }
-  }
-  return best || pool[0];
-};
-
-/* シーン候補のサムネイル(JPEG data URL)。作れなければ null。
-   ★ 再生中は作らない ─ seek で画面が乱れる(cutmode.makeThumb と同じ約束)。
-   ★ 1度作ったら覚える(候補は描き直しのたびに再生成しない) */
-MC.ui._sceneThumbs = new Map();
-MC.ui.sceneThumbKey = t => `t${Math.round(t * 10)}`;
-MC.ui.makeSceneThumb = async t => {
-  const key = MC.ui.sceneThumbKey(t);
-  if (MC.ui._sceneThumbs.has(key)) return MC.ui._sceneThumbs.get(key);
-  if (MC.S.playing) return null;
-  const clip = MC.ui.wideCamAt(t);
-  if (!clip || !clip.video) return null;
-  const v = clip.video;
-  if (!v.videoWidth) return null;
-  const local = Math.max(0, Math.min(clip.duration - 0.05, t - clip.offset));
-  try {
-    await new Promise(res => {
-      const done = () => { clearTimeout(tm); v.removeEventListener("seeked", done); res(); };
-      const tm = setTimeout(done, 1800);
-      v.addEventListener("seeked", done, { once: true });
-      v.currentTime = local;
-    });
-    const cv = document.createElement("canvas");
-    cv.width = 96; cv.height = 54;
-    const s = Math.max(cv.width / v.videoWidth, cv.height / v.videoHeight);
-    cv.getContext("2d").drawImage(v,
-      (cv.width - v.videoWidth * s) / 2, (cv.height - v.videoHeight * s) / 2,
-      v.videoWidth * s, v.videoHeight * s);
-    const url = cv.toDataURL("image/jpeg", 0.6);
-    MC.ui._sceneThumbs.set(key, url);
-    return url;
-  } catch (e) { return null; }
-};
-
-/* 描いたあとで、候補のサムネイルを1つずつ埋める(描画は待たせない)。
-   ★ 直列に回す ─ 同じ <video> を同時に seek すると取り違える */
-MC.ui.fillSceneThumbs = async () => {
-  if (MC.ui._fillingThumbs) return;
-  MC.ui._fillingThumbs = true;
-  try {
-    const slots = document.querySelectorAll(".mzso-thumb[data-t]:not([data-done])");
-    for (const el of slots) {
-      const t = parseFloat(el.dataset.t);
-      if (!isFinite(t)) continue;
-      const url = await MC.ui.makeSceneThumb(t);
-      el.setAttribute("data-done", "1");
-      if (url) { el.style.backgroundImage = `url(${url})`; el.classList.add("has-img"); }
-    }
-  } catch (e) { MC.log("sceneThumb: " + e.message); }
-  finally { MC.ui._fillingThumbs = false; }
+  if (MC.ui._fillAgain) { MC.ui._fillAgain = false; return MC.ui.fillSceneThumbs(); }
 };
 
 /* 完成カードへ「別のシーンも作る」を実らせる。
@@ -1369,9 +1295,14 @@ MC.ui.renderLimitWhy = () => {
     el.innerHTML = icon
       + `<b>3本まで・1本${MC.ui.esc(L2.sourceLimitLabel)}まで</b>取り込めます。`
       + "長い録画でも構いません。<b>どこを何分使うか</b>は、この後で選びます。"
-      /* 端末のメモリで書き出しが頭打ちになる環境だけ、その理由も添える */
+      /* 端末のメモリで書き出しが頭打ちになる環境だけ、その理由も添える。
+         ★ モードの天井が理由のときは、短さだけを告げない(2026-08-04 レビュー反映)。
+           ここが上限との初対面なので、失う話(30秒)と得る話(高画質)を一緒に置く */
       + (isFinite(hardMax) && hardMax <= roleMax
           ? `（この端末で書き出せるのは${mmss(hardMax)}までです）`
+          : (L2.modeCapped && L2.modeCapped(MC.S.mode))
+            ? `（自動スイッチングはスマホでは${MC.ui.esc(L2.exportLimitLabelFor(MC.S.mode))}まで。`
+              + "そのぶん高画質で書き出します）"
           : isFinite(roleMax)
             ? `（書き出せるのは${MC.ui.esc(L2.exportLimitLabelFor
                 ? L2.exportLimitLabelFor(MC.S.mode) : L2.exportLimitLabel)}までです）` : "");
@@ -1541,21 +1472,49 @@ MC.ui.showUnlockHelp = p => {
     host.insertAdjacentElement("afterend", el);
   }
   const L = window.MZ_LIMITS || {};
+  const nowLabel = (L.exportLimitLabelFor
+    ? L.exportLimitLabelFor(MC.S.mode) : L.exportLimitLabel) || "";
+  const title = `<p class="lun-title"><i class="fa-solid fa-lock" aria-hidden="true"></i> `
+    + `「${MC.ui.esc(p.label)}」は、いまはまだ使えません</p>`;
+
+  /* ★ モードの天井が理由のとき(2026-08-04 レビュー反映)。
+     登録しても伸びないので登録は勧めない ─ ただし何も出さないと、
+     押しても次の一手が無い行き止まりになる(他の理由のときは必ず
+     「無料登録する」がある)。ここでは必ず3つを出す:
+       ① なぜ短いのか(カメラを何台も同時に処理するから)
+       ② そのぶん何が良いのか(高画質) ─ 損だけを突きつけない
+       ③ 伸ばす道(パソコンで開く) ＋ そこへ行く手段(リンクをコピー)
+     ★ 文言はカード側(limits.js)と重ねない。同じ一文を画面に3回出さない */
+  if (L.modeCapped && L.modeCapped(MC.S.mode)) {
+    el.innerHTML = title
+      + `<p class="lun-body">カメラを何台も同時に処理するため、`
+      + `スマホでは<b>${MC.ui.esc(nowLabel)}</b>までです。そのぶん高画質で書き出します。<br>`
+      + `パソコンで開くと、もっと長く作れます。</p>`
+      + `<button type="button" class="lun-btn" id="lunCopyPc">`
+      + `<i class="fa-solid fa-link" aria-hidden="true"></i>パソコン用にリンクをコピー</button>`;
+    const cp = el.querySelector("#lunCopyPc");
+    if (cp) cp.onclick = () => {
+      /* iOS Safari はクリックと同じ流れで呼ばないと拒否する ─ await を挟まない */
+      Promise.resolve(MC.ui._copyText(MC.ui.toolShareUrl())).then(ok => {
+        MC.ui.toast(ok ? "リンクをコピーしました。パソコンで開けます"
+                       : "コピーできませんでした。アドレスバーのURLをお使いください");
+      });
+    };
+    return;
+  }
+
   const needsPc = /パソコン/.test(p.unlock || "");
-  el.innerHTML =
-    `<p class="lun-title"><i class="fa-solid fa-lock" aria-hidden="true"></i> `
-    + `「${MC.ui.esc(p.label)}」は、いまはまだ使えません</p>`
+  el.innerHTML = title
     + `<p class="lun-body">${MC.ui.esc(p.unlock)}。`
     /* メモリの説明は OPFS の無い端末だけ(2026-07-31 5巡目P1)。
        採用基準の iOS16+ はOPFS対応=ストリーム書き出しでメモリ上限は外れており、
        登録×スマホが3分止まりの本当の理由はプランの壁。嘘をつかない */
     + (needsPc && !(MC.exporter && MC.exporter.opfsSupported && MC.exporter.opfsSupported())
         ? "この端末は動画を丸ごとメモリに載せるため、長い書き出しが途中で止まってしまいます。" : "")
-    + `いまは<b>${MC.ui.esc((L.exportLimitLabelFor
-        ? L.exportLimitLabelFor(MC.S.mode) : L.exportLimitLabel) || "")}</b>まで作れます。</p>`
-    /* モードの天井が理由のときは登録を勧めない(登録しても伸びない) */
-    + (L.member || (L.modeCapped && L.modeCapped(MC.S.mode))
-        ? "" : '<a class="lun-btn" href="/#signup">無料登録する</a>');
+    + `いまは<b>${MC.ui.esc(nowLabel)}</b>まで作れます。</p>`
+    /* モードの天井が理由のときは上で返しているので、ここは「登録すれば伸びる」
+       場合だけ。条件のコピーを増やさない(片方を直したときもう片方が嘘になる) */
+    + (L.member ? "" : '<a class="lun-btn" href="/#signup">無料登録する</a>');
 };
 
 MC.ui.renderLengthSec = () => {

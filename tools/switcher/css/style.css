@@ -1795,10 +1795,13 @@ body.mz-diag-noskip #exportSec::before {
 .lun-title { font-size: 13px; font-weight: 800; color: #7a5200; margin-bottom: 4px; }
 .lun-title i { margin-right: 6px; }
 .lun-body { font-size: 12px; color: var(--tx2); line-height: 1.7; }
+/* <a>(登録へ)と <button>(リンクをコピー)の両方が同じ見た目になるようにする ─
+   button は既定の枠と font-family を持つので明示的に消す */
 .lun-btn { display: inline-flex; align-items: center; justify-content: center;
   margin-top: 10px; min-height: 44px; padding: 0 18px; border-radius: 999px;
   background: var(--acc); color: #fff; font-weight: 800; font-size: 13px;
-  text-decoration: none; }
+  text-decoration: none; border: 0; font-family: inherit; cursor: pointer; }
+.lun-btn i { margin-right: 7px; }
 
 
 /* ============ 素材カードのかたむきバッジ ============
