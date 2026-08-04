@@ -2463,7 +2463,7 @@ ${c.isImage ? "" : (c.tiltOk
        実体は3セレクト(微調整)が勝つ */
     const onAxis = (field, value) => {
       c[field] = value;
-      MC.applyAxes(c);
+      MC.applyAxes(c, field);   // 変えた軸だけ展開(微調整の手動値を巻き込まない)
       MC.saveState();
       MC.ui.renderClips();
       if (field === "target" && (value === "front" || value === "altwide") && c.height > c.width) {
@@ -4954,8 +4954,14 @@ MC.ui.runAuto = async (opt) => {
   const applyChoices = () => {
     if (!scene) MC.ui.applyAutoChoices();
     else {
-      MC.S.startKey = scene.key;
-      MC.S.startAt = scene.key === "manual" ? scene.t : null;
+      /* ★ 機械補完の候補(前半/まんなか/後半)は manual として t を直渡しする
+         (2026-08-05 レビューP0)。early/mid/late は highlight.candidates の
+         語彙に無いため、そのまま渡すと applyLengthChoice の
+         `cands.find(key)` が外れて cands[0] へ**無言でフォールバック**し、
+         押した窓と違う場面(往々にして、いま作ったのと同じ窓)が作られていた */
+      const mech = scene.key === "early" || scene.key === "mid" || scene.key === "late";
+      MC.S.startKey = mech ? "manual" : scene.key;
+      MC.S.startAt = (mech || scene.key === "manual") ? scene.t : null;
     }
   };
   let tick = null;
@@ -5833,10 +5839,19 @@ MC.ui.wire = () => {
      素材は showModeSelect が保つ(消すのは「最初からやり直す」だけ) */
   { const backLink = document.querySelector(".topbar .back-link");
     if (backLink) backLink.addEventListener("click", e => {
+      /* ★ 解析・書き出し中は遷移しない(2026-08-05 レビューP1)。
+         こだわりの進捗はインライン表示なので topbar が押せてしまい、
+         director.run が走ったまま種類選択→mode書き換えまで到達できた */
+      if (MC.ui._busy || (MC.exporter && MC.exporter.running)) {
+        e.preventDefault();
+        MC.ui.toast("処理中です。終わるまでお待ちください(中止するには画面内の「中止」を)");
+        return;
+      }
       const modeSel = $("#modeSelect");
       if (modeSel && modeSel.hidden) {
         e.preventDefault();
         MC.ui.showModeSelect();
+        MC.ui.toast("取り込んだ動画はそのまま残っています");
       }
     }); }
 

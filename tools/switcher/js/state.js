@@ -181,19 +181,35 @@ MC.MOTIONS = [
 ];
 
 /* 2軸 → 役割/出番/撮り方 への展開。「指定なし/自動判定」は触らない(自動へ委ねる) */
-MC.applyAxes = c => {
-  const t = c.target || "auto";
-  /* pov は役を決めない ─ 引き/寄りの物差しで測らず、厳選門の専用規則で扱う */
-  const roleMap = { front: "wide", altwide: "wide", spice: "pit", operator: "close", pov: "auto" };
-  if (t !== "auto") {
-    c.role = roleMap[t];
-    c.freq = (t === "spice" || t === "pov") ? "less" : "auto";
+/* @param {"target"|"motion"} [axis] 変えた軸だけ展開する(省略=両軸)。
+   ★「指定なし/自動判定」へ**戻した**ときは展開先も戻す(2026-08-05 レビューP1)。
+     戻さないと spice で書いた role=pit・freq=less が残留し、spiceIds には
+     入らない(=8%上限も窓条件も無い)まま pit の +1.2 だけが効く逆転が起きていた。
+   ★ただし軸を限定できるようにする ─ 無条件に両軸を書くと、
+     「じぶんで微調整」で role を手で変えた人が motion だけ触ったときに
+     role まで戻されてしまう(変えていない軸の展開先は触らない) */
+MC.applyAxes = (c, axis) => {
+  if (!axis || axis === "target") {
+    const t = c.target || "auto";
+    /* pov は役を決めない ─ 引き/寄りの物差しで測らず、厳選門の専用規則で扱う */
+    const roleMap = { front: "wide", altwide: "wide", spice: "pit", operator: "close", pov: "auto" };
+    if (t !== "auto") {
+      c.role = roleMap[t];
+      c.freq = (t === "spice" || t === "pov") ? "less" : "auto";
+    } else {
+      c.role = "auto";
+      c.freq = "auto";
+    }
   }
-  const m = c.motion || "auto";
-  if (m !== "auto") {
-    /* fixed/moving は v1.101.0 の旧値(互換のため受ける) */
-    c.rig = (m === "tripod" || m === "fixed") ? "fixed"
-          : m === "other" ? "auto" : "operated";
+  if (!axis || axis === "motion") {
+    const m = c.motion || "auto";
+    if (m !== "auto") {
+      /* fixed/moving は v1.101.0 の旧値(互換のため受ける) */
+      c.rig = (m === "tripod" || m === "fixed") ? "fixed"
+            : m === "other" ? "auto" : "operated";
+    } else {
+      c.rig = "auto";
+    }
   }
 };
 
@@ -212,9 +228,14 @@ MC.migrateAxes = c => {
     spice:    ["spice", null],
     roam:     ["operator", "gimbal"],
   }[k];
-  if (fromKind) { c.target = fromKind[0]; if (fromKind[1]) c.motion = fromKind[1]; return; }
+  if (fromKind) {
+    c.target = fromKind[0];
+    if (fromKind[1]) c.motion = fromKind[1];
+    MC.applyAxes(c);   // ★移行したら展開まで通す(2026-08-05 レビューP1。旧値の残留で食い違わせない)
+    return;
+  }
   const fromRole = { wide: "front", close: "operator", pit: "spice" }[c.role];
-  if (fromRole) c.target = fromRole;
+  if (fromRole) { c.target = fromRole; MC.applyAxes(c); }
 };
 
 MC.saveState = () => {

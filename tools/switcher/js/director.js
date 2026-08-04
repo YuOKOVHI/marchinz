@@ -451,6 +451,7 @@ MC.director._rank = (g0, g1, cls, ctx) => {
     if (c.role === "wide") sh.wide = Math.max(sh.wide, 0.8);
     if (c.role === "close") sh.close = Math.max(sh.close, 0.7);
     let score = 0;
+    let roamBad = false;
     let dqWhy = MC.visual.dqReason(m, c.role);
     /* プレイヤー視点は「人が写っていない」を失格にしない(2026-08-05) ─
        自分の視点なので人が写らないのが普通。ブレ・パンの失格はそのまま */
@@ -498,6 +499,7 @@ MC.director._rank = (g0, g1, cls, ctx) => {
         && (!m.sharpMed || m.sharpMean >= m.sharpMed * 0.9);
       const wanted = ctx.roamMoment && g0 >= (ctx.roamReadyAt || 0);
       const isAction = ctx.actionIds && ctx.actionIds.has(c.id);
+      roamBad = !good;   // ソロのハード選抜からも外す材料(下の ranked.push が持つ)
       if (!good) score -= MC.director.ROAM_PENALTY;
       else if (isAction && ctx.actionCapHit) score -= MC.director.ROAM_PENALTY;  // 15%で打ち止め
       /* アクション枠は良い窓なら中立で採点勝負(5〜15%へ寄せる。2026-08-05)。
@@ -551,7 +553,7 @@ MC.director._rank = (g0, g1, cls, ctx) => {
       }
     }
     ranked.push({ id: c.id, score, wideChosen: sh.wide >= 0.5, dq, dqWhy: dqWhy,
-                  close: sh.close, wide: sh.wide, nF });
+                  roamBad, close: sh.close, wide: sh.wide, nF });
   }
   ranked.sort((a, b) => b.score - a.score);
 
@@ -579,7 +581,10 @@ MC.director._rank = (g0, g1, cls, ctx) => {
      使わない」)。全奏・衝撃前の引き限定(forceWide)はこれより上位 */
   if (MC.director.SOLO_OPERATOR && featuring && !ctx.forceWide
       && ctx.operatorIds && ctx.operatorIds.size) {
-    const ops = ranked.filter(r => ctx.operatorIds.has(r.id) && !r.dq);
+    /* ★ 厳選門で「悪い窓」と判定された operator(action/ブレ多の自動降格)は
+       強制しない(2026-08-05 レビューP1)。「ブレが多いところは使わない」が
+       ハード選抜より上 ─ 良い窓の operator が居なければ通常の順位へ落ちる */
+    const ops = ranked.filter(r => ctx.operatorIds.has(r.id) && !r.dq && !r.roamBad);
     if (ops.length) return ops;
   }
   return ranked;
@@ -625,9 +630,12 @@ MC.director.generate = () => {
   ctx.povIds = new Set(vidsAll.filter(c => targetOf(c) === "pov").map(c => c.id));
   ctx.roamIds = new Set(vidsAll.filter(c => {
     const t = targetOf(c);
+    /* ★除外を先に見る(2026-08-05 レビューP2)。spice×action が両方の門に入ると
+       条件外の減点(-1.5と-3.0)が重複して実質出番ゼロになる ─
+       全体・スパイス指定はそれぞれの規則だけに従わせる */
+    if (t === "front" || t === "altwide" || t === "spice") return false;
     if (t === "pov") return true;                       // POVは無条件で厳選門
     if (c.motion === "action") return true;             // アクションカメラも同様
-    if (t === "front" || t === "altwide" || t === "spice") return false;
     const moving = c.motion === "moving" || c.rig === "operated" || (c.visual && c.visual.operated);
     return moving && c.visual && c.visual.shakeMed > MC.visual.TH_SHAKE;
   }).map(c => c.id));

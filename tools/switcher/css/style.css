@@ -423,6 +423,9 @@ html:has(body.mz-finish-pick), body.mz-finish-pick {
   .fp-axes { flex: 1 0 100%; }
   .fp-axis { flex: 1; }
   .fp-axis-sel { width: 100%; min-width: 0; }
+  /* iOS Safari は16px未満の select にフォーカスすると画面を自動ズームし、
+     閉じても拡大が残る(2026-08-05 レビューP1)。スマホ幅では16pxにする */
+  .fp-axis-sel, .select-mini { font-size: 16px; }
 }
 .fp-role { min-height: 44px; padding: 0 12px; border-radius: 10px;
   border: 1px solid var(--line); background: var(--panel2); color: var(--tx2);

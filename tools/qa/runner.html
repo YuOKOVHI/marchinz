@@ -7807,6 +7807,16 @@ async function countSamples(ns, file, fromSec) {
       if (clip.freq !== "less") throw new Error("spice が freq=less へ展開されない: " + clip.freq);
       const hasPitCam = S.clips.some(c => c.role === "pit");
       if (!hasPitCam) throw new Error("hasPitCam が立たない(=+1.2 の前提が満たされない)");
+      /* ★「指定なし」へ戻すと展開先も戻る(2026-08-05 レビューP1)。
+         残留すると spiceIds に入らないまま pit の +1.2 だけが効く逆転が起きる */
+      clip.target = "auto"; w.MC.applyAxes(clip, "target");
+      if (clip.role !== "auto" || clip.freq !== "auto") {
+        throw new Error(`指定なしへ戻しても展開先が残る: role=${clip.role} freq=${clip.freq}`);
+      }
+      clip.motion = "gimbal"; w.MC.applyAxes(clip, "motion");
+      if (clip.rig !== "operated") throw new Error("ジンバルが rig=operated に展開されない");
+      clip.motion = "auto"; w.MC.applyAxes(clip, "motion");
+      if (clip.rig !== "auto") throw new Error("自動判定へ戻しても rig が残る: " + clip.rig);
       /* ⑤ 縦型・ワイプでは出さない(カット割りをしないので使い道が無い) */
       for (const m of ["vertical", "wipeCam"]) {
         S.mode = m;
