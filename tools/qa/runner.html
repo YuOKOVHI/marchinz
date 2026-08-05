@@ -2159,6 +2159,65 @@ async function countSamples(ns, file, fromSec) {
     if (S.playing) throw new Error("閉じても再生が続いている");
     return "プレビュー再生 / 段3つ完了 / progressbar / 背後固定 / canvas往復";
   });
+  /* 実機報告「分析中に音がなる」(2026-08-06)。上の試験は open() 直後しか見ておらず、
+     open() 内の明示ミュートだけで通ってしまう ─ 真因は**その後**にあった。
+     解析で clip.stats が確定した瞬間に renderAudio が「おすすめ音声」を決め、
+     その場で applyMute を呼び直す。applyMute が「音声担当だけ鳴らす」実装だと
+     ここで音が生える。代入で確かめず、実際にその操作を通して測る */
+  await test("★解析の途中で音量が確定しても、音は生えないこと(真因の経路を通す)", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.clips.forEach(c => { c.tiltOk = true; c.syncMethod = "波形"; });
+    S.audioClipId = 1;
+    S.audioPickedByUser = false;      // おすすめに追従する状態=確定で切り替わる
+    /* ★ 音を測る試験なので、鳴る実体(video)を必ず持たせる。compReset のクリップは
+       video を持たないため、これが無いと applyMute が何にも触れず、
+       「音が生えた」も「守りを外すと鳴る」も両方素通りする(初版はここで骨抜きだった)。
+       スピーカーへ直結する GainNode も1本だけ再現する(録画を1度通した後の姿) */
+    S.clips.forEach(c => {
+      c.video = { muted: false, paused: true, currentTime: 0, playbackRate: 1,
+                  play: () => Promise.resolve(), pause() { this.paused = true; } };
+    });
+    S.clips[0].spkGain = { gain: { value: 1 } };
+    w.MC.ui.renderAll();
+    const A = w.MC.ui.autoStage;
+    w.MC.ui._autoT0 = w.performance.now();
+    w.MC.ui._autoEtaSec = 180;
+    A.open();
+    try {
+      /* 解析が終わって音量が確定した、を再現する。stats が入ると
+         MC.audio.recommend() が別のクリップを推し、renderAudio が乗り換える */
+      S.clips.forEach((c, i) => { c.stats = { rms: 0.02 + i * 0.05, peak: 0.5 }; });
+      const reco = w.MC.audio.recommend();
+      if (!reco) throw new Error("この土台では音量の確定を再現できない(試験の前提が崩れた)");
+      w.MC.ui.renderAudio();          // ← 真因の入口。中で applyMute が走る
+      if (reco.id === 1) throw new Error("おすすめが元のままで、乗り換えが起きていない(歯が無い)");
+      const rang = S.clips.filter(c => c.video && !c.video.muted);
+      if (rang.length) {
+        throw new Error(`解析中に音が生えた: 動画${rang.map(c => c.id).join(",")}`);
+      }
+      /* スピーカーへ直に繋がる経路(録画で作られる GainNode)も倒れていること */
+      const live = S.clips.filter(c => c.spkGain && c.spkGain.gain.value !== 0);
+      if (live.length) throw new Error("グラフ経由の音が止まっていない");
+      /* 変異: 守りを外すと本当に鳴るか(この試験に歯があるかの検査) */
+      const real = A._analyzing;
+      A._analyzing = false;           // ← ガードだけを無効化する
+      w.MC.preview.applyMute();
+      const bit = S.clips.some(c => c.video && !c.video.muted);
+      A._analyzing = real;
+      w.MC.preview.applyMute();       // 触った状態は必ず戻す
+      if (!bit) throw new Error("守りを外しても鳴らない=この試験は骨抜き");
+      if (S.clips.some(c => c.video && !c.video.muted)) throw new Error("戻し忘れ");
+    } finally { A.close(); }
+    /* 閉じたあとは元の割り当て(音声担当だけ鳴る)に戻ること。
+       close() が印を下ろす前に applyMute を呼ぶと、ここが全ミュートのままになる */
+    w.MC.preview.applyMute();
+    const master = S.clips.find(c => c.id === S.audioClipId);
+    if (master && master.video && master.video.muted) {
+      throw new Error("閉じても全ミュートのまま(印を下ろす順序が逆)");
+    }
+    return "確定の瞬間も無音 / GainNodeも0 / 変異で鳴る(歯あり) / 閉じたら音が戻る";
+  });
   await test("★自走は最後まで鍵が掛かったまま・残り時間が出る", async () => {
     const w = await compEnv();
     const S = compReset(w);

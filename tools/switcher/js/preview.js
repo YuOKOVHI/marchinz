@@ -118,17 +118,27 @@ MC.preview = {
   },
 
   applyMute() {
-    /* ★ おまかせの解析画面(mz-auto-stage)の間は全部消す(2026-08-06 実機報告
-       「分析中に音がなる」)。open() が play() 後に全ミュートしても、解析で
-       stats が確定した瞬間の renderAudio → applyMute が音声担当だけ解禁して
-       鳴っていた。個々の呼び出し側で消すのではなく、正本のここで守る。
-       書き出し中(exporter.running)は除外: リアルタイム録画は音声担当の
-       <video> から録るため、ここで消すと完成品が無音になる(スピーカーは
-       exportRealtime 側が別途黙らせる) */
-    const analyzing = document.body.classList.contains("mz-auto-stage")
-      && !(MC.exporter && MC.exporter.running);
+    /* ★ おまかせの解析中は全部消す(2026-08-06 実機報告「分析中に音がなる」)。
+       open() が play() 後に全ミュートしても、解析で stats が確定した瞬間の
+       renderAudio → applyMute が音声担当だけ解禁して鳴っていた。
+       個々の呼び出し側で消すのではなく、正本のここで守る。
+
+       ★ 判定は body の class ではなく明示フラグ(2026-08-06 レビューP1×2)。
+         class 版は close() が class を外す**前**に applyMute を呼ぶ順序で
+         意味が反転し、また「書き出し中は除外」を exporter.running で書くと
+         **一度も成立しない** ─ running は realtime では立てられない
+         (preview.tick が running を見て draw を止めるため、立てると
+          録画キャンバスが固まる)。守るべき唯一の経路が無防備だった。
+
+       ★ 録画中(recording)は音声担当の <video> を鳴らしたまま録る必要がある。
+         スピーカーだけ spkGain で黙らせる ─ muted で消すと完成品が無音になる。
+       ★ spkGain も一緒に倒す: MediaElementSource を作った要素は以後
+         グラフ経由でしか鳴らないため、muted だけでは止まらない場合がある */
+    const analyzing = !!(MC.ui && MC.ui.autoStage && MC.ui.autoStage._analyzing);
+    const recording = !!(MC.exporter && MC.exporter.recording);
     MC.S.clips.forEach(c => {
       if (c.video) c.video.muted = analyzing || c.id !== MC.S.audioClipId;
+      if (c.spkGain) c.spkGain.gain.value = (analyzing || recording) ? 0 : 1;
     });
   },
 

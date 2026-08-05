@@ -1065,12 +1065,22 @@ MC.exporter.opfsSweep = async () => {
     const root = await navigator.storage.getDirectory();
     const dir = await root.getDirectoryHandle(MC.exporter.OPFS_DIR, { create: false });
     const now = Date.now();
+    /* 退出時に消し損ねた名前は、新しくても消す(2026-08-06 レビューP2)。
+       これが無いと「保存して閉じる」直後の732MBが6時間居座る */
+    const pending = new Set(MC.exporter._pendingList());
+    const doomed = [];
     for await (const [n, h] of dir.entries()) {
-      try {
-        const f = await h.getFile();
-        if (now - f.lastModified < MC.exporter.OPFS_STALE_MS) continue;  // 進行中かも
-      } catch (e) { /* 読めないものは古いとみなして消す */ }
+      if (!pending.has(n)) {
+        try {
+          const f = await h.getFile();
+          if (now - f.lastModified < MC.exporter.OPFS_STALE_MS) continue;  // 進行中かも
+        } catch (e) { /* 読めないものは古いとみなして消す */ }
+      }
+      doomed.push(n);
+    }
+    for (const n of doomed) {
       await dir.removeEntry(n).catch(() => {});
+      MC.exporter._clearPending(n);
     }
   } catch (e) { /* ディレクトリが無ければ何もしない */ }
 };
@@ -1096,17 +1106,23 @@ MC.exporter.checkQuota = async needBytes => {
    膨らんでいる時、ここが小さければ犯人はサイト外=取り込み時のWebKit内部コピー
    と切り分けられる(2026-08-06 実機10GB調査。素材3本選択だけで+3.5GBを実測) */
 MC.exporter._est = null;
+/* ★ Promise を返す(2026-08-06 レビューP1)。以前は撃ちっぱなしで、診断を出す
+   showExportStats は書き出し**前**のキャッシュを読んでいた ─ 完成品の
+   732MBが数字に乗らず、「サイト枠はほぼ空=犯人は取り込みコピー」と
+   誤った結論へ導く。出す直前に測り直せるようにする */
 MC.exporter.refreshEstimate = () => {
-  if (!navigator.storage || !navigator.storage.estimate) return;
-  navigator.storage.estimate().then(e => {
+  if (!navigator.storage || !navigator.storage.estimate) return Promise.resolve();
+  return navigator.storage.estimate().then(e => {
     if (e) MC.exporter._est = { usage: e.usage || 0, quota: e.quota || 0 };
   }).catch(() => {});
 };
-MC.exporter.estLine = () => {
+/* 単位はGB固定・小数2桁(checkQuota の表記と揃える)。左右で単位が違うと
+   見比べるのに手間取る。いちばん知りたい「空き」も添える */
+MC.exporter.estLine = (label = "サイト保存量") => {
   const e = MC.exporter._est;
   if (!e) return null;
-  const gb = b => b >= 1e9 ? (b / 1e9).toFixed(2) + "GB" : Math.round(b / 1e6) + "MB";
-  return `サイト保存量 ${gb(e.usage)} / 枠 ${gb(e.quota)}`;
+  const gb = b => (Math.max(0, b) / 1e9).toFixed(2) + "GB";
+  return `${label} ${gb(e.usage)} / 上限 ${gb(e.quota)}（空き ${gb(e.quota - e.usage)}）`;
 };
 
 MC.exporter.maxExportableSec = () => {
@@ -1654,13 +1670,14 @@ MC.exporter.exportMP4Parts = async (onProgress) => {
     const root = await navigator.storage.getDirectory();
     const dir = await root.getDirectoryHandle(MC.exporter.OPFS_DIR, { create: false });
     const keep = `mzpart_${jobId}_`;
-    let freed = 0;
+    /* ★ 名前を集めてからループの外で消す(2026-08-06 レビューP2)。
+       for await の最中に removeEntry すると実装によってエントリを取りこぼす */
+    const doomed = [];
     for await (const [n] of dir.entries()) {
-      if (!n.startsWith("mzpart_") || n.startsWith(keep)) continue;
-      await dir.removeEntry(n).catch(() => {});
-      freed++;
+      if (n.startsWith("mzpart_") && !n.startsWith(keep)) doomed.push(n);
     }
-    if (freed) MC.log(`export(parts): 旧ジョブのパーツを掃除 ${freed}件`);
+    for (const n of doomed) await dir.removeEntry(n).catch(() => {});
+    if (doomed.length) MC.log(`export(parts): 旧ジョブのパーツを掃除 ${doomed.length}件`);
   } catch (_) { /* ディレクトリが無ければ何もない */ }
   MC.exporter.refreshEstimate();
 
@@ -2409,9 +2426,14 @@ MC.exporter.exportRealtime = async onProgress => {
   // プレビュー専用の重ね描き(カメラ名バッジ・範囲外の案内)は録画へ焼き込まない。
   // このcanvasをそのまま録るため、必ず finally で戻す
   MC.preview.overlayOn = false;
+  /* ★ 録画専用のフラグ(2026-08-06 レビューP1)。running は使えない ─
+     preview.tick が running を見て draw() を止めるため、realtime で立てると
+     録画するキャンバスが更新されず映像が固まる */
+  MC.exporter.recording = true;
   try {
     return await MC.exporter._exportRealtimeInner(onProgress);
   } finally {
+    MC.exporter.recording = false;
     MC.preview.overlayOn = true;
     MC.preview.draw();
     /* 録画中に黙らせたスピーカーを必ず戻す(失敗・キャンセルでも)。
@@ -2486,7 +2508,34 @@ MC.exporter.releaseOpfs = () => {
   if (!n) return;
   MC.exporter._opfsName = null;
   MC.exporter.lastResult = null;
-  MC.exporter.opfsRemove(n).then(() => MC.exporter.refreshEstimate());
+  /* ★ 消す前に名前を控える(2026-08-06 レビューP2×2)。退出導線から呼ばれると
+     直後に <a> 遷移が始まり、非同期の削除が完走しないことがある。
+     取りこぼすと対象は「書き出し直後の新しいファイル」なので
+     sweep の6時間窓に弾かれ、最長6時間 732MB が居座る。
+     控えた名前は起動時の sweep が経過時間を問わず消す */
+  MC.exporter._notePending(n);
+  MC.exporter.opfsRemove(n)
+    .then(() => { MC.exporter._clearPending(n); MC.exporter.refreshEstimate(); });
+};
+
+/* 「消し損ねたかもしれない」名前の控え。localStorage は同期なので遷移に負けない */
+MC.exporter.PENDING_KEY = "mz_switcher_opfs_pending_v1";
+MC.exporter._pendingList = () => {
+  try { return JSON.parse(localStorage.getItem(MC.exporter.PENDING_KEY)) || []; }
+  catch (_) { return []; }
+};
+MC.exporter._notePending = n => {
+  try {
+    const s = new Set(MC.exporter._pendingList()); s.add(n);
+    localStorage.setItem(MC.exporter.PENDING_KEY, JSON.stringify([...s].slice(-20)));
+  } catch (_) {}
+};
+MC.exporter._clearPending = n => {
+  try {
+    const rest = MC.exporter._pendingList().filter(v => v !== n);
+    if (rest.length) localStorage.setItem(MC.exporter.PENDING_KEY, JSON.stringify(rest));
+    else localStorage.removeItem(MC.exporter.PENDING_KEY);
+  } catch (_) {}
 };
 MC.exporter._shareMode = null;
 MC.exporter.shareMode = () => {

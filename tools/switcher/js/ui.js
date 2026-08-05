@@ -123,7 +123,11 @@ MC.ui.exportOverlay = {
   done() {
     const el = MC.ui.$("#exportOverlay");
     if (!el || el.hidden) return;
+    /* ★ 出す直前に測り直す(2026-08-06 レビューP1)。完成品をOPFSへ書いた**後**の
+       数字でないと、サイト枠と取り込みコピーの切り分けができない。
+       非同期だが診断は畳まれた中身なので、遅れて埋まって構わない */
     MC.ui.showExportStats();
+    MC.exporter.refreshEstimate().then(() => MC.ui.showExportStats());
     MC.ui.$("#eoTitleText").textContent = "完成しました";
     MC.ui.$("#eoTitleIcon").className = "fa-solid fa-circle-check eo-check";
     MC.ui.$("#eoRun").hidden = true;
@@ -4186,6 +4190,9 @@ MC.ui.autoStage = {
       if (w) w.textContent = MC.ui.autoWhatText(); }
     el.hidden = false;
     document.body.classList.add("mz-auto-stage");
+    /* 解析中の全ミュートの正本(preview.applyMute が見る)。class ではなく
+       ここを見る ─ 順序で意味が反転しないように(2026-08-06 レビューP1) */
+    this._analyzing = true;
     /* role="dialog" aria-modal を名乗る以上、フォーカスも中へ移す。
        aria-modal は読み上げには効くが、Tab の順番は止めない ─
        移さないと背後のこだわり画面のボタンへ Tab で入れてしまう */
@@ -4209,6 +4216,9 @@ MC.ui.autoStage = {
   close() {
     const el = MC.ui.$("#autoStage");
     if (!el || el.hidden) return;
+    /* ★ 解析の印を**先に**下ろす(2026-08-06 レビューP2×2)。下ろす前に
+       applyMute を呼ぶと「音の割り当てを元へ」どころか全ミュートを塗り直す */
+    this._analyzing = false;
     try { MC.preview.pause(); MC.preview.applyMute(); } catch (e) {}   // 音の割り当てを元へ
     const cv = document.getElementById("cv");
     if (cv && this._home) this._home.appendChild(cv);   // 必ず戻す
@@ -5627,6 +5637,8 @@ MC.ui.runEasyFinish = async (pIn, base = 0) => {
 MC.ui.showErrorLog = err => {
   try {
     MC.ui._showErrorLog(err);
+    /* 容量で落ちた回にこそ正確な数字が要る。測り直して描き直す(2026-08-06 レビューP1) */
+    MC.exporter.refreshEstimate().then(() => { try { MC.ui._showErrorLog(err); } catch (_) {} });
   } catch (e) {
     // 報告機構自体が落ちても、元のエラーを見失わないようにする
     console.error("[MC] showErrorLog failed", e, "original:", err);
@@ -5659,7 +5671,7 @@ MC.ui._showErrorLog = err => {
     /* 分割から降りた回は、たとえ書き出しが成功していてもここに残す */
     ...(MC.exporter.lastPartsError
         ? [`分割書き出しを断念: ${MC.exporter.lastPartsError}`] : []),
-    ...(MC.exporter.estLine() ? [MC.exporter.estLine()] : []),
+    ...(MC.exporter.estLine() ? [MC.exporter.estLine("サイト保存量:")] : []),
     `エラー: ${(err && err.stack) || (err && err.message) || err}`,
   ].join("\n");
   const text = `${env}\n---- ログ ----\n${MC.debug.slice(-120).join("\n")}`;
