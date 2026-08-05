@@ -4173,7 +4173,14 @@
       renderMLL(myLogs, calLookup, {
         isOwner: showOwnerChrome,
         sectionVis: { mll: mllSectionVis },
-        displayName: profile.display_name,
+        /* ★ 2026-08-06 バグ修正: 存在しない変数 profile を参照していた
+           (ReferenceError)。この関数のスコープに profile は無く、
+           先行ペイントで使った profileEarly はブロックスコープの外(3973行の
+           { } の中だけ)。プロフィール文書は pdata が正本。
+           ヘッダー/カバーは描けていたのに、ここで例外が飛んで
+           「読み込みに失敗しました」を出しつつ Log/Note/YouTube の件数が
+           0のまま止まっていた(実機で再現) */
+        displayName: pdata.display_name || "ユーザー",
         targetUid,
         viewerId,
         likeShow,
@@ -4272,8 +4279,12 @@
             likeShowLog: likeShow.logDiary,
             previewAsOtherMember: previewAsOtherUser,
             authorDisplay: {
-              name: profile.display_name || "ユーザー",
-              avatar: profile.avatar_url || "",
+              /* 同じ ReferenceError(profile未定義)。ここは try/catch の中で
+                 黙って握りつぶされていた(diaryCount=0 に落ちるだけ)ため
+                 画面のエラー表示までは出ないが、著者名が「ユーザー」固定に
+                 なる実害があった */
+              name: pdata.display_name || "ユーザー",
+              avatar: pdata.avatar_url || "",
             },
           });
           if (showOwnerChrome) {
