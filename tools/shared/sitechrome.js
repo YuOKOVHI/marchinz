@@ -14,13 +14,13 @@ window.MZSiteChrome = (() => {
     ["/#videos", "大会動画", "fa-solid fa-trophy"],
     ["/#youtube", "YouTube", "fa-brands fa-youtube"],
     ["/#webmagazine", "メディア", "fa-solid fa-newspaper"],
-    ["/#creators-heading", "クリエイター", "fa-solid fa-camera"],
+    ["/#creators", "クリエイター", "fa-solid fa-camera"],
     ["/#ops", "運営", "fa-solid fa-bullhorn"],
   ];
 
   const FOOT_COLS = [
     [["/#top", "TOP"], ["/#videos", "大会動画"], ["/#youtube", "YouTube"],
-     ["/#webmagazine", "メディア"], ["/#creators-heading", "クリエイター"]],
+     ["/#webmagazine", "メディア"], ["/#creators", "クリエイター"]],
     [["/#community/events", "イベント"], ["/#community/moments", "モーメント"],
      ["/#community/board", "掲示板"], ["/#community/notes", "ノート"], ["/#profile", "マイページ"]],
     [["/#ops", "運営について"], ["/#terms", "利用規約"], ["/#privacy", "プライバシーポリシー"]],
@@ -90,7 +90,7 @@ window.MZSiteChrome = (() => {
   /* ヘッダー: ブランド + グローバルナビ(TOPと同じ並び) */
   function headerHtml() {
     const nav = NAV.map(([href, label, icon]) =>
-      `<a href="${href}"${href === "/#creators-heading" ? ' class="on"' : ""}>`
+      `<a href="${href}"${href === "/#creators" ? ' class="on"' : ""}>`
       + `<i class="${icon}" aria-hidden="true"></i>${esc(label)}</a>`).join("");
     const auth = headerAuthHtml();
     return `

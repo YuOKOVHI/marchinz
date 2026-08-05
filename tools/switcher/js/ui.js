@@ -748,6 +748,7 @@ MC.ui.sceneOffers = () => {
        演奏区間の検出が狭かったり解析が消えていても、素材が実際に長ければ
        必ず他の場所を出す ─ 出さない言い訳に検出結果を使わない)。
        いまの窓や既存候補と近い(8秒未満)ものは足さない */
+    let fbNote = "";
     if (out.length < 3) {
       try {
         const durAll = MC.timelineDuration ? MC.timelineDuration() : s1;
@@ -755,6 +756,8 @@ MC.ui.sceneOffers = () => {
            終わりだけ素材の実長へ広げる ─ 演奏検出の尻切れを救う */
         const [f0, f1] = MC.ui.coverRange(s0, Math.max(durAll, s1));
         const fspan = (f1 - f0) - lenSec;
+        /* 保険が埋めなかった理由も内訳ログへ残す(fspan≤8=土台が無い) */
+        fbNote = ` fb=${f0.toFixed(0)}..${f1.toFixed(0)} fspan=${fspan.toFixed(0)}`;
         if (fspan > 8) {
           const spots = [["前半", 0.15], ["中盤", 0.45], ["終盤", 0.78]];
           for (const [nm, frac] of spots) {
@@ -782,9 +785,12 @@ MC.ui.sceneOffers = () => {
         seen.add(o.label);
       } }
     if (out.length < 3) {
-      MC.log(`sceneOffers内訳: show=${s0.toFixed(0)}..${s1.toFixed(0)}`
+      const line = `sceneOffers内訳: show=${s0.toFixed(0)}..${s1.toFixed(0)}`
         + ` cover=${c0.toFixed(0)}..${c1.toFixed(0)} len=${lenSec} bs=${bs.length}`
-        + ` 残=${out.length}`);
+        + ` 残=${out.length}` + fbNote;
+      /* renderSceneOffers は描き直しのたびに走る ─ 同じ内訳を並べない
+         (隣の _sceneWhyLogged と同じ理由のdedup) */
+      if (line !== MC.ui._soLastLog) { MC.ui._soLastLog = line; MC.log(line); }
     }
     if (out.length) return out;
     /* ここまで来たら本当に「いま作ったところしかない」(1分ちょっとの素材) */
@@ -1579,11 +1585,25 @@ MC.ui.applyLengthChoice = () => {
      極端に短い動画1本のせいで、書き出し全体をその数秒へ押し込めない */
   const [c0raw, c1raw] = MC.ui.coverRange(s0, s1);
   const covered = (c1raw - c0raw) >= lenSec + 1;
-  const [t0, t1] = covered ? [c0raw, c1raw] : [s0, s1];
+  let [t0, t1] = covered ? [c0raw, c1raw] : [s0, s1];
+  let roomSpan = s1 - s0;
+  /* ★ 保険候補(sceneOffers の fb-)の t は**素材の実長**が土台で、検出された
+     演奏範囲(s1)の外を指し得る。ここで従来の範囲へクランプすると、押した
+     サムネと別の場面(検出狭窄時は前回と同じ場所)が書き出される
+     (2026-08-06 レビューP0)。t が範囲の外を指すときだけ、保険の生成側と
+     同じ土台(素材実長までの cover)へ範囲を広げて、約束した場面を守る */
+  if (MC.S.startKey === "manual" && MC.S.startAt != null
+      && MC.S.startAt > t1 - lenSec) {
+    try {
+      const durAll = MC.timelineDuration ? MC.timelineDuration() : s1;
+      const [f0, f1] = MC.ui.coverRange(s0, Math.max(durAll, s1));
+      if (f1 > t1 + 0.5) { t0 = Math.min(t0, f0); t1 = f1; roomSpan = f1 - f0; }
+    } catch (e) { MC.log("applyLengthChoice広域: " + e.message); }
+  }
   const cands = MC.highlight.candidates(audioClip, lenSec, t0, t1);
   /* 選ぶ余地があるか。候補の数ではなく**実際の自由度**で見る ─
      候補が1つしか作れない曲でも、余地があるなら自分で決められるべき */
-  const room = (s1 - s0) - lenSec;
+  const room = roomSpan - lenSec;
   const canChoose = room > 1;
   let cand;
   if (MC.S.startKey === "manual" && canChoose) {
@@ -1605,7 +1625,8 @@ MC.ui.applyLengthChoice = () => {
   MC.S.exportPreset = preset.id;
   MC.S.startKey = cand.key;
   MC.S.trimIn = cand.t;
-  MC.S.trimOut = Math.min(s1, cand.t + lenSec);
+  /* 尻は広げた範囲(t1)まで許す ─ s1 で切ると保険候補の終盤が短切れになる */
+  MC.S.trimOut = Math.min(Math.max(s1, t1), cand.t + lenSec);
   MC.saveState();
   return { preset, lenSec, cands, cand, canChoose, room, audioClip };
 };
@@ -5859,10 +5880,11 @@ MC.ui.wire = () => {
          ・作業中: 横取りしてツール内の種類選択へ ─ ページ遷移すると
            取り込んだ動画(メモリ上)が消えるため
          ・最上位(種類選択): ふつうのリンクとして映像ツール一覧
-           (/#creators-heading)へ遷移する。ここは意図した退出なので
+           (/#creators)へ遷移する。ここは意図した退出なので
            保存状態も捨てる(goToolList と同じ扱い)。
-         ※「TOPの先頭に飛ぶ」ように見えた真因は、リンク先が存在しない
-           アンカー(/#creators)だったこと。実在の #creators-heading へ直した */
+         ※ TOPはハッシュ=ルートのSPA。#creators は site-nav.js の pageIds に
+           登録された正規ルートで、#creators-heading(見出しのid)へ変えると
+           逆にルーター不発でTOP先頭へ落ちる(2026-08-06 レビューで実測) */
       const modeSel = $("#modeSelect");
       if (modeSel && modeSel.hidden) {
         e.preventDefault();
@@ -6375,7 +6397,7 @@ MC.ui.wire = () => {
      いま作った動画(メモリ上のblob)は消えるため、黙って失わせない */
   MC.ui.goToolList = () => {
     MC.ui.resetSavedProject();   // 意図した退出=次は最初から(⑪)
-    location.href = "/#creators-heading";
+    location.href = "/#creators";
   };
   const eoCloseByUser = () => {
     const failed = $("#exportOverlay").classList.contains("eo-failed");

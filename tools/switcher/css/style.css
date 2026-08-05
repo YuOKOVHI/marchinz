@@ -2141,5 +2141,3 @@ html:has(body.mz-auto-stage), body.mz-auto-stage {
 @media (max-width: 460px) {
   .mode-tip { font-size: 12px; padding: 9px 11px; }
 }
-
-/* display:flex は hidden 属性(UAのdisplay:none)を上書きしてしまう(既知の罠) */

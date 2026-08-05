@@ -1410,20 +1410,29 @@ async function countSamples(ns, file, fromSec) {
     });
   });
 
-  await test("★「← 戻る」: 最上位=実在アンカーへの素直なリンク / 作業中=ツール内へ(保存も動画も守る)", async () => {
+  await test("★「← 戻る」: 最上位=TOPの実在ルートへの素直なリンク / 作業中=ツール内へ(保存も動画も守る)", async () => {
     /* 2026-08-05 優さん「映像ツールのリンク貼ればいいだけじゃないの?」。
-       「TOPの先頭に飛ぶ」ように見えた真因はリンク先が存在しないアンカー
-       (/#creators)だったこと。実在の /#creators-heading へ直し、
-       最上位ではふつうのリンク(=意図した退出。保存状態も捨てる)、
-       作業中だけ横取りしてツール内へ戻す(遷移すると取り込んだ動画が消える) */
+       ★ TOPはハッシュ=**ルート**のSPA(site-nav.js)。行き先の正しさは
+       href の文字列一致でなく「TOP側ルーターの pageIds にルートが実在する」
+       ことで測る ─ v1.108.1 は #creators-heading(見出しのid)を正解として
+       固定した骨抜き試験で、ルーター不発=TOP先頭落ちを見逃した
+       (2026-08-06 レビューで実測。壊れた値を契約にしない) */
     return withSwitcher(async (w, d) => {
       const a = d.querySelector(".topbar .back-link");
       const ms = d.getElementById("modeSelect");
-      /* 最上位: 隠さない・href は実在アンカー */
+      /* 最上位: 隠さない・href はTOPのルート形式 */
       w.MC.ui.showModeSelect();
       if (a.hidden) throw new Error("最上位で戻るが隠れている(ふつうのリンクであるべき)");
-      if (a.getAttribute("href") !== "/#creators-heading") {
-        throw new Error("リンク先が実在アンカーでない: " + a.getAttribute("href"));
+      const bhref = a.getAttribute("href");
+      const rm = /^\/#([\w-]+)$/.exec(bhref || "");
+      if (!rm) throw new Error("リンク先がTOPのルート形式(/#xxx)でない: " + bhref);
+      /* ルートの実在は正本(site-nav.js の pageIds)と突き合わせる */
+      const nav = await (await fetch("/site-nav.js")).text();
+      const ids = ((nav.match(/const pageIds = \[([^\]]*)\]/) || [])[1] || "")
+        .split(",").map(s => s.replace(/["'\s]/g, "")).filter(Boolean);
+      if (!ids.length) throw new Error("site-nav.js から pageIds を読めない(正本の形が変わった?)");
+      if (!ids.includes(rm[1])) {
+        throw new Error(`ルート "${rm[1]}" が pageIds に無い(ルーター不発でTOP先頭へ落ちる)`);
       }
       /* 最上位のクリック=素通し(退出)でリセットが走る。実遷移は試験側で止める */
       let reset = 0;
@@ -1447,7 +1456,7 @@ async function countSamples(ns, file, fromSec) {
           throw new Error("作業中の戻るで保存状態が消えた(「動画はそのまま」の約束が破れる)");
         }
       } finally { w.localStorage.removeItem("marchcut_project"); }
-      return "最上位=/#creators-heading への素直なリンク+退出リセット / 作業中=ツール内+保存維持";
+      return "最上位=" + bhref + "(pageIds実在を確認)+退出リセット / 作業中=ツール内+保存維持";
     });
   });
 
@@ -8001,6 +8010,53 @@ async function countSamples(ns, file, fromSec) {
       U.showRange = keep.range; U.currentPreset = keep.preset; U.coverRange = keep.cover;
       H.bestScenes = keep.best; H.presetSec = keep.psec;
       S.trimIn = keep.tIn; S.trimOut = keep.tOut; U._sceneWhy = null;
+    }
+  });
+
+  await test("★保険候補のタップは押した場面を書き出す(検出が狭くても実長へ広げてtを保つ)", async () => {
+    /* 2026-08-06 レビューP0。保険(fb-)の t は素材の実長が土台なのに、
+       applyLengthChoice が検出された演奏範囲(showOut)でクランプしていた ─
+       検出狭窄時は room≈0 で manual 分岐にすら入らず cands[0](=前回と
+       同じ場所)へ化け、「終盤 5:27〜」のサムネと別の動画ができていた。
+       ★ 生成側(上の試験)だけでは捕まらない ─ 消費側で trimIn/trimOut を実測する */
+    const w = await compEnv();
+    const S = compReset(w);
+    const U = w.MC.ui, H = w.MC.highlight;
+    const keep = { range: U.showRange, preset: U.currentPreset, cover: U.coverRange,
+                   cands: H.candidates, psec: H.presetSec, tdur: w.MC.timelineDuration,
+                   sk: S.startKey, sa: S.startAt, tIn: S.trimIn, tOut: S.trimOut,
+                   ep: S.exportPreset };
+    try {
+      U.showRange = () => [300, 361];            // 検出狭窄: 演奏61秒ぶんしか無い
+      U.currentPreset = () => ({ id: "p60" });
+      H.presetSec = () => 60;                     // room = 61-60 = 1 → 旧実装は canChoose=false
+      U.coverRange = (a, b) => [a, b];
+      w.MC.timelineDuration = () => 780;          // 実長13分 ─ 保険の土台はある
+      H.candidates = () => [{ key: "climax", label: "大盛り上がり", t: 300, dur: 60 }];
+      S.startKey = "manual"; S.startAt = 430;     // fb候補「中盤」相当(showOutの外)
+      const r = U.applyLengthChoice();
+      if (!r) throw new Error("applyLengthChoice が null");
+      if (!r.canChoose) throw new Error("実長があるのに canChoose=false(前回と同じ場所へ化ける)");
+      if (Math.abs(S.trimIn - 430) > 1.0) {
+        throw new Error(`押した t=430 が守られない: trimIn=${S.trimIn}(旧実装は300=前回と同じ場所)`);
+      }
+      if (Math.abs(S.trimOut - 490) > 1.0) {
+        throw new Error(`尻が実長まで届かない: trimOut=${S.trimOut}(showOut=361で短切れ)`);
+      }
+      /* 変異: 実長が無い(検出=実長)なら従来どおりクランプされること ─
+         広げっぱなしの書き逃げを許さない */
+      w.MC.timelineDuration = () => 361;
+      S.startKey = "manual"; S.startAt = 430;
+      U.applyLengthChoice();
+      if (S.trimIn > 301.5) {
+        throw new Error(`実長が無いのに範囲外へ出た: trimIn=${S.trimIn}(361-60=301へ収まるべき)`);
+      }
+      return "検出61秒+実長780秒: t=430を保ちtrimOut=490 / 実長無しは従来クランプ";
+    } finally {
+      U.showRange = keep.range; U.currentPreset = keep.preset; U.coverRange = keep.cover;
+      H.candidates = keep.cands; H.presetSec = keep.psec; w.MC.timelineDuration = keep.tdur;
+      S.startKey = keep.sk; S.startAt = keep.sa;
+      S.trimIn = keep.tIn; S.trimOut = keep.tOut; S.exportPreset = keep.ep;
     }
   });
 
