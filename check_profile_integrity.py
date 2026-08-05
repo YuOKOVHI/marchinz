@@ -121,25 +121,52 @@ def check_static_regression(base: str, problems: list[str], notes: list[str]) ->
     if status != 200:
         problems.append(f"user-profile-page.js の取得に失敗(HTTP {status})")
         return
+    # ★ 掴んだものが本当に当該JSかを確かめる(2026-08-06 レビューP2)。
+    #   netlify.toml の SPA フォールバック(/* → /index.html)があるので、
+    #   JSが消えても 200 で HTML が返る。そのとき profile. は当然見つからず
+    #   「OK 参照なし」と印字してしまい、Layer A 単独の判定が信用できなくなる
+    if "renderMLL" not in body or body.lstrip()[:9].lower() == "<!doctype":
+        problems.append("user-profile-page.js の中身がJSではない"
+                        "(SPAフォールバックのHTMLを掴んだ可能性。配信の確認を)")
+        return
 
-    # renderHeader(profile, targetUid) { ... } の中身だけを許容範囲として除外する。
-    # ざっくり「function renderHeader(profile, targetUid) {」から対応する閉じ括弧
-    # までを飛ばす代わりに、行番号ベースで「renderHeader 内の profile.」だけを
-    # 許可リストにする(この関数はブロックが大きくないため、開始行から300行を
-    # 安全マージンとして許可範囲にする簡易実装)。
+    # ★ 許可範囲は**波括弧の対応**で取る(2026-08-06 レビューP1)。
+    #   以前は「開始行 +60行」の行数ベースで、実測の余裕は10行しかなかった
+    #   (renderHeader は 50行)。11行足しただけで正当な参照が窓の外へ出て誤検知、
+    #   逆に短くリファクタすると次の関数が窓に入って見逃しになる。
+    #   対象も renderHeader 決め打ちをやめ、**引数に profile を取る関数すべて**を
+    #   許可範囲にする ─ その中でだけ profile は実在する。
     lines = body.splitlines()
-    allow_from = allow_to = -1
-    for i, line in enumerate(lines):
-        if re.search(r"function\s+renderHeader\s*\(\s*profile\s*,", line):
-            allow_from = i
-            allow_to = i + 60  # renderHeader は実測40行未満。余裕を持って60行
-            break
+    allow = []          # (開始行index, 終了行index) の配列
+    found_any = False
+    for m in re.finditer(r"function\s+(\w+)\s*\(([^)]*)\)\s*\{", body):
+        params = m.group(2)
+        if not re.search(r"\bprofile\b", params):
+            continue
+        found_any = True
+        # 対応する閉じ括弧まで数える(文字列・コメントは無視する簡易版だが、
+        # 行数固定よりはるかに安全。ズレたら下の found_any 側で気づける)
+        depth, j = 0, m.end() - 1
+        while j < len(body):
+            if body[j] == "{":
+                depth += 1
+            elif body[j] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            j += 1
+        allow.append((body.count("\n", 0, m.start()), body.count("\n", 0, j)))
+
+    def allowed(idx: int) -> bool:
+        return any(a <= idx <= b for a, b in allow)
 
     bad_lines = []
     for i, line in enumerate(lines):
-        if allow_from <= i <= allow_to:
+        if allowed(i):
             continue
-        if re.search(r"\bprofile\.(display_name|avatar_url|marchinz_public_id|updated_at)\b", line):
+        # ★ フィールド名を決め打ちしない(2026-08-06 レビューP1)。
+        #   4つだけを見ていたため、別フィールドや pdata 系のタイポは素通りだった
+        if re.search(r"(?<![\w.$])profile\.[A-Za-z_$]", line):
             bad_lines.append((i + 1, line.strip()))
 
     if bad_lines:
@@ -148,8 +175,8 @@ def check_static_regression(base: str, problems: list[str], notes: list[str]) ->
     else:
         print("  OK  スコープ外の profile. 参照なし")
 
-    if allow_from < 0:
-        notes.append("renderHeader(profile, targetUid) が見つからなかった"
+    if not found_any:
+        notes.append("引数に profile を取る関数が1つも見つからなかった"
                       "(ファイル構造が変わった可能性。許可リストの前提が崩れていないか確認を)")
 
 
@@ -176,11 +203,65 @@ def check_deploy_drift(base: str, problems: list[str], notes: list[str]) -> None
             problems.append(f"本番の {f} が HTTP {status}")
             continue
         if body.strip() != head.strip():
-            problems.append(
-                f"本番の {f} が HEAD と一致しない(未デプロイの修正が残っているか、"
-                "本番だけ古い)。push/デプロイの状態を確認してください")
+            msg = (f"本番の {f} が HEAD と一致しない(未デプロイの修正が残っているか、"
+                   "本番だけ古い)。push/デプロイの状態を確認してください")
+            # ★ Netlify のビルドが5分で終わらなかった回は「注意」に落とす
+            #   (2026-08-06 レビューP1)。ビルド時間は note の RSS 取得など
+            #   外部ネットワークに依存してブレるので、遅延が障害に化けないように
+            if os.environ.get("MZ_DEPLOY_LAGGED") == "1":
+                notes.append(msg + " ※ビルド待ちが5分で終わらなかった回のため注意扱い")
+            else:
+                problems.append(msg)
         else:
             print(f"  OK  {f} は HEAD と一致")
+
+
+def check_asset_version_bump(problems: list[str], notes: list[str]) -> None:
+    """Layer A3: JS を直したのに index.html の ?v= を据え置いた再発を捕まえる。
+
+    2026-08-06 の実例: アイコン重複を直したコミット(1cc1283)自身が
+    marchinz-icons.js?v=1.26.28 を据え置いていた。旧JSをキャッシュした端末は
+    直したはずのバグを再現し続けるが、**Layer A/A2/B はどれも緑のまま通る** ─
+    A2 はファイル実体しか比べず、B は毎回まっさらなブラウザで取得するため。
+    ここだけが参照側(index.html の ?v=)を見る層。
+    """
+    import subprocess
+
+    print("== Layer A3: ?v= の据え置き ==")
+    watched = ["user-profile-page.js", "marchinz-icons.js"]
+    try:
+        head_html = subprocess.run(
+            ["git", "show", "HEAD:index.html"], cwd=ROOT,
+            capture_output=True, text=True, check=True).stdout
+    except Exception as e:
+        notes.append(f"HEAD:index.html を読めない({e})。Layer A3 は省略")
+        return
+
+    for f in watched:
+        m = re.search(re.escape(f) + r"\?v=([0-9.]+)", head_html)
+        if not m:
+            notes.append(f"index.html に {f}?v= の参照が見つからない(構成が変わった?)")
+            continue
+        ver = m.group(1)
+        try:
+            # そのJSを最後に変えたコミットで、index.html の ?v= も一緒に動いたか
+            last = subprocess.run(
+                ["git", "log", "-1", "--format=%H", "--", f], cwd=ROOT,
+                capture_output=True, text=True, check=True).stdout.strip()
+            if not last:
+                continue
+            prev_html = subprocess.run(
+                ["git", "show", f"{last}^:index.html"], cwd=ROOT,
+                capture_output=True, text=True, check=True).stdout
+        except Exception:
+            continue  # 浅いcloneや初回コミットでは判定しない
+        pm = re.search(re.escape(f) + r"\?v=([0-9.]+)", prev_html)
+        if pm and pm.group(1) == ver:
+            problems.append(
+                f"{f} を直した {last[:7]} で index.html の ?v= が据え置き({ver})。"
+                "旧JSをキャッシュした端末は直る前の挙動のままになります")
+        else:
+            print(f"  OK  {f}?v={ver} はJSの変更と一緒に動いている")
 
 
 def check_live_profile(base: str, uid: str, problems: list[str], notes: list[str]) -> None:
@@ -198,8 +279,12 @@ def check_live_profile(base: str, uid: str, problems: list[str], notes: list[str
     # 計測系の中断)。これを赤にすると毎回鳴って見張りが死ぬので除外する。
     KNOWN_NOISE = re.compile(
         r"requestStorageAccess"
-        r"|Failed to load resource.*403"
-        r"|net::ERR_ABORTED"
+        # ★ 読み込み失敗はステータスを問わず除外(2026-08-06 レビューP1)。
+        #   以前は 403 だけで、Google Fonts / jsdelivr(cropperjs 等)が一時的に
+        #   4xx・5xx・タイムアウトを返した回に、サイトは無傷なのに赤くなっていた。
+        #   赤にするのは未捕捉例外(pageerror)と CODE_BUG に限る
+        r"|Failed to load resource"
+        r"|net::ERR_"
         r"|appCheck|AppCheck|recaptcha|ReCaptcha",
     )
     # コードのバグの証拠。App Check に弾かれただけの FirebaseError とは
@@ -248,6 +333,24 @@ def check_live_profile(base: str, uid: str, problems: list[str], notes: list[str
         for e in warn_bugs[:5]:
             problems.append(f"[{uid}] コードのバグによる読み込み失敗: {e}")
 
+        # b-2) ★ このUIDの「中身」まで見られたかを毎回記録する(2026-08-06 レビューP1)。
+        #      App Check が headless を弾くと Firestore に到達せず、Layer B が
+        #      実際に測っているのは index.html の静的DOMだけになる ─ 実測で
+        #      **存在しないUIDを渡しても結果が完全に同じ**だった。
+        #      docstring に書くだけでは運用中に見えないので、出力に必ず残す。
+        try:
+            name = page.evaluate(
+                "() => (document.querySelector('.user-profile-display-name')"
+                "?.textContent || '').trim()")
+        except Exception:
+            name = ""
+        if not name:
+            notes.append(f"[{uid}] このUIDの中身は未検証"
+                          "(App Check により Firestore へ到達せず)。"
+                          "この回の Layer B が見たのは静的DOMと実行時エラーだけです")
+        else:
+            print(f"  OK  [{uid}] 表示名まで描画された: {name[:20]}")
+
         # c) 6タブのアイコン重複チェック(2026-08-06 decorateProfileTabs 二重挿入の再発ガード)
         tab_ids = ["prof-tab-mll", "prof-tab-logdiary", "prof-tab-videos",
                    "prof-tab-yt", "prof-tab-notifs", "prof-tab-ops"]
@@ -290,7 +393,13 @@ def check_live_profile(base: str, uid: str, problems: list[str], notes: list[str
 
         browser.close()
 
-    if not page_errors and not console_errors and not warn_bugs:
+    # ★ このUIDで問題を1つでも積んだなら「OK」と言わない(2026-08-06 レビュー)。
+    #   以前はアイコン重複を6件積んだ直後でも「OK」と印字しており、
+    #   ログを読む人が「OKなのになぜ赤?」で混乱していた
+    mine = [p for p in problems if p.startswith(f"[{uid}]")]
+    if mine:
+        print(f"  NG  [{uid}] {len(mine)} 件の問題(上の一覧参照)")
+    elif not page_errors and not console_errors and not warn_bugs:
         print(f"  OK  [{uid}] 未捕捉例外0件・コードバグの痕跡なし")
 
 
@@ -311,6 +420,7 @@ def main() -> int:
     if not args.skip_static:
         check_static_regression(base, problems, notes)
         check_deploy_drift(base, problems, notes)
+        check_asset_version_bump(problems, notes)
 
     if not args.skip_live:
         print("== Layer B: 実際にブラウザで開いて確かめる ==")
@@ -338,6 +448,13 @@ def main() -> int:
                     fh.write(f"- {p}\n")
             else:
                 fh.write("問題ありません。\n")
+            # ★ notes も必ず出す(2026-08-06 レビューP2)。「許可リストの前提が
+            #   崩れた」「アイコンが1つも無い」といった**見張りが目を失った信号**が、
+            #   これまで標準出力の奥にしか残っていなかった
+            if notes:
+                fh.write("\n### 参考(見張り自身の状態)\n\n")
+                for n in notes:
+                    fh.write(f"- {n}\n")
 
     return 1 if problems else 0
 

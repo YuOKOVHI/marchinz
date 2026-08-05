@@ -66,20 +66,38 @@ jobs:
       - name: Wait for Netlify deploy (push only)
         if: github.event_name == 'push'
         run: |
+          # ★ Layer A2 が見るファイル**全部**が追いつくまで待つ(2026-08-06 レビューP1)。
+          #   以前は user-profile-page.js だけを見ており、icons.js や index.html
+          #   だけを直した push では1回目で即通過 → まだビルド中の本番を検査して
+          #   「HEADと不一致」で誤検知していた(実際 91f4c69 は index.html の1行だけ)
+          FILES="user-profile-page.js marchinz-icons.js index.html"
           for i in $(seq 1 10); do
-            deployed=$(curl -s "https://marchinz.netlify.app/user-profile-page.js?nocache=$i" | md5sum | cut -d' ' -f1)
-            local=$(md5sum user-profile-page.js | cut -d' ' -f1)
-            if [ "$deployed" = "$local" ]; then
+            all_ok=1
+            for f in $FILES; do
+              deployed=$(curl -s "https://marchinz.netlify.app/$f?nocache=$i" | md5sum | cut -d' ' -f1)
+              local=$(md5sum "$f" | cut -d' ' -f1)
+              [ "$deployed" = "$local" ] || { all_ok=0; echo "  まだ: $f"; }
+            done
+            if [ "$all_ok" = "1" ]; then
               echo "本番が HEAD に追いつきました($i 回目)"
               exit 0
             fi
             echo "まだ追いついていません($i/10)。30秒待ちます"
             sleep 30
           done
-          echo "5分待っても追いつきませんでした。検査は続行します(Layer A2 が知らせます)"
+          # ★ 追いつかなかったのは「ビルドが遅い」であって「本番が壊れた」ではない。
+          #   Layer A2 を注意扱いへ落として、ビルド遅延が障害に化けるのを防ぐ
+          echo "5分待っても追いつきませんでした。Layer A2 は注意扱いにします"
+          echo "MZ_DEPLOY_LAGGED=1" >> "$GITHUB_ENV"
 
       - name: Check profile integrity
-        run: python3 check_profile_integrity.py
+        # 失敗しても後段(Issue本文)で結果を使えるよう、出力を控えて終了コードは持ち回す
+        id: check
+        run: |
+          set +e
+          python3 check_profile_integrity.py 2>&1 | tee check-profile-out.txt
+          echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          exit ${PIPESTATUS[0]}
 
       - name: 問題があれば Issue を立てる
         # 検査が赤のときだけ。同じ題の Issue が開いたままなら重ねない
@@ -94,11 +112,50 @@ jobs:
             echo "同じ Issue が開いています。何もしません: $TITLE"
             exit 0
           fi
-          gh issue create --title "$TITLE" --body "自動チェック(check-profile-integrity)が失敗しました。
+          # ★ 本文はファイルで渡す(2026-08-06 レビューP0)。以前はヒアドキュメント風に
+          #   カラム0で書いており、YAMLのブロックがそこで終わって `詳細:`『見るところ:』が
+          #   **最上位キーとして生えていた** ─ Actions がワークフロー自体を受け付けず、
+          #   この見張りは一度も起動しないところだった。--body-file は
+          #   media-update-check.yml で実績のある書き方
+          {
+            echo "自動チェック(check-profile-integrity)が失敗しました。"
+            echo
+            echo "詳細: $RUN_URL"
+            echo
+            echo "## 何が赤か"
+            echo
+            echo '```'
+            # 検査の出力そのもの。これが無いと run URL → Summary と2段掘る必要がある
+            if [ -s check-profile-out.txt ]; then
+              tail -c 8000 check-profile-out.txt
+            else
+              echo "(検査の出力がありません = 検査に入る前に転んでいます。"
+              echo " checkout / pip / playwright install / Netlify待ち のいずれかを見てください)"
+            fi
+            echo '```'
+            echo
+            echo "## 見るところ"
+            echo
+            echo "- Layer A が赤 → スコープ外の profile. 参照が復活(2026-08-06 のバグの再発)"
+            echo "- Layer A2 が赤 → 本番が HEAD と不一致(未デプロイの修正が残っているか、本番だけ古い)"
+            echo "- Layer A3 が赤 → JS を直したのに index.html の ?v= が据え置き(既存端末が旧JSを実行し続ける)"
+            echo "- Layer B が赤 → 実行時エラーかアイコンの二重挿入"
+            echo "- **どの Layer 名も出ていない → サイトではなく見張り側が転んでいます**"
+          } > check-profile-issue.md
+          gh issue create --title "$TITLE" --body-file check-profile-issue.md
 
-詳細: $RUN_URL
-
-見るところ:
-- Layer A が赤 → スコープ外の profile. 参照が復活(2026-08-06 のバグの再発)
-- Layer A2 が赤 → 本番が HEAD と不一致(未デプロイの修正が残っているか、本番だけ古い)
-- Layer B が赤 → 実行時エラーかアイコンの二重挿入"
+      - name: 直ったら Issue を閉じる
+        # ★ 回復時に閉じないと、重複防止と噛み合って「閉じ忘れたまま別の原因で
+        #   壊れても新しい通知が来ない」状態になる(2026-08-06 レビュー)
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          TITLE="マイページ健全性チェックが失敗しています"
+          num=$(gh issue list --state open --limit 100 --json number,title \
+                  --jq ".[] | select(.title==\"$TITLE\") | .number" | head -1)
+          if [ -n "$num" ]; then
+            gh issue close "$num" --comment "自動チェックが通りました(緑に戻りました)。$RUN_URL"
+            echo "Issue #$num を閉じました"
+          fi
