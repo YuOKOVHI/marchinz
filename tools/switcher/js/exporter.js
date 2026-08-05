@@ -1065,22 +1065,34 @@ MC.exporter.opfsSweep = async () => {
     const root = await navigator.storage.getDirectory();
     const dir = await root.getDirectoryHandle(MC.exporter.OPFS_DIR, { create: false });
     const now = Date.now();
-    /* 退出時に消し損ねた名前は、新しくても消す(2026-08-06 レビューP2)。
-       これが無いと「保存して閉じる」直後の732MBが6時間居座る */
-    const pending = new Set(MC.exporter._pendingList());
+    /* 退出時に消し損ねた名前は、新しくても消す(2026-08-06)。
+       これが無いと「保存して閉じる」直後の732MBが6時間居座る。
+       ★ ただし控えた時刻より**新しい**実体は別物として扱う(レビューP1)。
+         書き出しファイル名は同じ日・同じ比率なら常に同名なので、
+         名前だけで判断すると翌回の書き出し中ファイルを消しにいく */
+    const pendingAt = new Map(MC.exporter._pendingList().map(v => [v.n, v.t]));
     const doomed = [];
     for await (const [n, h] of dir.entries()) {
-      if (!pending.has(n)) {
-        try {
-          const f = await h.getFile();
-          if (now - f.lastModified < MC.exporter.OPFS_STALE_MS) continue;  // 進行中かも
-        } catch (e) { /* 読めないものは古いとみなして消す */ }
+      let mtime = null;
+      try { mtime = (await h.getFile()).lastModified; } catch (e) { /* 読めない=古いとみなす */ }
+      const noted = pendingAt.get(n);
+      /* 控えにあり、かつ控えた後に作り直されていないなら、経過時間を問わず消す */
+      const isNotedSame = noted !== undefined && (mtime === null || mtime <= noted + 1000);
+      if (!isNotedSame) {
+        if (mtime !== null && now - mtime < MC.exporter.OPFS_STALE_MS) continue;  // 進行中かも
       }
       doomed.push(n);
     }
     for (const n of doomed) {
-      await dir.removeEntry(n).catch(() => {});
-      MC.exporter._clearPending(n);
+      /* ★ 消せたときだけ控えを消す(2026-08-06 レビューP1)。以前は失敗しても
+         控えを落としており、いちばん効かせたい局面 ─ 別タブが書き出し中で
+         removeEntry が NoModificationAllowedError で弾かれた時 ─ に
+         「消し損ねた」記録が失われて6時間窓の側へ落ちていた。
+         レビューでは実ブラウザで removeEntry の失敗を実測済み */
+      let ok = true;
+      await dir.removeEntry(n).catch(() => { ok = false; });
+      if (ok) MC.exporter._clearPending(n);
+      else MC.log(`opfsSweep: ${n} を消せなかった(次回に持ち越す)`);
     }
   } catch (e) { /* ディレクトリが無ければ何もしない */ }
 };
@@ -1105,6 +1117,19 @@ MC.exporter.checkQuota = async needBytes => {
 /* サイト枠(navigator.storage)の使用量キャッシュ。Safari本体の「書類とデータ」が
    膨らんでいる時、ここが小さければ犯人はサイト外=取り込み時のWebKit内部コピー
    と切り分けられる(2026-08-06 実機10GB調査。素材3本選択だけで+3.5GBを実測) */
+/* 実時間録画で使う AudioContext を、**タップの活性があるうちに**作って起こす
+   (2026-08-06 レビューP1)。録画の入口まで来ると await をいくつも通った後で
+   活性が切れており、iOS Safari では suspended のまま = 完成品が無音になる。
+   WebCodecs 経路では使わないので、作るだけなら無害(数十バイト) */
+MC.exporter.primeAudio = () => {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    const actx = MC.exporter._actx || (MC.exporter._actx = new AC());
+    if (actx.state === "suspended") actx.resume().catch(() => {});
+  } catch (_) { /* 使えない環境では黙って諦める(録画側で再度試す) */ }
+};
+
 MC.exporter._est = null;
 /* ★ Promise を返す(2026-08-06 レビューP1)。以前は撃ちっぱなしで、診断を出す
    showExportStats は書き出し**前**のキャッシュを読んでいた ─ 完成品の
@@ -2463,6 +2488,21 @@ MC.exporter._exportRealtimeInner = async onProgress => {
       aClip.spkGain.connect(actx.destination);
     }
     if (aClip.spkGain) aClip.spkGain.gain.value = 0;   // 録画中はスピーカーだけ無音
+    /* ★ resume を必ず試す(2026-08-06 レビューP1)。ここへ来るまでに
+       navigator.locks 等いくつもの await を通っており、iOS Safari は
+       活性の無い AudioContext を suspended のまま開始する。
+       止まったままだと createMediaStreamDestination のトラックは無音で流れ、
+       **例外もログも出ないまま音声だけ無い MP4 が完成する**(8分待った末に)。
+       await しない ─ 活性が無いと永久に解決しない実装があるため(ui.js:253と同じ) */
+    try { if (actx.state === "suspended") actx.resume().catch(() => {}); } catch (_) {}
+    if (actx.state === "suspended") {
+      /* 直らなかった事実は隠さない。診断に残し、利用者にも先に伝える */
+      MC.log("realtime: AudioContext が suspended のまま(音声が入らない可能性)");
+      MC.exporter.lastRealtimeAudioWarn = true;
+      MC.ui.toast("音が入らない場合があります。完成後に音を確かめてください");
+    } else {
+      MC.exporter.lastRealtimeAudioWarn = false;
+    }
     const dest = actx.createMediaStreamDestination();
     aClip.sourceNode.connect(dest);
     tracks.push(...dest.stream.getAudioTracks());
@@ -2521,18 +2561,35 @@ MC.exporter.releaseOpfs = () => {
 /* 「消し損ねたかもしれない」名前の控え。localStorage は同期なので遷移に負けない */
 MC.exporter.PENDING_KEY = "mz_switcher_opfs_pending_v1";
 MC.exporter._pendingList = () => {
-  try { return JSON.parse(localStorage.getItem(MC.exporter.PENDING_KEY)) || []; }
-  catch (_) { return []; }
+  try {
+    const v = JSON.parse(localStorage.getItem(MC.exporter.PENDING_KEY));
+    /* ★ 配列であることを確かめる(2026-08-06 レビューP2)。JSON.parse は
+       オブジェクトや数値もそのまま返すので、控え帳が壊れると new Set(...) が
+       TypeError を投げ、それを opfsSweep の外側 try が飲んで
+       **掃除が丸ごと無言で止まる**。容量対策の本体が控え帳1つで死ぬ */
+    if (!Array.isArray(v)) return [];
+    // 旧形式(文字列の配列)も読めるようにしておく
+    return v.map(x => typeof x === "string" ? { n: x, t: 0 }
+                    : (x && typeof x.n === "string" ? { n: x.n, t: Number(x.t) || 0 } : null))
+            .filter(Boolean);
+  } catch (_) { return []; }
 };
+/* 控えは「名前 + 控えた時刻」で持つ(2026-08-06 レビューP1)。
+   書き出しファイル名は `MarchinZ_Switcher_<比率>_<日付>.mp4` で、
+   **同じ日・同じ比率なら常に同名**。名前だけで控えると、消し損ねた名前が
+   翌回の「書き出し中のファイル」と一致し、sweep が経過時間を見ずに
+   進行中の実体へ removeEntry を投げることになる。
+   控えた時刻より新しいファイルは別物とみなし、通常の6時間窓で守る。 */
 MC.exporter._notePending = n => {
   try {
-    const s = new Set(MC.exporter._pendingList()); s.add(n);
-    localStorage.setItem(MC.exporter.PENDING_KEY, JSON.stringify([...s].slice(-20)));
+    const rest = MC.exporter._pendingList().filter(v => v.n !== n);
+    rest.push({ n, t: Date.now() });
+    localStorage.setItem(MC.exporter.PENDING_KEY, JSON.stringify(rest.slice(-20)));
   } catch (_) {}
 };
 MC.exporter._clearPending = n => {
   try {
-    const rest = MC.exporter._pendingList().filter(v => v !== n);
+    const rest = MC.exporter._pendingList().filter(v => v.n !== n);
     if (rest.length) localStorage.setItem(MC.exporter.PENDING_KEY, JSON.stringify(rest));
     else localStorage.removeItem(MC.exporter.PENDING_KEY);
   } catch (_) {}

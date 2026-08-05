@@ -25,6 +25,19 @@
   /** @type {{ stop: () => void } | null} */
   let coverRunner = null;
 
+  /** リンク先に使ってよいURLだけを通す（2026-08-06 レビューP0 / 保存型XSS対策）。
+   *
+   *  マイリストの url / channel_url は会員が自由に書ける値で、firestore.rules 側は
+   *  `is string` と長さしか見ておらず、mll_profiles は誰でも読める。
+   *  そのまま href に入れると `javascript:` が本番オリジンで実行される
+   *  （このサイトに CSP は無い。target="_blank" は javascript: に効かない）。
+   *  http/https 以外は無効化して "#" を返す。
+   *  ※同じ関数の中でチャンネルURLだけは以前から検証済みで、他が抜けていた。 */
+  function safeLinkUrl(url) {
+    const u = String(url || "").trim();
+    return /^https?:\/\//i.test(u) ? u : "#";
+  }
+
   /** Firebase Storage URL のブラウザキャッシュ差（通常タブ vs シークレット）を抑える */
   function withProfileImageCacheBust(url, cacheKey) {
     const u = String(url || "").trim();
@@ -3163,7 +3176,7 @@
           const slot = document.createElement("li");
           slot.className = "user-profile-mylist-thumb-slot";
           const link = document.createElement("a");
-          link.href = url || "#";
+          link.href = safeLinkUrl(url);
           link.target = "_blank";
           link.rel = "noopener noreferrer";
           link.className = "user-profile-mylist-thumb-link";
@@ -3201,7 +3214,7 @@
 
         if (vid) {
           const thumbWrap = document.createElement("a");
-          thumbWrap.href = url || "#";
+          thumbWrap.href = safeLinkUrl(url);
           thumbWrap.target = "_blank";
           thumbWrap.rel = "noopener noreferrer";
           thumbWrap.className = "recommend-item-thumb-wrap";
@@ -3231,7 +3244,7 @@
         const eventP = document.createElement("p");
         eventP.className = "recommend-item-event";
         const eventA = document.createElement("a");
-        eventA.href = url || "#";
+        eventA.href = safeLinkUrl(url);
         eventA.target = "_blank";
         eventA.rel = "noopener noreferrer";
         eventA.className = "recommend-item-event-link";
@@ -3406,7 +3419,7 @@
           slot.className = "user-profile-mylist-thumb-slot user-profile-mylist-thumb-slot--round";
           if (logo) {
             const link = document.createElement("a");
-            link.href = url || "#";
+            link.href = safeLinkUrl(url);
             link.target = "_blank";
             link.rel = "noopener noreferrer";
             link.className = "user-profile-mylist-thumb-link user-profile-mylist-thumb-link--round";
@@ -3445,7 +3458,7 @@
         cardHead.className = "youtube-card-head";
         if (logo) {
           const logoLink = document.createElement("a");
-          logoLink.href = url || "#";
+          logoLink.href = safeLinkUrl(url);
           logoLink.target = "_blank";
           logoLink.rel = "noopener noreferrer";
           logoLink.className = "youtube-logo-link";
@@ -3894,7 +3907,13 @@
 
     const viewToggle = el("#prof-view-toggle");
     const guestNotice = el("#prof-guest-preview-notice");
-    if (viewToggle) viewToggle.hidden = !realIsOwner || viewAsVisitor;
+    /* ★ プレビュー中も切替バーを残す(2026-08-06 レビューP0)。
+       以前は viewAsVisitor(=プレビュー中も true)で隠していたため、
+       「他のユーザーの視点」を押した瞬間に**戻すボタンごと消えて**いた。
+       戻す経路は hashchange 依存で、ハッシュが #profile のままマイページを
+       押し直しても発火しない ─ 別ページへ出て戻るまで他人ビューのままだった。
+       出す条件は「本当に本人か」だけにする */
+    if (viewToggle) viewToggle.hidden = !realIsOwner;
     if (guestNotice) guestNotice.hidden = !previewAsOtherUser;
     const ownerBtn = el("#prof-view-owner");
     const guestBtn = el("#prof-view-guest");
@@ -4024,10 +4043,16 @@
     const videosSectionVis = parseVideosSectionVisibility(pdata);
     const ytSectionVis = parseYtSectionVisibility(pdata);
     const likeShow = parseLikeShowPrefs(pdata);
-    const loadMll = !isProfileBanned(pdata) && (realIsOwner || mllSectionVis === "public");
-    const loadVid = !isProfileBanned(pdata) && (realIsOwner || videosSectionVis === "public");
-    const loadYt = !isProfileBanned(pdata) && (realIsOwner || ytSectionVis === "public");
-    const loadLogDiary = !isProfileBanned(pdata) && (realIsOwner || logDiarySectionVis === "public");
+    /* ★ 「他会員視点で見る」の間は、本人であっても非公開を開かない
+       (2026-08-06 レビューP1)。realIsOwner を見ていたためプレビュー中も
+       4本とも true になり、「一覧をすべて非公開にしています」と出ている
+       すぐ下に実データが並んでいた ─ 公開設定の確認手段として機能しない。
+       viewAsVisitor は「訪問者として描く」の正本(上で算出済み) */
+    const asViewer = !viewAsVisitor;   // 本人の目で見ているときだけ非公開も開く
+    const loadMll = !isProfileBanned(pdata) && (asViewer || mllSectionVis === "public");
+    const loadVid = !isProfileBanned(pdata) && (asViewer || videosSectionVis === "public");
+    const loadYt = !isProfileBanned(pdata) && (asViewer || ytSectionVis === "public");
+    const loadLogDiary = !isProfileBanned(pdata) && (asViewer || logDiarySectionVis === "public");
 
     if (realIsOwner && db) {
       // 旧「マイリスト」既定リストの掃除(一度きりの移行処理)。表示を待たせない
@@ -4132,6 +4157,13 @@
       root?.querySelectorAll("[data-prof-tab]").forEach((btn) => {
         if (btn instanceof HTMLElement) btn.hidden = false;
       });
+      /* ★ タブ帯そのものも戻す(2026-08-06 レビューP1)。凍結ユーザーの
+         プロフィールを開くと renderBannedVisitorLimitedProfile が
+         .user-profile-tabs を hidden にするが、戻す箇所がどこにも無かった。
+         自分のマイページへ戻ってもボタンは復活するのに帯が hidden のままで、
+         **全タブが見えず切り替え不能**。リロードするまで直らなかった */
+      const tabNavBack = root?.querySelector(".user-profile-tabs");
+      if (tabNavBack instanceof HTMLElement) tabNavBack.hidden = false;
     }
     renderMllSectionVisControls(mllSectionVis, showOwnerChrome);
 
