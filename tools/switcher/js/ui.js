@@ -321,6 +321,9 @@ MC.ui.showExportStats = () => {
       : "音声 なし",
     `色 ${s.filterId}${s.colorOn ? " + カメラ間の色合わせ" : ""}`,
     `保存先 ${s.route}`,
+    /* Safari「書類とデータ」膨張の実機切り分け用(2026-08-06)。ここが小さいのに
+       本体が膨らむなら、犯人はサイト外(取り込み時のWebKit内部コピー) */
+    MC.exporter.estLine(),
     s.skips ? `カメラの飛ばし読み ${s.skips}回 (${sec(s.reseekMs)}秒)` : null,
   ].filter(v => v !== null);
   const text = lines.join("\n");
@@ -1267,6 +1270,10 @@ MC.ui.renderRestoreNote = () => {
 MC.ui.resetSavedProject = () => {
   try { localStorage.removeItem("marchcut_project"); } catch (_) {}
   MC.restoreInfo = { sync: 0, cuts: false, trim: false };
+  /* ★ 書き出し済みファイルのOPFS実体もここで消す(2026-08-06 Safari容量調査)。
+     「保存して閉じる」等の退出導線が releaseOpfs を呼ばず、8分書き出しなら
+     732MBが起動時sweep(6時間据え置き)まで残留していた */
+  MC.exporter.releaseOpfs();
 };
 
 MC.ui.resetProject = () => {
@@ -5652,6 +5659,7 @@ MC.ui._showErrorLog = err => {
     /* 分割から降りた回は、たとえ書き出しが成功していてもここに残す */
     ...(MC.exporter.lastPartsError
         ? [`分割書き出しを断念: ${MC.exporter.lastPartsError}`] : []),
+    ...(MC.exporter.estLine() ? [MC.exporter.estLine()] : []),
     `エラー: ${(err && err.stack) || (err && err.message) || err}`,
   ].join("\n");
   const text = `${env}\n---- ログ ----\n${MC.debug.slice(-120).join("\n")}`;

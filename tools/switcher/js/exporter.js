@@ -1092,6 +1092,23 @@ MC.exporter.checkQuota = async needBytes => {
   );
 };
 
+/* サイト枠(navigator.storage)の使用量キャッシュ。Safari本体の「書類とデータ」が
+   膨らんでいる時、ここが小さければ犯人はサイト外=取り込み時のWebKit内部コピー
+   と切り分けられる(2026-08-06 実機10GB調査。素材3本選択だけで+3.5GBを実測) */
+MC.exporter._est = null;
+MC.exporter.refreshEstimate = () => {
+  if (!navigator.storage || !navigator.storage.estimate) return;
+  navigator.storage.estimate().then(e => {
+    if (e) MC.exporter._est = { usage: e.usage || 0, quota: e.quota || 0 };
+  }).catch(() => {});
+};
+MC.exporter.estLine = () => {
+  const e = MC.exporter._est;
+  if (!e) return null;
+  const gb = b => b >= 1e9 ? (b / 1e9).toFixed(2) + "GB" : Math.round(b / 1e6) + "MB";
+  return `サイト保存量 ${gb(e.usage)} / 枠 ${gb(e.quota)}`;
+};
+
 MC.exporter.maxExportableSec = () => {
   if (window.showSaveFilePicker) return Infinity;   // ディスクへ直接書ける環境は制限なし
   if (MC.exporter.opfsSupported()) return Infinity; // OPFSへ逐次書ける環境も制限なし
@@ -1626,6 +1643,26 @@ MC.exporter.exportMP4Parts = async (onProgress) => {
       }
     }
   }
+
+  /* ---- 旧ジョブのパーツを即掃除(2026-08-06 Safari容量調査) ----
+     設定を1つ変えるだけで jobId が変わり、前のジョブの mzpart_ を消す主体が
+     実質いなかった(起動時sweepは6時間据え置き)。同日に設定を変えながら試すと
+     1ジョブ最大720MBずつ積み上がる。いま走らせるジョブ以外はここで消す。
+     ※別タブの同時書き出しのパーツも消えうるが、mzjob.json が1つしかない
+       時点で同時書き出しの再開は元々成立していない(割り切り) */
+  try {
+    const root = await navigator.storage.getDirectory();
+    const dir = await root.getDirectoryHandle(MC.exporter.OPFS_DIR, { create: false });
+    const keep = `mzpart_${jobId}_`;
+    let freed = 0;
+    for await (const [n] of dir.entries()) {
+      if (!n.startsWith("mzpart_") || n.startsWith(keep)) continue;
+      await dir.removeEntry(n).catch(() => {});
+      freed++;
+    }
+    if (freed) MC.log(`export(parts): 旧ジョブのパーツを掃除 ${freed}件`);
+  } catch (_) { /* ディレクトリが無ければ何もない */ }
+  MC.exporter.refreshEstimate();
 
   /* 容量の確認は**再開の判定より後**にやる(完了パートぶんを差し引くため)。\n     パート+完成品で一時的に約2倍を使う(完成後にパートを消す)。
      ここで断ると、必要量が半分で済む従来の一気書きすら試されないまま
@@ -2377,6 +2414,10 @@ MC.exporter.exportRealtime = async onProgress => {
   } finally {
     MC.preview.overlayOn = true;
     MC.preview.draw();
+    /* 録画中に黙らせたスピーカーを必ず戻す(失敗・キャンセルでも)。
+       戻し忘れると以後の試聴が無音のままになる */
+    const a = MC.getClip(MC.S.audioClipId);
+    if (a && a.spkGain) a.spkGain.gain.value = 1;
   }
 };
 
@@ -2390,8 +2431,16 @@ MC.exporter._exportRealtimeInner = async onProgress => {
     const actx = MC.exporter._actx || (MC.exporter._actx = new AudioContext());
     if (!aClip.sourceNode) {
       aClip.sourceNode = actx.createMediaElementSource(aClip.video);
-      aClip.sourceNode.connect(actx.destination);  // 以後もスピーカーへ流す
+      /* スピーカーへは Gain を挟んで流す(2026-08-06 実機報告「書き出し中にも
+         鳴っていないか」)。MediaElementSource を作った要素は以後グラフ経由で
+         しか鳴らないため destination への接続自体は必要(切ると通常の試聴が
+         永久に無音)。録画中だけ gain=0 で黙らせる ─ 録画側(dest)は
+         sourceNode から直結なので影響しない */
+      aClip.spkGain = actx.createGain();
+      aClip.sourceNode.connect(aClip.spkGain);
+      aClip.spkGain.connect(actx.destination);
     }
+    if (aClip.spkGain) aClip.spkGain.gain.value = 0;   // 録画中はスピーカーだけ無音
     const dest = actx.createMediaStreamDestination();
     aClip.sourceNode.connect(dest);
     tracks.push(...dest.stream.getAudioTracks());
@@ -2437,7 +2486,7 @@ MC.exporter.releaseOpfs = () => {
   if (!n) return;
   MC.exporter._opfsName = null;
   MC.exporter.lastResult = null;
-  MC.exporter.opfsRemove(n);
+  MC.exporter.opfsRemove(n).then(() => MC.exporter.refreshEstimate());
 };
 MC.exporter._shareMode = null;
 MC.exporter.shareMode = () => {

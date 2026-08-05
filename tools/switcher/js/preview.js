@@ -118,7 +118,18 @@ MC.preview = {
   },
 
   applyMute() {
-    MC.S.clips.forEach(c => { if (c.video) c.video.muted = c.id !== MC.S.audioClipId; });
+    /* ★ おまかせの解析画面(mz-auto-stage)の間は全部消す(2026-08-06 実機報告
+       「分析中に音がなる」)。open() が play() 後に全ミュートしても、解析で
+       stats が確定した瞬間の renderAudio → applyMute が音声担当だけ解禁して
+       鳴っていた。個々の呼び出し側で消すのではなく、正本のここで守る。
+       書き出し中(exporter.running)は除外: リアルタイム録画は音声担当の
+       <video> から録るため、ここで消すと完成品が無音になる(スピーカーは
+       exportRealtime 側が別途黙らせる) */
+    const analyzing = document.body.classList.contains("mz-auto-stage")
+      && !(MC.exporter && MC.exporter.running);
+    MC.S.clips.forEach(c => {
+      if (c.video) c.video.muted = analyzing || c.id !== MC.S.audioClipId;
+    });
   },
 
   seek(t) {

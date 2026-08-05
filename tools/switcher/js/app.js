@@ -78,7 +78,12 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   // OPFSへ本当に書けるかを一度だけ実測してキャッシュ(G-1)。
   // これで maxExportableSec が「上限なし」と嘘をつかなくなる
-  MC.exporter.probeOpfs().then(() => MC.exporter.opfsSweep()).catch(() => {});
+  MC.exporter.probeOpfs().then(() => MC.exporter.opfsSweep())
+    .then(() => MC.exporter.refreshEstimate()).catch(() => {});
+  /* 退出時にも据え置き分を掃く(2026-08-06 Safari容量調査)。再開用パーツ等の
+     新しいファイルは sweep 側の6時間窓が守る。pagehide内のasyncは
+     完走保証が無いが、掃除は必須ではない(次回起動時sweepが拾う) */
+  window.addEventListener("pagehide", () => { MC.exporter.opfsSweep(); });
 
   await MC.exporter.probeCaps();
   const badge = document.getElementById("capsBadge");
