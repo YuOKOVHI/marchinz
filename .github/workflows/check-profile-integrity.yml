@@ -1,0 +1,104 @@
+# マイページ(プロフィール)が実際にJSを実行して壊れていないかを見張る(2026-08-06 優さん指示)
+#
+# きっかけ: user-profile-page.js のスコープ外変数参照(ReferenceError)で
+# マイページが「読み込みに失敗しました」になり、他人のプロフィールの
+# MarchinZ Log も見えなくなっていた。既存の検査はどれも static な中身しか
+# 見ておらず、**ブラウザがJSを実行して初めて出る壊れ方**を誰も見ていなかった。
+#
+# 3層で見る(詳細は check_profile_integrity.py の docstring):
+#   Layer A  今回のバグと同じ形(スコープ外の profile. 参照)の静的シグネチャ
+#   Layer A2 本番配信物と HEAD の一致(版番の変わらない修正の未デプロイを検知)
+#   Layer B  headless Chromium で実際に開き、未捕捉例外・アイコン二重挿入を検査
+#
+# 消費するもの:
+#   - Netlify のビルドクレジット … 消費しない(読むだけ。commit も push もしない)
+#   - GitHub Actions … public リポジトリのため無料。Playwright 込みで1回2分ほど
+#
+# 頻度(2026-08-06 優さん指示「お金がかからないなら頻度は多め」):
+#   - push 直後(コード変更が本番に出た直後がいちばん壊れやすい)
+#   - 6時間おきの定期(安全網)
+name: Check profile integrity
+
+on:
+  push:
+    branches: [main]
+    # データだけの push(botの日次更新)では走らせない。netlify.toml の ignore と
+    # 同じ考え方 ─ プロフィール表示に関わるファイルが変わったときだけ見る
+    paths:
+      - "*.js"
+      - "*.css"
+      - "index.html"
+      - ".github/workflows/check-profile-integrity.yml"
+      - "check_profile_integrity.py"
+  schedule:
+    # 6時間おき(JST 05:30 / 11:30 / 17:30 / 23:30)。データbot(20:00 UTC)や
+    # 他の日次チェック(21:00 UTC)と時刻をずらしてある
+    - cron: "30 2,8,14,20 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: check-profile-integrity
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      # Layer A2 が HEAD のファイル実体と比べるため、リポジトリ自体も要る
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Playwright (chromium)
+        run: |
+          pip install --quiet playwright
+          python -m playwright install --with-deps chromium
+
+      # push 直後は Netlify のビルドがまだ終わっていないことがある。
+      # Layer A2(HEADとの一致)が「ただのビルド待ち」で赤くならないよう、
+      # push トリガーのときだけ最大5分、本番の追いつきを待つ
+      - name: Wait for Netlify deploy (push only)
+        if: github.event_name == 'push'
+        run: |
+          for i in $(seq 1 10); do
+            deployed=$(curl -s "https://marchinz.netlify.app/user-profile-page.js?nocache=$i" | md5sum | cut -d' ' -f1)
+            local=$(md5sum user-profile-page.js | cut -d' ' -f1)
+            if [ "$deployed" = "$local" ]; then
+              echo "本番が HEAD に追いつきました($i 回目)"
+              exit 0
+            fi
+            echo "まだ追いついていません($i/10)。30秒待ちます"
+            sleep 30
+          done
+          echo "5分待っても追いつきませんでした。検査は続行します(Layer A2 が知らせます)"
+
+      - name: Check profile integrity
+        run: python3 check_profile_integrity.py
+
+      - name: 問題があれば Issue を立てる
+        # 検査が赤のときだけ。同じ題の Issue が開いたままなら重ねない
+        # (media-update-check.yml と同じ重複防止)
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          TITLE="マイページ健全性チェックが失敗しています"
+          if gh issue list --state open --limit 100 --json title --jq '.[].title' | grep -Fxq "$TITLE"; then
+            echo "同じ Issue が開いています。何もしません: $TITLE"
+            exit 0
+          fi
+          gh issue create --title "$TITLE" --body "自動チェック(check-profile-integrity)が失敗しました。
+
+詳細: $RUN_URL
+
+見るところ:
+- Layer A が赤 → スコープ外の profile. 参照が復活(2026-08-06 のバグの再発)
+- Layer A2 が赤 → 本番が HEAD と不一致(未デプロイの修正が残っているか、本番だけ古い)
+- Layer B が赤 → 実行時エラーかアイコンの二重挿入"
