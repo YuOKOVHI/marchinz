@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-app-v="1.107.0">
+<html lang="ja" data-mz-app-v="1.108.0">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -18,7 +18,7 @@
 <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
 <link rel="stylesheet" href="/tools/shared/progress.css?v=1.99.3">
 <link rel="stylesheet" href="/tools/shared/journey.css?v=1.99.3">
-<link rel="stylesheet" href="css/style.css?v=1.106.0">
+<link rel="stylesheet" href="css/style.css?v=1.108.0">
 <link rel="stylesheet" href="/tools/shared/sitechrome.css?v=1.105.0">
 </head>
 <body data-mz-tool="switcher">
@@ -513,10 +513,6 @@
           <button id="downloadBtn" class="btn big"><i class="fa-solid fa-download"></i> ダウンロード</button>
         </div>
         <div id="doneNote" class="status"></div>
-        <!-- 完了音トグルはこちらの保存経路にも(2026-08-05 レビューP1: eoOverlay側だけだと
-             doneCardから保存した人は一生出会えない)。checked は eoSfxToggle と同期 -->
-        <label class="eo-sfx-row" hidden><input type="checkbox" id="eoSfxToggle2">
-          <span>次から、書き出しの完了を音で知らせる（iPhoneはマナーモードでも鳴ります）</span></label>
         <div class="eo-exit">
           <button type="button" id="doneShareTool" class="btn ghost eo-share-tool">
             <i class="fa-solid fa-share-nodes" aria-hidden="true"></i> このツールを友達にシェア</button>
@@ -702,11 +698,6 @@
            前回「管理者にだけ残す」としたが、優さん自身が管理者で消えていなかった。
            同意の注意文も削除(必要になったら優さんの判断で戻す) -->
 
-      <!-- 完了音は既定オフ(2026-08-05 優さん実機)。iPhoneはマナーモードでも
-           鳴ってしまう(OS仕様でWebから追従できない)ため、鳴らしたい人だけオン -->
-      <label class="eo-sfx-row" hidden><input type="checkbox" id="eoSfxToggle">
-        <span>次から、書き出しの完了を音で知らせる（iPhoneはマナーモードでも鳴ります）</span></label>
-
       <!-- 何にどれだけ掛かったか。普段は畳んでおき、知りたい人だけ開く -->
       <details id="eoStats" class="eo-stats" hidden>
         <summary>診断ログ（開発者への報告用）</summary>
@@ -795,7 +786,7 @@
 <script src="js/timeline.js?v=1.99.3"></script>
 <script src="js/cutmode.js?v=1.99.3"></script>
 <script src="js/exporter.js?v=1.99.4"></script>
-<script src="js/ui.js?v=1.107.0"></script>
-<script src="js/app.js?v=1.99.3"></script>
+<script src="js/ui.js?v=1.108.0"></script>
+<script src="js/app.js?v=1.108.0"></script>
 </body>
 </html>

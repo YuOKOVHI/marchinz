@@ -1398,6 +1398,8 @@ async function countSamples(ns, file, fromSec) {
     return withSwitcher(async (w, d) => {
       const a = d.querySelector(".topbar .back-link");
       if (!a) throw new Error(".back-link が見つからない");
+      /* 最上位(種類選択)では hidden(2026-08-05 新契約) ─ 工程に入って測る */
+      w.MC.ui.chooseMode("vertical", { silent: true });
       const b = a.getBoundingClientRect();
       /* 左端: ヘッダー内でロゴ類を除き最左(⑨ 戻る=左の作法)。x はパディング分だけ */
       if (b.left > 24) throw new Error(`左端に無い(x=${Math.round(b.left)}px)`);
@@ -1407,6 +1409,34 @@ async function countSamples(ns, file, fromSec) {
       const bar = d.querySelector(".topbar").getBoundingClientRect();
       if (bar.height > 80) throw new Error(`ヘッダーが太った(${Math.round(bar.height)}px)`);
       return `x=${Math.round(b.left)} / ${Math.round(b.width)}×${Math.round(b.height)}px / ヘッダー${Math.round(bar.height)}px`;
+    });
+  });
+
+  await test("★「← 戻る」はツール内に留まる(TOPへ飛ばない・最上位では隠す・保存状態を消さない)", async () => {
+    /* 2026-08-05 優さん実機「戻るは、TOPページに戻る。なんなの!!!!」。
+       種類選択(最上位)から href=/#creators へ素通しする穴が残っていた。
+       新契約: TOPへは一度も遷移しない(TOP行きはフッターに一本化)。
+       最上位では戻る自体を隠す(iOSの作法: ルートに戻るは無い) */
+    return withSwitcher(async (w, d) => {
+      const a = d.querySelector(".topbar .back-link");
+      const ms = d.getElementById("modeSelect");
+      w.MC.ui.showModeSelect();
+      if (!a.hidden) throw new Error("最上位(種類選択)なのに戻るが見えている");
+      w.MC.ui.chooseMode("vertical", { silent: true });
+      if (a.hidden) throw new Error("工程に入ったのに戻るが出ない");
+      const href = w.location.href;
+      w.localStorage.setItem("marchcut_project", JSON.stringify({ clips: [{ key: "qa" }] }));
+      try {
+        a.click();
+        await new Promise(r2 => setTimeout(r2, 50));
+        if (w.location.href !== href) throw new Error("戻るでURLが動いた(TOPへ遷移)");
+        if (ms.hidden) throw new Error("種類選択に戻らない");
+        if (!a.hidden) throw new Error("最上位へ戻ったのに戻るが残っている");
+        if (w.localStorage.getItem("marchcut_project") == null) {
+          throw new Error("戻るで保存状態が消えた(「動画はそのまま」の約束が破れる)");
+        }
+      } finally { w.localStorage.removeItem("marchcut_project"); }
+      return "TOP遷移なし / 種類選択へ戻る / 最上位では非表示 / 保存状態は残る";
     });
   });
 
@@ -6179,12 +6209,20 @@ async function countSamples(ns, file, fromSec) {
       const ov = Math.min(a.t + a.dur, b.t + b.dur) - Math.max(a.t, b.t);
       if (ov >= a.dur * 0.9) throw new Error(`候補どうしがほぼ同じ場面: ${a.label} / ${b.label}`);
     }
-    /* 短い素材(演奏70秒): 候補は自然に絞られる。前回と同じ場面しか残らなければ0個 */
+    /* 短い素材: 候補は自然に絞られる(水増ししない)。
+       ★ 「短い」の基準は**動画の実長**(2026-08-05 優さん実機: 動画が8分あるのに
+       演奏検出が狭くて候補ゼロになった ─ 動画が長ければ保険が埋めるのが新契約。
+       だからこの試験は動画そのものも短くして測る) */
     S.showIn = 40; S.showOut = 110; S.startKey = "start";
-    w.MC.ui.applyLengthChoice();
-    const few = w.MC.ui.sceneOffers();
-    if (few.length > 1) throw new Error("短い素材で候補が出すぎる: " + few.length);
-    return `長い素材=${offers.length}個(${offers.map(o => o.label).join("/")}) / 短い素材=${few.length}個`;
+    const keepDur = S.clips.map(c => c.duration);
+    S.clips.forEach(c => { c.duration = 105; });
+    try {
+      w.MC.ui.applyLengthChoice();
+      const few = w.MC.ui.sceneOffers();
+      if (few.length > 1) throw new Error("短い素材で候補が出すぎる: " + few.length);
+      var fewN = few.length;
+    } finally { S.clips.forEach((c, i) => { c.duration = keepDur[i]; }); }
+    return `長い素材=${offers.length}個(${offers.map(o => o.label).join("/")}) / 短い素材=${fewN}個`;
   });
   await test("★2回目は解析を使い回し、仕上げと書き出しだけが走る", async () => {
     const w = await compEnv();
@@ -7633,8 +7671,13 @@ async function countSamples(ns, file, fromSec) {
       if (!/pageshow[\s\S]{0,400}persisted[\s\S]{0,120}location\.reload/.test(app)) {
         throw new Error("bfcache復帰の読み直しが無い(戻ると前の動画とエラーが蘇る)");
       }
-      if (!/back-link[\s\S]{0,400}resetSavedProject/.test(app)) {
-        throw new Error("「← 戻る」等の退出でリセットしていない");
+      /* ★ 「← 戻る」はツール内に留まる導線になった(2026-08-05) ─
+         リセットしてはいけない。退出リセットは foot-link 等だけ */
+      if (!/foot-link[\s\S]{0,400}resetSavedProject/.test(app)) {
+        throw new Error("退出導線(フッター等)でリセットしていない");
+      }
+      if (/\.back-link"[\s\S]{0,200}resetSavedProject/.test(app)) {
+        throw new Error("「← 戻る」で保存状態を消している(ツール内に戻るだけなのに)");
       }
       const uiSrc = await (await fetch("../switcher/js/ui.js?cb=" + Date.now())).text();
       if (!/goToolList[\s\S]{0,300}resetSavedProject/.test(uiSrc)) {
@@ -7909,12 +7952,26 @@ async function countSamples(ns, file, fromSec) {
       }
       if (U._sceneWhy !== null) throw new Error("成功したのに理由が残る: " + U._sceneWhy);
 
-      /* overlap: 候補が全部いまの窓とほぼ同一(92%以上)のときだけ */
+      /* ★ 保険(2026-08-05 優さん実機: 8分の素材で候補ゼロが出た)。
+         bestScenes が今の窓と重なる1件しか返せなくても(演奏検出の狭窄や
+         解析消失)、素材の全長が十分なら前半/中盤/終盤で必ず3つ埋める */
       H.bestScenes = () => [{ key: "best", label: "フィナーレ", t: 301, dur: 60 }];
+      const fb = U.sceneOffers();
+      if (fb.length !== 3) throw new Error("保険が埋めない: " + fb.length);
+      if (!fb.every(o => /^fb-/.test(o.key))) {
+        throw new Error("保険候補のキーが違う: " + fb.map(o => o.key).join(","));
+      }
+      if (U._sceneWhy !== null) throw new Error("保険で埋めたのに理由が残る: " + U._sceneWhy);
+
+      /* overlap/none が出るのは「素材の全長でも埋められない」ときだけ
+         (重なり区間を窓+6秒に絞る=保険の土台も無い状況を作る) */
+      const wideCover = U.coverRange;
+      U.coverRange = () => [300, 366];
       if (why() !== "overlap") throw new Error("重なりが overlap にならない: " + U._sceneWhy);
 
       H.bestScenes = () => [];
       if (why() !== "none") throw new Error("候補ゼロが none にならない: " + U._sceneWhy);
+      U.coverRange = wideCover;
 
       U.coverRange = (a) => [a, a + 0.5];       // 重なりが1秒以下
       if (why() !== "cover") throw new Error("cover にならない: " + U._sceneWhy);
@@ -7927,8 +7984,8 @@ async function countSamples(ns, file, fromSec) {
 
       U.showRange = () => { throw new Error("わざと"); };
       if (why() !== "error") throw new Error("例外が error にならない: " + U._sceneWhy);
-      return "成功=null(順位候補3つ) / overlap / none / cover / "
-        + "preset / range / error をキーで区別する(文言は畳んでも落ちない)";
+      return "成功=null(順位候補3つ) / 保険=前半・中盤・終盤で必ず埋める / "
+        + "overlap / none / cover / preset / range / error をキーで区別";
     } finally {
       U.showRange = keep.range; U.currentPreset = keep.preset; U.coverRange = keep.cover;
       H.bestScenes = keep.best; H.presetSec = keep.psec;
@@ -8034,29 +8091,6 @@ async function countSamples(ns, file, fromSec) {
       S.filterId = keep.fid; S.colorOn = keep.con;
       S.clips.forEach((c, i) => { c.role = keep.roles[i]; c.target = keep.targets[i]; c.motion = keep.motions[i]; c.freq = keep.freqs[i]; });
       try { U.closeFinishPick(); } catch (_) {}
-    }
-  });
-
-  await test("★完了音は既定オフ(iPhoneのマナーモードにWebは追従できないため)", async () => {
-    /* 2026-08-05 優さん実機「マナーモードでも音がでる」。iOSのサイレントスイッチは
-       WebAudioから検出も追従もできないOS仕様なので、勝手に鳴る音を既定で止めた */
-    const w = await compEnv();
-    const key = "mc_sfx_on";
-    const keep = w.localStorage.getItem(key);
-    try {
-      w.localStorage.removeItem(key);
-      if (w.MC.ui.sfx.enabled() !== false) throw new Error("既定がオンになっている");
-      if (w.MC.ui.sfx.play("done") !== false) throw new Error("既定オフなのに鳴った");
-      w.MC.ui.sfx.setEnabled(true);
-      if (w.MC.ui.sfx.enabled() !== true) throw new Error("オンにしても保存されない");
-      w.MC.ui.sfx.setEnabled(false);
-      if (w.MC.ui.sfx.enabled() !== false) throw new Error("オフに戻せない");
-      const tg = w.document.getElementById("eoSfxToggle");
-      if (!tg) throw new Error("トグル(#eoSfxToggle)がHTMLに無い");
-      return "既定オフ / play=false / トグルで保存・復帰 / #eoSfxToggle あり";
-    } finally {
-      if (keep == null) w.localStorage.removeItem(key);
-      else w.localStorage.setItem(key, keep);
     }
   });
 
@@ -9007,24 +9041,22 @@ async function countSamples(ns, file, fromSec) {
   /* ===== ㉞ 2026-08-02 追加: 完了・保存はファンファーレ、失敗もお知らせ(㉝は並行のWake Lock群) ===== */
   group("㉞ 完了・保存はファンファーレ / 失敗もお知らせ");
 
-  await test("★完了と保存で祝う(紙吹雪+効果音+振動)、取り消しでは祝わない", async () => {
+  await test("★完了と保存で祝う(紙吹雪+振動)、取り消しでは祝わない", async () => {
     const e = await doneEnv();
     const U = e.U;
-    const keep = { fan: U.fanfare, play: U.sfx.play, buzz: U.buzz, share: U._share,
+    const keep = { fan: U.fanfare, buzz: U.buzz, share: U._share,
                    turn: U.notifyUserTurn };
     const log = [];
     try {
       U.fanfare = k => { log.push("fan:" + k); return true; };
-      U.sfx.play = k => { log.push("sfx:" + k); return true; };
       U.buzz = () => { log.push("buzz"); };
       U.showDone(e.res);
       if (!log.includes("fan:done")) throw new Error("完成で紙吹雪が出ない");
-      if (!log.includes("sfx:done")) throw new Error("完成でファンファーレが鳴らない");
       if (!log.includes("buzz")) throw new Error("完成で振動しない");
       log.length = 0;
       U._share = async () => true;
       await U.saveResult();
-      if (!log.includes("fan:saved") || !log.includes("sfx:saved")) {
+      if (!log.includes("fan:saved")) {
         throw new Error("保存の祝いが無い: " + log.join(","));
       }
       if (!log.includes("buzz")) throw new Error("保存で振動しない");
@@ -9034,46 +9066,34 @@ async function countSamples(ns, file, fromSec) {
       U._share = async () => { const x = new Error("x"); x.name = "AbortError"; throw x; };
       await U.saveResult();
       if (log.some(l => l.includes("saved"))) throw new Error("取り消したのに祝った: " + log.join(","));
-      return "完了=紙吹雪+音+振動 / 保存=同 / 取り消し=沈黙";
+      return "完了=紙吹雪+振動 / 保存=同 / 取り消し=沈黙(完了音は廃止済み)";
     } finally {
-      U.fanfare = keep.fan; U.sfx.play = keep.play; U.buzz = keep.buzz;
+      U.fanfare = keep.fan; U.buzz = keep.buzz;
       U._share = keep.share; U.notifyUserTurn = keep.turn;
       U._fanfareStop(); e.restore();
     }
   });
 
-  await test("★失敗は完了と別の低い音+失敗種別で知らせ、同じ失敗で二重に鳴らさない", async () => {
+  await test("★失敗は失敗種別で知らせ、同じ失敗で二重に知らせない", async () => {
+    /* 完了音は廃止(2026-08-05 優さん指示「音はもうなしでいい」)。
+       残る契約は通知の種別と2.5秒窓の二重抑止 */
     const e = await doneEnv();
     const U = e.U;
-    const keep = { play: U.sfx.play, turn: U.notifyUserTurn, fan: U.fanfare };
-    const played = [], kinds = [];
+    const keep = { turn: U.notifyUserTurn, fan: U.fanfare };
+    const kinds = [];
     try {
-      U.sfx.play = k => { played.push(k); return true; };
       U.notifyUserTurn = o => { kinds.push((o && o.kind) || "turn"); return true; };
       U.fanfare = () => true;
       U._lastFailNotify = 0;
       U.exportOverlay.open();
       U.exportOverlay.fail();
-      if (!played.includes("fail")) throw new Error("失敗音が鳴らない");
       if (!kinds.includes("fail")) throw new Error("失敗の通知種別が無い: " + kinds.join(","));
-      if (played.includes("done")) throw new Error("失敗なのに完了の音が混ざった");
-      /* 音色そのもの(実物の定義)が別か。失敗=低い(300Hz未満)・完了=高い(400Hz超) */
-      const T = U.sfx.TONES;
-      if (!(T.fail[0][0] < 300 && T.done[0][0] > 400)) {
-        throw new Error(`失敗音が完了音と紛らわしい: fail=${T.fail[0][0]}Hz / done=${T.done[0][0]}Hz`);
-      }
-      /* どの音も1秒以内(指示)。開始+長さの最大で見る */
-      for (const k of ["done", "saved", "fail"]) {
-        const end = T[k].reduce((m, x) => Math.max(m, x[1] + x[2]), 0);
-        if (end > 1) throw new Error(`${k} の音が1秒を超える: ${end}s`);
-      }
-      /* 同じ失敗が2つの顔から届いても1回(2.5秒の窓) */
-      played.length = 0; kinds.length = 0;
+      kinds.length = 0;
       U.exportOverlay.fail();
-      if (played.length || kinds.length) throw new Error("同じ失敗で二重に鳴った");
-      return `fail=${T.fail.map(x => x[0]).join("/")}Hz(低・下降) / done=${T.done.map(x => x[0]).join("/")}Hz(上昇) / 全音1秒以内 / 二重なし`;
+      if (kinds.length) throw new Error("同じ失敗で二重に知らせた");
+      return "fail種別で知らせる / 2.5秒窓で二重なし";
     } finally {
-      U.sfx.play = keep.play; U.notifyUserTurn = keep.turn; U.fanfare = keep.fan;
+      U.notifyUserTurn = keep.turn; U.fanfare = keep.fan;
       U._lastFailNotify = 0; U.exportOverlay.close(); e.restore();
     }
   });
@@ -9081,13 +9101,12 @@ async function countSamples(ns, file, fromSec) {
   await test("★おまかせの途中の進行は黙るが、途中の失敗は知らせる(失敗=終端)", async () => {
     const w = await compEnv();
     const U = w.MC.ui;
-    const keep = { turn: U.notifyUserTurn, play: U.sfx.play };
+    const keep = { turn: U.notifyUserTurn };
     const kinds = [];
     const as = w.document.getElementById("autoStage");
     const wasHidden = as.hidden;
     try {
       U.notifyUserTurn = o => { if (!(o && o.silent)) kinds.push((o && o.kind) || "turn"); return true; };
-      U.sfx.play = () => true;
       U._lastFailNotify = 0;
       U._autoRunning = true;
       /* 進行の通知は silent の鉄則どおり黙る */
@@ -9099,7 +9118,7 @@ async function countSamples(ns, file, fromSec) {
       if (!kinds.includes("fail")) throw new Error("自走中の失敗が黙っている: " + kinds.join(","));
       return "進行=沈黙 / 失敗=fail種別で知らせる";
     } finally {
-      U.notifyUserTurn = keep.turn; U.sfx.play = keep.play;
+      U.notifyUserTurn = keep.turn;
       U._autoRunning = false; U._lastFailNotify = 0;
       U.autoStage._fail = null; U.autoStage._failedStep = null;
       as.classList.remove("as-failed"); as.hidden = wasHidden;
@@ -9124,35 +9143,8 @@ async function countSamples(ns, file, fromSec) {
       U._fanfareStop();
       if (w.document.querySelector(".mz-fanfare-canvas")) throw new Error("後片付けされない");
       if (U._fanfareOn) throw new Error("片付けても鍵が残る(次が出せない)");
-      /* 音も裏タブでは鳴らさない(通知に任せる) */
-      U.fxVisible = () => false;
-      if (U.sfx.ready()) throw new Error("裏タブなのに鳴らせる判定");
-      return "裏タブ/静止=出ない / 連打=1枚 / 片付けOK / 裏タブの音=鳴らさない";
+      return "裏タブ/静止=出ない / 連打=1枚 / 片付けOK";
     } finally { U.fxVisible = keep.vis; U.motionOk = keep.mo; U._fanfareStop(); }
-  });
-
-  await test("★音はタップで解錠し、音のAPIが無い環境でも例外を投げない(iOS)", async () => {
-    const w = await compEnv();
-    const U = w.MC.ui;
-    /* iOSの「タップ起点でしか作れない」への配線があるか(コメントは除いて見る) */
-    const src = (await (await fetch("../switcher/js/ui.js")).text())
-      .replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-    if (!/pointerdown[\s\S]{0,160}sfx\.unlock/.test(src)) {
-      throw new Error("タップでの解錠が配線されていない(完了時に一度も鳴れない)");
-    }
-    /* API が無い/壊れている環境で静かに諦めるか */
-    const set = (k, v) => { try { Object.defineProperty(w, k, { value: v, configurable: true }); } catch (_) {} };
-    const kAC = w.AudioContext, kWAC = w.webkitAudioContext, kCtx = U.sfx._ctx;
-    try {
-      U.sfx._ctx = null;
-      set("AudioContext", undefined); set("webkitAudioContext", undefined);
-      U.sfx.unlock();   // 例外を投げないこと
-      if (U.sfx.play("done") !== false) throw new Error("APIが無いのに鳴ったことにしている");
-      /* ctx はあるが suspended(タップ前のiOS) → 鳴らさない */
-      U.sfx._ctx = { state: "suspended" };
-      if (U.sfx.ready()) throw new Error("解錠前なのに鳴らせる判定");
-      return "解錠の配線あり / API無し・解錠前は静かに諦める";
-    } finally { set("AudioContext", kAC); set("webkitAudioContext", kWAC); U.sfx._ctx = kCtx; }
   });
 
 

@@ -441,9 +441,6 @@ MC.ui.showDone = res => {
   MC.ui._scenesRevealed = false;
   MC.ui.setSaveState(false);
   MC.ui.liftShareTool(false);   // 新しい完成では、シェアは出口の列に戻す
-  /* 完了音トグルも未保存の顔に戻す(保存が済んだら celebrate("saved") が出す)。
-     戻さないと前回の保存で出たトグルが未保存画面の縦を44px押し広げる */
-  document.querySelectorAll(".eo-sfx-row").forEach(row => { row.hidden = true; });
   /* ★ 「終わったとき」の呼び戻し(2026-08-02 優さん指示)。書き出しは数分かかり、
      おまかせなら合計3〜5分。ここが**本当に終わった**唯一の地点で、しかも
      このあと人が「動画を保存」を押さないと何も残らない ─ 呼び戻す価値が
@@ -746,6 +743,31 @@ MC.ui.sceneOffers = () => {
       return ov < c.dur * 0.92;
     };
     const out = bs.filter(notSame).slice(0, 3).map(o => ({ ...o }));
+    /* ★ 保険: 候補が3つ未満なら**素材の全長**から前半/中盤/終盤で埋める
+       (2026-08-05 優さん実機: 8分の素材で候補ゼロ=「演奏が短く」が出た。
+       演奏区間の検出が狭かったり解析が消えていても、素材が実際に長ければ
+       必ず他の場所を出す ─ 出さない言い訳に検出結果を使わない)。
+       いまの窓や既存候補と近い(8秒未満)ものは足さない */
+    if (out.length < 3) {
+      try {
+        const durAll = MC.timelineDuration ? MC.timelineDuration() : s1;
+        /* 始まりは演奏開始(s0)を尊重(セッティング風景を出さない)。
+           終わりだけ素材の実長へ広げる ─ 演奏検出の尻切れを救う */
+        const [f0, f1] = MC.ui.coverRange(s0, Math.max(durAll, s1));
+        const fspan = (f1 - f0) - lenSec;
+        if (fspan > 8) {
+          const spots = [["前半", 0.15], ["中盤", 0.45], ["終盤", 0.78]];
+          for (const [nm, frac] of spots) {
+            if (out.length >= 3) break;
+            const t = f0 + fspan * frac;
+            const cand = { key: "fb-" + frac, label: nm, why: "素材の" + nm + "の位置",
+                           icon: "fa-clapperboard", t, dur: Math.min(lenSec, f1 - f0),
+                           rank: out.length + 1, score: 0 };
+            if (notSame(cand) && !out.some(o => Math.abs(o.t - t) < 8)) out.push(cand);
+          }
+        }
+      } catch (e) { MC.log("sceneOffers保険: " + e.message); }
+    }
     /* 表示は時刻順。「シーンN」は出す順に振り直す(採点順の名残で
        「シーン2」から始まる歯抜けを防ぐ)。同じラベルが2つ並んだら後の方を
        シーンNへ落とす(「大盛り上がり」×2を出さない) */
@@ -759,6 +781,11 @@ MC.ui.sceneOffers = () => {
         }
         seen.add(o.label);
       } }
+    if (out.length < 3) {
+      MC.log(`sceneOffers内訳: show=${s0.toFixed(0)}..${s1.toFixed(0)}`
+        + ` cover=${c0.toFixed(0)}..${c1.toFixed(0)} len=${lenSec} bs=${bs.length}`
+        + ` 残=${out.length}`);
+    }
     if (out.length) return out;
     /* ここまで来たら本当に「いま作ったところしかない」(1分ちょっとの素材) */
     return no(bs.length ? "overlap" : "none");
@@ -3624,7 +3651,6 @@ MC.ui.notifyFail = (o) => {
   const now = Date.now();
   if (now - (MC.ui._lastFailNotify || 0) < 2500) return false;
   MC.ui._lastFailNotify = now;
-  MC.ui.sfx.play("fail");   // 完了と明確に別の、短い低い音(裏タブなら鳴らず通知に任せる)
   return MC.ui.notifyUserTurn({
     kind: "fail",
     pattern: [180, 90, 180],   // 完了(短×2+長)と区別できる強めの2打
@@ -3711,72 +3737,9 @@ MC.ui.fanfare = kind => {
    iOS Safari は AudioContext を**タップ起点でしか**作れない。wire() が
    最初のタップで unlock() を呼び、完了時(数分後)はその文脈で鳴らす。
    タブが裏なら鳴らさない(ready)。端末がサイレントなら鳴らないのは iOS の仕様として受け入れる */
-MC.ui.sfx = {
-  _ctx: null,
-  /* [周波数Hz, 開始秒, 長さ秒]。done=上昇の和音(C5-E5-G5-C6・0.8秒で終わる)、
-     saved=軽い2音、fail=低い2音(A3→F3・下がる)。同じ音で違う意味を言わない */
-  TONES: {
-    done:  [[523.25, 0, 0.12], [659.25, 0.11, 0.12], [783.99, 0.22, 0.14], [1046.5, 0.34, 0.42]],
-    saved: [[659.25, 0, 0.10], [987.77, 0.09, 0.26]],
-    fail:  [[220, 0, 0.10], [174.61, 0.13, 0.30]],
-  },
-  unlock() {
-    try {
-      const AC = window.AudioContext || window.webkitAudioContext;
-      if (!AC) return;
-      if (!this._ctx) this._ctx = new AC();
-      if (this._ctx.state === "suspended") {
-        const p = this._ctx.resume();
-        if (p && typeof p.catch === "function") p.catch(() => {});
-      }
-    } catch (_) {}
-  },
-  /* ★ 効果音は既定オフ(2026-08-05 優さん実機「マナーモードでも音がでる」)。
-     iOSのサイレントスイッチはWebから検出も追従もできない(WebAudio/メディア再生は
-     マナーモードを無視して鳴るOS仕様)。「マナーモードに合わせる」の実装として、
-     勝手に鳴る音を既定で止め、鳴らしたい人だけトグルでオンにする */
-  enabled() {
-    try { return localStorage.getItem("mc_sfx_on") === "1"; } catch (_) { return false; }
-  },
-  setEnabled(on) {
-    try { localStorage.setItem("mc_sfx_on", on ? "1" : "0"); } catch (_) {}
-  },
-  /* 鳴らせるか。設定オフ/ctxが無い/止まっている(=タップ前・iOSが裏で回収)・裏タブでは鳴らさない */
-  ready() {
-    if (!this.enabled()) return false;
-    return !!(this._ctx && this._ctx.state === "running") && MC.ui.fxVisible();
-  },
-  play(kind) {
-    if (!this.ready()) return false;
-    try {
-      const ctx = this._ctx, t0 = ctx.currentTime + 0.02;
-      const master = ctx.createGain();
-      master.gain.value = 0.14;   // 控えめ。びっくりさせない
-      master.connect(ctx.destination);
-      for (const [f, at, dur] of (this.TONES[kind] || [])) {
-        const o = ctx.createOscillator(), g = ctx.createGain();
-        o.type = kind === "fail" ? "sine" : "triangle";   // 失敗は丸く低く、祝いは少し明るく
-        o.frequency.value = f;
-        g.gain.setValueAtTime(0, t0 + at);
-        g.gain.linearRampToValueAtTime(1, t0 + at + 0.015);
-        g.gain.exponentialRampToValueAtTime(0.001, t0 + at + dur);
-        o.connect(g); g.connect(master);
-        o.start(t0 + at); o.stop(t0 + at + dur + 0.05);
-      }
-      return true;
-    } catch (_) { return false; }
-  },
-};
-
-/* 祝いの一式。絵と音はここで、振動は呼び出し元の notifyUserTurn / ここが打つ */
+/* 祝いの一式(絵と振動)。完了音は廃止(2026-08-05 優さん指示「音はもうなしでいい」) */
 MC.ui.celebrate = kind => {
   MC.ui.fanfare(kind);
-  MC.ui.sfx.play(kind);
-  /* 完了音トグルは保存が済んでから見せる(2026-08-05)。未保存の画面に足すと
-     「動画を保存」が画面中央から押し出される(QAの実測が捕まえた) */
-  if (kind === "saved") {
-    document.querySelectorAll(".eo-sfx-row").forEach(row => { row.hidden = false; });
-  }
   /* 完了(done)の振動は showDone の notifyUserTurn が打つ。保存はここで短く */
   if (kind === "saved") MC.ui.buzz([40, 30, 90]);
 };
@@ -5752,6 +5715,7 @@ MC.ui.chooseMode = (mode, { silent = false } = {}) => {
   MC.ui.normalizeForMode();
   if (!silent) MC.saveState();
   MC.ui.$("#modeSelect").hidden = true;
+  { const bl = document.querySelector(".topbar .back-link"); if (bl) bl.hidden = false; }
   /* 中の段も畳んでおく(2026-08-01)。親が hidden なので見えはしないが、
      開いたまま残すと次に showModeSelect で戻ったとき2段目から始まる ─
      「種類を選び直す」つもりで戻ったのに進め方の画面が出ることになる */
@@ -5868,6 +5832,8 @@ MC.ui.showModeSelect = () => {
   MC.preview.pause();  // 選択画面の裏で音が鳴り続けないように
   MC.ui.$("#workspace").hidden = true;
   MC.ui.$("#modeSelect").hidden = false;
+  /* 最上位に戻ったら「← 戻る」を隠す(戻る先はもう無い。TOPへはフッターから) */
+  { const bl = document.querySelector(".topbar .back-link"); if (bl) bl.hidden = true; }
   MC.ui.showModeStep("kind");   // 戻ったら必ず1段目から
   document.body.classList.remove("mz-focus");   // 工程を抜けたらサイトの外枠を戻す
 };
@@ -5882,20 +5848,8 @@ MC.ui.wire = () => {
      期待は「作る動画を選ぶ」(種類選択)へ戻ること。
      種類選択の画面にいるときだけ、従来どおりサイトのクリエイターページへ。
      素材は showModeSelect が保つ(消すのは「最初からやり直す」だけ) */
-  /* 完了音トグル(2026-08-05)。既定オフ。変えたら即保存し、オンにした瞬間に
-     試し鳴らし(その場で音量感が分かる+タップ起点でAudioContextも解錠される)。
-     2箇所(eoOverlay/doneCard)にあるので checked は相互に同期する */
-  { const tgs = [...document.querySelectorAll(".eo-sfx-row input")];
-    tgs.forEach(tg => {
-      tg.checked = MC.ui.sfx.enabled();
-      tg.onchange = () => {
-        MC.ui.sfx.setEnabled(tg.checked);
-        tgs.forEach(o => { if (o !== tg) o.checked = tg.checked; });
-        if (tg.checked) { MC.ui.sfx.unlock(); MC.ui.sfx.play("saved"); }
-      };
-    }); }
-
   { const backLink = document.querySelector(".topbar .back-link");
+    if (backLink) backLink.hidden = !$("#modeSelect").hidden;
     if (backLink) backLink.addEventListener("click", e => {
       /* ★ 解析・書き出し中は遷移しない(2026-08-05 レビューP1)。
          こだわりの進捗はインライン表示なので topbar が押せてしまい、
@@ -5905,20 +5859,17 @@ MC.ui.wire = () => {
         MC.ui.toast("処理中です。終わるまでお待ちください(中止するには画面内の「中止」を)");
         return;
       }
+      /* ★ 「← 戻る」は常にツール内(2026-08-05 優さん実機「戻るは、TOPページに
+         戻る。なんなの!!!!」)。href の /#creators へは**一度も**遷移させない ─
+         TOPへ行く道はフッターの「MarchinZへ戻る」に一本化。
+         種類選択(最上位)では戻る自体を隠す(iOSの作法: ルートに戻るは無い) */
+      e.preventDefault();
       const modeSel = $("#modeSelect");
       if (modeSel && modeSel.hidden) {
-        e.preventDefault();
         MC.ui.showModeSelect();
         MC.ui.toast("取り込んだ動画はそのまま残っています");
       }
     }); }
-
-  /* ★ 効果音の解錠(2026-08-02)。iOS Safari は AudioContext をタップ起点でしか
-     作れない/再開できない。どのタップでも unlock しておけば、数分後の完了時に
-     その文脈で鳴らせる。iOSは裏へ回ると ctx を止めることがあるので、
-     once にせず**毎タップ** resume を試みる(走っていれば何もしない・軽い) */
-  ["pointerdown", "keydown"].forEach(ev =>
-    document.addEventListener(ev, () => MC.ui.sfx.unlock(), { capture: true, passive: true }));
 
   /* 種類カード。**ここでは作業画面へ進まない**(2026-08-01)。
      選んだ種類を覚えて、2段目の「どちらで作りますか」へ送る */

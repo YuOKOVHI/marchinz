@@ -2142,9 +2142,4 @@ html:has(body.mz-auto-stage), body.mz-auto-stage {
   .mode-tip { font-size: 12px; padding: 9px 11px; }
 }
 
-/* 完了音トグル(2026-08-05)。完成画面の診断ログの上に小さく */
-.eo-sfx-row { display: flex; align-items: center; gap: 8px; margin: 10px 0 4px;
-  font-size: 12px; color: var(--tx2); cursor: pointer; min-height: 44px; }
 /* display:flex は hidden 属性(UAのdisplay:none)を上書きしてしまう(既知の罠) */
-.eo-sfx-row[hidden] { display: none; }
-.eo-sfx-row input { width: 18px; height: 18px; }

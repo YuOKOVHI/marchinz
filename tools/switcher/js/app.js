@@ -68,7 +68,10 @@ window.addEventListener("DOMContentLoaded", async () => {
      「一度戻ると、リセットした状態でスタート」)。対象は
      「← 戻る」(ヘッダー)・「最初から作り直す」(完成画面2箇所)・フッターの戻り。
      クラッシュ・リロードはここを通らないので、復元(続きから)は生きたまま */
-  for (const sel of [".back-link", "#eoToTools", "#doneToTools", ".foot-link"]) {
+  /* ★ .back-link はここに入れない(2026-08-05 優さん実機)。「← 戻る」は
+     ツール内(種類選択)へ戻る導線になった ─ 「取り込んだ動画はそのまま」と
+     言いながら保存状態を消すことになる。退出=リセットは本当に離れる導線だけ */
+  for (const sel of ["#eoToTools", "#doneToTools", ".foot-link"]) {
     document.querySelectorAll(sel).forEach(a =>
       a.addEventListener("click", () => { MC.ui.resetSavedProject(); }));
   }
