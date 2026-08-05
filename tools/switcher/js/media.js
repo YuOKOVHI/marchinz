@@ -91,12 +91,19 @@ MC.media.addFiles = async files => {
          **次にどうすればよいかを同時に言う**こと ─ スマホには
          「パソコンで開くと15分まで」を必ず添える。QAがこの一文を見張る */
     if (MC.media.tooLong(v.duration)) {
+      /* ★ 「約5分は取り込めません ─ 5分まで」の自己矛盾を作らない(2026-08-06
+         レビューP1)。上限超えで一番多いのは5分00〜29秒 ─ 分に丸めると
+         上限と同じ数字になって嘘に見える。分+秒で実際の長さを言う */
+      const durMin = Math.floor(v.duration / 60);
+      let durSec = Math.round(v.duration % 60);
+      const durLabel = durSec >= 60 ? `${durMin + 1}分`
+        : `${durMin}分${durSec ? durSec + "秒" : ""}`;
       /* ★ 逃げ道は MZ_LIMITS.sourceUpgradeHint() に聞く(2026-08-05 レビュー反映)。
          以前はここで `MZ_LIMITS.mobile` だけを見て「パソコンで開くと15分まで」と
          直書きしていた ─ 15分になるのは**登録×パソコン**だけなので、
          ゲストには嘘だった(ゲストはパソコンでも5分)。さらに条件が mobile だけ
          だったため、**パソコンのゲストには逃げ道が1つも出ず**行き止まりだった。 */
-      MC.ui.toast(`⚠ ${f.name} は約${Math.round(v.duration / 60)}分です。`
+      MC.ui.toast(`⚠ ${f.name} は${durLabel}です。`
         + `この端末で扱えるのは1本${MZ_LIMITS.sourceLimitLabel}までです。`
         + MZ_LIMITS.sourceUpgradeHint()
         + "長い録画は、先に前半・後半などに分けてからお試しください");
@@ -105,11 +112,11 @@ MC.media.addFiles = async files => {
          同じ内容+具体的な切り方を、取り込み枠の下に**消えない形**でも置く
          (描画は renderClips。次の取り込みで上書き・成功だけなら消える) */
       MC.media._importNote = `<i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> `
-        + `${MC.ui.esc(f.name)}（約${Math.round(v.duration / 60)}分）は取り込めませんでした ─ `
+        + `${MC.ui.esc(f.name)}（${durLabel}）は取り込めませんでした ─ `
         + `この端末で扱えるのは1本${MC.ui.esc(MZ_LIMITS.sourceLimitLabel)}までです。`
         + MC.ui.esc(MZ_LIMITS.sourceUpgradeHint())
         + `<b>短くするには:</b> iPhoneの写真アプリで動画を開き、`
-        + `「編集」で黄色い枠の端をドラッグ →「ビデオを保存」`;
+        + `「編集」で黄色い枠の端をドラッグ → ✓ →「ビデオを保存」を選択`;
       URL.revokeObjectURL(clip.url);
       continue;
     }

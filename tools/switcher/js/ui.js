@@ -494,12 +494,14 @@ MC.ui.showDone = res => {
        「準備できました」は見出しの「完成しました」と同じことの言い直しで、
        「写真(カメラロール)やファイルへ…」はボタン名「動画を保存」が
        すべて言っている。サイズだけ1語で残す(送れる大きさかの判断材料)。
-       ★ ただし共有シートの案内1行だけは戻す(2026-08-06 保護者レビューP1:
-         シートの上段はLINE等が並び、「ビデオを保存」は下のリスト ─
-         知らないと十中八九LINEを押して「保存したのに写真に無い」になる) */
+       ★ 「ビデオを保存」の案内(2026-08-06 保護者レビューP1: シートの上段は
+         LINE等が並び、知らないとLINEを押して「保存したのに写真に無い」になる)は
+         **完了トースト**で言う ─ doneNote に置く案は、この画面の中央寄せが
+         上マージンvh固定のため1行増えるだけで出口が667pxの外へ落ち、
+         「出口が同じ画面に収まる」契約(QA㉜)が破れた(実測+16px/2行版は+37px) */
     $("#doneText").innerHTML = `<span class="ok">${(res.blob.size / 1e6).toFixed(1)}MB</span>`;
-    $("#doneNote").textContent = "写真アプリに残すには、開いた画面で「ビデオを保存」を選んでください";
-    MC.ui.toast("✔ 完成しました。保存を押してください");
+    $("#doneNote").textContent = "";
+    MC.ui.toast("✔ 完成しました。「動画を保存」を押して「ビデオを保存」を選ぶと写真に入ります");
   } else {
     // PC/Mac: 自動ダウンロード済み。再ダウンロードだけ出す
     $("#saveBtn").style.display = "none";
@@ -1247,6 +1249,9 @@ MC.ui.resetProject = () => {
   try { localStorage.removeItem("marchcut_project"); } catch (_) {}
   MC.exporter.releaseOpfs();   // 書き出し済みファイルもここで片付ける
   MC.ui.clearErrorLog();
+  /* まっさらに戻したのに「◯◯は取り込めませんでした」が再表示されないように
+     (2026-08-06 レビューP1。クリアは addFiles 冒頭とここの2箇所) */
+  if (MC.media) MC.media._importNote = null;
   MC.ui.resetEasyDone();
   MC.ui.renderRestoreNote();
   MC.ui.renderAll();
@@ -1486,7 +1491,7 @@ MC.ui.renderLimitWhy = () => {
       + (!L2.member && L2.memberExportLabel
           && !(L2.modeCapped && L2.modeCapped(MC.S.mode))
           && !(isFinite(hardMax) && hardMax <= roleMax)
-          ? `<span class="hint">無料登録すると、書き出しは${MC.ui.esc(L2.memberExportLabel)}まで・`
+          ? `<span class="hint">無料登録すると${MC.ui.esc(L2.memberExportLabel)}まで書き出せて、`
             + "完成後の「別のシーン」も何本でも作れます。</span>"
           : "");
     return;
@@ -2616,13 +2621,18 @@ ${c.isImage ? "" : (c.tiltOk
   }
   /* ★ 取り込めなかった理由の常設表示(2026-08-06 保護者レビューP0)。
      トーストは3.5秒で消え、まとめて選んだ人は読み切れない。
-     文面は media.js(_importNote)が作る ─ 弾いた場所が理由を一番知っている */
+     文面は media.js(_importNote)が作る ─ 弾いた場所が理由を一番知っている。
+     ★ 置き場所は needSecondNote と同じ理由で**最初の空き枠の直前**(2026-08-06
+       レビューP1: 末尾だと0本取り込み時に空き枠3つの下=375pxの折り目の下)。
+       両方出るときは原因(こちら)→次の行動(2つ目を選ぶ)の順 */
   if (MC.media && MC.media._importNote) {
     const note = document.createElement("div");
     note.id = "importNote";
     note.className = "need-second-note";
     note.innerHTML = MC.media._importNote;
-    box.appendChild(note);
+    const anchor = box.querySelector("#needSecondNote")
+      || box.querySelector(".clip-slot.empty");
+    if (anchor) box.insertBefore(note, anchor); else box.appendChild(note);
   }
   /* 仕上げの好み画面が開いている間は、あとから完成するサムネイルを反映する
      (makeThumb → renderClips 経由でここへ来る。2026-08-02) */

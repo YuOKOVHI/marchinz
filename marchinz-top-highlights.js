@@ -140,15 +140,25 @@
     var rows = window.__YOUTUBE_LIST_ROWS;
     if (!grid || !Array.isArray(rows) || !rows.length) return;
 
-    var items = rows
+    var sorted = rows
       .slice()
       .filter(function (r) {
         return extractVideoId(r["最新動画URL"]);
       })
       .sort(function (a, b) {
         return parseDate(b["最新動画配信日"]) - parseDate(a["最新動画配信日"]);
-      })
-      .slice(0, YT_LIMIT);
+      });
+    /* ★ 海外は最後に1枠だけ・残りは日本(2026-08-06 優さん指示)。
+       カテゴリの正本は site-nav.js の名簿(__MZ_YT_CATEGORY_OF の窓口)。
+       窓口が無い/海外に新着が無いときは、日本だけで4枠を埋める */
+    var catOf = window.__MZ_YT_CATEGORY_OF || function () { return ""; };
+    var overseas = sorted.filter(function (r) {
+      return catOf(r["チャンネルURL"]) === "海外";
+    }).slice(0, 1);
+    var japan = sorted.filter(function (r) {
+      return catOf(r["チャンネルURL"]) !== "海外";
+    });
+    var items = japan.slice(0, overseas.length ? YT_LIMIT - 1 : YT_LIMIT).concat(overseas);
     if (!items.length) return;
 
     items.forEach(function (r) {

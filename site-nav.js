@@ -2541,6 +2541,18 @@
       }
     };
 
+    /* ★ TOPの「YouTube 新着」(marchinz-top-highlights.js)が名簿のカテゴリで
+       出し分ける(海外は最後に1枠だけ・2026-08-06 優さん指示)ための窓口。
+       カテゴリの正本はこの channels 1つ ─ 表を外に複製しない。
+       ここは最初の await より手前なので、後続の defer スクリプトが
+       実行される時点で必ず窓口が立っている */
+    const publishYtCategoryLookup = () => {
+      const map = {};
+      channels.forEach((c) => { map[normalizeYoutubeChannelUrl(c.url)] = c.category || "一般"; });
+      window.__MZ_YT_CATEGORY_OF = (url) => map[normalizeYoutubeChannelUrl(url)] || "";
+    };
+    publishYtCategoryLookup();
+
     const extractVideoIdFromYoutubeUrl = (url) => {
       const raw = String(url || "").trim();
       if (!raw) return "";
@@ -2725,6 +2737,7 @@
         latestDateByUrl = newLatestDateByUrl;
         videoDateById = newVideoDateById;
         videoTitleById = newVideoTitleById;
+        publishYtCategoryLookup();   // 名簿が入れ替わったら窓口も追随(mz:data-refreshed 経由)
       }
     };
 
