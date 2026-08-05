@@ -179,6 +179,10 @@ window.MZSiteChrome = (() => {
     <a href="https://x.com/marchinz2026" target="_blank" rel="noopener noreferrer" class="mzsc-x-link" aria-label="MarchinZ公式Xを開く" title="MarchinZ公式Xを開く">${X_SVG}</a>
   </div>
   <nav class="mzsc-foot-grid" aria-label="サイト内ページとポリシー">${cols}</nav>
+  <div class="mzsc-foot-note">
+    <p class="mzsc-foot-note-title">注意事項</p>
+    <p>本機能は映像制作をサポートするための補助ツールです。本ツールを利用して作成された映像、およびそれに起因するトラブルについて、運営は一切の責任を負いかねます。あらかじめご了承ください。詳しくは<a href="/#terms">利用規約</a>をご覧ください。</p>
+  </div>
   <p class="mzsc-foot-copy">${copyHtml(ver)}</p>
 </footer>`;
   }

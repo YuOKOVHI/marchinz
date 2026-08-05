@@ -3792,6 +3792,103 @@ async function countSamples(ns, file, fromSec) {
     return `ゲスト×PC: ${hint}`;
   });
 
+  await test("★上限なしの環境でも「3本まで」は言う(門と表示の食い違い)", async () => {
+    /* 2026-08-06 レビューで発覚: 上限なしの枝が「本数・長さの上限なし」と
+       言うのに、media.js の門(3本・会員種別で変わらない設計)は開かない ─
+       4本目で「素材は3つまでです」と食い違っていた。長さだけ上限なしと言う */
+    const w = await compEnv();
+    compReset(w);
+    const txt = withRole(w, { unlimited: true, local: true, admin: true, member: true,
+      mobile: false, bigDevice: true, maxExportSec: Infinity, maxVideoSec: Infinity,
+      maxSourceSec: Infinity, sourceLimitLabel: "上限なし", exportLimitLabel: "上限なし" }, () => {
+      w.MC.ui.renderLimitWhy();
+      return w.document.querySelector(".mz-limit-why").textContent;
+    });
+    if (!/3本まで/.test(txt)) throw new Error("本数の門(3本)を言っていない: " + txt);
+    if (!/上限なし/.test(txt)) throw new Error("長さの上限なしを言っていない: " + txt);
+    if (/本数・長さの上限なし/.test(txt)) throw new Error("嘘の旧文言が残っている: " + txt);
+    return "3本まで・長さは上限なし(門と表示が一致)";
+  });
+
+  await test("★ゲストには「登録で何が変わるか」を上限と同じ場所で言う(嘘は言わない)", async () => {
+    /* 2026-08-06 高校生レビューP0: data-mz-plan 撤去後、登録の利点が画面の
+       どこにも出ていなかった。ただし自動SW×スマホは登録しても30秒(天井)なので、
+       そこで「登録すると」と言うのは嘘 ─ 出し分けまで測る */
+    /* ★ withRole では測れない ─ modeCapped は limits.js の閉包(内部の mobile)を
+       見るため、プロパティの差し替えでは「スマホの天井」にならない。
+       loadLimits で**本物の閉包ごと**ゲスト×スマホを作って差し込む */
+    const w = await compEnv();
+    compReset(w);
+    const keepL = w.MZ_LIMITS, keepMode = w.MC.S.mode;
+    try {
+      w.MZ_LIMITS = await loadLimits({ mobile: true });   // ゲスト×スマホ
+      w.MC.S.mode = "vertical";
+      w.MC.ui.renderLimitWhy();
+      const txt = w.document.querySelector(".mz-limit-why").textContent;
+      if (!/無料登録すると/.test(txt) || !/別のシーン/.test(txt)) {
+        throw new Error("登録の利点が出ていない: " + txt);
+      }
+      if (!/60秒/.test(txt)) throw new Error("スマホなのに60秒の約束でない: " + txt);
+      /* 自動SW×スマホ(登録しても30秒)では約束しない */
+      w.MC.S.mode = "switch";
+      w.MC.ui.renderLimitWhy();
+      const capped = w.document.querySelector(".mz-limit-why").textContent;
+      if (/無料登録すると/.test(capped)) {
+        throw new Error("登録しても変わらない条件で登録を勧めている(嘘): " + capped);
+      }
+      return "縦型ゲスト=60秒と別のシーンを約束 / 自動SW×スマホ=言わない";
+    } finally {
+      w.MZ_LIMITS = keepL; w.MC.S.mode = keepMode;
+      w.MC.ui.renderLimitWhy();   // 触った表示も戻す
+    }
+  });
+
+  await test("★長さで弾かれた理由は消えない形でも残る(トーストだけにしない)", async () => {
+    /* 2026-08-06 保護者レビューP0: 断りがトースト(3.5秒)だけで、まとめて
+       選んだ人は読み切れない。取り込み枠の下の常設表示と、次にすべき
+       具体的な切り方(写真アプリ)まで言うことを測る */
+    const w = await compEnv();
+    compReset(w);
+    const keepToast = w.MC.ui.toast;
+    const keepCreate = w.document.createElement.bind(w.document);
+    w.MC.ui.toast = () => {};
+    w.document.createElement = tag => {
+      const el = keepCreate(tag);
+      if (String(tag).toLowerCase() === "video") {
+        Object.defineProperty(el, "duration", { get: () => 510, configurable: true });
+        Object.defineProperty(el, "videoWidth", { get: () => 1920, configurable: true });
+        Object.defineProperty(el, "videoHeight", { get: () => 1080, configurable: true });
+        Object.defineProperty(el, "src", { configurable: true, get: () => "blob:fake",
+          set: () => { setTimeout(() => { if (el.onloadedmetadata) el.onloadedmetadata(); }, 0); } });
+      }
+      return el;
+    };
+    try {
+      await withRoleAsync(w, { unlimited: false, local: false, admin: false, member: false,
+        mobile: true, bigDevice: false, maxSourceSec: 300.5, sourceLimitLabel: "5分",
+        maxExportSec: 30, exportLimitLabel: "30秒", maxVideoSec: 300.5, videoLimitLabel: "5分" }, async () => {
+        w.MC.S.clips = [];
+        const head = new Uint8Array(32);
+        head.set([0x66, 0x74, 0x79, 0x70], 4);
+        await w.MC.media.addFiles([new w.File([head], "show.mp4", { type: "video/mp4" })]);
+        const note = w.document.getElementById("importNote");
+        if (!note) throw new Error("常設の断り書きが出ない(トーストだけに戻っている)");
+        if (!w.document.getElementById("clipSlots").contains(note)) {
+          throw new Error("断り書きが取り込み枠の近くに無い");
+        }
+        if (!/写真アプリ/.test(note.textContent) || !/ビデオを保存/.test(note.textContent)) {
+          throw new Error("具体的な切り方(写真アプリ)を言っていない: " + note.textContent);
+        }
+        if (!/5分/.test(note.textContent)) throw new Error("上限を言っていない: " + note.textContent);
+        /* 変異の歯: 次の取り込みで仕切り直す(古い断りが残り続けない) */
+        w.MC.media._importNote = "残骸";
+        await w.MC.media.addFiles([]);
+        if (w.MC.media._importNote === "残骸") throw new Error("取り込みのたびに仕切り直していない");
+      });
+    } finally { w.MC.ui.toast = keepToast; w.document.createElement = keepCreate; }
+    return "常設表示あり / 写真アプリの道順つき / 次の取り込みで仕切り直す";
+  });
+
   await test("★鍵つきの札が約束する道は、本当にその鍵を開ける(約束の検算)", async () => {
     /* ★ 2026-08-05 レビューで見つかった P0 の再発防止。
        limits.js の modeCapped が `<`(厳密)だったため、
@@ -6116,6 +6213,30 @@ async function countSamples(ns, file, fromSec) {
       if (!called) throw new Error("2本そろったのに自走が始まらない(=止めすぎ)");
       return "案内が消える / 同じ経路で自走が始まる";
     } finally { w.MC.ui.runAuto = keep; w.MC.ui._autoFlow = false; }
+  });
+
+  await test("★動画2の札: おまかせ=「必要」/ こだわり=「任意」(門と表示の一致)", async () => {
+    /* 2026-08-06 保護者レビューP1: おまかせは2本必須(needSecondVideoの門)なのに
+       枠の札が「任意」のまま ─ スマホ1台の人が「1本でいいのに動かない」と詰まる。
+       門と同じ判断(_autoFlow)で出し分けること。3本目は両方とも任意のまま */
+    const w = await compEnv();
+    const S = compReset(w);
+    try {
+      S.clips = [S.clips[0]]; S.slots = [1];
+      const labelOf = idx => {
+        const lb = w.document.querySelectorAll("#clipSlots .clip-slot-label")[idx];
+        return lb ? lb.textContent : "(無し)";
+      };
+      w.MC.ui._autoFlow = true;
+      w.MC.ui.renderClips();
+      if (!/必要/.test(labelOf(1))) throw new Error("おまかせの動画2が必要と言わない: " + labelOf(1));
+      if (/任意/.test(labelOf(1))) throw new Error("おまかせの動画2に任意が残っている: " + labelOf(1));
+      if (!/任意/.test(labelOf(2))) throw new Error("3本目まで必要になっている: " + labelOf(2));
+      w.MC.ui._autoFlow = false;
+      w.MC.ui.renderClips();
+      if (!/任意/.test(labelOf(1))) throw new Error("こだわりの動画2が任意でない: " + labelOf(1));
+      return "おまかせ=必要 / こだわり=任意 / 3本目=任意";
+    } finally { w.MC.ui._autoFlow = false; }
   });
 
   await test("★runAuto の入口にも門がある(ワイプ選択後・再試行など直接の道)", async () => {

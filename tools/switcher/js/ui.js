@@ -493,9 +493,12 @@ MC.ui.showDone = res => {
     /* ★ 説明の行は両方削除(2026-08-01 優さん指示「文字が多い」)。
        「準備できました」は見出しの「完成しました」と同じことの言い直しで、
        「写真(カメラロール)やファイルへ…」はボタン名「動画を保存」が
-       すべて言っている。サイズだけ1語で残す(送れる大きさかの判断材料) */
+       すべて言っている。サイズだけ1語で残す(送れる大きさかの判断材料)。
+       ★ ただし共有シートの案内1行だけは戻す(2026-08-06 保護者レビューP1:
+         シートの上段はLINE等が並び、「ビデオを保存」は下のリスト ─
+         知らないと十中八九LINEを押して「保存したのに写真に無い」になる) */
     $("#doneText").innerHTML = `<span class="ok">${(res.blob.size / 1e6).toFixed(1)}MB</span>`;
-    $("#doneNote").textContent = "";
+    $("#doneNote").textContent = "写真アプリに残すには、開いた画面で「ビデオを保存」を選んでください";
     MC.ui.toast("✔ 完成しました。保存を押してください");
   } else {
     // PC/Mac: 自動ダウンロード済み。再ダウンロードだけ出す
@@ -1475,13 +1478,25 @@ MC.ui.renderLimitWhy = () => {
               + "そのぶん高画質で書き出します）"
           : isFinite(roleMax)
             ? `（書き出せるのは${MC.ui.esc(L2.exportLimitLabelFor
-                ? L2.exportLimitLabelFor(MC.S.mode) : L2.exportLimitLabel)}までです）` : "");
+                ? L2.exportLimitLabelFor(MC.S.mode) : L2.exportLimitLabel)}までです）` : "")
+      /* ★ 登録で何が変わるかを、上限と同じ場所で言う(2026-08-06 高校生レビューP0:
+         data-mz-plan撤去後、「登録すると60秒/別のシーン何本でも」が画面の
+         どこにも出ていなかった ─ 制限だけ見せられて動機が無い)。
+         自動SW×スマホ(登録しても30秒)とメモリ頭打ちの端末では言わない(嘘になる) */
+      + (!L2.member && L2.memberExportLabel
+          && !(L2.modeCapped && L2.modeCapped(MC.S.mode))
+          && !(isFinite(hardMax) && hardMax <= roleMax)
+          ? `<span class="hint">無料登録すると、書き出しは${MC.ui.esc(L2.memberExportLabel)}まで・`
+            + "完成後の「別のシーン」も何本でも作れます。</span>"
+          : "");
     return;
   }
-  /* 上限が外れている端末(手元の環境・管理者)。ここで「3本まで」と言うと、
-     limits.js が出す #adminLimitBadge の「上限なし」と真正面から矛盾する。
-     上限の話はこの1文に集約し、バッジの方を畳む(2026-07-28) */
-  el.innerHTML = icon + "<b>本数・長さの上限なし</b>で取り込めます。";
+  /* 上限が外れている端末(手元の環境・管理者)。上限の話はこの1文に集約し、
+     バッジの方を畳む(2026-07-28)。
+     ★ 本数は上限なしでも3本まで(media.jsの門は会員種別で変わらない設計・
+       2026-08-05 優さん指示)。前の文言「本数・長さの上限なし」は
+       4本目で「素材は3つまでです」と食い違う嘘だった(2026-08-06 レビュー) */
+  el.innerHTML = icon + "<b>3本まで・長さは上限なし</b>で取り込めます。";
   const badge = document.getElementById("adminLimitBadge");
   if (badge) badge.hidden = true;
 };
@@ -2427,10 +2442,15 @@ MC.ui.renderClips = () => {
     const lb = document.createElement("div");
     lb.className = "clip-slot-label";
     const noun = vertical ? "素材" : "動画";
-    /* 2本目から先は任意(1本でも成立する)。3本目だけに但し書きを付けると、
-       2本目は必須のように読める(2026-08-01) */
+    /* こだわりは2本目から先が任意(1本でも成立する)。3本目だけに但し書きを
+       付けると、2本目は必須のように読める(2026-08-01)。
+       ★ おまかせは動画2本必須(needSecondVideoの門・2026-08-02)なのに
+         「任意」のままだった ─ スマホ1台の人が「1本でいいのに動かない」と
+         詰まる(2026-08-06 保護者レビューP1)。門と同じ判断で出し分ける */
+    const secondNeeded = slotIdx === 1 && !!MC.ui._autoFlow;
     lb.innerHTML = `<i class="fa-solid fa-video"></i> ${noun}${slotIdx + 1}`
-      + (slotIdx >= 1 ? ` <span class="hint">任意</span>` : "");
+      + (secondNeeded ? ` <span class="hint">必要</span>`
+         : slotIdx >= 1 ? ` <span class="hint">任意</span>` : "");
     slot.appendChild(lb);
     if (!c) {
       const btn = document.createElement("button");
@@ -2593,6 +2613,16 @@ ${c.isImage ? "" : (c.tiltOk
        375px では折り目の下 ─ 次にすべき行動(動画2を選ぶ)の手前で読ませる */
     const emptySlot = firstEmptyIdx != null ? box.children[firstEmptyIdx] : null;
     if (emptySlot) box.insertBefore(note, emptySlot); else box.appendChild(note);
+  }
+  /* ★ 取り込めなかった理由の常設表示(2026-08-06 保護者レビューP0)。
+     トーストは3.5秒で消え、まとめて選んだ人は読み切れない。
+     文面は media.js(_importNote)が作る ─ 弾いた場所が理由を一番知っている */
+  if (MC.media && MC.media._importNote) {
+    const note = document.createElement("div");
+    note.id = "importNote";
+    note.className = "need-second-note";
+    note.innerHTML = MC.media._importNote;
+    box.appendChild(note);
   }
   /* 仕上げの好み画面が開いている間は、あとから完成するサムネイルを反映する
      (makeThumb → renderClips 経由でここへ来る。2026-08-02) */
@@ -5780,7 +5810,9 @@ MC.ui.showModeStep = step => {
   { const d = MC.ui.$("#flowEasyDesc"), L = window.MZ_LIMITS;
     if (d && L && L.exportLimitLabelFor) {
       const lab = L.exportLimitLabelFor(MC.ui._pendingMode || MC.S.mode);
-      d.innerHTML = `動画を選ぶだけ。<b>${MC.ui.esc(lab)}</b>までの見どころを、`
+      /* ★「2本以上」を選ぶ前に言う(2026-08-06 保護者レビュー: 「任意」表記と
+         needSecondVideoの門が矛盾し、スマホ1台の人が選んだ後で詰まっていた) */
+      d.innerHTML = `動画を2本以上選ぶだけ。<b>${MC.ui.esc(lab)}</b>までの見どころを、`
         + "傾きも色も整えて自動で書き出します";
     } }
   if (step === "flow") {

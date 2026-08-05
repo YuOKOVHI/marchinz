@@ -32,6 +32,7 @@ MC.media.addFiles = async files => {
   let added = 0;
   const skipped = [];   // 動画として扱えず見送ったファイル(最後にまとめて知らせる)
   let photoBlocked = 0; // おまかせに写真が混ざった数(最後に1行で知らせる)
+  MC.media._importNote = null;   // 常設の断り書きは取り込みのたびに仕切り直す
   for (const f of files) {
     const isImage = /^image\//.test(f.type) || /\.(jpe?g|png|webp|heic|heif|gif)$/i.test(f.name);
     if (isImage) {
@@ -99,6 +100,16 @@ MC.media.addFiles = async files => {
         + `この端末で扱えるのは1本${MZ_LIMITS.sourceLimitLabel}までです。`
         + MZ_LIMITS.sourceUpgradeHint()
         + "長い録画は、先に前半・後半などに分けてからお試しください");
+      /* ★ トーストは3.5秒で消える ─ まとめて選んだ人は理由を読み切れず、
+         「なぜ入らなかったのか」だけが残る(2026-08-06 保護者レビューP0)。
+         同じ内容+具体的な切り方を、取り込み枠の下に**消えない形**でも置く
+         (描画は renderClips。次の取り込みで上書き・成功だけなら消える) */
+      MC.media._importNote = `<i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> `
+        + `${MC.ui.esc(f.name)}（約${Math.round(v.duration / 60)}分）は取り込めませんでした ─ `
+        + `この端末で扱えるのは1本${MC.ui.esc(MZ_LIMITS.sourceLimitLabel)}までです。`
+        + MC.ui.esc(MZ_LIMITS.sourceUpgradeHint())
+        + `<b>短くするには:</b> iPhoneの写真アプリで動画を開き、`
+        + `「編集」で黄色い枠の端をドラッグ →「ビデオを保存」`;
       URL.revokeObjectURL(clip.url);
       continue;
     }
@@ -122,6 +133,9 @@ MC.media.addFiles = async files => {
     MC.ui.toast("おまかせでは写真は使えません（動画のみ）。写真はこだわりでどうぞ");
   }
   if (added) MC.media.afterChange();
+  /* 何も足せず断り書きだけが立ったときも描き直す ─ afterChange が走らないと
+     renderClips が呼ばれず、常設の断り書きが画面に出ない */
+  else if (MC.media._importNote && MC.ui.renderClips) MC.ui.renderClips();
 };
 
 /* 入口の門番。**技術的な天井(maxSourceSec)**だけを見る ─ プランの壁

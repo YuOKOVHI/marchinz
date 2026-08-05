@@ -179,6 +179,20 @@
   display: inline-flex; align-items: center; min-height: 44px; }
 .mzsc-foot-col a:hover { text-decoration: underline; }
 .mzsc-foot-tools { text-align: center; font-size: 12px; padding: 0 18px 4px; color: rgba(255, 255, 255, 0.7); }
+/* 注意事項(映像ツールの免責・2026-08-06 優さん指示)。コピーライトと同じ
+   トーンで、目立たせすぎず読める濃さに */
+.mzsc-foot-note {
+  max-width: 400px;
+  margin: 0 auto;
+  padding: 0 18px 14px;
+  text-align: left;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 11px;
+  line-height: 1.7;
+}
+.mzsc-foot-note p { margin: 0; }
+.mzsc-foot-note-title { font-weight: 700; color: rgba(255, 255, 255, 0.75); margin-bottom: 2px; }
+.mzsc-foot-note a { color: inherit; text-decoration: underline; }
 .mzsc-foot-copy {
   text-align: center;
   font-size: 11.5px;
