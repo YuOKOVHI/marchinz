@@ -3910,6 +3910,21 @@ async function countSamples(ns, file, fromSec) {
       for (const need of ["無料登録", "パソコン", "5分", "15分", "10分"]) {
         if (t.indexOf(need) < 0) throw new Error(`案内に「${need}」が無い: ` + t);
       }
+      /* ★ ゲストは「PCで開くだけで15分」と読めてはいけない(2026-08-06 レビューP2-4:
+         固定文だった2文目がゲストにも「パソコンなら1本15分」と言い、
+         実際はゲスト×PCは5分のまま=登録して初めて15分になる、を隠していた) */
+      const body = w.document.getElementById("mzModeTipBody").textContent;
+      if (!/登録してパソコンで開くと/.test(body)) {
+        throw new Error("ゲストに「登録して」の条件が付いていない: " + body);
+      }
+      /* 登録済みは「登録して」を言わない(もう済んでいる) */
+      w.MZ_LIMITS = await loadLimits({ member: true, mobile: true });
+      w.MC.ui.showModeStep("kind");
+      const bodyM = w.document.getElementById("mzModeTipBody").textContent;
+      if (/登録して/.test(bodyM)) throw new Error("登録済みにまだ「登録して」と言っている: " + bodyM);
+      if (!/パソコンなら1本15分まで/.test(bodyM)) throw new Error("登録済みの文が変わった: " + bodyM);
+
+      w.MZ_LIMITS = await loadLimits({ mobile: true });
       /* 上限なし(管理者)には出さない(2026-08-05 優さん指示のまま) */
       w.MZ_LIMITS = await loadLimits({ admin: true, mobile: true });
       w.MC.ui.showModeStep("kind");
@@ -3944,8 +3959,62 @@ async function countSamples(ns, file, fromSec) {
       if (!/登録済みだから10分まで/.test(el.textContent)) {
         throw new Error("登録×PCの理由つき実数が出ない: " + el.textContent);
       }
-      return "管理者=上限なし / 未登録=30秒 / 登録PC=10分(全部理由つき・強調)";
-    } finally { w.MZ_LIMITS = keepL; w.MC.ui.showModeStep("kind"); }
+      /* ★ 自動SW×スマホの30秒は技術的な天井 ─ 「未登録だから」と言うと
+         登録で伸びると読める嘘(2026-08-06 レビューP1)。主語は端末 */
+      w.MZ_LIMITS = await loadLimits({ mobile: true });
+      const keepPm = w.MC.ui._pendingMode;
+      w.MC.ui._pendingMode = "switch";
+      w.MC.ui.showModeStep("kind");
+      const sw = el.textContent;
+      w.MC.ui._pendingMode = keepPm;
+      if (!/スマホだから30秒まで/.test(sw)) throw new Error("天井の主語が端末でない: " + sw);
+      if (/未登録だから/.test(sw)) throw new Error("天井なのに会員種別を理由にしている(嘘): " + sw);
+      return "管理者=上限なし / 未登録=30秒 / 登録PC=10分 / 自動SW×スマホ=スマホだから30秒";
+    } finally { w.MZ_LIMITS = keepL; w.MC.ui._pendingMode = null; w.MC.ui.showModeStep("kind"); }
+  });
+
+  await test("★演奏検出が狭窄しても(show=末尾だけ)、保険は素材の頭から3つ出し、前半のタップは前半を書き出す", async () => {
+    /* 2026-08-06 優さん実機ログで確定した真因の見張り:
+       salute検出が最後の礼だけを拾い show=486..643(末尾157秒)に狭窄。
+       s0を信じると前半7分の演奏が永遠に出せない。
+       (1)保険が素材の頭(0起点)から3つ出ること
+       (2)前半候補(t<s0)をタップしても、書き出し範囲が t を保つこと(前方向の広げ) */
+    const w = await compEnv();
+    const S = compReset(w);
+    const U = w.MC.ui, H = w.MC.highlight;
+    const keep = { range: U.showRange, preset: U.currentPreset, cover: U.coverRange,
+                   best: H.bestScenes, cands: H.candidates, psec: H.presetSec,
+                   tdur: w.MC.timelineDuration, sk: S.startKey, sa: S.startAt,
+                   tIn: S.trimIn, tOut: S.trimOut, ep: S.exportPreset };
+    try {
+      U.showRange = () => [486, 643];           // 実機ログそのままの狭窄
+      U.currentPreset = () => ({ id: "p60" });
+      H.presetSec = () => 60;
+      U.coverRange = (a, b) => [a, b];
+      H.bestScenes = () => [];
+      w.MC.timelineDuration = () => 650;
+      S.trimIn = 486; S.trimOut = 546;
+      const offers = U.sceneOffers();
+      if (offers.length < 3) throw new Error("狭窄で3つ出ない: " + offers.length);
+      const early = offers.find(o => o.t < 486 - 8);
+      if (!early) throw new Error("素材の前半の候補が無い(検出を信じすぎ): "
+        + offers.map(o => o.t.toFixed(0)).join(","));
+      /* (2) 前半候補のタップ相当: t を保って書き出すか */
+      H.candidates = () => [{ key: "climax", label: "大盛り上がり", t: 486, dur: 60 }];
+      S.startKey = "manual"; S.startAt = early.t;
+      const r = U.applyLengthChoice();
+      if (!r) throw new Error("applyLengthChoice が null");
+      if (Math.abs(S.trimIn - early.t) > 1.0) {
+        throw new Error(`前半の t=${early.t.toFixed(0)} が守られない: trimIn=${S.trimIn.toFixed(0)}(s0=486へ引き戻し)`);
+      }
+      return `狭窄でも${offers.length}個 / 前半t=${early.t.toFixed(0)}を保って書き出す`;
+    } finally {
+      U.showRange = keep.range; U.currentPreset = keep.preset; U.coverRange = keep.cover;
+      H.bestScenes = keep.best; H.candidates = keep.cands; H.presetSec = keep.psec;
+      w.MC.timelineDuration = keep.tdur; S.startKey = keep.sk; S.startAt = keep.sa;
+      S.trimIn = keep.tIn; S.trimOut = keep.tOut; S.exportPreset = keep.ep;
+      U._sceneWhy = null;
+    }
   });
 
   await test("★管理者×スマホの既定の長さは一般の登録者と同じ60秒(まるごとは選べば使える)", async () => {
@@ -7738,7 +7807,12 @@ async function countSamples(ns, file, fromSec) {
     }
   });
 
-  await test("★シーン候補は全動画が重なる区間の中だけ(3本目が無い時間帯を選ばない・変異つき)", async () => {
+  await test("★機械候補は重なり区間の中・保険(fb-)だけ実長まで許す(2026-08-06 裁定)", async () => {
+    /* ★ 契約の更新(2026-08-06 優さん指示「2分未満を除いて、常に3つ以上」):
+       旧契約(⑤ 2026-08-02)は全候補を交差内に限定していたが、演奏検出の狭窄や
+       短いカメラ1本で「別のシーン」が全滅する(実機で候補1枚が再発)。
+       裁定: 機械候補(bs)は従来どおり交差内 / 保険(fb-)は素材の実長まで許す。
+       交差の外はそのカメラが無い時間帯があり得るが、選べない方が損 */
     const w = await compEnv();
     const S = compReset(w);
     await sceneAudioSetup(w, S);
@@ -7748,32 +7822,30 @@ async function countSamples(ns, file, fromSec) {
     S.exportPreset = "short"; S.startKey = "start";
     if (!U.applyLengthChoice()) throw new Error("範囲を決められない");
     S.lengthDecided = true;
-    /* 開始位置そのものも共通区間の中に落ちること(applyLengthChoice) */
+    /* 開始位置そのものは共通区間の中(startKey="start"=非manualは従来クランプ) */
     if (!(S.trimIn >= 40 - 0.01 && S.trimOut <= 150 + 0.01)) {
       throw new Error(`1回目の窓が共通区間(40〜150)の外: ${S.trimIn.toFixed(1)}〜${S.trimOut.toFixed(1)}`);
     }
     const offers = U.sceneOffers();
     for (const o of offers) {
+      if (/^fb-/.test(o.key)) continue;   // 保険は実長まで許す(下で別に測る)
       if (o.t < 40 - 0.01 || o.t + o.dur > 150 + 0.01) {
-        throw new Error(`候補「${o.label}」が3本目の無い時間帯を含む: ${o.t.toFixed(1)}〜${(o.t + o.dur).toFixed(1)}`);
+        throw new Error(`機械候補「${o.label}」が3本目の無い時間帯を含む: ${o.t.toFixed(1)}〜${(o.t + o.dur).toFixed(1)}`);
       }
     }
-    /* 変異: 共通区間の制限を外すと、150秒より後ろの候補が実際に出ること
-       (=このフィクスチャと見張りに検出力がある証明) */
-    const keepCover = U.coverRange;
-    try {
-      U.coverRange = (a, b) => [a, b];
-      const mut = U.sceneOffers();
-      if (!mut.some(o => o.t + o.dur > 150 + 1)) {
-        throw new Error("変異(制限なし)でも候補が150秒に収まる=この見張りは何も検出していない");
-      }
-    } finally { U.coverRange = keepCover; }
+    /* 保険の検出力: 実長(400秒)側へ本当に届くこと(=「常に3つ」の歯)。
+       交差(40..150)に閉じ込める旧実装へ戻すとここで落ちる */
+    if (!offers.some(o => /^fb-/.test(o.key) && o.t + o.dur > 150 + 1)) {
+      throw new Error("保険が実長へ届かない(交差に閉じ込められている): "
+        + offers.map(o => `${o.key}:${o.t.toFixed(0)}`).join(","));
+    }
+    if (offers.length < 3) throw new Error("常に3つ以上が守られない: " + offers.length);
     /* 共通部分が選んだ長さより短いときは、窓ごと押し込めず従来の範囲に戻す(詰ませない) */
     w.MC.getClip(3).duration = 70;   // 共通部分 40〜70 = 30秒 < 59秒
     const r = U.applyLengthChoice();
     if (!r) throw new Error("共通部分が短いと長さを決められなくなる(詰み)");
     w.MC.getClip(3).duration = 400;
-    return `共通区間内=${offers.length}個 / 変異は検出 / 短い共通部分では従来へ`;
+    return `機械=交差内 / 保険=実長へ届く(${offers.length}個) / 短い共通部分では従来へ`;
   });
 
   await test("★書き出し中プレビューの<video>再生 — 消灯抑止の条件と、断られたらcanvasへ戻る", async () => {
@@ -8269,15 +8341,20 @@ async function countSamples(ns, file, fromSec) {
       if (Math.abs(S.trimOut - 490) > 1.0) {
         throw new Error(`尻が実長まで届かない: trimOut=${S.trimOut}(showOut=361で短切れ)`);
       }
-      /* 変異: 実長が無い(検出=実長)なら従来どおりクランプされること ─
-         広げっぱなしの書き逃げを許さない */
+      /* 変異: 検出が素材の**大半**を占める(=実長の余地が無い)なら従来どおり
+         クランプされること ─ 広げっぱなしの書き逃げを許さない。
+         ★ show=[300,361]/durAll=361(検出が実長の17%)は、新仕様(2026-08-06
+           実機ログで確定した検出狭窄への保険: 検出が実長の半分未満なら
+           演奏開始より前も候補に含める)では**正しく広がる**ケースになった。
+           ここは検出が実長の過半を占め、広域化が要らない場合を再現する */
       w.MC.timelineDuration = () => 361;
+      U.showRange = () => [0, 361];
       S.startKey = "manual"; S.startAt = 430;
       U.applyLengthChoice();
       if (S.trimIn > 301.5) {
-        throw new Error(`実長が無いのに範囲外へ出た: trimIn=${S.trimIn}(361-60=301へ収まるべき)`);
+        throw new Error(`検出が大半を占めるのに範囲外へ出た: trimIn=${S.trimIn}(361-60=301へ収まるべき)`);
       }
-      return "検出61秒+実長780秒: t=430を保ちtrimOut=490 / 実長無しは従来クランプ";
+      return "検出61秒+実長780秒: t=430を保ちtrimOut=490 / 検出が大半なら従来クランプ";
     } finally {
       U.showRange = keep.range; U.currentPreset = keep.preset; U.coverRange = keep.cover;
       H.candidates = keep.cands; H.presetSec = keep.psec; w.MC.timelineDuration = keep.tdur;

@@ -166,7 +166,9 @@
         buildVideoCard({
           url: r["最新動画URL"],
           thumb: thumbUrl(extractVideoId(r["最新動画URL"])),
-          badge: "",
+          /* 海外は「意図した特設枠」と分かる印を付ける(2026-08-06 レビュー:
+             末尾固定は日付順でないため、無印だと並びの壊れに見える) */
+          badge: catOf(r["チャンネルURL"]) === "海外" ? "海外" : "",
           title: r["最新動画タイトル"] || "最新動画",
           channelName: r["チャンネル名"] || "",
           channelLogo: r["ロゴ画像URL"] || "",

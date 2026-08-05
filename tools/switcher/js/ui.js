@@ -653,7 +653,12 @@ MC.ui.saveResult = async () => {
       MC.ui.notifySaved(r, "share");                    // 成功したときだけ言う
       return "saved";
     } catch (e) {
-      if (e && e.name === "AbortError") return "cancelled";   // 取り消しは黙る
+      if (e && e.name === "AbortError") {
+        /* ★ 取り消し=「どれを押せばいいか分からなかった」ことが多い(2026-08-06
+           保護者レビュー: シート上段のLINEを押して「写真に無い」)。次の一手を言う */
+        MC.ui.toast("開いた画面の下の方にある「ビデオを保存」を選ぶと、写真アプリに入ります");
+        return "cancelled";
+      }
       /* ★ iPhoneで <a download> へ落とすと「PCのダウンロードの挙動」になり、
          どこへ保存されたか分からなくなる(2026-08-05 優さん実機)。
          タップから時間が経った(NotAllowedError)・シートの競合
@@ -767,10 +772,17 @@ MC.ui.sceneOffers = () => {
            欠ける時間帯があり得るが、「その場面を選べない」方が損。
            始まりは演奏開始(s0)を尊重(セッティング風景は出さない)。
            2分未満の素材だけ保険なし(優さん指示「2分未満を除いて常に3つ」) */
-        const f0 = s0, f1 = Math.max(durAll, s1);
+        /* ★ 演奏検出(show)が素材の半分も掴めていないときは、頭からを土台に
+           (2026-08-06 優さん実機ログで確定: salute検出が最後の礼だけを拾い
+           show=486..643(末尾157秒)に狭窄。s0を信じると前半7分の演奏が
+           永遠に出せない ─ 「検出結果を出さない言い訳に使わない」)。
+           検出がまともなときは従来どおり演奏開始(s0)を尊重 */
+        const wide = (s1 - s0) < durAll * 0.5;
+        const f0 = wide ? 0 : s0, f1 = Math.max(durAll, s1);
         const fspan = (f1 - f0) - lenSec;
-        fbNote = ` fb=${f0.toFixed(0)}..${f1.toFixed(0)} fspan=${fspan.toFixed(0)}`;
-        if (durAll >= 120) {
+        fbNote = ` fb=${f0.toFixed(0)}..${f1.toFixed(0)} fspan=${fspan.toFixed(0)}`
+          + (wide ? " wide" : "");
+        if (durAll >= 120 && f1 - f0 >= 10) {
           /* ★ 位置は**素材の実長比**で置く(fspan比ではない)。上限なしの人は
              プリセットが「まるごと」= fspan が10秒ほどしか残らず、fspan比だと
              候補が冒頭数秒に密集して1枚しか生き残らない(2026-08-06 優さん実機:
@@ -815,8 +827,9 @@ MC.ui.sceneOffers = () => {
       if (line !== MC.ui._soLastLog) { MC.ui._soLastLog = line; MC.log(line); }
     }
     if (out.length) return out;
-    /* ここまで来たら本当に「いま作ったところしかない」(1分ちょっとの素材) */
-    return no(bs.length ? "overlap" : "none");
+    /* ここまで来たら本当に「いま作ったところしかない」(2分未満の素材)。
+       cover は切り分けキーとして残す(2026-08-06 レビューP0: 到達不能化していた) */
+    return no(!covered ? "cover" : bs.length ? "overlap" : "none");
   } catch (e) { MC.log("sceneOffers: " + e.message); return no("error"); }
 };
 
@@ -1643,13 +1656,20 @@ MC.ui.applyLengthChoice = () => {
      (2026-08-06 レビューP0)。t が範囲の外を指すときだけ、保険の生成側と
      同じ土台(素材実長までの cover)へ範囲を広げて、約束した場面を守る */
   if (MC.S.startKey === "manual" && MC.S.startAt != null
-      && MC.S.startAt > t1 - lenSec) {
+      && (MC.S.startAt > t1 - lenSec || MC.S.startAt < t0)) {
     try {
       /* 広げ先は保険の生成側と同じ**素材の実長**(2026-08-06 交差説の撤回と同時に
-         coverRange経由をやめた ─ 土台が2実装に割れると必ず片方が嘘になる) */
+         coverRange経由をやめた ─ 土台が2実装に割れると必ず片方が嘘になる)。
+         ★ 前方向にも広げる(同日ログで確定した show狭窄=486..643 のケースでは、
+           保険の「前半」候補 t は s0 より**手前**を指す。後ろだけ広げると
+           snapToBeat の下限クランプが t を s0 へ引き戻し、押した場面と別の
+           動画ができる ─ P0の三度目を作らない)。wide の判定式は生成側と同一 */
       const durAll = MC.timelineDuration ? MC.timelineDuration() : s1;
-      const f1 = Math.max(durAll, s1);
-      if (f1 > t1 + 0.5) { t1 = f1; roomSpan = f1 - s0; }
+      const wide = (s1 - s0) < durAll * 0.5;
+      const f0 = wide ? 0 : s0, f1 = Math.max(durAll, s1);
+      if (f1 > t1 + 0.5 || f0 < t0 - 0.5) {
+        t0 = Math.min(t0, f0); t1 = Math.max(t1, f1); roomSpan = t1 - t0;
+      }
     } catch (e) { MC.log("applyLengthChoice広域: " + e.message); }
   }
   const cands = MC.highlight.candidates(audioClip, lenSec, t0, t1);
@@ -1658,15 +1678,26 @@ MC.ui.applyLengthChoice = () => {
   const room = roomSpan - lenSec;
   const canChoose = room > 1;
   let cand;
+  /* 実長へ広げたか(保険候補のタップ)。広げていない通常フローと挙動を分ける */
+  const widened = (t1 > s1 + 0.5) || (t0 < s0 - 0.5);
   if (MC.S.startKey === "manual" && canChoose) {
     const base = MC.S.startAt == null ? cands[0].t : MC.S.startAt;
-    /* ★ 上限は「末尾に最低10秒」まで許す(2026-08-06)。t1-lenSec で頭打ちすると、
-       まるごと(lenSec≈全長)の人は保険候補の t が冒頭へ引き戻される。
-       尻が足りない分は dur を縮める ─ 保険候補の dur と同じ縮め方 */
-    const t = MC.highlight.snapToBeat(base, audioClip, t0, Math.max(t0, t1 - 10));
-    MC.S.startAt = t;
-    const mdur = Math.max(10, Math.min(lenSec, t1 - t));
-    cand = { ...MC.highlight.MANUAL, t, dur: mdur, z: 0 };
+    if (widened) {
+      /* ★ 保険候補は**押した場面を守る**(2026-08-06)。t1-lenSec で頭打ちすると
+         t が引き戻され、押したサムネと別の動画ができる。尻が足りない分は
+         dur を縮める ─ 保険候補の dur と同じ縮め方 */
+      const t = MC.highlight.snapToBeat(base, audioClip, t0, Math.max(t0, t1 - 10));
+      MC.S.startAt = t;
+      const mdur = Math.max(10, Math.min(lenSec, t1 - t));
+      cand = { ...MC.highlight.MANUAL, t, dur: mdur, z: 0 };
+    } else {
+      /* ★ 通常フロー(広げていない)は**札の長さを守る**(2026-08-06 レビューP0:
+         1分×手動440秒→ミドル2分に変えると、旧実装どおり開始を引き戻して
+         きっかり2分を作る。「2分の札で70秒の動画」を作らない) */
+      const t = MC.highlight.snapToBeat(base, audioClip, t0, Math.max(t0, t1 - lenSec));
+      MC.S.startAt = t;
+      cand = { ...MC.highlight.MANUAL, t, dur: lenSec, z: 0 };
+    }
   } else if (MC.S.startKey === "best") {
     /* ★ おまかせの既定 = 「一番いいシーン」(2026-08-05 DCI協議)。
        採点(フィナーレ別格+payoff+arc)の1位を使う。
@@ -4816,7 +4847,7 @@ MC.ui.keepFinishPickFocus = () => {
      被写体/固定を選ぶたびピッカーがもう一度開く)。プログラムからの
      focus() を iOS Safari は「開く操作」として扱う。焦点復元は
      キーボード操作のための配慮なので、タッチでは何もしないのが正しい */
-  if ((navigator.maxTouchPoints || 0) > 0 && to && to.tagName === "SELECT") return;
+  if (MC.isTouch && to && to.tagName === "SELECT") return;
   try { if (to) to.focus({ preventScroll: true }); } catch (e) {}
 };
 
@@ -5849,11 +5880,22 @@ MC.ui.showModeStep = step => {
     if (tip) {
       const show = !!(L && L.mobile && !L.unlimited);
       tip.hidden = !show;
-      const b = show ? tip.querySelector("b") : null;
-      if (b) {
-        b.textContent = L.member
+      const head = show ? MC.ui.$("#mzModeTipHead") : null;
+      const body = show ? MC.ui.$("#mzModeTipBody") : null;
+      if (head) {
+        head.textContent = L.member
           ? "フルショウのランスルーは、パソコンから作れます。"
           : "フルショウのランスルーは、無料登録＋パソコンから作れます。";
+      }
+      /* ★ 2文目も member で出し分ける(2026-08-06 レビューP2-4: 「パソコンなら
+         1本15分」が固定文で、ゲストが単独で読むと「PCで開くだけで15分」と
+         誤読し得た ─ 実際はゲスト×PCは5分のまま。member=登録者だけがPCで
+         15分になる、という条件を1文目と同じ主語でつなぐ */
+      if (body) {
+        body.textContent = "スマホで取り込めるのは1本5分まで。"
+          + (L.member
+            ? "パソコンなら1本15分まで取り込めて、10分までの動画を作成できます。"
+            : "登録してパソコンで開くと1本15分まで取り込めて、10分までの動画を作成できます。");
       }
     } }
   /* おまかせの説明にある長さも、その人・その端末の値にする(2026-08-05)。
@@ -5866,7 +5908,12 @@ MC.ui.showModeStep = step => {
          ★ 上限は「誰だから・いくつまで」を**理由つき+強調色**で(2026-08-06
            優さん「xxだから、aaまでを強調色で表示」。裸の「上限なし」は
            管理者自身が製品の姿と誤読した実績がある) */
-      const who = L.unlimited ? "管理者" : L.member ? "登録済み" : "未登録";
+      /* ★ 自動SW×スマホの30秒は技術的な天井 ─ 会員種別を主語にすると
+         「登録すれば伸びる」と読める嘘になる(2026-08-06 レビューP1)。
+         天井のときは端末を主語に */
+      const capped2 = L.modeCapped && L.modeCapped(MC.ui._pendingMode || MC.S.mode);
+      const who = capped2 ? "スマホ"
+        : L.unlimited ? "管理者" : L.member ? "登録済み" : "未登録";
       const lim = lab === "上限なし"
         ? `<b class="mode-desc-limit">${who}だから上限なし</b>。`
         : `<b class="mode-desc-limit">${who}だから${MC.ui.esc(lab)}まで</b>の`;

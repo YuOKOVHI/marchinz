@@ -95,6 +95,9 @@ body::before {
 /* おまかせで動画1本のときの常設の案内(2026-08-02)。責めない色で1行 */
 /* おまかせ説明の上限(◯◯だから△△まで)の強調(2026-08-06 優さん指示) */
 .mode-desc-limit { color: var(--acc-deep); font-weight: 700; }
+/* ★ 書き出しオーバーレイ(z:120)表示中もトーストを前に(2026-08-06 レビューP0:
+   「ビデオを保存」案内が背後に隠れて1pxも見えなかった)。中断ノート(130)よりは下 */
+body.mz-export-open .toast { z-index: 125; }
 .need-second-note { font-size: 13px; color: var(--acc-deep); background: #f4f7ff;
   overflow-wrap: anywhere;   /* 長い無改行ファイル名(importNote)でも枠から溢れない */
   border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
