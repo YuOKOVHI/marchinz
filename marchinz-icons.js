@@ -141,14 +141,14 @@
     prependIcon(document.getElementById("community-open-compose"), [SOLID, "fa-pen-to-square"]);
   }
 
-  function decorateProfileTabs() {
-    prependIcon(document.getElementById("prof-tab-mll"), [SOLID, "fa-calendar-check"]);
-    prependIcon(document.getElementById("prof-tab-logdiary"), [SOLID, "fa-book-open"]);
-    prependIcon(document.getElementById("prof-tab-videos"), [SOLID, "fa-trophy"]);
-    prependIcon(document.getElementById("prof-tab-yt"), ["fa-brands", "fa-youtube"]);
-    prependIcon(document.getElementById("prof-tab-notifs"), [SOLID, "fa-bell"]);
-    prependIcon(document.getElementById("prof-tab-ops"), [SOLID, "fa-bullhorn"]);
-  }
+  /* ★ decorateProfileTabs は2026-08-06 削除(優さん実機指摘「通知と運営より
+     でアイコンが2つ続いてる」)。真因: prof-tab-mll/logdiary/videos/yt/notifs/ops
+     の6つはいずれも index.html 側に既にアイコンが書かれており(例: notifsは
+     fa-bell、opsはfa-bullhorn)、prependIcon のガード(:scope > .mz-ui-icon)は
+     マークアップ側の無印<i>を検知できないため、ここで**2個目**を差し込んで
+     いた。notif/opsは横並びで並んで見えるため気づかれたが、mll(カレンダー+
+     チェックリスト)・videos(トロフィー+カメラ)・yt(YouTube+テレビ)も同様に
+     縦積みで二重表示されていた。6つとも静的アイコンがあるので関数ごと不要 */
 
   function decorateVideosPage() {
     prependIcon(document.getElementById("tab-marching"), [SOLID, "fa-drum"]);
@@ -471,7 +471,6 @@
     decorateCalendarEvents();
     decorateBoard();
     decorateCommunityUpdates();
-    decorateProfileTabs();
     decorateVideosPage();
     decorateYoutubePage();
     decorateResultSortButtons();

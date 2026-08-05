@@ -1425,6 +1425,21 @@
     return null;
   }
 
+  /* ★ 2026-08-06 優さん指示「今よりあとのは、予定と入れよう」。
+     event_date が今日より後のログは、選んだ参加スタイル(観戦/出演/…)を
+     まだ実際にはしていない。行のチップと年別集計の両方で「予定」に置き換える。
+     event_date は "YYYY-MM-DD" 固定(renderMLLで dateStr.split("-") している
+     形式と同じ)なので、今日も同じ形式にそろえれば文字列比較だけで安全に判定できる */
+  function todayYmd() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+  /** @param {any} log */
+  function isFutureLogDate(log) {
+    const raw = String(log?.event_date || "").trim();
+    return !!raw && raw > todayYmd();
+  }
+
   /** @param {"perform"|"watch"|"ops"|"team_staff"|null} rk */
   function profileLogRoleUiLabel(rk) {
     const R = window.MarchinZMllRole;
@@ -2345,10 +2360,17 @@
     const totals = emptyRoleTotals();
     /** @type {Record<string, ReturnType<typeof emptyRoleTotals>>} */
     const byYear = {};
+    /** 未来日のログは役割の集計に含めず、年別に別枠で数える(2026-08-06) */
+    /** @type {Record<string, number>} */
+    const futureByYear = {};
     for (const log of logs) {
       const y = logYearKey(log);
       if (!y || y === "????") continue;
       if (!byYear[y]) Object.assign(byYear, { [y]: emptyRoleTotals() });
+      if (isFutureLogDate(log)) {
+        futureByYear[y] = (futureByYear[y] || 0) + 1;
+        continue;
+      }
       const k = mapLogRole(log.role, log.role_label);
       if (!k) continue;
       totals[k] += 1;
@@ -2469,8 +2491,8 @@
 
     const sorted = [...logs].sort((a, b) => String(b.event_date).localeCompare(String(a.event_date)));
 
-    /** @returns {HTMLElement} */
-    function yearChip(y, yt) {
+    /** @param {string} y @param {ReturnType<typeof emptyRoleTotals>} yt @param {number} [futureCount] @returns {HTMLElement} */
+    function yearChip(y, yt, futureCount) {
       const sec = document.createElement("section");
       sec.className = "user-profile-mll-year";
       const hdr = document.createElement("header");
@@ -2480,11 +2502,16 @@
       h3.textContent = `${y}年`;
       hdr.appendChild(h3);
 
+      /* 未来日ぶんは「N回観戦」等に混ぜず、「M件は予定」を別に添える
+         (2026-08-06 優さん指示。まだ起きていないことを実績のように数えない) */
+      const summaryParts = [];
       const yearSummary = formatRoleTotalsSummaryJa(yt);
-      if (yearSummary) {
+      if (yearSummary) summaryParts.push(yearSummary);
+      if (futureCount) summaryParts.push(`${futureCount}件は予定`);
+      if (summaryParts.length) {
         const sm = document.createElement("p");
         sm.className = "user-profile-mll-year-meta";
-        sm.textContent = yearSummary;
+        sm.textContent = summaryParts.join("、");
         hdr.appendChild(sm);
       }
       sec.appendChild(hdr);
@@ -2527,9 +2554,13 @@
         const roleHint = document.createElement("span");
         roleHint.className = "user-profile-mll-role-hint";
         const rk = mapLogRole(log.role, log.role_label);
-        const roleUi = profileLogRoleUiLabel(rk);
+        /* ★ 未来日は選んだ参加スタイルでなく「予定」を出す(2026-08-06 優さん指示)。
+           年別集計側(yearChip呼び出し元のfutureByYear)と同じ isFutureLogDate で判定 */
+        const future = isFutureLogDate(log);
+        const roleUi = future ? "予定" : profileLogRoleUiLabel(rk);
         roleHint.textContent = roleUi;
-        if (!rk) roleHint.classList.add("user-profile-mll-role-hint--unknown");
+        if (!rk && !future) roleHint.classList.add("user-profile-mll-role-hint--unknown");
+        if (future) roleHint.classList.add("user-profile-mll-role-hint--future");
         if (roleHint.textContent) actionsRow.appendChild(roleHint);
         const diaryIds = shareCtx?.diaryEventIds instanceof Set ? shareCtx.diaryEventIds : new Set();
         appendProfileMllNoteBtn(actionsRow, log, shareCtx, calLookup, diaryIds);
@@ -2564,7 +2595,7 @@
       return;
     }
     for (const y of years) {
-      host.appendChild(yearChip(y, byYear[y] || emptyRoleTotals()));
+      host.appendChild(yearChip(y, byYear[y] || emptyRoleTotals(), futureByYear[y] || 0));
     }
   }
 

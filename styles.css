@@ -3145,6 +3145,13 @@ html.mz-settings-dialog-open .mz-dialog-overlay:not([hidden]) {
   color: #92400e;
 }
 
+/* 未来日のログ=「予定」(2026-08-06 優さん指示)。実績の色(既定の.user-profile-mll-role-hint)
+   と区別できるよう、まだ起きていないことが分かる控えめな青系に */
+.user-profile-mll-role-hint--future {
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
 .eld-participation-current-unknown {
   margin: 0 0 0.5rem;
   font-size: 0.82rem;
