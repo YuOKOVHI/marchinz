@@ -443,7 +443,7 @@ MC.ui.showDone = res => {
   MC.ui.liftShareTool(false);   // 新しい完成では、シェアは出口の列に戻す
   /* 完了音トグルも未保存の顔に戻す(保存が済んだら celebrate("saved") が出す)。
      戻さないと前回の保存で出たトグルが未保存画面の縦を44px押し広げる */
-  { const row = document.querySelector(".eo-sfx-row"); if (row) row.hidden = true; }
+  document.querySelectorAll(".eo-sfx-row").forEach(row => { row.hidden = true; });
   /* ★ 「終わったとき」の呼び戻し(2026-08-02 優さん指示)。書き出しは数分かかり、
      おまかせなら合計3〜5分。ここが**本当に終わった**唯一の地点で、しかも
      このあと人が「動画を保存」を押さないと何も残らない ─ 呼び戻す価値が
@@ -647,6 +647,7 @@ MC.ui.saveResult = async () => {
         ? r.blob
         : new File([r.blob], r.name, { type: r.type || r.blob.type });
       await MC.ui._share([file]);
+      MC.ui._shareRetryN = 0;
       MC.ui.notifySaved(r, "share");                    // 成功したときだけ言う
       return "saved";
     } catch (e) {
@@ -656,9 +657,15 @@ MC.ui.saveResult = async () => {
          タップから時間が経った(NotAllowedError)・シートの競合
          (InvalidStateError)は、押し直せば share が通る ─ 落とさずに頼む */
       if (e && (e.name === "NotAllowedError" || e.name === "InvalidStateError")) {
-        MC.log("share再試行待ち:", e.name);
-        MC.ui.toast("保存シートを開けませんでした。もう一度「動画を保存」を押してください");
-        return "retry";
+        /* 押し直しで直らない環境(共有が常時拒否)への出口: 3回目はダウンロードへ
+           (2026-08-05 レビューP2。出口が無いと保存手段が消える) */
+        MC.ui._shareRetryN = (MC.ui._shareRetryN || 0) + 1;
+        if (MC.ui._shareRetryN < 3) {
+          MC.log("share再試行待ち:", e.name);
+          MC.ui.toast("保存の画面を開けませんでした。もう一度「動画を保存」を押してください");
+          return "retry";
+        }
+        MC.log("share3回失敗→ダウンロードへ:", e.name);
       }
       MC.log("share失敗→ダウンロード:", e && e.message);
       MC.exporter.triggerDownload(r.blob, r.name);        // 最後の手段
@@ -738,7 +745,20 @@ MC.ui.sceneOffers = () => {
       const ov = Math.min(c.t + c.dur, pOut) - Math.max(c.t, pIn);
       return ov < c.dur * 0.92;
     };
-    const out = bs.filter(notSame).slice(0, 3);
+    const out = bs.filter(notSame).slice(0, 3).map(o => ({ ...o }));
+    /* 表示は時刻順。「シーンN」は出す順に振り直す(採点順の名残で
+       「シーン2」から始まる歯抜けを防ぐ)。同じラベルが2つ並んだら後の方を
+       シーンNへ落とす(「大盛り上がり」×2を出さない) */
+    out.sort((a, b) => a.t - b.t);
+    { const seen = new Set(); let sn = 0;
+      for (const o of out) {
+        if (/^scene/.test(o.key) || seen.has(o.label)) {
+          sn += 1;
+          o.key = "scene" + sn; o.label = "シーン" + sn;
+          o.why = "音の流れが良い位置"; o.icon = "fa-clapperboard";
+        }
+        seen.add(o.label);
+      } }
     if (out.length) return out;
     /* ここまで来たら本当に「いま作ったところしかない」(1分ちょっとの素材) */
     return no(bs.length ? "overlap" : "none");
@@ -3755,8 +3775,7 @@ MC.ui.celebrate = kind => {
   /* 完了音トグルは保存が済んでから見せる(2026-08-05)。未保存の画面に足すと
      「動画を保存」が画面中央から押し出される(QAの実測が捕まえた) */
   if (kind === "saved") {
-    const row = document.querySelector(".eo-sfx-row");
-    if (row) row.hidden = false;
+    document.querySelectorAll(".eo-sfx-row").forEach(row => { row.hidden = false; });
   }
   /* 完了(done)の振動は showDone の notifyUserTurn が打つ。保存はここで短く */
   if (kind === "saved") MC.ui.buzz([40, 30, 90]);
@@ -4893,9 +4912,11 @@ MC.ui.finishPickGo = () => {
     MC.ui._extraScenesMade = (MC.ui._extraScenesMade || 0) + 1;
     MC.ui.exportOverlay.close();
     const dc = MC.ui.$("#doneCard"); if (dc) dc.hidden = true;
-    /* 同じシーンを scene 指定で渡す → runAuto の高速経路(解析使い回し)に乗り、
-       applyLengthChoice が同じ startKey/startAt から同じ窓を引き直す */
-    MC.ui.runAuto({ scene: { key: MC.S.startKey || "start", t: MC.S.startAt } });
+    /* ★ 「同じシーン」は現在の窓の t を直渡しで再現する(2026-08-05 レビューP0)。
+       旧: startKey/startAt を渡していたが、おまかせ(best)は startAt が null で、
+       manual 化の過程で cands[0](=冒頭)へ化けた ─ キーではなく
+       いまの trimIn こそが「同じシーン」の正体 */
+    MC.ui.runAuto({ scene: { key: "manual", t: MC.S.trimIn } });
     return;
   }
   MC.ui.runAuto();   // ここから先は今までどおり書き出しまで自走
@@ -4979,15 +5000,13 @@ MC.ui.runAuto = async (opt) => {
   const applyChoices = () => {
     if (!scene) MC.ui.applyAutoChoices();
     else {
-      /* ★ candidates の語彙に無いキーは全部 manual として t を直渡しする
-         (2026-08-05 レビューP0の一般化)。未知キーをそのまま渡すと
-         applyLengthChoice の `cands.find(key)` が外れて cands[0] へ
-         **無言でフォールバック**し、押した窓と違う場面が作られる。
-         bestScenes の "best"/"sceneN" もこの経路で安全に通る */
-      const known = ["start", "climax", "ballad", "drumline", "solo", "finale", "manual"];
-      const direct = !known.includes(scene.key) || scene.key === "manual";
-      MC.S.startKey = direct ? "manual" : scene.key;
-      MC.S.startAt = direct ? scene.t : null;
+      /* ★ シーンの候補は常に manual として t を直渡しする(2026-08-05 レビューP0)。
+         known リストで分けていた前版は逆向きの一般化だった ─ bestScenes の
+         ラベルは旧語彙キー(finale/solo等)を再利用するため、キーで引き直すと
+         旧 candidates の代表位置(=押したサムネ・時刻と違う場面)へ流れる。
+         候補は正確な t を持っている。キーに関わらず直渡しが唯一安全 */
+      MC.S.startKey = "manual";
+      MC.S.startAt = scene.t;
     }
   };
   let tick = null;
@@ -5864,15 +5883,17 @@ MC.ui.wire = () => {
      種類選択の画面にいるときだけ、従来どおりサイトのクリエイターページへ。
      素材は showModeSelect が保つ(消すのは「最初からやり直す」だけ) */
   /* 完了音トグル(2026-08-05)。既定オフ。変えたら即保存し、オンにした瞬間に
-     試し鳴らし(その場で音量感が分かる+タップ起点なのでAudioContextも解錠される) */
-  { const sfxTg = $("#eoSfxToggle");
-    if (sfxTg) {
-      sfxTg.checked = MC.ui.sfx.enabled();
-      sfxTg.onchange = () => {
-        MC.ui.sfx.setEnabled(sfxTg.checked);
-        if (sfxTg.checked) { MC.ui.sfx.unlock(); MC.ui.sfx.play("saved"); }
+     試し鳴らし(その場で音量感が分かる+タップ起点でAudioContextも解錠される)。
+     2箇所(eoOverlay/doneCard)にあるので checked は相互に同期する */
+  { const tgs = [...document.querySelectorAll(".eo-sfx-row input")];
+    tgs.forEach(tg => {
+      tg.checked = MC.ui.sfx.enabled();
+      tg.onchange = () => {
+        MC.ui.sfx.setEnabled(tg.checked);
+        tgs.forEach(o => { if (o !== tg) o.checked = tg.checked; });
+        if (tg.checked) { MC.ui.sfx.unlock(); MC.ui.sfx.play("saved"); }
       };
-    } }
+    }); }
 
   { const backLink = document.querySelector(".topbar .back-link");
     if (backLink) backLink.addEventListener("click", e => {

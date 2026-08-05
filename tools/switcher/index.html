@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-app-v="1.106.0">
+<html lang="ja" data-mz-app-v="1.107.0">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -513,6 +513,10 @@
           <button id="downloadBtn" class="btn big"><i class="fa-solid fa-download"></i> ダウンロード</button>
         </div>
         <div id="doneNote" class="status"></div>
+        <!-- 完了音トグルはこちらの保存経路にも(2026-08-05 レビューP1: eoOverlay側だけだと
+             doneCardから保存した人は一生出会えない)。checked は eoSfxToggle と同期 -->
+        <label class="eo-sfx-row" hidden><input type="checkbox" id="eoSfxToggle2">
+          <span>次から、書き出しの完了を音で知らせる（iPhoneはマナーモードでも鳴ります）</span></label>
         <div class="eo-exit">
           <button type="button" id="doneShareTool" class="btn ghost eo-share-tool">
             <i class="fa-solid fa-share-nodes" aria-hidden="true"></i> このツールを友達にシェア</button>
@@ -701,7 +705,7 @@
       <!-- 完了音は既定オフ(2026-08-05 優さん実機)。iPhoneはマナーモードでも
            鳴ってしまう(OS仕様でWebから追従できない)ため、鳴らしたい人だけオン -->
       <label class="eo-sfx-row" hidden><input type="checkbox" id="eoSfxToggle">
-        <span>完了を音で知らせる（iPhoneはマナーモードでも鳴ります）</span></label>
+        <span>次から、書き出しの完了を音で知らせる（iPhoneはマナーモードでも鳴ります）</span></label>
 
       <!-- 何にどれだけ掛かったか。普段は畳んでおき、知りたい人だけ開く -->
       <details id="eoStats" class="eo-stats" hidden>
@@ -777,9 +781,9 @@
 <script src="js/sync.js?v=1.99.3"></script>
 <script src="js/beats.js?v=1.99.3"></script>
 <script src="js/sections.js?v=1.99.3"></script>
-<script src="js/highlight.js?v=1.106.0"></script>
+<script src="js/highlight.js?v=1.107.0"></script>
 <script src="js/visual.js?v=1.100.0"></script>
-<script src="js/director.js?v=1.105.0"></script>
+<script src="js/director.js?v=1.107.0"></script>
 <script src="js/colormatch.js?v=1.99.3"></script>
 <!-- horizon.js(自動傾き検出)を読み込みに戻した(2026-08-01 優さん指示
      「おまかせは傾き補正も自動で行う」)。2026-07-28 に外したのは
@@ -791,7 +795,7 @@
 <script src="js/timeline.js?v=1.99.3"></script>
 <script src="js/cutmode.js?v=1.99.3"></script>
 <script src="js/exporter.js?v=1.99.4"></script>
-<script src="js/ui.js?v=1.106.0"></script>
+<script src="js/ui.js?v=1.107.0"></script>
 <script src="js/app.js?v=1.99.3"></script>
 </body>
 </html>

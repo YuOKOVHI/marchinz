@@ -586,8 +586,11 @@ MC.director._rank = (g0, g1, cls, ctx) => {
     const wides = ranked.filter(r => r.wideChosen && !r.dq
       && !(MC.director.HARD_WIDE_NO_SPICE && ctx.spiceIds && ctx.spiceIds.has(r.id)));
     if (wides.length) return wides;
+    /* スパイスしか引きが無い構成でも、上限到達後は引き強制を諦めて通常順位へ
+       (2026-08-05 レビューP1: ここで返し続けると8%素通りが同じ形で再発する。
+       下の return ranked に落ちても黒画面にはならない ─ 罰4倍の通常採点になるだけ) */
     const anyWide = ranked.filter(r => r.wideChosen && !r.dq);
-    if (anyWide.length) return anyWide;
+    if (anyWide.length && !ctx.spiceCapHit) return anyWide;
   }
   /* ★ ソロは操作カメラで抜く(2026-08-05 優さん指示「ソロを抜いていたら必ず使う」)。
      feature が立っている区間では、「カメラマン操作」のカメラが失格でなければ

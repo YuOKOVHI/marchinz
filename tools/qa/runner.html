@@ -2947,7 +2947,10 @@ async function countSamples(ns, file, fromSec) {
     const MCX = await loadHighlight();
     const c2 = MCX.highlight.bestScenes(mkSong(70), 60, 0, 70);   // ずらし幅10秒
     eq(c2.length, 2, "短い素材の候補数");
-    eq(c2[0].key, "finale", "1位=尻まで");
+    /* 1位の席は通常経路と同じ "best"(おまかせ・作り直しが引く鍵。
+       2026-08-05 レビューP2: finale のままだと復元・作り直しが legacy finale へ行き
+       snap した終点と食い違う) */
+    eq(c2[0].key, "best", "1位=尻まで(席は best)");
     eq(c2[1].key, "start", "2位=頭から");
     const c1 = MCX.highlight.bestScenes(mkSong(62), 60, 0, 62);   // ずらし幅2秒
     eq(c1.length, 1, "まるごとの候補数");
@@ -6203,7 +6206,7 @@ async function countSamples(ns, file, fromSec) {
     eb.onclick = () => log.push("export");
     eb.disabled = false;
     try {
-      await w.MC.ui.runAuto({ scene: { key: "finale", t: 0 } });
+      await w.MC.ui.runAuto({ scene: { key: "finale", t: 100 } });
     } finally {
       w.MC.horizon.suggest = keep.h; w.MC.sync.run = keep.s;
       w.MC.ui.runEasyScan = keep.sc; w.MC.ui.runEasyFinish = keep.f;
@@ -6213,7 +6216,13 @@ async function countSamples(ns, file, fromSec) {
       throw new Error("2回目なのに1回目と同じ道を通っている: " + log.join(","));
     }
     if (S.filterId !== "none") throw new Error("シーン選び直しが色の設定を潰した: " + S.filterId);
-    if (S.startKey !== "finale") throw new Error("選んだシーンが反映されていない: " + S.startKey);
+    /* 新契約(2026-08-05): シーンはキー照合せず常に manual + t 直渡し。
+       「反映」は渡した t=100 が startAt に入ったことで測る(キー名では測らない)。
+       ビート吸着(snapToBeat)で数秒動くのは正 ─ ±3秒まで許す。
+       範囲外の t を渡すと t0 へクランプされるので、必ず範囲内の値で測ること */
+    if (S.startKey !== "manual" || Math.abs(S.startAt - 100) > 3) {
+      throw new Error(`選んだシーンが反映されていない: ${S.startKey}/${S.startAt}`);
+    }
     if (S.clips.some(c => c.colorStats)) throw new Error("前の範囲の色統計が捨てられていない");
     if (!S.lengthDecided) throw new Error("範囲が確定していない");
     return "傾き・同期・音楽解析はスキップ / 色統計は捨て直し / 設定は保持";
@@ -7701,7 +7710,8 @@ async function countSamples(ns, file, fromSec) {
     const w = e.w, d = w.document, U = e.U, S = w.MC.S;
     const keep = { max: w.MZ_LIMITS.maxExtraScenes, made: U._extraScenesMade,
                    auto: U.runAuto, lv: S.cutLevel, mode: S.mode, fid: S.filterId,
-                   tilt: S.autoTilt, sk: S.startKey, sa: S.startAt, fp: U._fp };
+                   tilt: S.autoTilt, sk: S.startKey, sa: S.startAt, ti: S.trimIn,
+                   fp: U._fp };
     let ran = 0, got = null;
     U.runAuto = async opt => { ran++; got = opt; };
     const openIt = () => {
@@ -7716,7 +7726,10 @@ async function countSamples(ns, file, fromSec) {
     try {
       /* いま使った設定 = 多め(3)・ナチュラル・傾きOFF。おすすめ(2/シネマ/ON)とは全部違う */
       S.mode = "switch"; S.cutLevel = 3; S.filterId = "none"; S.autoTilt = false;
-      S.startKey = "climax"; S.startAt = null;
+      /* ★ おまかせ帰り(best/startAt=null)を再現し、startAt には囮(99)を置く。
+         「同じシーン」の正体は trimIn=42 ─ 旧実装(startKey/startAt引き継ぎ)なら
+         t が null か 99 になって即バレる(2026-08-05 レビューP0の再発防止) */
+      S.startKey = "best"; S.startAt = 99; S.trimIn = 42;
       w.MZ_LIMITS.maxExtraScenes = 1; U._extraScenesMade = 0;
       U.setSaveState(true);
 
@@ -7754,8 +7767,8 @@ async function countSamples(ns, file, fromSec) {
       U._fp.level = 1;                       // 頻度だけ変えてみる
       U.finishPickGo();
       if (ran !== 1) throw new Error("作り直しが走らない");
-      if (!got || !got.scene || got.scene.key !== "climax") {
-        throw new Error("同じシーンを引き継いでいない: " + JSON.stringify(got));
+      if (!got || !got.scene || got.scene.key !== "manual" || got.scene.t !== 42) {
+        throw new Error("同じシーン(=いまの trimIn)を直渡ししていない: " + JSON.stringify(got));
       }
       if (S.cutLevel !== 1) throw new Error(`選んだ頻度が入っていない(${S.cutLevel})`);
       eq(U._extraScenesMade, 1, "進んだときに枠を1つ使う");
@@ -7779,25 +7792,26 @@ async function countSamples(ns, file, fromSec) {
         throw new Error("変異(設定を読まない)でも引き継がれる=②が空回り");
       }
 
-      /* ⑦ 変異B: シーンを渡さないと別のシーンになる(=④が経路を測っている証明) */
+      /* ⑦ 変異B: trimIn を動かすと渡る t も動く(=④の t が本当に trimIn 由来で、
+             startAt の囮や固定値を読んでいない証明) */
       U._extraScenesMade = 0; U.setSaveState(true);
       const realGo = U.runAuto;
       let got2 = null;
-      U.runAuto = async opt => { got2 = opt === undefined ? "指定なし" : opt; };
+      U.runAuto = async opt => { got2 = opt; };
+      S.trimIn = 77;
       openIt();
-      const realKey = S.startKey; S.startKey = null; S.startAt = null;
       U.finishPickGo();
-      S.startKey = realKey; U.runAuto = realGo;
-      if (got2 && got2.scene && got2.scene.key === "climax") {
-        throw new Error("変異(開始位置なし)でも同じシーンが渡る=④が空回り");
+      U.runAuto = realGo;
+      if (!got2 || !got2.scene || got2.scene.t !== 77) {
+        throw new Error("trimIn を動かしても渡る t が追随しない=④が空回り: " + JSON.stringify(got2));
       }
       return "全モードに出る / いまの設定入りで開く / やめても枠は減らない / "
-        + "進むと同じシーンで作り直し / 枠ゼロは直接呼びも門 / 変異2件とも落ちる";
+        + "進むと現在の窓(trimIn)を直渡しで作り直し / 枠ゼロは直接呼びも門 / 変異2件が効く";
     } finally {
       w.MZ_LIMITS.maxExtraScenes = keep.max; U._extraScenesMade = keep.made;
       U.runAuto = keep.auto; S.cutLevel = keep.lv; S.mode = keep.mode;
       S.filterId = keep.fid; S.autoTilt = keep.tilt;
-      S.startKey = keep.sk; S.startAt = keep.sa; U._fp = keep.fp;
+      S.startKey = keep.sk; S.startAt = keep.sa; S.trimIn = keep.ti; U._fp = keep.fp;
       U._fpRemake = false;
       try { U.closeFinishPick(); } catch (_) {}
       e.restore();
@@ -7880,7 +7894,19 @@ async function countSamples(ns, file, fromSec) {
       S.trimIn = 300; S.trimOut = 360;          // いま作ったのは 300〜360 秒
       const filled = U.sceneOffers();
       if (filled.length !== 3) throw new Error(`順位候補3つが出ない: ${filled.length}`);
-      if (filled[0].key !== "best") throw new Error("1位が先頭に来ない: " + filled[0].key);
+      /* 表示は時刻順(2026-08-05 レビューP1: 採点順だと後の時刻が先に並び
+         「シーン2→シーン1」の歯抜けに見える)。1位(best)は順位でなく
+         **含まれること**で測り、シーンNは出す順に振り直される */
+      const ts = filled.map(o => o.t);
+      if (!ts.every((t, i) => i === 0 || t >= ts[i - 1])) {
+        throw new Error("時刻順に並んでいない: " + ts.join(","));
+      }
+      if (!filled.some(o => o.key === "best" && o.t === 430)) {
+        throw new Error("1位(best)の窓が消えた: " + JSON.stringify(filled.map(o => o.key)));
+      }
+      if (filled[0].key !== "scene1") {
+        throw new Error("シーンNが出す順に振り直されない: " + filled[0].key);
+      }
       if (U._sceneWhy !== null) throw new Error("成功したのに理由が残る: " + U._sceneWhy);
 
       /* overlap: 候補が全部いまの窓とほぼ同一(92%以上)のときだけ */

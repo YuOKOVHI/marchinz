@@ -189,7 +189,8 @@ MC.highlight.bestScenes = (audioClip, lenSec, t0, t1, max) => {
       const s2 = lastImp + C.SNAP_TAIL - lenSec;
       if (s2 > t0 + 1 && s2 <= t1 - lenSec) endT = s2;
     }
-    const out = [{ ...H.FINALE, t: endT, dur, rank: 1, score: 1 }];
+    /* 1位の席は通常経路と同じ "best"(おまかせ・作り直しが引く鍵。非対称にしない) */
+    const out = [{ ...H.FINALE, key: "best", t: endT, dur, rank: 1, score: 1 }];
     if (Math.abs(endT - t0) > 1) out.push({ ...startCand, rank: 2 });
     return out;
   }
@@ -198,6 +199,9 @@ MC.highlight.bestScenes = (audioClip, lenSec, t0, t1, max) => {
   const hop = Math.max(1, Math.min(3, lenSec / 20));
   const wins = [];
   for (let s = t0; s <= t1 - lenSec + 1e-6; s += hop) wins.push(s);
+  /* 「尻まで」の窓は必ず張る(hop の端数で抜けると、ヒットで終わるショウの
+     1位が中盤へずれる。2026-08-05 レビューP2) */
+  if (!wins.length || wins[wins.length - 1] < t1 - lenSec - 1e-6) wins.push(t1 - lenSec);
   if (!wins.length) return [startCand];
 
   /* 窓ごとの素点(z化のため全窓ぶん先に測る) */
@@ -220,8 +224,9 @@ MC.highlight.bestScenes = (audioClip, lenSec, t0, t1, max) => {
     /* snap: 終点を先に決める(窓内最後の衝撃+余韻)。始点は従属。
        衝撃が無い窓は始点を近くの谷(ブレス)へ寄せる */
     let s = r.s;
-    if (r.last != null && r.last + C.SNAP_TAIL <= t1) {
-      s = Math.max(t0, Math.min(t1 - lenSec, r.last + C.SNAP_TAIL - lenSec));
+    if (r.last != null) {
+      /* 末尾ぎりぎりの衝撃は t1 でクランプ(余韻が短くても尻まで見せる) */
+      s = Math.max(t0, Math.min(t1 - lenSec, Math.min(t1, r.last + C.SNAP_TAIL) - lenSec));
     } else {
       const T = lenSec * C.START_T;
       const near = valleys.find(v => Math.abs(v - s) <= T);
