@@ -3920,24 +3920,62 @@ async function countSamples(ns, file, fromSec) {
     } finally { w.MZ_LIMITS = keepL; w.MC.ui.showModeStep("kind"); }
   });
 
-  await test("★おまかせの説明: 上限なしでは長さを言わない(「上限なしまでの」を出さない)", async () => {
-    /* 2026-08-06 優さん実機: 管理者のiPhoneで「上限なしまでの見どころ」と
-       日本語が壊れて出ていた。誤解のもとなので長さの節ごと省く */
+  await test("★おまかせの説明: 上限は「誰だから・いくつまで」を理由つき強調で言う", async () => {
+    /* 2026-08-06 優さん: 裸の「上限なしまでの見どころ」は管理者自身が
+       製品の姿と誤読した。「xxだから、aaまで(あるいは上限なし)」を強調色で */
     const w = await compEnv();
     compReset(w);
     const keepL = w.MZ_LIMITS;
     try {
       w.MZ_LIMITS = await loadLimits({ admin: true });
       w.MC.ui.showModeStep("kind");
-      const d = w.document.getElementById("flowEasyDesc").textContent;
-      if (/上限なし/.test(d)) throw new Error("上限なしの言葉が残っている: " + d);
-      if (!/2本以上/.test(d)) throw new Error("2本以上の前提が消えた: " + d);
+      const el = w.document.getElementById("flowEasyDesc");
+      if (!/管理者だから上限なし/.test(el.textContent)) {
+        throw new Error("管理者に理由つきの上限なしが出ない: " + el.textContent);
+      }
+      if (!el.querySelector("b.mode-desc-limit")) throw new Error("強調(mode-desc-limit)が無い");
       w.MZ_LIMITS = await loadLimits({ mobile: true });
       w.MC.ui.showModeStep("kind");
-      const g = w.document.getElementById("flowEasyDesc").textContent;
-      if (!/30秒まで/.test(g)) throw new Error("ゲストに実数(30秒)を言わない: " + g);
-      return "上限なし=長さを言わない / ゲスト=30秒までと言う";
+      const g = el.textContent;
+      if (!/未登録だから30秒まで/.test(g)) throw new Error("ゲストに理由つき実数が出ない: " + g);
+      if (!/2本以上/.test(g)) throw new Error("2本以上の前提が消えた: " + g);
+      w.MZ_LIMITS = await loadLimits({ member: true, mobile: false });
+      w.MC.ui.showModeStep("kind");
+      if (!/登録済みだから10分まで/.test(el.textContent)) {
+        throw new Error("登録×PCの理由つき実数が出ない: " + el.textContent);
+      }
+      return "管理者=上限なし / 未登録=30秒 / 登録PC=10分(全部理由つき・強調)";
     } finally { w.MZ_LIMITS = keepL; w.MC.ui.showModeStep("kind"); }
+  });
+
+  await test("★管理者×スマホの既定の長さは一般の登録者と同じ60秒(まるごとは選べば使える)", async () => {
+    /* 2026-08-06 優さん「秒数はユーザーなら選べるよね？管理者アカウントも同様に」。
+       全札が開くため既定が「まるごと」になり、8分書き出し→別シーン候補が
+       1枚だけ、という一般では起きない画面を管理者だけが見ていた */
+    const w = await compEnv();
+    const S = compReset(w);
+    const keepL = w.MZ_LIMITS, keepEp = S.exportPreset,
+          keepHard = w.MC.exporter.maxExportableSec;
+    try {
+      w.MC.exporter.maxExportableSec = () => Infinity;
+      w.MZ_LIMITS = await loadLimits({ admin: true, mobile: true });
+      S.exportPreset = null;
+      const p = w.MC.ui.currentPreset(480);
+      if (!p || p.sec !== 60) throw new Error("既定が60秒でない: " + JSON.stringify(p));
+      /* 選べば「まるごと」も従来どおり使える(札は開いたまま) */
+      S.exportPreset = "full";
+      const f = w.MC.ui.currentPreset(480);
+      if (!f || !f.whole) throw new Error("まるごとを選んでも通らない: " + JSON.stringify(f));
+      /* 管理者×PCは従来どおり(一番長い札=まるごと) */
+      w.MZ_LIMITS = await loadLimits({ admin: true, mobile: false });
+      S.exportPreset = null;
+      const pc = w.MC.ui.currentPreset(480);
+      if (!pc || !pc.whole) throw new Error("管理者×PCの既定が変わった: " + JSON.stringify(pc));
+      return "スマホ既定=60秒 / まるごと選択可 / PC既定=従来どおり";
+    } finally {
+      w.MZ_LIMITS = keepL; S.exportPreset = keepEp;
+      w.MC.exporter.maxExportableSec = keepHard;
+    }
   });
 
   await test("★鍵つきの札が約束する道は、本当にその鍵を開ける(約束の検算)", async () => {
@@ -8115,7 +8153,7 @@ async function countSamples(ns, file, fromSec) {
     const S = compReset(w);
     const U = w.MC.ui, H = w.MC.highlight;
     const keep = { range: U.showRange, preset: U.currentPreset, cover: U.coverRange,
-                   best: H.bestScenes, psec: H.presetSec,
+                   best: H.bestScenes, psec: H.presetSec, tdur: w.MC.timelineDuration,
                    tIn: S.trimIn, tOut: S.trimOut };
     const why = () => { U.sceneOffers(); return U._sceneWhy; };
     try {
@@ -8151,6 +8189,7 @@ async function countSamples(ns, file, fromSec) {
       /* ★ 保険(2026-08-05 優さん実機: 8分の素材で候補ゼロが出た)。
          bestScenes が今の窓と重なる1件しか返せなくても(演奏検出の狭窄や
          解析消失)、素材の全長が十分なら前半/中盤/終盤で必ず3つ埋める */
+      w.MC.timelineDuration = () => 780;   // 実長13分 ─ 保険の土台
       H.bestScenes = () => [{ key: "best", label: "フィナーレ", t: 301, dur: 60 }];
       const fb = U.sceneOffers();
       if (fb.length !== 3) throw new Error("保険が埋めない: " + fb.length);
@@ -8159,20 +8198,30 @@ async function countSamples(ns, file, fromSec) {
       }
       if (U._sceneWhy !== null) throw new Error("保険で埋めたのに理由が残る: " + U._sceneWhy);
 
-      /* overlap/none が出るのは「素材の全長でも埋められない」ときだけ
-         (重なり区間を窓+6秒に絞る=保険の土台も無い状況を作る) */
-      const wideCover = U.coverRange;
-      U.coverRange = () => [300, 366];
-      if (why() !== "overlap") throw new Error("重なりが overlap にならない: " + U._sceneWhy);
+      /* ★ overlap/none/cover が出るのは**素材が2分未満**のときだけ(2026-08-06
+         優さん指示「2分未満を除いて、常に3つ以上」)。交差(coverRange)が
+         狭くても、実長が2分あれば保険が実長比で3つ出す */
+      w.MC.timelineDuration = () => 110;        // 2分未満 → 保険は出ない
+      U.showRange = () => [0, 110];
+      if (why() !== "overlap") throw new Error("2分未満×重複が overlap にならない: " + U._sceneWhy);
 
       H.bestScenes = () => [];
-      if (why() !== "none") throw new Error("候補ゼロが none にならない: " + U._sceneWhy);
-      U.coverRange = wideCover;
+      if (why() !== "none") throw new Error("2分未満×候補ゼロが none にならない: " + U._sceneWhy);
 
-      U.coverRange = (a) => [a, a + 0.5];       // 重なりが1秒以下
+      U.coverRange = (a) => [a, a + 0.5];       // 交差1秒以下
       if (why() !== "cover") throw new Error("cover にならない: " + U._sceneWhy);
 
-      U.coverRange = keep.cover; U.currentPreset = () => null;
+      /* 変異の歯: 実長が2分に届けば、交差が無くても保険が実長比で3つ出る */
+      w.MC.timelineDuration = () => 480;
+      U.showRange = () => [0, 480];
+      const fb2 = U.sceneOffers();
+      if (fb2.length !== 3 || !fb2.every(o => /^fb-/.test(o.key))) {
+        throw new Error("交差ゼロでも実長があれば3つ、が守られない: "
+          + fb2.map(o => o.key).join(","));
+      }
+
+      U.coverRange = keep.cover; w.MC.timelineDuration = keep.tdur;
+      U.currentPreset = () => null;
       if (why() !== "preset") throw new Error("preset にならない: " + U._sceneWhy);
 
       U.currentPreset = () => ({ id: "p60" }); U.showRange = () => [0, 0];
@@ -8180,11 +8229,12 @@ async function countSamples(ns, file, fromSec) {
 
       U.showRange = () => { throw new Error("わざと"); };
       if (why() !== "error") throw new Error("例外が error にならない: " + U._sceneWhy);
-      return "成功=null(順位候補3つ) / 保険=前半・中盤・終盤で必ず埋める / "
+      return "成功=null(順位候補3つ) / 保険=実長比で必ず3つ / 2分未満だけ "
         + "overlap / none / cover / preset / range / error をキーで区別";
     } finally {
       U.showRange = keep.range; U.currentPreset = keep.preset; U.coverRange = keep.cover;
       H.bestScenes = keep.best; H.presetSec = keep.psec;
+      w.MC.timelineDuration = keep.tdur;
       S.trimIn = keep.tIn; S.trimOut = keep.tOut; U._sceneWhy = null;
     }
   });

@@ -735,12 +735,15 @@ MC.ui.sceneOffers = () => {
        あり、音だけで探すと動画の無い時間帯に窓を置いてしまう。
        共通部分が短ければ、作れる分だけ(candidates が自然に減らす) */
     const [c0, c1] = MC.ui.coverRange(s0, s1);
-    if (!(c1 > c0 + 1)) return no("cover");
+    /* ★ 交差が無くても即あきらめない(2026-08-06 優さん実機2回目)。
+       前版はここで return no("cover") しており、保険が一度も走らなかった。
+       機械候補(bs)だけ交差窓で探し、足りない分は保険が実長から埋める */
+    const covered = c1 > c0 + 1;
     /* ★ 候補は「一番いいシーン」の順位から(2026-08-05 DCI協議)。
        性格代表(旧candidates)でなく採点順の2番手・3番手を出す。
        短い素材は bestScenes が「尻まで/頭から」の2択(または1本)を返す。
        重複は構わない(優さん指示) ─ 除くのはいま作った窓とほぼ同一(92%以上)だけ */
-    const bs = MC.highlight.bestScenes(audioClip, lenSec, c0, c1);
+    const bs = covered ? MC.highlight.bestScenes(audioClip, lenSec, c0, c1) : [];
     const pIn = MC.S.trimIn != null ? MC.S.trimIn : s0;
     const pOut = MC.S.trimOut != null ? MC.S.trimOut : pIn + lenSec;
     const notSame = c => {
@@ -757,21 +760,35 @@ MC.ui.sceneOffers = () => {
     if (out.length < 3) {
       try {
         const durAll = MC.timelineDuration ? MC.timelineDuration() : s1;
-        /* 始まりは演奏開始(s0)を尊重(セッティング風景を出さない)。
-           終わりだけ素材の実長へ広げる ─ 演奏検出の尻切れを救う */
-        const [f0, f1] = MC.ui.coverRange(s0, Math.max(durAll, s1));
+        /* ★ 土台は**素材の実長そのもの**(2026-08-06 優さん実機2回目)。
+           前版は coverRange(全カメラの交差)を土台にしており、2本目の
+           カメラが短い/ズレていると8分素材でも土台が十数秒に縮み、
+           「終盤 9秒〜」の1枚だけ、が実機で起きた。交差の外はカメラが
+           欠ける時間帯があり得るが、「その場面を選べない」方が損。
+           始まりは演奏開始(s0)を尊重(セッティング風景は出さない)。
+           2分未満の素材だけ保険なし(優さん指示「2分未満を除いて常に3つ」) */
+        const f0 = s0, f1 = Math.max(durAll, s1);
         const fspan = (f1 - f0) - lenSec;
-        /* 保険が埋めなかった理由も内訳ログへ残す(fspan≤8=土台が無い) */
         fbNote = ` fb=${f0.toFixed(0)}..${f1.toFixed(0)} fspan=${fspan.toFixed(0)}`;
-        if (fspan > 8) {
-          const spots = [["前半", 0.15], ["中盤", 0.45], ["終盤", 0.78]];
+        if (durAll >= 120) {
+          /* ★ 位置は**素材の実長比**で置く(fspan比ではない)。上限なしの人は
+             プリセットが「まるごと」= fspan が10秒ほどしか残らず、fspan比だと
+             候補が冒頭数秒に密集して1枚しか生き残らない(2026-08-06 優さん実機:
+             8分素材で「終盤9秒〜」の1枚だけ)。
+             ★ 前回窓との92%重複除外(notSame)は保険には適用しない ─ まるごと
+             書き出した直後は素材のどこもが「前回と重なる」ため、適用すると
+             永遠に出せない。開始位置が8秒以上違えば別のシーンとして出し、
+             尻が足りない分は dur を縮める(書き出し側も同じ縮め方をする) */
+          const spots = [["前半", 0.15], ["中盤", 0.45], ["終盤", 0.78],
+                         ["前半", 0.30], ["中盤", 0.62], ["終盤", 0.90]];
           for (const [nm, frac] of spots) {
             if (out.length >= 3) break;
-            const t = f0 + fspan * frac;
+            const t = f0 + (f1 - f0 - 10) * frac;   // 末尾は最低10秒残す
             const cand = { key: "fb-" + frac, label: nm, why: "素材の" + nm + "の位置",
-                           icon: "fa-clapperboard", t, dur: Math.min(lenSec, f1 - f0),
+                           icon: "fa-clapperboard", t, dur: Math.min(lenSec, f1 - t),
                            rank: out.length + 1, score: 0 };
-            if (notSame(cand) && !out.some(o => Math.abs(o.t - t) < 8)) out.push(cand);
+            if (Math.abs(t - pIn) >= 8
+                && !out.some(o => Math.abs(o.t - t) < 8)) out.push(cand);
           }
         }
       } catch (e) { MC.log("sceneOffers保険: " + e.message); }
@@ -997,7 +1014,9 @@ MC.ui.renderSceneOffers = () => {
     el.innerHTML =
       '<p class="mzso-title"><i class="fa-solid fa-clapperboard" aria-hidden="true"></i> '
       + '同じ動画から別のシーンを作成<span class="mzso-note">'
-      + (hold ? "先に「動画を保存」を押してください" : "前回の解析を使うため速い")
+      /* ★「前回の解析を使うため速い」は削除(2026-08-06 優さん「実際まつ」。
+         解析が消えた復元セッションでは全部やり直しで速くない ─ 嘘になる) */
+      + (hold ? "先に「動画を保存」を押してください" : "")
       + "</span></p>"
       + (hold
         ? '<button type="button" class="mzso-reveal">'
@@ -1588,7 +1607,18 @@ MC.ui.currentPreset = showLen => {
   if (!list.length) return null;
   const open = list.filter(p => !p.locked);
   const pick = list.find(p => p.id === MC.S.exportPreset && !p.locked);
-  return pick || open[open.length - 1] || list[0];
+  if (pick) return pick;
+  /* ★ 管理者(上限なし)×スマホの既定は一般の登録者と同じ60秒(2026-08-06 優さん
+     「秒数はユーザーなら選べるよね？管理者アカウントも同様にして」)。
+     全札が開くため既定が「まるごと」になり、8分まるごと書き出し→自由度が
+     10秒しか残らず別シーン候補が1枚だけ、という一般では起きない画面を
+     管理者だけが見ていた。まるごとは選べば従来どおり使える(札は開いたまま) */
+  const L = window.MZ_LIMITS || {};
+  if (L.unlimited && L.mobile) {
+    const same = open.filter(p => !p.whole && p.sec <= 60);
+    if (same.length) return same[same.length - 1];
+  }
+  return open[open.length - 1] || list[0];
 };
 
 /* 選択を書き出し範囲(trimIn/trimOut)へ落とす。
@@ -1615,9 +1645,11 @@ MC.ui.applyLengthChoice = () => {
   if (MC.S.startKey === "manual" && MC.S.startAt != null
       && MC.S.startAt > t1 - lenSec) {
     try {
+      /* 広げ先は保険の生成側と同じ**素材の実長**(2026-08-06 交差説の撤回と同時に
+         coverRange経由をやめた ─ 土台が2実装に割れると必ず片方が嘘になる) */
       const durAll = MC.timelineDuration ? MC.timelineDuration() : s1;
-      const [f0, f1] = MC.ui.coverRange(s0, Math.max(durAll, s1));
-      if (f1 > t1 + 0.5) { t0 = Math.min(t0, f0); t1 = f1; roomSpan = f1 - f0; }
+      const f1 = Math.max(durAll, s1);
+      if (f1 > t1 + 0.5) { t1 = f1; roomSpan = f1 - s0; }
     } catch (e) { MC.log("applyLengthChoice広域: " + e.message); }
   }
   const cands = MC.highlight.candidates(audioClip, lenSec, t0, t1);
@@ -1628,9 +1660,13 @@ MC.ui.applyLengthChoice = () => {
   let cand;
   if (MC.S.startKey === "manual" && canChoose) {
     const base = MC.S.startAt == null ? cands[0].t : MC.S.startAt;
-    const t = MC.highlight.snapToBeat(base, audioClip, t0, t1 - lenSec);
+    /* ★ 上限は「末尾に最低10秒」まで許す(2026-08-06)。t1-lenSec で頭打ちすると、
+       まるごと(lenSec≈全長)の人は保険候補の t が冒頭へ引き戻される。
+       尻が足りない分は dur を縮める ─ 保険候補の dur と同じ縮め方 */
+    const t = MC.highlight.snapToBeat(base, audioClip, t0, Math.max(t0, t1 - 10));
     MC.S.startAt = t;
-    cand = { ...MC.highlight.MANUAL, t, dur: lenSec, z: 0 };
+    const mdur = Math.max(10, Math.min(lenSec, t1 - t));
+    cand = { ...MC.highlight.MANUAL, t, dur: mdur, z: 0 };
   } else if (MC.S.startKey === "best") {
     /* ★ おまかせの既定 = 「一番いいシーン」(2026-08-05 DCI協議)。
        採点(フィナーレ別格+payoff+arc)の1位を使う。
@@ -1646,7 +1682,7 @@ MC.ui.applyLengthChoice = () => {
   MC.S.startKey = cand.key;
   MC.S.trimIn = cand.t;
   /* 尻は広げた範囲(t1)まで許す ─ s1 で切ると保険候補の終盤が短切れになる */
-  MC.S.trimOut = Math.min(Math.max(s1, t1), cand.t + lenSec);
+  MC.S.trimOut = Math.min(Math.max(s1, t1), cand.t + (cand.dur || lenSec));
   MC.saveState();
   return { preset, lenSec, cands, cand, canChoose, room, audioClip };
 };
@@ -4776,6 +4812,11 @@ MC.ui.keepFinishPickFocus = () => {
   }
   const go = MC.ui.$("#fpGo");
   const to = next || (go && !go.disabled ? go : MC.ui.$("#fpBack"));
+  /* ★ タッチ端末では select へ焦点を戻さない(2026-08-06 優さん実機:
+     被写体/固定を選ぶたびピッカーがもう一度開く)。プログラムからの
+     focus() を iOS Safari は「開く操作」として扱う。焦点復元は
+     キーボード操作のための配慮なので、タッチでは何もしないのが正しい */
+  if ((navigator.maxTouchPoints || 0) > 0 && to && to.tagName === "SELECT") return;
   try { if (to) to.focus({ preventScroll: true }); } catch (e) {}
 };
 
@@ -5822,12 +5863,14 @@ MC.ui.showModeStep = step => {
       const lab = L.exportLimitLabelFor(MC.ui._pendingMode || MC.S.mode);
       /* ★「2本以上」を選ぶ前に言う(2026-08-06 保護者レビュー: 「任意」表記と
          needSecondVideoの門が矛盾し、スマホ1台の人が選んだ後で詰まっていた)。
-         ★ 上限なし(管理者・手元)では長さの話をしない ─ 「上限なしまでの
-           見どころ」は日本語として壊れているうえ誤解を与える(2026-08-06 優さん) */
-      const capped = lab && lab !== "上限なし";
-      d.innerHTML = "動画を2本以上選ぶだけ。"
-        + (capped ? `<b>${MC.ui.esc(lab)}</b>までの見どころを、` : "見どころを、")
-        + "傾きも色も整えて自動で書き出します";
+         ★ 上限は「誰だから・いくつまで」を**理由つき+強調色**で(2026-08-06
+           優さん「xxだから、aaまでを強調色で表示」。裸の「上限なし」は
+           管理者自身が製品の姿と誤読した実績がある) */
+      const who = L.unlimited ? "管理者" : L.member ? "登録済み" : "未登録";
+      const lim = lab === "上限なし"
+        ? `<b class="mode-desc-limit">${who}だから上限なし</b>。`
+        : `<b class="mode-desc-limit">${who}だから${MC.ui.esc(lab)}まで</b>の`;
+      d.innerHTML = `動画を2本以上選ぶだけ。${lim}見どころを、傾きも色も整えて自動で書き出します`;
     } }
   if (step === "flow") {
     const lead = MC.ui.$("#flowLead");
