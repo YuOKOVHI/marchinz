@@ -90,6 +90,7 @@ MC.director = {
      上限8%(5〜10%の中央寄り)+発火条件も下で締めた。条件外は role=pit の -0.35 に上乗せ */
   SPICE_PENALTY: 1.5,
   SPICE_CAP_RATIO: 0.08,
+  HARD_WIDE_NO_SPICE: true,   // 引き限定の受け皿にスパイスを使わない(QAの変異用に定数化)
   /* ソロは操作カメラで抜く(「ソロを抜いていたら必ず使う」)。
      失格(ブレ・パン)していれば使わない ─ その判定は dq が担う */
   SOLO_OPERATOR: true,
@@ -489,7 +490,9 @@ MC.director._rank = (g0, g1, cls, ctx) => {
       /* ★ 上限到達後は罰を倍にする ─ ピットの見せ場が続く曲では
          +1.2(pit加点)が単発の罰を食い破り、10%を大きく超えて出続けた
          (QA変異で実測14秒/上限6秒)。見せ場の途中でも上限は上限 */
-      if (!ok) score -= MC.director.SPICE_PENALTY * (ctx.spiceCapHit ? 2 : 1);
+      /* 上限到達後は4倍(=どの加点でも食い破れない)。2倍では pit の +1.2 と
+         引き・寄りの加点が重なると再び顔を出した(2026-08-05 優さん実機) */
+      if (!ok) score -= MC.director.SPICE_PENALTY * (ctx.spiceCapHit ? 4 : 1);
     }
     if (ctx.roamIds && ctx.roamIds.has(c.id)) {
       /* 歩き撮り: いまの窓の実測が良い(据わっていて・ブレが小さく・普段より
@@ -575,8 +578,16 @@ MC.director._rank = (g0, g1, cls, ctx) => {
   const hardWide = !opening &&
     (!!ctx.forceWide || (!featuring && ctx.segsSinceWide >= ctx.interleave));
   if (hardWide) {
-    const wides = ranked.filter(r => r.wideChosen && !r.dq);
+    /* ★ スパイス(ピット定点)を引きの受け皿にしない(2026-08-05 優さん実機
+       「ピットにしたのに出まくってる」)。前列の定点は全体が写って
+       wideChosen になりがちで、全奏・織り込みの引き限定のたびに
+       ピットが選ばれ、8%上限を素通りしていた ─ 引きの席は全体(front/altwide)へ。
+       スパイスしか引きが無いときだけ従来どおり(黒画面よりまし) */
+    const wides = ranked.filter(r => r.wideChosen && !r.dq
+      && !(MC.director.HARD_WIDE_NO_SPICE && ctx.spiceIds && ctx.spiceIds.has(r.id)));
     if (wides.length) return wides;
+    const anyWide = ranked.filter(r => r.wideChosen && !r.dq);
+    if (anyWide.length) return anyWide;
   }
   /* ★ ソロは操作カメラで抜く(2026-08-05 優さん指示「ソロを抜いていたら必ず使う」)。
      feature が立っている区間では、「カメラマン操作」のカメラが失格でなければ
@@ -907,7 +918,13 @@ MC.director.generate = () => {
       if (top.id === ctx.prevId
           && (ctx.runSec + (tNext - t) > sameCap
               || ctx.runLen >= MC.director.MAX_RUN)) {
-        const alt = (ranked.full || ranked).find(r => r.id !== ctx.prevId && !r.dq);
+        /* 強制切替の逃げ先にもスパイス・厳選門は選ばない(場違いな1枚を挟まない)。
+           他に誰も居なければ従来どおり */
+        const altPool = ranked.full || ranked;
+        const alt = altPool.find(r => r.id !== ctx.prevId && !r.dq
+            && !(ctx.spiceIds && ctx.spiceIds.has(r.id))
+            && !(ctx.roamIds && ctx.roamIds.has(r.id)))
+          || altPool.find(r => r.id !== ctx.prevId && !r.dq);
         if (alt) {
           forcedN++;
           MC.log(`director: ${t.toFixed(1)}s〜 連続${ctx.runSec.toFixed(1)}秒/${ctx.runLen}ショットのため別カメラへ強制切替`);

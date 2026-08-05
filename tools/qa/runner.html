@@ -1988,7 +1988,12 @@ async function countSamples(ns, file, fromSec) {
     if (log.join(",") !== want.join(",")) throw new Error("通った順番が違う: " + log.join(","));
     /* ② 優さんが決めた4つが当たっているか */
     if (S.filterId !== "marchinz") throw new Error("色が MarchinZカラー でない: " + S.filterId);
-    if (S.startKey !== "climax") throw new Error("盛り上がりから始まらない: " + S.startKey);
+    /* 2026-08-05 DCI協議: おまかせの既定は climax(音圧最大窓)→ best(採点1位)へ。
+       applyLengthChoice が bestScenes[0] を manual 相当で確定するため、
+       確定後の startKey はその候補のキー(通常 "best")になる */
+    if (S.startKey !== "best" && S.startKey !== "manual") {
+      throw new Error("一番いいシーンから始まらない: " + S.startKey);
+    }
     const len = S.trimOut - S.trimIn;
     if (!(len > 50 && len <= 60)) throw new Error(`完成が60秒前後でない: ${len.toFixed(0)}秒`);
     if (!S.clips.every(c => Math.abs(c.rot - 0.8) < 0.01)) throw new Error("傾きが自動で当たっていない");
@@ -2886,6 +2891,68 @@ async function countSamples(ns, file, fromSec) {
       throw new Error("変異させても落ちない=この見張りは無意味(条件を見直すこと)");
     }
     return "z順にすると " + labels.join("/") + " になる";
+  });
+
+  await test("★一番いいシーン: 1位は「最後のヒットで終われる窓」(DCI協議・変異つき)", async () => {
+    /* 2026-08-05 DCI配信ディレクター協議。良い切り出し=終わり方が気持ちいい60秒。
+       ショウ最後の衝撃+余韻2.5秒で終わる窓が別格(W_FINALE)で1位になること */
+    const MCX = await loadHighlight();
+    /* 合成: 300秒・基礎音量はゆるい線形(0.15→0.25)、100秒と290秒に衝撃(急上昇)。
+       ★ 基礎を sin にしてはいけない ─ 正規化(p15..p90)後の sin の山は dyn≈1 になり、
+         山の上に置いた衝撃は「直前も大きい」ため rise 条件が立たず検出されない
+         (この試験を書いた初回に実際に踏んだ) */
+    const mkHit = () => {
+      const n = 600, t = [], rms = [];
+      for (let i = 0; i < n; i++) { t.push(i * 0.5 + 0.5); rms.push(0.15 + 0.1 * i / n); }
+      for (const at of [100, 290]) {
+        for (let i = 0; i < n; i++) if (t[i] >= at && t[i] < at + 2.5) rms[i] = 1.0;
+      }
+      const S = { t, rms, onset: rms.map(() => 0.2), centroid: rms.map(() => 1000),
+                  bpmT: [0, 150, 299], bpmV: [120, 120, 120] };
+      /* ★ 正規化(p90)に任せない ─ 衝撃サンプルは全体の数%しかなく、p90 は
+         必ず基礎帯に落ちる。すると基礎の上位が dyn≈1 になり衝撃の rise が
+         立たない。fixture は正規化の範囲を手で固定する */
+      S.rmsLo = 0.15; S.rmsHi = 0.9;
+      S.onLo = 0.15; S.onHi = 0.9;
+      S.cenMed = 1000; S.cenHi = 1200;
+      return { offset: 0, sections: S };
+    };
+    const song = mkHit();
+    /* 前提の検算: 衝撃2つが検出されていること(合成が壊れたらここで言う) */
+    const imps = MCX.highlight._impacts(song.sections, 0, 0, 300);
+    if (imps.length !== 2) throw new Error("試験の前提が崩れた: 衝撃が" + imps.length + "個(2個のはず)");
+    const bs = MCX.highlight.bestScenes(song, 60, 0, 300);
+    if (!bs.length) throw new Error("候補が出ない");
+    if (bs[0].key !== "best") throw new Error("1位のキーが best でない: " + bs[0].key);
+    /* 最後の衝撃(≈290)+余韻2.5秒 で終わる窓 → 開始 ≈ 232.5 */
+    const want = 290 + 2.5 - 60;
+    if (Math.abs(bs[0].t - want) > 5) {
+      throw new Error(`1位が最後のヒットで終わる窓でない: t=${bs[0].t.toFixed(1)}(期待≈${want.toFixed(1)})`);
+    }
+    /* 変異: フィナーレ別格と payoff を消すと、1位がそこから離れる(=採点が仕事をしている) */
+    const K = MCX.highlight.SCORE;
+    const keep = { f: K.W_FINALE, p: K.W_PAYOFF };
+    K.W_FINALE = 0; K.W_PAYOFF = 0;
+    const mut = MCX.highlight.bestScenes(song, 60, 0, 300);
+    K.W_FINALE = keep.f; K.W_PAYOFF = keep.p;
+    if (mut.length && Math.abs(mut[0].t - want) <= 5) {
+      throw new Error("変異(採点なし)でも同じ窓が1位=採点が空回り");
+    }
+    return `1位 t=${bs[0].t.toFixed(1)}(最後のヒット290+余韻で終了) / 変異=1位が移動`;
+  });
+
+  await test("★一番いいシーン: 短い素材は「尻まで/頭から」の2択・まるごとは1本", async () => {
+    /* DCI協議「ずらし幅10秒の世界では中身の違いは作れないが端の違いは作れる。
+       3本目をひねり出すのは水増し」 */
+    const MCX = await loadHighlight();
+    const c2 = MCX.highlight.bestScenes(mkSong(70), 60, 0, 70);   // ずらし幅10秒
+    eq(c2.length, 2, "短い素材の候補数");
+    eq(c2[0].key, "finale", "1位=尻まで");
+    eq(c2[1].key, "start", "2位=頭から");
+    const c1 = MCX.highlight.bestScenes(mkSong(62), 60, 0, 62);   // ずらし幅2秒
+    eq(c1.length, 1, "まるごとの候補数");
+    eq(c1[0].key, "start", "残るもの");
+    return `70秒素材=2択(${c2.map(x => x.label).join("/")}) / 62秒素材=1本`;
   });
 
   /* ===== ⑯ 「長さと始まり」フェーズの導線 ===== */
@@ -3840,6 +3907,18 @@ async function countSamples(ns, file, fromSec) {
       w.MC.ui._share = () => Promise.reject(Object.assign(new Error("abort"), { name: "AbortError" }));
       if (await w.MC.ui.saveResult() !== "cancelled") throw new Error("取り消しを区別できない");
       if ($("#doneNote").textContent !== before) throw new Error("取り消したのに保存できたと言う");
+      /* ②' 押し直しで直る失敗(ジェスチャ切れ・シート競合)はダウンロードへ落とさない
+         (2026-08-05 優さん実機「PCのときのダウンロードの挙動になった」) */
+      { let dl2 = 0; const keepDl2 = X.triggerDownload; X.triggerDownload = () => { dl2++; };
+        for (const nm of ["NotAllowedError", "InvalidStateError"]) {
+          w.MC.ui._share = () => Promise.reject(Object.assign(new Error(nm), { name: nm }));
+          if (await w.MC.ui.saveResult() !== "retry") throw new Error(nm + " が retry にならない");
+        }
+        if (dl2) throw new Error("押し直しで直る失敗なのにダウンロードへ落ちた");
+        w.MC.ui._shareBusy = true;
+        if (await w.MC.ui.saveResult() !== "busy") throw new Error("連打が busy にならない");
+        w.MC.ui._shareBusy = false;
+        X.triggerDownload = keepDl2; }
       /* ③ 成功したら画面の主役が変わる(2026-08-01 優さん指示
          「保存完了ももっとわかりやすく」): 主ボタンが「✓ 保存しました」(緑)に変わる。
          ★ 帯は出さない(2026-08-02 優さん指摘⑦「保存しましたが2つでる」)。
@@ -4809,6 +4888,47 @@ async function countSamples(ns, file, fromSec) {
       w.MC.visual.seg = keep.seg; w.MC.sections.classify = keep.cls;
       w.MC.director._salute = keep.sal;
       w.MC.director.SPICE_PENALTY = keep.pen; w.MC.director.SPICE_CAP_RATIO = keep.cap;
+      S.clips.forEach((c, i) => { [c.target, c.motion, c.role, c.freq, c.rig] = keep.st[i]; });
+      compReset(w);
+    }
+  });
+
+  await test("★スパイス(ピット定点)は引きの受け皿にならない(変異つき)", async () => {
+    /* 2026-08-05 優さん実機「ピットにしたのに出まくってる」。前列の定点は
+       全体が写って wideChosen になり、全奏・織り込みの引き限定のたびに
+       選ばれて8%上限を素通りしていた ─ 引きの席は front/altwide だけに */
+    const w = await compEnv();
+    const S = compReset(w);
+    S.audioClipId = 1; S.trimIn = 0; S.trimOut = 60; S.cutLevel = 2;
+    Object.assign(w.MC.getClip(1), { beatsData: dciBeats(), sections: {} });
+    /* cam2=スパイスだが引きに見える(小さい顔・よく撮れている) */
+    const M = { 1: dciSeg(.30, true), 2: { ...dciSeg(.05), sharpMean: 60 },
+                3: { ...dciSeg(.05), sharpMean: 30 } };
+    const keep = { seg: w.MC.visual.seg, cls: w.MC.sections.classify,
+                   sal: w.MC.director._salute, hw: w.MC.director.HARD_WIDE_NO_SPICE,
+                   st: S.clips.map(c => [c.target, c.motion, c.role, c.freq, c.rig]) };
+    const run = () => { S.cutList = []; w.MC.director.generate(); return S.cutList.slice(); };
+    const spiceN = cuts => cuts.filter(c => c.clipId === 2).length;
+    try {
+      w.MC.visual.seg = clip => M[clip.id];
+      w.MC.director._salute = null;
+      S.clips[2].target = "front"; w.MC.applyAxes(S.clips[2]);
+      S.clips[1].target = "spice"; w.MC.applyAxes(S.clips[1]);
+      S.clips[0].target = "operator"; w.MC.applyAxes(S.clips[0]);
+      /* 全奏が続く曲(引き限定が毎回かかる) */
+      w.MC.sections.classify = () => ({ feature: 0, percussion: 0, tutti: 0.85, pit: 0,
+                                        bpm: 120, dyn: 0.85, quiet: 0 });
+      const a = spiceN(run());
+      if (a > 0) throw new Error(`全奏の引き席にスパイスが${a}枚座っている(8%素通りの再発)`);
+      /* 変異: 除外を切ると、よく撮れたスパイス定点が引き席を取り出す */
+      w.MC.director.HARD_WIDE_NO_SPICE = false;
+      const b = spiceN(run());
+      w.MC.director.HARD_WIDE_NO_SPICE = keep.hw;
+      if (!b) throw new Error("変異(除外なし)でも出ない=規則が空回り");
+      return `本番=0枚 / 変異(除外なし)=${b}枚`;
+    } finally {
+      w.MC.visual.seg = keep.seg; w.MC.sections.classify = keep.cls;
+      w.MC.director._salute = keep.sal; w.MC.director.HARD_WIDE_NO_SPICE = keep.hw;
       S.clips.forEach((c, i) => { [c.target, c.motion, c.role, c.freq, c.rig] = keep.st[i]; });
       compReset(w);
     }
@@ -7742,7 +7862,7 @@ async function countSamples(ns, file, fromSec) {
     const S = compReset(w);
     const U = w.MC.ui, H = w.MC.highlight;
     const keep = { range: U.showRange, preset: U.currentPreset, cover: U.coverRange,
-                   cands: H.candidates, psec: H.presetSec,
+                   best: H.bestScenes, psec: H.presetSec,
                    tIn: S.trimIn, tOut: S.trimOut };
     const why = () => { U.sceneOffers(); return U._sceneWhy; };
     try {
@@ -7750,29 +7870,24 @@ async function countSamples(ns, file, fromSec) {
       U.currentPreset = () => ({ id: "p60" });
       H.presetSec = () => 60;
       U.coverRange = (a, b) => [a, b];
-      H.candidates = () => [{ key: "start", label: "スタート", t: 0, dur: 60 }];
+      /* ★ 候補は「一番いいシーン」の順位から(2026-08-05 DCI協議で bestScenes 化)。
+         短尺の2択・水増ししない方針は bestScenes 本体の試験(⑮)が見る */
+      H.bestScenes = () => [
+        { key: "best", label: "フィナーレ", t: 430, dur: 60 },
+        { key: "scene2", label: "シーン2", t: 200, dur: 60 },
+        { key: "scene3", label: "シーン3", t: 0, dur: 60 },
+      ];
       S.trimIn = 300; S.trimOut = 360;          // いま作ったのは 300〜360 秒
-      /* ★ 3つ前後を必ず(2026-08-05 優さん実機)。特徴候補1つ+機械的な窓で3つに補われる */
       const filled = U.sceneOffers();
-      if (filled.length !== 3) throw new Error(`候補が3つに補われない: ${filled.length}`);
-      if (!filled.some(c => c.key === "start")) throw new Error("特徴候補(start)が消えている");
+      if (filled.length !== 3) throw new Error(`順位候補3つが出ない: ${filled.length}`);
+      if (filled[0].key !== "best") throw new Error("1位が先頭に来ない: " + filled[0].key);
       if (U._sceneWhy !== null) throw new Error("成功したのに理由が残る: " + U._sceneWhy);
 
-      /* ★ 新契約(2026-08-05 優さん指示): 素材が長ければ、候補が全部いまの窓と
-         重なっていても、機械的な窓(前半/まんなか/後半)で必ず提示する */
-      S.trimIn = 0; S.trimOut = 60;             // いま作ったのが候補そのもの
-      const mech = U.sceneOffers();
-      if (!mech.length) throw new Error("素材510秒で候補0(「必ず提示」の新契約に反する)");
-      if (U._sceneWhy !== null) throw new Error("機械候補を出したのに理由が残る: " + U._sceneWhy);
-      if (!mech.every(m => ["early", "mid", "late"].includes(m.key))) {
-        throw new Error("機械候補のキーが想定外: " + mech.map(m => m.key).join(","));
-      }
-
-      /* overlap の理由が立つのは「本当に他の場面が無い」短い素材だけ(1分ちょっと) */
-      U.showRange = () => [0, 65];
+      /* overlap: 候補が全部いまの窓とほぼ同一(92%以上)のときだけ */
+      H.bestScenes = () => [{ key: "best", label: "フィナーレ", t: 301, dur: 60 }];
       if (why() !== "overlap") throw new Error("重なりが overlap にならない: " + U._sceneWhy);
 
-      H.candidates = () => [];
+      H.bestScenes = () => [];
       if (why() !== "none") throw new Error("候補ゼロが none にならない: " + U._sceneWhy);
 
       U.coverRange = (a) => [a, a + 0.5];       // 重なりが1秒以下
@@ -7786,11 +7901,11 @@ async function countSamples(ns, file, fromSec) {
 
       U.showRange = () => { throw new Error("わざと"); };
       if (why() !== "error") throw new Error("例外が error にならない: " + U._sceneWhy);
-      return "成功=null / 長い素材=機械候補(early/mid/late) / overlap / none / cover / "
+      return "成功=null(順位候補3つ) / overlap / none / cover / "
         + "preset / range / error をキーで区別する(文言は畳んでも落ちない)";
     } finally {
       U.showRange = keep.range; U.currentPreset = keep.preset; U.coverRange = keep.cover;
-      H.candidates = keep.cands; H.presetSec = keep.psec;
+      H.bestScenes = keep.best; H.presetSec = keep.psec;
       S.trimIn = keep.tIn; S.trimOut = keep.tOut; U._sceneWhy = null;
     }
   });
@@ -7893,6 +8008,29 @@ async function countSamples(ns, file, fromSec) {
       S.filterId = keep.fid; S.colorOn = keep.con;
       S.clips.forEach((c, i) => { c.role = keep.roles[i]; c.target = keep.targets[i]; c.motion = keep.motions[i]; c.freq = keep.freqs[i]; });
       try { U.closeFinishPick(); } catch (_) {}
+    }
+  });
+
+  await test("★完了音は既定オフ(iPhoneのマナーモードにWebは追従できないため)", async () => {
+    /* 2026-08-05 優さん実機「マナーモードでも音がでる」。iOSのサイレントスイッチは
+       WebAudioから検出も追従もできないOS仕様なので、勝手に鳴る音を既定で止めた */
+    const w = await compEnv();
+    const key = "mc_sfx_on";
+    const keep = w.localStorage.getItem(key);
+    try {
+      w.localStorage.removeItem(key);
+      if (w.MC.ui.sfx.enabled() !== false) throw new Error("既定がオンになっている");
+      if (w.MC.ui.sfx.play("done") !== false) throw new Error("既定オフなのに鳴った");
+      w.MC.ui.sfx.setEnabled(true);
+      if (w.MC.ui.sfx.enabled() !== true) throw new Error("オンにしても保存されない");
+      w.MC.ui.sfx.setEnabled(false);
+      if (w.MC.ui.sfx.enabled() !== false) throw new Error("オフに戻せない");
+      const tg = w.document.getElementById("eoSfxToggle");
+      if (!tg) throw new Error("トグル(#eoSfxToggle)がHTMLに無い");
+      return "既定オフ / play=false / トグルで保存・復帰 / #eoSfxToggle あり";
+    } finally {
+      if (keep == null) w.localStorage.removeItem(key);
+      else w.localStorage.setItem(key, keep);
     }
   });
 

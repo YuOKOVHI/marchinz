@@ -325,13 +325,10 @@ MC.ui.showExportStats = () => {
   ].filter(v => v !== null);
   const text = lines.join("\n");
   /* 中高生が読むのはこの1行だけでよい。畳んだ中身は開発者向け */
+  /* 「◯分で書き出しました」の1行は出さない(2026-08-05 優さん指示で削除)。
+     所要時間・解像度は診断ログ(畳み)の中に残っている */
   const one = MC.ui.$("#eoOneLine");
-  if (one) {
-    /* 同じ1行で単位系を割らない。素材側を「8分30秒」と読ませておいて
-       所要だけ「912.4秒」だと、それが15分だと分かる部員はいない(2026-07-26) */
-    one.textContent = `${mmss(s.spanSec)}の動画を${mmss(s.totalMs / 1000)}で書き出しました（${s.w}×${s.h}）`;
-    one.hidden = false;
-  }
+  if (one) { one.textContent = ""; one.hidden = true; }
   host.hidden = false;
   host.open = false;                       // 既定は畳んでおく(見たい人だけ開く)
   MC.ui.$("#eoStatsText").textContent = text;
@@ -444,6 +441,9 @@ MC.ui.showDone = res => {
   MC.ui._scenesRevealed = false;
   MC.ui.setSaveState(false);
   MC.ui.liftShareTool(false);   // 新しい完成では、シェアは出口の列に戻す
+  /* 完了音トグルも未保存の顔に戻す(保存が済んだら celebrate("saved") が出す)。
+     戻さないと前回の保存で出たトグルが未保存画面の縦を44px押し広げる */
+  { const row = document.querySelector(".eo-sfx-row"); if (row) row.hidden = true; }
   /* ★ 「終わったとき」の呼び戻し(2026-08-02 優さん指示)。書き出しは数分かかり、
      おまかせなら合計3〜5分。ここが**本当に終わった**唯一の地点で、しかも
      このあと人が「動画を保存」を押さないと何も残らない ─ 呼び戻す価値が
@@ -630,10 +630,15 @@ MC.ui._share = files => navigator.share({ files });
 
 /* 保存の実行。iOSはWeb Shareで写真/ファイルへ、それ以外はダウンロード。
    返り値で何が起きたかを言う("saved"/"cancelled"/"downloaded"/"none") */
+MC.ui._shareBusy = false;
 MC.ui.saveResult = async () => {
   const r = MC.exporter.lastResult;
   if (!r) return "none";
   if (MC.exporter.shareMode()) {
+    /* ★ 共有シートが開くまでに間があると連打され、2回目の share が
+       InvalidStateError で落ちて下のフォールバックへ流れていた(2026-08-05) */
+    if (MC.ui._shareBusy) return "busy";
+    MC.ui._shareBusy = true;
     try {
       /* すでに File(OPFSから取り出したもの)ならそのまま渡す。
          new File([blob]) は中身を丸ごとメモリへ複製するため、
@@ -646,10 +651,21 @@ MC.ui.saveResult = async () => {
       return "saved";
     } catch (e) {
       if (e && e.name === "AbortError") return "cancelled";   // 取り消しは黙る
+      /* ★ iPhoneで <a download> へ落とすと「PCのダウンロードの挙動」になり、
+         どこへ保存されたか分からなくなる(2026-08-05 優さん実機)。
+         タップから時間が経った(NotAllowedError)・シートの競合
+         (InvalidStateError)は、押し直せば share が通る ─ 落とさずに頼む */
+      if (e && (e.name === "NotAllowedError" || e.name === "InvalidStateError")) {
+        MC.log("share再試行待ち:", e.name);
+        MC.ui.toast("保存シートを開けませんでした。もう一度「動画を保存」を押してください");
+        return "retry";
+      }
       MC.log("share失敗→ダウンロード:", e && e.message);
       MC.exporter.triggerDownload(r.blob, r.name);        // 最後の手段
       MC.ui.notifySaved(r, "download");
       return "downloaded";
+    } finally {
+      MC.ui._shareBusy = false;
     }
   }
   MC.exporter.triggerDownload(r.blob, r.name);
@@ -711,42 +727,21 @@ MC.ui.sceneOffers = () => {
        共通部分が短ければ、作れる分だけ(candidates が自然に減らす) */
     const [c0, c1] = MC.ui.coverRange(s0, s1);
     if (!(c1 > c0 + 1)) return no("cover");
-    const cands = MC.highlight.candidates(audioClip, lenSec, c0, c1);
+    /* ★ 候補は「一番いいシーン」の順位から(2026-08-05 DCI協議)。
+       性格代表(旧candidates)でなく採点順の2番手・3番手を出す。
+       短い素材は bestScenes が「尻まで/頭から」の2択(または1本)を返す。
+       重複は構わない(優さん指示) ─ 除くのはいま作った窓とほぼ同一(92%以上)だけ */
+    const bs = MC.highlight.bestScenes(audioClip, lenSec, c0, c1);
     const pIn = MC.S.trimIn != null ? MC.S.trimIn : s0;
     const pOut = MC.S.trimOut != null ? MC.S.trimOut : pIn + lenSec;
-    /* ★ 重複は構わない(2026-08-05 優さん指示)。除くのは「ほぼ同じ窓」だけ ─
-       いま作ったものと85%以上重なる候補を別のシーンと呼ぶのは嘘になる。
-       旧: 半分重なったら落としていて、候補が全滅しがちだった */
     const notSame = c => {
       const ov = Math.min(c.t + c.dur, pOut) - Math.max(c.t, pIn);
-      return ov < c.dur * 0.85;
+      return ov < c.dur * 0.92;
     };
-    const out = cands.filter(notSame);
-    /* ★ 3つ前後を必ず出す(2026-08-05 優さん実機「1つしか表示されていない。
-       3つ前後を。一部箇所が重複してもよい」)。特徴の候補(盛り上がり・バラード等)が
-       足りなければ、機械的な窓(前半/まんなか/後半)で3つまで補う。
-       補えないのは素材が書き出し長+15秒未満(=1分ちょっと)のときだけ */
-    if (out.length < 3 && c1 - c0 >= lenSec + 15) {
-      const span = (c1 - c0) - lenSec;
-      const mech = [
-        { key: "early", label: "前半",  why: "演奏の前半から", icon: "fa-backward-step",
-          t: c0, dur: lenSec, z: 0 },
-        { key: "mid",   label: "まんなか", why: "演奏の中ほどから", icon: "fa-circle-half-stroke",
-          t: c0 + span * 0.5, dur: lenSec, z: 0 },
-        { key: "late",  label: "後半",  why: "演奏の後半から", icon: "fa-forward-step",
-          t: c0 + span, dur: lenSec, z: 0 },
-      ].filter(notSame);
-      for (const m of mech) {
-        if (out.length >= 3) break;
-        /* 既にある候補と窓がほぼ同じなら足さない(名前だけ違う同じ場面を並べない) */
-        if (out.some(o => Math.abs(o.t - m.t) < lenSec * 0.3)) continue;
-        out.push(m);
-      }
-      out.sort((a, b) => a.t - b.t);
-    }
+    const out = bs.filter(notSame).slice(0, 3);
     if (out.length) return out;
     /* ここまで来たら本当に「いま作ったところしかない」(1分ちょっとの素材) */
-    return no(cands.length ? "overlap" : "none");
+    return no(bs.length ? "overlap" : "none");
   } catch (e) { MC.log("sceneOffers: " + e.message); return no("error"); }
 };
 
@@ -1549,6 +1544,14 @@ MC.ui.applyLengthChoice = () => {
     const t = MC.highlight.snapToBeat(base, audioClip, t0, t1 - lenSec);
     MC.S.startAt = t;
     cand = { ...MC.highlight.MANUAL, t, dur: lenSec, z: 0 };
+  } else if (MC.S.startKey === "best") {
+    /* ★ おまかせの既定 = 「一番いいシーン」(2026-08-05 DCI協議)。
+       採点(フィナーレ別格+payoff+arc)の1位を使う。
+       ★ "climax" をここへ寄せてはいけない ─ ユーザーが開始位置の候補で
+         「大盛り上がり」を明示的に選んだ場合も同じキーで、乗っ取りになる
+         (QAが実際に捕まえた)。best はおまかせ専用キー */
+    const bs = MC.highlight.bestScenes(audioClip, lenSec, t0, t1, 1);
+    cand = bs[0] || cands[0];
   } else {
     cand = cands.find(c => c.key === MC.S.startKey) || cands[0];
   }
@@ -3708,8 +3711,19 @@ MC.ui.sfx = {
       }
     } catch (_) {}
   },
-  /* 鳴らせるか。ctxが無い/止まっている(=タップ前・iOSが裏で回収)・裏タブでは鳴らさない */
+  /* ★ 効果音は既定オフ(2026-08-05 優さん実機「マナーモードでも音がでる」)。
+     iOSのサイレントスイッチはWebから検出も追従もできない(WebAudio/メディア再生は
+     マナーモードを無視して鳴るOS仕様)。「マナーモードに合わせる」の実装として、
+     勝手に鳴る音を既定で止め、鳴らしたい人だけトグルでオンにする */
+  enabled() {
+    try { return localStorage.getItem("mc_sfx_on") === "1"; } catch (_) { return false; }
+  },
+  setEnabled(on) {
+    try { localStorage.setItem("mc_sfx_on", on ? "1" : "0"); } catch (_) {}
+  },
+  /* 鳴らせるか。設定オフ/ctxが無い/止まっている(=タップ前・iOSが裏で回収)・裏タブでは鳴らさない */
   ready() {
+    if (!this.enabled()) return false;
     return !!(this._ctx && this._ctx.state === "running") && MC.ui.fxVisible();
   },
   play(kind) {
@@ -3738,6 +3752,12 @@ MC.ui.sfx = {
 MC.ui.celebrate = kind => {
   MC.ui.fanfare(kind);
   MC.ui.sfx.play(kind);
+  /* 完了音トグルは保存が済んでから見せる(2026-08-05)。未保存の画面に足すと
+     「動画を保存」が画面中央から押し出される(QAの実測が捕まえた) */
+  if (kind === "saved") {
+    const row = document.querySelector(".eo-sfx-row");
+    if (row) row.hidden = false;
+  }
   /* 完了(done)の振動は showDone の notifyUserTurn が打つ。保存はここで短く */
   if (kind === "saved") MC.ui.buzz([40, 30, 90]);
 };
@@ -3856,7 +3876,7 @@ MC.ui.initVisibility = () => {
      ・すでに書き出し済みなら走らせない(二重書き出し) */
 MC.ui.AUTO = {
   preset: "short",        // 完成60秒(実尺は上限で丸まる)
-  startKey: "climax",     // 盛り上がるシーン
+  startKey: "best",       // 一番いいシーン(2026-08-05 DCI協議の採点1位)
   filterId: "marchinz",   // MarchinZカラー(=「仕上げの好み」のおすすめ)
   cutLevel: 2,            // 切り替えは「おすすめ」(同上)
 };
@@ -4809,35 +4829,24 @@ MC.ui.renderFinishRoles = (fp, cards) => {
       MC.ui.renderFinishPick();
     };
     /* ラベルを添える(2026-08-05 優さん実機「被写体 / 固定or手持ち のラベルを」)。
-       ★選択中の項目の hint を1行だけ下に出す(2026-08-05 レビューP1)。
-         一覧の長文説明は削除済みで、iPhone では title が読まれないため、
-         選んだものの意味がどこにも出ていなかった。既定(指定なし/自動判定)は出さない */
-    const labeled = (text, sel, list) => {
+       ★説明文は出さない(2026-08-05 優さん実機「この被写体や固定の説明文はいらない」。
+         一度hintの動的表示を足したが即日巻き戻した ─ 選択肢名だけで通す) */
+    const labeled = (text, sel) => {
       const box = document.createElement("span");
       box.className = "fp-axis";
       const lab = document.createElement("span");
       lab.className = "fp-axis-label";
       lab.textContent = text;
-      const hint = document.createElement("span");
-      hint.className = "fp-axis-hint";
-      const syncHint = () => {
-        const o = list.find(x => x.v === sel.value);
-        hint.textContent = (o && o.v !== "auto") ? o.hint : "";
-        hint.hidden = !hint.textContent;
-      };
-      sel.addEventListener("change", syncHint);
-      syncHint();
       box.appendChild(lab);
       box.appendChild(sel);
-      box.appendChild(hint);
       return box;
     };
     const selT = mkSel(MC.TARGETS, cur.target, `${c.name} の被写体`, pick("target"));
     selT.dataset.id = String(c.id); selT.dataset.axis = "target";
     const selM = mkSel(MC.MOTIONS, cur.motion, `${c.name} の固定or手持ち`, pick("motion"));
     selM.dataset.id = String(c.id); selM.dataset.axis = "motion";
-    seg.appendChild(labeled("被写体", selT, MC.TARGETS));
-    seg.appendChild(labeled("固定or手持ち", selM, MC.MOTIONS));
+    seg.appendChild(labeled("被写体", selT));
+    seg.appendChild(labeled("固定or手持ち", selM));
     card.appendChild(seg);
     box.appendChild(card);
   });
@@ -4970,14 +4979,15 @@ MC.ui.runAuto = async (opt) => {
   const applyChoices = () => {
     if (!scene) MC.ui.applyAutoChoices();
     else {
-      /* ★ 機械補完の候補(前半/まんなか/後半)は manual として t を直渡しする
-         (2026-08-05 レビューP0)。early/mid/late は highlight.candidates の
-         語彙に無いため、そのまま渡すと applyLengthChoice の
-         `cands.find(key)` が外れて cands[0] へ**無言でフォールバック**し、
-         押した窓と違う場面(往々にして、いま作ったのと同じ窓)が作られていた */
-      const mech = scene.key === "early" || scene.key === "mid" || scene.key === "late";
-      MC.S.startKey = mech ? "manual" : scene.key;
-      MC.S.startAt = (mech || scene.key === "manual") ? scene.t : null;
+      /* ★ candidates の語彙に無いキーは全部 manual として t を直渡しする
+         (2026-08-05 レビューP0の一般化)。未知キーをそのまま渡すと
+         applyLengthChoice の `cands.find(key)` が外れて cands[0] へ
+         **無言でフォールバック**し、押した窓と違う場面が作られる。
+         bestScenes の "best"/"sceneN" もこの経路で安全に通る */
+      const known = ["start", "climax", "ballad", "drumline", "solo", "finale", "manual"];
+      const direct = !known.includes(scene.key) || scene.key === "manual";
+      MC.S.startKey = direct ? "manual" : scene.key;
+      MC.S.startAt = direct ? scene.t : null;
     }
   };
   let tick = null;
@@ -5853,6 +5863,17 @@ MC.ui.wire = () => {
      期待は「作る動画を選ぶ」(種類選択)へ戻ること。
      種類選択の画面にいるときだけ、従来どおりサイトのクリエイターページへ。
      素材は showModeSelect が保つ(消すのは「最初からやり直す」だけ) */
+  /* 完了音トグル(2026-08-05)。既定オフ。変えたら即保存し、オンにした瞬間に
+     試し鳴らし(その場で音量感が分かる+タップ起点なのでAudioContextも解錠される) */
+  { const sfxTg = $("#eoSfxToggle");
+    if (sfxTg) {
+      sfxTg.checked = MC.ui.sfx.enabled();
+      sfxTg.onchange = () => {
+        MC.ui.sfx.setEnabled(sfxTg.checked);
+        if (sfxTg.checked) { MC.ui.sfx.unlock(); MC.ui.sfx.play("saved"); }
+      };
+    } }
+
   { const backLink = document.querySelector(".topbar .back-link");
     if (backLink) backLink.addEventListener("click", e => {
       /* ★ 解析・書き出し中は遷移しない(2026-08-05 レビューP1)。

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-app-v="1.105.0">
+<html lang="ja" data-mz-app-v="1.106.0">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -18,7 +18,7 @@
 <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
 <link rel="stylesheet" href="/tools/shared/progress.css?v=1.99.3">
 <link rel="stylesheet" href="/tools/shared/journey.css?v=1.99.3">
-<link rel="stylesheet" href="css/style.css?v=1.105.0">
+<link rel="stylesheet" href="css/style.css?v=1.106.0">
 <link rel="stylesheet" href="/tools/shared/sitechrome.css?v=1.105.0">
 </head>
 <body data-mz-tool="switcher">
@@ -521,7 +521,7 @@
                ページを読み直すので、文言も「最初から作り直す」に改めた
                (「戻る」と書いて別ページへ飛ばさない・再スタートだと分かる言い方) -->
           <a href="/tools/switcher/" id="doneToTools" class="btn ghost eo-tools">
-            <i class="fa-solid fa-rotate-left" aria-hidden="true"></i> 最初から作り直す</a>
+            <i class="fa-solid fa-rotate-left" aria-hidden="true"></i> 別の動画を作る</a>
         </div>
       </div>
     </section>
@@ -698,6 +698,11 @@
            前回「管理者にだけ残す」としたが、優さん自身が管理者で消えていなかった。
            同意の注意文も削除(必要になったら優さんの判断で戻す) -->
 
+      <!-- 完了音は既定オフ(2026-08-05 優さん実機)。iPhoneはマナーモードでも
+           鳴ってしまう(OS仕様でWebから追従できない)ため、鳴らしたい人だけオン -->
+      <label class="eo-sfx-row" hidden><input type="checkbox" id="eoSfxToggle">
+        <span>完了を音で知らせる（iPhoneはマナーモードでも鳴ります）</span></label>
+
       <!-- 何にどれだけ掛かったか。普段は畳んでおき、知りたい人だけ開く -->
       <details id="eoStats" class="eo-stats" hidden>
         <summary>診断ログ（開発者への報告用）</summary>
@@ -721,7 +726,7 @@
       <!-- ★ 行き先はツール一覧でなく Switcher 自身(2026-08-02 優さん指示)。
            ページ再読込=まっさらな状態から新しく始められる、が伝わる文言にする -->
       <a href="/tools/switcher/" id="eoToTools" class="btn ghost eo-tools">
-        <i class="fa-solid fa-rotate-left" aria-hidden="true"></i> 最初から作り直す</a>
+        <i class="fa-solid fa-rotate-left" aria-hidden="true"></i> 別の動画を作る</a>
       <button type="button" id="eoClose" class="btn ghost eo-close" hidden>閉じる</button>
     </div>
   </div>
@@ -772,7 +777,7 @@
 <script src="js/sync.js?v=1.99.3"></script>
 <script src="js/beats.js?v=1.99.3"></script>
 <script src="js/sections.js?v=1.99.3"></script>
-<script src="js/highlight.js?v=1.99.3"></script>
+<script src="js/highlight.js?v=1.106.0"></script>
 <script src="js/visual.js?v=1.100.0"></script>
 <script src="js/director.js?v=1.105.0"></script>
 <script src="js/colormatch.js?v=1.99.3"></script>
@@ -786,7 +791,7 @@
 <script src="js/timeline.js?v=1.99.3"></script>
 <script src="js/cutmode.js?v=1.99.3"></script>
 <script src="js/exporter.js?v=1.99.4"></script>
-<script src="js/ui.js?v=1.105.0"></script>
+<script src="js/ui.js?v=1.106.0"></script>
 <script src="js/app.js?v=1.99.3"></script>
 </body>
 </html>
