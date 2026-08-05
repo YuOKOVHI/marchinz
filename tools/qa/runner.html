@@ -1398,8 +1398,6 @@ async function countSamples(ns, file, fromSec) {
     return withSwitcher(async (w, d) => {
       const a = d.querySelector(".topbar .back-link");
       if (!a) throw new Error(".back-link が見つからない");
-      /* 最上位(種類選択)では hidden(2026-08-05 新契約) ─ 工程に入って測る */
-      w.MC.ui.chooseMode("vertical", { silent: true });
       const b = a.getBoundingClientRect();
       /* 左端: ヘッダー内でロゴ類を除き最左(⑨ 戻る=左の作法)。x はパディング分だけ */
       if (b.left > 24) throw new Error(`左端に無い(x=${Math.round(b.left)}px)`);
@@ -1412,31 +1410,44 @@ async function countSamples(ns, file, fromSec) {
     });
   });
 
-  await test("★「← 戻る」はツール内に留まる(TOPへ飛ばない・最上位では隠す・保存状態を消さない)", async () => {
-    /* 2026-08-05 優さん実機「戻るは、TOPページに戻る。なんなの!!!!」。
-       種類選択(最上位)から href=/#creators へ素通しする穴が残っていた。
-       新契約: TOPへは一度も遷移しない(TOP行きはフッターに一本化)。
-       最上位では戻る自体を隠す(iOSの作法: ルートに戻るは無い) */
+  await test("★「← 戻る」: 最上位=実在アンカーへの素直なリンク / 作業中=ツール内へ(保存も動画も守る)", async () => {
+    /* 2026-08-05 優さん「映像ツールのリンク貼ればいいだけじゃないの?」。
+       「TOPの先頭に飛ぶ」ように見えた真因はリンク先が存在しないアンカー
+       (/#creators)だったこと。実在の /#creators-heading へ直し、
+       最上位ではふつうのリンク(=意図した退出。保存状態も捨てる)、
+       作業中だけ横取りしてツール内へ戻す(遷移すると取り込んだ動画が消える) */
     return withSwitcher(async (w, d) => {
       const a = d.querySelector(".topbar .back-link");
       const ms = d.getElementById("modeSelect");
+      /* 最上位: 隠さない・href は実在アンカー */
       w.MC.ui.showModeSelect();
-      if (!a.hidden) throw new Error("最上位(種類選択)なのに戻るが見えている");
+      if (a.hidden) throw new Error("最上位で戻るが隠れている(ふつうのリンクであるべき)");
+      if (a.getAttribute("href") !== "/#creators-heading") {
+        throw new Error("リンク先が実在アンカーでない: " + a.getAttribute("href"));
+      }
+      /* 最上位のクリック=素通し(退出)でリセットが走る。実遷移は試験側で止める */
+      let reset = 0;
+      const keepReset = w.MC.ui.resetSavedProject;
+      w.MC.ui.resetSavedProject = () => { reset++; };
+      const stop = ev => ev.preventDefault();
+      d.addEventListener("click", stop, false);
+      try { a.click(); } finally { d.removeEventListener("click", stop, false); }
+      if (!reset) throw new Error("最上位からの退出で保存状態をリセットしていない");
+      w.MC.ui.resetSavedProject = keepReset;
+      /* 作業中: 横取りしてツール内の種類選択へ。URLも保存状態も動かさない */
       w.MC.ui.chooseMode("vertical", { silent: true });
-      if (a.hidden) throw new Error("工程に入ったのに戻るが出ない");
       const href = w.location.href;
       w.localStorage.setItem("marchcut_project", JSON.stringify({ clips: [{ key: "qa" }] }));
       try {
         a.click();
         await new Promise(r2 => setTimeout(r2, 50));
-        if (w.location.href !== href) throw new Error("戻るでURLが動いた(TOPへ遷移)");
+        if (w.location.href !== href) throw new Error("作業中の戻るでURLが動いた");
         if (ms.hidden) throw new Error("種類選択に戻らない");
-        if (!a.hidden) throw new Error("最上位へ戻ったのに戻るが残っている");
         if (w.localStorage.getItem("marchcut_project") == null) {
-          throw new Error("戻るで保存状態が消えた(「動画はそのまま」の約束が破れる)");
+          throw new Error("作業中の戻るで保存状態が消えた(「動画はそのまま」の約束が破れる)");
         }
       } finally { w.localStorage.removeItem("marchcut_project"); }
-      return "TOP遷移なし / 種類選択へ戻る / 最上位では非表示 / 保存状態は残る";
+      return "最上位=/#creators-heading への素直なリンク+退出リセット / 作業中=ツール内+保存維持";
     });
   });
 

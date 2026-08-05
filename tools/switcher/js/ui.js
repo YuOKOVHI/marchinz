@@ -5715,7 +5715,6 @@ MC.ui.chooseMode = (mode, { silent = false } = {}) => {
   MC.ui.normalizeForMode();
   if (!silent) MC.saveState();
   MC.ui.$("#modeSelect").hidden = true;
-  { const bl = document.querySelector(".topbar .back-link"); if (bl) bl.hidden = false; }
   /* 中の段も畳んでおく(2026-08-01)。親が hidden なので見えはしないが、
      開いたまま残すと次に showModeSelect で戻ったとき2段目から始まる ─
      「種類を選び直す」つもりで戻ったのに進め方の画面が出ることになる */
@@ -5832,8 +5831,6 @@ MC.ui.showModeSelect = () => {
   MC.preview.pause();  // 選択画面の裏で音が鳴り続けないように
   MC.ui.$("#workspace").hidden = true;
   MC.ui.$("#modeSelect").hidden = false;
-  /* 最上位に戻ったら「← 戻る」を隠す(戻る先はもう無い。TOPへはフッターから) */
-  { const bl = document.querySelector(".topbar .back-link"); if (bl) bl.hidden = true; }
   MC.ui.showModeStep("kind");   // 戻ったら必ず1段目から
   document.body.classList.remove("mz-focus");   // 工程を抜けたらサイトの外枠を戻す
 };
@@ -5849,7 +5846,6 @@ MC.ui.wire = () => {
      種類選択の画面にいるときだけ、従来どおりサイトのクリエイターページへ。
      素材は showModeSelect が保つ(消すのは「最初からやり直す」だけ) */
   { const backLink = document.querySelector(".topbar .back-link");
-    if (backLink) backLink.hidden = !$("#modeSelect").hidden;
     if (backLink) backLink.addEventListener("click", e => {
       /* ★ 解析・書き出し中は遷移しない(2026-08-05 レビューP1)。
          こだわりの進捗はインライン表示なので topbar が押せてしまい、
@@ -5859,16 +5855,22 @@ MC.ui.wire = () => {
         MC.ui.toast("処理中です。終わるまでお待ちください(中止するには画面内の「中止」を)");
         return;
       }
-      /* ★ 「← 戻る」は常にツール内(2026-08-05 優さん実機「戻るは、TOPページに
-         戻る。なんなの!!!!」)。href の /#creators へは**一度も**遷移させない ─
-         TOPへ行く道はフッターの「MarchinZへ戻る」に一本化。
-         種類選択(最上位)では戻る自体を隠す(iOSの作法: ルートに戻るは無い) */
-      e.preventDefault();
+      /* ★ 「← 戻る」の設計(2026-08-05 優さん)。
+         ・作業中: 横取りしてツール内の種類選択へ ─ ページ遷移すると
+           取り込んだ動画(メモリ上)が消えるため
+         ・最上位(種類選択): ふつうのリンクとして映像ツール一覧
+           (/#creators-heading)へ遷移する。ここは意図した退出なので
+           保存状態も捨てる(goToolList と同じ扱い)。
+         ※「TOPの先頭に飛ぶ」ように見えた真因は、リンク先が存在しない
+           アンカー(/#creators)だったこと。実在の #creators-heading へ直した */
       const modeSel = $("#modeSelect");
       if (modeSel && modeSel.hidden) {
+        e.preventDefault();
         MC.ui.showModeSelect();
         MC.ui.toast("取り込んだ動画はそのまま残っています");
+        return;
       }
+      MC.ui.resetSavedProject();   // 素通し=退出。次に来たら最初から
     }); }
 
   /* 種類カード。**ここでは作業画面へ進まない**(2026-08-01)。
