@@ -87,6 +87,11 @@ window.addEventListener("DOMContentLoaded", async () => {
     mute: "MP4対応(音声なし)", none: "書き出し非対応",
   }[MC.ui.exportMode()];
   MC.ui.renderAll();
+  /* ★ 種類選択(1/2)の案内(#mzModeTip「フルショウはパソコンから」)を初回から出す
+     (2026-08-06 優さん指示+高校生レビューP0: showModeStep は種類を選んだ後にしか
+     呼ばれず、いちばん読んでほしい初回に一度も表示されていなかった)。
+     復元で作業画面に居る場合も、親(modeSelect)が hidden なだけで無害 */
+  MC.ui.showModeStep("kind");
 
   // 自動テストモード: ?test で test_clips.json のクリップを読み込む
   if (new URLSearchParams(location.search).has("test")) {

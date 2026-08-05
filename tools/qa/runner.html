@@ -3889,6 +3889,57 @@ async function countSamples(ns, file, fromSec) {
     return "常設表示あり / 写真アプリの道順つき / 次の取り込みで仕切り直す";
   });
 
+  await test("★1/2画面のフルショウ案内: 初回から出る配線+スマホゲストで5分/15分/10分を言う", async () => {
+    /* 2026-08-06 優さん指示+高校生レビューP0-3: #mzModeTip は showModeStep が
+       種類選択後にしか走らず、初回に一度も出ていなかった。
+       (1)app.js が初期化で showModeStep("kind") を呼ぶ配線があること(除去=退行)
+       (2)スマホ×ゲストの L で呼べば tip が出て、5分/15分/10分の実数を言うこと */
+    const appSrc = await (await fetch("../switcher/js/app.js")).text();
+    if (!/showModeStep\("kind"\)/.test(appSrc)) {
+      throw new Error("app.js の初期化に showModeStep('kind') が無い(初回に案内が出ない)");
+    }
+    const w = await compEnv();
+    compReset(w);
+    const keepL = w.MZ_LIMITS;
+    try {
+      w.MZ_LIMITS = await loadLimits({ mobile: true });   // ゲスト×スマホ
+      w.MC.ui.showModeStep("kind");
+      const tip = w.document.getElementById("mzModeTip");
+      if (!tip || tip.hidden) throw new Error("スマホゲストなのに案内が出ない");
+      const t = tip.textContent;
+      for (const need of ["無料登録", "パソコン", "5分", "15分", "10分"]) {
+        if (t.indexOf(need) < 0) throw new Error(`案内に「${need}」が無い: ` + t);
+      }
+      /* 上限なし(管理者)には出さない(2026-08-05 優さん指示のまま) */
+      w.MZ_LIMITS = await loadLimits({ admin: true, mobile: true });
+      w.MC.ui.showModeStep("kind");
+      if (!w.document.getElementById("mzModeTip").hidden) {
+        throw new Error("上限なしにも案内が出ている(当てはまらない話)");
+      }
+      return "配線あり / 5分・15分・10分を明言 / 上限なしには出さない";
+    } finally { w.MZ_LIMITS = keepL; w.MC.ui.showModeStep("kind"); }
+  });
+
+  await test("★おまかせの説明: 上限なしでは長さを言わない(「上限なしまでの」を出さない)", async () => {
+    /* 2026-08-06 優さん実機: 管理者のiPhoneで「上限なしまでの見どころ」と
+       日本語が壊れて出ていた。誤解のもとなので長さの節ごと省く */
+    const w = await compEnv();
+    compReset(w);
+    const keepL = w.MZ_LIMITS;
+    try {
+      w.MZ_LIMITS = await loadLimits({ admin: true });
+      w.MC.ui.showModeStep("kind");
+      const d = w.document.getElementById("flowEasyDesc").textContent;
+      if (/上限なし/.test(d)) throw new Error("上限なしの言葉が残っている: " + d);
+      if (!/2本以上/.test(d)) throw new Error("2本以上の前提が消えた: " + d);
+      w.MZ_LIMITS = await loadLimits({ mobile: true });
+      w.MC.ui.showModeStep("kind");
+      const g = w.document.getElementById("flowEasyDesc").textContent;
+      if (!/30秒まで/.test(g)) throw new Error("ゲストに実数(30秒)を言わない: " + g);
+      return "上限なし=長さを言わない / ゲスト=30秒までと言う";
+    } finally { w.MZ_LIMITS = keepL; w.MC.ui.showModeStep("kind"); }
+  });
+
   await test("★鍵つきの札が約束する道は、本当にその鍵を開ける(約束の検算)", async () => {
     /* ★ 2026-08-05 レビューで見つかった P0 の再発防止。
        limits.js の modeCapped が `<`(厳密)だったため、
@@ -7180,13 +7231,17 @@ async function countSamples(ns, file, fromSec) {
 
   await test("★「こだわり」を選べるかの正本は limits.js の1箇所(proAllowed)", async () => {
     /* ★ 2026-08-02 優さん指示⑩「こだわりは、pcだけにしよう」:
-       登録 かつ PC のみ。登録×スマホも不可になった。admin/手元環境は端末を問わず可 */
+       登録 かつ PC のみ。登録×スマホも不可。
+       ★ 2026-08-06 優さん「こだわりは、パソコンだけだよね!」で管理者も
+         端末の縛りに従うことになった ─ 管理者のiPhoneにだけこだわりが
+         開いて見え、一般ユーザーの画面と別物になっていた */
     const cases = [
       { name: "ゲスト×スマホ", o: { mobile: true },                pro: false },
       { name: "ゲスト×PC",     o: { mobile: false },               pro: false },
       { name: "登録×スマホ",   o: { mobile: true, member: true },  pro: false },
       { name: "登録×PC",       o: { mobile: false, member: true }, pro: true  },
-      { name: "管理者",        o: { admin: true, mobile: true },   pro: true  },
+      { name: "管理者×スマホ", o: { admin: true, mobile: true },   pro: false },
+      { name: "管理者×PC",     o: { admin: true, mobile: false },  pro: true  },
       { name: "手元環境",      o: { host: "localhost" },           pro: true  },
     ];
     const got = [];

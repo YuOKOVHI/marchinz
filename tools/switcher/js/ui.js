@@ -5821,8 +5821,12 @@ MC.ui.showModeStep = step => {
     if (d && L && L.exportLimitLabelFor) {
       const lab = L.exportLimitLabelFor(MC.ui._pendingMode || MC.S.mode);
       /* ★「2本以上」を選ぶ前に言う(2026-08-06 保護者レビュー: 「任意」表記と
-         needSecondVideoの門が矛盾し、スマホ1台の人が選んだ後で詰まっていた) */
-      d.innerHTML = `動画を2本以上選ぶだけ。<b>${MC.ui.esc(lab)}</b>までの見どころを、`
+         needSecondVideoの門が矛盾し、スマホ1台の人が選んだ後で詰まっていた)。
+         ★ 上限なし(管理者・手元)では長さの話をしない ─ 「上限なしまでの
+           見どころ」は日本語として壊れているうえ誤解を与える(2026-08-06 優さん) */
+      const capped = lab && lab !== "上限なし";
+      d.innerHTML = "動画を2本以上選ぶだけ。"
+        + (capped ? `<b>${MC.ui.esc(lab)}</b>までの見どころを、` : "見どころを、")
         + "傾きも色も整えて自動で書き出します";
     } }
   if (step === "flow") {
