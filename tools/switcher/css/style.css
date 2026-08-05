@@ -1459,10 +1459,10 @@ body.mz-interrupt-on #dropSec .mz-stay-hint {
    同期と分析: 見せる編集結果がまだ無いのでプレビューを出さない。
    自動編集設定(polish): モバイルではJSが常時フロート化する(ui.js側) */
 body[data-mzj-phase="sync"] .stage { display: none; }
-/* 音声を選ぶ画面にもプレビューは出さない(2026-07-28 優さん指示)。
-   決めるのは「どの音を使うか」だけ ─ 絵と再生バーとIN/OUTは別の工程の道具。
-   「試聴する」の音は <video> から出るので、絵を隠しても鳴る */
-body[data-mzj-phase="audio"] .stage { display: none; }
+/* ★ 音を選ぶ画面はプレビューを**出す**(2026-08-06 優さん指示「そこでは視聴できるように」)。
+   2026-07-28 の「絵は出さない」を明示的に反転したもの ─ 音だけを鳴らして
+   選ばせると、いまどの場面の音を聴いているのかが分からなかった。
+   ただしIN/OUT・カット割・タイムラインは別の工程の道具なので下で隠す */
 /* 傾きの確認中はプレビューの絵だけ。再生バーとIN/OUTは別の工程の道具で、
    固定表示のプレビューに重なって見えてもいた(2026-07-28) */
 /* ★ セレクタは body.mz-pin-force で。data-mzj-phase="tilt" を前提にすると、
@@ -1481,12 +1481,15 @@ body.mz-pin-force #cutModeBtn { display: none; }
 body[data-mzj-phase="mat"] .trim-row,
 body[data-mzj-phase="tilt"] .trim-row,
 body[data-mzj-phase="sync"] .trim-row,
+body[data-mzj-phase="audio"] .trim-row,
 body[data-mzj-phase="export"] .trim-row,
 body[data-mzj-phase="mat"] #cutModeBtn,
 body[data-mzj-phase="tilt"] #cutModeBtn,
+body[data-mzj-phase="audio"] #cutModeBtn,
 body[data-mzj-phase="export"] #cutModeBtn,
 body[data-mzj-phase="mat"] #timelineWrap,
 body[data-mzj-phase="tilt"] #timelineWrap,
+body[data-mzj-phase="audio"] #timelineWrap,
 body[data-mzj-phase="export"] #timelineWrap { display: none !important; }
 
 

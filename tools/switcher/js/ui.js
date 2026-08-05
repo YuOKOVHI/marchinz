@@ -2066,7 +2066,8 @@ MC.ui.renderAll = () => {
 };
 
 /* ---- ジャーニーバー(どのフェーズにいるかの常時表示) ---- */
-MC.ui.JOURNEY_SECTIONS = { mat: "#dropSec", tilt: "#tiltSec", sync: "#syncSec", length: "#lengthSec", export: "#exportSec" };
+MC.ui.JOURNEY_SECTIONS = { mat: "#dropSec", tilt: "#tiltSec", sync: "#syncSec",
+  audio: "#audioSec", length: "#lengthSec", export: "#exportSec" };
 
 MC.ui.initJourney = () => {
   MZJourney.init({
@@ -2079,6 +2080,10 @@ MC.ui.initJourney = () => {
       { id: "mat",    label: "動画を選ぶ", shortLabel: "動画", hint: "使う動画を選びます" },
       { id: "tilt",   label: "傾きを直す", shortLabel: "傾き", hint: "1本ずつ傾きを直します" },
       { id: "sync",   label: "同期と分析",   shortLabel: "同期", hint: "音のズレを合わせ、素材を分析します" },
+      /* 音は単独の工程に戻した(2026-08-06 優さん指示)。同期の中の一手だと
+         「試聴して選ぶ」という**耳を使う作業**が分析の続きに埋もれ、
+         おまかせのまま素通りしていた。動画が1本なら選ぶ余地が無いので飛ばす */
+      { id: "audio",  label: "使う音を選ぶ", shortLabel: "音", hint: "どの動画の音を使うかを試聴して選びます" },
       { id: "length", label: "長さと開始位置", shortLabel: "長さ", hint: "長さと開始位置を選びます" },
       /* 「画質を選んで」は削除(2026-08-03 12Mbps統一で選択肢ごと無くなった) */
       { id: "export", label: "書き出し",     shortLabel: "書出", hint: "動画を書き出します。色は気になるときだけ" },
@@ -2182,23 +2187,26 @@ MC.ui.updateActionBar = () => {
       }
       conf = { label: "この長さで進める", icon: "fa-check",
         disabled: lb.disabled, act: () => lb.click() };
-    } else if (cur === "sync") {
-      /* 同期の工程は2段になった(2026-08-01 工程統合)。
-         ①まだ分析していない → 分析を開始
-         ②分析は済んだが音声が未決 → この音で進める
-         音声を選ぶ工程を畳んだので、その一手をここで受ける */
+    } else if (cur === "audio") {
+      /* 使う音を選ぶ(2026-08-06 優さん指示で単独工程に戻す)。
+         流儀は長さと同じ ─ 本体の決定ボタンが見えているときは重ねない */
       const db = MC.ui.$("#audioDecideBtn");
-      const audioTurn = db && !db.disabled && !MC.S.audioDecided;
+      if (!db) { bar.classList.remove("on"); document.body.classList.remove("mz-actionbar-on"); return; }
+      const r = db.getBoundingClientRect();
+      if (r.height > 0 && r.top < window.innerHeight - 70 && r.bottom > 0) {
+        bar.classList.remove("on");
+        document.body.classList.remove("mz-actionbar-on");
+        return;
+      }
+      conf = { label: "この音で進める", icon: "fa-check",
+        disabled: db.disabled, act: () => db.click() };
+    } else if (cur === "sync") {
       const near = el => {
         if (!el) return false;
         const r = el.getBoundingClientRect();
         return r.height > 0 && r.top < window.innerHeight - 70 && r.bottom > 0;
       };
-      if (audioTurn) {
-        /* 本体の決定ボタンが見えているなら重ねない(書き出しと同じ流儀) */
-        if (near(db)) { bar.classList.remove("on"); document.body.classList.remove("mz-actionbar-on"); return; }
-        conf = { label: "この音で進める", icon: "fa-check", act: () => db.click() };
-      } else if (MC.ui._setupTab !== "pro" && !MC.S.easyDone) {
+      if (MC.ui._setupTab !== "pro" && !MC.S.easyDone) {
         /* おまかせタブでは同期ボタンは隠れている。次の一手は「おまかせで開始」 */
         const eb = MC.ui.$("#easyStartBtn");
         if (near(eb)) { bar.classList.remove("on"); document.body.classList.remove("mz-actionbar-on"); return; }
@@ -2293,9 +2301,10 @@ MC.ui.refreshJourney = () => {
      かたむきの確認ずみは tilt 工程の完了として別に立てる */
   if (slot.length) done.push("mat");
   if (slot.length && tiltConfirmed) done.push("tilt");   // 飛ばした回は✓にしない
-  /* 同期の完了に「音声を決めた」を含める(2026-08-01 工程統合)。
-     音声の決定は同期と分析の中の一手になった */
-  if (slot.length && synced && audioDone) done.push("sync");
+  /* ★ 同期の完了から「音声を決めた」を外した(2026-08-06 優さん指示で単独工程に戻す)。
+     同期は同期だけで完了し、音は音の工程で完了する */
+  if (slot.length && synced) done.push("sync");
+  if (slot.length && synced && audioDone) done.push("audio");
   if (slot.length && synced && audioDone && lengthDone) done.push("length");
   if (exported) done.push("export");
   /* ★ おまかせでは手動の傾き工程を見せない(2026-08-02 縦型2本の実機報告)。
@@ -2308,8 +2317,10 @@ MC.ui.refreshJourney = () => {
   const tiltHands = !(MC.ui._autoFlow && MC.ui._setupTab !== "pro");
   let current = !slot.length ? "mat"
     : (!tiltDone && !MC.S.easyDone && tiltHands) ? "tilt"
-    /* 同期と音声の決定は同じ工程(2026-08-01)。どちらか未了なら sync に留まる */
-    : ((vids.length >= 2 && !synced) || !audioDone) ? "sync"
+    /* ★ 同期と音を分けた(2026-08-06 優さん指示)。同期が済んでいなければ sync、
+       済んでいて音が未決なら audio で止める */
+    : (vids.length >= 2 && !synced) ? "sync"
+    : !audioDone ? "audio"
     /* 音楽の解析が済んで、まだ長さを決めていないならここで止める。
        重い映像解析はこの選択のあとで、選ばれた範囲だけを見る */
     : (scanned && !lengthDone) ? "length"
@@ -2359,7 +2370,7 @@ MC.ui.refreshJourney = () => {
 
    残した3つ(素材・傾き・長さと開始位置)は、どれも**本人が決めないと
    先が決まらない**もの。ここを削ると、ツールが勝手に決めたことになる */
-MC.ui.STEP_RANK = { mat: 0, tilt: 1, sync: 2, length: 3, export: 4 };
+MC.ui.STEP_RANK = { mat: 0, tilt: 1, sync: 2, audio: 3, length: 4, export: 5 };
 MC.ui.STEP_GROUPS = [
   { id: "mat",    panels: ["#dropSec"] },
   /* 傾きは単独の工程(2026-07-31 優さん指示)。1画面に1本ぶんだけを出し、
@@ -2368,8 +2379,10 @@ MC.ui.STEP_GROUPS = [
   /* #easyPane を sync に載せる(2026-07-28)。おまかせの実際の操作＝「分析を開始」は
      この枠にあるのに、工程表に載っていなかったため applySteps が一切触れられず、
      分析が済んだあとも全工程に出続けていた。
-     #audioSec もここへ(2026-08-01) ─ 「この音で進める」は分析の続きの一手 */
-  { id: "sync",   panels: ["#syncSec", "#easyPane", "#audioSec"] },
+     ★ #audioSec はここから出した(2026-08-06 優さん指示)。単独工程に戻す */
+  { id: "sync",   panels: ["#syncSec", "#easyPane"] },
+  /* 使う音を選ぶ(2026-08-06 優さん指示で単独工程に戻す)。試聴して耳で決める */
+  { id: "audio",  panels: ["#audioSec"] },
   /* 長さと開始位置を決める(2026-07-31)。音楽の解析だけ先に済ませてここで止まり、
      決まった範囲だけを映像解析する */
   { id: "length", panels: ["#lengthSec"] },
@@ -2400,6 +2413,12 @@ MC.ui.showPhase = id => {
   /* 「長さと開始位置」は開いた時点で候補を作り直す。長さ・演奏範囲・上限の
      どれが変わっていても、画面に出ているものが必ず今の状態を指すようにする */
   if (id === "length") MC.ui.renderLengthSec();
+  /* 音の工程に入ったら選択肢を描き直す(2026-08-06)。分析の結果(おすすめ・音量)は
+     この画面へ入る直前に確定するので、入った時点の状態を必ず映す */
+  if (id === "audio") MC.ui.renderAudio();
+  /* 工程から出るときは試聴を止める。別の画面で音だけ鳴り続けるのを防ぐ */
+  if (id !== "audio" && MC.ui._audioPhaseWasOn) MC.preview.pause();
+  MC.ui._audioPhaseWasOn = (id === "audio");
   /* 傾きは単独工程(2026-07-31)。この画面に入ったら対象の1本を描き、
      出るときは固定プレビューを解く。パネルの出し入れは applySteps に任せる */
   if (id === "tilt") MC.ui.renderTiltSec();
@@ -2732,9 +2751,38 @@ MC.ui.renderAudio = () => {
     if (MC.preview && typeof MC.preview.applyMute === "function") MC.preview.applyMute();
   }
   box.innerHTML = "";
+  /* ★ 「おまかせ」を明示の選択肢にする(2026-08-06 優さん指示)。
+     以前も audioPickedByUser=false なら自動でおすすめに追従していたが、
+     画面のどこにも「おまかせ中」と出ていなかったため、
+     選ばないまま進んだ人には**自分が何を選んだのか分からない**状態だった。
+     選ぶと以後もおすすめに追従する(分析が変われば選ばれる音も変わる) */
+  {
+    const auto = document.createElement("label");
+    const on = !MC.S.audioPickedByUser;
+    auto.className = "audio-choice audio-choice-auto" + (on ? " selected" : "");
+    const recoName = reco
+      ? (MC.S.slots.indexOf(reco.id) >= 0 ? `動画${MC.S.slots.indexOf(reco.id) + 1}`
+                                          : MC.ui.shortName(reco.name))
+      : null;
+    auto.innerHTML = `
+      <input type="radio" name="audioClip" ${on ? "checked" : ""}>
+      <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
+      <span>おまかせ</span>
+      <span class="audio-stat">${reco ? `いま最も良い音: ${MC.ui.esc(recoName)}`
+                                      : "分析するとここに選ばれた音が出ます"}</span>`;
+    auto.querySelector("input").onchange = () => {
+      MC.S.audioPickedByUser = false;      // 以後もおすすめに追従する
+      const r = MC.audio.recommend();
+      if (r) MC.S.audioClipId = r.id;
+      MC.preview.applyMute();
+      MC.ui.renderAudio();
+    };
+    box.appendChild(auto);
+  }
   for (const c of cands) {
     const label = document.createElement("label");
-    label.className = "audio-choice" + (MC.S.audioClipId === c.id ? " selected" : "");
+    label.className = "audio-choice"
+      + (MC.S.audioPickedByUser && MC.S.audioClipId === c.id ? " selected" : "");
     /* dB表記はやめた(2026-07-28 文言見直し)。「音量-14dB」は中高生に通じない。
        rms を3段の言葉に割る(-20dB相当=0.1 / -34dB相当=0.02 が境目) */
     const loud = r => r >= 0.1 ? "音が大きい" : r >= 0.02 ? "音は標準" : "音が小さめ";
@@ -2755,7 +2803,7 @@ MC.ui.renderAudio = () => {
     const dispName = c.isAudio ? "音声ファイル"
       : slotIdx >= 0 ? `動画${slotIdx + 1}` : MC.ui.shortName(c.name);
     label.innerHTML = `
-      <input type="radio" name="audioClip" ${MC.S.audioClipId === c.id ? "checked" : ""} ${c.hasAudio === false ? "disabled" : ""}>
+      <input type="radio" name="audioClip" ${MC.S.audioPickedByUser && MC.S.audioClipId === c.id ? "checked" : ""} ${c.hasAudio === false ? "disabled" : ""}>
       ${c.isAudio ? '<i class="fa-solid fa-file-audio" title="取り込んだ音声ファイル"></i> ' : ""}<span>${MC.ui.esc(dispName)}${!c.isAudio && slotIdx >= 0 ? ` <span class="hint">${MC.ui.esc(MC.ui.shortName(c.name, 12))}</span>` : ""}</span>
       ${badge}
       <span class="audio-stat">${stat}</span>`;
@@ -5754,6 +5802,16 @@ MC.ui.updateTransport = () => {
   if (!MC.ui._scrubbing) scrub.value = MC.S.t;
   MC.ui.$("#timeLabel").textContent = `${MC.ui.fmtTime(MC.S.t)} / ${MC.ui.fmtTime(dur)}`;
   MC.ui.$("#playBtn").innerHTML = MC.S.playing ? '<i class="fa-solid fa-pause"></i>' : '<i class="fa-solid fa-play"></i>';
+  /* 音の工程はプレビューも出るようになった(2026-08-06)ので、再生の入口が
+     「試聴する」と再生ボタンの2つある。どちらで動かしても両方の表示を合わせる ─
+     以前は試聴ボタンが自分の click でしか文言を変えず、再生ボタンで止めると
+     「停止」と書かれたまま止まっていた */
+  {
+    const lb = MC.ui.$("#audioListenBtn");
+    if (lb) lb.innerHTML = MC.S.playing
+      ? '<i class="fa-solid fa-pause"></i> 停止'
+      : '<i class="fa-solid fa-headphones"></i> 試聴する';
+  }
   const [tIn, tOut] = MC.trimRange();
   // INかOUTをユーザーが動かしているか(初期値=全体)
   const custom = MC.S.trimIn > 0.05 || MC.S.trimOut != null;
@@ -6264,13 +6322,9 @@ MC.ui.wire = () => {
   MC.ui.wireSectionBand();
   $("#audioListenBtn").onclick = () => {
     MC.preview.toggle();
-    /* 再生状態はplay()のPromise後に確定するので少し待ってから表示を合わせる */
-    setTimeout(() => {
-      const b = $("#audioListenBtn");
-      if (b) b.innerHTML = MC.S.playing
-        ? '<i class="fa-solid fa-pause"></i> 停止'
-        : '<i class="fa-solid fa-headphones"></i> 試聴する';
-    }, 250);
+    /* 再生状態はplay()のPromise後に確定するので少し待ってから表示を合わせる。
+       文言の正本は updateTransport(再生ボタンと共通) */
+    setTimeout(() => MC.ui.updateTransport(), 250);
   };
   $("#audioDecideBtn").onclick = () => {
     if (MC.ui._busy) return;

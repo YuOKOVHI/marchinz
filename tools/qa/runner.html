@@ -2358,13 +2358,27 @@ async function countSamples(ns, file, fromSec) {
   });
 
   group("㉔ 工程は5つ（バーが画面に収まる）");
-  await test("★工程が5つで、消した工程名がどこにも残っていない", async () => {
+  await test("★工程は6つ・並び順とSTEP_RANKが一致・消した工程名が残っていない", async () => {
     const w = await compEnv();
     const ids = [...w.document.querySelectorAll(".mzj-phase")].map(b => b.dataset.id);
-    const want = ["mat", "tilt", "sync", "length", "export"];
+    /* 「音」は2026-08-06に単独工程へ戻した(優さん指示)。2026-08-01 に
+       sync へ畳んだのを明示的に取り消したもの。polish は消えたまま */
+    const want = ["mat", "tilt", "sync", "audio", "length", "export"];
     if (ids.join(",") !== want.join(",")) throw new Error("工程が " + ids.join(","));
     const R = w.MC.ui.STEP_RANK;
-    if ("polish" in R || "audio" in R) throw new Error("STEP_RANK に消した工程が残っている");
+    if ("polish" in R) throw new Error("STEP_RANK に消した工程(polish)が残っている");
+    /* ★ 画面の並びと STEP_RANK がズレたら、戻る導線(canSelect)と
+       「進んだか」の判定が食い違う。工程を足した日にいちばん壊しやすい所なので
+       順序そのものを見張る(2026-08-06 audio 追加で新設) */
+    for (let i = 0; i < ids.length; i++) {
+      if (R[ids[i]] !== i) throw new Error(`並びとSTEP_RANKがズレ: ${ids[i]} は ${R[ids[i]]} 番(画面では ${i} 番)`);
+    }
+    /* ★ 工程に対応するパネルが無いと、その工程は永久に空画面になる
+       (canSelect が JOURNEY_SECTIONS を引く) */
+    for (const id of ids) {
+      const sel = w.MC.ui.JOURNEY_SECTIONS[id];
+      if (!sel || !w.document.querySelector(sel)) throw new Error(`工程 ${id} に対応するパネルが無い`);
+    }
     /* ★ 消した工程名が条件に残ると静かに壊れる ─ 実際 refreshSetupTabs が
        rank.polish を見ており、undefined との比較が常に false になって
        タブが最初の画面から出っぱなしになっていた */
@@ -2373,8 +2387,42 @@ async function countSamples(ns, file, fromSec) {
        (HTMLコメントで同じ失敗を一度している)。コメントを除いてから見る */
     const src = w.MC.ui.refreshSetupTabs.toString()
       .replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-    if (/rank\.polish|rank\.audio/.test(src)) throw new Error("タブの条件が消した工程を見ている");
-    return "5工程 / 消した工程名の残りなし";
+    if (/rank\.polish/.test(src)) throw new Error("タブの条件が消した工程を見ている");
+    return "6工程(音を単独へ) / 並びとRANK一致 / パネル対応あり / polishの残りなし";
+  });
+  /* 音を単独工程へ戻した(2026-08-06 優さん指示)。同期の完了に音の決定を
+     混ぜていた頃の契約が残っていないか、実際に状態を作って確かめる */
+  await test("★音は単独工程: 同期だけで sync は完了し、音が未決なら audio で止まる", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.clips.forEach(c => { c.tiltOk = true; c.syncMethod = "波形"; });
+    S.audioDecided = false; S.lengthDecided = false; S.easyDone = false;
+    S.showIn = null; S.showOut = null;
+    w.MC.ui.renderAll();
+    if (w.MC.ui._derivedPhase !== "audio") {
+      throw new Error("同期済み・音未決なのに " + w.MC.ui._derivedPhase + " で止まっている");
+    }
+    /* 同期は「同期だけ」で完了印が付くこと(音の決定を巻き込まない) */
+    const doneNow = [...w.document.querySelectorAll(".mzj-phase.done")].map(b => b.dataset.id);
+    if (!doneNow.includes("sync")) throw new Error("音が未決だと同期まで未完了になる: " + doneNow.join(","));
+    if (doneNow.includes("audio")) throw new Error("未決なのに音が完了になっている");
+    /* 画面に出ているのは音のパネルだけ。プレビューは**出す**(優さん指示「視聴できるように」)、
+       IN/OUT は長さの道具なので出さない */
+    if (w.document.getElementById("audioSec").classList.contains("step-off")) {
+      throw new Error("音の工程なのに音のパネルが出ていない");
+    }
+    if (w.getComputedStyle(w.document.querySelector(".stage")).display === "none") {
+      throw new Error("音の工程でプレビューが隠れている(視聴できない)");
+    }
+    if (w.getComputedStyle(w.document.querySelector(".trim-row")).display !== "none") {
+      throw new Error("音の工程に IN/OUT が出ている");
+    }
+    /* 動画が1本なら選ぶ余地が無いので工程ごと飛ばす */
+    S.clips = [S.clips[0]]; S.slots = [S.clips[0].id];
+    S.wipeClipId = null; S.wipeClipId2 = null;
+    w.MC.ui.renderAll();
+    if (w.MC.ui._derivedPhase === "audio") throw new Error("1本なのに音の工程で止まっている");
+    return "同期は単独で完了 / 音で停止 / プレビューあり・IN/OUTなし / 1本は飛ばす";
   });
   await test("★仕上げ（色とフィルター）は書き出しの画面で、おまかせでも触れる", async () => {
     const w = await compEnv();
@@ -6358,8 +6406,21 @@ async function countSamples(ns, file, fromSec) {
     S.clips[2].stats = { rms: 0.15, noise: 0.010, clipRatio: 0,    flatRun: 0,   peak: 0.5, lfRatio: 0.9 };
     S.audioPickedByUser = false;
     w.MC.ui.renderAudio();
-    const cards = [...w.document.querySelectorAll("#audioChoices .audio-choice")];
-    eq(cards.length, 3, "カードの枚数");
+    /* 先頭は「おまかせ」の1枚(2026-08-06 優さん指示で追加)。理由バッジの規則は
+       動画のカードにだけ効くので、おまかせを外してから数える */
+    const all = [...w.document.querySelectorAll("#audioChoices .audio-choice")];
+    const autoCards = all.filter(el => el.classList.contains("audio-choice-auto"));
+    eq(autoCards.length, 1, "おまかせのカード");
+    if (all[0] !== autoCards[0]) throw new Error("おまかせが先頭にない");
+    /* おまかせ中は、おまかせだけが選ばれている状態に見えること
+       (動画側にも checked が残ると、同じ name のラジオで後勝ちになり
+        おまかせが選ばれていないように見える) */
+    if (!autoCards[0].querySelector("input").checked) throw new Error("おまかせが選ばれていない");
+    if (all.some(el => el !== autoCards[0] && el.querySelector("input").checked)) {
+      throw new Error("おまかせ中なのに動画のカードも選ばれている");
+    }
+    const cards = all.filter(el => !el.classList.contains("audio-choice-auto"));
+    eq(cards.length, 3, "動画カードの枚数");
     const btexts = cards.map(el => [...el.querySelectorAll(".reco-badge")].map(b => b.textContent.trim()));
     btexts.forEach((t, i) => {
       if (t.length > 1) throw new Error(`カード${i + 1}に一言を超えるバッジ: ` + t.join("/"));
