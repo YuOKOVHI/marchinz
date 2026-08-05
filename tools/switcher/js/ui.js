@@ -2096,6 +2096,9 @@ MC.ui.initJourney = () => {
     canSelect: id => {
       const R = MC.ui.STEP_RANK;
       const reached = MC.ui._derivedPhase || "mat";
+      /* 動画1本で音を飛ばした回は、その工程へ入れない(2026-08-06 レビューP2)。
+         決めるものが無い画面へ行けてしまうと「何をすれば?」で止まる */
+      if (id === "audio" && MC.ui._audioSkipped) return false;
       return !!document.querySelector(MC.ui.JOURNEY_SECTIONS[id]) && R[id] <= R[reached];
     },
     onSelect: id => {
@@ -2304,7 +2307,13 @@ MC.ui.refreshJourney = () => {
   /* ★ 同期の完了から「音声を決めた」を外した(2026-08-06 優さん指示で単独工程に戻す)。
      同期は同期だけで完了し、音は音の工程で完了する */
   if (slot.length && synced) done.push("sync");
-  if (slot.length && synced && audioDone) done.push("audio");
+  /* ★ 通っていない工程に✓を付けない(2026-08-06 レビューP2)。動画1本のときは
+     選ぶ余地が無いので工程ごと飛ばすが、飛ばした回を「決めた」とは記録しない ─
+     すぐ上の傾き工程と同じ方針(嘘の✓を付けない)。入っても
+     「おまかせ / 動画1」の2枚が同じことを2通りに言うだけなので、
+     バーからも入れないようにする(canSelect が _audioSkipped を見る) */
+  MC.ui._audioSkipped = !audioNeeded;
+  if (slot.length && synced && MC.S.audioDecided) done.push("audio");
   if (slot.length && synced && audioDone && lengthDone) done.push("length");
   if (exported) done.push("export");
   /* ★ おまかせでは手動の傾き工程を見せない(2026-08-02 縦型2本の実機報告)。
@@ -2405,6 +2414,10 @@ MC.ui.stepSummary = sel => {
 /* 表示する工程を切り替える唯一の入口。dataset(CSSの出し分け)・強調・
    applySteps・傾きフェーズの出入りをここに集約する */
 MC.ui.showPhase = id => {
+  /* ★ 「入ったところか」は applySteps より**前**に取る(2026-08-06)。
+     applySteps が _stepPhase を id に更新するので、後ろで見ると必ず一致し、
+     入った時だけの処理が一度も走らない */
+  const entering = MC.ui._stepPhase !== id;
   document.body.dataset.mzjPhase = id;
   document.querySelectorAll(".side .panel").forEach(p => p.classList.remove("phase-current"));
   const target = document.querySelector(MC.ui.JOURNEY_SECTIONS[id]);
@@ -2413,9 +2426,11 @@ MC.ui.showPhase = id => {
   /* 「長さと開始位置」は開いた時点で候補を作り直す。長さ・演奏範囲・上限の
      どれが変わっていても、画面に出ているものが必ず今の状態を指すようにする */
   if (id === "length") MC.ui.renderLengthSec();
-  /* 音の工程に入ったら選択肢を描き直す(2026-08-06)。分析の結果(おすすめ・音量)は
-     この画面へ入る直前に確定するので、入った時点の状態を必ず映す */
-  if (id === "audio") MC.ui.renderAudio();
+  /* 音の工程に**入ったとき**だけ選択肢を描き直す(2026-08-06)。分析の結果
+     (おすすめ・音量)はこの画面へ入る直前に確定するので、入った時点の状態を映す。
+     ★ 毎回描き直すと renderAll → showPhase で二重に作り直し、
+       キーボード操作中のフォーカスが飛ぶ(レビューP2)。工程が変わった時だけにする */
+  if (id === "audio" && entering) MC.ui.renderAudio();
   /* 工程から出るときは試聴を止める。別の画面で音だけ鳴り続けるのを防ぐ */
   if (id !== "audio" && MC.ui._audioPhaseWasOn) MC.preview.pause();
   MC.ui._audioPhaseWasOn = (id === "audio");
@@ -2760,10 +2775,13 @@ MC.ui.renderAudio = () => {
     const auto = document.createElement("label");
     const on = !MC.S.audioPickedByUser;
     auto.className = "audio-choice audio-choice-auto" + (on ? " selected" : "");
-    const recoName = reco
-      ? (MC.S.slots.indexOf(reco.id) >= 0 ? `動画${MC.S.slots.indexOf(reco.id) + 1}`
-                                          : MC.ui.shortName(reco.name))
-      : null;
+    /* 呼び名は下の動画カードと同じ規則にする(2026-08-06 レビューP2)。
+       取り込んだ音声ファイルはカード側が「音声ファイル」に丸めるのに、
+       ここだけ生のファイル名を出すと、同じものを2つの名前で呼ぶことになる */
+    const recoName = !reco ? null
+      : reco.isAudio ? "音声ファイル"
+      : MC.S.slots.indexOf(reco.id) >= 0 ? `動画${MC.S.slots.indexOf(reco.id) + 1}`
+      : MC.ui.shortName(reco.name);
     auto.innerHTML = `
       <input type="radio" name="audioClip" ${on ? "checked" : ""}>
       <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
@@ -5428,18 +5446,24 @@ MC.ui.runEasy = async (opt) => {
     }
     if (vids.length >= 2 && !MC.S.audioDecided) {
       /* ここで一度手を止める: 音声を選んでから仕上げへ */
-      p.done("同期できました", { sub: "使う音声を選んで「この音で進める」を押してください" });
+      p.done("同期できました", { sub: "使う音を選んで「この音で進める」を押してください" });
       /* ★ 人を待つ瞬間(2026-08-02 優さん指示)。同期は数分かかることがあり、
          その間に別アプリへ行った人は、ここで止まっていることに気づけない。
          auto は通らない分岐だが、規則を1つにするため silent も渡す */
       MC.ui.notifyUserTurn({
         silent: !!MC.ui._autoRunning,
-        title: "使う音声を選んでください",
-        body: "同期できました。MarchinZ Switcher に戻って音声を選ぶと先へ進めます",
-        tab: "🔔 音声を選んでください — MarchinZ",
+        title: "使う音を選んでください",
+        body: "同期できました。MarchinZ Switcher に戻って音を選ぶと先へ進めます",
+        tab: "🔔 音を選んでください — MarchinZ",
       });
       MC.ui.renderAll();
-      MC.ui.gentleScrollTo(document.querySelector("#audioSec"), "start");
+      /* ★ 運ぶのは finally が _busy を下ろした**後**(2026-08-06 レビューP1)。
+         ここはまだ _busy=true で、refreshJourney が工程を sync に固定するため
+         #audioSec は step-off(display:none)。gentleScrollTo は
+         offsetParent===null で即 return する ─ この行は死んでいた。
+         音の工程はプレビューも出すようになり、375px では選択肢が
+         折り目の下へ回るので、運ばないと「何も起きていない」ように見える */
+      setTimeout(() => MC.ui.gentleScrollTo(document.querySelector("#audioSec"), "start"), 0);
       return;
     }
     await MC.ui.runEasyScan(p, tiltSteps + syncSteps);   // 続きの段番号から
@@ -5808,9 +5832,15 @@ MC.ui.updateTransport = () => {
      「停止」と書かれたまま止まっていた */
   {
     const lb = MC.ui.$("#audioListenBtn");
-    if (lb) lb.innerHTML = MC.S.playing
-      ? '<i class="fa-solid fa-pause"></i> 停止'
-      : '<i class="fa-solid fa-headphones"></i> 試聴する';
+    /* 再生中は rAF ごとに来るので、変わった時だけ書く(syncLenPlayBtns と同じ流儀)。
+       音の工程はプレビューが回る画面なので、無ガードだと毎フレーム DOM を作り直す */
+    const want = MC.S.playing ? "pause" : "play";
+    if (lb && lb.dataset.mzState !== want) {
+      lb.dataset.mzState = want;
+      lb.innerHTML = MC.S.playing
+        ? '<i class="fa-solid fa-pause"></i> 停止'
+        : '<i class="fa-solid fa-headphones"></i> 試聴する';
+    }
   }
   const [tIn, tOut] = MC.trimRange();
   // INかOUTをユーザーが動かしているか(初期値=全体)
@@ -6341,7 +6371,15 @@ MC.ui.wire = () => {
     /* 音楽の解析まで走らせて「長さと開始位置」で止まる(2026-07-31)。
        以前はここから仕上げ(映像解析+カット割)まで一気に走っていた */
     if (!MC.S.easyDone) MC.ui.runEasyScan();
-    else MC.ui.refreshJourney();   // 仕上げ済みで選び直しただけなら状態更新のみ
+    else {
+      /* ★ 仕上げ済みで選び直しただけの場合(2026-08-06 レビューP1)。
+         工程バーから戻ってきた人は _viewPhase="audio" で居座っているため、
+         refreshJourney だけでは到達点が動かず**画面が1pxも動かない**。
+         押しても何も起きない=壊れたと見える。寄り道を解いて到達点へ返す */
+      MC.ui._viewPhase = null;
+      MC.ui.refreshJourney();
+      MC.ui.toast("この音で進めます");
+    }
   };
 
   /* 「この長さで進める」= ここではじめて重い映像解析へ入る。

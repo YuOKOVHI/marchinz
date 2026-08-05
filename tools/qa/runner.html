@@ -1517,6 +1517,11 @@ async function countSamples(ns, file, fromSec) {
        落ちていた ─ 製品ではなく**試験どうしの状態漏れ**。
        compReset を名乗る以上、導出に効く状態は全部戻す */
     S.showIn = null; S.showOut = null;
+    /* ★ audioPickedByUser は「どのラジオが checked か」を決める状態に昇格した
+       (2026-08-06 おまかせカード追加)。戻さないと、おまかせを手で選ぶ試験の
+       あと後続の試験へ漏れる ─ この関数は「導出に効く状態は全部戻す」と
+       自分で約束している */
+    S.audioPickedByUser = false;
     S.exportPreset = null; S.startKey = null; S.startAt = null;
     S.lengthDecided = false; S.audioDecided = false; S.easyDone = false;
     S.trimIn = 0; S.trimOut = null;
@@ -2357,7 +2362,7 @@ async function countSamples(ns, file, fromSec) {
     return "コピーなし / limits も MZDevice 経由";
   });
 
-  group("㉔ 工程は5つ（バーが画面に収まる）");
+  group("㉔ 工程は6つ（音を単独へ・バーが画面に収まる）");
   await test("★工程は6つ・並び順とSTEP_RANKが一致・消した工程名が残っていない", async () => {
     const w = await compEnv();
     const ids = [...w.document.querySelectorAll(".mzj-phase")].map(b => b.dataset.id);
@@ -2423,6 +2428,71 @@ async function countSamples(ns, file, fromSec) {
     w.MC.ui.renderAll();
     if (w.MC.ui._derivedPhase === "audio") throw new Error("1本なのに音の工程で止まっている");
     return "同期は単独で完了 / 音で停止 / プレビューあり・IN/OUTなし / 1本は飛ばす";
+  });
+  /* 実装した3点(試聴の文言一本化・工程を出たら止める・おまかせカードの操作)は
+     いずれも「代入で確かめる」ではなく**操作を通して**測る(2026-08-06 レビューP1)。
+     この3つは変異させれば必ず落ちること */
+  await test("★音の工程: 試聴の操作・工程を出たら止まる・おまかせカードで戻せる", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.clips.forEach(c => { c.tiltOk = true; c.syncMethod = "波形"; });
+    S.audioDecided = false; S.lengthDecided = false; S.easyDone = false;
+    S.showIn = null; S.showOut = null;
+    /* 鳴る実体を持たせる。compReset のクリップは video を持たない */
+    S.clips.forEach(c => {
+      c.video = { muted: false, paused: true, currentTime: 0, playbackRate: 1,
+                  play() { this.paused = false; return Promise.resolve(); },
+                  pause() { this.paused = true; } };
+    });
+    S.clips[0].stats = { rms: 0.03, clipRatio: 0 };
+    S.clips[1].stats = { rms: 0.20, clipRatio: 0 };
+    S.clips[2].stats = { rms: 0.06, clipRatio: 0 };
+    S.audioPickedByUser = false;
+    w.MC.ui.renderAll();
+    if (w.MC.ui._derivedPhase !== "audio") throw new Error("音の工程に入れない: " + w.MC.ui._derivedPhase);
+    const listen = w.document.getElementById("audioListenBtn");
+    const play = w.document.getElementById("playBtn");
+    const label = () => listen.textContent.replace(/\s+/g, "");
+    try {
+      /* ① 試聴ボタンで再生 → 文言が「停止」になる */
+      listen.click();
+      w.MC.ui.updateTransport();
+      if (!S.playing) throw new Error("試聴ボタンで再生が始まらない");
+      if (!/停止/.test(label())) throw new Error("試聴ボタンの文言が変わらない: " + label());
+      /* ② **再生ボタン**で止めても試聴ボタンの文言が追従する
+         (直した不具合そのもの。以前は「停止」のまま残っていた) */
+      play.click();
+      w.MC.ui.updateTransport();
+      if (S.playing) throw new Error("再生ボタンで止まらない");
+      if (!/試聴する/.test(label())) throw new Error("再生ボタンで止めたのに試聴ボタンが追従しない: " + label());
+      /* ③ おまかせカードを**クリック**して戻せる(代入ではなく操作で測る) */
+      const pickClip = [...w.document.querySelectorAll("#audioChoices .audio-choice")]
+        .filter(el => !el.classList.contains("audio-choice-auto"))[0];
+      pickClip.querySelector("input").click();
+      if (!S.audioPickedByUser) throw new Error("手で選んでも pickedByUser が立たない");
+      const auto = w.document.querySelector("#audioChoices .audio-choice-auto input");
+      if (!w.document.contains(auto)) throw new Error("再描画でおまかせカードが消えた");
+      auto.click();
+      if (S.audioPickedByUser) throw new Error("おまかせを押しても手動のままになる");
+      const reco = w.MC.audio.recommend();
+      if (reco && S.audioClipId !== reco.id) {
+        throw new Error(`おまかせなのに ${S.audioClipId} が選ばれている(おすすめは ${reco.id})`);
+      }
+      /* ④ 工程を出たら試聴が止まること */
+      listen.click();
+      w.MC.ui.updateTransport();
+      if (!S.playing) throw new Error("④の前提: 再生が始まらない");
+      w.MC.ui._viewPhase = "mat";
+      w.MC.ui.refreshJourney();
+      if (S.playing) throw new Error("工程を出ても試聴が鳴り続けている");
+    } finally {
+      /* 触った状態は必ず戻す */
+      w.MC.ui._viewPhase = null;
+      try { w.MC.preview.pause(); } catch (_) {}
+      S.audioPickedByUser = false;
+      w.MC.ui.refreshJourney();
+    }
+    return "試聴で再生 / 再生ボタンで止めても文言追従 / おまかせへ戻せる / 工程を出たら停止";
   });
   await test("★仕上げ（色とフィルター）は書き出しの画面で、おまかせでも触れる", async () => {
     const w = await compEnv();
@@ -6419,6 +6489,19 @@ async function countSamples(ns, file, fromSec) {
     if (all.some(el => el !== autoCards[0] && el.querySelector("input").checked)) {
       throw new Error("おまかせ中なのに動画のカードも選ばれている");
     }
+    /* ★ 逆側も測る(2026-08-06 レビューP1)。おまかせ側だけを見ていると
+       `const on = true` の変異(=常におまかせが点く)で生き残ってしまう */
+    S.audioPickedByUser = true; S.audioClipId = S.clips[2].id;
+    w.MC.ui.renderAudio();
+    {
+      const now = [...w.document.querySelectorAll("#audioChoices .audio-choice")];
+      const autoNow = now.find(el => el.classList.contains("audio-choice-auto"));
+      if (autoNow.querySelector("input").checked) throw new Error("手で選んだのにおまかせが点いたまま");
+      const checked = now.filter(el => el.querySelector("input").checked);
+      if (checked.length !== 1) throw new Error(`選ばれたカードが ${checked.length} 枚`);
+      if (!/動画3/.test(checked[0].innerText)) throw new Error("選ばれたのが動画3でない: " + checked[0].innerText.trim());
+    }
+    S.audioPickedByUser = false; w.MC.ui.renderAudio();
     const cards = all.filter(el => !el.classList.contains("audio-choice-auto"));
     eq(cards.length, 3, "動画カードの枚数");
     const btexts = cards.map(el => [...el.querySelectorAll(".reco-badge")].map(b => b.textContent.trim()));

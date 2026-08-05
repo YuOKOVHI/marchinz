@@ -1463,6 +1463,29 @@ body[data-mzj-phase="sync"] .stage { display: none; }
    2026-07-28 の「絵は出さない」を明示的に反転したもの ─ 音だけを鳴らして
    選ばせると、いまどの場面の音を聴いているのかが分からなかった。
    ただしIN/OUT・カット割・タイムラインは別の工程の道具なので下で隠す */
+
+/* ★ プレビューを足したぶんの縦を、選択肢と操作から借りない(2026-08-06 レビューP0/P1)。
+   実測で、初期表示に出るのが4枚中2枚・試聴ボタンは y=840(画面外 812)まで落ち、
+   「おすすめ」カードの中心タップが行動バーの主ボタンに当たっていた。
+   ① 音の工程では絵を抑える ② 進め方タブはこの工程で出さない
+   ③ 行動バーのぶんの余白を音のパネルに持たせる ─ の3つで1画面に戻す */
+body[data-mzj-phase="audio"] #cv { max-height: 24vh; }
+/* 進め方(おまかせ/こだわり)はここで切り替える作業ではない。しかも「おまかせ」が
+   1画面に2つ並び、どちらも選択中に見えていた(レビューP1) */
+body[data-mzj-phase="audio"] #setupTabs { display: none; }
+/* 行動バーは半透明すりガラスなので、下に隠れたカードは「薄く見えているのに
+   押せない」= 押せる要素に見える最悪の状態になる。実体ぶん余白を空ける */
+body.mz-actionbar-on[data-mzj-phase="audio"] #audioSec {
+  padding-bottom: calc(var(--mz-actionbar-h) + 14px + env(safe-area-inset-bottom, 0px));
+}
+/* おまかせは「動画1/2/3」とは種類が違う選択肢だと、見た目でも分かるようにする */
+.audio-choice-auto { margin-bottom: 10px; position: relative; }
+.audio-choice-auto::after {
+  content: ""; position: absolute; left: 10px; right: 10px; bottom: -6px;
+  border-bottom: 1px solid var(--line, #e5e7eb);
+}
+/* 試聴の文言が「試聴する」→「停止」と縮むと、隣の主ボタンが28px横へ動いていた */
+#audioListenBtn { min-width: 96px; justify-content: center; }
 /* 傾きの確認中はプレビューの絵だけ。再生バーとIN/OUTは別の工程の道具で、
    固定表示のプレビューに重なって見えてもいた(2026-07-28) */
 /* ★ セレクタは body.mz-pin-force で。data-mzj-phase="tilt" を前提にすると、

@@ -154,10 +154,12 @@
   /* 幅は接続線を捨てて作る(2026-07-26)。9.5px・opacity .75 は
      実効3.45:1 で 4.5:1 を割り、タップ標的も25px(44ptの57%)しかなかった。
      線4本ぶんを文字と親指に回す */
-  .mzj-track { gap: 2px; }
+  .mzj-track { gap: 1px; }
   .mzj-link { display: none; }
-  .mzj-phase { padding: 4px 3px; gap: 4px; min-height: 44px; }
-  .mzj-phase.current { padding: 4px 10px 4px 5px; gap: 6px; }
+  .mzj-phase { padding: 4px 2px; gap: 4px; min-height: 44px; }
+  /* 6工程になった 2026-08-06 に 375px で 21〜23px 溢れ、先頭の✓が画面外へ
+     出ていた(音・長さの工程で発生)。現在地ピルの左右を2pxずつ削って収める */
+  .mzj-phase.current { padding: 4px 8px 4px 3px; gap: 6px; }
   .mzj-phase:not(.current) .mzj-dot { width: 17px; height: 17px; font-size: 10px; }
   .mzj-phase:not(.current) .mzj-label { font-size: 11px; max-width: 2.4em;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
