@@ -131,7 +131,8 @@
   let lastVideoSearchAt = 0;
   const VIDEO_SEARCH_MIN_GAP_MS = 3000;
 
-  const TOOL_USE_IDS = ["metronome", "tuner", "privacy", "switcher", "reangle"];
+  /* reel/wipe = 映像ツール再編(2026-08-07)。Switcher の3モードを別カウントに */
+  const TOOL_USE_IDS = ["metronome", "tuner", "privacy", "switcher", "reangle", "reel", "wipe"];
   /** ページ滞在中に記録済みのツール(同一ツールの連打・再スタートを重複記録しない) */
   const recordedToolUses = new Set();
 
@@ -437,10 +438,14 @@
     if (Number.isFinite(at) && Date.now() - at > TOOL_USE_PENDING_MAX_AGE_MS) return;
     const mode = String(p.modeLabel || "").trim();
     const toolName = String(p.toolName || "MarchinZ Switcher").trim() || "MarchinZ Switcher";
+    /* ★ toolId は置き手紙の値を使う(2026-08-07 再編・3分割)。
+       未知値は switcher へ倒す ─ rules の許可リスト外だと書き込みごと拒否されるため */
+    const rawId = String(p.toolId || "").trim();
+    const toolId = TOOL_USE_IDS.includes(rawId) ? rawId : "switcher";
     void window.MarchinZAdminUgcLog?.recordToolUse?.({
-      toolId: "switcher",
+      toolId,
       toolName: mode ? `${toolName}（${mode}）` : toolName,
-      targetHref: "/tools/switcher/",
+      targetHref: "/tools/switcher/" + (toolId !== "switcher" && TOOL_USE_IDS.includes(rawId) ? `?tool=${toolId}` : ""),
     });
   }
 

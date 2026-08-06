@@ -6366,11 +6366,19 @@ MC.ui.TOOL_USE_KEY = "marchinz_tool_use_pending_v1";
 
 MC.ui.noteToolUse = () => {
   try {
-    const label = MC.ui.MODES[MC.S.mode] ? MC.ui.MODES[MC.S.mode].label : "";
+    /* ★ Reel/Switcher/Wipe を別カウント(2026-08-07 優さん決定)。
+       toolId はモード確定ならその toolKey、未確定(起動しただけ)なら
+       URLのスコープ、それも無ければ従来どおり switcher。
+       過去データは switcher 勘定のまま(連続性は断つ、と合意済み)。
+       firestore.rules の tool_id 許可リストに reel/wipe を足してある ─
+       rules デプロイ前にこの版が本番へ出ると reel/wipe の記録だけ
+       無音で拒否される(集計が3日欠ける程度の実害。機能は壊れない) */
+    const m = MC.ui.MODES[MC.S.mode];
+    const sc = window.MZToolScope && MZToolScope.get();
     localStorage.setItem(MC.ui.TOOL_USE_KEY, JSON.stringify({
-      toolId: "switcher",
-      toolName: "MarchinZ Switcher",
-      modeLabel: label,          // 「縦型動画」「自動スイッチング動画」「ワイプカメラ動画」
+      toolId: (m && m.toolKey) || (sc && sc.key) || "switcher",
+      toolName: MC.ui.toolName(),
+      modeLabel: m ? m.label : "",   // 「縦型動画」等(過去データと同じ語彙)
       at: new Date().toISOString(),
     }));
   } catch (e) { /* プライベートモード等で書けなくても本体は続行 */ }

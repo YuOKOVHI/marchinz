@@ -1136,7 +1136,10 @@ service cloud.firestore {
         return request.resource.data.kind == 'tool_use'
           && request.resource.data.action == 'create'
           && request.resource.data.tool_id is string
-          && request.resource.data.tool_id in ['metronome', 'tuner', 'privacy', 'switcher'];
+          && request.resource.data.tool_id in ['metronome', 'tuner', 'privacy', 'switcher',
+               // reel/wipe = 映像ツール再編(2026-08-07)。reangle は TOOL_USE_IDS に
+               // ありながらここに無く、記録が無音で拒否されていた(同時に修正)
+               'reangle', 'reel', 'wipe'];
       }
 
       function adminUgcFeedSearchKindsOk() {
@@ -1237,7 +1240,10 @@ service cloud.firestore {
           && request.resource.data.actor_uid == 'mll_guest'
           && request.resource.data.actor_name == 'ゲスト'
           && request.resource.data.tool_id is string
-          && request.resource.data.tool_id in ['metronome', 'tuner', 'privacy', 'switcher']
+          && request.resource.data.tool_id in ['metronome', 'tuner', 'privacy', 'switcher',
+               // reel/wipe = 映像ツール再編(2026-08-07)。reangle は TOOL_USE_IDS に
+               // ありながらここに無く、記録が無音で拒否されていた(同時に修正)
+               'reangle', 'reel', 'wipe']
           && request.resource.data.created_at is string
           && request.resource.data.created_at.size() > 0
           && request.resource.data.created_at.size() <= 48

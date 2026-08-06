@@ -39,7 +39,10 @@
     ["metronome", "メトロノーム", "fa-stopwatch"],
     ["tuner", "チューナー", "fa-wave-square"],
     ["privacy", "Privacy", "fa-user-shield"],
+    /* reel/wipe = 映像ツール再編(2026-08-07)。過去の縦型/ワイプは switcher 勘定のまま */
+    ["reel", "Reel", "fa-mobile-screen"],
     ["switcher", "Switcher", "fa-clapperboard"],
+    ["wipe", "Wipe", "fa-clone"],
     ["reangle", "ReAngle", "fa-crop-simple"],
   ]);
   /** tool_use サマリーの全期間集計を1セッション内でキャッシュ(タブ往復での再取得を防ぐ) */
