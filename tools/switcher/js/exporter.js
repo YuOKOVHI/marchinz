@@ -1061,40 +1061,81 @@ MC.exporter.opfsRemove = async name => {
 MC.exporter.OPFS_STALE_MS = 6 * 60 * 60 * 1000;
 MC.exporter.opfsSweep = async () => {
   if (!MC.exporter.opfsSupported()) return;
+  /* ★ 深い掃除(2026-08-06 優さん実機: Safari終了でもiPhone再起動でも11GBが
+     残ったまま)。OPFS は**永続ストレージ**で、再起動では消えない。しかも
+     iOSの「Webサイトデータ」のサイト別表示に計上されず、netlify.app 行が
+     6.6MBでも本体の「書類とデータ」だけが膨らむ ─ 残る11GBの主体はこれ。
+     従来の6時間据え置き窓は「別タブが書き出し中かも」への保険だったが、
+     書き出しは Web Locks "mz-export" を**最初から最後まで保持**する(ui.js)。
+     つまりロックが ifAvailable で取れた=どのタブも書き出していない=
+     再開材料と今セッションの成果物以外は全部消してよい。
+     取れなかった回だけ、従来の保守的な窓に落とす */
+  let deep = false, releaseLock = null;
+  try {
+    if (navigator.locks) {
+      deep = await new Promise(resolve => {
+        navigator.locks.request("mz-export", { ifAvailable: true }, lock => {
+          if (!lock) { resolve(false); return; }
+          resolve(true);
+          return new Promise(r => { releaseLock = r; });   // 掃除の間だけ保持
+        }).catch(() => resolve(false));
+      });
+    }
+  } catch (_) { deep = false; }
   try {
     const root = await navigator.storage.getDirectory();
     const dir = await root.getDirectoryHandle(MC.exporter.OPFS_DIR, { create: false });
     const now = Date.now();
-    /* 退出時に消し損ねた名前は、新しくても消す(2026-08-06)。
-       これが無いと「保存して閉じる」直後の732MBが6時間居座る。
-       ★ ただし控えた時刻より**新しい**実体は別物として扱う(レビューP1)。
-         書き出しファイル名は同じ日・同じ比率なら常に同名なので、
-         名前だけで判断すると翌回の書き出し中ファイルを消しにいく */
     const pendingAt = new Map(MC.exporter._pendingList().map(v => [v.n, v.t]));
+    /* 深い掃除で残すもの:
+       ① 今セッションの書き出し結果(_opfsName) ─ iOSはアプリ切替で pagehide が
+          発火するので、保存前にホームへ出ただけで消してはいけない
+       ② 現行ジョブ(mzjob.json の jobId)のパーツで6時間以内 ─ クラッシュ後の
+          「続きから」の材料。それより古い再開材料は実用上使われない */
+    let resumeJobId = "";
+    if (deep) {
+      try { const job = await MC.exporter.readJob(); resumeJobId = String((job && job.jobId) || ""); }
+      catch (_) { /* 台帳が無ければ再開材料も無い */ }
+    }
     const doomed = [];
+    let freedBytes = 0, keptResume = false;
     for await (const [n, h] of dir.entries()) {
-      let mtime = null;
-      try { mtime = (await h.getFile()).lastModified; } catch (e) { /* 読めない=古いとみなす */ }
+      let mtime = null, size = 0;
+      try { const f = await h.getFile(); mtime = f.lastModified; size = f.size; }
+      catch (e) { /* 読めない=古いとみなす */ }
+      if (deep) {
+        if (n === MC.exporter._opfsName) continue;                      // ①
+        const isResume = resumeJobId && n.startsWith(`mzpart_${resumeJobId}_`)
+          && mtime !== null && now - mtime < MC.exporter.OPFS_STALE_MS; // ②
+        if (isResume) { keptResume = true; continue; }
+        if (n === MC.exporter.JOB_FILE) continue;                        // 台帳は最後に判断
+        doomed.push(n); freedBytes += size;
+        continue;
+      }
+      /* 保守的な経路(別タブが書き出し中): 従来どおり6時間窓+消し損ねの控え */
       const noted = pendingAt.get(n);
-      /* 控えにあり、かつ控えた後に作り直されていないなら、経過時間を問わず消す */
       const isNotedSame = noted !== undefined && (mtime === null || mtime <= noted + 1000);
       if (!isNotedSame) {
         if (mtime !== null && now - mtime < MC.exporter.OPFS_STALE_MS) continue;  // 進行中かも
       }
-      doomed.push(n);
+      doomed.push(n); freedBytes += size;
     }
+    /* 台帳: 残した再開パーツが無いなら用済み */
+    if (deep && !keptResume) doomed.push(MC.exporter.JOB_FILE);
     for (const n of doomed) {
-      /* ★ 消せたときだけ控えを消す(2026-08-06 レビューP1)。以前は失敗しても
-         控えを落としており、いちばん効かせたい局面 ─ 別タブが書き出し中で
-         removeEntry が NoModificationAllowedError で弾かれた時 ─ に
-         「消し損ねた」記録が失われて6時間窓の側へ落ちていた。
-         レビューでは実ブラウザで removeEntry の失敗を実測済み */
+      /* ★ 消せたときだけ控えを消す(2026-08-06 レビューP1)。削除失敗時に控えを
+         落とすと、いちばん効かせたい局面で記録が失われて6時間窓の側へ落ちる */
       let ok = true;
       await dir.removeEntry(n).catch(() => { ok = false; });
       if (ok) MC.exporter._clearPending(n);
-      else MC.log(`opfsSweep: ${n} を消せなかった(次回に持ち越す)`);
+      else if (n !== MC.exporter.JOB_FILE) MC.log(`opfsSweep: ${n} を消せなかった(次回に持ち越す)`);
     }
+    if (doomed.length && freedBytes > 0) {
+      MC.log(`opfsSweep(${deep ? "深" : "保守"}): ${doomed.length}件 約${Math.round(freedBytes / 1e6)}MB を片付けました`);
+    }
+    MC.exporter.refreshEstimate();
   } catch (e) { /* ディレクトリが無ければ何もしない */ }
+  finally { if (releaseLock) releaseLock(); }
 };
 
 /** 書き出し前に空き容量を確かめる。足りないなら「始める前に」断る。
