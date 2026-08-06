@@ -4813,7 +4813,11 @@ input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
 
 /* ---------- クリエイターページの末尾: 無料・ロゴ・免責(2026-08-07 優さん指示) ----------
    各映像ツールのページと同じ3点を、ツールの入口であるこのページにも置く */
-.mzsc-note-band { margin: 2rem 0 0; }
+.mzsc-note-band { margin: 2.5rem 0 0; padding-top: 1.2rem; border-top: 1px solid rgba(15, 33, 56, 0.1); }
+/* 直前が外部サービスの案内なので、線と見出しで「ここからは別の話」と区切る */
+.mzsc-note-head {
+  margin: 0 0 0.6rem; font-size: 0.9rem; font-weight: 800; color: #0f2138;
+}
 .mzsc-note-band .mzsc-note-free,
 .mzsc-note-band .mzsc-note-logo {
   margin: 0 0 0.5rem; font-size: 0.8rem; line-height: 1.7;

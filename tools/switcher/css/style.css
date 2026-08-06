@@ -1223,7 +1223,10 @@ body[data-mzj-phase="export"] .clip-slot.empty { display: none; }
   border: none;
   box-shadow: none;
   color: var(--tx2);
-  font-size: 11px;
+  /* ★ 12px(2026-08-07 UI/UXレビュー🟡)。11px だと、すぐ下に並ぶ免責(12px)より
+     **重要な情報のほうが小さい**という逆転が起きていた。この帯は
+     「動画は送信されない」という不安払拭で、3点のうちいちばん先に読ませたい */
+  font-size: 12px;
   padding: 6px 16px;
 }
 .beta-disclaimer strong { font-weight: 600; }

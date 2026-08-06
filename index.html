@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-version="2.0.0" data-mz-channel="beta">
+<html lang="ja" data-mz-version="2.0.1" data-mz-channel="beta">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -73,7 +73,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css" />
     <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css?v=1.25.64" />
     <link rel="stylesheet" href="styles.css?v=1.39.69" />
-    <link rel="stylesheet" href="marchinz-brushup.css?v=2.0.0" />
+    <link rel="stylesheet" href="marchinz-brushup.css?v=2.0.1" />
     <!-- Microsoft Clarity -->
     <script type="text/javascript">
       (function(c,l,a,r,i,t,y){
@@ -3783,13 +3783,22 @@
                文面は tools/shared/sitechrome.js の DISCLAIMER_HTML と対。
                変えるときは両方(QAが一致を見張る) -->
           <div class="mzsc-note-band">
+            <!-- ★ 見出しで「何についての話か」を名乗る(2026-08-07 UI/UXレビュー🔴)。
+                 この塊の直前は Artlist(外部サービス)の案内で、免責の本文は
+                 「本機能は…」で始まる ─ 見出しが無いと **Artlistへの免責** と
+                 読めてしまう。ボディ最下部という置き場所は変えずに、
+                 範囲だけをはっきりさせる -->
+            <h3 class="mzsc-note-head">クリエイターツールについて</h3>
+            <!-- ★ 冒頭リードと逐語で重ならない書き方にする(同レビュー🟡)。
+                 リードは「どんなツールか」を売る声、ここは「使う前に知っておくこと」を
+                 確かめる声。同じ事実でも役割が違うので、文もそれぞれの声で書く -->
             <p class="mzsc-note-free">
               <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
-              <strong>無料・すべて端末内で処理</strong>します（動画はどこにも送信されません）。
+              <strong>無料</strong>でお使いいただけます。処理はすべてお使いの端末の中で行われ、動画・写真が送信されることはありません。
             </p>
             <p class="mzsc-note-logo">
               <i class="fa-solid fa-image" aria-hidden="true"></i>
-              作成した映像に<b>MarchinZのロゴ</b>が表示されます。
+              書き出した映像には<b>MarchinZのロゴ</b>が入ります。
             </p>
             <div class="mzsc-note">
               <p class="mzsc-note-title">注意事項</p>

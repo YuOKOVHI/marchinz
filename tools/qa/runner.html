@@ -7458,7 +7458,14 @@ async function countSamples(ns, file, fromSec) {
       const y = e => e.getBoundingClientRect().top;
       if (!(y(note) < rFoot.top)) throw new Error(`免責 ${Math.round(y(note))} がフッター ${Math.round(rFoot.top)} より下`);
     }
-    return `DOM順 無料→ロゴ→免責→フッター / フッター内に重複なし${rFoot.height > 0 ? " / 位置でも確認" : "(位置は非表示のため省略)"}`;
+    /* ★ 重要度と字の大きさが逆転しないこと(2026-08-07 UI/UXレビュー🟡)。
+       いちばん先に読ませたい「動画は送信されない」が11pxで、法務文の免責12pxより
+       小さかった。3点の並び順と字の大きさは同じ向きにそろえる */
+    const px = e => parseFloat(w.getComputedStyle(e).fontSize) || 0;
+    if (px(free) < px(note)) {
+      throw new Error(`無料の帯 ${px(free)}px が免責 ${px(note)}px より小さい(重要度と逆転)`);
+    }
+    return `DOM順 無料→ロゴ→免責→フッター / 字の大きさ ${px(free)}≧${px(note)}px / フッター内に重複なし${rFoot.height > 0 ? " / 位置でも確認" : "(位置は非表示のため省略)"}`;
   });
   await test("★クリエイターページにも同じ3点があり、免責の文面がツールと一致する", async () => {
     const top = await (await fetch("../../index.html")).text();
@@ -7467,12 +7474,22 @@ async function countSamples(ns, file, fromSec) {
     const i1 = top.indexOf('id="page-ops"', i0);
     const seg = top.slice(i0, i1 > i0 ? i1 : i0 + 60000);
     for (const [needle, why] of [
-      ["無料・すべて端末内で処理", "無料のこと"],
+      ["端末の中で行われ", "無料・端末内のこと"],
       ["MarchinZのロゴ", "ロゴのこと"],
       ["mzsc-note-title", "免責"],
     ]) {
       if (seg.indexOf(needle) < 0) throw new Error(`クリエイターページに「${why}」が無い`);
     }
+    /* ★ 範囲を名乗る見出し(2026-08-07 UI/UXレビュー🔴)。この塊の直前は
+       Artlist(外部サービス)の案内で、免責は「本機能は…」で始まる ─
+       見出しが無いと Artlist への免責と読める */
+    if (seg.indexOf("クリエイターツールについて") < 0) {
+      throw new Error("免責の塊に範囲の見出しが無い(直前のArtlist案内への免責と読める)");
+    }
+    /* 冒頭リードと逐語で重ならないこと(同レビュー🟡)。同じ文が2回出たら書き手が
+       二人いるように読める ─ 事実は同じでも文は分ける */
+    const dup = "無料・すべて端末内で処理します（動画はどこにも送信されません）。";
+    if ((seg.split(dup).length - 1) > 1) throw new Error("同じ文が冒頭と末尾で重複している");
     /* 免責の本文はツール側(sitechrome.js)と同じであること ─ 2箇所に写しがあるので、
        片方だけ直して食い違うのを機械で止める */
     const sc = await (await fetch("../shared/sitechrome.js")).text();
