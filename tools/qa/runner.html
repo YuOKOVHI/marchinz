@@ -7523,6 +7523,72 @@ async function countSamples(ns, file, fromSec) {
     if (txt.indexOf(mv[1]) < 0) throw new Error(`画面の版番が正本と違う: 「${txt}」≠ ${mv[1]}`);
     return `内部=${mv[1]}(${mc[1]}) / 画面=「${txt}」`;
   });
+  /* ---- UI/UXブラッシュアップの見張り(2026-08-07 3者レビュー) ---- */
+  await test("★無効ボタンの文字が読めること(opacityで薄めない)", async () => {
+    const w = await compEnv();
+    const lum = c => { const [r,g,b]=c.match(/[\d.]+/g).slice(0,3).map(Number);
+      const f=v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4)};
+      return 0.2126*f(r)+0.7152*f(g)+0.0722*f(b); };
+    const ratio=(a,b)=>{const L1=lum(a),L2=lum(b);return (Math.max(L1,L2)+0.05)/(Math.min(L1,L2)+0.05);};
+    const mix=(fg,bg,a)=>{const F=fg.match(/[\d.]+/g).map(Number),B=bg.match(/[\d.]+/g).map(Number);
+      return `rgb(${F.slice(0,3).map((v,i)=>Math.round(v*a+B[i]*(1-a))).join(",")})`;};
+    const pbg=el=>{let p=el.parentElement;while(p){const c=w.getComputedStyle(p).backgroundColor;
+      if(c&&!/rgba\(0, 0, 0, 0\)/.test(c))return c;p=p.parentElement}return "rgb(255,255,255)";};
+    const btn = w.document.getElementById("easyStartBtn");
+    if (!btn) throw new Error("主役CTAが見つからない");
+    /* ★ 無効状態を**自分で作って**測る(2026-08-07)。最初この行が無く、
+       compReset で素材が入った=有効なボタンを測っていたため、opacity を
+       戻す変異でも 6.68:1 のまま通ってしまった ─ 歯の無い試験だった */
+    const keepDis = btn.disabled;
+    btn.disabled = true;
+    let c, a, bg, r;
+    try {
+      c = w.getComputedStyle(btn); a = parseFloat(c.opacity); bg = pbg(btn);
+      r = ratio(mix(c.color, bg, a), mix(c.backgroundColor, bg, a));
+    } finally { btn.disabled = keepDis; }
+    /* 直す前は opacity:.45 で 6.68:1 → 2.14:1 まで落ちていた(主役CTAが該当)。
+       WCAGは無効部品を免除するが、主役が読めないのは品質の問題 */
+    if (r < 4.0) throw new Error(`無効ボタンの文字が読めない: ${r.toFixed(2)}:1(opacity=${a})`);
+    if (a < 1) throw new Error(`opacity(${a})でラベルごと薄めている ─ 彩度と影で示すこと`);
+    return `無効CTA ${r.toFixed(2)}:1 / opacity=${a}(無効状態を作って実測)`;
+  });
+  await test("★面の階層: 下地とパネルに見える差があること", async () => {
+    const w = await compEnv();
+    const lum = c => { const [r,g,b]=c.match(/[\d.]+/g).slice(0,3).map(Number);
+      const f=v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4)};
+      return 0.2126*f(r)+0.7152*f(g)+0.0722*f(b); };
+    const ratio=(a,b)=>{const L1=lum(a),L2=lum(b);return (Math.max(L1,L2)+0.05)/(Math.min(L1,L2)+0.05);};
+    const page = w.getComputedStyle(w.document.documentElement).backgroundColor;
+    const panel = w.document.querySelector('[data-mz-block="intake"]');
+    if (!panel) throw new Error("intakeパネルが見つからない");
+    const r = ratio(w.getComputedStyle(panel).backgroundColor, page);
+    /* 直す前は 1.064:1 で、影(5〜6%)がこの明度差では見えず「どこが操作面か」が
+       伝わらなかった。1.10 を下限にする */
+    if (r < 1.10) throw new Error(`下地とパネルの差が ${r.toFixed(3)}:1 しかない(面が平坦)`);
+    return `下地 ${page} とパネルの差 ${r.toFixed(3)}:1`;
+  });
+  await test("★チップ/バッジが1規格にそろっていること", async () => {
+    const w = await compEnv();
+    const names = ["caps-badge", "beta-badge", "sync-badge", "reco-badge", "q-tag", "rig-badge"];
+    const src = await (await fetch("../switcher/css/style.css")).text();
+    const sizes = new Set(), radii = new Set(), missing = [];
+    for (const n of names) {
+      const m = src.match(new RegExp("\\." + n + "\\s*\\{[^}]*\\}"));
+      if (!m) { missing.push(n); continue; }
+      const fs = m[0].match(/font-size:\s*([\d.]+)px/);
+      const br = m[0].match(/border-radius:\s*([\w()\-. ]+);/);
+      if (fs) sizes.add(fs[1]);
+      if (br) radii.add(br[1].trim());
+    }
+    if (missing.length) throw new Error("見つからないチップ: " + missing.join(","));
+    /* 直す前は font-size 5種・radius 4種・padding 9種の10規格が混在し、
+       同じヘッダーの中で別の書体系に見えていた */
+    if (sizes.size > 1) throw new Error(`チップの文字サイズが ${sizes.size} 種: ${[...sizes].join(",")}px`);
+    if (radii.size > 1) throw new Error(`チップの角丸が ${radii.size} 種: ${[...radii].join(" / ")}`);
+    const px = parseFloat([...sizes][0]);
+    if (px < 11) throw new Error(`チップが ${px}px(iPhoneで10px以下は読みづらい)`);
+    return `${px}px / ${[...radii][0]} に統一`;
+  });
   /* 版番の大小比較(1.113.10 > 1.113.9 を正しく判定するため文字列比較にしない) */
   function cmpVer(a, b) {
     const pa = String(a).split("."), pb = String(b).split(".");

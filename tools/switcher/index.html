@@ -18,7 +18,7 @@
 <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
 <link rel="stylesheet" href="/tools/shared/progress.css?v=1.99.3">
 <link rel="stylesheet" href="/tools/shared/journey.css?v=1.110.1">
-<link rel="stylesheet" href="css/style.css?v=2.0.1">
+<link rel="stylesheet" href="css/style.css?v=2.1.0">
 <link rel="stylesheet" href="/tools/shared/sitechrome.css?v=2.0.0">
 </head>
 <body data-mz-tool="switcher">
@@ -305,7 +305,10 @@
              主ボタンより明らかに弱く見せて、押し間違いを防ぐ -->
         <button type="button" id="tiltSkipBtn" class="tilt-skip">
           傾きは気にならない ─ このまま進む</button>
-        <p class="hint tilt-skip-note">あとから工程表の「傾き」で直せます。</p>
+        <!-- ★「工程表」は画面のどこにも出ない開発側の語(2026-08-07 UI/UXレビュー🟢)。
+             読み上げ用ラベルは「作業のながれ」で、見える名前は無い。
+             名前を与えるより位置で指すほうが短くて確実 -->
+        <p class="hint tilt-skip-note">あとから上の「傾き」で直せます。</p>
       </div>
     </section>
 
@@ -403,8 +406,11 @@
       </div>
       <div id="autocutPanel" style="display:none">
         <div class="row level-row">
-          <label class="hint">切替頻度</label>
-          <div id="levelSeg" class="level-seg" role="radiogroup" aria-label="切替頻度">
+          <!-- ★ 呼び名は「カメラの切り替え」に寄せる(2026-08-07 UI/UXレビュー🟡)。
+               同じ機能が 切替頻度/自動カット割/カット割/カメラの切り替え と
+               6通りの名前で呼ばれ、別機能に見えていた -->
+          <label class="hint">カメラの切り替えの多さ</label>
+          <div id="levelSeg" class="level-seg" role="radiogroup" aria-label="カメラの切り替えの多さ">
             <button type="button" data-lv="1" title="カットを長めに・ゆったり">少なめ</button>
             <button type="button" data-lv="2" title="バランスの良い標準">おすすめ</button>
             <button type="button" data-lv="3" title="カットを短めに・細かく">多め</button>
@@ -415,7 +421,7 @@
           <select id="bpbSelect" class="select" style="width:auto; margin:0">
             <option value="4">4/4</option><option value="2">2/4</option><option value="3">3/4</option>
           </select>
-          <button id="autocutBtn" class="btn primary"><i class="fa-solid fa-clapperboard"></i> 自動カット割</button>
+          <button id="autocutBtn" class="btn primary"><i class="fa-solid fa-clapperboard"></i> カメラの切り替えを作る</button>
         </div>
         <p class="hint" style="margin:4px 0 0">音楽と映像を解析し、ブレの少ないカメラと見せ場に合う画角を自動で選びます。</p>
         <div id="autocutStatus" class="status"></div>
@@ -661,7 +667,10 @@
          「画面が消えると止まります」と正面衝突していた（普通の人にとって
          「画面を閉じる」と「画面が消える」は同じ行為）。
          書き出しの全画面と同じ言い方に揃える -->
-    <p class="as-wait">このままお待ちください。ほかのアプリを開くと止まります</p>
+    <!-- ★ 書き出し中の #exportOverlay .eo-note と**同じ文**にする(2026-08-07 UI/UXレビュー🔴)。
+         連続して出る2画面が「止まります(=やり直し)」と「停止します(=再開しそう)」という
+         逆の期待を与えていた。6分の待ち時間中にLINEを見てよいかの判断が画面で変わる -->
+    <p class="as-wait">この画面のままお待ちください。ほかのアプリを開くと止まり、はじめからやり直しになります</p>
     <!-- 「動画を選び直す」と「やめる」の2本(2026-08-02 優さん指示)。
          統合しない理由: 止めたあとの行き先が別 ─
          選び直す=中止して素材の工程へ戻り、入れ替えてもう一度おまかせ /
@@ -695,7 +704,7 @@
       <video id="eoLiveVid" class="eo-live" hidden playsinline aria-hidden="true"></video>
       <div id="eoProgress"></div>
       <p class="eo-note"><i class="fa-solid fa-mug-hot" aria-hidden="true"></i>
-        この画面のままお待ちください。ほかのアプリを開いている間は停止します。</p>
+        この画面のままお待ちください。ほかのアプリを開くと止まり、はじめからやり直しになります</p>
       <button type="button" id="eoCancel" class="btn danger">中止</button>
     </div>
     <div id="eoDone" hidden>
@@ -802,7 +811,7 @@
 <!-- 縮小版(プロキシ)。exporter の掃除が MC.proxy.PREFIX を見るので先に読む -->
 <script src="js/proxy.js?v=1.113.10"></script>
 <script src="js/exporter.js?v=1.113.8"></script>
-<script src="js/ui.js?v=1.113.13"></script>
+<script src="js/ui.js?v=2.1.0"></script>
 <script src="js/app.js?v=1.113.7"></script>
 </body>
 </html>

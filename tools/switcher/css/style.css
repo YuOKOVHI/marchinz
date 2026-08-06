@@ -8,10 +8,47 @@
   --ok: #1e7a43; --warn: #9a6a00; --err: #c0392b;
   --cream: #fefcef;
   --shadow-card: 0 1px 2px rgba(15, 33, 56, 0.05), 0 4px 16px rgba(15, 33, 56, 0.06);
+
+  /* ---- 2026-08-07 ブラッシュアップで足したトークン ----
+     それまで色15個しか無く、角丸19種・文字サイズ24種・余白はトークン0だった。
+     「チップがバラバラ」の構造的な原因はここ。値は既存の実測値から代表を採る */
+  /* 選択中の正本。これまで #f4f7ff / #e8f1fe / #f0f5ff / rgba(30,79,214,.06) /
+     ベタ塗り の5通りが同じ「選ばれている」を意味していた。
+     ★ 塗りではなく「白抜き+内側リング」を正本にする ─ 親パネルが薄青(#f4f8ff)
+       なので、薄青で塗ると実測 1.006:1(rgb距離1)で消える */
+  --sel-bg: #ffffff;
+  --sel-ring: var(--acc);
+  --sel-tint: #e8f1fe;          /* 塗りが要る場面(タブ等)だけ */
+  /* 無効。opacity で薄めると primary の白文字が 6.68:1 -> 2.14:1 まで落ちる
+     (実測。WCAGは無効部品を免除するが、主役CTAがこの見え方なのは品質の問題) */
+  --off-bg: #f2f4f8; --off-tx: #7a828f; --off-line: rgba(15, 33, 56, 0.10);
+  --off-primary-bg: #dde3ec; --off-primary-tx: #5c6675;
+  /* 角丸 */
+  --r-sm: 8px; --r-md: 10px; --r-lg: 14px; --r-pill: 999px;
+  /* これまで未定義のまま var() のフォールバックだけで動いていた3つ。
+     明示しないと、名前を整理した瞬間に別の色が出る(潜伏していた地雷) */
+  --muted: #667085;
+  --sub: rgba(12, 15, 20, 0.55);
+  --acc2-text: #b45309;
 }
-html { background: #eef1f5; }
+/* ★ キャンバスを一段沈める(2026-08-07 ビジュアルレビュー🔴)。
+   実測で ページ#eef1f5 → パネル#f4f8ff が 1.064:1、白カードでも 1.133:1 しかなく、
+   --shadow-card(5〜6%)がこの明度差では見えない = 「どこが操作面か」が伝わらない。
+   パネル側の色は一切触らず、下地だけ沈めて階層を作る
+   (intake 1.064→1.12 / 白カード 1.133→1.20) */
+html { background: #e6ebf2; }
+/* ★ キーボード操作の居場所(2026-08-07 ビジュアルレビュー🟢)。
+   2200行のCSSで :focus-visible は1件しか無く、iPad+外部キーボードで
+   どこにいるか分からなかった。:where() は詳細度0なので既存指定を一切上書きしない */
+:where(button, a, input, select, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--acc); outline-offset: 2px; border-radius: var(--r-sm);
+}
 * { -webkit-tap-highlight-color: transparent; }
-body { background: transparent; color: var(--tx); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", Meiryo, sans-serif; font-size: 14px; }
+body { background: transparent; color: var(--tx); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", Meiryo, sans-serif; font-size: 14px;
+  /* ★ 和文の行間(2026-08-07 ビジュアルレビュー🟡)。line-height:normal(≒1.18)の
+     可視テキストが20種あり、1行に収まっている今は目立たないが、2行に
+     折り返した瞬間に詰まって見える。和文の下限は1.6〜1.75 */
+  line-height: 1.7; }
 
 /* 3ツール共通: キービジュアルの上に白い透明を重ねた背景(iOS配慮でposition:fixed) */
 body::before {
@@ -37,12 +74,17 @@ body::before {
   display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 700;
   color: var(--navy); white-space: nowrap; padding-left: 10px; border-left: 1px solid var(--line);
 }
-.caps-badge { font-size: 12px; color: var(--tx2); background: #fff; border: 1px solid var(--line); padding: 4px 10px; border-radius: 20px; }
+/* ★ ここから下の小片(チップ/バッジ)は1規格に揃える(2026-08-07 ビジュアルレビュー🟡)。
+   実測で font-size 5種・border-radius 4種・padding 9種の**10規格**が混在し、
+   同じヘッダーの中で「ベータ版」(10px/999px)と「対応確認中…」(12px/20px)が
+   別の書体系に見えていた。規格 = 11px / 999px / 2px 9px。
+   11px を下限にするのは、iPhoneで10px以下が読みづらいため(色は各自のまま) */
+.caps-badge { font-size: 11px; color: var(--tx2); background: #fff; border: 1px solid var(--line); padding: 2px 9px; border-radius: var(--r-pill); }
 
 /* MarchinZ 統合(ベータ版バッジ+戻るリンク)。バッジは本体 .mz-ctools-beta と同配色 */
 .beta-badge {
-  font-size: 10px; font-weight: 700; color: #866a19; background: #fdf3d7;
-  border: 1px solid #ecd9a0; border-radius: 999px; padding: 2px 8px;
+  font-size: 11px; font-weight: 700; color: #866a19; background: #fdf3d7;
+  border: 1px solid #ecd9a0; border-radius: var(--r-pill); padding: 2px 9px;
   white-space: nowrap; vertical-align: 2px;
 }
 .head-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
@@ -102,14 +144,23 @@ body.mz-export-open .toast { z-index: 125; }
   overflow-wrap: anywhere;   /* 長い無改行ファイル名(importNote)でも枠から溢れない */
   border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
 .need-second-note i { margin-right: 4px; }
-.clip-slot-label { font-size: 11px; font-weight: 700; color: var(--acc); margin-bottom: 4px; letter-spacing: 0.02em; }
+/* ★ 押せないラベルに操作色(--acc)を使わない(2026-08-07 ビジュアルレビュー🟢)。
+   「動画1」は見出しであって押せない。青は「押せる/選ばれている」専用に温存する */
+.clip-slot-label { font-size: 11px; font-weight: 700; color: var(--tx2); margin-bottom: 6px; letter-spacing: 0.02em; }
 .clip-slot.empty .clip-slot-add {
   width: 100%; border: 2px dashed rgba(15, 33, 56, 0.25); border-radius: 10px;
-  padding: 16px 12px; text-align: center; background: none; color: var(--tx2);
+  padding: 16px 12px; text-align: center; color: var(--tx2);
   font-size: 13px; line-height: 1.7; cursor: pointer; font-family: inherit;
+  /* ★ 面を持たせる(2026-08-07 ビジュアルレビュー🟡)。画面でいちばん大きい
+     操作対象(319x80px x 3)が塗りゼロで、破線は親パネルに対し 1.58:1 しか
+     無かった ─ 「置ける場所」が面として存在していなかった */
+  background: #fff; box-shadow: 0 1px 2px rgba(15, 33, 56, 0.04);
 }
 .clip-slot.empty .clip-slot-add:hover, .clip-slots.over .clip-slot.empty .clip-slot-add {
-  border-color: var(--acc); color: var(--tx); background: #f4f7ff;
+  /* ドラッグ中は色だけでなく**形**も変える(破線→実線)。
+     旧 #f4f7ff は親と 1.006:1 で、変化が見えていなかった */
+  border-color: var(--acc); border-style: solid; color: var(--acc-deep);
+  background: var(--sel-tint); box-shadow: 0 0 0 3px rgba(30, 79, 214, 0.10);
 }
 /* 素材カード: サムネイルを上に大きく、文字情報はその下にまとめる。
    横並びだと情報側の幅が足りず、微調整ボタン(-1s…+1s)が右へはみ出していた
@@ -132,7 +183,7 @@ body.mz-export-open .toast { z-index: 125; }
 .clip-name { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .clip-meta { font-size: 11px; color: var(--tx2); margin-top: 2px; }
 .clip-sync { font-size: 11px; margin-top: 4px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-.sync-badge { padding: 1px 7px; border-radius: 10px; font-size: 10px; background: rgba(15, 33, 56, 0.08); color: var(--tx2); }
+.sync-badge { padding: 2px 9px; border-radius: var(--r-pill); font-size: 11px; background: rgba(15, 33, 56, 0.08); color: var(--tx2); }
 .sync-badge.wave { background: #e0f5e9; color: var(--ok); }
 .sync-badge.ts { background: #fdf3d7; color: var(--warn); }
 .sync-badge.ref { background: #e3edf8; color: var(--acc-deep); }
@@ -155,7 +206,7 @@ body.mz-export-open .toast { z-index: 125; }
 .pan-row .select-mini { flex: 1; min-width: 0; }
 
 /* 撮り方の自動判定バッジ(定点固定 / カメラマン付き / 手動 / 解析前) */
-.rig-badge { font-size: 9.5px; font-weight: 700; padding: 2px 7px; border-radius: 999px;
+.rig-badge { font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: var(--r-pill);
   white-space: nowrap; border: 1px solid transparent; }
 .rig-badge.fx { background: #e3edf8; color: var(--acc-deep); border-color: #c3d6ec; }
 .rig-badge.op { background: #fdf3d7; color: #866a19; border-color: #ecd9a0; }
@@ -166,7 +217,15 @@ body.mz-export-open .toast { z-index: 125; }
 .btn { background: #fff; color: var(--navy); border: 1px solid var(--line); border-radius: 8px;
   padding: 8px 14px; cursor: pointer; font-size: 13px; font-family: inherit; }
 .btn:hover:not(:disabled) { border-color: var(--acc); background: #f4f7ff; }
-.btn:disabled { opacity: .45; cursor: default; }
+/* ★ opacity をやめる(2026-08-07 ビジュアルレビュー🔴・実測)。
+   opacity はラベルごと薄めるので、.btn.primary の白文字が
+   6.68:1 → **2.14:1** まで落ちていた(#easyStartBtn=主役CTAが該当)。
+   「押せない」は彩度と影を落として示し、文字は読めるまま残す */
+.btn:disabled {
+  cursor: default; background: var(--off-bg); color: var(--off-tx);
+  border-color: var(--off-line); box-shadow: none;
+}
+.btn.primary:disabled { background: var(--off-primary-bg); color: var(--off-primary-tx); }
 /* 作業中のロック。disabled だけでもクリックは飛ばないが、iOSでは
    押し込みのハイライトが出て「押せた」ように見えるので触感ごと殺す。
    中止ボタンだけは押せないと困るので除外する(2026-07-25 実機で事故) */
@@ -194,17 +253,23 @@ body.mz-busy-lock #errorLog button { pointer-events: auto; opacity: 1; }
   border-radius: 8px; cursor: pointer; font-size: 12px; border: 1px solid var(--line);
   /* 指で選ぶラジオ行。実測35pxで44ptに届いていなかった(2026-08-02 push前レビュー) */
   min-height: 44px; }
-.audio-choice.selected { border-color: var(--acc); background: #f4f7ff; }
+/* ★ 選択中は白抜き+内側リング(2026-08-07 ビジュアルレビュー🔴)。
+   #f4f7ff は親パネル #f4f8ff と実測 1.006:1(rgb距離1)で、選択の表現が
+   1px の枠線だけに頼っていた。白へ抜けば親との差がつき、リングで縁も立つ */
+.audio-choice.selected {
+  border-color: var(--sel-ring); background: var(--sel-bg); font-weight: 600;
+  box-shadow: inset 0 0 0 1px var(--sel-ring), 0 1px 3px rgba(30, 79, 214, 0.14);
+}
 .audio-choice input { accent-color: var(--acc); }
-.reco-badge { background: var(--acc2); color: #fff; font-size: 10px;
-  font-weight: bold; padding: 1px 8px; border-radius: 10px; white-space: nowrap; }
+.reco-badge { background: var(--acc2); color: #fff; font-size: 11px;
+  font-weight: 700; padding: 2px 9px; border-radius: var(--r-pill); white-space: nowrap; }
 /* 理由バッジ(2026-08-02): 「音割れあり」「風の音あり」。責める色にしない */
 .reco-badge.warn { background: var(--panel2, #f2f2f4); color: var(--warn, #b26a00);
   border: 1px solid var(--line); }
 .audio-stat { color: var(--tx2); font-size: 10px; margin-left: auto; }
 
 .preset-row { gap: 6px; }
-.preset-chip { padding: 5px 10px; border-radius: 16px; border: 1px solid var(--line); cursor: pointer;
+.preset-chip { padding: 5px 12px; border-radius: var(--r-pill); border: 1px solid var(--line); cursor: pointer;
   font-size: 11px; color: var(--tx2); background: #fff; }
 .preset-chip.selected { border-color: var(--acc); color: var(--acc-deep); background: #e8f1fe; font-weight: 700; }
 /* 比率が1つに固定のモード(縦型動画)では、選択肢ではなく現在のサイズ表示にする */
@@ -288,14 +353,15 @@ body.mz-busy-lock #errorLog button { pointer-events: auto; opacity: 1; }
    行動バーの高さ = 上下パディング10+10 + ボタン48 + safe-area */
 body.mz-actionbar-on .toast { bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
 
-.empty-slot-label { color: var(--tx2); }
 
 /* ============ 最初の選択フェーズ(つくる動画を選ぶ) ============ */
 /* display:flex は UA の [hidden]=display:none を打ち消すため明示的に殺す */
 .mode-select[hidden] { display: none; }
 .mode-select { display: flex; justify-content: center; padding: 32px 16px; }
 .mode-inner { width: 100%; max-width: 720px; text-align: center; }
-.mode-title { font-size: 22px; font-weight: 700; color: var(--navy); }
+/* 見出しは normal(≒1.18)だと2行に折り返した瞬間に詰まる */
+.mode-title { font-size: 22px; font-weight: 700; color: var(--navy);
+  line-height: 1.4; letter-spacing: 0.01em; }
 .mode-lead { font-size: 13px; color: var(--tx2); margin-top: 6px; margin-bottom: 22px; }
 /* ★ 見出し(と補足)との間に息を入れる(2026-08-07 優さん指示
    「作る動画をえらぶ、の下に少しマージンを」)。.mode-title も .mode-tip も
@@ -453,8 +519,18 @@ html:has(body.mz-finish-pick), body.mz-finish-pick {
   background: var(--panel); box-shadow: var(--shadow-card); font-family: inherit;
   font-size: 13px; font-weight: 700; color: var(--navy); cursor: pointer; transition: .15s; }
 .fp-seg-btn:hover { border-color: var(--acc); }
+/* ★ 選択中の描き方を1画面で2通りにしない(2026-08-07 UI/UXレビュー🟡)。
+   同じ #finishPick の中で 色(.fp-color.on)には右上にチェック丸が出るのに、
+   切り替え/傾き(.fp-seg-btn.on)は枠と文字色だけだった ─ 「チェックが付いて
+   いるのが選択中」と学習した直後に、チェックの無い列が出てくる。
+   枠だけの表現はiPhoneの屋外でいちばん見落とされる */
 .fp-seg-btn.on { border-color: var(--acc); box-shadow: 0 0 0 2px var(--acc) inset;
-  color: var(--acc); }
+  color: var(--acc); position: relative; font-weight: 700; }
+.fp-seg-btn.on::after {
+  content: ""; position: absolute; top: 6px; right: 8px;
+  width: 6px; height: 10px; border: solid var(--acc);
+  border-width: 0 2px 2px 0; transform: rotate(45deg);
+}
 /* 色: 2枚のカード。選択は枠+右上のチェックで言う(色は絵の話なので文字を増やさない) */
 .fp-colors { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 /* 使う音(2026-08-06 優さん実機指示)。おまかせ既定+行ごとに試聴 */
@@ -467,7 +543,8 @@ html:has(body.mz-finish-pick), body.mz-finish-pick {
   background: #fff; cursor: pointer;
   display: flex; flex-direction: column; justify-content: center; gap: 2px;
 }
-.fp-audio-row.on .fp-audio-pick { border-color: var(--acc, #2440c8); background: #f4f7ff; }
+.fp-audio-row.on .fp-audio-pick { border-color: var(--sel-ring); background: var(--sel-bg); }
+.fp-audio-row.on .fp-audio-pick { box-shadow: inset 0 0 0 1px var(--sel-ring); }
 .fp-audio-name { font-weight: 800; font-size: 14px; color: var(--navy, #101a3a); }
 .fp-audio-sub { font-size: 11px; color: var(--muted, #667085); }
 .fp-audio-pick .fp-check { position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
@@ -480,7 +557,8 @@ html:has(body.mz-finish-pick), body.mz-finish-pick {
   color: var(--navy, #101a3a); display: inline-flex; align-items: center;
   justify-content: center; gap: 5px;
 }
-.fp-audio-play.on { border-color: var(--acc, #2440c8); color: var(--acc, #2440c8); background: #f4f7ff; }
+.fp-audio-play.on { border-color: var(--sel-ring); color: var(--sel-ring); background: var(--sel-bg); }
+.fp-audio-play.on { box-shadow: inset 0 0 0 1px var(--sel-ring); }
 
 .fp-color { position: relative; text-align: left; min-height: 44px;
   padding: 12px 12px 10px; border-radius: 14px; border: 1px solid var(--line);
@@ -516,7 +594,10 @@ html:has(body.mz-finish-pick), body.mz-finish-pick {
   background: linear-gradient(180deg, rgba(238,242,248,0) 0%, #eef2f8 100%); }
 .wp-foot #fpBack { min-height: 44px; }   /* .btn.small のままでは指の的が細すぎる */
 .wp-foot #fpGo { flex: 1; min-height: 48px; font-size: 14px; }
-.wp-foot #fpGo:disabled { opacity: .45; cursor: default; }
+/* ★ ここも opacity をやめる(2026-08-07)。.btn:disabled と同じ理由 ─
+   仕上げ画面の主ボタン「このまま進む」がラベルごと薄まっていた */
+.wp-foot #fpGo:disabled { cursor: default; background: var(--off-primary-bg);
+  color: var(--off-primary-tx); border-color: var(--off-line); box-shadow: none; }
 @media (max-width: 355px) {
   .fp-colors { grid-template-columns: 1fr; }   /* 320px はカードを縦積みに */
 }
@@ -769,7 +850,6 @@ body { --mz-actionbar-h: 69px; }
    旧: 右上の小窓フロート(29vw)。実機で小さすぎ+サイトヘッダーへ重なり破綻
    (2026-07-24 優さん指示で廃止)。代わりに、スクロールでプレビューが見えなく
    なったら画面上部へ全幅・約1/3高で固定する。傾き調整中(mz-pin-force)も固定 */
-.float-toggle { display: none; }
 @media (max-width: 860px) {
   body.mz-has-clips.mz-pin-on:not(.cutmode-open) .canvas-holder,
   body.mz-has-clips.mz-pin-force:not(.cutmode-open) .canvas-holder {
@@ -1135,11 +1215,12 @@ html, body { max-width: 100%; overflow-x: clip; }
   border: 1.5px solid var(--line); border-radius: 12px;
   background: #fff; cursor: pointer; text-align: left; font-family: inherit;
 }
-.q-card.on { border-color: var(--acc); background: #f0f5ff; }
+.q-card.on { border-color: var(--sel-ring); background: var(--sel-bg);
+  box-shadow: inset 0 0 0 1px var(--sel-ring), 0 1px 3px rgba(30, 79, 214, 0.14); }
 .q-name { font-size: 13.5px; font-weight: 800; color: var(--tx); }
 .q-tag {
-  font-style: normal; font-size: 10px; font-weight: 800;
-  padding: 1px 8px; border-radius: 999px; vertical-align: 1px;
+  font-style: normal; font-size: 11px; font-weight: 800;
+  padding: 2px 9px; border-radius: var(--r-pill); vertical-align: 1px;
   background: #e8f1fe; color: var(--acc-deep);
 }
 .q-card.on .q-name { color: var(--acc-deep); }
@@ -1558,6 +1639,15 @@ body[data-mzj-phase="export"] #timelineWrap { display: none !important; }
 /* ============ 書き出しの全画面(案B / 2026-07-24) ============
    ドットは増やさず、書き出し中→保存 をこの中で切り替える(Apple Photos/iMovieの型)。
    進捗(MZP)は #eoProgress にそのまま実る */
+/* ★ 完成画面だけは字送りを元のまま(2026-08-07)。
+   body に line-height:1.7 を入れたところ、この画面の出口(シェア/別の動画/閉じる)が
+   375x667(iPhone SE)で **672px** となり画面の外へ出た(QAが検出)。
+   この全画面には「出口まで1画面に収まる」という契約があり(2026-08-02 レビュー)、
+   巻けることに気づけないと「閉じるが無い」と読まれる。
+   読ませたい説明文にだけ、個別に行間を与える */
+.export-overlay { line-height: normal; }
+.export-overlay .eo-note, .export-overlay #eoDoneText { line-height: 1.6; }
+
 .export-overlay {
   position: fixed; inset: 0; z-index: 120;
   background: var(--bg);
@@ -1829,7 +1919,8 @@ body.mz-diag-noskip #exportSec::before {
   background: #fff; cursor: pointer; text-align: left; font-family: inherit;
   min-height: 60px; }
 @media (min-width: 620px) { .len-card { grid-template-columns: 1fr; row-gap: 2px; } }
-.len-card.on { border-color: var(--acc); background: #f0f5ff; }
+.len-card.on { border-color: var(--sel-ring); background: var(--sel-bg);
+  box-shadow: inset 0 0 0 1px var(--sel-ring), 0 1px 3px rgba(30, 79, 214, 0.14); }
 .len-card.on .len-name { color: var(--acc-deep); }
 .len-name { font-size: 14px; font-weight: 800; color: var(--tx); white-space: nowrap; }
 .len-dur { font-size: 13px; font-weight: 700; color: var(--acc-deep);
@@ -1850,7 +1941,8 @@ body.mz-diag-noskip #exportSec::before {
 .len-start { display: flex; align-items: center; gap: 6px; width: 100%;
   padding: 0 8px 0 0; border: 1.5px solid var(--line); border-radius: 12px;
   background: #fff; min-height: 56px; }
-.len-start.on { border-color: var(--acc); background: #f0f5ff; }
+.len-start.on { border-color: var(--sel-ring); background: var(--sel-bg);
+  box-shadow: inset 0 0 0 1px var(--sel-ring), 0 1px 3px rgba(30, 79, 214, 0.14); }
 .len-pick { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px;
   padding: 9px 4px 9px 12px; min-height: 54px;
   background: none; border: 0; border-radius: 11px;
@@ -1967,8 +2059,8 @@ html:has(body.mz-auto-stage), body.mz-auto-stage {
 
 .as-title { display: flex; align-items: center; gap: 10px; margin: 0;
   font-size: 17px; font-weight: 800; color: var(--tx); }
-.as-badge { flex: none; padding: 4px 10px; border-radius: 999px;
-  background: rgba(30, 79, 214, .12); color: var(--acc); font-size: 12px; font-weight: 800; }
+.as-badge { flex: none; padding: 2px 9px; border-radius: var(--r-pill);
+  background: rgba(30, 79, 214, .12); color: var(--acc); font-size: 11px; font-weight: 800; }
 
 /* プレビュー。ここが主役なので大きく取る */
 /* ★ 枠を絵に吸い付かせる(2026-08-01 レビュー14件)。width:100% 固定だったため、
@@ -2000,7 +2092,13 @@ html:has(body.mz-auto-stage), body.mz-auto-stage {
   transition: width .45s cubic-bezier(.22, .8, .3, 1); }
 .as-meta { display: flex; align-items: baseline; justify-content: space-between;
   margin: 0; font-size: 13px; color: var(--tx2); }
-.as-pct { font-size: 22px; font-weight: 800; color: var(--tx);
+/* ★ 大きさを入れ替える(2026-08-07 UI/UXレビュー🟡・実測)。
+   「28%」が22px/800、「あと およそ6分」が13px/400 だった。5〜9分待つ人が
+   知りたいのは進捗率ではなく「席を立ってよいか」で、%は残り時間に換算できない ─
+   いちばん役に立たない数字が一等地を占めていた */
+.as-pct { font-size: 13px; font-weight: 700; color: var(--tx2);
+  font-variant-numeric: tabular-nums; }
+.as-eta { font-size: 20px; font-weight: 800; color: var(--tx);
   font-variant-numeric: tabular-nums; }
 
 /* 段のチェックリスト */
@@ -2188,7 +2286,8 @@ html:has(body.mz-auto-stage), body.mz-auto-stage {
      削るのは装飾であって、段の名前と値は削らない */
   .as-step { padding: 3px 4px; font-size: 13px; }
   .as-title { font-size: 15px; }
-  .as-pct { font-size: 19px; }
+  .as-pct { font-size: 12px; }
+  .as-eta { font-size: 17px; }
   #asWhat { display: none; }   /* 何をおまかせしたかは縦向きで読めている */
   .as-wait { font-size: 11px; }
   .auto-stage { padding-top: calc(10px + env(safe-area-inset-top, 0px));

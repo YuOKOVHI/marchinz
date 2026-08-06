@@ -2242,7 +2242,7 @@ MC.ui.updateActionBar = () => {
     } else if (cur === "export" && !MC.exporter.lastResult) {
       const cutMode = MC.S.mode === "switch";   // カット割は③自動スイッチングだけ(2026-07-24)
       if (cutMode && !MC.S.cutList.length) {
-        conf = { label: "自動カット割", icon: "fa-clapperboard",
+        conf = { label: "カメラの切り替え", icon: "fa-clapperboard",
           act: () => MC.ui.$("#autocutBtn").click() };
       } else {
         /* 本体の書き出しボタン(緑のおまかせ完了ボタン/書き出しセクション)が
@@ -4980,7 +4980,11 @@ MC.ui.renderFinishPick = () => {
   if (MC.S.mode === "switch") {
     const box = MC.ui.$("#fpLevels");
     box.innerHTML = "";
-    for (const [lv, label] of [[1, "少なめ"], [2, "おすすめ"], [3, "多め"]]) {
+    /* ★ 真ん中は「ふつう」(2026-08-07 UI/UXレビュー🟡)。「少なめ→おすすめ→多め」は
+       尺度として成立していない ─ 多い・少ないの軸に、多寡でない語が真ん中に入って
+       いた。同じ画面で「おすすめ」は推奨バッジとしても使われており、1語が2役。
+       「おすすめ」はバッジ専用語にして、軸は多寡だけで並べる */
+    for (const [lv, label] of [[1, "少なめ"], [2, "ふつう"], [3, "多め"]]) {
       const b = document.createElement("button");
       b.type = "button";
       b.className = "fp-seg-btn" + (fp.level === lv ? " on" : "");
