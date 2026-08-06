@@ -1252,6 +1252,39 @@ async function countSamples(ns, file, fromSec) {
        ① setBusy が6個を名指しで止めており、#audioDecideBtn が漏れていた
        ② そもそも分析前から押せた(押すと未同期のまま仕上げが走る)
      本物の画面を iframe で開いて、押せないことを確かめる。 */
+  /* ?tool= 等のクエリつきで switcher を開く(2026-08-07 映像ツール再編)。
+     compEnv はiframeを使い回すためクエリの試験に使えない ─ 毎回新設するこちらで */
+  const withSwitcherAt = async (search, fn) => {
+    const f = document.createElement("iframe");
+    f.style.cssText = "position:fixed;left:-9999px;top:0;width:390px;height:844px;border:0";
+    f.src = "../switcher/index.html" + (search || "");
+    document.body.appendChild(f);
+    try {
+      await new Promise((res, rej) => {
+        f.onload = res;
+        setTimeout(() => rej(new Error("switcher の読み込みが終わらない")), 20000);
+      });
+      const w = f.contentWindow;
+      for (let i = 0; i < 100 && !(w.MC && w.MC.ui && w.MC.ui.setBusy); i++) {
+        await new Promise(r => setTimeout(r, 100));
+      }
+      if (!(w.MC && w.MC.ui && w.MC.ui.setBusy)) throw new Error("MC.ui が生えない");
+      /* ★ boot の完了まで待つ(2026-08-07)。MC.ui が生えた時点ではまだ
+         app.js の `await probeCaps()` の手前で、スコープを反映する
+         showModeStep("kind") が呼ばれていない。
+         「1段目が hidden になるまで待つ」ではダメ ─ 1段目は初期状態で**可視**
+         なので、その条件だと即抜けて起動前の姿を測ってしまう(実際それで落ちた)。
+         capsBadge が初期文言から変われば probeCaps は済んでいる */
+      const d0 = f.contentDocument;
+      for (let i = 0; i < 150; i++) {
+        const cb = d0.getElementById("capsBadge");
+        if (cb && cb.textContent && cb.textContent !== "対応確認中…") break;
+        await new Promise(r => setTimeout(r, 100));
+      }
+      return await fn(w, f.contentDocument);
+    } finally { f.remove(); }
+  };
+
   const withSwitcher = async fn => {
     const f = document.createElement("iframe");
     f.style.cssText = "position:fixed;left:-9999px;top:0;width:390px;height:844px;border:0";
@@ -7308,27 +7341,29 @@ async function countSamples(ns, file, fromSec) {
   /* ---- やめるの着地(2026-08-07 優さん指示) ----
      実際に押すと iframe ごと /#creators へ遷移して後続の試験が全滅するので、
      配線をソースで見張る(この試験は旧コードでは必ず落ちる=歯の確認済み) */
-  await test("★やめる: こだわりへ落とさず、映像ツールのページへ戻る(配線)", async () => {
+  await test("★やめる: そのツールの最初の画面へ戻る(?tool=維持・こだわりへ落とさない)", async () => {
+    /* 映像ツール再編(2026-08-07 優さん決定): やめる=そのツールの入口へリロード。
+       以前の /#creators 行きから変わった */
     const src = await (await fetch("../switcher/js/ui.js")).text();
     const i = src.indexOf("_repickAfterCancel) MC.ui.repickLand()");
     if (i < 0) throw new Error("着地の分岐が見つからない(試験の目印が古い)");
-    /* やめる枝は repickLand の else 節だけ。窓を広げすぎると、直後にある
-       **失敗時**の着地(こちらは正当に「こだわり」で理由を見せる)の
-       setSetupTab を拾って誤検知する ─ 一度それで落ちた */
-    const seg = src.slice(i, i + 900);
-    const iCre = seg.indexOf("#creators");
+    const seg = src.slice(i, i + 1200);
+    const iLand = seg.indexOf("location.pathname + (key ?");
     const iPro = seg.indexOf('setSetupTab("pro")');
-    if (iCre < 0) {
-      throw new Error("映像ツールのページ(/#creators)への配線が無い");
+    if (iLand < 0) {
+      throw new Error("そのツールの最初の画面(location.pathname+?tool=)への配線が無い");
     }
-    if (iPro >= 0 && iPro < iCre) {
-      throw new Error("やめるの着地がまだ「こだわり」タブ(優さん指示 2026-08-07 と逆)");
+    if (iPro >= 0 && iPro < iLand) {
+      throw new Error("やめるの着地がまだ「こだわり」タブ(優さん指示と逆)");
     }
-    /* ページを離れる=動画が消える、を確認文が正直に言うこと */
-    if (src.indexOf("映像ツールのページへ戻りますか") < 0) {
-      throw new Error("やめる確認文がページ遷移(動画が消える)を言っていない");
+    /* 確認文: ツール名+「最初の画面」+動画が消えることを正直に */
+    if (src.indexOf("の最初の画面に戻りますか") < 0) {
+      throw new Error("やめる確認文が「最初の画面」を言っていない");
     }
-    return "着地=/#creators / こだわりへは落とさない / 確認文も正直";
+    if (src.indexOf("取り込んだ動画は消えます。動画を残すなら「動画を選び直す」") < 0) {
+      throw new Error("やめる確認文が動画の消滅を言っていない");
+    }
+    return "着地=そのツールの入口(?tool=維持) / こだわりへ落とさない / 確認文も正直";
   });
   /* ---- ツールのハンバーガーをTOPと同じ中身に(2026-08-07 優さん指示・2度目) ----
      ツール側は マイページ ボタンとページ一覧だけで、①スタッフ向けバッジ
@@ -7348,7 +7383,7 @@ async function countSamples(ns, file, fromSec) {
       if (n < 2) throw new Error(`${why} は定義だけで、ドロワーへ差し込まれていない`);
     }
     /* TOPが出している項目が、ツール側にも揃っていること */
-    for (const label of ["プロフィールを見る", "モーメント", "MarchinZ Switcher(映像制作)",
+    for (const label of ["プロフィールを見る", "モーメント", "MarchinZ 映像ツール",
                          "MarchinZ Days(練習記録)", "マイページを表示"]) {
       if (src.indexOf(label) < 0) throw new Error(`アカウント枠に「${label}」が無い(TOPにはある)`);
     }
@@ -7588,6 +7623,130 @@ async function countSamples(ns, file, fromSec) {
     const px = parseFloat([...sizes][0]);
     if (px < 11) throw new Error(`チップが ${px}px(iPhoneで10px以下は読みづらい)`);
     return `${px}px / ${[...radii][0]} に統一`;
+  });
+  /* ==== 映像ツール再編(2026-08-07 優さん指示): 6ツール化の見張り ==== */
+  await test("★再編: ?tool=reel|switcher|wipe で2/2直行・名前と共有URLが変わる", async () => {
+    const out = [];
+    /* 先行試験が書いた保存状態(marchcut_project)は同一オリジンで漏れる ─ 消してから測る */
+    try { localStorage.removeItem("marchcut_project"); } catch (_) {}
+    for (const [key, mode, short] of [["reel","vertical","Reel"],["switcher","switch","Switcher"],["wipe","wipeCam","Wipe"]]) {
+      await withSwitcherAt(`?tool=${key}`, async (w, d) => {
+        if (!d.getElementById("modeStepFlow") || d.getElementById("modeStepFlow").hidden) {
+          throw new Error(`?tool=${key}: 2/2(おまかせ/こだわり)から始まっていない`);
+        }
+        if (!d.getElementById("modeStepKind").hidden) throw new Error(`?tool=${key}: 1段目が出ている`);
+        if (d.getElementById("toolName").textContent !== short) {
+          throw new Error(`?tool=${key}: h1が ${d.getElementById("toolName").textContent}(期待${short})`);
+        }
+        if (!d.title.includes(`MarchinZ ${short}`)) throw new Error(`?tool=${key}: titleが「${d.title}」`);
+        if (w.MC.ui._pendingMode !== mode) throw new Error(`?tool=${key}: _pendingMode=${w.MC.ui._pendingMode}`);
+        if (!d.getElementById("flowBackBtn").hidden) throw new Error(`?tool=${key}: 「種類を選び直す」が出ている`);
+        const share = w.MC.ui.toolShareUrl();
+        if (!share.includes(`?tool=${key}`)) throw new Error(`?tool=${key}: 共有URLがスコープを失う(${share})`);
+        /* ★ body[data-mz-tool] は switcher のまま(limits/sitechromeが読む内部ID)。
+           変えると登録特典リストが黙って空になる */
+        if (d.body.getAttribute("data-mz-tool") !== "switcher") {
+          throw new Error(`?tool=${key}: data-mz-tool が ${d.body.getAttribute("data-mz-tool")} に化けた`);
+        }
+        out.push(short);
+      });
+    }
+    return out.join("/") + " 3スコープとも 2/2直行・名前・共有URL・内部ID不変";
+  });
+  await test("★再編: 未知の?tool=は従来の1段目へ落ちる(白画面を作らない)", async () => {
+    try { localStorage.removeItem("marchcut_project"); } catch (_) {}
+    for (const bad of ["?tool=xxx", "?tool=", "?tool=REEL"]) {
+      await withSwitcherAt(bad, async (w, d) => {
+        const kind = d.getElementById("modeStepKind");
+        if (bad === "?tool=REEL") {
+          /* 大文字は寛容に受ける(手打ち対策) */
+          if (kind.hidden !== true) throw new Error("?tool=REEL が旧経路へ落ちた(大小無視のはず)");
+        } else if (kind.hidden) {
+          throw new Error(`${bad}: 1段目(3枚カード)が出ていない`);
+        }
+        if (!d.getElementById("toolName")) throw new Error("h1のspanが無い");
+      });
+    }
+    return "未知値/空=従来の3枚カード / 大文字=寛容に受理";
+  });
+  await test("★再編: 素URLの3枚カードは Reel/Switcher/Wipe(順序と日本語補足)", async () => {
+    return withSwitcher(async (w, d) => {
+      const cards = [...d.querySelectorAll("#modeStepKind .mode-card[data-mode]")];
+      const modes = cards.map(c => c.dataset.mode).join(",");
+      if (modes !== "vertical,switch,wipeCam") throw new Error(`並びが ${modes}`);
+      const names = cards.map(c => c.querySelector(".mode-card-name").textContent).join(",");
+      if (names !== "Reel,Switcher,Wipe") throw new Error(`カード名が ${names}`);
+      const subs = cards.map(c => (c.querySelector(".mode-card-sub") || {}).textContent || "").join(",");
+      if (subs !== "縦型動画,自動スイッチング動画,ワイプカメラ動画") throw new Error(`日本語補足が ${subs}`);
+      return names;
+    });
+  });
+  await test("★再編: #creators に6入口(順序・?tool=・開発中バッジ)", async () => {
+    const top = await (await fetch("../../index.html")).text();
+    const i0 = top.indexOf('id="page-creators"');
+    const i1 = top.indexOf('id="page-ops"', i0);
+    const seg = top.slice(i0, i1);
+    const hrefs = [...seg.matchAll(/class="mz-ctool-card[^"]*"[^>]*|href="([^"]+)" class="mz-ctool-card/g)];
+    /* href の出現順で6入口を確認 */
+    const order = [...seg.matchAll(/<a href="([^"]+)" class="mz-ctool-card/g)].map(m => m[1]);
+    const want = ["/tools/switcher/?tool=reel", "/tools/switcher/?tool=switcher", "/tools/switcher/?tool=wipe",
+                  "/tools/reangle/", "/tools/privacy/", "/tools/vlog/"];
+    if (order.join("|") !== want.join("|")) throw new Error(`6入口の順序が違う: ${order.join(" , ")}`);
+    if (!/mz-ctool-soon/.test(seg)) throw new Error("Vlogの開発中バッジが無い");
+    if ((seg.match(/mz-ctool-card--visual/g) || []).length !== 3) throw new Error("大カードが3枚でない");
+    return "6入口: 大3(?tool=) + 小2 + 開発中1";
+  });
+  await test("★再編: ナビの行き先が「映像ツール」(#creators)に揃っている", async () => {
+    const sc = await (await fetch("../shared/sitechrome.js")).text();
+    if (sc.indexOf('"MarchinZ 映像ツール"') < 0) throw new Error("ツール側ドロワーの行が旧名のまま");
+    if (sc.indexOf('label: "映像ツール", svg: TAB_SVG.clap, tools: true') < 0) {
+      throw new Error("タブバーのcreator枠が映像ツール(/#creators)になっていない");
+    }
+    if (sc.indexOf('here.startsWith("/tools/")') < 0) throw new Error("タブの点灯が「どのツールでも」になっていない");
+    const ut = await (await fetch("../../marchinz-usertype-ui.js")).text();
+    if (!/creator: \{ href: "#creators"/.test(ut)) throw new Error("本体タブ/heroCTAのcreator枠が旧のまま");
+    return "ドロワー/タブバー/heroCTA すべて映像ツール(#creators)";
+  });
+  await test("★再編: 集計3分割(toolId=reel|switcher|wipe)とrulesの整合", async () => {
+    const ui = await (await fetch("../switcher/js/ui.js")).text();
+    if (ui.indexOf('(m && m.toolKey) || (sc && sc.key) || "switcher"') < 0) {
+      throw new Error("noteToolUse が switcher 決め打ちのまま");
+    }
+    const log = await (await fetch("../../marchinz-admin-ugc-log.js")).text();
+    for (const id of ['"reel"', '"wipe"']) {
+      if (log.indexOf(id) < 0) throw new Error(`TOOL_USE_IDS に ${id} が無い(集計から落ちる)`);
+    }
+    const rules = await (await fetch("/firebase/firestore.rules")).text();
+    /* rules の tool_id 許可リスト(2箇所)に reel/wipe/reangle が入っていること */
+    const n = (rules.match(/'reangle', 'reel', 'wipe'/g) || []).length;
+    if (n !== 2) throw new Error(`rules の tool_id 許可が ${n} 箇所(期待2) ─ 記録が無音で拒否される`);
+    return "noteToolUse/辞書/rules(2箇所) 整合";
+  });
+  /* ==== 同意チェック 5→3(2026-08-07 優さん指示) ==== */
+  await test("★同意: 登録チェックは3個・統計提供は規約第5条の2・βは内包", async () => {
+    const top = await (await fetch("../../index.html")).text();
+    const b0 = top.indexOf('id="auth-entry-signup-block"');
+    const b1 = top.indexOf("</div>", top.indexOf("auth-consent-label", b0));
+    /* ★ コメントを剥がしてから測る ─ 撤去の経緯を書いたHTMLコメントに
+       「【重要】」「βテスト」の語が残っていて、素の innerText 検査だと誤検知した */
+    const blk = top.slice(b0, top.indexOf('id="btn-auth-signup-google"', b0))
+      .replace(/<!--[\s\S]*?-->/g, "");
+    const boxes = (blk.match(/type="checkbox"/g) || []).length;
+    if (boxes !== 3) throw new Error(`登録画面のチェックが ${boxes} 個(期待3)`);
+    if (blk.includes("【重要】")) throw new Error("【重要】ブロックが残っている");
+    if (blk.includes("βテスト")) throw new Error("βテストのチェック/注記が残っている");
+    if (blk.includes("統計データ")) throw new Error("統計提供のチェックが残っている");
+    if (top.indexOf("第5条の2（統計データの第三者提供）") < 0) {
+      throw new Error("利用規約に統計提供の条文が無い(チェックを消しただけになっている)");
+    }
+    const auth = await (await fetch("/auth.js")).text();
+    if (auth.indexOf('LEGAL_POLICY_VERSION = "2026-08-07-v2"') < 0) {
+      throw new Error("LEGAL_POLICY_VERSION が旧版 ─ 既存ユーザーに規約改定が伝わらない");
+    }
+    if (auth.indexOf("stashSignupConsent?.(true)") < 0) {
+      throw new Error("βテスト同意の自動記録が無い(新規登録直後にβモーダルが出てしまう)");
+    }
+    return "3チェック / 規約第5条の2 / 版バンプ / β内包";
   });
   /* 版番の大小比較(1.113.10 > 1.113.9 を正しく判定するため文字列比較にしない) */
   function cmpVer(a, b) {
@@ -8628,8 +8787,12 @@ async function countSamples(ns, file, fromSec) {
       if (btn.getBoundingClientRect().height < 44) throw new Error("44ptに満たない");
       const href = d.getElementById("eoToTools").getAttribute("href");
       const url = U.toolShareUrl();
-      /* 2026-08-02 優さん指示: シェアの行き先はツール一覧ではなく Switcher 自身 */
-      if (!/\/tools\/switcher\/$/.test(url)) throw new Error("Switcher自身のURLを指していない: " + url);
+      /* 2026-08-02 優さん指示: シェアの行き先はツール一覧ではなくツール自身。
+         2026-08-07 映像ツール再編: どの「ツール」かを ?tool= で保つようになった
+         (Reel を送ったのに Switcher の入口が開く、を防ぐ) */
+      if (!/\/tools\/switcher\/(\?tool=(reel|switcher|wipe))?$/.test(url)) {
+        throw new Error("ツール自身のURLを指していない: " + url);
+      }
       /* 2026-08-02 優さん指示「ツール一覧に戻るも、スイッチャーのページにいって」。
          出口の行き先も Switcher 自身(=再読込で最初から)。文言も「戻る」でなく
          再スタートだと分かる言い方であること */
