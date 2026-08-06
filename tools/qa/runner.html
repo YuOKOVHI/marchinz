@@ -6726,6 +6726,60 @@ async function countSamples(ns, file, fromSec) {
     } finally { S.clips.forEach((c, i) => { c.duration = keepDur[i]; }); }
     return `長い素材=${offers.length}個(${offers.map(o => o.label).join("/")}) / 短い素材=${fewN}個`;
   });
+  /* 実機報告(2026-08-06)「どれも同じ秒数にみえる。全部同じ?」。
+     検出が末尾に狭窄した素材(show=486..643 の同型)では、wide保険候補の t が
+     全部 s0 より手前になり、旧ラベル式 max(0, t-s0) が**3候補とも「0秒〜」**を
+     出していた。画面に実際に描いて、秒数のラベルで測る */
+  await test("★検出が末尾に狭窄しても、候補の秒数ラベルが全部同じにならない", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    await sceneAudioSetup(w, S);
+    /* 演奏検出を末尾だけに狭める(salute誤検出の再現)。素材400秒に対し
+       show=340..395(55秒 < 半分)→ sceneOffers の wide 経路に入る */
+    S.showIn = 340; S.showOut = 395;
+    S.exportPreset = "short";
+    S.trimIn = 340; S.trimOut = 400;   // 前回の書き出し=末尾(検出窓のまま)
+    S.lengthDecided = true;
+    const U = w.MC.ui;
+    const offers = U.sceneOffers();
+    ge(offers.length, 2, "候補の数(保険が埋める)");
+    /* 歯の確認: この土台が旧バグの条件(全候補が s0 より手前)を本当に再現して
+       いること。ここが崩れたらフィクスチャが変わっただけで試験は無意味 */
+    if (!offers.every(o => o.t < S.showIn)) {
+      throw new Error("土台が変わった: s0 より手前の候補になっていない("
+        + offers.map(o => Math.round(o.t)).join(",") + ")");
+    }
+    /* 実際に完成画面へ描いて、表示されたラベルで測る(代入でなく描画を通す) */
+    const keepSaved = U._saved, keepRevealed = U._scenesRevealed, keepLeft = U.extraScenesLeft;
+    try {
+      U._saved = true; U._scenesRevealed = true;
+      U.extraScenesLeft = () => 3;   // 枠の門は別の試験の主題(ここでは開けておく)
+      U.renderSceneOffers();
+      const labels = [...w.document.querySelectorAll("#doneScenes .mzso-t")]
+        .map(el => el.textContent.trim());
+      ge(labels.length, 2, "描画された候補");
+      if (labels.every(t => t === "0秒〜")) {
+        throw new Error("全候補が「0秒〜」(旧バグの再現): " + labels.join(" / "));
+      }
+      if (new Set(labels).size !== labels.length) {
+        throw new Error("秒数ラベルが重複している: " + labels.join(" / "));
+      }
+      /* ラベルは素材の頭からの絶対時刻(シークバーと同じ基準)であること */
+      const sorted = offers.slice().sort((a, b) => a.t - b.t);
+      labels.forEach((txt, i) => {
+        const want = U.fmtLen(Math.max(0, sorted[i].t)) + "〜";
+        if (txt !== want) throw new Error(`ラベルが絶対時刻でない: ${txt}(期待 ${want})`);
+      });
+      var got = labels.join(" / ");
+    } finally {
+      U._saved = keepSaved; U._scenesRevealed = keepRevealed; U.extraScenesLeft = keepLeft;
+      const host = w.document.getElementById("doneScenes");
+      if (host) host.remove();   // 後続の試験に描画を持ち越さない
+      const host2 = w.document.getElementById("eoDoneScenes");
+      if (host2) host2.remove();
+    }
+    return `候補${offers.length}個: ${got}`;
+  });
   await test("★2回目は解析を使い回し、仕上げと書き出しだけが走る", async () => {
     const w = await compEnv();
     const S = compReset(w);

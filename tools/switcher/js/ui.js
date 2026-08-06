@@ -1014,7 +1014,6 @@ MC.ui.renderSceneOffers = () => {
       el.className = "mz-scene-offers";
       h.after.insertAdjacentElement("afterend", el);
     }
-    const [s0] = MC.ui.showRange();
     /* ★ ゲストが1本を使い切ったら、候補の代わりに登録の誘いを1行だけ(⑭)。
        責めずに、登録で何ができるかだけを言う。
        ★ 枠は「切り替えの多い/少ない」でも使う(2026-08-03)ので、シーンだけの
@@ -1053,7 +1052,14 @@ MC.ui.renderSceneOffers = () => {
               + `<span class="mzso-thumb" data-t="${c.t}" aria-hidden="true"></span>`
               + `<i class="fa-solid ${MC.ui.esc(c.icon || "fa-flag")}" aria-hidden="true"></i> `
               + `${MC.ui.esc(c.label)}`
-              + `<span class="mzso-t">${MC.ui.fmtLen ? MC.ui.fmtLen(Math.max(0, c.t - s0)) : ""}〜</span>`
+              /* ★ 時刻は**素材の頭からの絶対値**(2026-08-06 優さん実機
+                 「どれも同じ秒数にみえる。全部同じ?」)。以前は t-s0(演奏開始
+                 からの相対)で、検出が末尾に狭窄した素材(show=486..)では
+                 wide保険候補の t(96/192/288 等)が全部 s0 より手前になり、
+                 max(0,負)=0 で**3候補とも「0秒〜」**になっていた。
+                 候補には bs(演奏窓内)と fb(素材実長)の2種類が混ざるので、
+                 どちらでも嘘にならない基準は絶対時刻だけ。シークバーとも揃う */
+              + `<span class="mzso-t">${MC.ui.fmtLen ? MC.ui.fmtLen(Math.max(0, c.t)) : ""}〜</span>`
               + `</button>`).join("")
           + "</div>");
     el.querySelectorAll("[data-scene]").forEach(b => {
