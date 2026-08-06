@@ -7330,6 +7330,104 @@ async function countSamples(ns, file, fromSec) {
     }
     return "着地=/#creators / こだわりへは落とさない / 確認文も正直";
   });
+  /* ---- ツールのハンバーガーをTOPと同じ中身に(2026-08-07 優さん指示・2度目) ----
+     ツール側は マイページ ボタンとページ一覧だけで、①スタッフ向けバッジ
+     ②ログイン中のアカウント枠 ③管理者のページ が丸ごと無かった */
+  await test("★ツールのハンバーガー: TOPと同じ中身(スタッフ向けバッジ・アカウント枠・管理者ページ)", async () => {
+    const src = await (await fetch("../shared/sitechrome.js")).text();
+    /* 配線が実在すること(死配線の再発防止) */
+    for (const [needle, why] of [
+      ["userTypeBadgeHtml", "スタッフ向けバッジ"],
+      ["drawerAccountHtml", "ログイン中のアカウント枠"],
+      ["adminPagesHtml", "管理者のページ"],
+      ["mzscUserTypeBtn", "「切り替え」ボタン"],
+    ]) {
+      if (src.indexOf(needle) < 0) throw new Error(`${why}(${needle})が sitechrome.js に無い`);
+      /* 定義しただけで組み立てへ差していない、を捕まえる: 2回以上出ること */
+      const n = src.split(needle).length - 1;
+      if (n < 2) throw new Error(`${why} は定義だけで、ドロワーへ差し込まれていない`);
+    }
+    /* TOPが出している項目が、ツール側にも揃っていること */
+    for (const label of ["プロフィールを見る", "モーメント", "MarchinZ Switcher(映像制作)",
+                         "MarchinZ Days(練習記録)", "マイページを表示"]) {
+      if (src.indexOf(label) < 0) throw new Error(`アカウント枠に「${label}」が無い(TOPにはある)`);
+    }
+    /* バッジの正本(marchinz-usertype.js)を4ツールとも読んでいること ─
+       読まないとバッジは黙って消える(loggedInと違い代替が無い) */
+    for (const tool of ["switcher", "privacy", "reangle", "vlog"]) {
+      const html = await (await fetch(`../${tool}/index.html`)).text();
+      if (!/marchinz-usertype\.js\?v=/.test(html)) {
+        throw new Error(`${tool} が marchinz-usertype.js を読んでいない(バッジが出ない)`);
+      }
+      /* 読み込み順: sitechrome より前(mount時に window.MZUserType が要る) */
+      if (html.indexOf("marchinz-usertype.js") > html.indexOf("shared/sitechrome.js")) {
+        throw new Error(`${tool}: usertype が sitechrome より後ろ(mount時にまだ無い)`);
+      }
+    }
+    /* CSSも持ち込まれていること(ツールは本体CSSを読まない) */
+    const css = await (await fetch("../shared/sitechrome.css")).text();
+    for (const cls of [".mzsc-drawer-user-head", ".mzsc-drawer-menu-item",
+                       ".mz-drawer-usertype", ".mzsc-drawer-admin"]) {
+      if (css.indexOf(cls) < 0) throw new Error(`${cls} のCSSが無い(素の文字で崩れる)`);
+    }
+    return "バッジ・アカウント枠・管理者ページ・正本の読み込み順・CSS すべて有";
+  });
+  /* ---- 「作る動画を選ぶ」の下のマージン(2026-08-07 優さん指示) ---- */
+  await test("★作る動画を選ぶ: 見出しとカードの間に余白がある", async () => {
+    const w = await compEnv();
+    const cards = w.document.querySelector("#modeStepKind .mode-cards");
+    const title = w.document.querySelector("#modeStepKind .mode-title");
+    if (!cards || !title) throw new Error("種類選択の見出し/カードが見つからない");
+    /* 実際の計算値で測る(CSSの記述ではなく効いている値) */
+    const mt = parseFloat(w.getComputedStyle(cards).marginTop) || 0;
+    if (mt < 12) throw new Error(`カードの上余白が ${mt}px ─ 見出しに貼り付いている`);
+    return `カードの上余白 ${mt}px`;
+  });
+  /* ---- 音を選び済みなら「良い音を選ぶ」を出さない(2026-08-07 優さん指示) ---- */
+  await test("★おまかせの工程: 音を選び済みなら「良い音を選ぶ」を出さない", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.mode = "switch"; S.layoutId = "switch"; S.preset = "16x9";
+    const el = w.document.getElementById("autoStage");
+    const keepHidden = el ? el.hidden : null;
+    const keepPicked = S.audioPickedByUser, keepId = S.audioClipId;
+    const keys = () => w.MC.ui.autoStage.STEPS.map(s => s.key);
+    try {
+      /* ① 選んでいない → 段は出る(ここが無いと試験が骨抜き) */
+      S.audioPickedByUser = false;
+      if (el) el.hidden = true;
+      w.MC.ui.autoStage.open();
+      const before = keys();
+      w.MC.ui.autoStage.close();
+      if (!before.includes("audio")) {
+        throw new Error(`選んでいないのに「良い音を選ぶ」が無い: ${before.join(",")}`);
+      }
+      /* ② 本人が選んだ → 段が消える */
+      S.audioPickedByUser = true; S.audioClipId = S.clips[0].id;
+      if (el) el.hidden = true;
+      w.MC.ui.autoStage.open();
+      const after = keys();
+      w.MC.ui.autoStage.close();
+      if (after.includes("audio")) {
+        throw new Error(`音を選び済みなのに「良い音を選ぶ」が出ている: ${after.join(",")}`);
+      }
+      /* ③ 選んだ動画が消えている(idだけ残った)なら、段は出したまま ─
+            採点で決め直すので「決めることが無い」わけではない */
+      S.audioClipId = "存在しないid";
+      if (el) el.hidden = true;
+      w.MC.ui.autoStage.open();
+      const gone = keys();
+      w.MC.ui.autoStage.close();
+      if (!gone.includes("audio")) {
+        throw new Error("選んだ動画が無いのに段まで消えた(自動で選び直すので出すべき)");
+      }
+      return `未選択=${before.length}段(audioあり) / 選択済み=${after.length}段(audioなし)`;
+    } finally {
+      S.audioPickedByUser = keepPicked; S.audioClipId = keepId;
+      w.MC.ui.autoStage.close();
+      if (el && keepHidden !== null) el.hidden = keepHidden;
+    }
+  });
   /* 版番の大小比較(1.113.10 > 1.113.9 を正しく判定するため文字列比較にしない) */
   function cmpVer(a, b) {
     const pa = String(a).split("."), pb = String(b).split(".");

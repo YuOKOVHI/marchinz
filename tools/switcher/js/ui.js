@@ -4314,6 +4314,15 @@ MC.ui.autoStage = {
       /* finish は「実際に走る仕事」で名前・重みを決め、0段なら出さない */
       .filter(s => s.key !== "finish" || MC.ui.finishSteps() > 0)
       .filter(s => s.key !== "proxy" || (MC.ui.willBuildProxy && MC.ui.willBuildProxy()))
+      /* ★ 本人がもう音を選んでいるなら「良い音を選ぶ」は出さない(2026-08-07 優さん指示)。
+         選び済みのときこの段がするのは「本人の選択をそのまま採用する」だけで、
+         選んでいないときの採点(autoPickAudio)は走らない ─ 決めることが何も
+         残っていないのに工程だけ並ぶのは、この画面の「やらない仕事のチェックが
+         点くのは嘘」という方針に反する。
+         ★ 選んだ動画が無音だった場合は runEasy が自動選択へ落とすが、そのときは
+           トーストで事実を伝えるので、段が無くても黙って変わることにはならない */
+      .filter(s => s.key !== "audio"
+        || !(MC.S.audioPickedByUser && MC.getClip(MC.S.audioClipId)))
       .map(s => (s.key === "finish" && MC.S.mode !== "switch")
         ? { ...s, label: "色をそろえる", done: "色がそろいました", w: 10 }
         : s);

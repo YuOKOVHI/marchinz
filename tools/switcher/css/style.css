@@ -297,7 +297,11 @@ body.mz-actionbar-on .toast { bottom: calc(80px + env(safe-area-inset-bottom, 0p
 .mode-inner { width: 100%; max-width: 720px; text-align: center; }
 .mode-title { font-size: 22px; font-weight: 700; color: var(--navy); }
 .mode-lead { font-size: 13px; color: var(--tx2); margin-top: 6px; margin-bottom: 22px; }
-.mode-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+/* ★ 見出し(と補足)との間に息を入れる(2026-08-07 優さん指示
+   「作る動画をえらぶ、の下に少しマージンを」)。.mode-title も .mode-tip も
+   下マージンを持たないため、カードが見出しに貼り付いていた。
+   どちらが出ていても効くよう、余白はカード側が持つ */
+.mode-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 20px; }
 .mode-card {
   display: flex; flex-direction: column; align-items: flex-start; gap: 8px; text-align: left;
   padding: 22px 20px; background: var(--panel); border: 1px solid var(--line); border-radius: 16px;

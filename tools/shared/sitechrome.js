@@ -77,6 +77,65 @@ window.MZSiteChrome = (() => {
       + '<a href="/#login" class="mzsc-brand-btn">ログイン</a>';
   }
 
+  /* ---------- TOPのドロワーと同じ中身(2026-08-07 優さん指示・2度目) ----------
+     優さんの指摘は「TOPのハンバーガー(スタッフ向けバッジ等がある方)と、
+     映像ツールのハンバーガーが合っていない」。ツール側は マイページ ボタンと
+     ページ一覧だけで、①「◯◯向けメニューを表示中」②ログイン中のアカウント枠
+     ③管理者のページ(UGC/UGC(ツール)/管理) の3つが丸ごと無かった。
+     ツールは Firebase SDK を読まないので、判断材料は本体が localStorage へ
+     書いた印(MZ_LIMITS / mz_member_v1 / mz_user_type_v1)だけ ─ ここまでは
+     TOPと同じ物を出せる。**出せないのは 設定・プロフィール編集・ログアウトの
+     3つだけ**で、これらは本体のダイアログで、ハッシュの入口が無い
+     (auth.js の openSettingsDialog はボタンからしか開かない)。
+     行けない場所を3行に分けて並べるのは嘘になるので、1行にまとめて
+     「マイページで」と正直に言う */
+
+  /* 「◯◯向けメニューを表示中 [切り替え]」。正本は marchinz-usertype.js
+     (ツールのページでも読み込む)。読めなければ黙って出さない */
+  function userTypeBadgeHtml() {
+    const UT = window.MZUserType;
+    if (!UT || !UT.info || !UT.get) return "";
+    const info = UT.info(UT.get());
+    return '<p class="mz-drawer-usertype" id="mzscUserType">'
+      + `<i class="fa-solid ${esc(info.icon)}" aria-hidden="true"></i> `
+      + `${esc(info.short)}向けメニューを表示中`
+      + ' <button type="button" class="mz-drawer-usertype-btn" id="mzscUserTypeBtn">切り替え</button></p>';
+  }
+
+  /* ログイン中のアカウント枠。TOPの site-mobile-drawer-user と同じ並び */
+  function drawerAccountHtml() {
+    if (!loggedIn()) return "";
+    const p = memberProfile();
+    const item = (href, label, icon) =>
+      `<a href="${href}" class="mzsc-drawer-menu-item">`
+      + (icon ? `<i class="${icon}" aria-hidden="true"></i> ` : "") + esc(label) + "</a>";
+    return '<div class="mzsc-drawer-user">'
+      + '<a href="/#profile" class="mzsc-drawer-user-head">'
+      + `<img class="mzsc-drawer-avatar" src="${esc(p.avatar || AVATAR_FALLBACK)}" alt="" width="44" height="44" decoding="async" onerror="this.src='${AVATAR_FALLBACK}'">`
+      + '<span class="mzsc-drawer-user-meta">'
+      + (p.name ? `<span class="mzsc-drawer-user-name">${esc(p.name)}</span>` : "")
+      + '<span class="mzsc-drawer-mypage-link">マイページを表示</span>'
+      + '</span></a>'
+      + '<div class="mzsc-drawer-user-actions">'
+      + item("/#profile", "プロフィールを見る", "")
+      + item("/#community/moments", "モーメント", "fa-solid fa-bolt")
+      + item("/tools/switcher/", "MarchinZ Switcher(映像制作)", "fa-solid fa-clapperboard")
+      + item("/#profile?tab=base", "MarchinZ Days(練習記録)", "fa-solid fa-drum")
+      /* ★ 設定・プロフィール編集・ログアウトは本体のダイアログでしか開けない。
+         3行に割ると、どれを押しても同じマイページに着く「3本の同じ道」になる */
+      + item("/#profile", "プロフィール編集・設定・ログアウト(マイページ)", "fa-solid fa-gear")
+      + '</div></div>';
+  }
+
+  /* 管理者だけのページ。TOPのドロワー先頭にあるのと同じ3つ */
+  function adminPagesHtml() {
+    const L = window.MZ_LIMITS;
+    if (!(L && L.admin)) return "";
+    return '<a href="/#ugc/signup" class="mzsc-drawer-admin">UGC</a>'
+      + '<a href="/#ugc-tools" class="mzsc-drawer-admin">UGC（ツール）</a>'
+      + '<a href="/#admin/reports" class="mzsc-drawer-admin mzsc-drawer-admin--red">管理</a>';
+  }
+
   /* ドロワー内は場所が狭いのでボタン型のまま */
   function authAreaHtml() {
     if (loggedIn()) {
@@ -113,14 +172,15 @@ window.MZSiteChrome = (() => {
   <button type="button" class="mzsc-drawer-bd" data-mzsc-close aria-label="メニューを閉じる"></button>
   <div class="mzsc-drawer-panel" role="dialog" aria-modal="true" aria-label="サイトメニュー">
     <button type="button" class="mzsc-drawer-close" data-mzsc-close aria-label="閉じる">×</button>
-    <div class="mzsc-drawer-cta">${authAreaHtml()}</div>
+    ${userTypeBadgeHtml()}
+    ${loggedIn() ? drawerAccountHtml() : `<div class="mzsc-drawer-cta">${authAreaHtml()}</div>`}
     <!-- ★ 「映像ツール」の節は出さない(2026-08-06 優さん指示
          「映像ツールでハンバーガー開くと映像ツールが出る。TOPにいるときと同じ挙動に」)。
          TOP のドロワーはページ一覧が主で、ツールは Switcher の1行だけ。
          ツールの中にいるのに4本を並べ直すのは、TOP と挙動が食い違っていた。
          各ツールへの入口は TOP とクリエイターページが持つ -->
     <p class="mzsc-drawer-label">ページ一覧</p>
-    <nav class="mzsc-drawer-nav">${NAV.map(([h, l, ic]) => `<a href="${h}"><i class="${ic}" aria-hidden="true"></i> ${esc(l)}</a>`).join("")}
+    <nav class="mzsc-drawer-nav">${adminPagesHtml()}${NAV.map(([h, l, ic]) => `<a href="${h}"><i class="${ic}" aria-hidden="true"></i> ${esc(l)}</a>`).join("")}
       <a href="/#profile">マイページ</a>
     </nav>
   </div>
@@ -325,6 +385,44 @@ window.MZSiteChrome = (() => {
         prevOverflow = null;
       }
     };
+    /* 「切り替え」= その場で3択を開く(2026-08-07)。TOPは設定ダイアログへ
+       飛ばす道も持つが、ツールからは本体のダイアログを開けない ─
+       ゲスト向けにTOPが用意しているのと同じ「その場で選ぶ」だけを使う。
+       ★ この中の要素は a ではないので、下の「aを押したら閉じる」に巻き込まれない */
+    const utBtn = document.getElementById("mzscUserTypeBtn");
+    if (utBtn) utBtn.addEventListener("click", ev => {
+      ev.stopPropagation();
+      const UT = window.MZUserType;
+      const host = document.getElementById("mzscUserType");
+      if (!UT || !UT.TYPES || !host) return;
+      const gone = document.getElementById("mzscUserTypePick");
+      if (gone) { gone.remove(); return; }
+      const box = document.createElement("div");
+      box.id = "mzscUserTypePick";
+      box.className = "mz-drawer-usertype-pick";
+      box.setAttribute("role", "radiogroup");
+      box.setAttribute("aria-label", "だれ向けの表示にするか");
+      const cur = UT.get();
+      box.innerHTML = Object.values(UT.TYPES).map(t =>
+        `<button type="button" class="mz-drawer-usertype-opt${t.id === cur ? " on" : ""}"`
+        + ` role="radio" aria-checked="${t.id === cur ? "true" : "false"}" data-mzsc-usertype="${t.id}">`
+        + `<i class="fa-solid ${t.icon}" aria-hidden="true"></i> ${esc(t.label)}</button>`).join("");
+      host.insertAdjacentElement("afterend", box);
+      box.querySelectorAll("[data-mzsc-usertype]").forEach(b => {
+        b.addEventListener("click", () => {
+          UT.set(b.getAttribute("data-mzsc-usertype"));
+          /* バッジの文字とタブバーの3枠目を、その場で描き直す
+             (TOPは applyAll が受け持つ。ツールにはそれが無い) */
+          const info = UT.info(UT.get());
+          const label = host.childNodes[1];
+          if (label) label.textContent = ` ${info.short}向けメニューを表示中 `;
+          const ic = host.querySelector("i");
+          if (ic) ic.className = `fa-solid ${info.icon}`;
+          const pick = document.getElementById("mzscUserTypePick");
+          if (pick) pick.remove();
+        });
+      });
+    });
     burger.addEventListener("click", () => setOpen(drawer.hidden));
     drawer.querySelectorAll("[data-mzsc-close]").forEach(b => b.addEventListener("click", () => setOpen(false)));
     drawer.querySelectorAll("a").forEach(a => a.addEventListener("click", () => setOpen(false)));

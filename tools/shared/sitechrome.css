@@ -508,3 +508,58 @@ body.mz-focus.mzsc-has-tabbar .mzp-dock { bottom: calc(8px + env(safe-area-inset
 body:has(#exportBtn:not(:disabled)) #buildBtn {
   box-shadow: 0 3px 10px rgba(30, 79, 214, 0.18);
 }
+
+/* ---------- ドロワーのアカウント枠(2026-08-07 優さん指示・TOPと同じ中身へ) ----------
+   TOPの .site-mobile-drawer-user と同じ見え方。ツールは本体CSSを読まないので
+   ここに持つ(バッジ .mz-drawer-usertype* も同様に下で持つ) */
+.mzsc-drawer-user { margin-bottom: 6px; }
+.mzsc-drawer-user-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 2px 12px; text-decoration: none;
+  border-bottom: 1px solid rgba(15, 33, 56, 0.08);
+}
+.mzsc-drawer-avatar { width: 44px; height: 44px; border-radius: 50%; flex: none; object-fit: cover; }
+.mzsc-drawer-user-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mzsc-drawer-user-name { font-size: 15px; font-weight: 800; color: #12213a; }
+.mzsc-drawer-mypage-link { font-size: 12.5px; font-weight: 700; color: #1e4fd6; }
+.mzsc-drawer-user-actions { display: flex; flex-direction: column; }
+.mzsc-drawer-menu-item {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 46px; padding: 6px 4px;
+  font-size: 14px; font-weight: 600; color: #12213a; text-decoration: none;
+  border-bottom: 1px solid rgba(15, 33, 56, 0.08);
+}
+.mzsc-drawer-menu-item i { width: 18px; text-align: center; color: rgba(12, 15, 20, 0.5); }
+.mzsc-drawer-admin {
+  display: flex; align-items: center; min-height: 44px; padding: 6px 12px; margin-bottom: 6px;
+  border-radius: 10px; background: #eef3ff; color: #1e4fd6;
+  font-size: 14px; font-weight: 800; text-decoration: none;
+}
+.mzsc-drawer-admin--red { background: #fdeef0; color: #b3243a; }
+
+/* 「◯◯向けメニューを表示中」。本体 marchinz-brushup.css と同じ見え方を持ち込む */
+.mz-drawer-usertype {
+  display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;
+  margin: 0 0 0.6rem; padding: 0.45rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid rgba(30, 79, 214, 0.18);
+  background: rgba(30, 79, 214, 0.07);
+  font-size: 0.7rem; color: #0f2138;
+}
+.mz-drawer-usertype i { color: #1e4fd6; }
+.mz-drawer-usertype-btn {
+  margin-left: auto; padding: 0.2rem 0.6rem;
+  border: 1px solid rgba(30, 79, 214, 0.45); border-radius: 999px;
+  background: #fff; color: #1e4fd6; font-weight: 700;
+  font-size: 0.68rem; font-family: inherit; cursor: pointer;
+}
+.mz-drawer-usertype-pick { display: grid; gap: 6px; margin: 0 0 10px; }
+.mz-drawer-usertype-opt {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 10px 12px; border: 1px solid rgba(15, 33, 56, 0.16);
+  border-radius: 10px; background: #fff;
+  font-size: 13px; font-weight: 700; color: #0f2138;
+  text-align: left; cursor: pointer; font-family: inherit;
+}
+.mz-drawer-usertype-opt i { color: #1e4fd6; width: 1.1em; text-align: center; }
+.mz-drawer-usertype-opt.on { border-color: #1e4fd6; background: #eef3ff; }
