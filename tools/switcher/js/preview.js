@@ -183,6 +183,9 @@ MC.preview = {
     MC.S.playing = false;
     MC.S.clips.forEach(c => { if (!c.video) return; try { c.video.pause(); c.video.playbackRate = 1; } catch (e) {} });
     MC.ui.updateTransport();
+    /* 試聴中に見送られた軽い判定を拾い直す(2026-08-07 未解決P2)。
+       おまかせ中の pause はここを通っても _busy で弾かれる ─ 邪魔はしない */
+    try { if (MC.media && MC.media.retryQuick) MC.media.retryQuick(); } catch (e) {}
   },
 
   toggle() { MC.S.playing ? this.pause() : this.play(); },

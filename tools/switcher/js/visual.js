@@ -580,6 +580,14 @@ MC.visual.quickProbe = clip => MC.withSeekLock(async () => {
      判定できなかった素材は「自動判定」のままになるだけで、何も壊れない */
   if (MC.ui && MC.ui._busy) return null;
   if (MC.exporter && (MC.exporter.running || MC.exporter.recording)) return null;
+  /* ★ ここから先は「実際に測った」。上の3つの見送りと区別する印を残す
+     (2026-08-07 未解決P2)。本解析(visual.analyzeClip)は director からしか
+     呼ばれず、director が動くのは mode==="switch" のときだけ ─ つまり
+     **縦型・ワイプでは見送られた素材の2軸が二度と測られない**。
+     印の無い素材だけを media.retryQuick が手の空いたときに拾い直す。
+     測って駄目だった素材(短くて2点取れない等)にも印は付くので、
+     直らないものを何度もシークすることにはならない */
+  clip._quickTried = true;
   const keep = v.currentTime;
   const shake = [];
   try {

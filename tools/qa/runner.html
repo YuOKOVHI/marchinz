@@ -7163,6 +7163,173 @@ async function countSamples(ns, file, fromSec) {
       return `殺しスイッチで作らない / 分母と段が一致(${willOn ? "作る" : "作らない"})`;
     } finally { w.MC.proxy.off = keepOff; }
   });
+  /* ---- 2軸(被写体・固定)の軽い判定を取りこぼさない 2026-08-07 未解決P2 ----
+     quickProbe は 再生中・おまかせ中・書き出し中 は黙って見送る。ところが本解析
+     (visual.analyzeClip)は director からしか呼ばれず、director が動くのは
+     mode==="switch" のときだけ ─ 見送られた素材が二度と測られなかった。
+     ★ この試験は先行する200件の環境状態(playing等)を引き継いで一度落ちた。
+       門は自分で全部開けてから測り、finally で全部戻す(qa-assign-vs-operate) */
+  await test("★2軸: 見送られた軽い判定を、手が空いたら拾い直す(P2)", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.mode = "vertical"; S.layoutId = "v3"; S.preset = "9x16";
+    const clip = { id: "q1", name: "a.mov", width: 1920, height: 1080, duration: 600,
+                   offset: 0, video: {}, file: { size: 1, lastModified: 1 } };
+    S.clips = [clip]; S.slots = [clip.id, null, null];
+    const keep = { busy: w.MC.ui._busy, playing: S.playing,
+                   run: w.MC.exporter.running, rec: w.MC.exporter.recording,
+                   probe: w.MC.visual.quickProbe, queue: w.MC.media._quickQueue };
+    w.MC.media._quickQueue = Promise.resolve();   // 前の試験のキューと混ぜない
+    try {
+      /* 門を全部開ける(先行試験の状態を引き継がない) */
+      w.MC.ui._busy = false; S.playing = false;
+      w.MC.exporter.running = false; w.MC.exporter.recording = false;
+
+      /* ① おまかせ中は見送る。そのとき「測った」印を付けてはいけない ─
+            付けたら拾い直しの対象から永久に外れる(これがP2そのもの) */
+      w.MC.ui._busy = true;
+      if ((await w.MC.visual.quickProbe(clip)) !== null) {
+        throw new Error("おまかせ中に軽い判定が割り込んでいる");
+      }
+      if (clip._quickTried) throw new Error("見送りなのに「測った」印が付いた(二度と拾えなくなる)");
+      if (w.MC.media.retryQuick() !== 0) throw new Error("手が塞がっているのに拾いに行った");
+
+      /* ② 手が空いたら拾い直し、実際にキューが走ること(積んだだけでは意味がない) */
+      w.MC.ui._busy = false;
+      const calls = [];
+      w.MC.visual.quickProbe = c => { calls.push(c.id); return Promise.resolve(null); };
+      const got = w.MC.media.retryQuick();
+      if (got !== 1) {
+        const g = `busy=${w.MC.ui._busy} playing=${S.playing} run=${w.MC.exporter.running} rec=${w.MC.exporter.recording} tried=${!!clip._quickTried} retry=${clip._quickRetry || 0}`;
+        throw new Error(`手が空いたのに拾い直さない(=${got}) 門の状態: ${g}`);
+      }
+      await w.MC.media._quickQueue;
+      if (calls.join() !== "q1") throw new Error(`拾ったのにキューが走っていない: [${calls}]`);
+
+      /* ③ 測って駄目だった素材(短くて2点取れない等)は拾わない ─
+            直らないものを何度もシークするほうが害になる */
+      calls.length = 0;
+      clip._quickTried = true;
+      if (w.MC.media.retryQuick() !== 0) throw new Error("測り済みの素材をまた拾った(無駄なシークを繰り返す)");
+      /* ④ もう答えを持っている素材も拾わない */
+      clip._quickTried = false; clip.quickVisual = { quick: true, enough: true };
+      if (w.MC.media.retryQuick() !== 0) throw new Error("判定済みの素材をまた拾った");
+      delete clip.quickVisual;
+
+      /* ⑤ 引き金が**実在する**こと。MC.sync.cancel が実在しない死配線だった
+            前例があるので、呼ばれることを実際に測る */
+      let fired = 0;
+      const keepRetry = w.MC.media.retryQuick;
+      w.MC.media.retryQuick = () => { fired++; return 0; };
+      try {
+        w.MC.preview.pause();
+        if (!fired) throw new Error("試聴を止めても拾い直しが呼ばれない(preview.pause の配線が死んでいる)");
+        /* 仕上げの好み画面を開いても拾い直す(2026-08-07 優さん実機4回目)。
+           この画面こそ判定の答えを見せる場所 ─ 開いた瞬間が最良の引き金 */
+        fired = 0;
+        const fpEl = w.document.getElementById("finishPick");
+        const keepHidden = fpEl ? fpEl.hidden : null;
+        const keepFp = w.MC.ui._fp;
+        try {
+          if (fpEl) fpEl.hidden = true;
+          w.MC.ui.openFinishPick();
+          if (!fired) throw new Error("仕上げの好みを開いても拾い直しが呼ばれない(openFinishPick の配線が死んでいる)");
+        } finally {
+          w.MC.ui.closeFinishPick();
+          if (fpEl && keepHidden !== null) fpEl.hidden = keepHidden;
+          w.MC.ui._fp = keepFp;
+        }
+      } finally { w.MC.media.retryQuick = keepRetry; }
+
+      /* ⑥ おまかせの終わりの引き金は試験から実行できないので、配線をソースで確かめる。
+            setBusy(false) より**後**にあること ─ 前にあると _busy で弾かれて
+            1本も拾えない(この製品が繰り返してきた形そのもの) */
+      const src = await (await fetch("../switcher/js/ui.js")).text();
+      const fin = src.indexOf("MC.ui._autoRunning = false;   // 成功経路では上で返済済み");
+      if (fin < 0) throw new Error("runAuto の finally を見つけられない(試験の目印が古い)");
+      const seg = src.slice(fin, fin + 900);
+      const iBusy = seg.indexOf("setBusy(false)"), iRetry = seg.indexOf("retryQuick");
+      if (iRetry < 0) throw new Error("runAuto の終わりに拾い直しの配線が無い");
+      if (iBusy < 0 || iRetry < iBusy) {
+        throw new Error("拾い直しが setBusy(false) より前にある(_busy で弾かれて何も拾えない)");
+      }
+      return "見送り→拾い直し / 測り済みは拾わない / 引き金3つとも実在";
+    } finally {
+      w.MC.visual.quickProbe = keep.probe;
+      w.MC.ui._busy = keep.busy; S.playing = keep.playing;
+      w.MC.exporter.running = keep.run; w.MC.exporter.recording = keep.rec;
+      w.MC.media._quickQueue = keep.queue;
+    }
+  });
+  /* ---- 4回目の指摘の本丸: fp.axes の凍結(2026-08-07 優さん実機) ----
+     軽い判定は数秒かかるので、画面が開いた時点では答えが無いのが普通。
+     ところが fp.axes は最初の描画で一度作ったきり凍結され、あとから判定が
+     届いて描き直されても「指定なし/自動判定」を出し続けていた。
+     3回の修正はどれも初期値の計算式を直していて、受け取り直す経路が無かった */
+  await test("★2軸: 判定があとから届いても、開いている画面の初期値に反映される(4回目の本丸)", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    /* compReset は mode を switch にする(chooseMode)。カードは動画2本以上で出る */
+    S.mode = "switch";
+    const keepFp = w.MC.ui._fp;
+    const c1 = S.clips[0];
+    try {
+      delete c1.quickVisual; delete c1.visual;
+      c1.targetByUser = false; c1.motionByUser = false;
+      w.MC.ui._fp = null;
+      /* ① 判定がまだ無い → 「自動判定」で出る(これは正しい) */
+      w.MC.ui.renderFinishPick();
+      const box = w.document.getElementById("fpRoleCards");
+      if (!box || !box.querySelector("select")) throw new Error("2軸プルダウンが描かれない");
+      /* カードは素材の順。各カードの select は [被写体, 固定or手持ち] の順 */
+      const motionSel = () => box.querySelectorAll("select")[1];
+      if (motionSel().value !== "auto") throw new Error(`判定前から ${motionSel().value} が入っている`);
+      /* ② 判定が届いた(三脚相当) → 開いたままの画面の初期値が「三脚」へ変わる */
+      c1.quickVisual = { quick: true, nSample: 3, enough: true, shakeMed: 0.001, operated: false };
+      w.MC.ui.renderFinishPick();   // 実機では quickProbe完了 → renderClips がこれを呼ぶ
+      if (motionSel().value !== "tripod") {
+        throw new Error(`判定が届いても画面が凍ったまま(値=${motionSel().value}) ─ 4回目の指摘の形`);
+      }
+      /* ③ 本人が触った軸は、あとから来た判定で巻き戻さない(凍結の元の目的) */
+      const fp = w.MC.ui._fp;
+      (fp.axesByUser || (fp.axesByUser = {}))[`${c1.id}/motion`] = true;
+      fp.axes[c1.id].motion = "handheld";
+      c1.quickVisual = { quick: true, nSample: 3, enough: true, shakeMed: 0.001, operated: false };
+      w.MC.ui.renderFinishPick();
+      if (motionSel().value !== "handheld") {
+        throw new Error(`本人の選択(handheld)が判定(tripod)に巻き戻された: ${motionSel().value}`);
+      }
+      return "判定前=自動判定 / 届いたら三脚 / 本人の選択は勝つ";
+    } finally {
+      delete c1.quickVisual;
+      w.MC.ui._fp = keepFp;
+    }
+  });
+  /* ---- やめるの着地(2026-08-07 優さん指示) ----
+     実際に押すと iframe ごと /#creators へ遷移して後続の試験が全滅するので、
+     配線をソースで見張る(この試験は旧コードでは必ず落ちる=歯の確認済み) */
+  await test("★やめる: こだわりへ落とさず、映像ツールのページへ戻る(配線)", async () => {
+    const src = await (await fetch("../switcher/js/ui.js")).text();
+    const i = src.indexOf("_repickAfterCancel) MC.ui.repickLand()");
+    if (i < 0) throw new Error("着地の分岐が見つからない(試験の目印が古い)");
+    /* やめる枝は repickLand の else 節だけ。窓を広げすぎると、直後にある
+       **失敗時**の着地(こちらは正当に「こだわり」で理由を見せる)の
+       setSetupTab を拾って誤検知する ─ 一度それで落ちた */
+    const seg = src.slice(i, i + 900);
+    const iCre = seg.indexOf("#creators");
+    const iPro = seg.indexOf('setSetupTab("pro")');
+    if (iCre < 0) {
+      throw new Error("映像ツールのページ(/#creators)への配線が無い");
+    }
+    if (iPro >= 0 && iPro < iCre) {
+      throw new Error("やめるの着地がまだ「こだわり」タブ(優さん指示 2026-08-07 と逆)");
+    }
+    /* ページを離れる=動画が消える、を確認文が正直に言うこと */
+    if (src.indexOf("映像ツールのページへ戻りますか") < 0) {
+      throw new Error("やめる確認文がページ遷移(動画が消える)を言っていない");
+    }
+    return "着地=/#creators / こだわりへは落とさない / 確認文も正直";
+  });
   /* 版番の大小比較(1.113.10 > 1.113.9 を正しく判定するため文字列比較にしない) */
   function cmpVer(a, b) {
     const pa = String(a).split("."), pb = String(b).split(".");

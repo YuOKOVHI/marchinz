@@ -214,10 +214,41 @@ MC.media.makeThumb = async clip => {
      ここで測らないと2軸の選択肢は永久に「自動判定」のまま。
      ・失敗しても取り込みは成功のまま(判定は付加価値)
      ・1本ずつ順番に(同時に走らせると seek が競合し、端末も重くなる) */
+  MC.media.queueQuick(clip);
+};
+
+/* 軽い判定を1本ずつ順番に流す(同時に走らせると seek が競合し、端末も重くなる) */
+MC.media.queueQuick = clip => {
   MC.media._quickQueue = (MC.media._quickQueue || Promise.resolve())
     .then(() => MC.visual.quickProbe(clip))
     .then(q => { if (q) { clip.quickVisual = q; MC.ui.renderClips(); } })
     .catch(() => {});
+};
+
+/* ★ 見送られた軽い判定を、手が空いたときに拾い直す(2026-08-07 未解決P2)。
+   quickProbe は 再生中・おまかせ中・書き出し中 は黙って見送る。ところが
+   本解析は director(mode==="switch")からしか走らないので、縦型・ワイプでは
+   見送られた素材の2軸が**二度と**測られず「自動判定」のまま固定される ─
+   狙いだった縦型ユーザーがいちばん当たる帯だった。
+   ・拾うのは _quickTried の無い素材だけ(測って駄目だった素材は拾わない)
+   ・仕上げ画面はここから描き直さない ─ 本人が選んでいる最中の値を
+     axisInitial 経由で巻き戻す危険がある(ui.js の renderClips 注記と同じ罠)。
+     finishAxesMap は画面を開くたびに作り直すので、次に開けば反映される
+   ・QUICK_MAX_TRY は無限ループの保険(引き金は本人の操作なので通常1回で足りる) */
+MC.media.QUICK_MAX_TRY = 8;
+MC.media.retryQuick = () => {
+  if (!window.MC || !MC.visual || !MC.visual.quickProbe) return 0;
+  /* 手が空いているときだけ。塞がっていれば次の引き金に任せる ─
+     ここで積むと、見送られて _quickRetry だけが減る */
+  if (MC.S && MC.S.playing) return 0;
+  if (MC.ui && MC.ui._busy) return 0;
+  if (MC.exporter && (MC.exporter.running || MC.exporter.recording)) return 0;
+  const todo = ((MC.S && MC.S.clips) || []).filter(c =>
+    c && !c.isImage && !c.isAudio && c.video
+    && !c._quickTried && !c.visual && !c.quickVisual
+    && (c._quickRetry || 0) < MC.media.QUICK_MAX_TRY);
+  for (const c of todo) { c._quickRetry = (c._quickRetry || 0) + 1; MC.media.queueQuick(c); }
+  return todo.length;
 };
 
 MC.media.removeClip = id => {

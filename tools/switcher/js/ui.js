@@ -4871,6 +4871,12 @@ MC.ui.openFinishPick = opts => {
   el.scrollTop = 0;
   document.body.classList.add("mz-finish-pick");
   MC.ui.setFinishPickInert(true);
+  /* 見送られた軽い判定を、この画面のために拾い直す(2026-08-07 優さん実機4回目)。
+     取り込み中(_busy)に見送られた素材は、引き金がなければ二度と測られない。
+     この画面こそ判定の答えを見せる場所なので、開いた瞬間が最良の引き金 ─
+     届いた判定は queueQuick → renderClips → renderFinishPick 経由で、
+     開いたままの画面にも反映される(renderFinishRoles の引き直し) */
+  try { if (MC.media && MC.media.retryQuick) MC.media.retryQuick(); } catch (e) {}
   MC.ui.renderFinishPick();
   /* 焦点は「このまま進む」へ ─ いちばん多い操作(0決定)を最短にする */
   try { const b = MC.ui.$("#fpGo"); if (b) b.focus({ preventScroll: true }); } catch (e) {}
@@ -5127,7 +5133,26 @@ MC.ui.renderFinishRoles = (fp, cards) => {
   for (const c of cards) if (!(c.id in fp.axes)) {
     const clip = MC.getClip(c.id) || c;
     MC.migrateAxes(clip);
-    fp.axes[c.id] = { target: clip.target || "auto", motion: clip.motion || "auto" };
+    fp.axes[c.id] = { target: MC.ui.axisInitial(clip, "target"),
+                      motion: MC.ui.axisInitial(clip, "motion") };
+  }
+  /* ★ 触っていない軸は、描くたびに最新の提案へ引き直す(2026-08-07 優さん実機・
+     同じ指摘の4回目)。軽い判定(quickProbe)は1本1〜2秒×本数かかるうえ、
+     取り込み中は見送られることもある ─ この画面が開いた時点ではまだ答えが
+     無いのが普通。ところが fp.axes は最初の描画で一度作ったきり凍結される
+     ため、あとから判定が届いて renderClips → ここが描き直されても
+     「指定なし/自動判定」を出し続けていた ─ **答えが来ても画面が受け取らない**。
+     これまでの3回の修正はどれも初期値の計算式(axisInitial)を直していて、
+     この受け取り直しの経路が無かった。
+     本人が触った軸(axesByUser)には絶対に触らない ─ 凍結の元の目的
+     (選択中の値を巻き戻さない)はこの印が守る */
+  for (const c of cards) {
+    const clip = MC.getClip(c.id);
+    if (!clip) continue;
+    for (const axis of ["target", "motion"]) {
+      if (fp.axesByUser && fp.axesByUser[`${c.id}/${axis}`]) continue;
+      fp.axes[c.id][axis] = MC.ui.axisInitial(clip, axis);
+    }
   }
   box.innerHTML = "";
   /* 2軸プルダウン(2026-08-05 優さん指示)。①撮影対象 ②固定/動きあり */
@@ -5612,10 +5637,15 @@ MC.ui.runAuto = async (opt) => {
       MC.ui.autoStage.close();
       if (MC.ui._repickAfterCancel) MC.ui.repickLand();
       else {
-        MC.ui.toast("やめました。こだわりで続けられます");
-        MC.ui.setSetupTab("pro");
-        MC.ui._tabsForced = true;
-        MC.ui.refreshSetupTabs();
+        /* ★ やめたら映像ツールのページへ戻る(2026-08-07 優さん指示「やめるにすると、
+           こだわりになる。なんでや。映像ツールのページに戻って」)。
+           こだわりタブへ落とすのは、「やめた」と言った人に次の作業を差し出す形だった。
+           行き先はトップページのクリエイター節(/#creators。フッターの
+           「MarchinZへ戻る」と同じ)。ページを離れる=取り込んだ動画は消えるので、
+           確認文(asCancel)がそれを正直に言う。動画を残したい人の道は
+           「動画を選び直す」(上の分岐)に元からある */
+        try { MC.ui.resetSavedProject(); } catch (e) {}
+        location.href = "/#creators";
       }
     } else {
       console.error(e);
@@ -5638,6 +5668,10 @@ MC.ui.runAuto = async (opt) => {
     MC.ui.setBusy(false);
     MC.ui.renderAll();
     MC.ui.refreshJourney();
+    /* おまかせ中に見送られた軽い判定を拾い直す(2026-08-07 未解決P2)。
+       setBusy(false) の**あと**に置くこと ─ 前に置くと _busy で弾かれて
+       何も拾えない(この配線がまさに死んでいた形) */
+    try { if (MC.media && MC.media.retryQuick) MC.media.retryQuick(); } catch (e) {}
   }
 };
 
@@ -6543,7 +6577,7 @@ MC.ui.wire = () => {
   { const c = MC.ui.$("#asCancel");
     if (c) c.onclick = () => {
       /* ★ 確認を挟む(2026-08-01 レビュー14件)。7分待った直後の1タップで全部消えるのは重すぎる */
-      if (!window.confirm("やめますか？\nここまでの解析結果は残ります。")) return;
+      if (!window.confirm("やめて、映像ツールのページへ戻りますか？\n(取り込んだ動画は消えます。動画を残すなら「動画を選び直す」)")) return;
       MC.ui._autoCancel = true;
       if (MC.exporter) MC.exporter.cancelFlag = true;
       /* ★ 押しても即座には畳まない(2026-08-01 レビュー14件)。畳んでも解析は動き続けるうえ、
