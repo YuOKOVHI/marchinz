@@ -39,6 +39,14 @@ renderMLL() は「本人」だけでなく「MarchinZ Log を公開設定にし�
           (2026-08-06 に見つかった decorateProfileTabs() の二重挿入の再発を見張る)
        d. 未来日の MarchinZ Log があれば、参加スタイルでなく「予定」と
           表示されていること(該当ログが無ければこの項目はスキップ)
+       e. 「本人の状態に戻したとき、通知ペインを表示できる」こと
+          (2026-08-06 の「スマホから通知が読めない」の再発ガード)
+  4. (Layer A4 / 静的) 通知が読めなくなる形の再発:
+       ・訪問者フラグ(data-mz-prof-visitor)の確定が loadAndRender の中=
+         どの early return よりも前にあること。中ほどにあると、認証の復帰待ちで
+         抜けた回に古い値が残り、本人なのに通知の中身だけが消える
+       ・通知ペインを消す規則が、出し分け(訪問者・プレビュー・読み込み中・
+         対象なし・凍結)以外の条件で増えていないこと
 
 ## ヘッドレス環境の限界(重要・正直に書く)
 
@@ -264,6 +272,85 @@ def check_asset_version_bump(problems: list[str], notes: list[str]) -> None:
             print(f"  OK  {f}?v={ver} はJSの変更と一緒に動いている")
 
 
+def check_notif_visibility_guard(base: str, problems: list[str], notes: list[str]) -> None:
+    """Layer A4: 通知が読めなくなる再発を静的に捕まえる。
+
+    2026-08-06 の実害(優さん実機「スマホから通知が読めない/パソコンならいけた」):
+      styles.css の
+        html[data-mz-prof-visitor="1"] #prof-pane-notifs { display:none !important }
+      は正しい。壊れていたのは**フラグを更新する場所**で、
+      loadAndRenderCore の中ほど(認証の復帰待ちで抜ける early return より後)
+      にしか無かった。他人のプロフィール → 自分のマイページ、と移ると
+      待ちで一度抜けてフラグが "1" のまま残り、
+      **通知タブは押せてバッジも出るのに中身だけが消える**。
+
+    ここで見張るのは2つ:
+      (1) フラグの確定が loadAndRender(包み側)にある = どの early return よりも前
+      (2) 通知ペインを消す規則が、visitor フラグ以外の条件で増えていない
+          (無条件に隠す規則が入ると、本人でも読めなくなる)
+    """
+    print("== Layer A4: 通知が読めなくなる再発ガード ==")
+    status, js = fetch(base + "/user-profile-page.js")
+    if status != 200 or "renderMLL" not in js:
+        problems.append(f"user-profile-page.js を読めない(HTTP {status})。Layer A4 は判定不能")
+        return
+
+    ATTR = "data-mz-prof-visitor"
+    if ATTR not in js:
+        problems.append(f"{ATTR} を設定する処理が消えている"
+                        "(通知ペインの出し分けが壊れている可能性)")
+        return
+
+    # (1) loadAndRender(包み側)の中で、core を呼ぶ**前**に確定しているか。
+    #     波括弧の対応で関数の範囲を取り、core 呼び出しの位置と比べる
+    m = re.search(r"async\s+function\s+loadAndRender\s*\(\s*\)\s*\{", js)
+    if not m:
+        notes.append("loadAndRender が見つからない(構造が変わった?)。Layer A4 の(1)は省略")
+    else:
+        depth, j = 0, m.end() - 1
+        while j < len(js):
+            if js[j] == "{":
+                depth += 1
+            elif js[j] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            j += 1
+        body = js[m.start():j]
+        core_at = body.find("loadAndRenderCore(")
+        attr_at = body.find(ATTR)
+        if attr_at < 0 or (core_at >= 0 and attr_at > core_at):
+            problems.append(
+                f"{ATTR} の確定が loadAndRender の中に無い(または core 呼び出しより後)。"
+                "認証の復帰待ちで抜けた回に古い値が残り、本人なのに通知の中身が"
+                "消える(2026-08-06 の再発)")
+        else:
+            print("  OK  訪問者フラグは early return より前で確定している")
+
+    # (2) 通知ペインを消す規則が visitor フラグ以外に増えていないか
+    st, css = fetch(base + "/styles.css")
+    if st != 200:
+        notes.append(f"styles.css を読めない(HTTP {st})。Layer A4 の(2)は省略")
+        return
+    # 「#prof-pane-notifs を含み display:none を持つ」規則の条件部を集める
+    bad = []
+    for mm in re.finditer(r"([^{}]*#prof-pane-notifs[^{}]*)\{([^}]*)\}", css):
+        sel, decl = mm.group(1), mm.group(2)
+        if "display" not in decl or "none" not in decl:
+            continue
+        # 正当な出し分け(訪問者・他会員視点プレビュー・読み込み中・対象なし・凍結)
+        ok = any(k in sel for k in (
+            "data-mz-prof-visitor", "data-mz-prof-guest-preview",
+            "--loading", "--no-target", "--banned-limited"))
+        if not ok:
+            bad.append(" ".join(sel.split())[:90])
+    if bad:
+        for s in bad:
+            problems.append(f"通知ペインを無条件に近い条件で隠す規則がある: {s}")
+    else:
+        print("  OK  通知ペインを隠すのは出し分けの規則だけ")
+
+
 def check_live_profile(base: str, uid: str, problems: list[str], notes: list[str]) -> None:
     """Layer B: 実際にブラウザでプロフィールを開いて確かめる。"""
     try:
@@ -364,6 +451,55 @@ def check_live_profile(base: str, uid: str, problems: list[str], notes: list[str
             elif count > 1:
                 problems.append(f"[{uid}] #{tid} のアイコンが{count}個重複している")
 
+        # c-2) 「本人だったら通知の中身が出せるか」(2026-08-06 実機報告の再発ガード)。
+        #      CI は常に訪問者として見るので、通知ペインが消えているのは**正しい**。
+        #      測るべきは「訪問者フラグを本人相当に戻したとき、ちゃんと出せるか」。
+        #      これで、フラグ以外の理由で永久に隠す規則が入った回を捕まえられる。
+        #      触った属性は必ず元へ戻す(この後の検査に影響させない)。
+        try:
+            res = page.evaluate(
+                """() => {
+                  const html = document.documentElement;
+                  const pane = document.querySelector('#prof-pane-notifs');
+                  if (!pane) return { missing: true };
+                  const layout = document.querySelector('.user-profile-layout');
+                  const before = html.getAttribute('data-mz-prof-visitor');
+                  const hiddenBefore = pane.hidden;
+                  // ★ CI は App Check で Firestore へ到達できず、レイアウトが
+                  //   --no-target(対象なし)のまま残る。その状態も一緒に戻さないと
+                  //   「本人なら出せるか」ではなく「読み込めていないか」を測ってしまう
+                  //   (最初の実走でこの誤検知を踏んだ)
+                  const layoutWas = layout ? layout.className : null;
+                  if (layout) {
+                    layout.classList.remove('user-profile-layout--no-target',
+                                            'user-profile-layout--loading',
+                                            'user-profile-layout--banned-limited');
+                  }
+                  html.setAttribute('data-mz-prof-visitor', '');
+                  html.setAttribute('data-mz-prof-guest-preview', '');
+                  pane.hidden = false;
+                  const shown = getComputedStyle(pane).display !== 'none';
+                  // 触ったものを全部戻す
+                  if (before === null) html.removeAttribute('data-mz-prof-visitor');
+                  else html.setAttribute('data-mz-prof-visitor', before);
+                  html.setAttribute('data-mz-prof-guest-preview', '');
+                  if (layout && layoutWas !== null) layout.className = layoutWas;
+                  pane.hidden = hiddenBefore;
+                  return { missing: false, shown, flagWas: before };
+                }"""
+            )
+            if res.get("missing"):
+                problems.append(f"[{uid}] 通知ペイン(#prof-pane-notifs)がページに無い")
+            elif not res.get("shown"):
+                problems.append(
+                    f"[{uid}] 本人の状態に戻しても通知ペインが display:none のまま。"
+                    "訪問者フラグ以外の理由で消えている(2026-08-06 の再発)")
+            else:
+                print(f"  OK  [{uid}] 本人の状態なら通知ペインは表示できる"
+                      f"(いまの訪問者フラグ={res.get('flagWas')!r})")
+        except Exception as e:
+            notes.append(f"[{uid}] 通知ペインの出し分けを確かめられなかった: {e}")
+
         # d) 未来日ログの「予定」表示(ベストエフォート。該当ログが無ければ何も起きない)
         try:
             violations = page.evaluate(
@@ -421,6 +557,7 @@ def main() -> int:
         check_static_regression(base, problems, notes)
         check_deploy_drift(base, problems, notes)
         check_asset_version_bump(problems, notes)
+        check_notif_visibility_guard(base, problems, notes)
 
     if not args.skip_live:
         print("== Layer B: 実際にブラウザで開いて確かめる ==")
