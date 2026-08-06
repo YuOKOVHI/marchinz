@@ -18,7 +18,7 @@
 <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
 <link rel="stylesheet" href="/tools/shared/progress.css?v=1.99.3">
 <link rel="stylesheet" href="/tools/shared/journey.css?v=1.110.1">
-<link rel="stylesheet" href="css/style.css?v=1.110.1">
+<link rel="stylesheet" href="css/style.css?v=1.112.0">
 <link rel="stylesheet" href="/tools/shared/sitechrome.css?v=1.108.4">
 </head>
 <body data-mz-tool="switcher">
@@ -166,7 +166,7 @@
   <div class="wp-inner">
     <p id="fpKind" class="wp-kind"></p>
     <h2 id="fpTitle" class="mode-title">仕上げの好み</h2>
-    <p class="mode-lead">おすすめを選んであります。変えたいところだけタップ</p>
+    <p class="mode-lead" hidden></p>
     <div id="fpPlaceSec" class="fp-sec" hidden>
       <h3 id="fpPlaceTitle" class="fp-sec-title">カメラの配置</h3>
       <!-- 手順は書き換わるだけなので aria-live が無いと読み上げに乗らない(2026-08-03 2巡目レビュー) -->
@@ -192,6 +192,15 @@
       <p id="fpTiltHint" class="fp-hint">カメラが傾いたまま撮れた映像を、まっすぐに直します（まわりが少し切れます）</p>
       <div id="fpTilt" class="fp-seg fp-seg--2" role="radiogroup"
            aria-label="傾きの自動補正" aria-describedby="fpTiltHint"></div>
+    </div>
+    <!-- ★ 使う音(2026-08-06 優さん実機指示)。スマホのおまかせは「使う音を選ぶ」
+         工程を通らない(autoPickAudio が自動で決めて素通りする)ため、
+         この画面でしか選べなかった。既定は「おまかせ」、他は表示と試聴ボタン。
+         置き場所は傾きの後・役割の手前 ─ 役割は「分かる場合だけ」の任意項目で、
+         元から最後に置く約束なので、そこだけを押し下げる -->
+    <div id="fpAudioSec" class="fp-sec" hidden>
+      <h3 class="fp-sec-title">使う音</h3>
+      <div id="fpAudio" class="fp-audio" role="radiogroup" aria-label="使う音"></div>
     </div>
     <!-- ★ カメラの役割(2026-08-04 三者レビュー)。自動スイッチングのときだけ。
          これまで役割タグは設定画面の「pro」タブの中にしかなく、こだわり自体が
@@ -786,7 +795,7 @@
 <script src="js/timeline.js?v=1.99.3"></script>
 <script src="js/cutmode.js?v=1.99.3"></script>
 <script src="js/exporter.js?v=1.110.2"></script>
-<script src="js/ui.js?v=1.111.2"></script>
+<script src="js/ui.js?v=1.112.0"></script>
 <script src="js/app.js?v=1.109.0"></script>
 </body>
 </html>

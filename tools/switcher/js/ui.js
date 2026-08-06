@@ -4712,6 +4712,9 @@ MC.ui.newFinishPrefs = fromState => ({
      直に c.role を書かないのは、「やめる」で戻れなくなるため
      ─ 開いてやめた人の設定は変えない、という他の項目と同じ約束 */
   axes: MC.ui.finishAxesMap(),
+  /* 使う音(2026-08-06 優さん実機指示)。"auto"=おまかせ(既定)、それ以外は clip.id。
+     開き直し(remake)のときだけ、本人が前回選んだ音を入れて開く */
+  audio: fromState && MC.S.audioPickedByUser ? MC.S.audioClipId : "auto",
   changed: false,
 });
 
@@ -4722,9 +4725,39 @@ MC.ui.finishAxesMap = () => {
   for (const c of MC.ui.finishCards()) {
     const clip = MC.getClip(c.id) || c;
     MC.migrateAxes(clip);
-    m[c.id] = { target: clip.target || "auto", motion: clip.motion || "auto" };
+    const g = MC.ui.guessAxes(clip);
+    /* ★ 本人が選んでいなければ**映像解析の判定**を初期値にする
+       (2026-08-06 優さん実機「被写体や固定などが初期で分析後が選ばれない。
+       前みたいにそれを初期値にしてほしい」)。
+       解析が済んでいない1回目は g が空なので、従来どおり「指定なし/自動判定」。
+       本人が選んだ値は必ず優先する ─ 解析で上書きしない */
+    m[c.id] = { target: clip.target || g.target || "auto",
+                motion: clip.motion || g.motion || "auto" };
   }
   return m;
+};
+
+/* 映像解析(visual.js)の性格判定を、画面の2軸の言葉へ写す。
+   解析が済んでいない/サンプル不足のクリップは {} を返す(何も推さない)。
+   ★ 推測を clip へ書き戻さない ─ ここは「初期値の提案」であって確定ではない。
+     確定するのは finishPickGo(本人が画面を通したとき)だけ */
+MC.ui.guessAxes = clip => {
+  const v = clip && clip.visual;
+  if (!v) return {};
+  const out = {};
+  /* 固定or手持ち: 解析が持つのは「操作されているか」と「ブレの中央値」。
+     操作あり=手持ち(いちばん多い撮り方)、ブレが三脚相当=三脚。
+     その中間(操作なしだがブレはある)は決めつけない */
+  if (v.operated) out.motion = "handheld";
+  else if (v.shakeMed != null && v.shakeMed <= MC.visual.TH_FIXED_SHAKE) out.motion = "tripod";
+  /* 被写体: 解析が言い切れるのは2つだけ。
+     ・overheadFixed = 動かないカメラで画面の広い範囲が動き続ける = 全体が見えている
+     ・staticScene   = 人がほぼ動かない定点 = メジャー・ピットの類
+     「正面かどうか」は映像からは分からないので front は推さない
+     (間違えると背骨のカメラを取り違えるため、他の場所からの全体に倒す) */
+  if (v.overheadFixed) out.target = "altwide";
+  else if (v.staticScene) out.target = "spice";
+  return out;
 };
 /* 選べる値は MC.TARGETS / MC.MOTIONS が正本(2026-08-05 優さん指示で2軸化)。
    長い説明文は出さない(2026-08-05 優さん実機「説明テキストは削除」) */
@@ -4756,6 +4789,9 @@ MC.ui.openFinishPick = opts => {
 MC.ui.closeFinishPick = () => {
   const el = MC.ui.$("#finishPick");
   if (!el || el.hidden) return;
+  /* 試聴を鳴らしたまま閉じない(2026-08-06)。「やめる」で戻った人の裏で
+     音だけ鳴り続けるのを防ぐ。音の割り当ても正本へ戻す */
+  if (MC.ui.fpAuditionStop) MC.ui.fpAuditionStop();
   el.hidden = true;
   document.body.classList.remove("mz-finish-pick");
   MC.ui.setFinishPickInert(false);
@@ -4831,6 +4867,7 @@ MC.ui.renderFinishPick = () => {
     });
   }
   /* --- それぞれのカメラの役割(自動スイッチングだけ) --- */
+  MC.ui.renderFinishPickAudio();
   MC.ui.renderFinishRoles(fp, cards);
   /* --- 切り替えの多さ(自動スイッチングだけ) --- */
   const lvSec = MC.ui.$("#fpLevelSec");
@@ -4897,10 +4934,10 @@ MC.ui.renderFinishPick = () => {
      この関数が描き直すたびに上書きしてしまう ─ #fpGo の所有者はここ。
      作り直し(完成後の「別設定で作成」)では、行き先が違うので言葉も変える */
   const remake = !!MC.ui._fpRemake;
+  /* ★ リード文は出さない(2026-08-06 優さん実機「テキストの『おすすめを
+     選んでます——』のところ全カット」)。おすすめが選択済みなのは見れば分かる */
   const lead = el.querySelector(".mode-lead");
-  if (lead) lead.textContent = remake
-    ? "いまの設定が入っています。変えたいところだけタップ"
-    : "おすすめを選んであります。変えたいところだけタップ";
+  if (lead) { lead.textContent = ""; lead.hidden = true; }
   const back = MC.ui.$("#fpBack");
   if (back) back.textContent = remake ? "← やめる" : "← 動画を選び直す";
   const go = MC.ui.$("#fpGo");
@@ -5070,9 +5107,111 @@ MC.ui.renderFinishRoles = (fp, cards) => {
   });
 };
 
+/* ---- 使う音(2026-08-06 優さん実機指示) ----
+   スマホのおまかせは「使う音を選ぶ」工程を通らない(autoPickAudio が自動で
+   決めて素通りする)ため、この画面が唯一の選び場になる。
+   既定は「おまかせ」。それ以外は名前を並べて、行ごとに試聴ボタンを付ける。 */
+MC.ui._fpAudId = null;          // いま試聴しているクリップ(null=止まっている)
+
+/** 試聴の停止。触った <video> は必ず元の割り当てへ戻す */
+MC.ui.fpAuditionStop = () => {
+  MC.ui._fpAudId = null;
+  try {
+    MC.S.clips.forEach(c => { if (c.video) { try { c.video.pause(); } catch (_) {} } });
+    MC.preview.applyMute();     // 音の割り当ての正本へ戻す
+  } catch (_) {}
+};
+
+/** 1本だけ鳴らす。もう一度押したら止める */
+MC.ui.fpAudition = id => {
+  const clip = MC.getClip(id);
+  if (!clip || !clip.video) return;
+  if (MC.ui._fpAudId === id) { MC.ui.fpAuditionStop(); MC.ui.renderFinishPick(); return; }
+  MC.ui.fpAuditionStop();
+  MC.ui._fpAudId = id;
+  MC.S.clips.forEach(c => { if (c.video) c.video.muted = c.id !== id; });
+  try {
+    /* 頭のセッティングではなく、音のあるところから鳴らす。
+       演奏範囲が分かっていればその少し内側、まだなら全体の3割の位置 */
+    const dur = Number(clip.duration) || 0;
+    let at = dur * 0.3;
+    if (MC.ui.showRange) {
+      const [a, b] = MC.ui.showRange();
+      if (b > a) at = a + Math.min(5, (b - a) * 0.1);
+    }
+    clip.video.currentTime = Math.max(0, Math.min(at, Math.max(0, dur - 1)));
+  } catch (_) {}
+  const pr = clip.video.play();
+  if (pr && pr.catch) pr.catch(() => { MC.ui.fpAuditionStop(); MC.ui.renderFinishPick(); });
+  MC.ui.renderFinishPick();
+};
+
+MC.ui.renderFinishPickAudio = () => {
+  const fp = MC.ui._fp;
+  const sec = MC.ui.$("#fpAudioSec");
+  if (!sec || !fp) return;
+  /* 音のある動画が2本以上あるときだけ。1本なら選ぶ余地が無い
+     (「使う音を選ぶ」工程のスキップ条件と同じ物差し) */
+  const cands = MC.S.clips.filter(c => !c.isImage && c.hasAudio !== false);
+  const show = cands.length >= 2;
+  sec.hidden = !show;
+  if (!show) return;
+  const box = MC.ui.$("#fpAudio");
+  if (!box) return;
+  box.innerHTML = "";
+  const rows = [{ id: "auto", name: "おまかせ", sub: "いちばん良い音を自動で選びます" }]
+    .concat(cands.map(c => {
+      const i = MC.S.slots.indexOf(c.id);
+      return { id: c.id, clip: c,
+               name: c.isAudio ? "音声ファイル" : (i >= 0 ? `動画${i + 1}` : MC.ui.shortName(c.name)),
+               sub: c.isAudio ? "" : MC.ui.shortName(c.name, 14) };
+    }));
+  for (const r of rows) {
+    const row = document.createElement("div");
+    row.className = "fp-audio-row" + (fp.audio === r.id ? " on" : "");
+    const pick = document.createElement("button");
+    pick.type = "button";
+    pick.className = "fp-audio-pick";
+    pick.setAttribute("role", "radio");
+    pick.setAttribute("aria-checked", fp.audio === r.id ? "true" : "false");
+    pick.innerHTML = `<span class="fp-audio-name">${MC.ui.esc(r.name)}</span>`
+      + (r.sub ? `<span class="fp-audio-sub">${MC.ui.esc(r.sub)}</span>` : "")
+      + '<i class="fa-solid fa-circle-check fp-check" aria-hidden="true"></i>';
+    pick.onclick = () => {
+      if (fp.audio === r.id) return;
+      fp.audio = r.id; fp.changed = true; fp.focus = null;
+      MC.ui.buzz([10]); MC.ui.renderFinishPick();
+    };
+    row.appendChild(pick);
+    /* 試聴は動画の行だけ(おまかせは「どれが選ばれるか」が未確定なので付けない) */
+    if (r.clip) {
+      const on = MC.ui._fpAudId === r.id;
+      const play = document.createElement("button");
+      play.type = "button";
+      play.className = "fp-audio-play" + (on ? " on" : "");
+      play.setAttribute("aria-label", `${r.name} を試聴`);
+      play.innerHTML = on
+        ? '<i class="fa-solid fa-pause" aria-hidden="true"></i> 停止'
+        : '<i class="fa-solid fa-headphones" aria-hidden="true"></i> 試聴';
+      play.onclick = () => MC.ui.fpAudition(r.id);
+      row.appendChild(play);
+    }
+    box.appendChild(row);
+  }
+};
+
 MC.ui.finishPickGo = () => {
   const fp = MC.ui._fp;
   if (!fp) return;
+  MC.ui.fpAuditionStop();               // 試聴を鳴らしたまま次へ行かせない
+  /* 使う音(2026-08-06)。おまかせなら従来どおり autoPickAudio に任せる */
+  if (fp.audio && fp.audio !== "auto" && MC.getClip(fp.audio)) {
+    MC.S.audioClipId = fp.audio;
+    MC.S.audioPickedByUser = true;
+    MC.S.audioDecided = true;
+  } else {
+    MC.S.audioPickedByUser = false;
+  }
   /* ★ カメラの2軸(撮影対象×固定/動きあり)を clip へ書き戻す(2026-08-05)。
      ここで初めて書く ─「やめる」で戻ってきた人の設定は変えない。
      applyAxes が役割/出番/撮り方へ展開する。

@@ -8726,6 +8726,111 @@ async function countSamples(ns, file, fromSec) {
     }
   });
 
+  /* 2026-08-06 優さん実機の3点:
+     ①スマホのおまかせは「使う音を選ぶ」工程を通らないので、この画面で選べること
+     ②リード文(おすすめを選んであります…)を出さないこと
+     ③被写体/固定は**解析結果**を初期値にすること(前は指定なしのままだった) */
+  await test("★仕上げの好み: 使う音を選べる/リード文なし/役割は解析結果が初期値", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    const U = w.MC.ui, d = w.document;
+    const keep = { mode: S.mode, fp: U._fp, picked: S.finishPicked, auto: U.runAuto,
+                   hold: U._repickHold, vp: U._viewPhase, remake: U._fpRemake,
+                   lv: S.cutLevel, tilt: S.autoTilt, fid: S.filterId, con: S.colorOn,
+                   aid: S.audioClipId, apu: S.audioPickedByUser, ad: S.audioDecided,
+                   targets: S.clips.map(c => c.target), motions: S.clips.map(c => c.motion),
+                   roles: S.clips.map(c => c.role), rigs: S.clips.map(c => c.rig),
+                   vis: S.clips.map(c => c.visual) };
+    U.runAuto = async () => {};
+    try {
+      S.mode = "switch";
+      /* 鳴る実体と、映像解析の結果を持たせる(1=三脚の全体 / 2=手持ち / 3=定点) */
+      S.clips.forEach((c, i) => {
+        c.video = { muted: false, paused: true, currentTime: 0, playbackRate: 1,
+                    play() { this.paused = false; return Promise.resolve(); },
+                    pause() { this.paused = true; } };
+        c.target = null; c.motion = null;
+        c.visual = i === 0 ? { operated: false, shakeMed: 0.01, overheadFixed: true, staticScene: false }
+                 : i === 1 ? { operated: true,  shakeMed: 0.20, overheadFixed: false, staticScene: false }
+                 :           { operated: false, shakeMed: 0.01, overheadFixed: false, staticScene: true };
+      });
+      U._fp = null;
+      U.openFinishPick();
+      /* ② リード文は出さない */
+      const lead = d.querySelector("#finishPick .mode-lead");
+      if (lead && !lead.hidden && lead.textContent.trim()) {
+        throw new Error("リード文が出ている: " + lead.textContent.trim());
+      }
+      /* ③ 役割の初期値が解析結果になっている(全部 auto ではない) */
+      const axes = [...d.querySelectorAll("#fpRoleCards .fp-axis-sel")]
+        .map(s => `${s.dataset.id}/${s.dataset.axis}=${s.value}`);
+      if (axes.every(a => a.endsWith("=auto"))) {
+        throw new Error("解析済みなのに全部「指定なし/自動判定」のまま: " + axes.join(","));
+      }
+      const want = ["1/target=altwide", "1/motion=tripod", "2/motion=handheld",
+                    "3/target=spice", "3/motion=tripod"];
+      for (const x of want) {
+        if (!axes.includes(x)) throw new Error(`解析の判定が入っていない(${x}): ` + axes.join(","));
+      }
+      /* 歯の確認: 解析が無いクリップは推さない(勝手に決めつけない) */
+      S.clips.forEach(c => { c.visual = null; });
+      /* ★ openFinishPick は「開いていたら何もしない」ので、必ず閉じてから開き直す
+         (閉じずに呼ぶと前の描画のまま測ってしまい、試験が嘘をつく) */
+      U.closeFinishPick(); U._fp = null; U.openFinishPick();
+      const noVis = [...d.querySelectorAll("#fpRoleCards .fp-axis-sel")].map(s => s.value);
+      if (!noVis.every(v => v === "auto")) {
+        throw new Error("解析が無いのに値を推している: " + noVis.join(","));
+      }
+      /* ① 使う音の段。既定は「おまかせ」、動画の行だけ試聴ボタン */
+      S.clips.forEach((c, i) => {
+        c.visual = i === 0 ? { operated: false, shakeMed: 0.01, overheadFixed: true, staticScene: false } : null;
+      });
+      U.closeFinishPick(); U._fp = null; U.openFinishPick();
+      const sec = d.getElementById("fpAudioSec");
+      if (!sec || sec.hidden) throw new Error("使う音の段が出ない");
+      const rows = [...d.querySelectorAll("#fpAudio .fp-audio-row")];
+      eq(rows.length, S.clips.length + 1, "行数(おまかせ+動画)");
+      if (!rows[0].classList.contains("on")) throw new Error("既定が「おまかせ」でない");
+      if (rows[0].querySelector(".fp-audio-play")) throw new Error("おまかせに試聴が付いている");
+      eq(d.querySelectorAll("#fpAudio .fp-audio-play").length, S.clips.length, "試聴ボタンの数");
+      /* 試聴を**実際に押して**測る(代入で確かめない) */
+      rows[2].querySelector(".fp-audio-play").click();
+      const playing = S.clips.filter(c => c.video && !c.video.paused).map(c => c.id);
+      if (playing.length !== 1) throw new Error("鳴っている本数が " + playing.length);
+      const unmuted = S.clips.filter(c => c.video && !c.video.muted).map(c => c.id);
+      if (unmuted.length !== 1 || unmuted[0] !== playing[0]) {
+        throw new Error("鳴っている本と音が出ている本が食い違う");
+      }
+      rows[2].querySelector(".fp-audio-play").click();   // もう一度で停止
+      if (S.clips.some(c => c.video && !c.video.paused)) throw new Error("押し直しで止まらない");
+      /* 選んで進むと S へ入る。おまかせのままなら本人選択にしない */
+      rows[3].querySelector(".fp-audio-pick").click();
+      const pickedId = S.clips[2].id;
+      U.finishPickGo();
+      if (S.audioClipId !== pickedId) throw new Error("選んだ音が入らない: " + S.audioClipId);
+      if (!S.audioPickedByUser) throw new Error("本人が選んだ印が立たない");
+      U.closeFinishPick(); U._fp = null; U.openFinishPick();
+      [...d.querySelectorAll("#fpAudio .fp-audio-pick")][0].click();   // おまかせへ戻す
+      U.finishPickGo();
+      if (S.audioPickedByUser) throw new Error("おまかせなのに本人選択のままになる");
+      /* 閉じたら試聴は必ず止まる */
+      U.closeFinishPick(); U._fp = null; U.openFinishPick();
+      [...d.querySelectorAll("#fpAudio .fp-audio-play")][0].click();
+      U.closeFinishPick();
+      if (S.clips.some(c => c.video && !c.video.paused)) throw new Error("閉じても鳴り続ける");
+      return "使う音=おまかせ既定+行ごと試聴(押して測定) / リード文なし / 解析の判定が初期値(無ければ推さない)";
+    } finally {
+      S.mode = keep.mode; U._fp = keep.fp; U.runAuto = keep.auto;
+      S.finishPicked = keep.picked; U._repickHold = keep.hold; U._viewPhase = keep.vp;
+      U._fpRemake = keep.remake; S.cutLevel = keep.lv; S.autoTilt = keep.tilt;
+      S.filterId = keep.fid; S.colorOn = keep.con;
+      S.audioClipId = keep.aid; S.audioPickedByUser = keep.apu; S.audioDecided = keep.ad;
+      S.clips.forEach((c, i) => { c.target = keep.targets[i]; c.motion = keep.motions[i];
+        c.role = keep.roles[i]; c.rig = keep.rigs[i]; c.visual = keep.vis[i]; delete c.video; });
+      try { U.closeFinishPick(); } catch (_) {}
+    }
+  });
+
   await test("★音の判定の発火数を数える(実素材でしきい値を詰める根拠・変異つき)", async () => {
     /* +1.2 という全加点で最大の値を支えている pit 判定は、
        sections.js 自身が「発火しすぎの可能性がある側」と書いたまま

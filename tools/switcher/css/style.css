@@ -453,6 +453,31 @@ html:has(body.mz-finish-pick), body.mz-finish-pick {
   color: var(--acc); }
 /* 色: 2枚のカード。選択は枠+右上のチェックで言う(色は絵の話なので文字を増やさない) */
 .fp-colors { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+/* 使う音(2026-08-06 優さん実機指示)。おまかせ既定+行ごとに試聴 */
+.fp-audio { display: flex; flex-direction: column; gap: 6px; }
+.fp-audio-row { display: flex; align-items: stretch; gap: 6px; }
+.fp-audio-pick {
+  position: relative; flex: 1; min-width: 0; text-align: left;
+  min-height: 44px; padding: 8px 34px 8px 12px;
+  border: 1.5px solid var(--line, #d7dbe3); border-radius: 12px;
+  background: #fff; cursor: pointer;
+  display: flex; flex-direction: column; justify-content: center; gap: 2px;
+}
+.fp-audio-row.on .fp-audio-pick { border-color: var(--acc, #2440c8); background: #f4f7ff; }
+.fp-audio-name { font-weight: 800; font-size: 14px; color: var(--navy, #101a3a); }
+.fp-audio-sub { font-size: 11px; color: var(--muted, #667085); }
+.fp-audio-pick .fp-check { position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  opacity: 0; color: var(--acc, #2440c8); }
+.fp-audio-row.on .fp-audio-pick .fp-check { opacity: 1; }
+.fp-audio-play {
+  flex: none; min-width: 84px; min-height: 44px; padding: 8px 10px;
+  border: 1.5px solid var(--line, #d7dbe3); border-radius: 12px;
+  background: #fff; cursor: pointer; font-size: 12px; font-weight: 700;
+  color: var(--navy, #101a3a); display: inline-flex; align-items: center;
+  justify-content: center; gap: 5px;
+}
+.fp-audio-play.on { border-color: var(--acc, #2440c8); color: var(--acc, #2440c8); background: #f4f7ff; }
+
 .fp-color { position: relative; text-align: left; min-height: 44px;
   padding: 12px 12px 10px; border-radius: 14px; border: 1px solid var(--line);
   background: var(--panel); box-shadow: var(--shadow-card); font-family: inherit;
