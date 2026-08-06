@@ -114,13 +114,11 @@ window.MZSiteChrome = (() => {
   <div class="mzsc-drawer-panel" role="dialog" aria-modal="true" aria-label="サイトメニュー">
     <button type="button" class="mzsc-drawer-close" data-mzsc-close aria-label="閉じる">×</button>
     <div class="mzsc-drawer-cta">${authAreaHtml()}</div>
-    <p class="mzsc-drawer-label">映像ツール</p>
-    <nav class="mzsc-drawer-nav">
-      <a href="/tools/switcher/"><i class="fa-solid fa-clapperboard" aria-hidden="true"></i> MarchinZ Switcher</a>
-      <a href="/tools/reangle/"><i class="fa-solid fa-vector-square" aria-hidden="true"></i> MarchinZ ReAngle</a>
-      <a href="/tools/privacy/"><i class="fa-solid fa-user-shield" aria-hidden="true"></i> MarchinZ Privacy</a>
-      <a href="/tools/vlog/"><i class="fa-solid fa-film" aria-hidden="true"></i> MarchinZ Vlog（開発中）</a>
-    </nav>
+    <!-- ★ 「映像ツール」の節は出さない(2026-08-06 優さん指示
+         「映像ツールでハンバーガー開くと映像ツールが出る。TOPにいるときと同じ挙動に」)。
+         TOP のドロワーはページ一覧が主で、ツールは Switcher の1行だけ。
+         ツールの中にいるのに4本を並べ直すのは、TOP と挙動が食い違っていた。
+         各ツールへの入口は TOP とクリエイターページが持つ -->
     <p class="mzsc-drawer-label">ページ一覧</p>
     <nav class="mzsc-drawer-nav">${NAV.map(([h, l, ic]) => `<a href="${h}"><i class="${ic}" aria-hidden="true"></i> ${esc(l)}</a>`).join("")}
       <a href="/#profile">マイページ</a>

@@ -158,7 +158,17 @@
     var japan = sorted.filter(function (r) {
       return catOf(r["チャンネルURL"]) !== "海外";
     });
-    var items = japan.slice(0, overseas.length ? YT_LIMIT - 1 : YT_LIMIT).concat(overseas);
+    /* ★ 枠は確保するが、並びは日付順に戻す(2026-08-06 優さん指示
+       「海外は必ず1つ入れるけど、時系列は他と実際の順にして(最後尾固定を解除)」)。
+       末尾固定は「新着一覧なのに最後だけ古い」という並びの嘘になっていた。
+       選ぶとき: 海外1本ぶんの席を空けて日本を詰める(=必ず1枠は入る)
+       見せるとき: 選ばれた顔ぶれを配信日の新しい順に並べ直す */
+    var items = japan
+      .slice(0, overseas.length ? YT_LIMIT - 1 : YT_LIMIT)
+      .concat(overseas)
+      .sort(function (a, b) {
+        return parseDate(b["最新動画配信日"]) - parseDate(a["最新動画配信日"]);
+      });
     if (!items.length) return;
 
     items.forEach(function (r) {
@@ -166,8 +176,8 @@
         buildVideoCard({
           url: r["最新動画URL"],
           thumb: thumbUrl(extractVideoId(r["最新動画URL"])),
-          /* 海外は「意図した特設枠」と分かる印を付ける(2026-08-06 レビュー:
-             末尾固定は日付順でないため、無印だと並びの壊れに見える) */
+          /* 海外は「必ず1枠を確保している」と分かる印(2026-08-06)。
+             並びは日付順に戻したので位置では伝わらない ─ 印だけが伝える */
           badge: catOf(r["チャンネルURL"]) === "海外" ? "海外" : "",
           title: r["最新動画タイトル"] || "最新動画",
           channelName: r["チャンネル名"] || "",

@@ -1479,6 +1479,14 @@ body {
 
 .mz-gate-link-desc { font-size: 0.7rem; color: var(--muted); line-height: 1.4; }
 
+/* 開発中のツール(2026-08-06)。押せるが MZVlogGate が止める ─ 見た目でも先に伝える */
+.mz-gate-link--soon .mz-gate-link-name { opacity: 0.85; }
+.mz-gate-link-soon {
+  margin-left: auto; flex: none;
+  font-size: 0.66rem; font-weight: 800; letter-spacing: 0.02em;
+  padding: 3px 8px; border-radius: 999px;
+  background: #f1f3f7; color: var(--tx2, #667085);
+}
 .mz-gate-link-go { margin-left: auto; flex: none; color: rgba(15, 33, 56, 0.3); font-size: 0.7rem; }
 
 .mz-gate-link:hover .mz-gate-link-go { color: var(--blue); }

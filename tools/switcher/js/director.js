@@ -643,7 +643,31 @@ MC.director.generate = () => {
   ctx.frontIds = new Set(vidsAll.filter(c => targetOf(c) === "front").map(c => c.id));
   ctx.altWideIds = new Set(vidsAll.filter(c => targetOf(c) === "altwide").map(c => c.id));
   ctx.wideIds = new Set([...ctx.frontIds, ...ctx.altWideIds]);
-  ctx.spiceIds = new Set(vidsAll.filter(c => targetOf(c) === "spice").map(c => c.id));
+  /* ★ ピットの上限を「本人がタグを付けた回」だけの機能にしない
+     (2026-08-06 優さん実機「ピットがまだまだ多い / 10%未満の使用になるように」)。
+     実機はカメラの被写体が全部「指定なし」で、spiceIds が空 = **10%上限が
+     一度も働いていなかった**。STATIC_BIAS(-0.4)だけでは、出番が空くほど
+     戻りやすくなる加点(最大+0.48)に食い破られ、後半ほど顔を出す。
+     解析が「人がほぼ動かない定点」と言ったカメラは、指定が無ければ
+     ピットとして扱い、同じ上限・同じ規則に乗せる。
+     ★ 全部が定点の構成で全滅させない: 非スパイスが1本も残らない場合は
+       自動判定ぶんを採用しない(黒画面より、上限が緩む方がまし) */
+  const explicitSpice = vidsAll.filter(c => targetOf(c) === "spice").map(c => c.id);
+  const autoSpice = vidsAll.filter(c => {
+    if (targetOf(c) !== "auto") return false;          // 本人の指定が最優先
+    const v = c.visual;
+    if (!v) return false;
+    const enough = v.enough != null ? v.enough : (v.nSample != null ? v.nSample >= 3 : false);
+    return enough && (v.staticScene || v.staticSubject);
+  }).map(c => c.id);
+  const wouldBe = new Set([...explicitSpice, ...autoSpice]);
+  const nonSpice = vidsAll.filter(c => !wouldBe.has(c.id)).length;
+  ctx.spiceIds = nonSpice >= 1 ? wouldBe : new Set(explicitSpice);
+  if (nonSpice < 1 && autoSpice.length) {
+    MC.log(`director: 全カメラが定点判定のため、自動ピット扱いは見送り(${autoSpice.length}本)`);
+  } else if (autoSpice.length) {
+    MC.log(`director: 定点判定のカメラを自動でピット扱い(${autoSpice.length}本・全尺${Math.round(MC.director.SPICE_CAP_RATIO * 100)}%上限)`);
+  }
   ctx.operatorIds = new Set(vidsAll.filter(c => targetOf(c) === "operator").map(c => c.id));
   /* プレイヤー視点(奏者装着POV)は常に厳選門(2026-08-05 優さん追加指示)。
      隊形は見えず臨場感が売り ─ 良い窓だけを見せ場に短く差し込む */
@@ -807,6 +831,15 @@ MC.director.generate = () => {
 
     // このセグメントのカメラを選ぶ
     const cls = MC.sections.classify(audioClip, t, tNext);
+    /* ★ 上限は「超えてから」ではなく「超える前」に立てる(2026-08-06 優さん実機
+       「ピットがまだまだ多い / 10%未満の使用になるように」)。
+       従来は加算後に判定しており、1カットぶん必ずはみ出していた
+       (60秒・上限8%=4.8秒に対し、3秒のカットが乗ると7.8秒=13%)。
+       いまの区間を足したら超えるなら、この区間はもう選ばせない */
+    if (!ctx.spiceCapHit && ctx.spiceIds && ctx.spiceIds.size) {
+      const budget = (tOut - tIn) * MC.director.SPICE_CAP_RATIO;
+      if (ctx.spiceSec + (tNext - t) > budget) ctx.spiceCapHit = true;
+    }
     const ranked = MC.director._rank(t, tNext, cls, ctx);
     if (!ranked.length) break;
     let top = ranked[0];

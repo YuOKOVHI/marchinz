@@ -5319,6 +5319,53 @@ async function countSamples(ns, file, fromSec) {
     }
   });
 
+  /* 2026-08-06 優さん実機「ピットがまだまだ多い」。実機はカメラの被写体が
+     全部「指定なし」で spiceIds が空 = **10%上限が一度も働いていなかった**。
+     解析が「人がほぼ動かない定点」と言ったカメラは、指定が無くてもピット扱いにする */
+  await test("★被写体を指定しなくても、定点と判定されたカメラは10%未満に収まる", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.audioClipId = 1; S.trimIn = 0; S.trimOut = 60; S.cutLevel = 2;
+    Object.assign(w.MC.getClip(1), { beatsData: dciBeats(), sections: {} });
+    const M = { 1: dciSeg(.13), 2: dciSeg(.30, true), 3: dciSeg(.05) };
+    const keep = { seg: w.MC.visual.seg, cls: w.MC.sections.classify,
+                   sal: w.MC.director._salute,
+                   st: S.clips.map(c => [c.target, c.motion, c.role, c.freq, c.rig]),
+                   vis: S.clips.map(c => c.visual) };
+    try {
+      w.MC.visual.seg = clip => M[clip.id];
+      w.MC.director._salute = null;
+      /* 被写体は**全部「指定なし」**(実機と同じ)。clip2 だけ解析が定点と言う */
+      S.clips.forEach((c) => { c.target = "auto"; c.motion = "auto"; w.MC.applyAxes(c); });
+      S.clips.forEach((c, i) => {
+        c.visual = { enough: true, nSample: 12, operated: i !== 1, shakeMed: i === 1 ? 0.01 : 0.2,
+                     overheadFixed: false, staticScene: i === 1, staticSubject: false };
+      });
+      w.MC.sections.classify = () => ({ feature: 0, percussion: 0, tutti: 0.1, pit: 0.6,
+                                        bpm: 100, dyn: 0.3, quiet: 0.5 });
+      const run = () => { S.cutList = []; w.MC.director.generate(); return S.cutList.slice(); };
+      const secOf = (cuts, id) => dciLens(cuts, 60).reduce(
+        (s, len, i) => s + (cuts[i].clipId === id ? len : 0), 0);
+      const real = secOf(run(), 2);
+      if (real >= 6.0) {
+        throw new Error(`定点カメラが${real.toFixed(1)}秒(全尺${(real / 60 * 100).toFixed(0)}%)`);
+      }
+      /* 歯の確認: 解析の印を消すと(=自動ピット扱いが効かないと)はっきり伸びること。
+         伸びなければ、この試験は「もともと出ていないだけ」を測っている */
+      S.clips.forEach((c) => { c.visual = null; });
+      const mut = secOf(run(), 2);
+      if (!(mut > real * 1.5)) {
+        throw new Error(`解析の印を消しても伸びない(${real.toFixed(1)}→${mut.toFixed(1)}秒)`
+          + " = 自動ピット扱いが効いている証拠にならない");
+      }
+      return `指定なしでも ${real.toFixed(1)}秒(${(real / 60 * 100).toFixed(0)}%) / 印を消すと ${mut.toFixed(1)}秒`;
+    } finally {
+      w.MC.visual.seg = keep.seg; w.MC.sections.classify = keep.cls;
+      w.MC.director._salute = keep.sal;
+      S.clips.forEach((c, i) => { [c.target, c.motion, c.role, c.freq, c.rig] = keep.st[i]; c.visual = keep.vis[i]; });
+      compReset(w);
+    }
+  });
   await test("★スパイス(メジャー・ピット)は鳴っている時だけ・全尺5〜10%(変異つき)", async () => {
     /* 2026-08-04 DCI協議。スパイスは効かせるから旨い ─ ピット音×静かめの
        区間だけで出し、合計は全尺の10%で打ち止め。条件外では画が良くても出さない */
@@ -5360,7 +5407,10 @@ async function countSamples(ns, file, fromSec) {
       w.MC.sections.classify = () => ({ feature: 0, percussion: 0, tutti: 0.1, pit: 0.6,
                                         bpm: 100, dyn: 0.3, quiet: 0.5 });
       const cReal = spiceSec(run());
-      if (cReal > 10.5) throw new Error(`スパイス合計${cReal.toFixed(1)}秒(8%上限が効いていない)`);
+      /* ★ 許容を実機の要求へ締める(2026-08-06 優さん「10%未満の使用になるように」)。
+         以前は 10.5秒=全尺17.5% まで通しており、上限の意味が無かった。
+         上限は「超える前」に立つようになったので、60秒なら 6.0秒未満で収まる */
+      if (cReal >= 6.0) throw new Error(`スパイス合計${cReal.toFixed(1)}秒(全尺${(cReal / 60 * 100).toFixed(0)}% ─ 10%未満に収まっていない)`);
       /* ④ 変異B: 上限を外すと合計がはっきり伸びる(=上限に歯がある) */
       w.MC.director.SPICE_CAP_RATIO = 10;
       const cMut = spiceSec(run());

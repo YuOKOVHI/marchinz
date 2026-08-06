@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-version="1.113.1">
+<html lang="ja" data-mz-version="1.113.2">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -73,7 +73,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css" />
     <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css?v=1.25.64" />
     <link rel="stylesheet" href="styles.css?v=1.39.69" />
-    <link rel="stylesheet" href="marchinz-brushup.css?v=1.113.1" />
+    <link rel="stylesheet" href="marchinz-brushup.css?v=1.113.2" />
     <!-- Microsoft Clarity -->
     <script type="text/javascript">
       (function(c,l,a,r,i,t,y){
@@ -1459,6 +1459,15 @@
                       <i class="fa-solid fa-user-shield" aria-hidden="true"></i>
                       <span class="mz-gate-link-body"><span class="mz-gate-link-name" lang="en">Privacy</span><span class="mz-gate-link-desc">顔に自動でモザイク</span></span>
                       <i class="fa-solid fa-chevron-right mz-gate-link-go" aria-hidden="true"></i>
+                    </a>
+                    <!-- ★ Vlog も並べる(2026-08-06 優さん指示「表示はさせてて」)。
+                         押しても MZVlogGate が「開発中です」と伝えて止めるので、
+                         リンクのままで安全。ここだけ無いと「クリエイターページには
+                         あるのにTOPには無い」という食い違いになる -->
+                    <a href="/tools/vlog/" class="mz-gate-link mz-gate-link--soon" data-mz-tool-link>
+                      <i class="fa-solid fa-film" aria-hidden="true"></i>
+                      <span class="mz-gate-link-body"><span class="mz-gate-link-name" lang="en">Vlog</span><span class="mz-gate-link-desc">インタビュー軸の団体Vlog（開発中）</span></span>
+                      <span class="mz-gate-link-soon">開発中</span>
                     </a>
                     <a href="#creators" data-page="creators" class="mz-gate-link">
                       <i class="fa-solid fa-users" aria-hidden="true"></i>
@@ -4214,7 +4223,7 @@
     <script defer src="user-profile-page.js?v=1.38.8"></script>
     <script defer src="marchinz-base.js?v=1.39.66"></script>
     <script defer src="app.js?v=1.99.0"></script>
-    <script defer src="marchinz-top-highlights.js?v=1.108.7"></script>
+    <script defer src="marchinz-top-highlights.js?v=1.113.2"></script>
     <script defer src="marchinz-confetti.js?v=1.28.0"></script>
     <script defer src="marchinz-journey.js?v=1.30.1"></script>
     <script defer src="marchinz-journey-export.js?v=1.35.6"></script>
