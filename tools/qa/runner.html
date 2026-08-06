@@ -7050,28 +7050,83 @@ async function countSamples(ns, file, fromSec) {
     };
     const keepLive = new Set(w.MC.proxy._live);
     const keepName = X._opfsName;
+    const keepStale = w.MC.proxy.STALE_MS;
     try {
       X._opfsName = null;
       w.MC.proxy._live.clear();
-      /* 作りたてでも消える(6時間窓に守られない)。File が消えた次の起動では
-         誰にも使えないので、残す意味がないという設計 */
+      /* 据え置き窓(STALE_MS)の両面を測る(2026-08-06 レビューP1-1)。
+         ①窓の内側: 別タブが使っているかもしれない新しい縮小版は消さない
+         ②窓の外側: 前セッションの残骸(Fileが死んで誰にも使えない)は必ず消える
+         OPFSのmtimeは書いた時刻で偽装できないので、窓を0にして外側を再現する */
       await put("mzprox_aaa_1138x640_0_60.mp4");
       await put("mzprox_bbb_1920x1080_0_60.mp4");
       w.MC.proxy._live.add("mzprox_bbb_1920x1080_0_60.mp4");   // このタブが使用中
       await X.opfsSweep();
-      const after = await names();
+      let after = await names();
+      if (!after.includes("mzprox_aaa_1138x640_0_60.mp4")) {
+        throw new Error("窓の内側(=別タブが使用中かも)の縮小版を消した");
+      }
+      w.MC.proxy.STALE_MS = 0;   // 窓明けを再現
+      await X.opfsSweep();
+      after = await names();
       if (after.includes("mzprox_aaa_1138x640_0_60.mp4")) {
-        throw new Error("使っていない縮小版が残った(容量が積み上がる)");
+        throw new Error("窓が明けた未使用の縮小版が残った(容量が積み上がる)");
       }
       if (!after.includes("mzprox_bbb_1920x1080_0_60.mp4")) {
         throw new Error("いま使っている縮小版を消した(書き出しが壊れる)");
       }
-      return "未使用は即消える / 使用中は残る";
+      return "窓の内側は残す / 窓明けは消える / 使用中は常に残る";
     } finally {
+      w.MC.proxy.STALE_MS = keepStale;
       w.MC.proxy._live.clear();
       for (const n of keepLive) w.MC.proxy._live.add(n);
       X._opfsName = keepName;
       for (const n of await names()) await dir.removeEntry(n).catch(() => {});
+    }
+  });
+  /* 2026-08-06 レビューP0の再発防止。spec単体の試験だけでは build() の実行経路に
+     歯が1本も無く、「muxerが先頭ts≠0で必ずthrow→トリムが奥だとプロキシが
+     一度も作られない」がすり抜けた。**本物のH.264で build→読み戻し**まで通す */
+  await test("★縮小版: トリム開始が素材の途中でも、実際に作れて読み戻せる(P0再発防止)", async () => {
+    if (!synth) throw new Error("合成H.264が無い(⑥が先に失敗している)");
+    const w = await compEnv();
+    const X = w.MC.exporter;
+    if (!X.opfsSupported()) return "この環境はOPFS非対応(判定のみ)";
+    const clip = { id: "cbuild", name: "synth.mp4", file: synth,
+                   width: EW, height: EH, duration: EN / EFPS, offset: 0 };
+    /* ★ t0>0 が主題。素材1.5秒の途中だけを縮める。
+       0.413 は30fpsのフレーム格子(1/30の倍数)に**わざと乗せない** ─
+       格子に乗る値(0.4=12/30)だと、tsを t0 基準で計算する旧バグでも
+       先頭tsが偶然0になり、この試験が骨抜きになる(変異で実証済み) */
+    const spec = { w: 160, h: 90, scale: 0.5, bitrate: 3e6, t0: 0.413, t1: 1.2 };
+    const r = await w.MC.proxy.build(clip, spec, null);
+    try {
+      if (!r) throw new Error("トリムが素材の途中だと縮小版が作れない(P0の形)");
+      if (!r.file || !r.file.size) throw new Error("縮小版が空");
+      if (!(r.t0 >= spec.t0 - 0.001 && r.t0 < spec.t0 + 0.2)) {
+        throw new Error(`返す t0 が実際の1コマ目とずれている: ${r.t0}`);
+      }
+      /* 読み戻し: 先頭サンプルの ts が 0 付近から始まること(コンテナ0=r.t0) */
+      const M = await loadShared();
+      const src = new M.MP4Source(r.file); await src.init();
+      const vt = src.videoTrack();
+      if (!vt) throw new Error("縮小版に映像トラックが無い");
+      let first = null, count = 0;
+      for await (const s of src.samples(vt.id, 0)) {
+        if (first === null) first = s.cts / s.timescale;
+        count++;
+      }
+      if (first === null || Math.abs(first) > 0.05) {
+        throw new Error(`縮小版の先頭時刻が0でない: ${first}`);
+      }
+      const wantFrames = Math.round((spec.t1 - spec.t0) * EFPS);
+      if (Math.abs(count - wantFrames) > 3) {
+        throw new Error(`コマ数が合わない: ${count}(期待${wantFrames}±3)`);
+      }
+      return `${r.file.size}bytes / ${count}コマ / t0=${r.t0.toFixed(2)} / 先頭ts=${first}`;
+    } finally {
+      clip.proxy = r || clip.proxy;
+      w.MC.proxy.dispose(clip);
     }
   });
   await test("★縮小版: ?noproxy と 工程数の分母が合っている", async () => {
@@ -7149,6 +7204,18 @@ async function countSamples(ns, file, fromSec) {
     /* 歯の確認: 素材カードの描画が axisInitial を通っていること
        (ここを c.motion 直読みに戻すと、優さんの画面は元に戻る) */
     const src = await (await fetch("../switcher/js/ui.js")).text();
+    /* 2026-08-06 レビューP1-1: 素材カードで手選択しても byUser が立たず、
+       renderClips が解析値へ表示を巻き戻し→finishPickGo が実データも上書きしていた。
+       onAxis が印を立てる(autoへ戻したら下ろす)行が消えたら捕まえる */
+    const oa = src.slice(src.indexOf("const onAxis = "), src.indexOf("const onAxis = ") + 900);
+    if (!/c\[field \+ "ByUser"\] = value !== "auto"/.test(oa)) {
+      throw new Error("素材カードの手選択が byUser を立てていない(選択が解析に上書きされる)");
+    }
+    /* 保存にも入っていること(再読込で全クリップが上書き対象へ戻る穴) */
+    const st = await (await fetch("../switcher/js/state.js")).text();
+    if (!/targetByUser: !!c\.targetByUser/.test(st) || !/clip\.motionByUser = !!hit\.motionByUser/.test(st)) {
+      throw new Error("byUser が localStorage に保存/復元されない(再読込で選択が消える)");
+    }
     const card = src.slice(src.indexOf('class="motion-sel'), src.indexOf('class="motion-sel') + 400);
     if (!/axisInitial\s*\(\s*c\s*,\s*"motion"\s*\)/.test(card)) {
       throw new Error("素材カードの固定or手持ちが axisInitial を通っていない");

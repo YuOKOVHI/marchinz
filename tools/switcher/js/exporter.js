@@ -95,9 +95,13 @@ MC.exporter.PIPE_REVIVE_MAX = 3;
    FHD以下(ratio<=1)は従来の枚数をそのまま返す ─ 既存の素材で挙動を変えないため。
    下限2枚は、先読みが消えて waitDequeue を毎コマ挟む状態を避けるための床
    (2026-08-01 レビューで 4/2 まで絞ると遅くなると分かっている) */
-MC.exporter.frameCap = clip => {
+MC.exporter.frameCap = (clip, proxy) => {
   const base = MC.isIOS ? 4 : 8;
-  const px = (clip && clip.width && clip.height) ? clip.width * clip.height : 0;
+  /* ★ 実際にパイプへ入るフレームの寸法で数える(2026-08-06 レビューP1-2)。
+     4K素材でも縮小版(プロキシ)を読んでいる間はFHD以下なので、元寸法で
+     絞ると「高速化の対象にだけ先読みが2枚」という自傷になる */
+  const px = proxy && proxy.w ? proxy.w * proxy.h
+           : (clip && clip.width && clip.height) ? clip.width * clip.height : 0;
   if (!px) return base;                       // 寸法が分からないなら従来どおり
   const ratio = px / (1920 * 1080);
   if (ratio <= 1) return base;
@@ -132,10 +136,27 @@ MC.exporter.VideoPipe = class {
        レイアウトへ変えられた、範囲が窓の外へ出た、等はすべて false になり、
        ここは黙って元ファイルへ戻る。**プロキシは速さのためだけの物で、
        正しさは元ファイルにしか依存しない** */
-    const P = (window.MC && MC.proxy && MC.proxy.usable(this.clip)) ? this.clip.proxy : null;
+    let P = (window.MC && MC.proxy && MC.proxy.usable(this.clip)) ? this.clip.proxy : null;
+    /* ★ 「使えるはず」でも実体が読めるとは限らない(2026-08-06 レビューP1-1)。
+       別タブの掃除に消される等で File が死んでいると、usable() は true のまま
+       init が落ちて**書き出しがエラーで止まり、素通しに戻れない**。しかも
+       proxy を持ったままなので ensureAll も作り直さない=リロードまで詰む。
+       物理故障はここで受け止め、捨てて元ファイルで開き直す(背骨の完成) */
+    if (P) {
+      try {
+        this.src = new MZ_MP4.MP4Source(P.file);
+        await this.src.init();
+      } catch (e) {
+        MC.log(`proxy: ${this.clip.name} の縮小版が読めないので元に戻します: ` + ((e && e.message) || e));
+        MC.proxy.dispose(this.clip);
+        P = null; this.src = null;
+      }
+    }
     this.proxy = P;
-    this.src = new MZ_MP4.MP4Source(P ? P.file : this.clip.file);
-    await this.src.init();
+    if (!this.src) {
+      this.src = new MZ_MP4.MP4Source(this.clip.file);
+      await this.src.init();
+    }
     const vt = this.src.videoTrack();
     if (!vt) throw new Error("映像トラックがありません: " + this.clip.name);
     const cfg = this.src.videoDecoderConfig();
@@ -234,7 +255,7 @@ MC.exporter.VideoPipe = class {
        (VideoFrame 1枚 12.4MB × 4枚 × 3カメラ = 149MB)。FHD以下は ratio<=1 で
        従来と同じ枚数を返すので、**優さんの素材での挙動は1ミリも変わらない** */
     while (!this.eof && this.decoder.decodeQueueSize < (MC.isIOS ? 6 : 12) &&
-           this.frames.length < MC.exporter.frameCap(this.clip)) {
+           this.frames.length < MC.exporter.frameCap(this.clip, this.proxy)) {
       const { value: s, done } = await this.cursor.next();
       if (done) {
         this.eof = true;
@@ -1161,9 +1182,22 @@ MC.exporter.opfsSweep = async () => {
          同じ扱いにする(従来の6時間窓より厳しいので、残留を増やすことはない)。
          いまこのタブが使っている物だけは除く */
       if (n.startsWith(MC.proxy.PREFIX)) {
-        if (!MC.proxy._live.has(n)) { doomed.push(n); freedBytes += size; }
+        /* 自タブが使っている物は残す。それ以外も**短い据え置き**(STALE_MS)だけ
+           待つ(2026-08-06 レビューP1-1) ─ 同一セッションの別タブが使っている
+           最中に消すと、そのタブの書き出しから縮小版を引き剥がす。
+           前セッションの残骸(Fileが死んでいて誰にも使えない)は窓明けで必ず消える */
+        if (!MC.proxy._live.has(n) &&
+            (mtime === null || now - mtime > MC.proxy.STALE_MS)) {
+          doomed.push(n); freedBytes += size;
+        }
         continue;
       }
+      /* ★ 走行中の probe の実測ファイルを消さない(2026-08-06 レビューP2-1)。
+         掃除と probe は独立に走る(v1.113.6)ので、open→createSyncAccessHandle の
+         隙に removeEntry が刺さると probe が誤って失敗し、false が
+         セッション中キャッシュされてパート書き出しが使えなくなる。
+         古い残骸(1分超)は従来どおり消す */
+      if (n.startsWith("__probe_") && mtime !== null && now - mtime < 60e3) continue;
       if (deep) {
         if (n === MC.exporter._opfsName) continue;                      // ①
         const isResume = resumeJobId && n.startsWith(`mzpart_${resumeJobId}_`)
@@ -2706,7 +2740,10 @@ MC.exporter.releaseOpfs = () => {
      控えた名前は起動時の sweep が経過時間を問わず消す */
   MC.exporter._notePending(n);
   MC.exporter.opfsRemove(n)
-    .then(() => { MC.exporter._clearPending(n); MC.exporter.refreshEstimate(); });
+    .then(() => { MC.exporter._clearPending(n); MC.exporter.refreshEstimate(); })
+    /* 片付けたら残量の表示も測り直す(2026-08-06 レビューP2-5。古い数字が出続けない) */
+    .then(() => { if (MC.ui && MC.ui.refreshStorageNote) return MC.ui.refreshStorageNote(); })
+    .catch(() => {});
 };
 
 /* いま端末に残っている書き出しデータを**実際に数える**(2026-08-06 優さん実機、
@@ -2747,6 +2784,22 @@ MC.exporter.purgeAll = async () => {
         }).catch(() => resolve(null));
       });
       if (!release) return { ok: false, busy: true };
+      /* ★ 別タブの未保存の完成品も確かめる(2026-08-06 レビューP2-2)。
+         結果ロックが取れない=どこかのタブが保存前の完成品を持っている。
+         自タブの分(_opfsName)は本人の意思で消してよい(下で後始末する)が、
+         **他人の分を消してはいけない**。自タブが保持している場合も
+         ifAvailable は失敗するので、先に自タブかどうかで分ける */
+      if (!MC.exporter._opfsName) {
+        const r2 = await new Promise(resolve => {
+          navigator.locks.request("mz-export-result", { ifAvailable: true }, lock => {
+            if (!lock) { resolve(null); return; }
+            let rel; const held = new Promise(r => { rel = r; });
+            resolve(rel); return held;
+          }).catch(() => resolve(null));
+        });
+        if (!r2) { release(); return { ok: false, busy: true }; }
+        r2();   // 確かめただけ。すぐ手放す
+      }
     }
     const before = await MC.exporter.opfsAudit();
     if (!before) return { ok: false, busy: false };

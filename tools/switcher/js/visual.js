@@ -568,6 +568,9 @@ MC.visual.QUICK_PAIR_DT = 0.15;
 MC.visual.quickProbe = async clip => {
   const v = clip && clip.video;
   if (!v || !clip.duration || clip.isImage || clip.isAudio) return null;
+  /* ★ 再生・試聴中に同じ <video> をシークで奪わない(2026-08-06 レビューP2-4)。
+     判定は付加価値なので、ぶつかるくらいなら黙って見送る(=自動判定のまま) */
+  if (MC.S && MC.S.playing) return null;
   const keep = v.currentTime;
   const shake = [];
   try {
@@ -613,7 +616,13 @@ MC.visual.reusable = (V, l0, l1) => {
   if (l0 < V.l0 - 0.05 || l1 > V.l1 + 0.05) return false;   // 外へはみ出すなら足りない
   let n = 0;
   for (const tt of V.t) if (tt >= l0 && tt <= l1) n++;
-  return n >= MC.visual.REUSE_MIN_PTS;
+  if (n < MC.visual.REUSE_MIN_PTS) return false;
+  /* ★ 数だけでなく**密度**も見る(2026-08-06 レビューP2-5)。8分の解析(間隔4秒)を
+     60秒へ使い回すと、点は15個あっても seg のカット判定窓に入らず
+     「最寄り1点」へ落ちる頻度が増える。新鮮に解析した場合の間隔の2倍より
+     粗いなら作り直す */
+  const freshInterval = Math.max(0.8, Math.min(5, (l1 - l0) / 120));
+  return (l1 - l0) / n <= freshInterval * 2;
 };
 
 MC.visual.analyzeClip = async (clip, l0, l1, prog) => {

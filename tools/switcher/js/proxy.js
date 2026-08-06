@@ -21,13 +21,18 @@
      誰も気づかないまま数フレームずれた完成品が出る)
    ②`_opfsName`(未保存の成果物の保護)には入れない ─ プロキシは成果物ではない
    ③File はページ再読み込みをまたいで生き残らないので、プロキシは次の
-     セッションで原理的に使えない。だから起動時の掃除は**据え置き窓を無視して消す** */
+     セッションでは使えない。掃除は短い据え置き(下の STALE_MS。同一セッションの
+     別タブを守る)だけ残して消す
+   ④クラッシュ後の「続きから」では、前半パート=プロキシ画質(FHD再エンコード)・
+     後半=元画質の混在が起きる。これは許容 ─ exportJobId にプロキシ有無を
+     入れるとリロード後に jobId が必ず変わり、再開機能そのものが死ぬ(2026-08-06) */
 
 const MCproxy = {};
 MC.proxy = MCproxy;
 
 MC.proxy.PREFIX = "mzprox_";
 MC.proxy.PAD_SEC = 1.5;        // トリムが後で微調整されても窓が生き残るための余白
+MC.proxy.STALE_MS = 3600e3;    // 掃除の据え置き(同一セッションの**別タブ**の使用中を守る)
 MC.proxy.BUDGET = 600e6;       // 3本ぶんの上限(超えたら効果の小さい素材から諦める)
 
 /* 実測でしか決められない値はここへ集めて、URLで上書きできるようにする */
@@ -126,7 +131,11 @@ MC.proxy.specFor = clip => {
     if (gain * (1 - px) < MC.proxy.TUNE.minGain) return null;
   }
 
-  /* 実ピクセル(回転前)へ戻して偶数へ。H.264 のクロマが奇数を嫌う */
+  /* 偶数へ切り上げ(H.264 のクロマが奇数を嫌う)。
+     ※ clip.width/height は <video> の videoWidth/Height = **回転適用済みの表示寸法**。
+       clip.rotation は現状誰も代入しない(常に undefined→rot=0)ので swap は
+       発火しない ─ それで正しい。将来 clip.rotation を埋めるなら、表示寸法との
+       二重スワップに注意(2026-08-06 レビューP2-6) */
   const even = v => Math.max(2, Math.ceil(v / 2) * 2);   // 切り上げ(足りないと拡大される)
   const w = even(clip.width * need), h = even(clip.height * need);
   if (w >= clip.width && h >= clip.height) return null;   // 縮まないなら意味がない
@@ -156,7 +165,9 @@ MC.proxy.usable = clip => {
   if (needNow > P.scale * 1.02) return false;        // 拡大が起きる = 使わない
   const [tIn, tOut] = MC.trimRange();
   const off = clip.offset || 0;
-  if (tIn - off < P.t0 - 0.05 || tOut - off > P.t1 + 0.05) return false;  // 窓の外
+  /* 先頭側に甘さを持たせない(2026-08-06 レビューP2-2)。P.t0 より手前の
+     フレームはプロキシに存在しないので、0.05秒の許容がそのまま黒コマになる */
+  if (tIn - off < P.t0 - 0.001 || tOut - off > P.t1 + 0.05) return false;  // 窓の外
   return true;
 };
 
@@ -222,9 +233,16 @@ MC.proxy.build = async (clip, spec, prog) => {
       },
       error: e => { vencErr = e; },
     });
-    const fps = 30;
+    /* ★ fps は決め打ちしない(2026-08-06 レビューP2-1)。60fps素材で30を仮定すると
+       ビットレート予算が半分(画質半減)・進捗が2倍速で100%に張り付く */
+    let fps = 30;
+    try {
+      const d = vt.duration / vt.timescale;
+      if (d > 0 && vt.nb_samples > 1) fps = Math.min(120, Math.max(10, Math.round(vt.nb_samples / d)));
+    } catch (_) {}
+    const bitrate = Math.max(3e6, Math.min(12e6, Math.round(spec.bitrate * fps / 30)));
     const baseCfg = { codec: "avc1.640028", width: spec.w, height: spec.h,
-                      bitrate: spec.bitrate, framerate: fps };
+                      bitrate, framerate: fps };
     let vcfg = { ...baseCfg, hardwareAcceleration: "prefer-hardware" };
     try {
       const s = await MC.exporter.withTimeout(
@@ -248,6 +266,14 @@ MC.proxy.build = async (clip, spec, prog) => {
     });
     dec.configure(cfg);
     let needKey = true, eof = false, wrote = 0;
+    /* ★ 1コマ目の実時刻。muxer は既定(strict)で「先頭チャンクの ts は 0」を
+       要求して throw する(2026-08-06 レビューP0)。spec.t0 は任意の実数で、
+       フレーム格子に乗らないため t0>0 だと先頭 ts が必ず非0になり、
+       **トリム開始が素材先頭から1.5秒より奥=おまかせの主戦場で、
+       プロキシが一度も作られないまま無言で素通し**していた。
+       実際に書いた1コマ目を基準(コンテナ0)にし、その値を t0 として返す ─
+       読む側(VideoPipe の tsOff=-t0)は返した t0 しか見ないので整合する */
+    let baseSec = null;
     const total = Math.max(1, Math.round((spec.t1 - spec.t0) * fps));
 
     while (!eof || frames.length) {
@@ -274,10 +300,10 @@ MC.proxy.build = async (clip, spec, prog) => {
       const fSec = f.timestamp / 1e6 - tsOff;
       if (fSec < spec.t0 - 0.001) { f.close(); continue; }       // 窓の手前は捨てる
       if (fSec > spec.t1 + 0.001) { f.close(); eof = true; break; }
+      if (baseSec === null) baseSec = fSec;
       while (venc.encodeQueueSize > 6) await MC.waitDequeue(venc);
       while ((MC.exporter._pendCount || 0) > 3) await MC.yield();
       /* 回転を焼き込みながら縮小。以後この素材は rotation=0 で扱える */
-      const fw = f.displayWidth || f.codedWidth, fh = f.displayHeight || f.codedHeight;
       ctx.save();
       ctx.translate(spec.w / 2, spec.h / 2);
       if (rot) ctx.rotate(rot * Math.PI / 180);
@@ -287,7 +313,8 @@ MC.proxy.build = async (clip, spec, prog) => {
       ctx.restore();
       f.close();
       const vf = new VideoFrame(canvas, {
-        timestamp: Math.round((fSec - spec.t0) * 1e6), duration: Math.round(1e6 / fps),
+        timestamp: Math.max(0, Math.round((fSec - baseSec) * 1e6)),
+        duration: Math.round(1e6 / fps),
       });
       try { venc.encode(vf, { keyFrame: wrote % fps === 0 }); }   // GOP1秒(再シークを軽く)
       catch (e) { vf.close(); throw e; }
@@ -303,13 +330,14 @@ MC.proxy.build = async (clip, spec, prog) => {
     muxer.finalize();
     const file = await MC.exporter.opfsFinalizeWorker(name);
     if (!file || !file.size) throw new Error("縮小版が空でした");
+    if (baseSec === null) throw new Error("範囲内に1コマも無かった");
     ok = true;
     const ms = Math.round(performance.now() - t0);
     MC.log(`proxy: ${clip.name} → ${spec.w}x${spec.h} `
       + `${(file.size / 1e6).toFixed(0)}MB ${wrote}コマ ${ms}ms`);
     MC.proxy.lastBuildMs = (MC.proxy.lastBuildMs || 0) + ms;
     return { file, name, w: spec.w, h: spec.h, scale: spec.scale,
-             t0: spec.t0, t1: spec.t1, bytes: file.size, buildMs: ms };
+             t0: baseSec, t1: spec.t1, bytes: file.size, buildMs: ms };
   } catch (e) {
     MC.log(`proxy: ${clip.name} の縮小版を作れませんでした(元のまま進みます): `
       + ((e && e.message) || e));
@@ -338,6 +366,9 @@ MC.proxy._key = (clip, spec) => {
      いま避けている状態そのものになる */
 MC.proxy.ensureAll = async (p, stepNo) => {
   if (MC.proxy.off()) return;
+  /* 書き出し中は絶対に走らせない(2026-08-06 レビューP2-7)。OPFSのwriterは
+     1本しか持てず、並走すると即破壊。UI層(_busy)の慣習に頼らず自衛する */
+  if (MC.exporter.running || MC.exporter.recording) return;
   if (!MC.exporter.opfsSupported || !MC.exporter.opfsSupported()) return;
   const targets = [];
   for (const c of MC.S.clips) {

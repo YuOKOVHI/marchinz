@@ -2729,6 +2729,12 @@ ${c.isImage ? "" : (c.tiltOk
        実体は3セレクト(微調整)が勝つ */
     const onAxis = (field, value) => {
       c[field] = value;
+      /* ★ 本人が触った印を必ず立てる(2026-08-06 レビューP1-1)。これが無いと、
+         直後の renderClips が axisInitial 経由で**解析値へ表示を巻き戻し**、
+         仕上げ画面を通ると finishPickGo が実データまで解析値で上書きする ─
+         「手で選んだのに解析に上書きされる」穴が素材カード側に残っていた。
+         「指定なし/自動判定」へ戻したときは印も下ろす(解析の提案が再び出る) */
+      c[field + "ByUser"] = value !== "auto";
       MC.applyAxes(c, field);   // 変えた軸だけ展開(微調整の手動値を巻き込まない)
       MC.saveState();
       MC.ui.renderClips();

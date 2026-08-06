@@ -260,6 +260,10 @@ MC.saveState = () => {
       key: MC.clipKey(c), offset: c.offset, confidence: c.confidence,
       syncMethod: c.syncMethod, pan: c.pan,
       target: c.target || "auto", motion: c.motion || "auto",
+      /* 本人が選んだ印(2026-08-06 レビューP1-2)。保存しないと再読込のたびに
+         全クリップが「解析で上書きしてよい」対象へ戻る ─
+         「UIの通行判定に消える値を使わない」と同型の穴 */
+      targetByUser: !!c.targetByUser, motionByUser: !!c.motionByUser,
       role: c.role || "auto", freq: c.freq || "auto", rig: c.rig || "auto",
       colorT: c.colorT || null, rot: c.rot || 0, tiltOk: !!c.tiltOk,
     }));
@@ -315,6 +319,8 @@ MC.restoreClipState = clip => {
       clip.pan = hit.pan == null ? 0.5 : hit.pan;
       clip.target = hit.target || null;
       clip.motion = hit.motion || null;
+      clip.targetByUser = !!hit.targetByUser;
+      clip.motionByUser = !!hit.motionByUser;
       clip.kind = hit.kind || null;          // 旧5択(v1.100.0)の保存。移行にだけ使う
       clip.role = hit.role || "auto";
       clip.freq = hit.freq || "auto";
