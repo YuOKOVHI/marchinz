@@ -6758,16 +6758,21 @@ async function countSamples(ns, file, fromSec) {
       const labels = [...w.document.querySelectorAll("#doneScenes .mzso-t")]
         .map(el => el.textContent.trim());
       ge(labels.length, 2, "描画された候補");
-      if (labels.every(t => t === "0秒〜")) {
-        throw new Error("全候補が「0秒〜」(旧バグの再現): " + labels.join(" / "));
+      /* 旧バグ(全部「0秒〜」)と、新表記での同型(全部「00:00から」)の両方を塞ぐ */
+      if (new Set(labels).size === 1) {
+        throw new Error("全候補が同じ表示(旧バグの再現): " + labels.join(" / "));
       }
-      if (new Set(labels).size !== labels.length) {
-        throw new Error("秒数ラベルが重複している: " + labels.join(" / "));
+      /* 表記は 00:56から / 2:35から の形(2026-08-06 優さん指示)。
+         分は2桁で揃える ─ 縦に並ぶので桁が揃わないと目で比べにくい */
+      for (const txt of labels) {
+        if (!/^(?:\d+:)?\d{2}:\d{2}から$/.test(txt)) {
+          throw new Error("開始時刻の表記が違う: " + txt);
+        }
       }
       /* ラベルは素材の頭からの絶対時刻(シークバーと同じ基準)であること */
       const sorted = offers.slice().sort((a, b) => a.t - b.t);
       labels.forEach((txt, i) => {
-        const want = U.fmtLen(Math.max(0, sorted[i].t)) + "〜";
+        const want = U.fmtStartAt(sorted[i].t) + "から";
         if (txt !== want) throw new Error(`ラベルが絶対時刻でない: ${txt}(期待 ${want})`);
       });
       var got = labels.join(" / ");

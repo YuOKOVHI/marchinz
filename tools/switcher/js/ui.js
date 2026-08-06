@@ -1059,7 +1059,7 @@ MC.ui.renderSceneOffers = () => {
                  max(0,負)=0 で**3候補とも「0秒〜」**になっていた。
                  候補には bs(演奏窓内)と fb(素材実長)の2種類が混ざるので、
                  どちらでも嘘にならない基準は絶対時刻だけ。シークバーとも揃う */
-              + `<span class="mzso-t">${MC.ui.fmtLen ? MC.ui.fmtLen(Math.max(0, c.t)) : ""}〜</span>`
+              + `<span class="mzso-t">${MC.ui.fmtStartAt(c.t)}から</span>`
               + `</button>`).join("")
           + "</div>");
     el.querySelectorAll("[data-scene]").forEach(b => {
@@ -2023,6 +2023,20 @@ MC.ui.lengthEta = showSec => {
 MC.ui.fmtClock = sec => {
   const s = Math.max(0, Math.round(sec));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+};
+
+/* 別のシーンの開始位置(2026-08-06 優さん指示「00:56から / 2:35から など」)。
+   fmtClock と分けたのは**分も2桁で揃える**ため ─ 候補が縦に3つ並ぶので、
+   0:56 と 2:35 が混ざると数字の桁が揃わず、目で比べにくい。
+   1時間を超える素材は h:mm:ss にする(60分超が 75:20 になると読めない) */
+MC.ui.fmtStartAt = sec => {
+  const s = Math.max(0, Math.round(sec));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const r = s % 60;
+  const mm = String(m).padStart(2, "0");
+  const ss = String(r).padStart(2, "0");
+  return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 };
 
 MC.ui.renderAll = () => {
