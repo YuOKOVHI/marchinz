@@ -1108,7 +1108,13 @@ MC.ui.liftShareTool = lift => {
    ・行き先は**このツール(Switcher)自身のURL**(2026-08-02 優さん指示)。
      受け取った友達が1タップで同じツールに立てる ─ 一覧を経由させない */
 MC.ui.toolShareUrl = () => {
-  const PATH = "/tools/switcher/";
+  /* ★ どの「ツール」を作っているかをURLに残す(2026-08-07 再編)。
+     Reel を友達に送ったのに Switcher の入口が開く、を防ぐ。
+     モード確定ならその toolKey、未確定ならURLのスコープ */
+  const m = MC.ui.MODES[MC.S.mode];
+  const sc = window.MZToolScope && MZToolScope.get();
+  const key = (m && m.toolKey) || (sc && sc.key) || "";
+  const PATH = "/tools/switcher/" + (key ? "?tool=" + key : "");
   try {
     /* file:// で開いているとき(手元の確認)は共有しても届かないので、
        本番のアドレスに寄せる。http(s) ならそのまま(localhost も含めて実測できる) */
@@ -5650,15 +5656,17 @@ MC.ui.runAuto = async (opt) => {
       MC.ui.autoStage.close();
       if (MC.ui._repickAfterCancel) MC.ui.repickLand();
       else {
-        /* ★ やめたら映像ツールのページへ戻る(2026-08-07 優さん指示「やめるにすると、
-           こだわりになる。なんでや。映像ツールのページに戻って」)。
-           こだわりタブへ落とすのは、「やめた」と言った人に次の作業を差し出す形だった。
-           行き先はトップページのクリエイター節(/#creators。フッターの
-           「MarchinZへ戻る」と同じ)。ページを離れる=取り込んだ動画は消えるので、
-           確認文(asCancel)がそれを正直に言う。動画を残したい人の道は
-           「動画を選び直す」(上の分岐)に元からある */
+        /* ★ やめたら**そのツールの最初の画面**へ(2026-08-07 優さん指示・再編)。
+           以前は /#creators(映像ツール一覧)へ飛ばしていたが、再編で
+           Reel/Switcher/Wipe が「別ツール」になった以上、やめた人が着くべきは
+           いま使っていたツールの入口。リロードで戻る(動画は消える=優さん決定)。
+           動画を残したい人の道は「動画を選び直す」(上の分岐)に元からある。
+           location.pathname に寄せるのは ?test 等の一時パラメータを持ち越さないため */
         try { MC.ui.resetSavedProject(); } catch (e) {}
-        location.href = "/#creators";
+        { const m = MC.ui.MODES[MC.S.mode];
+          const key = (m && m.toolKey)
+            || ((window.MZToolScope && MZToolScope.get()) || {}).key || "";
+          location.href = location.pathname + (key ? "?tool=" + key : ""); }
       }
     } else {
       console.error(e);
@@ -6397,7 +6405,9 @@ MC.ui.chooseMode = (mode, { silent = false } = {}) => {
      実測で最初の工程に押せるものが40個あり、24個がツールと無関係なサイトナビだった */
   document.body.classList.add("mz-focus");
   const lbl = MC.ui.$("#modeLabel");
-  if (lbl) lbl.textContent = m.label;
+  /* 工程中の現在地は短くツール名(2026-08-07 再編)。日本語の長い説明は
+     入口(flowLead)で言い終えている */
+  if (lbl) lbl.textContent = m.toolName || m.label;
   MC.preview.applyPreset();
   MC.ui.renderAll();
 };
@@ -6408,8 +6418,24 @@ MC.ui.chooseMode = (mode, { silent = false } = {}) => {
 MC.ui.showModeStep = step => {
   const kind = MC.ui.$("#modeStepKind"), flow = MC.ui.$("#modeStepFlow");
   if (!kind || !flow) return;
+  /* ★ ツールスコープ(?tool=reel 等)があるときは、1段目「作る動画を選ぶ」を
+     出さない(2026-08-07 映像ツール再編)。Reel の入口から来た人にとって
+     種類は**もう選び終わった問い** ─ 出すと「押したのに同じことをまた
+     聞かれた」になる。種類はスコープが決め、2段目(おまかせ/こだわり)から。
+     スコープ無し(素の /tools/switcher/)は従来どおり1段目から */
+  const sc = window.MZToolScope && MZToolScope.get();
+  if (sc && step === "kind") {
+    MC.ui._pendingMode = sc.mode;
+    step = "flow";
+  }
   kind.hidden = step !== "kind";
   flow.hidden = step !== "flow";
+  /* スコープ中は「2 / 2」と「← 種類を選び直す」を出さない ─ 1段目が無いのに
+     2/2 と言うと1段目を見逃した気になるし、種類の変更は別ツールへの移動 */
+  { const back = MC.ui.$("#flowBackBtn");
+    if (back) back.hidden = !!sc;
+    const no = flow.querySelector(".mode-step-no");
+    if (no) no.hidden = !!sc; }
   /* ★「フルショウはパソコンから」の案内はスマホのときだけ(2026-08-05 優さん指示)。
      パソコンで見ている人に「パソコンから作れます」と言っても意味が無い。
      上限なし(管理者・手元)にも出さない ─ その人には当てはまらない */
@@ -6462,7 +6488,9 @@ MC.ui.showModeStep = step => {
   if (step === "flow") {
     const lead = MC.ui.$("#flowLead");
     const m = MC.ui.MODES[MC.ui._pendingMode] || MC.ui.modeConf();
-    if (lead) lead.textContent = `${m.label}を作ります`;
+    /* ツール名が主・日本語は説明(2026-08-07 再編)。日本語を括弧で残すのは
+       説明のためだけでなく、QAの「ワイプ」表記の見張りを生かすため */
+    if (lead) lead.textContent = `${m.toolName}（${m.label}）を作ります`;
     MC.ui.renderFlowLock();
   }
 };
@@ -6528,8 +6556,15 @@ MC.ui.showModeSelect = () => {
   MC.preview.pause();  // 選択画面の裏で音が鳴り続けないように
   MC.ui.$("#workspace").hidden = true;
   MC.ui.$("#modeSelect").hidden = false;
-  MC.ui.showModeStep("kind");   // 戻ったら必ず1段目から
+  /* 戻ったら必ず最初の段から。スコープ(?tool=)があれば showModeStep が
+     自動で2段目(おまかせ/こだわり)を出す = そのツールの最初の画面(2026-08-07) */
+  MC.ui.showModeStep("kind");
   document.body.classList.remove("mz-focus");   // 工程を抜けたらサイトの外枠を戻す
+  /* 作業画面の「← 種類を変える」は、スコープ中は種類が固定なので
+     「← 進め方を選び直す」と名乗る(showModeSelect の着地が実際にそこ) */
+  { const sc = window.MZToolScope && MZToolScope.get();
+    const b = MC.ui.$("#modeBackBtn");
+    if (b) b.textContent = sc ? "← 進め方を選び直す" : "← 種類を変える"; }
 };
 
 /* --- イベント配線 --- */
@@ -6610,7 +6645,7 @@ MC.ui.wire = () => {
   { const c = MC.ui.$("#asCancel");
     if (c) c.onclick = () => {
       /* ★ 確認を挟む(2026-08-01 レビュー14件)。7分待った直後の1タップで全部消えるのは重すぎる */
-      if (!window.confirm("やめて、映像ツールのページへ戻りますか？\n(取り込んだ動画は消えます。動画を残すなら「動画を選び直す」)")) return;
+      if (!window.confirm(`やめて、${MC.ui.toolName()}の最初の画面に戻りますか？\n(取り込んだ動画は消えます。動画を残すなら「動画を選び直す」)`)) return;
       MC.ui._autoCancel = true;
       if (MC.exporter) MC.exporter.cancelFlag = true;
       /* ★ 押しても即座には畳まない(2026-08-01 レビュー14件)。畳んでも解析は動き続けるうえ、
