@@ -6785,6 +6785,49 @@ async function countSamples(ns, file, fromSec) {
     }
     return `候補${offers.length}個: ${got}`;
   });
+  /* 2026-08-06 レビューP0: 「仕上げの好み」で選んだ音が、その直後に始まる自走の
+     autoPickAudio に無条件で上書きされ、機能が一度も効いていなかった。
+     ★ runAuto をスタブすると原理的に検出できない ─ **runEasy まで実際に通して**
+       最終的に S.audioClipId が本人の選択のままかを見る */
+  await test("★選んだ音は自走の途中で捨てられない(runEasy を実際に通して測る)", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    await sceneAudioSetup(w, S);
+    const U = w.MC.ui;
+    S.clips.forEach(c => { c.tiltOk = true; c.syncMethod = "波形"; });
+    /* recommend が**別のクリップ**を推す土台にする(上書きが起きれば必ず値が変わる) */
+    S.clips.forEach((c, i) => { c.stats = { rms: 0.02 + i * 0.08, clipRatio: 0 }; });
+    const reco = w.MC.audio.recommend();
+    if (!reco) throw new Error("この土台では recommend が働かない(試験の前提が崩れた)");
+    const mine = S.clips.find(c => c.id !== reco.id);
+    if (!mine) throw new Error("おすすめと別のクリップが無い");
+    const keep = { scan: U.runEasyScan, sync: w.MC.sync.run, hz: w.MC.horizon.suggest,
+                   aid: S.audioClipId, apu: S.audioPickedByUser, ad: S.audioDecided };
+    w.MC.horizon.suggest = async () => 0;
+    w.MC.sync.run = async () => ({});
+    U.runEasyScan = async () => {};        // この先(解析)は主題ではない
+    try {
+      /* 本人が選んだ状態 = 仕上げの好みで音を選んで進んだ後の状態 */
+      S.audioClipId = mine.id; S.audioPickedByUser = true; S.audioDecided = true;
+      await U.runEasy({ auto: true });
+      if (S.audioClipId !== mine.id) {
+        throw new Error(`選んだ音が自走で捨てられた: ${S.audioClipId}(選んだのは ${mine.id})`);
+      }
+      if (!S.audioPickedByUser) throw new Error("本人が選んだ印が自走で消された");
+      /* 歯の確認: おまかせ(本人未選択)なら、従来どおり採点の勝者へ差し替わること。
+         ここが変わらないと「ガードが効いた」のか「そもそも上書きが無い」のか
+         区別が付かず、この試験は骨抜きになる */
+      S.audioClipId = mine.id; S.audioPickedByUser = false; S.audioDecided = false;
+      await U.runEasy({ auto: true });
+      if (S.audioClipId !== reco.id) {
+        throw new Error(`おまかせなのに自動採用が働かない: ${S.audioClipId}(おすすめは ${reco.id})`);
+      }
+      return `本人の選択(${mine.id})は残る / おまかせなら おすすめ(${reco.id})へ`;
+    } finally {
+      U.runEasyScan = keep.scan; w.MC.sync.run = keep.sync; w.MC.horizon.suggest = keep.hz;
+      S.audioClipId = keep.aid; S.audioPickedByUser = keep.apu; S.audioDecided = keep.ad;
+    }
+  });
   await test("★2回目は解析を使い回し、仕上げと書き出しだけが走る", async () => {
     const w = await compEnv();
     const S = compReset(w);
@@ -8750,9 +8793,10 @@ async function countSamples(ns, file, fromSec) {
                     play() { this.paused = false; return Promise.resolve(); },
                     pause() { this.paused = true; } };
         c.target = null; c.motion = null;
-        c.visual = i === 0 ? { operated: false, shakeMed: 0.01, overheadFixed: true, staticScene: false }
-                 : i === 1 ? { operated: true,  shakeMed: 0.20, overheadFixed: false, staticScene: false }
-                 :           { operated: false, shakeMed: 0.01, overheadFixed: false, staticScene: true };
+        const base = { enough: true, nSample: 12 };   // 測れているクリップ
+        c.visual = i === 0 ? { ...base, operated: false, shakeMed: 0.01, overheadFixed: true, staticScene: false }
+                 : i === 1 ? { ...base, operated: true,  shakeMed: 0.20, overheadFixed: false, staticScene: false }
+                 :           { ...base, operated: false, shakeMed: 0.01, overheadFixed: false, staticScene: true };
       });
       U._fp = null;
       U.openFinishPick();
@@ -8772,7 +8816,19 @@ async function countSamples(ns, file, fromSec) {
       for (const x of want) {
         if (!axes.includes(x)) throw new Error(`解析の判定が入っていない(${x}): ` + axes.join(","));
       }
-      /* 歯の確認: 解析が無いクリップは推さない(勝手に決めつけない) */
+      /* 歯の確認その1: **解析は在るがサンプルが足りない**クリップは推さない。
+         visual.js の med() は空配列で 0 を返すので、enough を見ないと
+         1点も測れなかったクリップが必ず「三脚」と断定される(実際に誤爆する側) */
+      S.clips.forEach(c => {
+        c.visual = { operated: false, shakeMed: 0, overheadFixed: false,
+                     staticScene: false, enough: false, nSample: 0 };
+      });
+      U.closeFinishPick(); U._fp = null; U.openFinishPick();
+      const thin = [...d.querySelectorAll("#fpRoleCards .fp-axis-sel")].map(s => s.value);
+      if (!thin.every(v => v === "auto")) {
+        throw new Error("測れていないのに推している(0サンプルを三脚と断定): " + thin.join(","));
+      }
+      /* 歯の確認その2: 解析そのものが無いクリップ */
       S.clips.forEach(c => { c.visual = null; });
       /* ★ openFinishPick は「開いていたら何もしない」ので、必ず閉じてから開き直す
          (閉じずに呼ぶと前の描画のまま測ってしまい、試験が嘘をつく) */
@@ -8783,7 +8839,8 @@ async function countSamples(ns, file, fromSec) {
       }
       /* ① 使う音の段。既定は「おまかせ」、動画の行だけ試聴ボタン */
       S.clips.forEach((c, i) => {
-        c.visual = i === 0 ? { operated: false, shakeMed: 0.01, overheadFixed: true, staticScene: false } : null;
+        c.visual = i === 0 ? { enough: true, nSample: 12, operated: false, shakeMed: 0.01,
+                               overheadFixed: true, staticScene: false } : null;
       });
       U.closeFinishPick(); U._fp = null; U.openFinishPick();
       const sec = d.getElementById("fpAudioSec");

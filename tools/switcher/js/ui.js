@@ -4731,8 +4731,15 @@ MC.ui.finishAxesMap = () => {
        前みたいにそれを初期値にしてほしい」)。
        解析が済んでいない1回目は g が空なので、従来どおり「指定なし/自動判定」。
        本人が選んだ値は必ず優先する ─ 解析で上書きしない */
-    m[c.id] = { target: clip.target || g.target || "auto",
-                motion: clip.motion || g.motion || "auto" };
+    /* ★ 判断は値ではなく「本人が触ったか」で(2026-08-06 レビューP0)。
+       一度この画面を通すと finishPickGo が全クリップへ target/motion を書き、
+       未指定でも "auto" が入る。"auto" は truthy なので `clip.target || g.target`
+       では**永久に解析値へ届かない** ─ 実機で「初期値にならない」と見えていた本体。
+       本人が選んだ軸だけ clip の値を尊重し、触っていない軸は解析の判定を出す */
+    m[c.id] = {
+      target: clip.targetByUser ? (clip.target || "auto") : (g.target || clip.target || "auto"),
+      motion: clip.motionByUser ? (clip.motion || "auto") : (g.motion || clip.motion || "auto"),
+    };
   }
   return m;
 };
@@ -4744,6 +4751,15 @@ MC.ui.finishAxesMap = () => {
 MC.ui.guessAxes = clip => {
   const v = clip && clip.visual;
   if (!v) return {};
+  /* ★ 測れていないクリップからは何も推さない(2026-08-06 レビューP1)。
+     visual.js は shakeMed を**サンプル数に関わらず**代入し、med() は空配列で 0 を
+     返す。enough を見ずに shakeMed だけで判断すると、1点も測れなかったクリップが
+     必ず「三脚」と断定され、本人が疑わず進むと rig=fixed が確定してしまう
+     (visual.js が overheadFixed/staticScene に enough ガードを入れた理由と同型)。
+     旧い解析結果には enough が無いので、その場合は nSample で判断する */
+  const enough = v.enough != null ? v.enough
+    : (v.nSample != null ? v.nSample >= 3 : false);
+  if (!enough) return {};
   const out = {};
   /* 固定or手持ち: 解析が持つのは「操作されているか」と「ブレの中央値」。
      操作あり=手持ち(いちばん多い撮り方)、ブレが三脚相当=三脚。
@@ -5069,6 +5085,9 @@ MC.ui.renderFinishRoles = (fp, cards) => {
     const pick = axis => v => {
       cur[axis] = v;
       fp.changed = true;
+      /* この軸は本人が選んだ、と覚える(2026-08-06 レビューP0)。
+         finishPickGo が clip へ写し、次に開いたとき解析値で上書きしない */
+      (fp.axesByUser || (fp.axesByUser = {}))[`${c.id}/${axis}`] = true;
       /* 縦向き動画を全体系にすると左右が切れて隊形が読めない(2026-08-04 DCI)。
          選択は妨げない ─ 事実だけ言う */
       const clip = MC.getClip(c.id);
@@ -5114,8 +5133,18 @@ MC.ui.renderFinishRoles = (fp, cards) => {
 MC.ui._fpAudId = null;          // いま試聴しているクリップ(null=止まっている)
 
 /** 試聴の停止。触った <video> は必ず元の割り当てへ戻す */
+MC.ui.FP_AUDITION_SEC = 20;     // 聴き比べに十分で、鳴りっぱなしにはならない長さ
+MC.ui._fpAudTimer = null;
+MC.ui._fpAudEnded = null;       // 終端の見張り(解除できるよう覚えておく)
+
 MC.ui.fpAuditionStop = () => {
   MC.ui._fpAudId = null;
+  if (MC.ui._fpAudTimer) { clearTimeout(MC.ui._fpAudTimer); MC.ui._fpAudTimer = null; }
+  if (MC.ui._fpAudEnded) {
+    const { el, fn } = MC.ui._fpAudEnded;
+    try { el.removeEventListener("ended", fn); } catch (_) {}
+    MC.ui._fpAudEnded = null;
+  }
   try {
     MC.S.clips.forEach(c => { if (c.video) { try { c.video.pause(); } catch (_) {} } });
     MC.preview.applyMute();     // 音の割り当ての正本へ戻す
@@ -5132,17 +5161,44 @@ MC.ui.fpAudition = id => {
   MC.S.clips.forEach(c => { if (c.video) c.video.muted = c.id !== id; });
   try {
     /* 頭のセッティングではなく、音のあるところから鳴らす。
-       演奏範囲が分かっていればその少し内側、まだなら全体の3割の位置 */
+       ★ showRange は**グローバル秒**、video.currentTime は**クリップローカル秒**で、
+         local = global - clip.offset(preview.js と同じ式)。この換算を忘れると、
+         遅れて回し始めたカメラ(offset が大きい)だけ別の瞬間が鳴り、
+         「同じ場面で聴き比べる」という試聴の目的が成立しない(2026-08-06 レビューP1)。
+       ★ 演奏範囲がまだ分からない初回は、全体の3割の位置から
+         (showRange は範囲未確定でも [0, dur] を返すので、null で判断する) */
     const dur = Number(clip.duration) || 0;
-    let at = dur * 0.3;
-    if (MC.ui.showRange) {
+    const known = MC.S.showIn != null && MC.S.showOut != null;
+    let local;
+    if (known) {
       const [a, b] = MC.ui.showRange();
-      if (b > a) at = a + Math.min(5, (b - a) * 0.1);
+      const global = a + Math.min(5, Math.max(0, (b - a) * 0.1));
+      local = global - (clip.offset || 0);
+    } else {
+      local = dur * 0.3;
     }
-    clip.video.currentTime = Math.max(0, Math.min(at, Math.max(0, dur - 1)));
+    clip.video.currentTime = Math.max(0, Math.min(local, Math.max(0, dur - 1)));
   } catch (_) {}
+  /* ★ 止まる条件を必ず持たせる(2026-08-06 レビューP1×2)。
+     ① 終端まで鳴ったら表示を戻す ─ 見張りが無いと「停止」のまま固まり、
+        次のタップが停止扱いになって**2回押さないと聴き直せない**
+     ② 一定時間で自動的に止める ─ 止め方が「もう一度押す」しか無く、
+        下の段を触っている間ずっと演奏が鳴り続けていた(教室・電車で実害) */
+  {
+    const el = clip.video;
+    const onEnded = () => { MC.ui.fpAuditionStop(); MC.ui.renderFinishPick(); };
+    try { el.addEventListener("ended", onEnded); MC.ui._fpAudEnded = { el, fn: onEnded }; } catch (_) {}
+    MC.ui._fpAudTimer = setTimeout(() => {
+      MC.ui.fpAuditionStop(); MC.ui.renderFinishPick();
+    }, MC.ui.FP_AUDITION_SEC * 1000);
+  }
   const pr = clip.video.play();
-  if (pr && pr.catch) pr.catch(() => { MC.ui.fpAuditionStop(); MC.ui.renderFinishPick(); });
+  if (pr && pr.catch) pr.catch(() => {
+    /* 黙って戻さない(2026-08-06 レビューP2)。iOSが自動再生を弾くと
+       ボタンが一瞬「停止」になって戻るだけで、壊れたようにしか見えない */
+    MC.ui.fpAuditionStop(); MC.ui.renderFinishPick();
+    MC.ui.toast("音を鳴らせませんでした。もう一度タップしてください");
+  });
   MC.ui.renderFinishPick();
 };
 
@@ -5158,6 +5214,10 @@ MC.ui.renderFinishPickAudio = () => {
   if (!show) return;
   const box = MC.ui.$("#fpAudio");
   if (!box) return;
+  /* 開いている間に素材が入れ替わって選択中の音が消えたら、おまかせへ戻す
+     (2026-08-06 レビューP2)。正規化しないと**どの行にも印が付かない**画面になる。
+     役割の段(fp.axes)が同じ場面で整合を取っているのと作法を揃える */
+  if (fp.audio !== "auto" && !cands.some(c => c.id === fp.audio)) fp.audio = "auto";
   box.innerHTML = "";
   const rows = [{ id: "auto", name: "おまかせ", sub: "いちばん良い音を自動で選びます" }]
     .concat(cands.map(c => {
@@ -5189,7 +5249,7 @@ MC.ui.renderFinishPickAudio = () => {
       const play = document.createElement("button");
       play.type = "button";
       play.className = "fp-audio-play" + (on ? " on" : "");
-      play.setAttribute("aria-label", `${r.name} を試聴`);
+      play.setAttribute("aria-label", on ? `${r.name} の試聴を止める` : `${r.name} を試聴`);
       play.innerHTML = on
         ? '<i class="fa-solid fa-pause" aria-hidden="true"></i> 停止'
         : '<i class="fa-solid fa-headphones" aria-hidden="true"></i> 試聴';
@@ -5210,7 +5270,11 @@ MC.ui.finishPickGo = () => {
     MC.S.audioPickedByUser = true;
     MC.S.audioDecided = true;
   } else {
+    /* おまかせへ戻したら「決定済み」も下ろす(2026-08-06 レビューP2)。
+       残すと refreshJourney が「音は決めた」と表示し、実際には
+       autoPickAudio がこれから選ぶ、という食い違いになる */
     MC.S.audioPickedByUser = false;
+    MC.S.audioDecided = false;
   }
   /* ★ カメラの2軸(撮影対象×固定/動きあり)を clip へ書き戻す(2026-08-05)。
      ここで初めて書く ─「やめる」で戻ってきた人の設定は変えない。
@@ -5219,7 +5283,14 @@ MC.ui.finishPickGo = () => {
   if (MC.S.mode === "switch" && fp.axes) {
     for (const c of MC.S.clips) {
       const a = fp.axes[c.id];
-      if (a) { c.target = a.target; c.motion = a.motion; MC.applyAxes(c); }
+      if (a) {
+        c.target = a.target; c.motion = a.motion;
+        /* 触った軸だけ印を立てる(既に立っている印は消さない) */
+        const by = fp.axesByUser || {};
+        if (by[`${c.id}/target`]) c.targetByUser = true;
+        if (by[`${c.id}/motion`]) c.motionByUser = true;
+        MC.applyAxes(c);
+      }
     }
   }
   MC.S.autoTilt = fp.tilt !== false;   // 傾きの自動補正(2026-08-04 優さん指示)
@@ -5598,8 +5669,25 @@ MC.ui.runEasy = async (opt) => {
       /* おまかせは止まらない。音声はここで自動採用する ─
          同期のあとなら stats が揃っていて recommend が使える */
       MC.ui.autoStage.step("audio");
-      const pick = MC.ui.autoPickAudio();
-      MC.log("auto: 音声=" + (pick ? pick.name : "(なし)"));
+      /* ★ 本人が「仕上げの好み」で選んだ音は上書きしない(2026-08-06 レビューP0)。
+         autoPickAudio は audioClipId を採点の勝者へ差し替え、さらに
+         audioPickedByUser を false へ戻すため、選んだ音が**一度も効かない**
+         うえに「別設定で作成」で開き直すと選択も忘れられていた。
+         色・切替頻度が finishPicked で守られているのと同じ形にする */
+      /* ★ ただし選んだ音が実は無音だったら見捨てない(2026-08-06 レビューP1)。
+         この画面は解析の**前**に開くので hasAudio はまだ未確定で、音声トラックの
+         無いクリップも選べてしまう。解析が済んだこの時点で分かるので、
+         黙って無音の動画を作らず、自動選択へ落として事実を伝える */
+      let picked = MC.S.audioPickedByUser && MC.getClip(MC.S.audioClipId);
+      if (picked && picked.hasAudio === false) {
+        MC.log("auto: 選ばれた音は無音だったため自動選択へ切り替え");
+        MC.ui.toast("選んだ動画に音が入っていなかったので、別の音を使います");
+        MC.S.audioPickedByUser = false;
+        picked = null;
+      }
+      const pick = picked || MC.ui.autoPickAudio();
+      MC.log("auto: 音声=" + (pick ? pick.name : "(なし)")
+        + (picked ? "(本人の選択)" : ""));
       /* 音を整えたことは、新しい行を足さずに既にある成果の枠で言う。
          ★ 測れているときだけ言う ─ していないことを言わない */
       /* 右は値だけ。「音も整えます」は動詞で、左の段名と役割がぶつかる */

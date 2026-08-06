@@ -521,6 +521,12 @@ MC.visual._finalize = V => {
      これは実素材で起きうる。判定は中央値なので3点あれば意味を持つ */
   const nSample = Math.min(V.act.length, V.moE.length);
   const enough = nSample >= 3;
+  /* ★ 「測れたか」を外へ残す(2026-08-06 レビューP1)。shakeMed は空配列でも 0 を
+     返すので、これを見ずに shakeMed だけで判断すると
+     **1点も測れなかったクリップが「三脚」と断定**される。
+     UI 側(guessAxes)がこの印を見て、推さない判断ができるようにする */
+  V.nSample = nSample;
+  V.enough = enough;
   V.overheadFixed = enough && !V.operated && V.shakeMed <= MC.visual.TH_FIXED_SHAKE
     && V.actMed >= MC.visual.TH_WIDE_ACT;
   V.staticScene = enough && !V.operated && V.actMed < MC.visual.TH_STATIC_ACT
