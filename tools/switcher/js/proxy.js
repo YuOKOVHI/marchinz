@@ -295,8 +295,14 @@ MC.proxy.build = async (clip, spec, prog) => {
       if (fSec < spec.t0 - 0.001) { f.close(); continue; }       // 窓の手前は捨てる
       if (fSec > spec.t1 + 0.001) { f.close(); eof = true; break; }
       if (baseSec === null) baseSec = fSec;
-      while (venc.encodeQueueSize > 6) await MC.waitDequeue(venc);
-      while ((MC.exporter._pendCount || 0) > 3) await MC.yield();
+      while (venc.encodeQueueSize > 6) {
+        if (MC.exporter.cancelFlag || MC.ui._autoCancel) throw new Error("キャンセルしました");
+        await MC.waitDequeue(venc);
+      }
+      while ((MC.exporter._pendCount || 0) > 3) {
+        if (MC.exporter.cancelFlag || MC.ui._autoCancel) throw new Error("キャンセルしました");
+        await MC.yield();
+      }
       /* 回転を焼き込みながら縮小。以後この素材は rotation=0 で扱える */
       ctx.save();
       ctx.translate(spec.w / 2, spec.h / 2);
@@ -402,9 +408,16 @@ MC.proxy.ensureAll = async (p, stepNo) => {
     i++;
     if (p) p.step(stepNo, `映像を軽くしています…(${i}/${plan.length})`)
             .pulse(`映像を軽くしています…(${i}/${plan.length})`);
+    /* おまかせ画面のチェックリストにも同じ進捗を流す(2026-08-07 レビューP0)。
+       MZPドックは全画面の下に隠れており、ここへ流さないと変換の数分間
+       バーが止まって見える */
+    if (MC.ui && MC.ui.autoStage) {
+      MC.ui.autoStage.step("proxy", `${i} / ${plan.length} 本目`);
+    }
     const r = await MC.proxy.build(t.clip, t.spec, fr => {
       if (p) p.pulse(`映像を軽くしています…(${i}/${plan.length})`,
                      { sub: `${Math.round(fr * 100)}%` });
+      if (MC.ui && MC.ui.autoStage) MC.ui.autoStage.progress((i - 1 + fr) / plan.length);
     });
     if (r) t.clip.proxy = r;
   }

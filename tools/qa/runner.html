@@ -7200,6 +7200,94 @@ async function countSamples(ns, file, fromSec) {
     }
     return `サイト ${site} ≧ ツール最大 ${maxV}(${maxWhere})`;
   });
+  /* ---- 「やめる」と進捗の配線(2026-08-07 実機停滞レビュー) ---- */
+  await test("★音の抽出は「やめる」で数秒以内に中断し、別方式へフォールバックしない", async () => {
+    const w = await compEnv();
+    /* 実素材(合成lpcm MOV)で本物の抽出経路を回し、onProg が false を返したら
+       mzCancel 印つきで止まることを実測する。
+       ★ フォールバック(viaDecodeAudioData)へ流れると「やめたのに別方式で
+         全部やり直す」逆効果になる ─ 例外がそのまま上がることまで確かめる */
+    const file = await fixture("lpcm_tail.mov");
+    const clip = { name: "t.mov", file, duration: 1.0 };
+    let calls = 0, err = null;
+    try {
+      await w.MC.audio.extract8k(clip, 1.0, () => { calls++; return false; }, 0);
+    } catch (e) { err = e; }
+    if (!err) throw new Error("onProg=false でも抽出が完走した(やめるが効かない)");
+    if (!err.mzCancel) throw new Error(`中断がフォールバックに化けた: ${err.message}`);
+    /* 配線: sync.js の extractStage が _autoCancel で false を返し、
+       中断例外を握らず上へ流すこと */
+    const src = await (await fetch("../switcher/js/sync.js")).text();
+    if (!/_autoCancel\) return false/.test(src)) {
+      throw new Error("extractStage が「やめる」を抽出へ伝えていない");
+    }
+    if (!/e\.mzCancel\) throw/.test(src)) {
+      throw new Error("extractStage が中断例外を握り潰す(段が終わるまで止まらない)");
+    }
+    /* 進捗の配線(P1-2): 抽出の進捗がおまかせ画面のバーへ流れること。
+       これが無いと音の抽出(数分)の間バーが16%に張り付いて見える */
+    if (!/autoStage\.progress\(\(base \+ frac\)/.test(src)) {
+      throw new Error("抽出の進捗がおまかせ画面のバーへ流れていない(16%張り付き)");
+    }
+    return `中断OK(onProg ${calls}回で停止・mzCancel印つき) / 配線3点あり`;
+  });
+  await test("★おまかせのチェックリストに「映像を軽くする」段があり、走るときだけ出る", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    const st = w.MC.ui.autoStage;
+    if (!st.ALL_STEPS.some(s => s.key === "proxy")) {
+      throw new Error("proxy 段が無い(4Kで変換の数分間、別の段に丸が付いたまま止まって見える)");
+    }
+    const el = w.MC.ui.$("#autoStage");
+    const keepHidden = el ? el.hidden : true;
+    try {
+      /* FHD(作らない) → 段は出ない */
+      S.mode = "vertical"; S.layoutId = "v3"; S.preset = "9x16";
+      S.trimIn = 0; S.trimOut = 60;
+      const fhd = { id: "c1", name: "a.mov", width: 1920, height: 1080, duration: 600,
+                    offset: 0, file: { size: 1, lastModified: 1 } };
+      S.clips = [fhd]; S.slots = [fhd.id, null, null];
+      if (el) el.hidden = true;   // open() の早期returnを避ける
+      st.open();
+      if (st.STEPS.some(s => s.key === "proxy")) {
+        throw new Error("FHDなのに「映像を軽くする」段が出る(やらない仕事のチェックは嘘)");
+      }
+      st.close ? st.close() : (el && (el.hidden = true));
+      w.document.body.classList.remove("mz-auto-stage");
+      st._analyzing = false;
+      /* 4K(作る) → 段が出る */
+      const k4 = { ...fhd, width: 3840, height: 2160 };
+      S.clips = [k4]; S.slots = [k4.id, null, null];
+      if (el) el.hidden = true;
+      st.open();
+      if (!st.STEPS.some(s => s.key === "proxy")) {
+        throw new Error("4Kなのに「映像を軽くする」段が出ない(変換中に止まって見える)");
+      }
+      /* ETA にも変換の見込みが乗ること(P0-2)。同じ条件で
+         willBuildProxy を殺すと ETA が縮む = 項が実在する */
+      const withProxy = w.MC.ui.autoEtaSec();
+      const keepWill = w.MC.ui.willBuildProxy;
+      let without;
+      try { w.MC.ui.willBuildProxy = () => false; without = w.MC.ui.autoEtaSec(); }
+      finally { w.MC.ui.willBuildProxy = keepWill; }
+      if (!(withProxy > without + 5)) {
+        throw new Error(`ETAに変換時間が乗っていない: ${withProxy.toFixed(0)}s vs ${without.toFixed(0)}s(「あと1分」のまま数分待たせる)`);
+      }
+      return `FHD=段なし / 4K=段あり / ETA +${(withProxy - without).toFixed(0)}秒`;
+    } finally {
+      w.document.body.classList.remove("mz-auto-stage");
+      st._analyzing = false;
+      if (el) el.hidden = keepHidden;
+    }
+  });
+  await test("★プレビューのバッジは、音の段で「映像分析中」と嘘をつかない", async () => {
+    const src = await (await fetch("../switcher/js/preview.js")).text();
+    const bl = src.slice(src.indexOf("busyLabel()"), src.indexOf("busyLabel()") + 800);
+    if (!/音声分析中/.test(bl)) {
+      throw new Error("busyLabel が2値のまま(音の抽出中も「映像分析中」と出て、診断を惑わせる)");
+    }
+    return "音の段は「音声分析中」/ 変換は「映像を変換中」に分岐";
+  });
   /* 2026-08-06 優さん実機、容量対策3度目の真因。掃除は probeOpfs().then(...) に
      ぶら下がっていた ─ probe は Worker の応答待ちでタイムアウトが無く、
      iOSで応答が無いと掃除は1バイトも走らない。前回 opfsSweep の入口だけ緩めても

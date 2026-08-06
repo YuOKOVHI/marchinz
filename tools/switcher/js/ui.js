@@ -4221,7 +4221,18 @@ MC.ui.autoEtaSec = () => {
     ? MC.highlight.presetSec({ id: MC.ui.AUTO.preset, sec: 59 }, 1e9) : 59;
   const ana = clips.length * lenSec * MC.ui.analysisRate();
   let exp = MC.ui.exportMode() === "realtime" ? 1.15 : (MC.isIOS ? 1.8 : 0.9);
-  return ana + lenSec * exp;
+  /* ★ 4K素材の縮小(変換)の見込みを足す(2026-08-07 レビューP0)。
+     入れないと4Kで「あとおよそ1分」のまま数分待たせる。係数は
+     フル再エンコードの粗い実測見込み(iOSは実時間の0.7倍/本、PCは0.25) */
+  let proxySec = 0;
+  if (MC.ui.willBuildProxy && MC.ui.willBuildProxy()) {
+    for (const c of clips) {
+      if (MC.proxy.usable(c)) continue;
+      const sp = MC.proxy.specFor(c);
+      if (sp) proxySec += (sp.t1 - sp.t0) * (MC.isIOS ? 0.7 : 0.25);
+    }
+  }
+  return ana + proxySec + lenSec * exp;
 };
 
 /* ============ おまかせ専用の1画面(2026-08-01 優さん指示) ============
@@ -4265,6 +4276,10 @@ MC.ui.autoStage = {
     { key: "sync",   label: "音を合わせる",       done: "音がそろいました",     w: 10 },
     { key: "audio",  label: "良い音を選ぶ",       done: "良い音を選びました",     w: 2 },
     { key: "scan",   label: "見どころを探す",      done: "見どころが決まりました", w: 16 },
+    /* ★ 4K素材の縮小(2026-08-07 レビューP0)。段が無いと、変換の数分間
+       「色をそろえる」等に丸が付いたまま止まって見える(優さん実機で実証)。
+       走らないときは open() が段ごと落とす(嘘のチェックを点けない) */
+    { key: "proxy",  label: "映像を軽くする",      done: "映像を軽くしました",    w: 10 },
     /* ★ finish 段の名前と重みはモードで変わる(2026-08-05 優さん決定)。
        中身は runEasyFinish で、カット割(director)を回すのは
        **自動スイッチングのときだけ**(ui.js の `mode === "switch"` の枝)。
@@ -4298,6 +4313,7 @@ MC.ui.autoStage = {
       .filter(s => s.key !== "tilt" || MC.S.autoTilt !== false)
       /* finish は「実際に走る仕事」で名前・重みを決め、0段なら出さない */
       .filter(s => s.key !== "finish" || MC.ui.finishSteps() > 0)
+      .filter(s => s.key !== "proxy" || (MC.ui.willBuildProxy && MC.ui.willBuildProxy()))
       .map(s => (s.key === "finish" && MC.S.mode !== "switch")
         ? { ...s, label: "色をそろえる", done: "色がそろいました", w: 10 }
         : s);
@@ -5956,7 +5972,15 @@ MC.ui.runEasyFinish = async (pIn, base = 0) => {
      MC.trimRange() の中しか見ないので、素材全体で見積もると
      1分を選んだ人に8分ぶんの待ち時間を予告してしまう */
   const [_ti, _to] = MC.trimRange();
-  const _est = _vc.length * Math.max(0, _to - _ti) * MC.ui.analysisRate();
+  let _est = _vc.length * Math.max(0, _to - _ti) * MC.ui.analysisRate();
+  /* 4K縮小の見込みも分母へ(autoEtaSec と同じ式。2026-08-07 レビューP0) */
+  if (MC.ui.willBuildProxy && MC.ui.willBuildProxy()) {
+    for (const c of _vc) {
+      if (MC.proxy.usable(c)) continue;
+      const sp = MC.proxy.specFor(c);
+      if (sp) _est += (sp.t1 - sp.t0) * (MC.isIOS ? 0.7 : 0.25);
+    }
+  }
   const _steps = Math.max(1, p.steps || MC.ui.finishSteps());
   const _eta = () => _est > 30 ? { eta: Math.max(0, _est * (1 - n / _steps)) } : undefined;
   try {
@@ -5966,8 +5990,22 @@ MC.ui.runEasyFinish = async (pIn, base = 0) => {
        (映像解析・色そろえ・書き出し)がまだ1つも走っていない。
        取り込み直後では範囲が決まっておらず、書き出し直前では解析に間に合わない。
        失敗しても素通しなので、ここで throw させない */
-    if (MC.ui.willBuildProxy()) {
-      await MC.proxy.ensureAll(p, ++n).catch(e => MC.log("proxy: " + ((e && e.message) || e)));
+    {
+      const st = MC.ui.autoStage;
+      if (MC.ui.willBuildProxy()) {
+        if (st) st.step("proxy");
+        await MC.proxy.ensureAll(p, ++n).catch(e => {
+          /* キャンセルは握らない(2026-08-07 レビューP2) ─ 握ると
+             「やめています…」の最中に次の段が一瞬立ち上がる */
+          if (MC.ui._autoCancel) throw e;
+          MC.log("proxy: " + ((e && e.message) || e));
+        });
+        if (st) { st.mark("proxy", ""); st.step("finish"); }
+      } else if (st && st.STEPS.some(s => s.key === "proxy")) {
+        /* 開いた時点では作る予定だったが、直前に不要になった(レイアウト変更等)。
+           未完了の丸を残さず「そのままでOK」で正直に埋める */
+        st.step("proxy"); st.mark("proxy", "そのままでOK"); st.step("finish");
+      }
     }
     /* 開始/終了の自動区切りと音楽の解析は runEasyScan へ移した(2026-07-31)。
        ここへ来る時点で MC.trimRange() は「選ばれた長さと開始位置」を指しており、
@@ -6508,7 +6546,6 @@ MC.ui.wire = () => {
       if (!window.confirm("やめますか？\nここまでの解析結果は残ります。")) return;
       MC.ui._autoCancel = true;
       if (MC.exporter) MC.exporter.cancelFlag = true;
-      if (MC.sync && MC.sync.cancel) MC.sync.cancel();
       /* ★ 押しても即座には畳まない(2026-08-01 レビュー14件)。畳んでも解析は動き続けるうえ、
          _autoRunning が立っている間は setBusy(false) が握り潰されるので、
          裏の画面はボタンが全部無効のまま数分固まって見えていた
@@ -6526,7 +6563,6 @@ MC.ui.wire = () => {
       MC.ui._repickAfterCancel = true;   // 着地の印(中止の鍵ではない)
       MC.ui._autoCancel = true;
       if (MC.exporter) MC.exporter.cancelFlag = true;
-      if (MC.sync && MC.sync.cancel) MC.sync.cancel();
       /* 押しても即座には畳まない ─ 実際に止まるまでの顔は「やめる」と共通 */
       MC.ui.autoStage.cancelling();
     }; }

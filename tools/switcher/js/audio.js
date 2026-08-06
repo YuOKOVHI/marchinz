@@ -52,6 +52,10 @@ MC.audio.extract8k = async (clip, maxSec = MC.audio.MAX_SEC, onProg = null, star
     r = await MC.audio.viaRawPcm(clip, maxSec, onProg, startSec);   // リニアPCM(Resolve等のMOV)は生読みが最速・最軽量
     if (!r) r = await MC.audio.viaWebCodecs(clip, maxSec, onProg, startSec);
   } catch (e) {
+    /* ★ 中断(onProg が false を返した)はフォールバックしない(2026-08-06 レビューP1)。
+       ここで viaDecodeAudioData へ流れると「やめたのに別の方式で全部やり直す」
+       最悪の逆効果になる */
+    if (e && e.mzCancel) throw e;
     err1 = e;
     console.warn("[MC] WebCodecs音声抽出失敗→decodeAudioDataへ:", e.message);
     try { r = await MC.audio.viaDecodeAudioData(clip, maxSec, startSec); }
@@ -113,7 +117,14 @@ MC.audio.viaRawPcm = async (clip, maxSec, onProg = null, startSec = 0) => {
     if (chans.length > 1) for (let i = 0; i < mono.length; i++) mono[i] /= chans.length;
     const out = resampler.push(mono);
     if (out.length) { outChunks.push(out); total += out.length; }
-    if (onProg && (tick++ & 7) === 0) onProg(Math.min(1, total / target));
+    if (onProg && (tick++ & 7) === 0) {
+      /* onProg が false を返したら中断(2026-08-06 レビューP1「やめるの死角」)。
+         音の抽出は10分素材で数分かかり、ここに中断点が無いと「やめる」を
+         押しても段が終わるまで「やめています…」のまま動かない */
+      if (onProg(Math.min(1, total / target)) === false) {
+        const e = new Error("やめました"); e.mzCancel = true; throw e;
+      }
+    }
     if (total >= maxFrames) break;
     await MC.yield();   // 20分素材でもUIを固めない
   }
@@ -175,7 +186,12 @@ MC.audio.viaWebCodecs = async (clip, maxSec, onProg = null, startSec = 0) => {
       duration: Math.round(s.duration * 1e6 / s.timescale),
       data: s.data,
     }));
-    if (onProg) onProg(Math.min(1, decodedSec / Math.max(1, Math.min(maxSec, clip.duration || maxSec))));
+    if (onProg) {
+      if (onProg(Math.min(1, decodedSec / Math.max(1, Math.min(maxSec, clip.duration || maxSec)))) === false) {
+        try { decoder.close(); } catch (_) {}
+        const e = new Error("やめました"); e.mzCancel = true; throw e;
+      }
+    }
     if (decodedSec >= maxSec) break;
     if (decoder.decodeQueueSize > 32) await MC.waitDequeue(decoder);
   }

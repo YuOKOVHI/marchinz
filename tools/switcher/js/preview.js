@@ -325,7 +325,13 @@ MC.preview = {
     const cur = window.MZP && MZP.current;
     if (!cur || cur.closed || !["run", "pulse", "frozen"].includes(cur.state)) return null;
     const ch = String((cur.opt && cur.opt.chapter) || "");
-    const label = ch.indexOf("書き出し") >= 0 ? "書き出し中" : "映像分析中";
+    /* ★ 2値(書き出し/映像分析)だと、音を合わせている最中も「映像分析中」と
+       出て嘘になる(2026-08-06 優さん実機で目撃)。いまの段のラベルで分ける */
+    const stepLabel = String(cur.label || "");
+    const label = ch.indexOf("書き出し") >= 0 ? "書き出し中"
+      : /音/.test(stepLabel) ? "音声分析中"
+      : /軽く/.test(stepLabel) ? "映像を変換中"
+      : "映像分析中";
     /* ★ 補足と進み具合を返す(2026-08-01)。drawRangeNotice は前から busy.sub を
        渡していたが、ここが返していなかったので**常に undefined**＝
        主役のプレビューには「映像分析中…」としか出ず、いま何をしているかは

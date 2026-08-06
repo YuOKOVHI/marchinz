@@ -136,9 +136,20 @@ MC.sync.run = async p => {
       const sub = needN > 1 ? `${base + 1} / ${needN} 本目・${MZP.shortName(c.name)}` : MZP.shortName(c.name);
       try {
         await MC.audio.extract8k(c, w.span, frac => {
+          /* 「やめる」は抽出の最中でも数秒で効かせる(2026-08-06 レビューP1)。
+             false を返すと extract8k がその場で中断してくる */
+          if (MC.ui && MC.ui._autoCancel) return false;
           if (p) p.set((base + frac) / needN, null, { sub });
+          /* ★ おまかせ画面のバーへも流す(2026-08-06 レビューP1-2)。
+             ここの進捗は隠れたMZPドックにしか流れておらず、音の抽出
+             (iPhoneのMOV3本で数分)の間、全体バーが16%に張り付いて
+             「止まっている」ように見えていた ─ 優さん実機の停滞の見え方の本体 */
+          if (MC.ui && MC.ui.autoStage) MC.ui.autoStage.progress((base + frac) / needN);
         }, w.start);
-      } catch (e) { console.warn("[MC]", e.message); MC.ui.toast(`⚠ ${e.message}`); }
+      } catch (e) {
+        if (e && e.mzCancel) throw new Error("やめました");   // 中断は握らず上へ
+        console.warn("[MC]", e.message); MC.ui.toast(`⚠ ${e.message}`);
+      }
       doneN++;
       if (p) p.set(doneN / needN, null, { sub });
       await new Promise(r => setTimeout(r, 0));
