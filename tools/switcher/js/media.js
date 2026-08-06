@@ -209,6 +209,15 @@ MC.media.makeThumb = async clip => {
     v.currentTime = 0;
   } catch (e) { /* サムネ失敗は無視 */ }
   MC.ui.renderClips();
+  /* 取り込みが終わったら、そのまま**軽い動き判定**まで進める(2026-08-06 優さん実機
+     「取り込み時に自動判定されていない」)。素材の確認画面は本解析より前に出るので、
+     ここで測らないと2軸の選択肢は永久に「自動判定」のまま。
+     ・失敗しても取り込みは成功のまま(判定は付加価値)
+     ・1本ずつ順番に(同時に走らせると seek が競合し、端末も重くなる) */
+  MC.media._quickQueue = (MC.media._quickQueue || Promise.resolve())
+    .then(() => MC.visual.quickProbe(clip))
+    .then(q => { if (q) { clip.quickVisual = q; MC.ui.renderClips(); } })
+    .catch(() => {});
 };
 
 MC.media.removeClip = id => {

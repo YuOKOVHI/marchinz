@@ -2555,8 +2555,46 @@ MC.ui.renderResumeNote = () => {
 MC.ui.photosInvited = () =>
   MC.S.mode === "vertical" && !(MC.ui._autoFlow && MC.ui._setupTab !== "pro");
 
+/* 端末に残っている書き出しデータの控え(app.js が起動時に測って入れる)。
+   2026-08-06 優さん実機、容量対策3度目 ─ 「消えるはず」を3度外したので、
+   今度は**残量を画面に出して本人が消せる**ようにする */
+MC.ui._storageAudit = null;
+MC.ui.PURGE_MIN_BYTES = 300e6;   // これ未満は黙る(案内文を増やさない)
+
+MC.ui.refreshStorageNote = async () => {
+  MC.ui._storageAudit = await MC.exporter.opfsAudit();
+  MC.ui.renderStorageNote();
+};
+
+MC.ui.renderStorageNote = () => {
+  const box = MC.ui.$("#storageNote");
+  if (!box) return;
+  const a = MC.ui._storageAudit;
+  if (!a || a.bytes < MC.ui.PURGE_MIN_BYTES) { box.hidden = true; box.innerHTML = ""; return; }
+  const gb = a.bytes >= 1e9 ? (a.bytes / 1e9).toFixed(1) + "GB" : Math.round(a.bytes / 1e6) + "MB";
+  box.hidden = false;
+  box.innerHTML = `
+    <div class="storage-note-body">
+      <b class="storage-note-head">この端末に、作った動画のデータが ${gb} 残っています</b>
+      <span class="storage-note-sub">保存ずみなら消して大丈夫です。iPhoneの空き容量が戻ります。</span>
+    </div>
+    <button type="button" class="btn small" id="storagePurge">消す</button>`;
+  box.querySelector("#storagePurge").onclick = async e => {
+    const btn = e.currentTarget;
+    btn.disabled = true; btn.textContent = "消しています…";
+    const r = await MC.exporter.purgeAll();
+    if (r && r.busy) { MC.ui.toast("いま書き出し中です。終わってからもう一度お試しください"); }
+    else if (r && r.ok) {
+      const mb = r.freed >= 1e9 ? (r.freed / 1e9).toFixed(1) + "GB" : Math.round(r.freed / 1e6) + "MB";
+      MC.ui.toast(`${mb} を消しました`);
+    } else { MC.ui.toast("消せませんでした。Safariを一度終了してからお試しください"); }
+    await MC.ui.refreshStorageNote();
+  };
+};
+
 MC.ui.renderClips = () => {
   MC.ui.renderResumeNote();
+  MC.ui.renderStorageNote();
   const box = MC.ui.$("#clipSlots");
   box.innerHTML = "";
   const vertical = MC.S.mode === "vertical";
@@ -2654,10 +2692,10 @@ ${c.isImage ? "" : (c.tiltOk
         <div class="pan-row">横位置 <input type="range" class="pan" min="0" max="1" step="0.01" value="${c.pan}"></div>`}
         ${(pro && MC.S.mode === "switch") ? `
         <div class="pan-row">被写体 <select class="target-sel select-mini" title="このカメラは何を撮ったか。選ぶと役割・出番へ展開します">
-          ${MC.TARGETS.map(k => `<option value="${k.v}" ${(c.target || "auto") === k.v ? "selected" : ""}>${k.label}</option>`).join("")}
+          ${MC.TARGETS.map(k => `<option value="${k.v}" ${MC.ui.axisInitial(c, "target") === k.v ? "selected" : ""}>${k.label}</option>`).join("")}
         </select></div>
         <div class="pan-row">固定or手持ち <select class="motion-sel select-mini" title="三脚/ジンバル/カメラマンのどれで撮ったか">
-          ${MC.MOTIONS.map(k => `<option value="${k.v}" ${(c.motion || "auto") === k.v ? "selected" : ""}>${k.label}</option>`).join("")}
+          ${MC.MOTIONS.map(k => `<option value="${k.v}" ${MC.ui.axisInitial(c, "motion") === k.v ? "selected" : ""}>${k.label}</option>`).join("")}
         </select></div>
         <details class="clip-fine">
           <summary>じぶんで微調整する</summary>
@@ -4718,6 +4756,18 @@ MC.ui.newFinishPrefs = fromState => ({
   changed: false,
 });
 
+/* 2軸セレクトに出す初期値。本人が選んだ軸はその値、触っていない軸は解析の判定
+   (2026-08-06 優さん実機「この画面で被写体と固定が選択されていない」)。
+   **素材の確認画面と仕上げの好み画面で同じ規則**を使う ─ 前回は仕上げ側だけ直し、
+   優さんが見ていた素材側は c.target を直接読んだままで、何も変わっていなかった */
+MC.ui.axisInitial = (clip, axis) => {
+  const byUser = axis === "target" ? clip.targetByUser : clip.motionByUser;
+  const cur = clip[axis];
+  if (byUser) return cur || "auto";
+  const g = MC.ui.guessAxes(clip);
+  return g[axis] || cur || "auto";
+};
+
 /* いまの clip の2軸(撮影対象×固定/動きあり)を id→{target,motion} で預かる。
    旧保存(kind/roleのみ)は migrateAxes が2軸へ写してから読む(2026-08-05) */
 MC.ui.finishAxesMap = () => {
@@ -4725,7 +4775,6 @@ MC.ui.finishAxesMap = () => {
   for (const c of MC.ui.finishCards()) {
     const clip = MC.getClip(c.id) || c;
     MC.migrateAxes(clip);
-    const g = MC.ui.guessAxes(clip);
     /* ★ 本人が選んでいなければ**映像解析の判定**を初期値にする
        (2026-08-06 優さん実機「被写体や固定などが初期で分析後が選ばれない。
        前みたいにそれを初期値にしてほしい」)。
@@ -4737,8 +4786,8 @@ MC.ui.finishAxesMap = () => {
        では**永久に解析値へ届かない** ─ 実機で「初期値にならない」と見えていた本体。
        本人が選んだ軸だけ clip の値を尊重し、触っていない軸は解析の判定を出す */
     m[c.id] = {
-      target: clip.targetByUser ? (clip.target || "auto") : (g.target || clip.target || "auto"),
-      motion: clip.motionByUser ? (clip.motion || "auto") : (g.motion || clip.motion || "auto"),
+      target: MC.ui.axisInitial(clip, "target"),
+      motion: MC.ui.axisInitial(clip, "motion"),
     };
   }
   return m;
@@ -4749,7 +4798,10 @@ MC.ui.finishAxesMap = () => {
    ★ 推測を clip へ書き戻さない ─ ここは「初期値の提案」であって確定ではない。
      確定するのは finishPickGo(本人が画面を通したとき)だけ */
 MC.ui.guessAxes = clip => {
-  const v = clip && clip.visual;
+  /* 本解析が済んでいればそれを、まだなら取り込み時の軽い判定を使う
+     (2026-08-06 優さん実機)。素材の確認画面は解析より前に出るので、
+     quickVisual が無いと、この画面では永久に何も推せない */
+  const v = (clip && clip.visual) || (clip && clip.quickVisual);
   if (!v) return {};
   /* ★ 測れていないクリップからは何も推さない(2026-08-06 レビューP1)。
      visual.js は shakeMed を**サンプル数に関わらず**代入し、med() は空配列で 0 を

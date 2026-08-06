@@ -18,7 +18,7 @@
 <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
 <link rel="stylesheet" href="/tools/shared/progress.css?v=1.99.3">
 <link rel="stylesheet" href="/tools/shared/journey.css?v=1.110.1">
-<link rel="stylesheet" href="css/style.css?v=1.112.2">
+<link rel="stylesheet" href="css/style.css?v=1.113.6">
 <link rel="stylesheet" href="/tools/shared/sitechrome.css?v=1.108.4">
 </head>
 <body data-mz-tool="switcher">
@@ -257,6 +257,10 @@
            (「3本まで」と「上限なし」が同じ画面に同時に出ていた) -->
       <!-- 前回の続きがあるときだけ出す。保存はされているのに、それを知らせる場所が
            どこにも無く「止まったら最初から」と思わせていた(2026-07-29 優さん報告) -->
+      <!-- 端末に書き出しデータが溜まっているときだけ出す(2026-08-06 優さん実機
+           14.88GB)。自動掃除で消えない/消しきれない分を、本人が1タップで
+           消せる逃げ道。溜まっていなければ何も出さない -->
+      <div id="storageNote" class="storage-note" hidden></div>
       <div id="resumeNote" class="resume-note" hidden></div>
       <div id="clipSlots" class="clip-slots"></div>
       <input type="file" id="fileInput" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" multiple hidden>
@@ -776,13 +780,13 @@
 <script src="vendor/fft.js"></script>
 <script src="js/state.js?v=1.105.0"></script>
 <script src="js/layout.js?v=1.99.3"></script>
-<script src="js/media.js?v=1.108.4"></script>
+<script src="js/media.js?v=1.113.6"></script>
 <script src="js/audio.js?v=1.99.3"></script>
 <script src="js/sync.js?v=1.99.3"></script>
 <script src="js/beats.js?v=1.99.3"></script>
 <script src="js/sections.js?v=1.99.3"></script>
 <script src="js/highlight.js?v=1.107.0"></script>
-<script src="js/visual.js?v=1.112.1"></script>
+<script src="js/visual.js?v=1.113.6"></script>
 <script src="js/director.js?v=1.113.2"></script>
 <script src="js/colormatch.js?v=1.99.3"></script>
 <!-- horizon.js(自動傾き検出)を読み込みに戻した(2026-08-01 優さん指示
@@ -794,8 +798,8 @@
 <script src="js/preview.js?v=1.109.1"></script>
 <script src="js/timeline.js?v=1.99.3"></script>
 <script src="js/cutmode.js?v=1.99.3"></script>
-<script src="js/exporter.js?v=1.113.5"></script>
-<script src="js/ui.js?v=1.113.3"></script>
-<script src="js/app.js?v=1.109.0"></script>
+<script src="js/exporter.js?v=1.113.6"></script>
+<script src="js/ui.js?v=1.113.6"></script>
+<script src="js/app.js?v=1.113.6"></script>
 </body>
 </html>

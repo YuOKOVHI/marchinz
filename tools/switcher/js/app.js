@@ -76,10 +76,20 @@ window.addEventListener("DOMContentLoaded", async () => {
       a.addEventListener("click", () => { MC.ui.resetSavedProject(); }));
   }
 
+  /* ★ 掃除を probe の後ろにぶら下げない(2026-08-06 優さん実機 14.88GB、3度目の対策)。
+     probeOpfs は Worker を起こして open/write/finalize の応答を待つ実測で、
+     **タイムアウトが無い**。iOS Safari で Worker が応答しないと、この then は
+     永遠に来ない = 掃除は1バイトも走らない。前回 opfsSweep の入口だけ緩めたが、
+     呼び出し側がこの形のままだったので効かなかった。
+     掃除に probe の結果は要らない(main thread の entries/removeEntry だけ)ので、
+     両者は独立に走らせる */
+  MC.exporter.opfsSweep()
+    .then(() => MC.exporter.refreshEstimate())
+    /* 掃除の**あと**に数える。残っていれば本人が消せるよう画面に出す */
+    .then(() => MC.ui.refreshStorageNote()).catch(() => {});
   // OPFSへ本当に書けるかを一度だけ実測してキャッシュ(G-1)。
   // これで maxExportableSec が「上限なし」と嘘をつかなくなる
-  MC.exporter.probeOpfs().then(() => MC.exporter.opfsSweep())
-    .then(() => MC.exporter.refreshEstimate()).catch(() => {});
+  MC.exporter.probeOpfs().catch(() => {});
   /* 退出時にも据え置き分を掃く(2026-08-06 Safari容量調査)。再開用パーツ等の
      新しいファイルは sweep 側の6時間窓が守る。pagehide内のasyncは
      完走保証が無いが、掃除は必須ではない(次回起動時sweepが拾う) */

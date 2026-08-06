@@ -2665,6 +2665,70 @@ MC.exporter.releaseOpfs = () => {
     .then(() => { MC.exporter._clearPending(n); MC.exporter.refreshEstimate(); });
 };
 
+/* いま端末に残っている書き出しデータを**実際に数える**(2026-08-06 優さん実機、
+   対策3度目)。「消えるはず」を3度外した原因は、優さんの端末で何が残っているかを
+   測る手段がこちらに無かったこと。憶測ではなく実測を画面へ出すための土台。
+   返り値: { items:[{name,size,mtime}], bytes, n } / 読めない環境は null */
+MC.exporter.opfsAudit = async () => {
+  try {
+    if (!(navigator.storage && navigator.storage.getDirectory)) return null;
+    const root = await navigator.storage.getDirectory();
+    const dir = await root.getDirectoryHandle(MC.exporter.OPFS_DIR, { create: false })
+      .catch(() => null);
+    if (!dir) return { items: [], bytes: 0, n: 0 };
+    const items = [];
+    for await (const [n, h] of dir.entries()) {
+      let size = 0, mtime = 0;
+      try { const f = await h.getFile(); size = f.size; mtime = f.lastModified; } catch (_) {}
+      items.push({ name: n, size, mtime });
+    }
+    items.sort((a, b) => b.size - a.size);
+    return { items, bytes: items.reduce((s, v) => s + v.size, 0), n: items.length };
+  } catch (e) { MC.log("opfsAudit失敗: " + ((e && e.message) || e)); return null; }
+};
+
+/* 本人が「消す」を押したときの全消し。掃除の自動判断(6時間窓・再開材料・
+   未保存の成果物)を**すべて無視する** ─ 本人の意思がいちばん強い。
+   書き出し中だけは断る(実体を抜くと必ず壊れる)。
+   返り値: { ok, freed, n } / 書き出し中は { ok:false, busy:true } */
+MC.exporter.purgeAll = async () => {
+  let release = null;
+  try {
+    if (navigator.locks) {
+      release = await new Promise(resolve => {
+        navigator.locks.request("mz-export", { ifAvailable: true }, lock => {
+          if (!lock) { resolve(null); return; }
+          let rel; const held = new Promise(r => { rel = r; });
+          resolve(rel); return held;
+        }).catch(() => resolve(null));
+      });
+      if (!release) return { ok: false, busy: true };
+    }
+    const before = await MC.exporter.opfsAudit();
+    if (!before) return { ok: false, busy: false };
+    const root = await navigator.storage.getDirectory();
+    const dir = await root.getDirectoryHandle(MC.exporter.OPFS_DIR, { create: false })
+      .catch(() => null);
+    if (!dir) return { ok: true, freed: 0, n: 0 };
+    let freed = 0, n = 0;
+    for (const it of before.items) {
+      let ok = true;
+      await dir.removeEntry(it.name).catch(() => { ok = false; });
+      if (ok) { freed += it.size; n++; MC.exporter._clearPending(it.name); }
+    }
+    /* 消した以上、覚えている成果物はもう無い。ここを残すと「保存」が空振りする */
+    MC.exporter._opfsName = null;
+    MC.exporter.lastResult = null;
+    MC.exporter.dropResultLock();
+    await MC.exporter.refreshEstimate();
+    MC.log(`purgeAll: ${n}件 ${Math.round(freed / 1e6)}MB を消しました`);
+    return { ok: true, freed, n };
+  } catch (e) {
+    MC.log("purgeAll失敗: " + ((e && e.message) || e));
+    return { ok: false, busy: false, error: (e && e.message) || String(e) };
+  } finally { if (release) release(); }
+};
+
 /* 「消し損ねたかもしれない」名前の控え。localStorage は同期なので遷移に負けない */
 MC.exporter.PENDING_KEY = "mz_switcher_opfs_pending_v1";
 MC.exporter._pendingList = () => {

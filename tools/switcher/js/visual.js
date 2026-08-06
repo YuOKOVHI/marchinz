@@ -557,6 +557,48 @@ MC.visual._finalize = V => {
    従来のvideo要素シーク方式へ自動フォールバック。
    iOSのシークは1回数十〜数百msで、1点2シーク×最大120点が解析の主コストだった
    (2026-07-22 高速化)。MC.visual.forceSeek=true で旧方式へ固定できる */
+/* 取り込み直後の**軽い**動き判定(2026-08-06 優さん実機
+   「取り込み時に自動判定されていない」「この画面で被写体と固定が選択されていない」)。
+   素材の確認画面は解析より**前**に出るので、本解析(analyzeClip)の結果は
+   原理的に間に合わない ─ 選択肢が「指定なし/自動判定」のままに見えていた本体。
+   ここでは3点×2フレームだけ測って「三脚か手持ちか」を出す(6シーク、1〜2秒)。
+   被写体(引き/ピット等)は数点では言い切れないので推さない ─ 本解析に任せる。
+   結果は clip.visual ではなく clip.quickVisual へ。本解析が来たら必ずそちらが勝つ */
+MC.visual.QUICK_PAIR_DT = 0.15;
+MC.visual.quickProbe = async clip => {
+  const v = clip && clip.video;
+  if (!v || !clip.duration || clip.isImage || clip.isAudio) return null;
+  const keep = v.currentTime;
+  const shake = [];
+  try {
+    for (const f of [0.25, 0.5, 0.75]) {
+      const t = clip.duration * f;
+      if (t >= clip.duration - (MC.visual.QUICK_PAIR_DT + 0.2)) continue;
+      await MC.visual.seek(v, t);
+      const A = MC.visual.grabGray(v);
+      await MC.visual.seek(v, t + MC.visual.QUICK_PAIR_DT);
+      const B = MC.visual.grabGray(v);
+      const gm = MC.visual.globalMotion(A, B);
+      shake.push(Math.hypot(gm.fdx ?? gm.dx, gm.fdy ?? gm.dy) / A.w / MC.visual.QUICK_PAIR_DT);
+    }
+  } catch (e) {
+    MC.log("quickProbe失敗: " + (clip.name || "") + " " + ((e && e.message) || e));
+    return null;
+  } finally { try { await MC.visual.seek(v, keep); } catch (_) {} }
+  /* 2点未満は「測れなかった」。0サンプルで shakeMed=0 を返すと必ず三脚と
+     断定される(guessAxes に enough ガードを入れたのと同じ事故) */
+  if (shake.length < 2) return null;
+  const s = shake.slice().sort((a, b) => a - b);
+  const shakeMed = s[Math.floor(s.length / 2)];
+  return {
+    quick: true, nSample: shake.length, enough: true, shakeMed,
+    /* 手ブレ失格の閾値を超えていれば「人が持っている」と見なす。
+       中間(三脚でも手持ちでもない)は operated=false かつ三脚判定にも
+       届かないので、guessAxes は何も推さない = 従来どおり「自動判定」 */
+    operated: shakeMed >= MC.visual.TH_SHAKE,
+  };
+};
+
 MC.visual.analyzeClip = async (clip, l0, l1, prog) => {
   const key = `${l0.toFixed(1)}|${l1.toFixed(1)}`;
   if (clip.visual && clip.visual.key === key) return clip.visual;

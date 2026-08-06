@@ -1756,6 +1756,21 @@ body.mz-pin-force .tilt-step { width: 52px; min-height: 48px; font-size: 20px; }
 .save-note { color: #1f6f4a; }
 .wm-note b, .save-note b { font-weight: 700; }
 
+/* 端末に残った書き出しデータの片付け(2026-08-06 優さん実機 14.88GB)。
+   警告色にはしない ─ 壊れているわけではなく「片付けられます」という案内。
+   溜まっているときしか出ないので、出たときは必ず押せる形にする */
+.storage-note { margin: 10px 0 12px; padding: 12px 14px; border-radius: 12px;
+  background: rgba(15, 23, 42, 0.04); border: 1px solid rgba(15, 23, 42, 0.12);
+  display: flex; align-items: center; gap: 12px; }
+.storage-note-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.storage-note-head { font-size: 14px; line-height: 1.45; color: #0f172a; }
+.storage-note-sub { font-size: 12.5px; line-height: 1.5; color: #57607a; }
+.storage-note .btn { flex: none; min-height: 44px; }
+@media (max-width: 460px) {
+  .storage-note { flex-direction: column; align-items: stretch; }
+  .storage-note .btn { width: 100%; }
+}
+
 /* 前回のつづきの案内(2026-07-29) */
 .resume-note { margin: 10px 0 12px; padding: 12px 14px; border-radius: 12px;
   background: rgba(31, 111, 74, 0.07); border: 1px solid rgba(31, 111, 74, 0.22); }

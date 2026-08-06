@@ -6962,6 +6962,82 @@ async function countSamples(ns, file, fromSec) {
       for (const n of await names()) await dir.removeEntry(n).catch(() => {});
     }
   });
+  /* 2026-08-06 優さん実機、容量対策3度目の真因。掃除は probeOpfs().then(...) に
+     ぶら下がっていた ─ probe は Worker の応答待ちでタイムアウトが無く、
+     iOSで応答が無いと掃除は1バイトも走らない。前回 opfsSweep の入口だけ緩めても
+     呼び出し側がこの形では効かない。**配線そのもの**を試験する */
+  await test("★起動時の掃除は、OPFSの実測(probe)が固まっても走る", async () => {
+    const src = await (await fetch("../switcher/js/app.js")).text();
+    /* 掃除が probe の Promise 連鎖にぶら下がっていないこと */
+    const chained = /probeOpfs\s*\([^)]*\)\s*\.then\s*\(\s*\(\s*\)\s*=>\s*MC\.exporter\.opfsSweep/.test(src);
+    if (chained) throw new Error("掃除が probeOpfs().then() にぶら下がっている(probeが固まると永久に走らない)");
+    if (!/MC\.exporter\.opfsSweep\s*\(\s*\)\s*\n?\s*\.then/.test(src)) {
+      throw new Error("起動時に opfsSweep を独立して呼んでいない");
+    }
+    /* 実測: probe を「永遠に返らない」形にしても掃除が走ること */
+    const w = await compEnv();
+    const X = w.MC.exporter;
+    const keepProbe = X.probeOpfs;
+    let swept = false;
+    const keepSweep = X.opfsSweep;
+    try {
+      X.probeOpfs = () => new Promise(() => {});      // 永久に未解決(iOSで固まる再現)
+      X.opfsSweep = async () => { swept = true; };
+      /* app.js と同じ形で呼ぶ */
+      X.opfsSweep().then(() => {}).catch(() => {});
+      X.probeOpfs().catch(() => {});
+      await new Promise(r => setTimeout(r, 30));
+      if (!swept) throw new Error("probeが固まると掃除も止まる");
+      return "掃除は probe と独立に走る(固まっても影響を受けない)";
+    } finally { X.probeOpfs = keepProbe; X.opfsSweep = keepSweep; }
+  });
+  /* 2026-08-06 優さん実機「この画面で、被写体と固定が選択されていない」。
+     前回は仕上げの好み画面(finishAxesMap)だけ直し、優さんが実際に見ている
+     **素材の確認画面**は c.target を直接読んだままだった */
+  await test("★素材カードの2軸は、解析の判定を初期値に出す(本人の選択は上書きしない)", async () => {
+    const w = await compEnv();
+    const U = w.MC.ui;
+    const clip = { id: "c1", name: "t.mov" };
+    /* 解析がまだ = 何も推さない(従来どおり「指定なし/自動判定」) */
+    if (U.axisInitial(clip, "motion") !== "auto") throw new Error("解析前なのに何かを推している");
+    /* 取り込み時の軽い判定(quickVisual)が三脚相当なら、それが初期値になる */
+    clip.quickVisual = { quick: true, nSample: 3, enough: true,
+                         shakeMed: w.MC.visual.TH_FIXED_SHAKE / 2, operated: false };
+    if (U.axisInitial(clip, "motion") !== "tripod") {
+      throw new Error(`軽い判定が初期値にならない: ${U.axisInitial(clip, "motion")}`);
+    }
+    /* 本解析が来たらそちらが勝つ */
+    clip.visual = { nSample: 12, enough: true, shakeMed: 0.3, operated: true };
+    if (U.axisInitial(clip, "motion") !== "handheld") {
+      throw new Error(`本解析より軽い判定が優先されている: ${U.axisInitial(clip, "motion")}`);
+    }
+    /* 本人が選んだら解析で上書きしない */
+    clip.motion = "gimbal"; clip.motionByUser = true;
+    if (U.axisInitial(clip, "motion") !== "gimbal") throw new Error("本人の選択が解析で上書きされた");
+    /* 歯の確認: 素材カードの描画が axisInitial を通っていること
+       (ここを c.motion 直読みに戻すと、優さんの画面は元に戻る) */
+    const src = await (await fetch("../switcher/js/ui.js")).text();
+    const card = src.slice(src.indexOf('class="motion-sel'), src.indexOf('class="motion-sel') + 400);
+    if (!/axisInitial\s*\(\s*c\s*,\s*"motion"\s*\)/.test(card)) {
+      throw new Error("素材カードの固定or手持ちが axisInitial を通っていない");
+    }
+    return "解析前=自動判定 / 軽い判定→三脚 / 本解析→手持ち / 本人の選択は不動";
+  });
+  /* 取り込み時の軽い判定そのもの。0〜1点しか測れなかったら**何も言わない**
+     (0サンプルで shakeMed=0 を返すと必ず「三脚」と断定される事故と同型) */
+  await test("★取り込み時の軽い動き判定は、測れなければ黙る", async () => {
+    const w = await compEnv();
+    const V = w.MC.visual;
+    if (typeof V.quickProbe !== "function") throw new Error("quickProbe が無い");
+    if (await V.quickProbe(null) !== null) throw new Error("素材が無いのに判定を返した");
+    if (await V.quickProbe({ isImage: true, duration: 10, video: {} }) !== null) {
+      throw new Error("静止画に動き判定を返した");
+    }
+    /* 尺が短すぎて2点そろわない素材 = 測れない */
+    const tiny = { duration: 0.2, video: document.createElement("video") };
+    if (await V.quickProbe(tiny) !== null) throw new Error("測れないのに判定を返した(三脚と断定する事故の入口)");
+    return "素材なし/静止画/測れない尺 のいずれも null(何も推さない)";
+  });
   await test("★書き出しを始めるとき、前回の書き出しファイルを必ず手放す", async () => {
     const w = await compEnv();
     const X = w.MC.exporter;
