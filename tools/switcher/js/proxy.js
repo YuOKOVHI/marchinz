@@ -37,11 +37,8 @@ MC.proxy.BUDGET = 600e6;       // 3本ぶんの上限(超えたら効果の小�
 
 /* 実測でしか決められない値はここへ集めて、URLで上書きできるようにする */
 MC.proxy.TUNE = {
-  minShrink: 0.5,     // 画素がこの比より小さくならないなら作らない(need*need で判定)
-  alwaysBelow: 0.25,  // 画素がこれ以下まで落ちるなら、条件を問わず作る
-  minGain: 1.3,     // 見込みの得がこれ未満なら作らない
-  colorGain: 3.5,   // 色そろえONのとき、GL転送+mipmapが効く倍率の見積り
-  bpp: 0.09,        // ビットレート = 画素 × fps × これ
+  alwaysBelow: 0.25,  // 画素がこれ以下まで落ちる素材(=4K級)だけ作る
+  bpp: 0.09,          // ビットレート = 画素 × fps × これ
 };
 
 /* このタブが「今まさに使っている」プロキシの名前。掃除はこれ以外を消す */
@@ -117,19 +114,16 @@ MC.proxy.specFor = clip => {
   need = Math.min(1, need);
   if (!(need > 0) || !isFinite(need)) return null;
 
-  /* 画素が半分にもならないなら、変換にかけた時間を取り戻せない */
+  /* ★ 作るのは4K級(画素が1/4以下まで落ちる素材)だけ(2026-08-06 優さん実機)。
+     当初は中間帯(1/4〜1/2)も損得の見積り式で通していたが、FHD×縦型3分割
+     (画素35%)が「作る」判定になり、**FHD素材3本の再エンコード(数分)が
+     おまかせの途中に割り込んだ**。しかもおまかせ画面のチェックリストに
+     この工程の段が無く、表示は「色をそろえる」に丸が付いたまま止まって見えた。
+     「FHDの優さんの環境では何も起きない」という約束が縦型で破れていた。
+     見積り式は実測に裏付けが無い(gain=3.5は仮置き)ので、確実に得な
+     4K級だけに絞る ─ 4K×スイッチング=25%、4K×縦型=8.8%はどちらも通る */
   const px = need * need;
-  if (px > MC.proxy.TUNE.minShrink) return null;
-
-  /* ★ 画素が1/4以下まで落ちるなら、条件を問わず作る(2026-08-06)。
-     4K×縦型v3 は 8.8% まで落ちる ─ ここを「色そろえOFFだから」と見送るのは
-     明らかに損。得を計算で見極めるのは**中間帯(1/4〜1/2)だけ**にする。
-     中間帯では、描かれる回数と色そろえの有無が効き幅を左右する */
-  if (px > MC.proxy.TUNE.alwaysBelow) {
-    const gain = panes.length * (MC.S.colorOn ? MC.proxy.TUNE.colorGain : 1)
-               + (MC.LAYOUTS[MC.S.layoutId].type === "switch" ? 1 : 0);
-    if (gain * (1 - px) < MC.proxy.TUNE.minGain) return null;
-  }
+  if (px > MC.proxy.TUNE.alwaysBelow) return null;
 
   /* 偶数へ切り上げ(H.264 のクロマが奇数を嫌う)。
      ※ clip.width/height は <video> の videoWidth/Height = **回転適用済みの表示寸法**。

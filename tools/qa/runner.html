@@ -6910,7 +6910,10 @@ async function countSamples(ns, file, fromSec) {
       await put("MarchinZ_Switcher_16x9_2020-01-01.mp4");  // 置き去りの完成品 → 消える
       await put("keepme.mp4"); X._opfsName = "keepme.mp4"; // 今の成果物 → 残る
       await X.opfsSweep();
-      const after = await names();
+      /* 走行中の probe の実測ファイル(__probe_、1分以内)は残ってよい(2026-08-06
+         レビューP2-1: 消すと probe が誤って失敗し false がセッション中固定される)。
+         この試験の主題ではないので比較から除く */
+      const after = (await names()).filter(n => !n.startsWith("__probe_"));
       const want = ["keepme.mp4", "mzjob.json", "mzpart_abc_0.mp4"];
       if (after.join(",") !== want.join(",")) {
         throw new Error(`残骸が違う: [${after.join(",")}] (期待 [${want.join(",")}])`);
@@ -6976,6 +6979,17 @@ async function countSamples(ns, file, fromSec) {
     if (w.MC.proxy.specFor(clip) !== null) {
       throw new Error("FHD+スイッチングで縮小版を作ろうとしている(出力と等倍なので無意味)");
     }
+    /* ★ 縦型でも FHD なら作らない(2026-08-06 優さん実機)。FHD×縦型3分割は
+       画素35%で、当初の損得式が「作る」と判定 → FHD3本の再エンコード(数分)が
+       おまかせに割り込み、チェックリストに段が無いため「色をそろえる」で
+       止まって見えた。作るのは4K級(画素1/4以下)だけ */
+    S.mode = "vertical"; S.layoutId = "v3"; S.preset = "9x16";
+    S.slots = [clip.id, null, null];
+    S.colorOn = true;
+    if (w.MC.proxy.specFor(clip) !== null) {
+      throw new Error("FHD+縦型で縮小版を作ろうとしている(おまかせが数分止まって見える形)");
+    }
+    S.mode = "switch"; S.layoutId = "switch"; S.preset = "16x9"; S.slots = [clip.id];
     /* 歯の確認: 同じ条件で 4K なら作る。ここが null のままなら試験が骨抜き */
     const k = { ...clip, width: 3840, height: 2160 };
     const spec4k = w.MC.proxy.specFor(k);
@@ -7272,7 +7286,25 @@ async function countSamples(ns, file, fromSec) {
     /* 尺が短すぎて2点そろわない素材 = 測れない */
     const tiny = { duration: 0.2, video: document.createElement("video") };
     if (await V.quickProbe(tiny) !== null) throw new Error("測れないのに判定を返した(三脚と断定する事故の入口)");
-    return "素材なし/静止画/測れない尺 のいずれも null(何も推さない)";
+    /* ★ おまかせ・書き出し中は見送る(2026-08-06 優さん実機「音を合わせるで
+       止まってる」)。取り込み直後に積んだキューがおまかせ開始後まで残り、
+       10分素材×3本のシークが本体と資源を奪い合っていた */
+    const okClip = { duration: 60, video: document.createElement("video") };
+    const keepBusy = w.MC.ui._busy;
+    try {
+      w.MC.ui._busy = true;
+      if (await V.quickProbe(okClip) !== null) throw new Error("おまかせ中なのにシークしに行く(本体と奪い合う)");
+    } finally { w.MC.ui._busy = keepBusy; }
+    const keepRun = w.MC.exporter.running;
+    try {
+      w.MC.exporter.running = true;
+      if (await V.quickProbe(okClip) !== null) throw new Error("書き出し中なのにシークしに行く");
+    } finally { w.MC.exporter.running = keepRun; }
+    /* 色統計・傾き検出と同じロックに居ること(ロック無しの割り込みが今回の実機事故) */
+    const src = await (await fetch("../switcher/js/visual.js")).text();
+    const qp = src.slice(src.indexOf("MC.visual.quickProbe"), src.indexOf("MC.visual.quickProbe") + 300);
+    if (!/withSeekLock/.test(qp)) throw new Error("quickProbe が withSeekLock の外に居る(シークの奪い合い)");
+    return "素材なし/静止画/測れない尺/おまかせ中/書き出し中 すべて見送る + ロック内";
   });
   await test("★書き出しを始めるとき、前回の書き出しファイルを必ず手放す", async () => {
     const w = await compEnv();

@@ -565,12 +565,21 @@ MC.visual._finalize = V => {
    被写体(引き/ピット等)は数点では言い切れないので推さない ─ 本解析に任せる。
    結果は clip.visual ではなく clip.quickVisual へ。本解析が来たら必ずそちらが勝つ */
 MC.visual.QUICK_PAIR_DT = 0.15;
-MC.visual.quickProbe = async clip => {
+/* ★ withSeekLock で包む(2026-08-06 優さん実機「音を合わせるで止まってる」)。
+   色統計(colormatch)と傾き検出(horizon)は同じロックでシークを直列にしているのに、
+   この軽い判定だけロック無しで割り込んでいた。10分級の素材3本だと6シーク×3本が
+   1〜2分続き、その間おまかせ本体(音の抽出・解析)と資源を奪い合う */
+MC.visual.quickProbe = clip => MC.withSeekLock(async () => {
   const v = clip && clip.video;
   if (!v || !clip.duration || clip.isImage || clip.isAudio) return null;
   /* ★ 再生・試聴中に同じ <video> をシークで奪わない(2026-08-06 レビューP2-4)。
      判定は付加価値なので、ぶつかるくらいなら黙って見送る(=自動判定のまま) */
   if (MC.S && MC.S.playing) return null;
+  /* ★ おまかせ・書き出しが走っているあいだは見送る(2026-08-06 優さん実機)。
+     取り込み直後に積んだキューが、おまかせ開始後まで残って本体の邪魔をしていた。
+     判定できなかった素材は「自動判定」のままになるだけで、何も壊れない */
+  if (MC.ui && MC.ui._busy) return null;
+  if (MC.exporter && (MC.exporter.running || MC.exporter.recording)) return null;
   const keep = v.currentTime;
   const shake = [];
   try {
@@ -600,7 +609,7 @@ MC.visual.quickProbe = async clip => {
        届かないので、guessAxes は何も推さない = 従来どおり「自動判定」 */
     operated: shakeMed >= MC.visual.TH_SHAKE,
   };
-};
+});
 
 /* 前の解析を、新しい範囲でそのまま使えるか(2026-08-06)。
    これまでは範囲が0.1秒でも動くと**全クリップを最初から解析し直して**いた。
