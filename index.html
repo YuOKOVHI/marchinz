@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-version="1.113.0">
+<html lang="ja" data-mz-version="1.113.1">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -73,7 +73,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css" />
     <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css?v=1.25.64" />
     <link rel="stylesheet" href="styles.css?v=1.39.69" />
-    <link rel="stylesheet" href="marchinz-brushup.css?v=1.113.0" />
+    <link rel="stylesheet" href="marchinz-brushup.css?v=1.113.1" />
     <!-- Microsoft Clarity -->
     <script type="text/javascript">
       (function(c,l,a,r,i,t,y){
@@ -2901,6 +2901,18 @@
               <summary>すべてのイベントを見る</summary>
               <div id="admin-ugc-ga-table" class="admin-ugc-ga-table" aria-live="polite"></div>
             </details>
+            <details id="admin-ugc-ga-manual" class="admin-ugc-ga-manual">
+              <summary>プロパティIDを直接入れる（自動で見つからないとき）</summary>
+              <p class="admin-ugc-ga-manual-lead">
+                GA の「管理 → プロパティ設定」に出る数字（例: 123456789）です。
+                <b>一度どこかの端末で取得できていれば、そのIDを他の端末にも入れれば同じように見られます。</b>
+              </p>
+              <div class="admin-ugc-ga-clientrow">
+                <input id="admin-ugc-ga-prop-id" type="text" inputmode="numeric" autocomplete="off"
+                  placeholder="123456789" aria-label="GA4 プロパティID" />
+                <button type="button" id="admin-ugc-ga-save-prop" class="btn small">保存</button>
+              </div>
+            </details>
             <p class="admin-ugc-ga-foot">
               <button type="button" id="admin-ugc-ga-reset" class="linklike">接続設定をやり直す</button>
             </p>
@@ -4159,7 +4171,7 @@
     <script defer src="marchinz-analytics.js?v=1.25.64"></script>
     <script defer src="marchinz-admin-page.js?v=1.26.25"></script>
     <script defer src="marchinz-admin-dash.js?v=1.36.8"></script>
-    <script defer src="marchinz-admin-ugc.js?v=1.113.0"></script>
+    <script defer src="marchinz-admin-ugc.js?v=1.113.1"></script>
     <script defer src="marchinz-admin-trash.js?v=1.25.105"></script>
     <script defer src="marchinz-admin-banned.js?v=1.25.64"></script>
     <script defer src="site-nav.js?v=1.39.58"></script>

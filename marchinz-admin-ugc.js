@@ -1003,14 +1003,26 @@
   async function gaDiscoverProperty(token) {
     const cached = gaLsGet(GA_LS.prop);
     if (cached) return cached;
-    const sums = await gaApi(
-      "https://analyticsadmin.googleapis.com/v1beta/accountSummaries?pageSize=200",
-      token,
-    );
+    /* ★ プロパティの一覧はページで返る(2026-08-06 優さん実機「1回できてたのに」)。
+       nextPageToken を辿らないと、プロパティが多いアカウントで
+       目当ての1件が2ページ目にあったときに永久に見つからない */
     const props = [];
-    for (const a of sums.accountSummaries || []) {
-      for (const p of a.propertySummaries || []) props.push(String(p.property || ""));
+    let pageToken = "";
+    for (let page = 0; page < 10; page++) {
+      const url = "https://analyticsadmin.googleapis.com/v1beta/accountSummaries?pageSize=200"
+        + (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : "");
+      const sums = await gaApi(url, token);
+      for (const a of sums.accountSummaries || []) {
+        for (const p of a.propertySummaries || []) props.push(String(p.property || ""));
+      }
+      pageToken = String(sums.nextPageToken || "");
+      if (!pageToken) break;
     }
+    /* ★ 失敗を握りつぶさない(同上)。以前は catch{} で全部飛ばしており、
+       Admin API が 403/429/一時障害を返した回まで「見つかりません」と
+       報告していた ─ **探せなかった**のに**無い**と言っていた。
+       理由が分からないと、優さんは直しようがない */
+    const errs = [];
     for (const prop of props) {
       if (!prop) continue;
       try {
@@ -1026,9 +1038,22 @@
           gaLsSet(GA_LS.prop, id);
           return id;
         }
-      } catch { /* 権限の無いプロパティは飛ばす */ }
+      } catch (e) {
+        errs.push(`${prop}: ${(e && e.message) || e}`);
+      }
     }
-    throw new Error(`このアカウントから測定ID ${GA_MEASUREMENT_ID} のプロパティが見つかりません`);
+    if (!props.length) {
+      throw new Error("このGoogleアカウントから見えるGA4プロパティが0件でした。"
+        + "GAに参加しているアカウントでログインしているか確認してください");
+    }
+    if (errs.length) {
+      throw new Error(`${props.length}件のプロパティを調べましたが、`
+        + `${errs.length}件は中を見られませんでした(権限か一時的な失敗)。`
+        + `下の「プロパティIDを直接入れる」で先に進めます。詳細: ${errs[0].slice(0, 120)}`);
+    }
+    throw new Error(`${props.length}件のプロパティを調べましたが、測定ID `
+      + `${GA_MEASUREMENT_ID} は見つかりませんでした。`
+      + "下の「プロパティIDを直接入れる」で指定できます");
   }
 
   function gaStartDate(range) {
@@ -1187,6 +1212,14 @@
   function gaSyncSetupUi() {
     const setup = el("admin-ugc-ga-setup");
     if (setup) setup.hidden = Boolean(gaLsGet(GA_LS.client));
+    /* いま使っているプロパティIDを見せる(2026-08-06)。自動で見つかった端末から
+       他の端末へ写せるようにする ─ この値は端末ごとの localStorage にしか無く、
+       PCで取得できてもスマホでは一から探し直しになるため */
+    const pi = el("admin-ugc-ga-prop-id");
+    /* ★ 保存済みの値を正本として必ず映す(2026-08-06)。「空のときだけ」にすると、
+       自動で見つけたIDが古い入力のまま隠れ、他の端末へ写す値を間違える */
+    const cur = gaLsGet(GA_LS.prop);
+    if (pi instanceof HTMLInputElement && cur && pi.value !== cur) pi.value = cur;
   }
 
   async function gaFetchAndRender() {
@@ -1209,6 +1242,7 @@
         : (await gaRunReport(token, propId, "all")).total;
       const at = Date.now();
       gaLsSet(GA_LS.cache, JSON.stringify({ allTotal, at }));
+      gaSyncSetupUi();          // 見つかったプロパティIDを欄へ映す
       paintGaTop(view.rows, gaRange);
       paintGaTable(view.rows, view.total, gaRange, at);
       paintToolsNavEventCount(allTotal);
@@ -1264,6 +1298,20 @@
         if (gaToken) void gaFetchAndRender();
       });
     }
+    const saveProp = el("admin-ugc-ga-save-prop");
+    if (saveProp && !saveProp.dataset.wired) {
+      saveProp.dataset.wired = "1";
+      saveProp.addEventListener("click", () => {
+        const input = el("admin-ugc-ga-prop-id");
+        const v = input instanceof HTMLInputElement ? input.value.trim() : "";
+        if (!/^\d{6,12}$/.test(v)) {
+          setGaMsg("プロパティIDは数字だけです(例: 123456789)", true);
+          return;
+        }
+        gaLsSet(GA_LS.prop, v);
+        setGaMsg("プロパティIDを保存しました。「GAから取得」を押してください");
+      });
+    }
     const reset = el("admin-ugc-ga-reset");
     if (reset && !reset.dataset.wired) {
       reset.dataset.wired = "1";
@@ -1271,6 +1319,7 @@
         gaLsSet(GA_LS.client, "");
         gaLsSet(GA_LS.prop, "");
         gaToken = null;
+        { const pi = el("admin-ugc-ga-prop-id"); if (pi instanceof HTMLInputElement) pi.value = ""; }
         gaSyncSetupUi();
         setGaMsg("接続設定を消しました。クライアントIDから設定し直してください");
       });
