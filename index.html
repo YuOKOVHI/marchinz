@@ -184,8 +184,10 @@
               <a href="#profile?tab=base" role="menuitem" class="user-account-dropdown-item" id="menu-open-days"
                 ><i class="fa-solid fa-drum" aria-hidden="true"></i> MarchinZ Days(練習記録)</a
               >
-              <a href="/tools/switcher/" role="menuitem" class="user-account-dropdown-item" id="menu-open-switcher"
-                ><i class="fa-solid fa-clapperboard" aria-hidden="true"></i> MarchinZ Switcher(映像制作)</a
+              <!-- ★ 6ツール化で単一ツール代表は不自然に(2026-08-07 再編)。
+                   入口(クリエイターページ)へ寄せる。id は MENU_SHORTCUTS が参照するので不変 -->
+              <a href="#creators" data-page="creators" role="menuitem" class="user-account-dropdown-item" id="menu-open-switcher"
+                ><i class="fa-solid fa-clapperboard" aria-hidden="true"></i> MarchinZ 映像ツール</a
               >
               <button type="button" role="menuitem" class="user-account-dropdown-item" id="menu-open-profile-edit">
                 プロフィール編集
@@ -288,8 +290,8 @@
             <a href="#community/moments" class="site-mobile-drawer-menu-item" id="menu-mobile-open-moments"
               ><i class="fa-solid fa-bolt" aria-hidden="true"></i> モーメント</a
             >
-            <a href="/tools/switcher/" class="site-mobile-drawer-menu-item" id="menu-mobile-open-switcher"
-              ><i class="fa-solid fa-clapperboard" aria-hidden="true"></i> MarchinZ Switcher(映像制作)</a
+            <a href="#creators" data-page="creators" class="site-mobile-drawer-menu-item" id="menu-mobile-open-switcher"
+              ><i class="fa-solid fa-clapperboard" aria-hidden="true"></i> MarchinZ 映像ツール</a
             >
             <a href="#profile?tab=base" class="site-mobile-drawer-menu-item" id="menu-mobile-open-days"
               ><i class="fa-solid fa-drum" aria-hidden="true"></i> MarchinZ Days(練習記録)</a
@@ -1358,14 +1360,33 @@
                 <span class="mz-today-tools-title" lang="en">CREATOR TOOLS</span>
               </div>
               <div class="mz-ctools-grid mz-top-ctools">
-<a href="/tools/switcher/" class="mz-ctool-card">
-                  <span class="mz-ctool-icon"><i class="fa-solid fa-clapperboard" aria-hidden="true"></i></span>
+<!-- ★ 押すのは①②③の3枚(2026-08-07 映像ツール再編)。④⑤⑥は
+                     「すべて見る」の先(クリエイターページ)に -->
+                <a href="/tools/switcher/?tool=reel" class="mz-ctool-card" data-mz-tool-link>
+                  <span class="mz-ctool-icon"><i class="fa-solid fa-mobile-screen" aria-hidden="true"></i></span>
                   <span class="mz-ctool-body">
-                    <span class="mz-ctool-name" lang="en">MarchinZ Switcher</span>
-                    <span class="mz-ctool-desc">ランスルー動画を音で同期。自動スイッチング・ワイプでMP4に</span>
+                    <span class="mz-ctool-name" lang="en">MarchinZ Reel</span>
+                    <span class="mz-ctool-desc">動画を音で同期し、縦に並べてSNS向けの1本に</span>
                   </span>
                   <span class="mz-ctool-go" aria-hidden="true"><i class="fa-solid fa-arrow-right"></i></span>
                 </a>
+                <a href="/tools/switcher/?tool=switcher" class="mz-ctool-card" data-mz-tool-link>
+                  <span class="mz-ctool-icon"><i class="fa-solid fa-clapperboard" aria-hidden="true"></i></span>
+                  <span class="mz-ctool-body">
+                    <span class="mz-ctool-name" lang="en">MarchinZ Switcher</span>
+                    <span class="mz-ctool-desc">複数カメラを音で同期し、見どころで自動切り替え</span>
+                  </span>
+                  <span class="mz-ctool-go" aria-hidden="true"><i class="fa-solid fa-arrow-right"></i></span>
+                </a>
+                <a href="/tools/switcher/?tool=wipe" class="mz-ctool-card" data-mz-tool-link>
+                  <span class="mz-ctool-icon"><i class="fa-solid fa-clone" aria-hidden="true"></i></span>
+                  <span class="mz-ctool-body">
+                    <span class="mz-ctool-name" lang="en">MarchinZ Wipe</span>
+                    <span class="mz-ctool-desc">メイン1台に小窓を2つまで。分析が速い</span>
+                  </span>
+                  <span class="mz-ctool-go" aria-hidden="true"><i class="fa-solid fa-arrow-right"></i></span>
+                </a>
+                <a href="#creators" data-page="creators" class="mz-ctools-more">映像ツールをすべて見る <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
                               </div>
               <div class="mz-today-tools-head">
                 <span class="mz-today-tools-title" lang="en">PRACTICE TOOLS</span>
@@ -1445,33 +1466,26 @@
                   <p class="mz-gate-eyebrow" lang="en">FOR CREATORS</p>
                   <h3 class="mz-gate-title"><i class="fa-solid fa-camera" aria-hidden="true"></i> 撮る・つくる</h3>
                   <nav class="mz-gate-links" aria-label="クリエイター向け機能">
-                    <a href="/tools/reangle/" class="mz-gate-link" data-mz-tool-link>
-                      <i class="fa-solid fa-vector-square" aria-hidden="true"></i>
-                      <span class="mz-gate-link-body"><span class="mz-gate-link-name" lang="en">ReAngle</span><span class="mz-gate-link-desc">斜め撮りを正面視点に補正</span></span>
+                    <!-- ★ 映像ツール再編(2026-08-07): 強く押す①②③を並べる。
+                         ④ReAngle⑤Privacy⑥Vlogは「クリエイターページ」行の先に(行数は増やさない) -->
+                    <a href="/tools/switcher/?tool=reel" class="mz-gate-link" data-mz-tool-link>
+                      <i class="fa-solid fa-mobile-screen" aria-hidden="true"></i>
+                      <span class="mz-gate-link-body"><span class="mz-gate-link-name" lang="en">Reel</span><span class="mz-gate-link-desc">縦に並べてSNS向けの1本に</span></span>
                       <i class="fa-solid fa-chevron-right mz-gate-link-go" aria-hidden="true"></i>
                     </a>
-                    <a href="/tools/switcher/" class="mz-gate-link" data-mz-tool-link>
+                    <a href="/tools/switcher/?tool=switcher" class="mz-gate-link" data-mz-tool-link>
                       <i class="fa-solid fa-clapperboard" aria-hidden="true"></i>
                       <span class="mz-gate-link-body"><span class="mz-gate-link-name" lang="en">Switcher</span><span class="mz-gate-link-desc">マルチカム自動スイッチング</span></span>
                       <i class="fa-solid fa-chevron-right mz-gate-link-go" aria-hidden="true"></i>
                     </a>
-                    <a href="/tools/privacy/" class="mz-gate-link" data-mz-tool-link>
-                      <i class="fa-solid fa-user-shield" aria-hidden="true"></i>
-                      <span class="mz-gate-link-body"><span class="mz-gate-link-name" lang="en">Privacy</span><span class="mz-gate-link-desc">顔に自動でモザイク</span></span>
+                    <a href="/tools/switcher/?tool=wipe" class="mz-gate-link" data-mz-tool-link>
+                      <i class="fa-solid fa-clone" aria-hidden="true"></i>
+                      <span class="mz-gate-link-body"><span class="mz-gate-link-name" lang="en">Wipe</span><span class="mz-gate-link-desc">メイン+小窓で分析が速い</span></span>
                       <i class="fa-solid fa-chevron-right mz-gate-link-go" aria-hidden="true"></i>
-                    </a>
-                    <!-- ★ Vlog も並べる(2026-08-06 優さん指示「表示はさせてて」)。
-                         押しても MZVlogGate が「開発中です」と伝えて止めるので、
-                         リンクのままで安全。ここだけ無いと「クリエイターページには
-                         あるのにTOPには無い」という食い違いになる -->
-                    <a href="/tools/vlog/" class="mz-gate-link mz-gate-link--soon" data-mz-tool-link>
-                      <i class="fa-solid fa-film" aria-hidden="true"></i>
-                      <span class="mz-gate-link-body"><span class="mz-gate-link-name" lang="en">Vlog</span><span class="mz-gate-link-desc">インタビュー軸の団体Vlog</span></span>
-                      <span class="mz-gate-link-soon">開発中</span>
                     </a>
                     <a href="#creators" data-page="creators" class="mz-gate-link">
                       <i class="fa-solid fa-users" aria-hidden="true"></i>
-                      <span class="mz-gate-link-body"><span class="mz-gate-link-name">クリエイターページ</span><span class="mz-gate-link-desc">ツール一覧・掲載のご案内</span></span>
+                      <span class="mz-gate-link-body"><span class="mz-gate-link-name">クリエイターページ</span><span class="mz-gate-link-desc">ReAngle・Privacy・Vlogなど全ツール</span></span>
                       <i class="fa-solid fa-chevron-right mz-gate-link-go" aria-hidden="true"></i>
                     </a>
                   </nav>
@@ -3666,7 +3680,7 @@
           <!-- ★ 当てはまるツール名を書く(2026-08-05 レビュー反映)。カード4枚の上に
                無条件で置いていたが、Privacy は watermark.js を読み込んでおらず
                ロゴは入らない ─ 4枚に掛かる位置で「入ります」と言うと嘘になる -->
-          <p class="mz-ctools-note">Switcher・ReAngle・Vlogで作成した映像に<b>MarchinZのロゴ</b>が表示されます。</p>
+          <p class="mz-ctools-note">Reel・Switcher・Wipe・ReAngle・Vlogで作成した映像に<b>MarchinZのロゴ</b>が表示されます。</p>
           <!-- ★ 無料登録＋パソコンで何ができるようになるかを、選ぶ前に言う
                (2026-08-05 優さん指示)。スマホは取り込み5分・書き出し30〜60秒なので、
                8分半のフルショウは通せない。行き止まりで気づかせず、先に道を示す。
@@ -3676,45 +3690,69 @@
                  カード4枚の上に置くので、どのツールの話かを明記する -->
           <p class="mz-ctools-note mz-ctools-note--tip">
             <i class="fa-regular fa-lightbulb" aria-hidden="true"></i>
-            <b>Switcherでフルショウのランスルーを作るなら、無料登録＋パソコンからどうぞ。</b>
+            <!-- ★ ツール名を出さない(2026-08-07 再編)。改名で「Switcher」は自動スイッチング
+                 専用の名になったが、この上限(PC15分/10分)は Reel/Wipe にも効く話 -->
+            <b>フルショウのランスルーを作るなら、無料登録＋パソコンからどうぞ。</b>
             パソコンなら1本15分まで取り込めて、10分までの動画を作成できます。
           </p>
-          <div class="mz-ctools-grid mz-ctools-grid--visual">
-            <a href="/tools/switcher/" class="mz-ctool-card mz-ctool-card--visual">
+          <!-- ★ 映像ツール再編(2026-08-07 優さん指示)。強く押すのは①Reel②Switcher③Wipe:
+               絵つきの大カード3枚を先頭に。④ReAngle⑤Privacyは控えめな小カード、
+               ⑥Vlogは開発中バッジ。①②③の実体は同じアプリで、?tool= が入口を分ける -->
+          <h4 class="mz-ctools-subhead">映像をつくる</h4>
+          <div class="mz-ctools-grid mz-ctools-grid--visual mz-ctools-grid--hero3">
+            <a href="/tools/switcher/?tool=reel" class="mz-ctool-card mz-ctool-card--visual" data-mz-tool-link>
+              <span class="mz-ctool-visual">
+                <img src="images/creators/tool-reel.svg?v=2.1.1" alt="横で撮った動画が縦に積まれてSNS向けの1本になるイメージ" width="400" height="250" loading="lazy" decoding="async" />
+              </span>
+              <span class="mz-ctool-body">
+                <span class="mz-ctool-name"><i class="fa-solid fa-mobile-screen" aria-hidden="true"></i> <span lang="en">MarchinZ Reel</span></span>
+                <span class="mz-ctool-desc">動画を音で自動同期し、縦に並べて1本に。SNS向けの縦型（9:16）。</span>
+              </span>
+            </a>
+            <a href="/tools/switcher/?tool=switcher" class="mz-ctool-card mz-ctool-card--visual" data-mz-tool-link>
               <span class="mz-ctool-visual">
                 <img src="images/creators/tool-switcher.svg?v=1.36.2" alt="複数カメラの映像が1本の動画に自動スイッチングされるイメージ" width="400" height="250" loading="lazy" decoding="async" />
               </span>
               <span class="mz-ctool-body">
                 <span class="mz-ctool-name"><i class="fa-solid fa-clapperboard" aria-hidden="true"></i> <span lang="en">MarchinZ Switcher</span></span>
-                <span class="mz-ctool-desc">みんなで撮ったランスルー（通し練習）動画を音で自動同期。自動スイッチング・ワイプでMP4に。</span>
+                <span class="mz-ctool-desc">複数カメラを音で同期し、見どころに合わせて自動で切り替え。横型（16:9）。</span>
               </span>
             </a>
-            <a href="/tools/reangle/" class="mz-ctool-card mz-ctool-card--visual">
+            <a href="/tools/switcher/?tool=wipe" class="mz-ctool-card mz-ctool-card--visual" data-mz-tool-link>
               <span class="mz-ctool-visual">
-                <img src="images/creators/tool-reangle.svg?v=1.36.2" alt="斜めから撮った映像が正面視点に補正されるイメージ" width="400" height="250" loading="lazy" decoding="async" />
+                <img src="images/creators/tool-wipe.svg?v=2.1.1" alt="メインの映像に小窓が2つ重なるイメージ" width="400" height="250" loading="lazy" decoding="async" />
               </span>
               <span class="mz-ctool-body">
-                <span class="mz-ctool-name"><i class="fa-solid fa-vector-square" aria-hidden="true"></i> <span lang="en">MarchinZ ReAngle</span></span>
-                <span class="mz-ctool-desc">客席の斜めから撮った演技を、正面から撮ったように補正。ドリルの形がまっすぐ伝わります。</span>
+                <span class="mz-ctool-name"><i class="fa-solid fa-clone" aria-hidden="true"></i> <span lang="en">MarchinZ Wipe</span></span>
+                <span class="mz-ctool-desc">メイン1台を固定し、小窓を2つまで重ねる。分析が速い。横型（16:9）。</span>
               </span>
             </a>
-            <a href="/tools/privacy/" class="mz-ctool-card mz-ctool-card--visual">
-              <span class="mz-ctool-visual">
-                <img src="images/creators/tool-privacy.svg?v=1.36.2" alt="演技写真の顔に自動でモザイクがかかるイメージ" width="400" height="250" loading="lazy" decoding="async" />
-              </span>
+          </div>
+          <h4 class="mz-ctools-subhead">そのほかの映像ツール</h4>
+          <div class="mz-ctools-grid">
+            <a href="/tools/reangle/" class="mz-ctool-card" data-mz-tool-link>
+              <span class="mz-ctool-icon"><i class="fa-solid fa-vector-square" aria-hidden="true"></i></span>
               <span class="mz-ctool-body">
-                <span class="mz-ctool-name"><i class="fa-solid fa-user-shield" aria-hidden="true"></i> <span lang="en">MarchinZ Privacy</span></span>
-                <span class="mz-ctool-desc">顔を自動で見つけてモザイク。SNSに載せる前の肖像権配慮が数タップで完了します。</span>
+                <span class="mz-ctool-name" lang="en">MarchinZ ReAngle</span>
+                <span class="mz-ctool-desc">斜め撮りの演技を正面視点に補正</span>
               </span>
+              <span class="mz-ctool-go" aria-hidden="true"><i class="fa-solid fa-arrow-right"></i></span>
             </a>
-            <a href="/tools/vlog/" class="mz-ctool-card mz-ctool-card--visual">
-              <span class="mz-ctool-visual">
-                <img src="images/creators/tool-vlog.svg?v=1.39.23" alt="インタビューと映像が1本の団体Vlogに組み上がるイメージ" width="400" height="250" loading="lazy" decoding="async" />
-              </span>
+            <a href="/tools/privacy/" class="mz-ctool-card" data-mz-tool-link>
+              <span class="mz-ctool-icon"><i class="fa-solid fa-user-shield" aria-hidden="true"></i></span>
               <span class="mz-ctool-body">
-                <span class="mz-ctool-name"><i class="fa-solid fa-film" aria-hidden="true"></i> <span lang="en">MarchinZ Vlog</span>（開発中）</span>
-                <span class="mz-ctool-desc">インタビューを軸に、プロの構成の団体Vlogへ自動編集。語りが主役のツールです。</span>
+                <span class="mz-ctool-name" lang="en">MarchinZ Privacy</span>
+                <span class="mz-ctool-desc">顔を自動で見つけてモザイク</span>
               </span>
+              <span class="mz-ctool-go" aria-hidden="true"><i class="fa-solid fa-arrow-right"></i></span>
+            </a>
+            <a href="/tools/vlog/" class="mz-ctool-card mz-ctool-card--soon" data-mz-tool-link>
+              <span class="mz-ctool-icon"><i class="fa-solid fa-film" aria-hidden="true"></i></span>
+              <span class="mz-ctool-body">
+                <span class="mz-ctool-name" lang="en">MarchinZ Vlog <span class="mz-ctool-soon">開発中</span></span>
+                <span class="mz-ctool-desc">インタビュー軸の団体Vlogへ自動編集</span>
+              </span>
+              <span class="mz-ctool-go" aria-hidden="true"><i class="fa-solid fa-arrow-right"></i></span>
             </a>
           </div>
           <p class="static-panel-text mz-ctools-note">推奨環境（お使いの端末に合わせてどうぞ・いずれも最新版）: iPhone・iPad → Safari ／ Androidスマホ → Chrome ／ パソコン（Mac・Windows） → Chrome</p>

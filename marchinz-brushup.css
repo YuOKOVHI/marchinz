@@ -4836,3 +4836,23 @@ input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
 }
 .mzsc-note-band .mzsc-note p { margin: 0; }
 .mzsc-note-band .mzsc-note a { color: #1e4fd6; }
+
+/* ---------- 映像ツール再編(2026-08-07): ①②③を大きく・④⑤控えめ・⑥開発中 ---------- */
+.mz-ctools-subhead {
+  margin: 1.4rem 0 0.6rem; font-size: 0.95rem; font-weight: 800; color: var(--text, #0f2138);
+}
+.mz-ctools-grid--hero3 { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 899px) {
+  .mz-ctools-grid--hero3 { grid-template-columns: 1fr; }
+}
+.mz-ctool-soon {
+  display: inline-block; margin-left: 0.4rem; padding: 0.1rem 0.55rem;
+  border-radius: 999px; background: rgba(15, 33, 56, 0.08);
+  color: rgba(15, 33, 56, 0.65); font-size: 0.68rem; font-weight: 800; vertical-align: 1px;
+}
+.mz-ctool-card--soon { opacity: 0.85; }
+.mz-ctools-more {
+  display: inline-flex; align-items: center; gap: 0.4rem; margin-top: 0.5rem;
+  font-size: 0.85rem; font-weight: 700; color: #1e4fd6; text-decoration: none;
+}
+.mz-ctools-more:hover { text-decoration: underline; }

@@ -119,7 +119,7 @@ window.MZSiteChrome = (() => {
       + '<div class="mzsc-drawer-user-actions">'
       + item("/#profile", "プロフィールを見る", "")
       + item("/#community/moments", "モーメント", "fa-solid fa-bolt")
-      + item("/tools/switcher/", "MarchinZ Switcher(映像制作)", "fa-solid fa-clapperboard")
+      + item("/#creators", "MarchinZ 映像ツール", "fa-solid fa-clapperboard")
       + item("/#profile?tab=base", "MarchinZ Days(練習記録)", "fa-solid fa-drum")
       /* ★ 設定・プロフィール編集・ログアウトは本体のダイアログでしか開けない。
          3行に割ると、どれを押しても同じマイページに着く「3本の同じ道」になる */
@@ -284,7 +284,9 @@ window.MZSiteChrome = (() => {
     let t = "fan";
     try { t = localStorage.getItem("mz_user_type_v1") || "fan"; } catch (_) {}
     if (t === "player") return { href: "/#profile?tab=base", label: "練習記録", svg: TAB_SVG.drum };
-    if (t === "creator") return { href: "/tools/switcher/", label: "Switcher", svg: TAB_SVG.clap };
+    /* ★ 6ツール化で単一ツール代表は不自然(2026-08-07 再編)。「映像ツール」の
+       入口へ。tools:true は「どのツールにいても現在地として点灯」の印 */
+    if (t === "creator") return { href: "/#creators", label: "映像ツール", svg: TAB_SVG.clap, tools: true };
     return { href: "/#community/events", label: "コミュニティ", svg: TAB_SVG.people };
   }
   function tabbarHtml() {
@@ -299,7 +301,9 @@ window.MZSiteChrome = (() => {
       { href: "/#profile", label: "マイページ", svg: TAB_SVG.user },
     ];
     const a = tabs.map(t => {
-      const on = t.href.startsWith("/tools/") && here === t.href;   // 今いるツールだけ点灯
+      /* 「映像ツール」枠(tools:true)は、6ツールのどこにいても現在地として点灯 */
+      const on = t.tools ? here.startsWith("/tools/")
+        : (t.href.startsWith("/tools/") && here === t.href);
       return `<a href="${t.href}"${on ? ' class="on"' : ""}>`
         + '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
         + t.svg + `</svg><span>${esc(t.label)}</span></a>`;

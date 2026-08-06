@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 250" role="img" aria-label="Reel: 横で撮った動画を縦に並べて1本のSNS向け動画に">
+  <defs>
+    <linearGradient id="rbg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#eef3ff"/>
+      <stop offset="1" stop-color="#f7f9ff"/>
+    </linearGradient>
+    <linearGradient id="rphone" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4d7ce8"/>
+      <stop offset="1" stop-color="#1e4fd6"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="250" fill="url(#rbg)"/>
+
+  <!-- 2つの横動画(左) -->
+  <g font-family="-apple-system,'Hiragino Sans',sans-serif" font-weight="700">
+    <g>
+      <rect x="34" y="52" width="104" height="60" rx="8" fill="#ffffff" stroke="#c9d6ee" stroke-width="2"/>
+      <circle cx="74" cy="80" r="9" fill="#aabde0"/>
+      <path d="M52 102 Q74 84 96 102 L122 102" stroke="#aabde0" stroke-width="3" fill="none" stroke-linecap="round"/>
+      <text x="42" y="68" font-size="10" fill="#68738a">MOV 1</text>
+    </g>
+    <g>
+      <rect x="34" y="128" width="104" height="60" rx="8" fill="#dfe8fb" stroke="#1e4fd6" stroke-width="2.5"/>
+      <rect x="58" y="152" width="12" height="26" rx="3" fill="#1e4fd6"/>
+      <rect x="78" y="144" width="12" height="34" rx="3" fill="#1e4fd6"/>
+      <rect x="98" y="158" width="12" height="20" rx="3" fill="#1e4fd6"/>
+      <text x="42" y="144" font-size="10" fill="#1e4fd6">MOV 2</text>
+    </g>
+  </g>
+
+  <!-- 矢印 -->
+  <g stroke="#1e4fd6" stroke-width="4" fill="none" stroke-linecap="round">
+    <path d="M158 120 L 196 120"/>
+    <path d="M186 108 L 198 120 L 186 132"/>
+  </g>
+
+  <!-- 縦スマホ(右): 3段に積まれた完成形 -->
+  <g>
+    <rect x="238" y="20" width="118" height="210" rx="18" fill="#0f2138"/>
+    <rect x="246" y="30" width="102" height="190" rx="10" fill="url(#rphone)"/>
+    <!-- 3分割の段 -->
+    <rect x="252" y="38" width="90" height="56" rx="6" fill="#ffffff" opacity="0.92"/>
+    <rect x="252" y="98" width="90" height="56" rx="6" fill="#ffffff" opacity="0.78"/>
+    <rect x="252" y="158" width="90" height="54" rx="6" fill="#ffffff" opacity="0.92"/>
+    <!-- 段の中身(人影と波形) -->
+    <circle cx="282" cy="60" r="8" fill="#4d7ce8"/>
+    <path d="M264 82 Q282 68 300 82 L326 82" stroke="#aabde0" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <circle cx="300" cy="120" r="9" fill="#1e4fd6"/>
+    <path d="M276 142 Q300 124 324 142" stroke="#1e4fd6" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+    <rect x="272" y="176" width="10" height="24" rx="3" fill="#4d7ce8"/>
+    <rect x="290" y="170" width="10" height="30" rx="3" fill="#4d7ce8"/>
+    <rect x="308" y="182" width="10" height="18" rx="3" fill="#4d7ce8"/>
+    <!-- 9:16 の札 -->
+    <g font-family="-apple-system,'Hiragino Sans',sans-serif" font-weight="800">
+      <rect x="256" y="204" width="46" height="18" rx="9" fill="#0f2138" opacity="0.85"/>
+      <text x="264" y="217" font-size="11" fill="#ffffff">9:16</text>
+    </g>
+  </g>
+</svg>

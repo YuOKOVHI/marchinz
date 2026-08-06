@@ -229,7 +229,8 @@
   const ATTR_ENTRY = {
     fan:     { href: "#community/events", page: "community", subtab: "", label: "コミュニティ", svg: SVG_PEOPLE, fa: "fa-users" },
     player:  { href: "#profile?tab=base", page: "days",      subtab: "", label: "練習記録",     svg: SVG_DRUM,   fa: "fa-drum" },
-    creator: { href: "/tools/switcher/",  page: "switcher",  subtab: "", label: "Switcher",     svg: SVG_CLAP,   fa: "fa-clapperboard" },
+    /* ★ 6ツール化(2026-08-07 再編): 代表機能は「映像ツール」の入口へ */
+    creator: { href: "#creators",         page: "creators",  subtab: "", label: "映像ツール",   svg: SVG_CLAP,   fa: "fa-clapperboard" },
   };
 
   function applyTabbar() {

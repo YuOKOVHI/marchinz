@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 250" role="img" aria-label="Wipe: メイン1台の映像に小窓を2つまで重ねる">
+  <defs>
+    <linearGradient id="wbg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#eef3ff"/>
+      <stop offset="1" stop-color="#f7f9ff"/>
+    </linearGradient>
+    <linearGradient id="wmain" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4d7ce8"/>
+      <stop offset="1" stop-color="#1e4fd6"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="250" fill="url(#wbg)"/>
+
+  <!-- メイン画面(16:9) -->
+  <g>
+    <rect x="52" y="34" width="296" height="182" rx="12" fill="#0f2138"/>
+    <rect x="60" y="42" width="280" height="166" rx="8" fill="url(#wmain)"/>
+    <!-- メインの被写体(隊列) -->
+    <g fill="#ffffff" opacity="0.92">
+      <circle cx="140" cy="102" r="11"/>
+      <path d="M112 138 Q140 112 168 138" stroke="#ffffff" stroke-width="5" fill="none" stroke-linecap="round"/>
+      <circle cx="205" cy="94" r="9" opacity="0.75"/>
+      <path d="M183 124 Q205 104 227 124" stroke="#ffffff" stroke-width="4" fill="none" stroke-linecap="round" opacity="0.75"/>
+      <circle cx="258" cy="102" r="7" opacity="0.55"/>
+      <path d="M242 124 Q258 110 274 124" stroke="#ffffff" stroke-width="3.5" fill="none" stroke-linecap="round" opacity="0.55"/>
+    </g>
+    <!-- 小窓1(右下・点灯中) -->
+    <g>
+      <rect x="238" y="140" width="88" height="56" rx="8" fill="#ffffff" stroke="#fefcef" stroke-width="3"/>
+      <circle cx="270" cy="162" r="8" fill="#1e4fd6"/>
+      <path d="M252 184 Q270 168 288 184 L312 184" stroke="#1e4fd6" stroke-width="3" fill="none" stroke-linecap="round"/>
+      <circle cx="316" cy="150" r="4" fill="#e0245e"/>
+    </g>
+    <!-- 小窓2(左下) -->
+    <g opacity="0.95">
+      <rect x="74" y="150" width="72" height="46" rx="8" fill="#ffffff" stroke="#c9d6ee" stroke-width="2"/>
+      <rect x="90" y="164" width="9" height="20" rx="3" fill="#aabde0"/>
+      <rect x="106" y="158" width="9" height="26" rx="3" fill="#aabde0"/>
+      <rect x="122" y="168" width="9" height="16" rx="3" fill="#aabde0"/>
+    </g>
+    <!-- 16:9 の札 -->
+    <g font-family="-apple-system,'Hiragino Sans',sans-serif" font-weight="800">
+      <rect x="68" y="50" width="46" height="18" rx="9" fill="#0f2138" opacity="0.85"/>
+      <text x="76" y="63" font-size="11" fill="#ffffff">16:9</text>
+    </g>
+  </g>
+</svg>
