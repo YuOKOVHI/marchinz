@@ -7149,6 +7149,43 @@ async function countSamples(ns, file, fromSec) {
       return `殺しスイッチで作らない / 分母と段が一致(${willOn ? "作る" : "作らない"})`;
     } finally { w.MC.proxy.off = keepOff; }
   });
+  /* 版番の大小比較(1.113.10 > 1.113.9 を正しく判定するため文字列比較にしない) */
+  function cmpVer(a, b) {
+    const pa = String(a).split("."), pb = String(b).split(".");
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+      const x = parseInt(pa[i] || "0", 10), y = parseInt(pb[i] || "0", 10);
+      if (x !== y) return x < y ? -1 : 1;
+    }
+    return 0;
+  }
+  /* 2026-08-06 優さん実機の指摘「バージョンが113.4のまま」。
+     フッターに出るサイト版番は index.html の data-mz-version が正本だが、
+     v1.113.5〜.8 の4回のリリースで**一度も更新されていなかった**。
+     ツールのJSは ?v= を上げていたので中身は新しいのに、画面の版番だけが
+     古いまま ─ 優さんが「更新されたか」を確かめる唯一の手がかりが嘘をつく。
+     機械で捕まえられる形にする: **サイト版番は、ツールの資産版番の最大値以上** */
+  await test("★サイトの版番(フッター)が、ツールの資産版番より古くないこと", async () => {
+    const top = await (await fetch("../../index.html")).text();
+    const m = top.match(/data-mz-version="([0-9.]+)"/);
+    if (!m) throw new Error("index.html に data-mz-version が無い");
+    const site = m[1];
+    /* 4ツールの ?v= を全部集めて最大を取る */
+    const tools = ["switcher", "vlog", "privacy", "reangle"];
+    let maxV = "0.0.0", maxWhere = "";
+    for (const tool of tools) {
+      let html = "";
+      try { html = await (await fetch(`../${tool}/index.html`)).text(); } catch (_) { continue; }
+      for (const mm of html.matchAll(/(?:js|css)\/[\w.-]+\?v=([0-9.]+)/g)) {
+        if (cmpVer(mm[1], maxV) > 0) { maxV = mm[1]; maxWhere = tool; }
+      }
+    }
+    if (maxV === "0.0.0") throw new Error("ツールの資産版番を1つも読めなかった");
+    if (cmpVer(site, maxV) < 0) {
+      throw new Error(`サイト版番 ${site} がツールの版番 ${maxV}(${maxWhere}) より古い`
+        + " ─ index.html の data-mz-version を上げ忘れている(フッターが嘘をつく)");
+    }
+    return `サイト ${site} ≧ ツール最大 ${maxV}(${maxWhere})`;
+  });
   /* 2026-08-06 優さん実機、容量対策3度目の真因。掃除は probeOpfs().then(...) に
      ぶら下がっていた ─ probe は Worker の応答待ちでタイムアウトが無く、
      iOSで応答が無いと掃除は1バイトも走らない。前回 opfsSweep の入口だけ緩めても
