@@ -1060,7 +1060,14 @@ MC.exporter.opfsRemove = async name => {
     新しいタブを開くと、その書きかけを消してしまうため(レビュー指摘 2026-07-23) */
 MC.exporter.OPFS_STALE_MS = 6 * 60 * 60 * 1000;
 MC.exporter.opfsSweep = async () => {
-  if (!MC.exporter.opfsSupported()) return;
+  /* ★ 入口は opfsSupported() ではなく「読める環境か」で判定(2026-08-06 レビューP1)。
+     opfsSupported は Worker 書き込みの実測(probe)を含み、一時失敗すると false が
+     キャッシュされる ─ **11GBを消したい当の起動で probe がコケると1バイトも
+     消えない**。掃除に要るのは main thread の getDirectory/entries/removeEntry
+     だけで、Worker は不要 */
+  try {
+    if (!(navigator.storage && navigator.storage.getDirectory)) return;
+  } catch (_) { return; }
   /* ★ 深い掃除(2026-08-06 優さん実機: Safari終了でもiPhone再起動でも11GBが
      残ったまま)。OPFS は**永続ストレージ**で、再起動では消えない。しかも
      iOSの「Webサイトデータ」のサイト別表示に計上されず、netlify.app 行が
@@ -1070,16 +1077,26 @@ MC.exporter.opfsSweep = async () => {
      つまりロックが ifAvailable で取れた=どのタブも書き出していない=
      再開材料と今セッションの成果物以外は全部消してよい。
      取れなかった回だけ、従来の保守的な窓に落とす */
-  let deep = false, releaseLock = null;
+  let deep = false, releaseLock = null, releaseResultLock = null;
   try {
     if (navigator.locks) {
-      deep = await new Promise(resolve => {
-        navigator.locks.request("mz-export", { ifAvailable: true }, lock => {
-          if (!lock) { resolve(false); return; }
-          resolve(true);
-          return new Promise(r => { releaseLock = r; });   // 掃除の間だけ保持
-        }).catch(() => resolve(false));
+      const grab = name => new Promise(resolve => {
+        navigator.locks.request(name, { ifAvailable: true }, lock => {
+          if (!lock) { resolve(null); return; }
+          let rel;
+          const held = new Promise(r => { rel = r; });
+          resolve(rel);
+          return held;   // 掃除の間だけ保持
+        }).catch(() => resolve(null));
       });
+      releaseLock = await grab("mz-export");
+      /* ★ mz-export だけでは足りない(2026-08-06 レビューP1)。書き出し完了〜
+         「動画を保存」の間、mz-export はもう誰も持っていない。その隙に
+         別タブで開かれると、未保存の完成品を深い掃除が消してしまう。
+         未保存の結果を持つタブは mz-export-result を保持している(holdResultLock)
+         ので、両方取れたときだけ深い掃除にする */
+      if (releaseLock) releaseResultLock = await grab("mz-export-result");
+      deep = !!(releaseLock && releaseResultLock);
     }
   } catch (_) { deep = false; }
   try {
@@ -1134,8 +1151,13 @@ MC.exporter.opfsSweep = async () => {
       MC.log(`opfsSweep(${deep ? "深" : "保守"}): ${doomed.length}件 約${Math.round(freedBytes / 1e6)}MB を片付けました`);
     }
     MC.exporter.refreshEstimate();
-  } catch (e) { /* ディレクトリが無ければ何もしない */ }
-  finally { if (releaseLock) releaseLock(); }
+  } catch (e) {
+    /* ディレクトリが無ければここへ来る(正常)。それ以外の失敗も掃除は諦めるが、
+       **無言にはしない**(2026-08-06 レビューP2) ─ iOSで万一 entries() 等が
+       投げると「対策したのに消えない」の切り分けが不可能になる */
+    if (!(e && e.name === "NotFoundError")) MC.log("opfsSweep失敗: " + ((e && e.message) || e));
+  }
+  finally { if (releaseLock) releaseLock(); if (releaseResultLock) releaseResultLock(); }
 };
 
 /** 書き出し前に空き容量を確かめる。足りないなら「始める前に」断る。
@@ -1950,6 +1972,7 @@ MC.exporter.exportMP4Parts = async (onProgress) => {
     muxer.finalize();
     const file = await MC.exporter.opfsFinalizeWorker(outName);
     MC.exporter._opfsName = outName;
+    MC.exporter.holdResultLock();
     finalOk = true;
     try { sessionStorage.removeItem("mz_switcher_export_at_v1"); } catch (_) {}
     /* 成功したのでパートと台帳を片付ける(失敗時は残す=次回の再開材料) */
@@ -2469,6 +2492,7 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle, opts) => {
          File を取り出す。取り出し(getFile)はメインで動く。iOSでOPFSに書ける道 */
       const file = await MC.exporter.opfsFinalizeWorker(name);
       MC.exporter._opfsName = name;   // 保存/破棄のあとに消すため覚えておく
+      MC.exporter.holdResultLock();
       MC.exporter.download(file, name);
       MC.log(`export done: ${name} bytes=${file.size} frames=${totalFrames} audio=${audioOk} (OPFS/worker)`);
       return { blob: file, name, opfs: true };
@@ -2599,11 +2623,38 @@ MC.exporter._opfsName = null;
 /** 保存/ダウンロードが済んだ書き出しファイルを OPFS から消す。
     lastResult.blob は File なので、消したあとに再保存はできない点に注意
     (完了カードは保存後に閉じる運用なので実害なし) */
+/* 未保存の書き出し結果を**全タブから**守るロック(2026-08-06 レビューP1)。
+   書き出し本体のロック(mz-export)は完了と同時に手放すため、
+   完了カードで「動画を保存」を待つ間はどのタブも何も持っていない。
+   その隙に別タブで Switcher を開くと、起動時の深い掃除が
+   未保存の完成品を消してしまう ─ _opfsName は自タブのメモリ変数で、
+   他のタブからは見えない。結果が残っている間はこのロックを保持し、
+   深い掃除は両方のロックが取れたときだけ走る。
+   タブごと閉じた場合はロックも自動解放されるが、そのとき _opfsName の
+   メモリも消えて保存は元々できないので、守るものが無い=正しい */
+MC.exporter._resultLockRelease = null;
+MC.exporter.holdResultLock = () => {
+  try {
+    if (!navigator.locks || MC.exporter._resultLockRelease) return;
+    navigator.locks.request("mz-export-result", { ifAvailable: true }, lock => {
+      if (!lock) return;   // 別タブが保持中(そちらの結果が守られている)
+      return new Promise(r => { MC.exporter._resultLockRelease = r; });
+    }).catch(() => {});
+  } catch (_) {}
+};
+MC.exporter.dropResultLock = () => {
+  if (MC.exporter._resultLockRelease) {
+    try { MC.exporter._resultLockRelease(); } catch (_) {}
+    MC.exporter._resultLockRelease = null;
+  }
+};
+
 MC.exporter.releaseOpfs = () => {
   const n = MC.exporter._opfsName;
   if (!n) return;
   MC.exporter._opfsName = null;
   MC.exporter.lastResult = null;
+  MC.exporter.dropResultLock();
   /* ★ 消す前に名前を控える(2026-08-06 レビューP2×2)。退出導線から呼ばれると
      直後に <a> 遷移が始まり、非同期の削除が完走しないことがある。
      取りこぼすと対象は「書き出し直後の新しいファイル」なので

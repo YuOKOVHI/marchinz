@@ -6899,6 +6899,7 @@ async function countSamples(ns, file, fromSec) {
       const out = []; for await (const [n] of dir.entries()) out.push(n); return out.sort();
     };
     const keepName = X._opfsName, keepPend = w.localStorage.getItem(X.PENDING_KEY);
+    const keepProbe = X._opfsProbed;
     try {
       w.localStorage.removeItem(X.PENDING_KEY);
       /* 実機の状態を再現: 台帳+現行ジョブのパーツ(再開材料)+旧ジョブの
@@ -6926,8 +6927,35 @@ async function countSamples(ns, file, fromSec) {
       if (!held.includes("MarchinZ_Switcher_16x9_2020-01-01.mp4")) {
         throw new Error("ロック保持中(=書き出し中相当)なのに新しいファイルを消した");
       }
-      return `深い掃除: 3件中2件を残して片付け / ロック保持中は保守的(6時間窓)`;
+      /* 2026-08-06 レビューP1-②: probe(Worker書き込みの実測)が一時失敗して
+         opfsSupported() が false でも、掃除は走らなければならない ─
+         11GBを消したい当の起動で probe がコケると1バイトも消えない形だった */
+      X._opfsProbed = false;
+      if (X.opfsSupported()) throw new Error("試験の前提が崩れた(probe偽装が効いていない)");
+      await X.opfsSweep();
+      const afterProbe = await names();
+      if (afterProbe.includes("MarchinZ_Switcher_16x9_2020-01-01.mp4")) {
+        throw new Error("probe失敗のセッションでは掃除が丸ごと走らない(11GBが消えない回が生じる)");
+      }
+      X._opfsProbed = keepProbe;
+      /* 2026-08-06 レビューP1-①: 書き出し完了〜保存の間、mz-export はもう
+         誰も持っていない。別タブの起動時掃除が未保存の完成品を消さないよう、
+         結果を持つタブは mz-export-result を保持する(holdResultLock)。
+         このタブ視点では _opfsName も null(他タブのメモリは見えない) */
+      await put("MarchinZ_Switcher_16x9_2020-01-01.mp4");
+      X._opfsName = null;
+      await new Promise((res, rej) => {
+        w.navigator.locks.request("mz-export-result", async lock => {
+          try { await X.opfsSweep(); res(); } catch (e) { rej(e); }
+        });
+      });
+      const heldR = await names();
+      if (!heldR.includes("MarchinZ_Switcher_16x9_2020-01-01.mp4")) {
+        throw new Error("結果ロック保持中(=別タブに未保存の完成品)なのに深い掃除が消した");
+      }
+      return `深い掃除OK / 書き出し中・未保存の結果あり は保守的 / probe失敗でも掃除は走る`;
     } finally {
+      X._opfsProbed = keepProbe;
       X._opfsName = keepName;
       if (keepPend != null) w.localStorage.setItem(X.PENDING_KEY, keepPend);
       else w.localStorage.removeItem(X.PENDING_KEY);
