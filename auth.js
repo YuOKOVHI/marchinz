@@ -1995,6 +1995,10 @@
     "created_at",
     "updated_at",
     "marchinz_public_id",
+    /* 登録時の同意記録(2026-08-06)。書くのは ensureProfile の signup 経路だけだが、
+       ここに無いと次のプロフィール保存で削除されてしまう */
+    "age13_confirmed_at",
+    "stats_sharing_consented_at",
     "withdrawn",
     "withdrawn_at",
     "cover_image_urls",
@@ -2035,6 +2039,8 @@
    * @param {string} uid
    * @param {Record<string, unknown>} payload
    */
+  /* 運営がコンソールで付与し、クライアントの保存では触らないフィールド */
+  const PROFILE_ROOT_PRESERVED_KEYS = new Set(["beta_tester"]);
   const PROFILE_ROOT_LEGACY_DELETE_KEYS = [
     "pref_count_mll",
     "pref_count_videos",
@@ -2063,6 +2069,11 @@
     if (!snap.exists) return patch;
     const data = snap.data() || {};
     for (const key of Object.keys(data)) {
+      /* ★ 運営が手で付けるフィールドは消さない(2026-08-06 レビューP1)。
+         beta_tester はコンソール付与→本人が自己紹介を1文字直して保存→無音で
+         消滅、が起きていた。クライアントは書かない(rulesも許さない)が、
+         **消しもしない** ─ 付与の権威は運営コンソール側にある */
+      if (PROFILE_ROOT_PRESERVED_KEYS.has(key)) continue;
       if (!MLL_PROFILE_ROOT_ALLOWED_KEYS.has(key)) patch[key] = fv.delete();
     }
     for (const key of PROFILE_ROOT_LEGACY_DELETE_KEYS) {
@@ -2109,28 +2120,30 @@
       if (Boolean(root.withdrawn)) return;
       const legacyG = String(root.profile_gender ?? "").trim();
       const legacyB = String(root.profile_birthdate ?? "").trim();
-      if (!legacyG && !legacyB) return;
+      /* ★ 非公開の都道府県がルートに残っていたら私的文書へ移す(2026-08-06 レビューP1)。
+         既存ユーザーは次の保存まで漏れたままになるので、ログイン時に片付ける */
+      const rootPref = String(root.profile_address_prefecture ?? "").trim();
+      const prefPrivateLeak = rootPref && root.profile_address_prefecture_public === false;
+      if (!legacyG && !legacyB && !prefPrivateLeak) return;
       const priv = privSnap.exists ? privSnap.data() || {} : {};
       let g = String(priv.profile_gender ?? "").trim() || legacyG;
       let b = String(priv.profile_birthdate ?? "").trim() || legacyB;
       if (!PROFILE_GENDER_VALUES.includes(g)) g = "無回答";
       if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(b)) b = "";
-      await privRef.set(
-        {
-          profile_gender: g,
-          profile_birthdate: b,
-          updated_at: new Date().toISOString(),
-        },
-        { merge: true },
-      );
-      await rootRef.set(
-        {
-          profile_gender: fv.delete(),
-          profile_birthdate: fv.delete(),
-          updated_at: new Date().toISOString(),
-        },
-        { merge: true },
-      );
+      const privPatch = { updated_at: new Date().toISOString() };
+      const rootPatch = { updated_at: new Date().toISOString() };
+      if (legacyG || legacyB) {
+        privPatch.profile_gender = g;
+        privPatch.profile_birthdate = b;
+        rootPatch.profile_gender = fv.delete();
+        rootPatch.profile_birthdate = fv.delete();
+      }
+      if (prefPrivateLeak) {
+        privPatch.profile_address_prefecture = rootPref;
+        rootPatch.profile_address_prefecture = "";   // 誰でも読める場所から消す
+      }
+      await privRef.set(privPatch, { merge: true });
+      await rootRef.set(rootPatch, { merge: true });
     } catch (e) {
       console.warn("[MarchinZ] migrateSensitiveProfileOffRoot", e);
     }
@@ -2181,6 +2194,7 @@
       const legacyPref = String(data.profile_prefecture ?? "").trim();
       let profile_gender = "";
       let profile_birthdate = "";
+      let priv_pref = "";
       try {
         const sensSnap = await db
           .collection("mll_profiles")
@@ -2192,6 +2206,9 @@
           const sd = sensSnap.data() || {};
           profile_gender = String(sd.profile_gender ?? "").trim();
           profile_birthdate = String(sd.profile_birthdate ?? "").trim();
+          /* 非公開の都道府県の実体はこちら(2026-08-06)。本人の編集画面や
+             統計にはこの値を使う。ルートが空でもここにあれば拾う */
+          priv_pref = String(sd.profile_address_prefecture ?? "").trim();
         }
       } catch {
         //
@@ -2215,7 +2232,7 @@
         avatar_url: data.avatar_url || fallback.avatar_url,
         cover_image_url: resolveCoverImageUrlFromDocData(data),
         withdrawn: false,
-        profile_address_prefecture: addrPref || legacyPref,
+        profile_address_prefecture: addrPref || legacyPref || priv_pref,
         profile_address_prefecture_public: data.profile_address_prefecture_public !== false,
         profile_gender,
         profile_birthdate,
@@ -2298,8 +2315,13 @@
    * @param {object} user
    * @param {{ recordSignupLegalConsent?: boolean }} [opts]
    */
+  /* ensureProfile が失敗した回の印。立っていたら、新規登録経路でも
+     規約の再同意モーダルを飛ばさない(同意記録が書けていないため) */
+  let ensureProfileFailed = false;
+
   async function ensureProfile(user, opts = {}) {
     const recordSignupLegalConsent = Boolean(opts.recordSignupLegalConsent);
+    ensureProfileFailed = false;
     const fv = window.firebase?.firestore?.FieldValue;
     try {
       const ref = db.collection("mll_profiles").doc(user.id);
@@ -2423,9 +2445,33 @@
           displayName: payload.display_name || existing.display_name || user.user_metadata?.full_name || "ユーザー",
           publicId: marchinz_public_id,
         });
+        /* ★ 13歳以上・統計第三者提供の同意を記録する(2026-08-06 レビューP1)。
+           これまで保存されるのは規約バージョンだけで、「同意した覚えはない」と
+           言われたとき反証する記録が1バイトも無かった(βテスト同意は保存
+           されているのにこの2つだけ非対称)。#signup のCTAは4つの必須チェックが
+           全部入るまで押せないので、この経路に来た=同意済みが保証されている。
+           ★ 本体とは別書きにする: rules のデプロイが遅れていても
+             ここの失敗が登録そのものを壊さないように */
+        if (fv?.serverTimestamp) {
+          try {
+            await ref.set({
+              age13_confirmed_at: fv.serverTimestamp(),
+              stats_sharing_consented_at: fv.serverTimestamp(),
+            }, { merge: true });
+          } catch (e) {
+            console.warn("[MarchinZ] 同意記録の保存に失敗(登録は継続)", e);
+          }
+        }
       }
-    } catch {
-      // Firestore未設定時でもログインは継続
+    } catch (e) {
+      /* ★ 握りつぶさない(2026-08-06 レビューP1)。プロフィール作成に失敗しても
+         「ログイン成功」に見えてしまい、同意記録ゼロのまま使えるセッションが
+         成立していた。失敗の事実を残し、本人にも知らせる */
+      console.warn("[MarchinZ] プロフィールの作成/更新に失敗", e);
+      ensureProfileFailed = true;
+      try {
+        MZToast.err("プロフィールの保存に失敗しました。通信を確認して、ページを再読み込みしてください");
+      } catch { /* トースト自体が無い環境では諦める */ }
     }
   }
 
@@ -2580,7 +2626,10 @@
         await applyPendingSignupProfileAttributes(user);
         const prof = await refreshProfileView(user);
         // 新規登録は #signup のチェックで同意済み。ログインのみ規約改定時の再同意モーダルを出す。
-        if (!isSignupEntry) {
+        // ★ ただし ensureProfile が失敗した回は新規登録でも出す(2026-08-06 レビューP1)。
+        //   同意記録が書けていないのにモーダルまで飛ばすと、
+        //   同意記録ゼロのまま使えるセッションが成立してしまう
+        if (!isSignupEntry || ensureProfileFailed) {
           await maybePromptLegalPolicyAcceptance(user, prof);
         }
         if (runId !== profileSyncRunId) return;
@@ -3119,13 +3168,17 @@
         }
 
         const fv = window.firebase?.firestore?.FieldValue;
+        const prefPublic = Boolean(
+          profileAddressPrefecturePublic instanceof HTMLInputElement && profileAddressPrefecturePublic.checked,
+        );
         const payload = {
           id: currentUser.id,
           display_name: displayName,
+          /* 非公開の都道府県の隠し先は profile_private(下の後処理)。ここでは
+             従来どおり値を書き、**私的保存が成功してから**ルートを空にする ─
+             逆順にすると、rules 未デプロイの間に保存すると値が消える */
           profile_address_prefecture: prefecture,
-          profile_address_prefecture_public: Boolean(
-            profileAddressPrefecturePublic instanceof HTMLInputElement && profileAddressPrefecturePublic.checked,
-          ),
+          profile_address_prefecture_public: prefPublic,
           profile_bio: bio,
           profile_attributes: mergedProfileAttrs,
           updated_at: new Date().toISOString(),
@@ -3241,6 +3294,32 @@
           const err = e;
           err.mzStage = "firestore-private";
           throw err;
+        }
+        /* ★ 非公開の都道府県はルート文書に残さない(2026-08-06 レビューP1)。
+           ルートは read: if true で誰でも直読みでき、「非公開」が描画時に
+           隠すだけの飾りだった。性別・誕生日と同じ profile_private へ移す。
+           順序が命: **私的保存が成功してから**ルートを空にする。
+           rules のデプロイが遅れて私的保存に失敗した回は、値をルートに残して
+           次回の保存で再試行する(漏れは従来どおりだが、値は消えない) */
+        try {
+          if (!prefPublic && prefecture) {
+            await sensRef.set(
+              { profile_address_prefecture: prefecture, updated_at: new Date().toISOString() },
+              { merge: true },
+            );
+            await profRoot.set(
+              { profile_address_prefecture: "", updated_at: new Date().toISOString() },
+              { merge: true },
+            );
+          } else if (prefPublic) {
+            /* 公開へ切り替えた回は私的コピーを空に(キー削除はrulesが許さないため空文字) */
+            await sensRef.set(
+              { profile_address_prefecture: "", updated_at: new Date().toISOString() },
+              { merge: true },
+            );
+          }
+        } catch (e) {
+          console.warn("[MarchinZ] 非公開の都道府県の私的保存に失敗(次回の保存で再試行)", e);
         }
 
         croppedAvatarBlob = null;

@@ -468,6 +468,9 @@ service cloud.firestore {
         // 利用規約・プライバシー等の最新版への同意（クライアントは LEGAL_POLICY_VERSION と一致する文字列を書く）
         'legal_policy_accepted_version',
         'legal_policy_accepted_at',
+        // 登録時の同意記録(2026-08-06): 13歳以上+統計の第三者提供
+        'age13_confirmed_at',
+        'stats_sharing_consented_at',
         // 管理人が付与する凍結フラグ。クライアントの本文更新時は文書全体の検証に含まれるため列入が必要（差分変更は update 側で拒否）
         'banned',
         'banned_at',
@@ -593,6 +596,10 @@ service cloud.firestore {
           || (request.resource.data.legal_policy_accepted_at is string
             && request.resource.data.legal_policy_accepted_at.size() >= 10
             && request.resource.data.legal_policy_accepted_at.size() <= 48))
+        && (!aff.hasAny(['age13_confirmed_at'])
+          || request.resource.data.age13_confirmed_at is timestamp)
+        && (!aff.hasAny(['stats_sharing_consented_at'])
+          || request.resource.data.stats_sharing_consented_at is timestamp)
         && (!aff.hasAny(['banned'])
           || request.resource.data.banned is bool)
         && (!aff.hasAny(['banned_at'])
@@ -710,6 +717,9 @@ service cloud.firestore {
         'like_show_log_diary',
         'legal_policy_accepted_version',
         'legal_policy_accepted_at',
+        // 登録時の同意記録(2026-08-06): 13歳以上+統計の第三者提供
+        'age13_confirmed_at',
+        'stats_sharing_consented_at',
         'banned',
         'banned_at',
         'banned_reason',
@@ -756,7 +766,11 @@ service cloud.firestore {
 
     // mll_profiles/{uid}/profile_private/default — 性別・誕生日は本人のみ読める（ルート文書には載せない）
     function mllProfilePrivateSensitiveOk() {
-      return request.resource.data.keys().hasOnly(['profile_gender', 'profile_birthdate', 'birthdate_change_count', 'birthdate_change_allowed', 'updated_at'])
+      return request.resource.data.keys().hasOnly(['profile_gender', 'profile_birthdate', 'profile_address_prefecture', 'birthdate_change_count', 'birthdate_change_allowed', 'updated_at'])
+        // 非公開の都道府県の実体(2026-08-06)。ルート文書は誰でも読めるため、ここに置く
+        && (!request.resource.data.keys().hasAny(['profile_address_prefecture'])
+          || (request.resource.data.profile_address_prefecture is string
+            && request.resource.data.profile_address_prefecture.size() <= 16))
         && (!request.resource.data.keys().hasAny(['profile_gender'])
           || (request.resource.data.profile_gender is string
             && request.resource.data.profile_gender in ['', '男性', '女性', 'その他', '無回答']))
@@ -780,10 +794,14 @@ service cloud.firestore {
         && d.affectedKeys().hasOnly([
           'profile_gender',
           'profile_birthdate',
+          'profile_address_prefecture',
           'birthdate_change_count',
           'birthdate_change_allowed',
           'updated_at'
         ])
+        && (!d.affectedKeys().hasAny(['profile_address_prefecture'])
+          || (request.resource.data.profile_address_prefecture is string
+            && request.resource.data.profile_address_prefecture.size() <= 16))
         && (!d.affectedKeys().hasAny(['profile_gender'])
           || (request.resource.data.profile_gender is string
             && request.resource.data.profile_gender in ['', '男性', '女性', 'その他', '無回答']))
