@@ -6962,6 +6962,138 @@ async function countSamples(ns, file, fromSec) {
       for (const n of await names()) await dir.removeEntry(n).catch(() => {});
     }
   });
+  /* ---- 縮小版(プロキシ) 2026-08-06 優さん指示「4Kは縦型1080×640/スイッチングFHD」 ----
+     いちばん大事なのは「効くこと」より**優さんのFHD素材+スイッチングで何も起きないこと**。
+     ここが壊れると、いま動いている書き出しに余計な変換が挟まる */
+  await test("★縮小版: FHD素材+自動スイッチングでは作らない(優さんの環境を変えない)", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.mode = "switch"; S.layoutId = "switch"; S.preset = "16x9";
+    const clip = { id: "c1", name: "a.mov", width: 1920, height: 1080, duration: 600,
+                   offset: 0, file: { size: 1, lastModified: 1 } };
+    S.clips = [clip]; S.slots = [clip.id];
+    S.trimIn = 0; S.trimOut = 60;
+    if (w.MC.proxy.specFor(clip) !== null) {
+      throw new Error("FHD+スイッチングで縮小版を作ろうとしている(出力と等倍なので無意味)");
+    }
+    /* 歯の確認: 同じ条件で 4K なら作る。ここが null のままなら試験が骨抜き */
+    const k = { ...clip, width: 3840, height: 2160 };
+    const spec4k = w.MC.proxy.specFor(k);
+    if (!spec4k) throw new Error("4K+スイッチングでも作らない(効くはずの条件で効いていない)");
+    if (spec4k.w !== 1920 || spec4k.h !== 1080) {
+      throw new Error(`4Kスイッチングの縮小版が FHD でない: ${spec4k.w}x${spec4k.h}`);
+    }
+    return `FHDは作らない / 4Kは ${spec4k.w}x${spec4k.h}`;
+  });
+  await test("★縮小版: 縦型3分割は枠(1080×640)から逆算した大きさになる", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.mode = "vertical"; S.layoutId = "v3"; S.preset = "9x16";
+    S.trimIn = 0; S.trimOut = 60;
+    /* 16:9 の4K。v3 の1枠は 1080×640 なので、縦640に合わせて 1138×640 相当 */
+    const clip = { id: "c1", name: "a.mov", width: 3840, height: 2160, duration: 600,
+                   offset: 0, file: { size: 1, lastModified: 1 } };
+    S.clips = [clip]; S.slots = [clip.id, null, null];
+    const spec = w.MC.proxy.specFor(clip);
+    if (!spec) throw new Error("縦型v3+4Kで作らない");
+    if (Math.abs(spec.h - 640) > 24) throw new Error(`枠の高さ640に対して ${spec.w}x${spec.h}`);
+    /* iPhoneの縦4Kは、どのレイアウトでも1080×1920へ収束する(拡大が起きない) */
+    const vclip = { ...clip, width: 2160, height: 3840 };
+    S.clips = [vclip]; S.slots = [vclip.id, null, null];
+    const vs = w.MC.proxy.specFor(vclip);
+    if (!vs) throw new Error("縦4Kで作らない");
+    if (vs.w !== 1080 || vs.h !== 1920) throw new Error(`縦4Kが1080x1920でない: ${vs.w}x${vs.h}`);
+    return `横4K→${spec.w}x${spec.h} / 縦4K→${vs.w}x${vs.h}`;
+  });
+  await test("★縮小版: 拡大が起きるなら作らないし、持っていても使わない", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.mode = "vertical"; S.layoutId = "single"; S.preset = "9x16";
+    S.trimIn = 0; S.trimOut = 60;
+    /* 1画面(1080×1920)に16:9素材を cover で入れるには 3413×1920 が要る =
+       4Kの79%。ここで縮めると拡大が起きて画質が落ちるので、作ってはいけない */
+    const clip = { id: "c1", name: "a.mov", width: 3840, height: 2160, duration: 600,
+                   offset: 0, file: { size: 1, lastModified: 1 } };
+    S.clips = [clip]; S.slots = [clip.id];
+    if (w.MC.proxy.specFor(clip) !== null) {
+      throw new Error("1画面レイアウトで縮小版を作ろうとしている(拡大されてぼやける)");
+    }
+    /* 小さい枠のときに作った物を、大きい枠へ変えられたら**使わない** */
+    S.layoutId = "v3"; S.slots = [clip.id, null, null];
+    const small = w.MC.proxy.specFor(clip);
+    if (!small) throw new Error("試験の前提が崩れた(v3で作れない)");
+    clip.proxy = { file: { size: 1 }, name: "mzprox_x.mp4", w: small.w, h: small.h,
+                   scale: small.scale, t0: small.t0, t1: small.t1 };
+    if (!w.MC.proxy.usable(clip)) throw new Error("v3で作った物がv3で使えない");
+    S.layoutId = "single"; S.slots = [clip.id];
+    if (w.MC.proxy.usable(clip)) {
+      throw new Error("枠が大きくなったのに小さい縮小版を使っている(拡大されてぼやける)");
+    }
+    /* 範囲が窓の外へ出たら使わない */
+    S.layoutId = "v3"; S.slots = [clip.id, null, null];
+    S.trimIn = 0; S.trimOut = 599;
+    if (w.MC.proxy.usable(clip)) throw new Error("窓の外まで求められているのに使っている");
+    return "1画面は作らない / 枠拡大で不使用 / 窓外で不使用";
+  });
+  await test("★縮小版: 起動時の掃除が、据え置き窓を無視して必ず消す", async () => {
+    const w = await compEnv();
+    const X = w.MC.exporter;
+    if (!X.opfsSupported()) return "この環境はOPFS非対応(判定のみ)";
+    const root = await w.navigator.storage.getDirectory();
+    const dir = await root.getDirectoryHandle(X.OPFS_DIR, { create: true });
+    const put = async name => {
+      const fh = await dir.getFileHandle(name, { create: true });
+      const ws = await fh.createWritable(); await ws.write("x"); await ws.close();
+    };
+    const names = async () => {
+      const out = []; for await (const [n] of dir.entries()) out.push(n); return out.sort();
+    };
+    const keepLive = new Set(w.MC.proxy._live);
+    const keepName = X._opfsName;
+    try {
+      X._opfsName = null;
+      w.MC.proxy._live.clear();
+      /* 作りたてでも消える(6時間窓に守られない)。File が消えた次の起動では
+         誰にも使えないので、残す意味がないという設計 */
+      await put("mzprox_aaa_1138x640_0_60.mp4");
+      await put("mzprox_bbb_1920x1080_0_60.mp4");
+      w.MC.proxy._live.add("mzprox_bbb_1920x1080_0_60.mp4");   // このタブが使用中
+      await X.opfsSweep();
+      const after = await names();
+      if (after.includes("mzprox_aaa_1138x640_0_60.mp4")) {
+        throw new Error("使っていない縮小版が残った(容量が積み上がる)");
+      }
+      if (!after.includes("mzprox_bbb_1920x1080_0_60.mp4")) {
+        throw new Error("いま使っている縮小版を消した(書き出しが壊れる)");
+      }
+      return "未使用は即消える / 使用中は残る";
+    } finally {
+      w.MC.proxy._live.clear();
+      for (const n of keepLive) w.MC.proxy._live.add(n);
+      X._opfsName = keepName;
+      for (const n of await names()) await dir.removeEntry(n).catch(() => {});
+    }
+  });
+  await test("★縮小版: ?noproxy と 工程数の分母が合っている", async () => {
+    const w = await compEnv();
+    const S = compReset(w);
+    S.mode = "vertical"; S.layoutId = "v3"; S.preset = "9x16";
+    S.trimIn = 0; S.trimOut = 60;
+    const clip = { id: "c1", name: "a.mov", width: 3840, height: 2160, duration: 600,
+                   offset: 0, file: { size: 1, lastModified: 1 } };
+    S.clips = [clip]; S.slots = [clip.id, null, null];
+    const keepOff = w.MC.proxy.off;
+    try {
+      /* 分母(finishSteps)と、実際に通る段(willBuildProxy)は必ず一致すること */
+      const willOn = w.MC.ui.willBuildProxy();
+      w.MC.proxy.off = () => true;
+      if (w.MC.proxy.specFor(clip) !== null) throw new Error("?noproxy でも作ろうとしている");
+      if (w.MC.ui.willBuildProxy()) throw new Error("?noproxy なのに段を数えている");
+      w.MC.proxy.off = keepOff;
+      if (w.MC.ui.willBuildProxy() !== willOn) throw new Error("殺しスイッチが戻らない");
+      return `殺しスイッチで作らない / 分母と段が一致(${willOn ? "作る" : "作らない"})`;
+    } finally { w.MC.proxy.off = keepOff; }
+  });
   /* 2026-08-06 優さん実機、容量対策3度目の真因。掃除は probeOpfs().then(...) に
      ぶら下がっていた ─ probe は Worker の応答待ちでタイムアウトが無く、
      iOSで応答が無いと掃除は1バイトも走らない。前回 opfsSweep の入口だけ緩めても

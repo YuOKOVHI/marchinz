@@ -5916,7 +5916,17 @@ MC.ui.finishSteps = () => {
      返していたため、動画1本+自動スイッチングでは「全3段」と名乗った直後に
      1段も進まず必ず失敗を見せていた(色そろえ側は最初からこの条件つき) */
   return ((MC.S.mode === "switch" && vclips.length >= 2) ? 3 : 0)   // director の3段
-    + ((MC.S.colorOn && vclips.length >= 2) ? 1 : 0);            // 色をそろえる
+    + ((MC.S.colorOn && vclips.length >= 2) ? 1 : 0)             // 色をそろえる
+    + (MC.ui.willBuildProxy() ? 1 : 0);                          // 映像を軽くする
+};
+
+/* 縮小版を実際に作る段があるか(2026-08-06)。分母と実際に通る段は必ず揃える ─
+   ずれると「4/3」のような表示になる。判断は MC.proxy.specFor 1本に任せ、
+   ここでは条件を持たない(2箇所に規則が割れるのを避ける) */
+MC.ui.willBuildProxy = () => {
+  if (!window.MC || !MC.proxy || MC.proxy.off()) return false;
+  if (!MC.exporter.opfsSupported || !MC.exporter.opfsSupported()) return false;
+  return MC.S.clips.some(c => !MC.proxy.usable(c) && !!MC.proxy.specFor(c));
 };
 
 MC.ui.runEasyFinish = async (pIn, base = 0) => {
@@ -5944,6 +5954,15 @@ MC.ui.runEasyFinish = async (pIn, base = 0) => {
   const _steps = Math.max(1, p.steps || MC.ui.finishSteps());
   const _eta = () => _est > 30 ? { eta: Math.max(0, _est * (1 - n / _steps)) } : undefined;
   try {
+    /* ★ いちばん先に、素材を「実際に必要な大きさ」まで縮めておく(2026-08-06)。
+       ここが唯一の差し込み点 ─ この時点で 種類・レイアウト・スロット・
+       書き出す範囲・同期のずれ が全部確定していて、かつ重い工程
+       (映像解析・色そろえ・書き出し)がまだ1つも走っていない。
+       取り込み直後では範囲が決まっておらず、書き出し直前では解析に間に合わない。
+       失敗しても素通しなので、ここで throw させない */
+    if (MC.ui.willBuildProxy()) {
+      await MC.proxy.ensureAll(p, ++n).catch(e => MC.log("proxy: " + ((e && e.message) || e)));
+    }
     /* 開始/終了の自動区切りと音楽の解析は runEasyScan へ移した(2026-07-31)。
        ここへ来る時点で MC.trimRange() は「選ばれた長さと開始位置」を指しており、
        映像解析もカット割もその中だけを見る */

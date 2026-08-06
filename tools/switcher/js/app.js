@@ -93,7 +93,14 @@ window.addEventListener("DOMContentLoaded", async () => {
   /* 退出時にも据え置き分を掃く(2026-08-06 Safari容量調査)。再開用パーツ等の
      新しいファイルは sweep 側の6時間窓が守る。pagehide内のasyncは
      完走保証が無いが、掃除は必須ではない(次回起動時sweepが拾う) */
-  window.addEventListener("pagehide", () => { MC.exporter.opfsSweep(); });
+  window.addEventListener("pagehide", () => {
+    /* 縮小版は**このセッションでしか使えない**(引き当てに元の File が要るが、
+       File は再読み込みをまたいで生き残らない)。持ち越す意味がないので手放す。
+       pagehide の非同期は完走保証が無いが、取りこぼしても次回起動の掃除が
+       据え置き窓を無視して必ず消す */
+    if (window.MC && MC.proxy) MC.proxy.disposeAll();
+    MC.exporter.opfsSweep();
+  });
 
   await MC.exporter.probeCaps();
   const badge = document.getElementById("capsBadge");

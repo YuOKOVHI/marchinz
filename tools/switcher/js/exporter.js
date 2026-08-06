@@ -91,6 +91,19 @@ MC.exporter.frozenError = raw => {
 MC.exporter.PIPE_REVIVE_MAX = 3;
 
 /* ---- 1カメラ分のデコードパイプ: frameAt(tLocal秒)がhold-last-frameでフレームを返す ---- */
+/* 1本のパイプが同時に抱えてよいフレーム数。素材の画素数で割り戻す(2026-08-06)。
+   FHD以下(ratio<=1)は従来の枚数をそのまま返す ─ 既存の素材で挙動を変えないため。
+   下限2枚は、先読みが消えて waitDequeue を毎コマ挟む状態を避けるための床
+   (2026-08-01 レビューで 4/2 まで絞ると遅くなると分かっている) */
+MC.exporter.frameCap = clip => {
+  const base = MC.isIOS ? 4 : 8;
+  const px = (clip && clip.width && clip.height) ? clip.width * clip.height : 0;
+  if (!px) return base;                       // 寸法が分からないなら従来どおり
+  const ratio = px / (1920 * 1080);
+  if (ratio <= 1) return base;
+  return Math.max(2, Math.round(base / ratio));
+};
+
 MC.exporter.VideoPipe = class {
   constructor(clip) {
     this.clip = clip;
@@ -114,20 +127,37 @@ MC.exporter.VideoPipe = class {
   }
 
   async init(fromLocalSec) {
-    this.src = new MZ_MP4.MP4Source(this.clip.file);
+    /* ★ 縮小版(プロキシ)があればそちらを読む(2026-08-06)。
+       使えるかの判断は MC.proxy.usable が一手に引き受ける ─ 拡大が起きる
+       レイアウトへ変えられた、範囲が窓の外へ出た、等はすべて false になり、
+       ここは黙って元ファイルへ戻る。**プロキシは速さのためだけの物で、
+       正しさは元ファイルにしか依存しない** */
+    const P = (window.MC && MC.proxy && MC.proxy.usable(this.clip)) ? this.clip.proxy : null;
+    this.proxy = P;
+    this.src = new MZ_MP4.MP4Source(P ? P.file : this.clip.file);
     await this.src.init();
     const vt = this.src.videoTrack();
     if (!vt) throw new Error("映像トラックがありません: " + this.clip.name);
     const cfg = this.src.videoDecoderConfig();
     const sup = await VideoDecoder.isConfigSupported(cfg).catch(() => ({ supported: false }));
     if (!sup.supported) throw new Error(`デコード非対応(${cfg.codec}): ${this.clip.name}`);
-    this.rotation = this.src.rotationOf(vt);
+    /* プロキシは回転を焼き込んで正立で書いてあるので、ここでの補正は要らない */
+    this.rotation = P ? 0 : this.src.rotationOf(vt);
     /* elst(エディットリスト)の補正。音声(下の encodeAudio)と解析(visual.js)は
        editOffsetSec で補正しているのに、**書き出しの映像だけ生の cts を使っていた**
        (2026-07-29 プロビデオグラファー指摘)。Bフレームを持つ H.264 は
        composition delay 相当の elst が入るのが普通で、そのぶん映像が音声に対して
        1〜3フレームずれる。素材によって出たり出なかったりするので気づきにくい */
-    this.tsOff = this.src.editOffsetSec(vt) || 0;
+    /* プロキシは素直に書いた MP4 なので elst を持たない。代わりに
+       「コンテナ時刻0 = 元ローカル時刻 t0」なので、tsOff に -t0 を入れるだけで
+       既存の座標変換(pump / frameAt / skipTo)がそのまま正しく動く */
+    this.tsOff = P ? -P.t0 : (this.src.editOffsetSec(vt) || 0);
+    /* 末尾クランプに使う長さ。プロキシは窓のぶんしかないので短い
+       (元の duration のままだと素材の終端を越えて探しに行き、黒コマになる) */
+    this.srcDur = P ? (P.t1 - P.t0) : this.clip.duration;
+    /* ※ 読む側は必ず (this.srcDur || this.clip.duration) で受けること。
+       init を通らずに skipTo/revive だけ動かす経路(試験のスタブ)があり、
+       素の this.srcDur を使うと undefined → NaN で seek 先が消える */
     this.cfg = cfg;                  // revive(凍結からの作り直し)が使う
     this._newDecoder();
     this.cursor = this.src.cursor(vt.id);
@@ -183,7 +213,7 @@ MC.exporter.VideoPipe = class {
     this.flushed = false;
     /* 最後に要求された時刻から読み直す(init/skipTo と同じ座標変換) */
     const tLocal = this.lastReqUs != null ? this.lastReqUs / 1e6 : 0;
-    const target = Math.min(tLocal + this.tsOff, Math.max(0, this.clip.duration - 0.3));
+    const target = Math.min(tLocal + this.tsOff, Math.max(0, (this.srcDur || this.clip.duration) - 0.3));
     this.cursor.seek(Math.max(0, target));
     if (this.prof) this.prof.revives = (this.prof.revives || 0) + 1;
   }
@@ -199,8 +229,12 @@ MC.exporter.VideoPipe = class {
        延ばすと、**別の理由(時間切れ・発熱)で落ちる**確率が上がる。
        メモリが原因という確証が無いまま速度を捨てるのは分が悪い。
        本命の park(<video>を手放す)を先に試し、変えるのは1つずつにする */
+    /* ★ 枚数ではなく「画素の総量」で抑える(2026-08-06)。上の 6/4 も 12/8 も
+       **1080p を前提に決めた枚数**で、4K素材ではそのまま4倍のGPUメモリになる
+       (VideoFrame 1枚 12.4MB × 4枚 × 3カメラ = 149MB)。FHD以下は ratio<=1 で
+       従来と同じ枚数を返すので、**優さんの素材での挙動は1ミリも変わらない** */
     while (!this.eof && this.decoder.decodeQueueSize < (MC.isIOS ? 6 : 12) &&
-           this.frames.length < (MC.isIOS ? 4 : 8)) {
+           this.frames.length < MC.exporter.frameCap(this.clip)) {
       const { value: s, done } = await this.cursor.next();
       if (done) {
         this.eof = true;
@@ -263,7 +297,7 @@ MC.exporter.VideoPipe = class {
       // 末尾ぎりぎりへ飛ぶと RAP 以降にフレームが無く黒コマ化するためクランプ
       /* cursor はコンテナ時刻で探す(init と同じ)。tsOff を足さずに渡していたため、
          elst を持つ素材では init と skipTo で基準がずれていた(2026-08-02) */
-      const target = Math.min(tLocalSec + this.tsOff, Math.max(0, this.clip.duration - 0.3));
+      const target = Math.min(tLocalSec + this.tsOff, Math.max(0, (this.srcDur || this.clip.duration) - 0.3));
       this.cursor.seek(Math.max(0, target));
       this.eof = false;
       this.flushed = false;
@@ -1120,6 +1154,16 @@ MC.exporter.opfsSweep = async () => {
       let mtime = null, size = 0;
       try { const f = await h.getFile(); mtime = f.lastModified; size = f.size; }
       catch (e) { /* 読めない=古いとみなす */ }
+      /* ★ 縮小版(プロキシ)は据え置き窓を無視して消す(2026-08-06)。
+         プロキシを引き当てるには元の File が要るが、**File はページ再読み込みを
+         またいで生き残らない** ─ つまり前回セッションのプロキシは、
+         誰にも二度と使えないまま容量だけ食う。深い掃除でも保守的な経路でも
+         同じ扱いにする(従来の6時間窓より厳しいので、残留を増やすことはない)。
+         いまこのタブが使っている物だけは除く */
+      if (n.startsWith(MC.proxy.PREFIX)) {
+        if (!MC.proxy._live.has(n)) { doomed.push(n); freedBytes += size; }
+        continue;
+      }
       if (deep) {
         if (n === MC.exporter._opfsName) continue;                      // ①
         const isResume = resumeJobId && n.startsWith(`mzpart_${resumeJobId}_`)

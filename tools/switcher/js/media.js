@@ -226,6 +226,7 @@ MC.media.removeClip = id => {
   MC.ui.resetEasyDone();   // 素材が変わったら「書き出すだけ」状態を解除
   const c = MC.S.clips[i];
   try { c.video.pause(); } catch (e) {}
+  if (window.MC && MC.proxy) MC.proxy.dispose(c);   // 縮小版も一緒に片付ける
   URL.revokeObjectURL(c.url);
   MC.S.clips.splice(i, 1);
   MC.S.slots = MC.S.slots.map(s => (s === id ? null : s));

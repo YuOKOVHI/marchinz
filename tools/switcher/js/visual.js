@@ -599,9 +599,31 @@ MC.visual.quickProbe = async clip => {
   };
 };
 
+/* 前の解析を、新しい範囲でそのまま使えるか(2026-08-06)。
+   これまでは範囲が0.1秒でも動くと**全クリップを最初から解析し直して**いた。
+   おまかせ→演奏範囲の調整→おまかせ、の往復で毎回まるごと解析していたことになる。
+   下流の MC.visual.seg は V.t を範囲で絞り込む作りなので、**広い範囲の解析結果を
+   狭い範囲で使うのは元々できる**。作り直しが要るのは範囲が外へ広がったときだけ。
+   ★ 点が少なすぎると seg が「最寄り1点」に落ちて判定が粗くなるので、
+     新しい範囲に十分な点が残っていることを確かめてから再利用する */
+MC.visual.REUSE_MIN_PTS = 10;
+MC.visual.reusable = (V, l0, l1) => {
+  if (!V || !V.t || !V.t.length) return false;
+  if (V.l0 == null || V.l1 == null) return false;   // 範囲を持たない旧い結果は作り直す
+  if (l0 < V.l0 - 0.05 || l1 > V.l1 + 0.05) return false;   // 外へはみ出すなら足りない
+  let n = 0;
+  for (const tt of V.t) if (tt >= l0 && tt <= l1) n++;
+  return n >= MC.visual.REUSE_MIN_PTS;
+};
+
 MC.visual.analyzeClip = async (clip, l0, l1, prog) => {
   const key = `${l0.toFixed(1)}|${l1.toFixed(1)}`;
   if (clip.visual && clip.visual.key === key) return clip.visual;
+  if (MC.visual.reusable(clip.visual, l0, l1)) {
+    MC.log(`visual: 前の解析を使い回す ${clip.name} [${l0.toFixed(1)}-${l1.toFixed(1)}]`
+      + ` ⊂ [${clip.visual.l0.toFixed(1)}-${clip.visual.l1.toFixed(1)}]`);
+    return clip.visual;
+  }
   if (!MC.visual.forceSeek && typeof VideoDecoder !== "undefined" &&
       !clip._wcAnalyzeNG && clip.file) {
     try {
@@ -665,7 +687,7 @@ MC.visual.analyzeClipWC = async (clip, l0, l1, prog) => {
   const dec = new VideoDecoder({ output: f => outQ.push(f), error: e => { decErr = e; } });
   dec.configure(cfg);
 
-  const V = { key, t: [], shake: [], dxs: [], sharp: [], moE: [], act: [], amask: [],
+  const V = { key, l0, l1, t: [], shake: [], dxs: [], sharp: [], moE: [], act: [], amask: [],
               nF: [], maxF: [], faceOK };
   const colorAcc = wantColor ? MC.color.statsAcc() : null;
   const pending = {};      // ペア1枚目の保管: i -> {A, tA, tWant, facesP}
@@ -813,7 +835,7 @@ MC.visual.analyzeClipSeek = async (clip, l0, l1, prog) => {
   catch (e) { faceOK = false; MC.log("visual: 顔検出なしで続行:", e.message); }
 
   const V = {
-    key, t: [], shake: [], dxs: [], sharp: [], moE: [], act: [], amask: [],
+    key, l0, l1, t: [], shake: [], dxs: [], sharp: [], moE: [], act: [], amask: [],
     nF: [], maxF: [], faceOK,
   };
   for (let i = 0; i < n; i++) {
