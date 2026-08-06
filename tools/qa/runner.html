@@ -7428,6 +7428,84 @@ async function countSamples(ns, file, fromSec) {
       if (el && keepHidden !== null) el.hidden = keepHidden;
     }
   });
+  /* ---- 無料・ロゴ・免責 は「フッターより上のボディの一番下」(2026-08-07 優さん指示) ---- */
+  await test("★注意書き3点(無料・ロゴ・免責)がフッターより上のボディ最下部にある", async () => {
+    const w = await compEnv();
+    const d = w.document;
+    /* ★ 座標ではなく**DOMの順**で測る(2026-08-07)。QAランナーの中では
+       別の試験がフッターを display:none にしていることがあり、そのとき
+       getBoundingClientRect は全部0を返して「フッターより下」と誤検知する。
+       「フッターより上のボディの一番下」は本来DOM順の話なので、そちらで測る */
+    const el = sel => { const e = d.querySelector(sel); if (!e) throw new Error(`${sel} がページに無い`); return e; };
+    const free = el(".beta-disclaimer"), logo = el(".mode-tip--logo");
+    const note = el(".mzsc-note"), foot = el(".mzsc-foot");
+    /* a が b より前か(DOCUMENT_POSITION_FOLLOWING = 4) */
+    const before = (a, b) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    if (!before(free, logo)) throw new Error("ロゴの断りが「無料の帯」より前にある");
+    if (!before(logo, note)) throw new Error("免責がロゴの断りより前にある");
+    if (!before(note, foot)) throw new Error("免責がフッターより後ろにある(ボディの一番下ではない)");
+    /* フッターの中に免責が残っていないこと(1画面で二度言わない) */
+    if (d.querySelector(".mzsc-foot .mzsc-note, .mzsc-foot .mzsc-foot-note")) {
+      throw new Error("免責がフッターの中にも残っている(二重)");
+    }
+    /* 3つともフッターの外(=ボディ直下)にいること */
+    for (const [nm, e] of [["無料の帯", free], ["ロゴの断り", logo], ["免責", note]]) {
+      if (foot.contains(e)) throw new Error(`${nm} がフッターの中に入っている`);
+    }
+    /* 描画されているときだけ、実際の位置でも裏を取る */
+    const rFoot = foot.getBoundingClientRect();
+    if (rFoot.height > 0) {
+      const y = e => e.getBoundingClientRect().top;
+      if (!(y(note) < rFoot.top)) throw new Error(`免責 ${Math.round(y(note))} がフッター ${Math.round(rFoot.top)} より下`);
+    }
+    return `DOM順 無料→ロゴ→免責→フッター / フッター内に重複なし${rFoot.height > 0 ? " / 位置でも確認" : "(位置は非表示のため省略)"}`;
+  });
+  await test("★クリエイターページにも同じ3点があり、免責の文面がツールと一致する", async () => {
+    const top = await (await fetch("../../index.html")).text();
+    const i0 = top.indexOf('id="page-creators"');
+    if (i0 < 0) throw new Error("クリエイターページが見つからない");
+    const i1 = top.indexOf('id="page-ops"', i0);
+    const seg = top.slice(i0, i1 > i0 ? i1 : i0 + 60000);
+    for (const [needle, why] of [
+      ["無料・すべて端末内で処理", "無料のこと"],
+      ["MarchinZのロゴ", "ロゴのこと"],
+      ["mzsc-note-title", "免責"],
+    ]) {
+      if (seg.indexOf(needle) < 0) throw new Error(`クリエイターページに「${why}」が無い`);
+    }
+    /* 免責の本文はツール側(sitechrome.js)と同じであること ─ 2箇所に写しがあるので、
+       片方だけ直して食い違うのを機械で止める */
+    const sc = await (await fetch("../shared/sitechrome.js")).text();
+    const body = "本機能は映像制作をサポートするための補助ツールです。本ツールを利用して作成された映像、およびそれに起因するトラブルについて、運営は一切の責任を負いかねます。あらかじめご了承ください。";
+    if (sc.indexOf(body) < 0) throw new Error("sitechrome.js の免責の文面が変わっている(試験の目印が古い)");
+    if (seg.indexOf(body) < 0) throw new Error("クリエイターページの免責がツール側と食い違っている");
+    return "3点あり / 免責の文面も一致";
+  });
+  /* ---- 版番の表記: 内部は数値だけ・画面は (Beta) 併記(2026-08-07 優さん指示) ---- */
+  await test("★版番: 内部は数値だけ / 画面は「ver 2.0.0 (Beta)」", async () => {
+    const top = await (await fetch("../../index.html")).text();
+    const mv = top.match(/data-mz-version="([^"]+)"/);
+    if (!mv) throw new Error("data-mz-version が無い");
+    /* プレリリース札を内部へ混ぜない ─ 版番比較・OGPの ?v= が数として読めなくなる */
+    if (!/^\d+(\.\d+)*$/.test(mv[1])) {
+      throw new Error(`data-mz-version に数値以外が入っている: ${mv[1]}(比較とOGPが壊れる)`);
+    }
+    const mc = top.match(/data-mz-channel="([^"]+)"/);
+    if (!mc) throw new Error("data-mz-channel が無い(ベータ表記の正本)");
+    /* 画面側: ツールのフッターに (Beta) が出ていること */
+    const w = await compEnv();
+    for (let i = 0; i < 40 && !w.document.querySelector(".mzsc-foot-ver"); i++) {
+      await new Promise(r => setTimeout(r, 50));
+    }
+    const el = w.document.querySelector(".mzsc-foot-ver");
+    if (!el) throw new Error("ツールのフッターに版番が出ていない");
+    const txt = el.textContent.replace(/ /g, " ").trim();
+    if (mc[1] === "beta" && !/\(Beta\)$/.test(txt)) {
+      throw new Error(`ベータなのに画面に (Beta) が無い: 「${txt}」`);
+    }
+    if (txt.indexOf(mv[1]) < 0) throw new Error(`画面の版番が正本と違う: 「${txt}」≠ ${mv[1]}`);
+    return `内部=${mv[1]}(${mc[1]}) / 画面=「${txt}」`;
+  });
   /* 版番の大小比較(1.113.10 > 1.113.9 を正しく判定するため文字列比較にしない) */
   function cmpVer(a, b) {
     const pa = String(a).split("."), pb = String(b).split(".");

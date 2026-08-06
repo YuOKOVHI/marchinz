@@ -4810,3 +4810,25 @@ input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
   align-items: center;
   min-height: 44px;
 }
+
+/* ---------- クリエイターページの末尾: 無料・ロゴ・免責(2026-08-07 優さん指示) ----------
+   各映像ツールのページと同じ3点を、ツールの入口であるこのページにも置く */
+.mzsc-note-band { margin: 2rem 0 0; }
+.mzsc-note-band .mzsc-note-free,
+.mzsc-note-band .mzsc-note-logo {
+  margin: 0 0 0.5rem; font-size: 0.8rem; line-height: 1.7;
+  color: var(--muted, rgba(12, 15, 20, 0.62));
+}
+.mzsc-note-band .mzsc-note-free i,
+.mzsc-note-band .mzsc-note-logo i { margin-right: 0.4rem; color: #1e4fd6; }
+.mzsc-note-band .mzsc-note {
+  margin: 0.8rem 0 0; padding: 0.8rem 0.9rem;
+  border-radius: 10px; background: rgba(15, 33, 56, 0.04);
+  border: 1px solid rgba(15, 33, 56, 0.08);
+  font-size: 0.75rem; line-height: 1.75; color: rgba(12, 15, 20, 0.62);
+}
+.mzsc-note-band .mzsc-note-title {
+  margin: 0 0 0.25rem; font-weight: 800; font-size: 0.75rem; color: rgba(12, 15, 20, 0.78);
+}
+.mzsc-note-band .mzsc-note p { margin: 0; }
+.mzsc-note-band .mzsc-note a { color: #1e4fd6; }

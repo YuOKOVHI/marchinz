@@ -563,3 +563,19 @@ body:has(#exportBtn:not(:disabled)) #buildBtn {
 }
 .mz-drawer-usertype-opt i { color: #1e4fd6; width: 1.1em; text-align: center; }
 .mz-drawer-usertype-opt.on { border-color: #1e4fd6; background: #eef3ff; }
+
+/* ---------- 免責(ボディの一番下・フッターの直前) 2026-08-07 優さん指示 ----------
+   フッターの中(暗い帯)から、無料の帯・ロゴの断りと同じ明るい面へ移した。
+   3つが同じ場所に並ぶので、囲みは軽く・字も控えめにする */
+.mzsc-note {
+  max-width: 34rem; margin: 10px auto 18px; padding: 12px 14px;
+  border-radius: 10px; background: rgba(15, 33, 56, 0.04);
+  border: 1px solid rgba(15, 33, 56, 0.08);
+  color: rgba(12, 15, 20, 0.62); font-size: 12px; line-height: 1.75; text-align: left;
+}
+.mzsc-note-title { margin: 0 0 4px; font-weight: 800; color: rgba(12, 15, 20, 0.78); font-size: 12px; }
+.mzsc-note p { margin: 0; }
+.mzsc-note a { color: #1e4fd6; }
+@media (max-width: 719px) {
+  .mzsc-note { margin-left: 16px; margin-right: 16px; }
+}

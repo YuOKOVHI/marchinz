@@ -136,6 +136,20 @@ window.MZSiteChrome = (() => {
       + '<a href="/#admin/reports" class="mzsc-drawer-admin mzsc-drawer-admin--red">管理</a>';
   }
 
+  /* ---------- 免責(注意事項) ----------
+     ★ 置き場所は「フッターより上・ボディの一番下」(2026-08-07 優さん指示)。
+       これまでフッターの中にあり、すぐ上の「無料・すべて端末内で処理」の帯や
+       ロゴの断りと3行しか離れていないのに、暗い帯の向こう側にいた ─
+       同じ性質の3つ(無料のこと・ロゴのこと・免責)は同じ場所にまとめる。
+       フッター側からは外す ─ 1画面で二度言わない。
+     ★ 本体のクリエイターページ(#creators)にも同じ文面を置く(index.html)。
+       文面を変えるときは両方 ─ 増やすなら共有JSへ寄せること */
+  const DISCLAIMER_HTML =
+    '<div class="mzsc-note">'
+    + '<p class="mzsc-note-title">注意事項</p>'
+    + '<p>本機能は映像制作をサポートするための補助ツールです。本ツールを利用して作成された映像、およびそれに起因するトラブルについて、運営は一切の責任を負いかねます。あらかじめご了承ください。詳しくは<a href="/#terms">利用規約</a>をご覧ください。</p>'
+    + '</div>';
+
   /* ドロワー内は場所が狭いのでボタン型のまま */
   function authAreaHtml() {
     if (loggedIn()) {
@@ -193,8 +207,19 @@ window.MZSiteChrome = (() => {
      (二重管理にするとズレるため)。フッターと Switcher のエラーログ(ui.js)が
      この属性を参照する。取得完了までは前回取得値(localStorage)でつなぐ。 */
   const VER_KEY = "mzscSiteVersion";
+  /* ★ 版番の表記(2026-08-07 優さん指示)。
+       ・内部管理(data-mz-version)は **数値だけ**(2.0.0)。プレリリース札を
+         混ぜると、QAの版番比較・OGPの ?v= ・localStorage の突き合わせが
+         すべて「2.0.0-beta」を数として読めなくなる
+       ・画面には「ver 2.0.0 (Beta)」と併記する
+       ・ベータかどうかの正本は <html data-mz-channel="beta"> の1箇所。
+         正式版になったらこの属性を外すだけで、全画面から (Beta) が消える */
+  const isBeta = () =>
+    String(document.documentElement.getAttribute("data-mz-channel") || "")
+      .toLowerCase() === "beta";
+  const verLabel = ver => `ver ${esc(ver)}${isBeta() ? " (Beta)" : ""}`;
   const copyHtml = ver =>
-    `©️ MarchinZ 2026${ver ? ` <span class="mzsc-foot-ver" lang="en">ver. ${esc(ver)}</span>` : ""}`;
+    `©️ MarchinZ 2026${ver ? ` <span class="mzsc-foot-ver" lang="en">${verLabel(ver)}</span>` : ""}`;
 
   function setVersion(ver) {
     if (!ver) return;
@@ -237,10 +262,6 @@ window.MZSiteChrome = (() => {
     <a href="https://x.com/marchinz2026" target="_blank" rel="noopener noreferrer" class="mzsc-x-link" aria-label="MarchinZ公式Xを開く" title="MarchinZ公式Xを開く">${X_SVG}</a>
   </div>
   <nav class="mzsc-foot-grid" aria-label="サイト内ページとポリシー">${cols}</nav>
-  <div class="mzsc-foot-note">
-    <p class="mzsc-foot-note-title">注意事項</p>
-    <p>本機能は映像制作をサポートするための補助ツールです。本ツールを利用して作成された映像、およびそれに起因するトラブルについて、運営は一切の責任を負いかねます。あらかじめご了承ください。詳しくは<a href="/#terms">利用規約</a>をご覧ください。</p>
-  </div>
   <p class="mzsc-foot-copy">${copyHtml(ver)}</p>
 </footer>`;
   }
@@ -309,6 +330,10 @@ window.MZSiteChrome = (() => {
        ここで一緒に連れていく。Switcher にしか無いので見つからなければ何もしない */
     const logoNote = document.querySelector(".mode-tip--logo");
     if (disc && logoNote) body.insertBefore(logoNote, foot);
+    /* 免責もその下(=ボディの一番下・フッターの直前)へ(2026-08-07 優さん指示) */
+    const note = document.createElement("div");
+    note.innerHTML = DISCLAIMER_HTML;
+    body.insertBefore(note.firstElementChild, foot);
     // 下部タブバー(スマホ)。本体と同じ6枠で、ツールからも迷わず戻れるように
     const tab = document.createElement("div");
     tab.innerHTML = tabbarHtml();

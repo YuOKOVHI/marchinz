@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-version="1.113.13">
+<html lang="ja" data-mz-version="2.0.0" data-mz-channel="beta">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -73,7 +73,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css" />
     <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css?v=1.25.64" />
     <link rel="stylesheet" href="styles.css?v=1.39.69" />
-    <link rel="stylesheet" href="marchinz-brushup.css?v=1.113.5" />
+    <link rel="stylesheet" href="marchinz-brushup.css?v=2.0.0" />
     <!-- Microsoft Clarity -->
     <script type="text/javascript">
       (function(c,l,a,r,i,t,y){
@@ -3776,6 +3776,26 @@
               >Artlistのプラン、著作権についてなど</a
             >
           </h3>
+
+          <!-- ★ ボディの一番下(フッターより上)に 無料のこと・ロゴのこと・免責
+               (2026-08-07 優さん指示)。各映像ツールのページと同じ3つを、
+               ツールの入口であるこのページにも置く。
+               文面は tools/shared/sitechrome.js の DISCLAIMER_HTML と対。
+               変えるときは両方(QAが一致を見張る) -->
+          <div class="mzsc-note-band">
+            <p class="mzsc-note-free">
+              <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+              <strong>無料・すべて端末内で処理</strong>します（動画はどこにも送信されません）。
+            </p>
+            <p class="mzsc-note-logo">
+              <i class="fa-solid fa-image" aria-hidden="true"></i>
+              作成した映像に<b>MarchinZのロゴ</b>が表示されます。
+            </p>
+            <div class="mzsc-note">
+              <p class="mzsc-note-title">注意事項</p>
+              <p>本機能は映像制作をサポートするための補助ツールです。本ツールを利用して作成された映像、およびそれに起因するトラブルについて、運営は一切の責任を負いかねます。あらかじめご了承ください。詳しくは<a href="#terms">利用規約</a>をご覧ください。</p>
+            </div>
+          </div>
         </section>
       </div>
 
@@ -4166,7 +4186,11 @@
           if (!el) return;
           var v = document.documentElement.getAttribute("data-mz-version");
           if (v) {
-            el.textContent = "ver.\u202f" + v;
+            /* 画面には「ver 2.0.0 (Beta)」。ベータの正本は <html data-mz-channel>
+               の1箇所で、data-mz-version は数値だけ(2026-08-07 優さん指示) */
+            var beta = (document.documentElement.getAttribute("data-mz-channel") || "")
+              .toLowerCase() === "beta";
+            el.textContent = "ver\u202f" + v + (beta ? " (Beta)" : "");
             el.setAttribute("title", "このページのサイト版番（Safari で更新確認に使えます）");
           }
         })();
