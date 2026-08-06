@@ -1121,6 +1121,21 @@ MC.exporter.checkQuota = async needBytes => {
    (2026-08-06 レビューP1)。録画の入口まで来ると await をいくつも通った後で
    活性が切れており、iOS Safari では suspended のまま = 完成品が無音になる。
    WebCodecs 経路では使わないので、作るだけなら無害(数十バイト) */
+/* 前回の書き出しファイルを OPFS から片付ける(2026-08-06 優さん実機 11.26GB)。
+   「別のシーンを作る」「同じシーンを別設定で作り直す」は書き出しを繰り返すのに、
+   releaseOpfs を呼ぶのは**退出導線と「最初からやり直す」だけ**だった。
+   1本 8分なら 732MB。3本作れば 2GB 超がそのまま居座り、6時間の据え置き窓が
+   明けるまで消えない ─ 「3GBで3回分残ってそう」の実体はこれ。
+   書き出しを始める前に、前回ぶんを必ず手放す。 */
+MC.exporter.releasePrevExport = () => {
+  try {
+    if (MC.exporter._opfsName) {
+      MC.log(`export: 前回の書き出し(${MC.exporter._opfsName})を片付けます`);
+      MC.exporter.releaseOpfs();
+    }
+  } catch (e) { MC.log("前回書き出しの片付けに失敗(続行): " + e.message); }
+};
+
 MC.exporter.primeAudio = () => {
   try {
     const AC = window.AudioContext || window.webkitAudioContext;

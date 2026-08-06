@@ -6878,6 +6878,40 @@ async function countSamples(ns, file, fromSec) {
       S.audioClipId = keep.aid; S.audioPickedByUser = keep.apu; S.audioDecided = keep.ad;
     }
   });
+  /* 2026-08-06 優さん実機「縦動画・自動スイッチャー・別シーンで3回分がSafariに残ってそう」
+     (11.26GB)。書き出しを繰り返す導線(別のシーン/別設定で作り直す)で、
+     前回の書き出しファイルを OPFS から手放していなかった ─ 8分なら732MB/本 */
+  await test("★書き出しを始めるとき、前回の書き出しファイルを必ず手放す", async () => {
+    const w = await compEnv();
+    const X = w.MC.exporter;
+    const keep = { name: X._opfsName, rm: X.opfsRemove, note: X._notePending, est: X.refreshEstimate };
+    const removed = [];
+    try {
+      X.opfsRemove = async (n) => { removed.push(n); };
+      X._notePending = () => {};
+      X.refreshEstimate = () => Promise.resolve();
+      /* 前回の書き出しが残っている状態 */
+      X._opfsName = "MarchinZ_Switcher_9x16_2026-08-06.mp4";
+      X.releasePrevExport();
+      if (!removed.length) throw new Error("前回の書き出しを手放していない");
+      if (X._opfsName !== null) throw new Error("_opfsName が残ったまま(二重解放や取り違えの元)");
+      /* 何も無い回は何もしない(空振りで例外を出さない) */
+      const before = removed.length;
+      X.releasePrevExport();
+      if (removed.length !== before) throw new Error("前回が無いのに削除を投げた");
+      /* 歯の確認: 書き出しの入口が本当にこれを呼んでいるか。
+         呼び出しを消したら気づけるよう、ハンドラの中身を見る
+         (代入ではなく「配線されているか」を測る) */
+      const src = String(w.MC.ui.wire);
+      if (!/releasePrevExport\s*\(/.test(src)) {
+        throw new Error("書き出しの配線から releasePrevExport が消えている");
+      }
+      return `前回ぶんを手放す(${removed[0].slice(0, 28)}…) / 空振りは無害 / 入口に配線あり`;
+    } finally {
+      X._opfsName = keep.name; X.opfsRemove = keep.rm;
+      X._notePending = keep.note; X.refreshEstimate = keep.est;
+    }
+  });
   await test("★2回目は解析を使い回し、仕上げと書き出しだけが走る", async () => {
     const w = await compEnv();
     const S = compReset(w);
