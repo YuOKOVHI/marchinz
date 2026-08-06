@@ -6300,22 +6300,42 @@ MC.ui.updateTransport = () => {
    presets/layouts = そのモードで選べるものだけ。ここに無い選択肢はUIに出さない。
    並びも表示順(2026-08-02 優さん指示)に合わせてある ─ カードの実体は
    index.html #modeStepKind 側で、ここは読み手のための整列 */
+/* ★ toolKey/toolName/toolShort = 映像ツール再編(2026-08-07 優さん指示)。
+   3モードを ①MarchinZ Reel ②MarchinZ Switcher ③MarchinZ Wipe という
+   「3つのツール」として見せる(実体はこの1アプリ)。対応の正本は
+   tools/shared/toolscope.js の TOOLS と揃えること。
+   ★ label は**1文字も変えない** ─ noteToolUse が localStorage 経由で
+     Firestore の target_label へ流しており、変えると過去の集計と混ざる */
 MC.ui.MODES = {
   vertical: {
     preset: "9x16", layoutId: "v3", label: "縦型動画",   // 3分割縦積みが初期
     presets: ["9x16"],                                   // 縦型で固定(比率は選ばせない)
     layouts: ["v3", "v2", "big2", "single"],             // 横並べは廃止
+    toolKey: "reel", toolName: "MarchinZ Reel", toolShort: "Reel",
   },
   switch: {
     preset: "16x9", layoutId: "switch", label: "自動スイッチング動画",
     presets: ["16x9"],                                    // 横型のみ(2026-07-19 優さん指定)
     layouts: ["switch"],                                  // ワイプは専用モードへ分離(2026-07-24)
+    toolKey: "switcher", toolName: "MarchinZ Switcher", toolShort: "Switcher",
   },
   wipeCam: {
     preset: "16x9", layoutId: "wipe", label: "ワイプカメラ動画",   // メイン固定+小窓2まで(2026-07-24)
     presets: ["16x9"],
     layouts: ["wipe"],
+    toolKey: "wipe", toolName: "MarchinZ Wipe", toolShort: "Wipe",
   },
+};
+
+/* いま作っている「ツール」の名前(2026-08-07 映像ツール再編)。
+   通知・案内文の呼び名はこれを使う ─ 「MarchinZ Switcher」決め打ちだと、
+   Reel で作っている人への通知が別ツールの名で届く。
+   モード未確定(入口)では URL のスコープ → それも無ければ総称 */
+MC.ui.toolName = () => {
+  const m = MC.ui.MODES[MC.S.mode];
+  if (m && m.toolName) return m.toolName;
+  const sc = window.MZToolScope && MZToolScope.get();
+  return (sc && sc.name) || "MarchinZ 映像ツール";
 };
 
 /* いま選ばれているモードの設定 */

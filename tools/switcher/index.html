@@ -27,7 +27,12 @@
     <!-- ★ 戻るは左端(2026-08-02 優さん指示⑨「戻るボタンがわかりづらい。左側に表示」)。
          iOSの標準作法(戻る=左上)に合わせ、右端から移した -->
     <a href="/#creators" class="back-link">← 戻る</a>
-    <h1 class="tool-name">Switcher<span class="beta-badge">ベータ版</span></h1>
+    <!-- ★ ツール名は span で包む(2026-08-07 映像ツール再編)。?tool=reel|switcher|wipe
+         で来たとき、直後の toolscope.js がペイント前に Reel/Wipe へ差し替える。
+         スクリプトの位置は h1 の直後が必須 ─ head では要素がまだ無く、
+         </body> 直前では「Switcher」が一瞬見えてから化ける -->
+    <h1 class="tool-name"><span id="toolName">Switcher</span><span class="beta-badge">ベータ版</span></h1>
+    <script src="/tools/shared/toolscope.js?v=2.1.1"></script>
   </div>
   <div class="head-right">
     <div id="capsBadge" class="caps-badge">対応確認中…</div>
