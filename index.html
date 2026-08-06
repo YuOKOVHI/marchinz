@@ -73,7 +73,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css" />
     <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css?v=1.25.64" />
     <link rel="stylesheet" href="styles.css?v=1.39.69" />
-    <link rel="stylesheet" href="marchinz-brushup.css?v=2.0.1" />
+    <link rel="stylesheet" href="marchinz-brushup.css?v=2.2.0" />
     <!-- Microsoft Clarity -->
     <script type="text/javascript">
       (function(c,l,a,r,i,t,y){
@@ -832,9 +832,15 @@
             <p class="auth-register-lead">
               <a href="#terms" class="auth-inline-link">利用規約</a>および<a href="#privacy" class="auth-inline-link">プライバシーポリシー</a>を確認し、内容に同意してください。
             </p>
-            <p class="auth-legal-summary-snippet">
-              <strong>【重要】</strong>本サービスは<strong>13歳以上</strong>の方が対象です。取得情報を<strong>個人が特定されない統計</strong>に加工し、<strong>提携パートナー（楽器メーカー等）</strong>へ提供する場合があります（詳細はプライバシーポリシー）。
-            </p>
+            <!-- ★ チェックは3個(2026-08-07 優さん指示「チェック5個は多すぎる」)。
+                 ・【重要】ブロックは撤去 ─ 13歳は③のチェック文と重複、統計提供は
+                   利用規約 第5条の2 へ移した(規約に同意する=そこも読んだ扱い)
+                 ・「統計データの第三者提供」の個別チェックは廃止。提供は
+                   **個人が特定されない統計への加工後**なので、規約+ポリシー開示で
+                   成立する(個別同意の法的必然はない)。既存ユーザーの同意記録
+                   (stats_sharing_consented_at)はそのまま残す
+                 ・βテスト規約のチェックも廃止 ─ プライバシーポリシー第7項が
+                   βテストの条項で、ポリシー同意に内包される -->
             <label class="auth-consent-label">
               <input type="checkbox" id="auth-signup-agree-terms" />
               <span>利用規約に同意する</span>
@@ -847,17 +853,6 @@
               <input type="checkbox" id="auth-signup-age-13" />
               <span>私は13歳以上です（13歳未満は利用できません）</span>
             </label>
-            <label class="auth-consent-label">
-              <input type="checkbox" id="auth-signup-agree-stats-sharing" />
-              <span>統計データの第三者提供についてプライバシーポリシーを確認し、同意します</span>
-            </label>
-            <label class="auth-consent-label auth-consent-label--optional">
-              <input type="checkbox" id="auth-signup-b-test-agree" />
-              <span>βテストの規約に同意します</span>
-            </label>
-            <p class="auth-consent-optional-note">
-              βテスト期間中は、データが保存されない場合や機能が利用できない場合があります（詳細はプライバシーポリシー第7項）。
-            </p>
           </div>
           <p id="auth-signup-consent-msg" class="mll-create-msg" aria-live="polite"></p>
           <div class="auth-entry-actions">
@@ -3918,7 +3913,7 @@
             <h2 id="terms-heading" class="mz-philosophy-heading">利用規約</h2>
             <div class="mz-philosophy-rule" aria-hidden="true"></div>
           </header>
-          <p class="privacy-policy-meta">制定：2026年5月9日　最終更新：2026年8月5日</p>
+          <p class="privacy-policy-meta">制定：2026年5月9日　最終更新：2026年8月7日</p>
           <p class="static-panel-lead privacy-policy-scope">
             本規約は、ウェブサイト「MarchinZ（マーチンズ）」（以下「本サイト」）の利用条件を定めます。本サイトを利用すると、本規約に同意したものとみなします。
           </p>
@@ -3951,6 +3946,14 @@
               <h4 class="privacy-policy-heading">第5条（投稿コンテンツ・機能）</h4>
               <p class="static-panel-text">
                 利用者が本サイトに投稿・入力した内容（MarchinZ Log、MarchinZ Note、掲示板、イベント登録、マイリスト、プロフィール情報、画像等を含みます）の著作権等の権利は利用者に留保されます。利用者は、本サイトの運営・表示・機能維持に必要な範囲で、運営および他の利用者が当該内容を利用・複製・表示できる非独占的な許諾を付与するものとします。利用者は、投稿が第三者の権利を侵害しないことを保証するものとします。公開・非公開の設定は機能ごとに異なります。
+              </p>
+              <!-- ★ 第5条の2 = 統計データの第三者提供(2026-08-07 優さん指示で
+                   登録画面のチェックから規約本文へ移設)。枝番にするのは既存の
+                   第7条の2と同じ作法 ─ 条番号を繰り下げると他所の参照が壊れる。
+                   内容はプライバシーポリシー「4. 第三者および海外での保管」と対 -->
+              <h4 class="privacy-policy-heading">第5条の2（統計データの第三者提供）</h4>
+              <p class="static-panel-text">
+                運営は、本サイトの利用を通じて取得した情報を、<strong>個人が特定されない統計データ</strong>に加工した上で、提携パートナー企業（楽器メーカー等）へ提供する場合があります。個人が特定される形で第三者へ提供されることはありません。詳細は<a href="#privacy">プライバシーポリシー</a>「4. 第三者および海外での保管」をご覧ください。
               </p>
               <h4 class="privacy-policy-heading">第6条（サービス変更・停止）</h4>
               <p class="static-panel-text">
@@ -4052,7 +4055,7 @@
                 <li>障害・メンテナンス等により、一時的に利用できないことがあります</li>
               </ul>
               <p class="static-panel-text">
-                <strong>既存の利用者</strong>は、ログイン時にβテストの規約への同意が必要です。<strong>新規登録時</strong>は、登録画面の任意チェックで同意を記録できます。同意の有無は設定画面で確認できます。
+                <strong>既存の利用者</strong>は、ログイン時にβテストの規約への同意が必要です。<strong>新規登録時</strong>は、登録時の利用規約・プライバシーポリシーへの同意に本項への同意が含まれます。同意の有無は設定画面で確認できます。
               </p>
 
               <h4 class="privacy-policy-heading">8. 本ポリシーの変更</h4>
@@ -4251,7 +4254,7 @@
     <script defer src="marchinz-analytics.js?v=1.25.64"></script>
     <script defer src="marchinz-admin-page.js?v=1.26.25"></script>
     <script defer src="marchinz-admin-dash.js?v=1.36.8"></script>
-    <script defer src="marchinz-admin-ugc.js?v=1.113.1"></script>
+    <script defer src="marchinz-admin-ugc.js?v=2.2.0"></script>
     <script defer src="marchinz-admin-trash.js?v=1.25.105"></script>
     <script defer src="marchinz-admin-banned.js?v=1.25.64"></script>
     <script defer src="site-nav.js?v=1.39.58"></script>
@@ -4271,12 +4274,12 @@
     <script defer src="marchinz-rate-limit.js?v=1.25.64"></script>
     <script defer src="marchinz-toast.js?v=1.39.6"></script>
     <script defer src="marchinz-usertype.js?v=1.39.52"></script>
-    <script defer src="marchinz-usertype-ui.js?v=1.43.0"></script>
+    <script defer src="marchinz-usertype-ui.js?v=2.2.0"></script>
     <script defer src="auth-config.js?v=1.26.0"></script>
-    <script defer src="auth.js?v=1.110.3"></script>
-    <script defer src="marchinz-admin-ugc-log.js?v=1.99.0"></script>
+    <script defer src="auth.js?v=2.2.0"></script>
+    <script defer src="marchinz-admin-ugc-log.js?v=2.2.0"></script>
     <script defer src="marchinz-community-updates.js?v=1.26.28"></script>
-    <script defer src="marchinz-b-test.js?v=1.41.0"></script>
+    <script defer src="marchinz-b-test.js?v=2.2.0"></script>
     <script defer src="marchinz-notify.js?v=1.25.64"></script>
     <script defer src="marchinz-site-announcement.js?v=1.25.64"></script>
     <script defer src="marchinz-ops-announcement.js?v=1.25.64"></script>

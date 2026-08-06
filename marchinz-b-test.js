@@ -230,12 +230,8 @@
       .catch(() => {});
   });
 
-  const signupCheckbox = document.getElementById("auth-signup-b-test-agree");
-  signupCheckbox?.addEventListener("change", () => {
-    if (signupCheckbox instanceof HTMLInputElement) {
-      stashSignupConsent(signupCheckbox.checked);
-    }
-  });
+  /* 登録画面のβテストチェックは 2026-08-07 に廃止(ポリシー第7項に内包)。
+     同意は auth.js が登録ボタン押下時に stashSignupConsent(true) で立てる */
 
   window.MarchinZBTest = {
     getConsentVersion: () => B_TEST_CONSENT_VERSION,

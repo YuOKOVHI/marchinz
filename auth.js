@@ -97,7 +97,8 @@
   const authSignupAgreeTerms = document.getElementById("auth-signup-agree-terms");
   const authSignupAgreePrivacy = document.getElementById("auth-signup-agree-privacy");
   const authSignupAge13 = document.getElementById("auth-signup-age-13");
-  const authSignupAgreeStatsSharing = document.getElementById("auth-signup-agree-stats-sharing");
+  /* auth-signup-agree-stats-sharing / auth-signup-b-test-agree のチェックは
+     2026-08-07 に廃止(統計提供=利用規約 第5条の2 / βテスト=ポリシー第7項に内包) */
   const legalPolicyDialog = document.getElementById("mz-legal-policy-dialog");
   const legalGateAgreeCheckbox = document.getElementById("mz-legal-gate-agree-checkbox");
   const btnLegalGateAccept = document.getElementById("btn-legal-gate-accept");
@@ -321,8 +322,11 @@
   }
   const PROFILE_SENSITIVE_PRIVATE_COLLECTION = "profile_private";
   const PROFILE_SENSITIVE_PRIVATE_DOC_ID = "default";
-  /** Firestore の legal_policy_accepted_version と一致させる。改定時は値を上げて再同意フローを発火する。 */
-  const LEGAL_POLICY_VERSION = "2026-05-20-v1";
+  /** Firestore の legal_policy_accepted_version と一致させる。改定時は値を上げて再同意フローを発火する。
+      2026-08-07-v2: 利用規約に第5条の2(統計データの第三者提供)を新設。
+      登録画面の個別チェックを廃止して規約本文へ移したため、既存ユーザーには
+      再同意ゲート(#mz-legal-policy-dialog。統計提供の箇条書き入り)を一度出す。 */
+  const LEGAL_POLICY_VERSION = "2026-08-07-v2";
 
   /**
    * @param {HTMLSelectElement | null} sel
@@ -376,7 +380,7 @@
 
   const AUTH_MESSAGE = {
     agreeRequired:
-      "利用規約・プライバシーポリシー、13歳以上の確認、統計データの第三者提供について、すべてにチェックを入れてください。",
+      "利用規約・プライバシーポリシー・13歳以上の確認の3つすべてにチェックを入れてください。",
     firebaseMissingSimple: "Firebase が未設定です。auth-config.js を確認してください。",
     storageUnavailable: "Firebase Storage が利用できないため画像を保存できません。",
     fileTooLarge: "ファイルサイズが大きすぎます。20MB以下の画像を選択してください",
@@ -1382,8 +1386,7 @@
     const okConsent = Boolean(
       authSignupAgreeTerms?.checked &&
         authSignupAgreePrivacy?.checked &&
-        authSignupAge13?.checked &&
-        authSignupAgreeStatsSharing?.checked,
+        authSignupAge13?.checked,
     );
     if (authEntryBusy) {
       btnAuthSignupGoogle.disabled = true;
@@ -1442,7 +1445,6 @@
     if (authSignupAgreeTerms) authSignupAgreeTerms.checked = false;
     if (authSignupAgreePrivacy) authSignupAgreePrivacy.checked = false;
     if (authSignupAge13) authSignupAge13.checked = false;
-    if (authSignupAgreeStatsSharing) authSignupAgreeStatsSharing.checked = false;
     syncSignupProfileAttrCheckboxesFromList([]);
     try {
       sessionStorage.removeItem(PENDING_SIGNUP_PROFILE_ATTRS_KEY);
@@ -2445,18 +2447,18 @@
           displayName: payload.display_name || existing.display_name || user.user_metadata?.full_name || "ユーザー",
           publicId: marchinz_public_id,
         });
-        /* ★ 13歳以上・統計第三者提供の同意を記録する(2026-08-06 レビューP1)。
-           これまで保存されるのは規約バージョンだけで、「同意した覚えはない」と
-           言われたとき反証する記録が1バイトも無かった(βテスト同意は保存
-           されているのにこの2つだけ非対称)。#signup のCTAは4つの必須チェックが
-           全部入るまで押せないので、この経路に来た=同意済みが保証されている。
+        /* ★ 13歳以上の同意を記録する(2026-08-06 レビューP1)。#signup のCTAは
+           3つの必須チェックが全部入るまで押せないので、この経路に来た=同意済み。
+           ★ stats_sharing_consented_at は新規では書かない(2026-08-07 優さん指示)。
+             統計提供の個別チェックを廃止し、利用規約 第5条の2 への同意
+             (legal_policy_accepted_version=2026-08-07-v2)に一本化した。
+             既存ユーザーの値と rules の allowlist はそのまま残す。
            ★ 本体とは別書きにする: rules のデプロイが遅れていても
              ここの失敗が登録そのものを壊さないように */
         if (fv?.serverTimestamp) {
           try {
             await ref.set({
               age13_confirmed_at: fv.serverTimestamp(),
-              stats_sharing_consented_at: fv.serverTimestamp(),
             }, { merge: true });
           } catch (e) {
             console.warn("[MarchinZ] 同意記録の保存に失敗(登録は継続)", e);
@@ -2658,7 +2660,7 @@
     })();
   }
 
-  [authSignupAgreeTerms, authSignupAgreePrivacy, authSignupAge13, authSignupAgreeStatsSharing].forEach((el) => {
+  [authSignupAgreeTerms, authSignupAgreePrivacy, authSignupAge13].forEach((el) => {
     el?.addEventListener("change", () => syncSignupEntryConsentUi());
   });
 
@@ -2757,8 +2759,7 @@
       if (
         !authSignupAgreeTerms?.checked ||
         !authSignupAgreePrivacy?.checked ||
-        !authSignupAge13?.checked ||
-        !authSignupAgreeStatsSharing?.checked
+        !authSignupAge13?.checked
       ) {
         syncSignupEntryConsentUi();
         if (window.MarchinZTrackEvent) window.MarchinZTrackEvent("signup_consent_blocked", { reason: "checkbox_unchecked" });
@@ -2769,10 +2770,12 @@
       } catch {
         //
       }
-      const signupBTestEl = document.getElementById("auth-signup-b-test-agree");
-      window.MarchinZBTest?.stashSignupConsent?.(
-        signupBTestEl instanceof HTMLInputElement && signupBTestEl.checked,
-      );
+      /* ★ βテスト同意は自動で立てる(2026-08-07 優さん指示でチェック廃止)。
+         プライバシーポリシー第7項がβテストの条項であり、直前で確認した
+         ②ポリシー同意に内包される。ここで立てないと、auth.js の既存ユーザー向け
+         βゲート(isSignupEntry を見ない)が**新規登録直後にモーダルを出してしまう**
+         ─ チェックを消したのにモーダルが増えるのは本末転倒 */
+      window.MarchinZBTest?.stashSignupConsent?.(true);
       setAuthEntryMessage("signup", "");
       syncSignupEntryConsentUi();
       void signInWithGoogle("signup").catch((err) => {
