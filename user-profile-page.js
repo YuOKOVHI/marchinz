@@ -3819,6 +3819,20 @@
   async function loadAndRender() {
     const gen = ++profileLoadSeq;
     const targetUid = uidFromRoute();
+    /* ★ 訪問者フラグは**どの早期returnより前**で更新する(2026-08-06 優さん実機
+       「スマホから通知が読めない(パソコンならいけた)」の調査で判明)。
+       このフラグが "1" の間、styles.css は #prof-pane-notifs / #prof-pane-ops を
+       display:none !important で消す。更新は loadAndRenderCore の中ほど
+       (認証待ちの return より後)にしかなく、他人のプロフィールを見たあとに
+       自分のマイページへ来て**認証の復帰待ちで一度抜ける**と、"1" が残ったまま
+       画面が描かれ、通知タブを押しても中身が出ない。
+       ここで先に確定させれば、その残留は起こらない */
+    try {
+      const me = String(window.MLL_AUTH?.getUser?.()?.id || "").trim();
+      if (me && targetUid && me === targetUid) {
+        document.documentElement.setAttribute("data-mz-prof-visitor", "");
+      }
+    } catch { /* 認証がまだ無い回は、従来どおり core 側の更新に任せる */ }
     /** 認証の復帰待ちで抜けたか。待っている間は読み込み中の見た目を保つ */
     let pendingAuth = false;
     try {

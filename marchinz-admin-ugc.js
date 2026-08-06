@@ -1059,6 +1059,101 @@
     return { rows, total };
   }
 
+  /* イベント名 → 人が読める機能名。GA の生の名前(signup_complete 等)は
+     運営が毎回頭の中で翻訳していたので、辞書で置き換える。
+     ★ 表に無い名前は生のまま出す(黙って捨てない) */
+  const GA_EVENT_LABELS = {
+    mz_route_view: "ページを見た",
+    page_view: "ページを見た(GA標準)",
+    mz_core_engagement_start: "じっくり読み始めた",
+    mz_core_engagement_pulse: "読み続けている",
+    signup_complete: "新規登録の完了",
+    signup_consent_blocked: "登録の同意で止まった",
+    login_success: "ログイン成功",
+    login_start: "ログイン開始",
+    login_error: "ログイン失敗",
+    login_action: "ログイン操作",
+    legal_policy_accept: "規約に同意",
+    b_test_consent_accept: "βテストに同意",
+    b_test_gate_signout: "βの入口からログアウト",
+    profile_tab_view: "マイページのタブを見た",
+    community_post_submit: "掲示板に投稿",
+    community_reply_submit: "掲示板に返信",
+    community_search_run: "コミュニティ内を検索",
+    moment_save_success: "モーメントを投稿",
+    note_save_success: "MarchinZ Note を保存",
+    search_result_view: "検索結果を見た",
+    search_result_empty: "検索が0件だった",
+    report_submit: "通報",
+    rate_limit_hit: "投稿の速度制限に当たった",
+    account_withdraw_complete: "退会",
+    account_banned_view: "凍結の案内を見た",
+  };
+  /* 「機能」として数えないもの(ページ表示・滞在は機能の人気ではない)。
+     TOP3 はここを除いた実際の操作だけで決める */
+  const GA_NOT_FEATURE = new Set([
+    "mz_route_view", "page_view", "mz_core_engagement_start",
+    "mz_core_engagement_pulse", "user_engagement", "session_start",
+    "first_visit", "scroll", "form_start", "form_submit",
+  ]);
+  const gaLabel = name => GA_EVENT_LABELS[name] || name;
+
+  /** 人気の機能TOP3。ページ表示・滞在は除いた「操作」だけで順位を作る */
+  function paintGaTop(rows, range) {
+    const host = el("admin-ugc-ga-top");
+    if (!host) return;
+    host.replaceChildren();
+    const feats = rows.filter(r => !GA_NOT_FEATURE.has(r.name) && r.count > 0);
+    if (!feats.length) {
+      const p = document.createElement("p");
+      p.className = "user-profile-empty";
+      p.textContent = "この期間に使われた機能はまだありません";
+      host.appendChild(p);
+      return;
+    }
+    const top = feats.slice(0, 3);          // rows は件数の降順で来る
+    const max = top[0].count || 1;
+    const label = range === "7d" ? "7日" : range === "28d" ? "28日" : "全期間";
+    const cap = document.createElement("p");
+    cap.className = "admin-ugc-ga-cap";
+    cap.textContent = `${label}でよく使われた機能`;
+    host.appendChild(cap);
+    const medals = ["fa-trophy", "fa-medal", "fa-award"];
+    top.forEach((r, i) => {
+      const row = document.createElement("div");
+      row.className = `mz-ga-top mz-ga-top--${i + 1}`;
+      const rank = document.createElement("span");
+      rank.className = "mz-ga-top-rank";
+      rank.innerHTML = `<i class="fa-solid ${medals[i]}" aria-hidden="true"></i>`
+        + `<b>${i + 1}</b>`;
+      const body = document.createElement("span");
+      body.className = "mz-ga-top-body";
+      const nm = document.createElement("span");
+      nm.className = "mz-ga-top-name";
+      nm.textContent = gaLabel(r.name);
+      const bar = document.createElement("span");
+      bar.className = "mz-ga-top-bar";
+      const fill = document.createElement("span");
+      fill.className = "mz-ga-top-fill";
+      /* 1位を100%とした相対の長さ。数字だけより「どれだけ差があるか」が一目で分かる */
+      fill.style.width = `${Math.max(6, Math.round((r.count / max) * 100))}%`;
+      bar.appendChild(fill);
+      body.append(nm, bar);
+      const n = document.createElement("span");
+      n.className = "mz-ga-top-count";
+      n.textContent = r.count.toLocaleString("ja-JP");
+      row.append(rank, body, n);
+      host.appendChild(row);
+    });
+    /* 全体に占める割合を1行だけ。ここが低いなら「一部の機能に偏っていない」 */
+    const sum = feats.reduce((s, r) => s + r.count, 0);
+    const share = sum > 0 ? Math.round((top.reduce((s, r) => s + r.count, 0) / sum) * 100) : 0;
+    const foot = document.createElement("p");
+    foot.className = "mz-ga-top-foot";
+    foot.textContent = `TOP3で機能の使用の ${share}%（機能の種類は ${feats.length} 個）`;
+    host.appendChild(foot);
+  }
+
   function paintGaTable(rows, total, range, fetchedAt) {
     const host = el("admin-ugc-ga-table");
     if (!host) return;
@@ -1080,7 +1175,7 @@
     for (const r of rows) {
       const tr = document.createElement("tr");
       const td1 = document.createElement("td");
-      td1.textContent = r.name;
+      td1.textContent = gaLabel(r.name);
       const td2 = document.createElement("td");
       td2.textContent = r.count.toLocaleString("ja-JP");
       tr.append(td1, td2);
@@ -1114,6 +1209,7 @@
         : (await gaRunReport(token, propId, "all")).total;
       const at = Date.now();
       gaLsSet(GA_LS.cache, JSON.stringify({ allTotal, at }));
+      paintGaTop(view.rows, gaRange);
       paintGaTable(view.rows, view.total, gaRange, at);
       paintToolsNavEventCount(allTotal);
       setGaMsg("");

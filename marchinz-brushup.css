@@ -4063,6 +4063,44 @@ body {
   margin-bottom: 0.5rem;
 }
 
+/* 人気の機能TOP3(2026-08-06 優さん指示)。数字だけでなく差が目で分かる棒つき */
+.mz-ga-top-list { margin: 4px 0 14px; }
+.mz-ga-top {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; margin-bottom: 8px;
+  border: 1px solid var(--line, #e5e7eb); border-radius: 12px;
+  background: var(--panel, #fff);
+}
+.mz-ga-top--1 { border-color: #e3b341; background: linear-gradient(0deg, #fffdf5, #fffdf5); }
+.mz-ga-top--2 { border-color: #c9ced6; }
+.mz-ga-top--3 { border-color: #d9b18c; }
+.mz-ga-top-rank {
+  flex: none; width: 34px; text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  font-size: 0.68rem; color: var(--tx2, #667085);
+}
+.mz-ga-top--1 .mz-ga-top-rank { color: #b8860b; }
+.mz-ga-top--2 .mz-ga-top-rank { color: #8a929e; }
+.mz-ga-top--3 .mz-ga-top-rank { color: #a9714a; }
+.mz-ga-top-rank i { font-size: 1rem; }
+.mz-ga-top-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.mz-ga-top-name {
+  font-weight: 800; font-size: 0.9rem; color: var(--navy, #101a3a);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mz-ga-top-bar { display: block; height: 6px; border-radius: 999px; background: #eef1f6; overflow: hidden; }
+.mz-ga-top-fill { display: block; height: 100%; border-radius: 999px; background: var(--acc, #2440c8); }
+.mz-ga-top--1 .mz-ga-top-fill { background: #e3b341; }
+.mz-ga-top--2 .mz-ga-top-fill { background: #98a2b3; }
+.mz-ga-top--3 .mz-ga-top-fill { background: #c08457; }
+.mz-ga-top-count {
+  flex: none; font-weight: 800; font-size: 0.95rem;
+  font-variant-numeric: tabular-nums; color: var(--navy, #101a3a);
+}
+.mz-ga-top-foot { margin: 2px 0 0; font-size: 0.76rem; color: var(--tx2, #667085); }
+.mz-ga-all { margin-top: 8px; }
+.mz-ga-all > summary { cursor: pointer; font-size: 0.82rem; color: var(--tx2, #667085); padding: 6px 2px; }
+
 /* ── UGC（ツール）: Google アナリティクス(イベント数) 2026-08-06 ── */
 .admin-ugc-ga-setup {
   border: 1px dashed var(--line, #d7dbe3);
