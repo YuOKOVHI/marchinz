@@ -891,6 +891,296 @@
     }
   }
 
+  // ───────────────────────────────────────────────
+  // Google アナリティクス(イベント数)(2026-08-06 優さん指示)
+  // GA4 Data API を管理者の Google アカウントの読み取り権限で叩く。
+  // ナビの「UGC（ツール）【N】」は UGC【登録者数】と同型で、全期間の合計イベント数。
+  // トークンは1時間で切れるため、最後に取れた合計を localStorage に控えて
+  // ラベルは常にそこから描く(接続していないセッションでも直近値が出る)。
+  // ───────────────────────────────────────────────
+
+  const GA_MEASUREMENT_ID = "G-7D0TGBLTP7";
+  const GA_LS = {
+    client: "mz_ga_oauth_client_id",
+    prop: "mz_ga_property_id",
+    cache: "mz_ga_event_cache_v1",
+  };
+  const GA_SCOPE = "https://www.googleapis.com/auth/analytics.readonly";
+  /** @type {{token:string, at:number}|null} */
+  let gaToken = null;
+  let gaRange = "all";
+
+  function gaLsGet(key) {
+    try { return localStorage.getItem(key) || ""; } catch { return ""; }
+  }
+  function gaLsSet(key, val) {
+    try { val ? localStorage.setItem(key, val) : localStorage.removeItem(key); } catch { /* 満杯でも死なない */ }
+  }
+  function gaReadCache() {
+    try { return JSON.parse(gaLsGet(GA_LS.cache) || "null"); } catch { return null; }
+  }
+
+  /** ナビの「UGC（ツール）」に全期間の合計イベント数を差す(UGC【N】と同型) */
+  function paintToolsNavEventCount(count) {
+    const suffix = count == null ? "" : `【${Number(count).toLocaleString("ja-JP")}】`;
+    document.querySelectorAll("[data-ugc-tools-nav-label]").forEach((node) => {
+      if (!(node instanceof HTMLElement)) return;
+      node.textContent = `UGC（ツール）${suffix}`;
+    });
+  }
+  function paintToolsNavEventCountFromCache() {
+    if (!isAdminUi()) { paintToolsNavEventCount(null); return; }
+    const c = gaReadCache();
+    paintToolsNavEventCount(c && Number.isFinite(Number(c.allTotal)) ? Number(c.allTotal) : null);
+  }
+
+  function setGaMsg(text, isErr) {
+    const m = el("admin-ugc-ga-msg");
+    if (!m) return;
+    m.textContent = text || "";
+    m.hidden = !text;
+    m.classList.toggle("ops-announcement-msg--err", Boolean(isErr));
+  }
+
+  /** Google Identity Services を必要になった時だけ読み込む */
+  function gaEnsureGis() {
+    if (window.google?.accounts?.oauth2) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "https://accounts.google.com/gsi/client";
+      s.async = true;
+      s.onload = () => resolve();
+      s.onerror = () => reject(new Error("Google の認証スクリプトを読み込めませんでした"));
+      document.head.appendChild(s);
+    });
+  }
+
+  /** アクセストークンを取る(50分は使い回す)。初回はGoogleの同意画面が開く */
+  async function gaGetToken() {
+    if (gaToken && Date.now() - gaToken.at < 50 * 60 * 1000) return gaToken.token;
+    const clientId = gaLsGet(GA_LS.client);
+    if (!clientId) throw new Error("NO_CLIENT");
+    await gaEnsureGis();
+    return await new Promise((resolve, reject) => {
+      try {
+        const tc = window.google.accounts.oauth2.initTokenClient({
+          client_id: clientId,
+          scope: GA_SCOPE,
+          callback: (resp) => {
+            if (resp && resp.access_token) {
+              gaToken = { token: resp.access_token, at: Date.now() };
+              resolve(resp.access_token);
+            } else {
+              reject(new Error(String(resp?.error || "トークンを取得できませんでした")));
+            }
+          },
+          error_callback: (err) => reject(new Error(String(err?.type || "認証がキャンセルされました"))),
+        });
+        tc.requestAccessToken({ prompt: "" });
+      } catch (e) {
+        reject(e instanceof Error ? e : new Error(String(e)));
+      }
+    });
+  }
+
+  async function gaApi(url, token, body) {
+    const res = await fetch(url, {
+      method: body ? "POST" : "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(body ? { "Content-Type": "application/json" } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      throw new Error(`GA API ${res.status}: ${detail.slice(0, 200)}`);
+    }
+    return res.json();
+  }
+
+  /** 測定ID G-… からプロパティ(数値ID)を探す。見つけたら控えて以後は使い回す */
+  async function gaDiscoverProperty(token) {
+    const cached = gaLsGet(GA_LS.prop);
+    if (cached) return cached;
+    const sums = await gaApi(
+      "https://analyticsadmin.googleapis.com/v1beta/accountSummaries?pageSize=200",
+      token,
+    );
+    const props = [];
+    for (const a of sums.accountSummaries || []) {
+      for (const p of a.propertySummaries || []) props.push(String(p.property || ""));
+    }
+    for (const prop of props) {
+      if (!prop) continue;
+      try {
+        const streams = await gaApi(
+          `https://analyticsadmin.googleapis.com/v1beta/${prop}/dataStreams?pageSize=50`,
+          token,
+        );
+        const hit = (streams.dataStreams || []).some(
+          (s) => String(s?.webStreamData?.measurementId || "") === GA_MEASUREMENT_ID,
+        );
+        if (hit) {
+          const id = prop.replace(/^properties\//, "");
+          gaLsSet(GA_LS.prop, id);
+          return id;
+        }
+      } catch { /* 権限の無いプロパティは飛ばす */ }
+    }
+    throw new Error(`このアカウントから測定ID ${GA_MEASUREMENT_ID} のプロパティが見つかりません`);
+  }
+
+  function gaStartDate(range) {
+    if (range === "7d") return "7daysAgo";
+    if (range === "28d") return "28daysAgo";
+    return "2020-01-01";   // 全期間(サイト開設より十分前)
+  }
+
+  async function gaRunReport(token, propId, range) {
+    const body = {
+      dateRanges: [{ startDate: gaStartDate(range), endDate: "today" }],
+      dimensions: [{ name: "eventName" }],
+      metrics: [{ name: "eventCount" }],
+      orderBys: [{ desc: true, metric: { metricName: "eventCount" } }],
+      limit: 250,
+      metricAggregations: ["TOTAL"],
+    };
+    const data = await gaApi(
+      `https://analyticsdata.googleapis.com/v1beta/properties/${propId}:runReport`,
+      token, body,
+    );
+    const rows = (data.rows || []).map((r) => ({
+      name: String(r.dimensionValues?.[0]?.value || ""),
+      count: Number(r.metricValues?.[0]?.value || 0),
+    }));
+    const total = Number(data.totals?.[0]?.metricValues?.[0]?.value || 0)
+      || rows.reduce((s, r) => s + r.count, 0);
+    return { rows, total };
+  }
+
+  function paintGaTable(rows, total, range, fetchedAt) {
+    const host = el("admin-ugc-ga-table");
+    if (!host) return;
+    host.replaceChildren();
+    if (!rows.length) {
+      const p = document.createElement("p");
+      p.className = "user-profile-empty";
+      p.textContent = "この期間のイベントはありません";
+      host.appendChild(p);
+      return;
+    }
+    const label = range === "7d" ? "7日" : range === "28d" ? "28日" : "全期間";
+    const cap = document.createElement("p");
+    cap.className = "admin-ugc-ga-cap";
+    cap.textContent = `${label}の合計 ${total.toLocaleString("ja-JP")} 件` +
+      (fetchedAt ? `（${new Date(fetchedAt).toLocaleString("ja-JP")} 取得）` : "");
+    host.appendChild(cap);
+    const table = document.createElement("table");
+    for (const r of rows) {
+      const tr = document.createElement("tr");
+      const td1 = document.createElement("td");
+      td1.textContent = r.name;
+      const td2 = document.createElement("td");
+      td2.textContent = r.count.toLocaleString("ja-JP");
+      tr.append(td1, td2);
+      table.appendChild(tr);
+    }
+    host.appendChild(table);
+  }
+
+  function gaSyncSetupUi() {
+    const setup = el("admin-ugc-ga-setup");
+    if (setup) setup.hidden = Boolean(gaLsGet(GA_LS.client));
+  }
+
+  async function gaFetchAndRender() {
+    const btn = el("admin-ugc-ga-connect");
+    try {
+      if (!gaLsGet(GA_LS.client)) {
+        gaSyncSetupUi();
+        setGaMsg("先に上のクライアントIDを保存してください", true);
+        return;
+      }
+      if (btn) btn.disabled = true;
+      setGaMsg("Google アナリティクスから取得しています…");
+      const token = await gaGetToken();
+      const propId = await gaDiscoverProperty(token);
+      const view = await gaRunReport(token, propId, gaRange);
+      /* ナビ用の全期間合計。表示中の期間が全期間ならそれを使い、
+         別の期間を見ている回だけ追加で1本取る */
+      const allTotal = gaRange === "all"
+        ? view.total
+        : (await gaRunReport(token, propId, "all")).total;
+      const at = Date.now();
+      gaLsSet(GA_LS.cache, JSON.stringify({ allTotal, at }));
+      paintGaTable(view.rows, view.total, gaRange, at);
+      paintToolsNavEventCount(allTotal);
+      setGaMsg("");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg === "NO_CLIENT") {
+        gaSyncSetupUi();
+        setGaMsg("先に上のクライアントIDを保存してください", true);
+      } else {
+        console.warn("[MarchinZ] admin ugc GA", e);
+        setGaMsg(`取得できませんでした: ${msg}`, true);
+      }
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  function wireGa() {
+    gaSyncSetupUi();
+    const save = el("admin-ugc-ga-save-client");
+    if (save && !save.dataset.wired) {
+      save.dataset.wired = "1";
+      save.addEventListener("click", () => {
+        const input = el("admin-ugc-ga-client-id");
+        const v = input instanceof HTMLInputElement ? input.value.trim() : "";
+        if (!/\.apps\.googleusercontent\.com$/.test(v)) {
+          setGaMsg("クライアントIDの形式が違います(….apps.googleusercontent.com)", true);
+          return;
+        }
+        gaLsSet(GA_LS.client, v);
+        gaSyncSetupUi();
+        setGaMsg("保存しました。「GAから取得」を押してください");
+      });
+    }
+    const connect = el("admin-ugc-ga-connect");
+    if (connect && !connect.dataset.wired) {
+      connect.dataset.wired = "1";
+      connect.addEventListener("click", () => void gaFetchAndRender());
+    }
+    const ranges = el("admin-ugc-ga-ranges");
+    if (ranges && !ranges.dataset.wired) {
+      ranges.dataset.wired = "1";
+      ranges.addEventListener("click", (ev) => {
+        const btn = ev.target instanceof HTMLElement ? ev.target.closest("[data-admin-ugc-ga-range]") : null;
+        if (!btn) return;
+        const r = String(btn.getAttribute("data-admin-ugc-ga-range") || "all");
+        gaRange = r === "7d" || r === "28d" ? r : "all";
+        ranges.querySelectorAll("[data-admin-ugc-ga-range]").forEach((b) => {
+          b.setAttribute("aria-pressed", b === btn ? "true" : "false");
+        });
+        /* 期間の切替は、接続済み(トークンあり)なら即取り直す。未接続なら押した時 */
+        if (gaToken) void gaFetchAndRender();
+      });
+    }
+    const reset = el("admin-ugc-ga-reset");
+    if (reset && !reset.dataset.wired) {
+      reset.dataset.wired = "1";
+      reset.addEventListener("click", () => {
+        gaLsSet(GA_LS.client, "");
+        gaLsSet(GA_LS.prop, "");
+        gaToken = null;
+        gaSyncSetupUi();
+        setGaMsg("接続設定を消しました。クライアントIDから設定し直してください");
+      });
+    }
+  }
+
   window.MarchinZAdminUgcTools = {
     refresh: toolsRefresh,
     refreshBadge: refreshToolsBadge,
@@ -911,12 +1201,15 @@
     wireSubTabs();
     wireFilters();
     wireTools();
+    wireGa();
+    paintToolsNavEventCountFromCache();
   });
 
   document.addEventListener("mll-auth-changed", () => {
     void refreshBadges();
     void refreshNavSignupCount();
     void refreshToolsBadge();
+    paintToolsNavEventCountFromCache();
   });
 
   document.addEventListener("marchinz-admin-ugc-recorded", (e) => {

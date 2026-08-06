@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-version="1.110.3">
+<html lang="ja" data-mz-version="1.111.0">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -73,7 +73,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css" />
     <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css?v=1.25.64" />
     <link rel="stylesheet" href="styles.css?v=1.39.69" />
-    <link rel="stylesheet" href="marchinz-brushup.css?v=1.99.0" />
+    <link rel="stylesheet" href="marchinz-brushup.css?v=1.111.0" />
     <!-- Microsoft Clarity -->
     <script type="text/javascript">
       (function(c,l,a,r,i,t,y){
@@ -217,7 +217,7 @@
           data-admin-only="true"
           class="site-nav-link site-nav-link--ugc"
           hidden
-          >UGC（ツール）<span class="site-nav-unread-badge" data-ugc-tools-nav-badge hidden aria-label="未読ツール利用">0</span></a
+          ><span data-ugc-tools-nav-label>UGC（ツール）</span><span class="site-nav-unread-badge" data-ugc-tools-nav-badge hidden aria-label="未読ツール利用">0</span></a
         >
         <a href="#admin/reports" data-page="admin" data-admin-only="true" class="site-nav-link site-nav-link--admin" hidden>管理</a>
         <a href="#top" data-page="mll" class="site-nav-link site-nav-link-active">TOP</a>
@@ -320,7 +320,7 @@
             data-admin-only="true"
             class="site-mobile-drawer-nav-link site-mobile-drawer-nav-link--ugc"
             hidden
-            >UGC（ツール）<span class="site-nav-unread-badge" data-ugc-tools-nav-badge hidden aria-label="未読ツール利用">0</span></a
+            ><span data-ugc-tools-nav-label>UGC（ツール）</span><span class="site-nav-unread-badge" data-ugc-tools-nav-badge hidden aria-label="未読ツール利用">0</span></a
           >
           <a href="#admin/reports" data-page="admin" data-admin-only="true" class="site-mobile-drawer-nav-link site-mobile-drawer-nav-link--admin" hidden
             >管理</a
@@ -2864,6 +2864,41 @@
             <div id="admin-ugc-tools-list" class="user-prof-notifs-items admin-ugc-list"></div>
             <p id="admin-ugc-tools-empty" class="user-profile-empty" hidden>未読のツール利用はありません</p>
           </div>
+          <div class="mz-admin-pane-card">
+            <h3 class="mz-admin-pane-heading">Google アナリティクス（イベント数）</h3>
+            <p class="mz-admin-lead">
+              GA4 に記録されたイベント数を表示します（読み取りのみ・データはこの画面から書き換えません）。ナビの「UGC（ツール）【N】」には全期間の合計が入ります。
+            </p>
+            <div id="admin-ugc-ga-setup" class="admin-ugc-ga-setup" hidden>
+              <p><b>初回のみ設定が必要です（管理者の Google アカウントで読み取ります）:</b></p>
+              <ol class="admin-ugc-ga-steps">
+                <li>console.cloud.google.com でプロジェクト <b>marchinz-app</b> を開く</li>
+                <li>「APIとサービス → ライブラリ」で <b>Google Analytics Data API</b> と <b>Google Analytics Admin API</b> を有効化</li>
+                <li>「認証情報 → 認証情報を作成 → OAuth クライアント ID」（ウェブ アプリケーション）。承認済みの JavaScript 生成元に <code>https://marchinz.netlify.app</code> を追加</li>
+                <li>できたクライアントIDを下へ貼って保存</li>
+              </ol>
+              <div class="admin-ugc-ga-clientrow">
+                <input id="admin-ugc-ga-client-id" type="text" inputmode="url" autocomplete="off"
+                  placeholder="xxxxxxxx.apps.googleusercontent.com" aria-label="OAuth クライアントID" />
+                <button type="button" id="admin-ugc-ga-save-client" class="btn small">保存</button>
+              </div>
+            </div>
+            <div class="admin-ugc-tools-toolbar admin-ugc-ga-toolbar">
+              <div id="admin-ugc-ga-ranges" class="user-prof-notif-filters admin-ugc-filters">
+                <button type="button" class="user-prof-notif-filter-btn" data-admin-ugc-ga-range="all" aria-pressed="true">全期間</button>
+                <button type="button" class="user-prof-notif-filter-btn" data-admin-ugc-ga-range="28d" aria-pressed="false">28日</button>
+                <button type="button" class="user-prof-notif-filter-btn" data-admin-ugc-ga-range="7d" aria-pressed="false">7日</button>
+              </div>
+              <button type="button" id="admin-ugc-ga-connect" class="admin-ugc-tools-allread-btn">
+                <i class="fa-solid fa-chart-line" aria-hidden="true"></i> GAから取得
+              </button>
+            </div>
+            <p id="admin-ugc-ga-msg" class="mll-create-msg ops-announcement-msg" hidden aria-live="polite"></p>
+            <div id="admin-ugc-ga-table" class="admin-ugc-ga-table" aria-live="polite"></div>
+            <p class="admin-ugc-ga-foot">
+              <button type="button" id="admin-ugc-ga-reset" class="linklike">接続設定をやり直す</button>
+            </p>
+          </div>
         </div>
       </div>
 
@@ -4118,7 +4153,7 @@
     <script defer src="marchinz-analytics.js?v=1.25.64"></script>
     <script defer src="marchinz-admin-page.js?v=1.26.25"></script>
     <script defer src="marchinz-admin-dash.js?v=1.36.8"></script>
-    <script defer src="marchinz-admin-ugc.js?v=1.99.0"></script>
+    <script defer src="marchinz-admin-ugc.js?v=1.111.0"></script>
     <script defer src="marchinz-admin-trash.js?v=1.25.105"></script>
     <script defer src="marchinz-admin-banned.js?v=1.25.64"></script>
     <script defer src="site-nav.js?v=1.39.58"></script>
