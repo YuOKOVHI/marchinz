@@ -120,7 +120,10 @@ else:
          f"{'.'.join(map(str, tool_max))}({tool_max_at})")
 
 # 変更した JS の ?v= がバンプされているか(参照側で新旧の版が変わったか)
-js_changed = [f for f in changed if f.endswith(".js") and f.startswith("tools/")]
+# ★ tools/ に絞ってはいけない(2026-08-07)。site-nav.js・auth.js 等の**直下のJS**も
+#   index.html から ?v= 付きで読まれる。絞っていたせいで site-nav.js の変更が
+#   「JSの変更なし」と報告され、バンプ漏れを1件も捕まえられなかった
+js_changed = [f for f in changed if f.endswith(".js")]
 stale = []
 for f in js_changed:
     base = re.escape(os.path.basename(f))
