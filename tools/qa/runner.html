@@ -7332,7 +7332,30 @@ async function countSamples(ns, file, fromSec) {
       if (motionSel().value !== "handheld") {
         throw new Error(`本人の選択(handheld)が判定(tripod)に巻き戻された: ${motionSel().value}`);
       }
-      return "判定前=自動判定 / 届いたら三脚 / 本人の選択は勝つ";
+      /* ④ ★受け取り経路そのものを見張る(2026-08-07 追試)。
+         ②③は renderFinishPick を**手で呼んで**いるので、実機の引き金である
+         「quickProbe完了 → renderClips → (画面が開いていれば) renderFinishPick」の
+         橋(ui.js renderClips 末尾)が切れていても素通りする ─ 骨抜きの形。
+         4回目の指摘の本体は計算式ではなく**受け取り経路**だったのだから、
+         橋そのものを渡って測る。ここでは renderFinishPick を一切呼ばない */
+      const fpEl = w.document.getElementById("finishPick");
+      const keepHidden = fpEl.hidden;
+      try {
+        delete fp.axesByUser[`${c1.id}/motion`];   // ③で立てた「本人が触った」印を下ろす
+        delete c1.quickVisual;
+        fpEl.hidden = false;                        // 橋は「画面が開いている」ときだけ渡る
+        w.MC.ui.renderClips();
+        if (motionSel().value !== "auto") {
+          throw new Error(`下ごしらえが崩れている(判定前なのに ${motionSel().value})`);
+        }
+        c1.quickVisual = { quick: true, nSample: 3, enough: true, shakeMed: 0.001, operated: false };
+        w.MC.ui.renderClips();   // ← 実機の引き金と同じ。renderFinishPick は呼ばない
+        if (motionSel().value !== "tripod") {
+          throw new Error("renderClips が仕上げ画面へ橋渡ししていない"
+            + `(値=${motionSel().value}) ─ 判定が届いても画面が受け取らない形`);
+        }
+      } finally { fpEl.hidden = keepHidden; }
+      return "判定前=自動判定 / 届いたら三脚 / 本人の選択は勝つ / renderClips の橋も生きている";
     } finally {
       delete c1.quickVisual;
       w.MC.ui._fp = keepFp;
