@@ -3046,7 +3046,7 @@
     }
 
     function buildPublishedListSections(ch) {
-      const order = ["大会", "一般", "マーチング配信", "高校", "中学生以下", "カラーガード", "海外"];
+      const order = ["大会", "マーチング配信", "一般", "高校", "中学生以下", "カラーガード", "海外"];
       const frag = document.createDocumentFragment();
       order.forEach((cat) => {
         const items = ch
@@ -3120,6 +3120,7 @@
       catTop.className = "youtube-top-badge youtube-top-badge--category";
       const categoryClassMap = {
         大会: "youtube-top-badge--cat-taikai",
+        マーチング配信: "youtube-top-badge--cat-default",
         一般: "youtube-top-badge--cat-ippan",
         中学生以下: "youtube-top-badge--cat-junior",
         高校: "youtube-top-badge--cat-koko",

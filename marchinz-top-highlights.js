@@ -9,8 +9,9 @@
 
   var FRESH_LIMIT = 4;
   var YT_LIMIT = 4;
-  var MEDIA_NOTE_LIMIT = 2;      /* TOP「新着メディア」の note 枠 */
-  var MEDIA_LAUNDRY_LIMIT = 2;   /* 同 Laundry Day!! 枠 */
+  var MEDIA_NOTE_LIMIT = 2;      /* TOP「メディア」の note 枠 */
+  var MEDIA_LAUNDRY_LIMIT = 1;   /* 同 Laundry Day!! 枠 */
+  var MEDIA_MARCHING_LIVE_LIMIT = 1; /* 同「マーチング配信」枠 */
 
   function extractVideoId(url) {
     if (!url) return null;
@@ -227,6 +228,7 @@
            誌名を二度書くと375pxで2行に折れる */
         channelName: "NPO法人マーチング祭",
         meta: issueLabel(meta ? meta.textContent : ""),
+        publishedAt: parseDate(String(meta ? meta.textContent : "").replace(/\s/g, "") + "/1"),
       });
     }
     /* ★ DOMの並び順に頼らない。カードを末尾に足しても最新号が出るように号数で降順。 */
@@ -238,9 +240,26 @@
     return out.slice(0, limit);
   }
 
-  /* TOPの「メディア」バンド(2026-08-04 優さん指示で「新着note」から拡張)。
-     Laundry Day!! は年2回発行で最新号が半年〜1年前になるため「新着」とは呼ばない。
-     note の最新2件 + Laundry Day!! の最新2件 = 4枚。
+  function marchingLiveTopItems(limit) {
+    var rows = Array.isArray(window.__YOUTUBE_LIST_ROWS) ? window.__YOUTUBE_LIST_ROWS : [];
+    var row = rows.find(function (r) {
+      return String(r["チャンネルURL"] || "") === "https://www.youtube.com/@genetube2018";
+    });
+    if (!row || !row["最新動画URL"]) return [];
+    return [{
+      url: row["最新動画URL"],
+      thumb: thumbUrl(extractVideoId(row["最新動画URL"])),
+      title: row["最新動画タイトル"] || "じぇねTUBE 最新動画",
+      badge: "マーチング配信",
+      channelName: row["チャンネル名"] || "じぇねTUBE_マーチング情報",
+      channelLogo: row["ロゴ画像URL"] || "",
+      meta: daysAgoLabel(parseDate(row["最新動画配信日"])),
+      publishedAt: parseDate(row["最新動画配信日"]),
+    }].slice(0, limit);
+  }
+
+  /* TOPの「メディア」バンド。note 2件、Laundry Day!! 1件、マーチング配信 1件を
+     発行・配信の新しい順に混ぜて見せる。各コンテンツの正本はそれぞれの一覧DOM/名簿に残す。
      DOM の id が mz-top-note-* のままなのは、CSS(スマホ2×2の指定)を巻き込まないため。 */
   function renderTopMedia() {
     var grid = document.getElementById("mz-top-note-grid");
@@ -258,10 +277,12 @@
           badge: "note",
           channelName: n.accountLabel || "",
           meta: daysAgoLabel(parseDate(n.pubDate)),
+          publishedAt: parseDate(n.pubDate),
         };
       })
-      /* note の取得が全滅していても Laundry Day!! だけで出せるようにする */
-      .concat(laundryTopItems(MEDIA_LAUNDRY_LIMIT));
+      .concat(laundryTopItems(MEDIA_LAUNDRY_LIMIT))
+      .concat(marchingLiveTopItems(MEDIA_MARCHING_LIVE_LIMIT))
+      .sort(function (a, b) { return (b.publishedAt || 0) - (a.publishedAt || 0); });
     if (!items.length) return;
     grid.replaceChildren();
     items.forEach(function (it) {

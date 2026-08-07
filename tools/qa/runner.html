@@ -7798,6 +7798,38 @@ async function countSamples(ns, file, fromSec) {
     if (n !== 2) throw new Error(`rules の tool_id 許可が ${n} 箇所(期待2) ─ 記録が無音で拒否される`);
     return "noteToolUse/辞書/rules(2箇所) 整合";
   });
+  await test("★YouTube/メディア: マーチング配信は大会の次、じぇねTUBEは6枚、TOPは4種を新しい順", async () => {
+    const top = await (await fetch("../../index.html")).text();
+    const yt0 = top.indexOf('aria-label="YouTubeカテゴリ"');
+    const yt1 = top.indexOf('</nav>', yt0);
+    const ytTabs = top.slice(yt0, yt1);
+    const cats = [...ytTabs.matchAll(/data-yt-category="([^"]+)"/g)].map(m => m[1]);
+    const wantCats = ["all", "大会", "マーチング配信", "一般", "高校", "中学生以下", "カラーガード", "海外"];
+    if (cats.join("|") !== wantCats.join("|")) throw new Error(`YouTubeカテゴリ順が違う: ${cats.join(" / ")}`);
+    const media0 = top.indexOf('id="page-webmagazine"');
+    const media1 = top.indexOf('id="page-youtube"', media0);
+    const media = top.slice(media0, media1);
+    const pLaundry = media.indexOf('<h3 id="media-free-magazine"');
+    const pLive = media.indexOf('<h3 id="media-marching-live"');
+    const pManga = media.indexOf('<h3 id="media-manga"');
+    if (!(pLaundry >= 0 && pLaundry < pLive && pLive < pManga)) throw new Error("マーチング配信がフリーマガジン直下に無い");
+    if (!media.includes('『じぇねTUBE』は、ただの演奏アーカイブじゃない。')) throw new Error("じぇねTUBEの紹介文が無い");
+    if (!media.includes('href="https://www.youtube.com/@genetube2018"')) throw new Error("じぇねTUBE配信元へのリンクが無い");
+    const liveEnd = media.indexOf('<h3 id="media-manga"', pLive);
+    const live = media.slice(pLive, liveEnd);
+    const cards = (live.match(/class="magazine-card"/g) || []).length;
+    if (cards !== 6) throw new Error(`じぇねTUBEの動画カードが ${cards} 枚(期待6)`);
+    for (const label of ["動画再生回数 TOP 1", "動画再生回数 TOP 2", "動画再生回数 TOP 3", "最新LIVE", "LIVE再生回数 TOP", "最新動画"]) {
+      if (!live.includes(label)) throw new Error(`じぇねTUBEのカード種別が無い: ${label}`);
+    }
+    const nav = await (await fetch("../../site-nav.js")).text();
+    if (!nav.includes('const order = ["大会", "マーチング配信", "一般"')) throw new Error("掲載一覧のマーチング配信が大会の次でない");
+    const highlights = await (await fetch("../../marchinz-top-highlights.js")).text();
+    for (const needle of ["var MEDIA_NOTE_LIMIT = 2", "var MEDIA_LAUNDRY_LIMIT = 1", "var MEDIA_MARCHING_LIVE_LIMIT = 1", "badge: \"マーチング配信\"", ".sort(function (a, b) { return (b.publishedAt || 0) - (a.publishedAt || 0); })"]) {
+      if (!highlights.includes(needle)) throw new Error(`TOPメディアの構成が無い: ${needle}`);
+    }
+    return "YouTube=大会→マーチング配信 / メディア=Laundry直下のじぇねTUBE6枚 / TOP=note2+Laundry1+配信1を最新順";
+  });
   /* ==== 同意チェック 5→3(2026-08-07 優さん指示) ==== */
   await test("★同意: 登録チェックは3個・統計提供は規約第5条の2・βは内包", async () => {
     const top = await (await fetch("../../index.html")).text();
