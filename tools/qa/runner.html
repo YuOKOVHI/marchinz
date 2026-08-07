@@ -7740,6 +7740,23 @@ async function countSamples(ns, file, fromSec) {
       return names;
     });
   });
+  await test("★映像ツール: 素材条件を選ぶ前に示す", async () => {
+    return withSwitcher(async (w, d) => {
+      const cards = [...d.querySelectorAll("#modeStepKind .mode-card[data-mode]")];
+      if (cards.length !== 3) throw new Error(`種類カードが ${cards.length} 枚`);
+      for (const card of cards) {
+        const desc = card.querySelector(".mode-card-desc")?.textContent || "";
+        if (!desc.includes("同じ演奏を別角度から撮った動画")) {
+          throw new Error(`${card.dataset.mode}: 同じ演奏・別角度の素材条件が選択前に無い`);
+        }
+      }
+      const ui = await (await fetch("../switcher/js/ui.js")).text();
+      if (!ui.includes("同じ演奏を別の場所から撮った動画を2本以上選ぶだけ")) {
+        throw new Error("おまかせの2本以上の条件が、進め方を選ぶ前に無い");
+      }
+      return "3種類のカード=同じ演奏・別角度 / おまかせ=2本以上";
+    });
+  });
   await test("★再編: #creators に6入口(順序・?tool=・開発中バッジ)", async () => {
     const top = await (await fetch("../../index.html")).text();
     const i0 = top.indexOf('id="page-creators"');
@@ -7792,6 +7809,17 @@ async function countSamples(ns, file, fromSec) {
       .replace(/<!--[\s\S]*?-->/g, "");
     const boxes = (blk.match(/type="checkbox"/g) || []).length;
     if (boxes !== 3) throw new Error(`登録画面のチェックが ${boxes} 個(期待3)`);
+    if (!top.includes('id="auth-signup-profile-notice"')) {
+      throw new Error("Google認証後の必須プロフィール設定を登録前に案内していない");
+    }
+    if (!top.includes("性別・誕生日は他のユーザーに公開されません")) {
+      throw new Error("性別・誕生日の非公開を登録前に案内していない");
+    }
+    const prefectureInput = top.match(/<input[^>]*id="profile-address-prefecture-public"[^>]*>/);
+    if (!prefectureInput) throw new Error("都道府県公開の選択肢が無い");
+    if (/\schecked(?:\s|=|>)/.test(prefectureInput[0])) {
+      throw new Error("都道府県公開が初期値でオンになっている");
+    }
     if (blk.includes("【重要】")) throw new Error("【重要】ブロックが残っている");
     if (blk.includes("βテスト")) throw new Error("βテストのチェック/注記が残っている");
     if (blk.includes("統計データ")) throw new Error("統計提供のチェックが残っている");
@@ -7805,7 +7833,7 @@ async function countSamples(ns, file, fromSec) {
     if (auth.indexOf("stashSignupConsent?.(true)") < 0) {
       throw new Error("βテスト同意の自動記録が無い(新規登録直後にβモーダルが出てしまう)");
     }
-    return "3チェック / 規約第5条の2 / 版バンプ / β内包";
+    return "3チェック / 登録前のプロフィール・非公開案内 / 都道府県は初期オフ / 規約第5条の2 / 版バンプ / β内包";
   });
   /* 版番の大小比較(1.113.10 > 1.113.9 を正しく判定するため文字列比較にしない) */
   function cmpVer(a, b) {

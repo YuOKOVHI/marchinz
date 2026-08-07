@@ -6491,7 +6491,7 @@ MC.ui.showModeStep = step => {
       const lim = lab === "上限なし"
         ? `<b class="mode-desc-limit">${who}だから上限なし</b>。`
         : `<b class="mode-desc-limit">${who}だから${MC.ui.esc(lab)}まで</b>の`;
-      d.innerHTML = `動画を2本以上選ぶだけ。${lim}見どころを、傾きも色も整えて自動で書き出します`;
+      d.innerHTML = `同じ演奏を別の場所から撮った動画を2本以上選ぶだけ。${lim}見どころを、傾きも色も整えて自動で書き出します`;
     } }
   if (step === "flow") {
     const lead = MC.ui.$("#flowLead");

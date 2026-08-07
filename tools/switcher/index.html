@@ -91,7 +91,7 @@
              出るため、photosInvited() 相当の出し分けはここでは判定できない(MZ_LIMITS の読込も
              非同期)。条件分岐せず全員「動画」に統一する ─ 誘っておいて断る画面を作らない。
              写真を使える人(こだわり)には renderClips が「動画・写真を選ぶ」と改めて誘う -->
-        <span class="mode-card-desc">動画を音で自動同期し、縦に並べて1本に。SNS向けの縦型（9:16）</span>
+        <span class="mode-card-desc">同じ演奏を別角度から撮った動画を、音で自動同期して縦に並べます。SNS向けの縦型（9:16）</span>
       </button>
 <!-- 並びは ①縦型 ②自動スイッチング ③ワイプ動画(2026-08-02 優さん指示)。
            それまでは 縦型/ワイプ/スイッチングの順だった -->
@@ -104,7 +104,7 @@
         </span>
         <span class="mode-card-name" lang="en">Switcher</span>
         <span class="mode-card-sub">自動スイッチング動画</span>
-        <span class="mode-card-desc">複数カメラを音で同期し、見どころに合わせて自動で切り替え。横型（16:9）で1本に</span>
+        <span class="mode-card-desc">同じ演奏を別角度から撮った動画を、見どころに合わせて自動で切り替えます。横型（16:9）で1本に</span>
       </button>
       <button type="button" class="mode-card" data-mode="wipeCam">
         <span class="mode-card-icon" aria-hidden="true">
@@ -116,7 +116,7 @@
         </span>
         <span class="mode-card-name" lang="en">Wipe</span>
         <span class="mode-card-sub">ワイプカメラ動画</span>
-        <span class="mode-card-desc">メイン1台を固定し、小窓を2つまで重ねる。分析が速い。横型（16:9）</span>
+        <span class="mode-card-desc">同じ演奏を別角度から撮った動画で、メイン1台に小窓を2つまで重ねます。横型（16:9）</span>
       </button>
     </div>
   </div>
@@ -138,7 +138,7 @@
         <!-- ★ 長さは人と端末で変わるので静的に書かない(2026-08-05)。
              ゲストは30秒、登録×スマホは30/60秒、パソコンは10分まで ─
              「60秒」と決め打つと、ゲストには嘘になる。ui.js が入れる -->
-        <span class="mode-card-desc" id="flowEasyDesc">動画を選ぶだけ。見どころを、傾きも色も整えて自動で書き出します</span>
+        <span class="mode-card-desc" id="flowEasyDesc">同じ演奏を別の場所から撮った動画を2本以上選ぶだけ。見どころを、傾きも色も整えて自動で書き出します</span>
       </button>
       <button type="button" class="mode-card" data-flow="pro">
         <span class="mode-card-icon" aria-hidden="true">
@@ -820,7 +820,7 @@
 <!-- 縮小版(プロキシ)。exporter の掃除が MC.proxy.PREFIX を見るので先に読む -->
 <script src="js/proxy.js?v=1.113.10"></script>
 <script src="js/exporter.js?v=1.113.8"></script>
-<script src="js/ui.js?v=2.2.0"></script>
+<script src="js/ui.js?v=2.3.1"></script>
 <script src="js/app.js?v=1.113.7"></script>
 </body>
 </html>
