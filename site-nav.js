@@ -1264,7 +1264,7 @@
       {
         name: "じぇねTUBE_マーチング情報",
         url: "https://www.youtube.com/@genetube2018",
-        category: "一般",
+        category: "マーチング配信",
         logo: "https://yt3.googleusercontent.com/2zp9ZnYupQwHw6I2jRVZxLzeZiphXWHiBfertnrW9zv6rINc_7HxcAZxNNshmsPPOhWFitX3=s900-c-k-c0x00ffffff-no-rj",
         thumbnails: [
           "https://i.ytimg.com/vi/3rgxCdI8M4E/hqdefault.jpg",
@@ -3046,7 +3046,7 @@
     }
 
     function buildPublishedListSections(ch) {
-      const order = ["大会", "一般", "高校", "中学生以下", "カラーガード", "海外"];
+      const order = ["大会", "一般", "マーチング配信", "高校", "中学生以下", "カラーガード", "海外"];
       const frag = document.createDocumentFragment();
       order.forEach((cat) => {
         const items = ch
