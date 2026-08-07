@@ -1873,6 +1873,37 @@ body.mz-pin-force .tilt-step { width: 52px; min-height: 48px; font-size: 20px; }
   .storage-note .btn { width: 100%; }
 }
 
+/* Safari容量診断。管理者判定を通ったときだけHTMLを組み立てる。 */
+.storage-diag { margin: 10px 0 14px; padding: 14px; border-radius: 16px;
+  background: #f7f9ff; border: 1px solid rgba(37, 84, 204, .18); color: #17213b; }
+.storage-diag[hidden] { display: none; }
+.sd-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.sd-head > div { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
+.sd-head b { font-size: 14px; line-height: 1.4; }
+.sd-head span, .sd-result span { color: #59647d; font-size: 12px; line-height: 1.5; }
+.sd-live { flex: none; padding: 3px 8px; border-radius: 999px; background: #e4ecff;
+  color: #2754cc !important; font-size: 11px !important; font-weight: 700; }
+.sd-primary { width: 100%; min-height: 44px; margin-top: 12px; }
+.sd-result { display: flex; flex-direction: column; gap: 3px; margin: 12px 0;
+  padding: 10px 11px; border-radius: 12px; background: #fff; border: 1px solid rgba(37,84,204,.12); }
+.sd-result b { font-size: 13px; line-height: 1.5; }
+.sd-label { display: block; margin-bottom: 6px; font-size: 12px; font-weight: 700; color: #35405b; }
+.sd-measure { display: grid; grid-template-columns: minmax(0,1fr) auto auto; align-items: center; gap: 7px; }
+.sd-measure input { width: 100%; min-height: 44px; padding: 9px 10px; border: 1px solid #bcc7df;
+  border-radius: 10px; background: #fff; color: #17213b; font: inherit; }
+.sd-measure > span { font-size: 13px; color: #59647d; }
+.sd-measure .btn, .sd-actions .btn { min-height: 44px; }
+.sd-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 9px; }
+.sd-actions .btn:last-child { grid-column: 1 / -1; }
+.sd-report { width: 100%; min-height: 180px; margin-top: 10px; padding: 9px; border-radius: 10px;
+  border: 1px solid #bcc7df; background: #fff; font: 11px/1.55 ui-monospace, monospace; }
+@media (max-width: 460px) {
+  .sd-measure { grid-template-columns: minmax(0,1fr) auto; }
+  .sd-measure .btn { grid-column: 1 / -1; width: 100%; }
+  .sd-actions { grid-template-columns: 1fr; }
+  .sd-actions .btn:last-child { grid-column: auto; }
+}
+
 /* 前回のつづきの案内(2026-07-29) */
 .resume-note { margin: 10px 0 12px; padding: 12px 14px; border-radius: 12px;
   background: rgba(31, 111, 74, 0.07); border: 1px solid rgba(31, 111, 74, 0.22); }

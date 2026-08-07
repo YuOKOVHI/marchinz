@@ -8001,8 +8001,8 @@ async function countSamples(ns, file, fromSec) {
     /* 掃除が probe の Promise 連鎖にぶら下がっていないこと */
     const chained = /probeOpfs\s*\([^)]*\)\s*\.then\s*\(\s*\(\s*\)\s*=>\s*MC\.exporter\.opfsSweep/.test(src);
     if (chained) throw new Error("掃除が probeOpfs().then() にぶら下がっている(probeが固まると永久に走らない)");
-    if (!/MC\.exporter\.opfsSweep\s*\(\s*\)\s*\n?\s*\.then/.test(src)) {
-      throw new Error("起動時に opfsSweep を独立して呼んでいない");
+    if (!/storageDiag\s*\?\s*MC\.storageDiag\.sweepCycle\("起動時"\)\s*:\s*MC\.exporter\.opfsSweep\(\)/.test(src)) {
+      throw new Error("起動時に診断つきの独立sweepを呼んでいない");
     }
     /* 実測: probe を「永遠に返らない」形にしても掃除が走ること */
     const w = await compEnv();
@@ -9607,6 +9607,105 @@ async function countSamples(ns, file, fromSec) {
         if (keepLS == null) w.localStorage.removeItem("marchcut_project");
         else w.localStorage.setItem("marchcut_project", keepLS);
       } catch (_) {}
+    }
+  });
+
+  await test("★Safari容量診断: 管理者限定・匿名・再読込継続・FHDの実プロキシ結果を記録（変異つき）", async () => {
+    const w = await compEnv();
+    const D = w.MC.storageDiag, host = w.document.getElementById("storageDiag");
+    if (!D || !host) throw new Error("診断ツール本体/表示枠が無い");
+    const keepAdmin = w.MZ_LIMITS.admin;
+    try {
+      /* 変異: 管理者フラグをOFFにする。入口だけでなく記録そのものも止まること。 */
+      w.MZ_LIMITS.admin = false;
+      D._test.setState(D._test.fresh());
+      D.render();
+      if (!host.hidden) throw new Error("一般ユーザーに診断ツールが見える");
+      const offState = D._test.getState(); offState.active = true;
+      D.beforeImport([new w.File(["x"], "絶対に保存しない名前.mov", { type: "video/quicktime" })]);
+      if (offState.events.length) throw new Error("一般ユーザーでも診断記録が動く");
+
+      w.MZ_LIMITS.admin = true;
+      await D.start();
+      if (host.hidden || !/Safari容量診断中/.test(host.textContent)) throw new Error("管理者に診断UIが出ない");
+      const secret = "優さんの秘密のファイル名.mov";
+      const f = new w.File([new Uint8Array(2048)], secret, { type: "video/quicktime", lastModified: 123 });
+      D.beforeImport([f]);
+      const clip = { id: "qa-fhd", name: secret, file: f, size: f.size,
+        width: 1920, height: 1080, duration: 65 };
+      w.MC.S.clips = [clip];
+      D.clipLoaded(clip);
+      /* FHDかどうかの推定で終わらず、実行結果(success)が別イベントで残ること。 */
+      D.proxyDecision(clip, { w: 960, h: 540, scale: .5 }, { reason: "candidate" });
+      D.proxyBuild("success", clip, { bytes: 123456789, width: 960, height: 540, scale: .5 });
+      const json = JSON.stringify(D._test.getState());
+      if (json.includes(secret)) throw new Error("診断記録に素材ファイル名が漏れた");
+      if (!/proxy_success/.test(json) || !/123456789/.test(json)) {
+        throw new Error("プロキシの実作成結果・実容量が記録されない");
+      }
+      const saved = w.localStorage.getItem("mz_storage_diag_v2") || "";
+      if (!saved || saved.includes(secret)) throw new Error("再読込用記録が無い、またはファイル名が漏れた");
+      /* 再読込相当: メモリ状態を捨て、localStorageから戻す。 */
+      D._test.setState(null); D.init();
+      if (!D._test.getState().active || !D.report().includes("プロキシ: 作成あり")) {
+        throw new Error("再読込で診断結果が消える");
+      }
+      D.probeStart(); D.probePending(); D.probeResult(false, new Error("QA probe failure"));
+      const probeLog = D.report();
+      if (!/opfs_probe_pending_15s/.test(probeLog) || !/QA probe failure/.test(probeLog)) {
+        throw new Error("OPFS Workerの無応答/失敗を記録できない");
+      }
+      return "一般=非表示+記録停止 / 管理者=表示 / ファイル名なし / FHDでも実作成結果を保存 / 再読込復元";
+    } finally {
+      w.MZ_LIMITS.admin = true; D.stop(); w.MZ_LIMITS.admin = keepAdmin; D.render();
+    }
+  });
+
+  await test("★Safari容量診断: OPFSを種類別に実測し、Safari差から未計上領域を分離する", async () => {
+    const w = await compEnv();
+    const D = w.MC.storageDiag, X = w.MC.exporter;
+    const keepAdmin = w.MZ_LIMITS.admin;
+    w.MZ_LIMITS.admin = true;
+    let dir = null;
+    const made = [];
+    try {
+      await D.start();
+      if (w.navigator.storage && w.navigator.storage.getDirectory) {
+        const root = await w.navigator.storage.getDirectory();
+        dir = await root.getDirectoryHandle(X.OPFS_DIR, { create: true });
+        const put = async (name, size) => {
+          const fh = await dir.getFileHandle(name, { create: true });
+          const ws = await fh.createWritable(); await ws.write(new Uint8Array(size)); await ws.close();
+          made.push(name);
+        };
+        await put("mzprox_qa.mp4", 1100);
+        await put("mzpart_qa_0.mp4", 2200);
+        await put("MarchinZ_QA.mp4", 3300);
+        await put("mzjob.json", 100);
+        const snap = await D.captureRaw("QA内訳");
+        const c = snap.opfs.categories;
+        if (!c.proxy || c.proxy.bytes < 1100) throw new Error("プロキシを分類できない");
+        if (!c.part || c.part.bytes < 2200) throw new Error("再開パーツを分類できない");
+        if (!c.result || c.result.bytes < 3300) throw new Error("完成品を分類できない");
+        if (!c.job || c.job.bytes < 100) throw new Error("ジョブ台帳を分類できない");
+        if (JSON.stringify(snap).includes("mzprox_qa.mp4")) throw new Error("OPFSの実名をレポートへ残している");
+      }
+      /* Safari +1GB、OPFS +10MB → OPFSで説明できない内部コピー側と判定する。 */
+      const base = { opfs: { bytes: 100e6, error: "" } };
+      const after = { opfs: { bytes: 110e6, error: "" } };
+      const st = D._test.getState();
+      st.checkpoints = [
+        { at: 1, safariGb: 5, safariBytes: 5e9, snapshot: base },
+        { at: 2, safariGb: 6, safariBytes: 6e9, snapshot: after },
+      ];
+      const a = D.analysis();
+      if (!/内部コピー/.test(a.verdict) || !a.detail.join(" ").includes("OPFSで説明できない差")) {
+        throw new Error("Safari差とOPFS差を分離できない: " + a.verdict);
+      }
+      return `OPFS=${dir ? "種類別実測" : "API非対応"} / Safari+1GB・OPFS+10MB→内部コピー側を分類`;
+    } finally {
+      if (dir) for (const n of made) await dir.removeEntry(n).catch(() => {});
+      D.stop(); w.MZ_LIMITS.admin = keepAdmin; D.render();
     }
   });
 

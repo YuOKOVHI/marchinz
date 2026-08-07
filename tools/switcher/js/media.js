@@ -29,6 +29,7 @@ MC.media.sniffContainer = async f => {
 };
 
 MC.media.addFiles = async files => {
+  if (MC.storageDiag) MC.storageDiag.beforeImport(files);
   let added = 0;
   const skipped = [];   // 動画として扱えず見送ったファイル(最後にまとめて知らせる)
   let photoBlocked = 0; // おまかせに写真が混ざった数(最後に1行で知らせる)
@@ -125,6 +126,7 @@ MC.media.addFiles = async files => {
     clip.height = v.videoHeight;
     clip.restored = MC.restoreClipState(clip);
     MC.S.clips.push(clip);
+    if (MC.storageDiag) MC.storageDiag.clipLoaded(clip);
     added++;
     MC.media.makeThumb(clip);  // 非同期・完了後にカード再描画
   }

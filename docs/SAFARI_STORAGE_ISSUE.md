@@ -179,6 +179,24 @@ if (!MC.proxy._live.has(n) &&
 
 3で減って4でも減らないなら、犯人はプロキシではない。
 
+### 2026-08-07: 管理者専用の実測診断を追加（v2.3.3・ローカル、未配信）
+
+「FHDだからプロキシは作っていない」と推定せず、**実際に作成処理へ入ったか・
+成功したか・何bytesできたか**を記録する診断パネルを追加した。
+
+- 管理者アカウントにだけ「Safari容量診断」を表示。一般ユーザーは入口も記録処理も動かない
+- 動画・ファイル名は保存も送信もしない。素材1〜3の容量、実解像度、長さ、MIMEだけを端末内に記録
+- プロキシは候補判定、予算見送り、作成開始、成功、失敗、破棄と実容量を別々に記録
+- OPFSは `proxy / result / part / job / probe / other` に分け、掃除前後の件数・bytesを同時計測
+- `navigator.storage.estimate()`、Web Locks、起動掃除が深/保守のどちらだったか、削除失敗を記録
+- Worker probeが15秒返らない事実も記録する。ただし起動掃除はprobeと独立のまま維持
+- iPhone設定画面の「書類とデータ」をGBで2〜3回入力すると、Safari差とOPFS差を比較し、
+  OPFSで説明できない増加（取り込み内部コピー側）を分離する
+- 診断中だけlocalStorageへ継続保存し、Safari終了・再訪をまたいで比較できる。
+  「診断を終了・記録削除」で診断記録だけを消す
+
+実機での最終分類は未確認。本番へはまだ配信していない。
+
 ### 直すなら（案・未実装）
 
 - 深い掃除（誰も使っていないと確認できた回）では、プロキシにも据え置きを効かせない。
@@ -260,6 +278,7 @@ Switcher を開かずに容量だけ減らしたい、という要望が出た�
 | 残量の集計・全消し | `exporter.js` `opfsAudit`（2753行）/ `purgeAll`（2775行） |
 | 利用者向けの帯と「消す」ボタン | `tools/switcher/js/ui.js` `renderStorageNote`（2575行付近） |
 | サイト保存量の診断行 | `exporter.js` `estLine`（1302行）→ `ui.js` 328行・6166行 |
+| 管理者専用Safari容量診断 | `tools/switcher/js/storage-diagnostics.js` |
 | 縮小版の後片付け | `tools/switcher/js/proxy.js` `dispose` / `disposeAll`（182〜193行） |
 | 定数 | `OPFS_DIR="mz-export"`(909) / `OPFS_STALE_MS=6h`(1116) / `PURGE_MIN_BYTES=300MB`(ui.js 2568) |
 

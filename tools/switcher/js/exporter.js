@@ -1115,14 +1115,21 @@ MC.exporter.opfsRemove = async name => {
     新しいタブを開くと、その書きかけを消してしまうため(レビュー指摘 2026-07-23) */
 MC.exporter.OPFS_STALE_MS = 6 * 60 * 60 * 1000;
 MC.exporter.opfsSweep = async () => {
+  const report = MC.exporter._lastSweepReport = {
+    startedAt: Date.now(), supported: true, deep: false,
+    exportLock: false, resultLock: false, planned: 0, deleted: 0, failed: 0,
+    plannedBytes: 0, error: "", finishedAt: 0,
+  };
   /* ★ 入口は opfsSupported() ではなく「読める環境か」で判定(2026-08-06 レビューP1)。
      opfsSupported は Worker 書き込みの実測(probe)を含み、一時失敗すると false が
      キャッシュされる ─ **11GBを消したい当の起動で probe がコケると1バイトも
      消えない**。掃除に要るのは main thread の getDirectory/entries/removeEntry
      だけで、Worker は不要 */
   try {
-    if (!(navigator.storage && navigator.storage.getDirectory)) return;
-  } catch (_) { return; }
+    if (!(navigator.storage && navigator.storage.getDirectory)) {
+      report.supported = false; report.finishedAt = Date.now(); return;
+    }
+  } catch (e) { report.supported = false; report.error = String((e && e.message) || e || ""); report.finishedAt = Date.now(); return; }
   /* ★ 深い掃除(2026-08-06 優さん実機: Safari終了でもiPhone再起動でも11GBが
      残ったまま)。OPFS は**永続ストレージ**で、再起動では消えない。しかも
      iOSの「Webサイトデータ」のサイト別表示に計上されず、netlify.app 行が
@@ -1145,13 +1152,16 @@ MC.exporter.opfsSweep = async () => {
         }).catch(() => resolve(null));
       });
       releaseLock = await grab("mz-export");
+      report.exportLock = !!releaseLock;
       /* ★ mz-export だけでは足りない(2026-08-06 レビューP1)。書き出し完了〜
          「動画を保存」の間、mz-export はもう誰も持っていない。その隙に
          別タブで開かれると、未保存の完成品を深い掃除が消してしまう。
          未保存の結果を持つタブは mz-export-result を保持している(holdResultLock)
          ので、両方取れたときだけ深い掃除にする */
       if (releaseLock) releaseResultLock = await grab("mz-export-result");
+      report.resultLock = !!releaseResultLock;
       deep = !!(releaseLock && releaseResultLock);
+      report.deep = deep;
     }
   } catch (_) { deep = false; }
   try {
@@ -1217,13 +1227,18 @@ MC.exporter.opfsSweep = async () => {
     }
     /* 台帳: 残した再開パーツが無いなら用済み */
     if (deep && !keptResume) doomed.push(MC.exporter.JOB_FILE);
+    report.planned = doomed.length;
+    report.plannedBytes = freedBytes;
     for (const n of doomed) {
       /* ★ 消せたときだけ控えを消す(2026-08-06 レビューP1)。削除失敗時に控えを
          落とすと、いちばん効かせたい局面で記録が失われて6時間窓の側へ落ちる */
       let ok = true;
       await dir.removeEntry(n).catch(() => { ok = false; });
-      if (ok) MC.exporter._clearPending(n);
-      else if (n !== MC.exporter.JOB_FILE) MC.log(`opfsSweep: ${n} を消せなかった(次回に持ち越す)`);
+      if (ok) { MC.exporter._clearPending(n); report.deleted++; }
+      else {
+        report.failed++;
+        if (n !== MC.exporter.JOB_FILE) MC.log(`opfsSweep: ${n} を消せなかった(次回に持ち越す)`);
+      }
     }
     if (doomed.length && freedBytes > 0) {
       MC.log(`opfsSweep(${deep ? "深" : "保守"}): ${doomed.length}件 約${Math.round(freedBytes / 1e6)}MB を片付けました`);
@@ -1233,9 +1248,15 @@ MC.exporter.opfsSweep = async () => {
     /* ディレクトリが無ければここへ来る(正常)。それ以外の失敗も掃除は諦めるが、
        **無言にはしない**(2026-08-06 レビューP2) ─ iOSで万一 entries() 等が
        投げると「対策したのに消えない」の切り分けが不可能になる */
-    if (!(e && e.name === "NotFoundError")) MC.log("opfsSweep失敗: " + ((e && e.message) || e));
+    if (!(e && e.name === "NotFoundError")) {
+      report.error = String((e && (e.message || e.name)) || e || "不明").slice(0, 240);
+      MC.log("opfsSweep失敗: " + ((e && e.message) || e));
+    }
   }
-  finally { if (releaseLock) releaseLock(); if (releaseResultLock) releaseResultLock(); }
+  finally {
+    report.finishedAt = Date.now();
+    if (releaseLock) releaseLock(); if (releaseResultLock) releaseResultLock();
+  }
 };
 
 /** 書き出し前に空き容量を確かめる。足りないなら「始める前に」断る。
@@ -2752,11 +2773,13 @@ MC.exporter.releaseOpfs = () => {
    返り値: { items:[{name,size,mtime}], bytes, n } / 読めない環境は null */
 MC.exporter.opfsAudit = async () => {
   try {
-    if (!(navigator.storage && navigator.storage.getDirectory)) return null;
+    if (!(navigator.storage && navigator.storage.getDirectory)) {
+      MC.exporter._lastAuditError = "OPFS非対応"; return null;
+    }
     const root = await navigator.storage.getDirectory();
     const dir = await root.getDirectoryHandle(MC.exporter.OPFS_DIR, { create: false })
       .catch(() => null);
-    if (!dir) return { items: [], bytes: 0, n: 0 };
+    if (!dir) { MC.exporter._lastAuditError = ""; return { items: [], bytes: 0, n: 0 }; }
     const items = [];
     for await (const [n, h] of dir.entries()) {
       let size = 0, mtime = 0;
@@ -2764,8 +2787,12 @@ MC.exporter.opfsAudit = async () => {
       items.push({ name: n, size, mtime });
     }
     items.sort((a, b) => b.size - a.size);
+    MC.exporter._lastAuditError = "";
     return { items, bytes: items.reduce((s, v) => s + v.size, 0), n: items.length };
-  } catch (e) { MC.log("opfsAudit失敗: " + ((e && e.message) || e)); return null; }
+  } catch (e) {
+    MC.exporter._lastAuditError = String((e && (e.message || e.name)) || e || "不明").slice(0, 240);
+    MC.log("opfsAudit失敗: " + ((e && e.message) || e)); return null;
+  }
 };
 
 /* 本人が「消す」を押したときの全消し。掃除の自動判断(6時間窓・再開材料・

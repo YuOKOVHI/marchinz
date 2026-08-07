@@ -20,6 +20,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   MC.ui.initFloatOnScroll();
   MC.ui.initVisibility();
   MC.ui.renderAll();
+  if (MC.storageDiag) MC.storageDiag.init();
   /* 「開いた」をトップページへ置き手紙(2026-08-04)。種類を選べば ui.js の
      入口が種類つきで上書きする。選ばずに離れた人も1件として残るようにする */
   MC.ui.noteToolUse();
@@ -83,13 +84,26 @@ window.addEventListener("DOMContentLoaded", async () => {
      呼び出し側がこの形のままだったので効かなかった。
      掃除に probe の結果は要らない(main thread の entries/removeEntry だけ)ので、
      両者は独立に走らせる */
-  MC.exporter.opfsSweep()
+  (MC.storageDiag ? MC.storageDiag.sweepCycle("起動時") : MC.exporter.opfsSweep())
     .then(() => MC.exporter.refreshEstimate())
     /* 掃除の**あと**に数える。残っていれば本人が消せるよう画面に出す */
     .then(() => MC.ui.refreshStorageNote()).catch(() => {});
   // OPFSへ本当に書けるかを一度だけ実測してキャッシュ(G-1)。
   // これで maxExportableSec が「上限なし」と嘘をつかなくなる
-  MC.exporter.probeOpfs().catch(() => {});
+  if (MC.storageDiag) MC.storageDiag.probeStart();
+  let opfsProbeSettled = false;
+  MC.exporter.probeOpfs().then(ok => {
+    opfsProbeSettled = true;
+    if (MC.storageDiag) MC.storageDiag.probeResult(ok);
+  }).catch(e => {
+    opfsProbeSettled = true;
+    if (MC.storageDiag) MC.storageDiag.probeResult(false, e);
+  });
+  /* probe自体の挙動は変えず、15秒返らない事実だけを診断へ残す。
+     掃除は上で既に独立して始まっているため、ここが固まっても妨げない。 */
+  setTimeout(() => {
+    if (!opfsProbeSettled && MC.storageDiag) MC.storageDiag.probePending();
+  }, 15000);
   /* 退出時にも据え置き分を掃く(2026-08-06 Safari容量調査)。再開用パーツ等の
      新しいファイルは sweep 側の6時間窓が守る。pagehide内のasyncは
      完走保証が無いが、掃除は必須ではない(次回起動時sweepが拾う) */
@@ -98,6 +112,7 @@ window.addEventListener("DOMContentLoaded", async () => {
        File は再読み込みをまたいで生き残らない)。持ち越す意味がないので手放す。
        pagehide の非同期は完走保証が無いが、取りこぼしても次回起動の掃除が
        据え置き窓を無視して必ず消す */
+    if (window.MC && MC.storageDiag) MC.storageDiag.pagehide();
     if (window.MC && MC.proxy) MC.proxy.disposeAll();
     MC.exporter.opfsSweep();
   });

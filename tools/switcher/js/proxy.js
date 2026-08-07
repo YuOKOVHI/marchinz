@@ -182,6 +182,9 @@ MC.proxy._scaleNeeded = clip => {
 MC.proxy.dispose = clip => {
   const P = clip && clip.proxy;
   if (!P) return;
+  if (MC.storageDiag) MC.storageDiag.proxyBuild("disposed", clip, {
+    bytes: Number(P.bytes) || 0, width: Number(P.w) || null, height: Number(P.h) || null,
+  });
   clip.proxy = null;
   if (P.name) {
     MC.proxy._live.delete(P.name);
@@ -199,8 +202,15 @@ MC.proxy.disposeAll = () => {
 MC.proxy.build = async (clip, spec, prog) => {
   const name = MC.proxy.PREFIX + MC.proxy._key(clip, spec) + ".mp4";
   const t0 = performance.now();
+  if (MC.storageDiag) MC.storageDiag.proxyBuild("start", clip, {
+    width: spec.w, height: spec.h, scale: spec.scale,
+    expectedBytes: Math.round((spec.t1 - spec.t0) * spec.bitrate / 8),
+  });
   const opfs = await MC.exporter.opfsCreate(name);
-  if (!opfs) return null;
+  if (!opfs) {
+    if (MC.storageDiag) MC.storageDiag.proxyBuild("failure", clip, { error: "OPFSを開けませんでした" });
+    return null;
+  }
   MC.proxy._live.add(name);
   let src = null, dec = null, venc = null, ok = false;
   try {
@@ -336,11 +346,19 @@ MC.proxy.build = async (clip, spec, prog) => {
     MC.log(`proxy: ${clip.name} → ${spec.w}x${spec.h} `
       + `${(file.size / 1e6).toFixed(0)}MB ${wrote}コマ ${ms}ms`);
     MC.proxy.lastBuildMs = (MC.proxy.lastBuildMs || 0) + ms;
+    if (MC.storageDiag) MC.storageDiag.proxyBuild("success", clip, {
+      bytes: file.size, width: spec.w, height: spec.h, scale: spec.scale,
+      duration: spec.t1 - baseSec, buildMs: ms, frames: wrote,
+    });
     return { file, name, w: spec.w, h: spec.h, scale: spec.scale,
              t0: baseSec, t1: spec.t1, bytes: file.size, buildMs: ms };
   } catch (e) {
     MC.log(`proxy: ${clip.name} の縮小版を作れませんでした(元のまま進みます): `
       + ((e && e.message) || e));
+    if (MC.storageDiag) MC.storageDiag.proxyBuild("failure", clip, {
+      error: String((e && (e.message || e.name)) || e || "不明").slice(0, 240),
+      width: spec.w, height: spec.h, scale: spec.scale,
+    });
     return null;
   } finally {
     try { if (dec && dec.state !== "closed") dec.close(); } catch (_) {}
@@ -365,16 +383,32 @@ MC.proxy._key = (clip, spec) => {
    ★ 直列。同時に走らせるとデコーダ3本+エンコーダ3本になり、
      いま避けている状態そのものになる */
 MC.proxy.ensureAll = async (p, stepNo) => {
-  if (MC.proxy.off()) return;
+  if (MC.proxy.off()) {
+    if (MC.storageDiag) for (const c of MC.S.clips) MC.storageDiag.proxyDecision(c, null, { reason: "noproxy" });
+    return;
+  }
   /* 書き出し中は絶対に走らせない(2026-08-06 レビューP2-7)。OPFSのwriterは
      1本しか持てず、並走すると即破壊。UI層(_busy)の慣習に頼らず自衛する */
-  if (MC.exporter.running || MC.exporter.recording) return;
-  if (!MC.exporter.opfsSupported || !MC.exporter.opfsSupported()) return;
+  if (MC.exporter.running || MC.exporter.recording) {
+    if (MC.storageDiag) for (const c of MC.S.clips) MC.storageDiag.proxyDecision(c, null, { reason: "export_busy" });
+    return;
+  }
+  if (!MC.exporter.opfsSupported || !MC.exporter.opfsSupported()) {
+    if (MC.storageDiag) for (const c of MC.S.clips) MC.storageDiag.proxyDecision(c, null, { reason: "opfs_unavailable" });
+    return;
+  }
   const targets = [];
   for (const c of MC.S.clips) {
-    if (MC.proxy.usable(c)) continue;          // 使える物を既に持っている
+    if (MC.proxy.usable(c)) {
+      if (MC.storageDiag) MC.storageDiag.proxyDecision(c, c.proxy, { reason: "already_usable", actual: true });
+      continue;                                // 使える物を既に持っている
+    }
     MC.proxy.dispose(c);                       // 古い物は捨ててから
     const spec = MC.proxy.specFor(c);
+    if (MC.storageDiag) MC.storageDiag.proxyDecision(c, spec, {
+      reason: spec ? "candidate" : "below_threshold",
+      scaleNeeded: MC.proxy._scaleNeeded(c), threshold: MC.proxy.TUNE.alwaysBelow,
+    });
     if (spec) targets.push({ clip: c, spec });
   }
   if (!targets.length) return;
@@ -397,6 +431,9 @@ MC.proxy.ensureAll = async (p, stepNo) => {
     const bytes = (t.spec.t1 - t.spec.t0) * t.spec.bitrate / 8;
     if (sum + bytes > budget) {
       MC.log(`proxy: 容量が足りないので ${t.clip.name} は元のまま使います`);
+      if (MC.storageDiag) MC.storageDiag.proxyBuild("skipped", t.clip, {
+        reason: "budget", expectedBytes: Math.round(bytes), budget: Math.round(budget),
+      });
       continue;
     }
     sum += bytes; plan.push(t);

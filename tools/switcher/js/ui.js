@@ -2601,6 +2601,7 @@ MC.ui.renderStorageNote = () => {
 MC.ui.renderClips = () => {
   MC.ui.renderResumeNote();
   MC.ui.renderStorageNote();
+  if (MC.storageDiag) MC.storageDiag.render();
   const box = MC.ui.$("#clipSlots");
   box.innerHTML = "";
   const vertical = MC.S.mode === "vertical";

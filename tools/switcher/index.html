@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-app-v="1.108.8" data-mz-channel="beta">
+<html lang="ja" data-mz-app-v="2.3.3" data-mz-channel="beta">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -18,7 +18,7 @@
 <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
 <link rel="stylesheet" href="/tools/shared/progress.css?v=1.99.3">
 <link rel="stylesheet" href="/tools/shared/journey.css?v=1.110.1">
-<link rel="stylesheet" href="css/style.css?v=2.1.0">
+<link rel="stylesheet" href="css/style.css?v=2.3.3">
 <link rel="stylesheet" href="/tools/shared/sitechrome.css?v=2.0.0">
 </head>
 <body data-mz-tool="switcher">
@@ -270,6 +270,7 @@
            14.88GB)。自動掃除で消えない/消しきれない分を、本人が1タップで
            消せる逃げ道。溜まっていなければ何も出さない -->
       <div id="storageNote" class="storage-note" hidden></div>
+      <section id="storageDiag" class="storage-diag" hidden aria-label="Safari容量診断"></section>
       <div id="resumeNote" class="resume-note" hidden></div>
       <div id="clipSlots" class="clip-slots"></div>
       <input type="file" id="fileInput" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" multiple hidden>
@@ -799,7 +800,7 @@
 <script src="vendor/fft.js"></script>
 <script src="js/state.js?v=1.113.8"></script>
 <script src="js/layout.js?v=1.99.3"></script>
-<script src="js/media.js?v=1.113.12"></script>
+<script src="js/media.js?v=2.3.3"></script>
 <script src="js/audio.js?v=1.113.10"></script>
 <script src="js/sync.js?v=1.113.10"></script>
 <script src="js/beats.js?v=1.99.3"></script>
@@ -818,9 +819,10 @@
 <script src="js/timeline.js?v=1.99.3"></script>
 <script src="js/cutmode.js?v=1.99.3"></script>
 <!-- 縮小版(プロキシ)。exporter の掃除が MC.proxy.PREFIX を見るので先に読む -->
-<script src="js/proxy.js?v=1.113.10"></script>
-<script src="js/exporter.js?v=1.113.8"></script>
-<script src="js/ui.js?v=2.3.1"></script>
-<script src="js/app.js?v=1.113.7"></script>
+<script src="js/proxy.js?v=2.3.3"></script>
+<script src="js/exporter.js?v=2.3.3"></script>
+<script src="js/storage-diagnostics.js?v=2.3.3"></script>
+<script src="js/ui.js?v=2.3.3"></script>
+<script src="js/app.js?v=2.3.3"></script>
 </body>
 </html>
