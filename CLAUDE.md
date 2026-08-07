@@ -22,3 +22,14 @@
 
 - push・本番デプロイは毎回かならず確認を取る。1度の許可は1度の実行にしか使えない（Netlify クレジット制）
 - Drive 同期がファイル・コミットを巻き戻す。作業ツリーの grep を信じず、git blob を権威にする（deploy-guard の安全ワークフロー）
+
+## 検証・QA（2026-08-07 優さん指示「必要最低限に」）
+
+- QAランナーは2段。**標準（既定）** = 重い実コーデック7群（③-d ③-e ④ ⑥ ⑱ ㉘ ㉟）を
+  飛ばす（283件・実測約70秒） / **`?full=1`** = 全件（316件・約130秒）
+- ふだんの再検証 = 関連 `?g=` か標準。**push前 = `python3 push_check.py` を回す**
+  （積みコミット・Drive巻き戻り・版番整合を機械チェックし、QAの段も判定する。
+  エンジン = tools/shared・switcher/js の exporter/visual/sync/media を触っていたら `?full=1` 必須）
+- 配信は `tools/qa/serve.sh`（/private/tmp/mzqa へ rsync + :8931。`serve.sh stop` で停止）
+- QAは **desktop の窓で回す**。モバイル判定（UA/タッチ）だと会員×端末の門の試験が
+  実力どおり落ちる（ランナー最上部に警告が出る）

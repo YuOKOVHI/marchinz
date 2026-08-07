@@ -56,8 +56,36 @@ let curGroup = "";
    取り違えないようにする */
 const MZQA_G = (new URLSearchParams(location.search).get("g") || "")
   .split(",").map(s => s.trim()).filter(Boolean);
-const groupWanted = () => !MZQA_G.length || MZQA_G.some(k => curGroup.includes(k));
-const group = g => { curGroup = g; if (!groupWanted()) return;
+/* ★ 2段構え(2026-08-07 優さん指示「必要最低限に」)。既定=標準セット。
+   重い実コーデック群(エンジン専用の守り・実測で全体の半分の時間)は
+   ?full=1 のときだけ回す。エンジン(tools/shared・exporter.js・visual.js・
+   sync.js・media.js)を触った push の前は ?full=1 必須 ─ 判定は
+   push_check.py がやる。?g= の明示指定は段より強い(重い群も名指しなら走る) */
+const MZQA_FULL = new URLSearchParams(location.search).has("full");
+const MZQA_HEAVY = ["③-d", "③-e", "④ ", "⑥", "⑱", "㉘", "㉟"];
+let MZQA_SKIPPED = 0;   // 標準セットで飛ばした群の数(まとめに正直に書く)
+/* ★ 実行環境の前提: モバイルUA/タッチ環境だと会員×端末の門(こだわり=登録+
+   パソコン 等)の試験が「実力どおり」落ちる。コードの欠陥ではないのに
+   FAILの顔で出る(2026-08-07、Browserペインのmobileプリセットのまま回して
+   1時間溶かした)。気づけるよう最上部に警告を貼る */
+if (/Android|iPhone|iPad/i.test(navigator.userAgent) || (navigator.maxTouchPoints || 0) > 2) {
+  addEventListener("DOMContentLoaded", () => {
+    const warn = document.createElement("div");
+    warn.style.cssText = "background:#7a1f1f;color:#fff;padding:10px 14px;border-radius:8px;margin:10px 0;font-weight:700";
+    warn.textContent = "⚠ モバイル判定の環境です(UA/タッチ)。会員×端末の門の試験は実力どおり落ちます。Browserペインを desktop プリセットへ戻して回すこと。";
+    document.body.prepend(warn);
+  });
+}
+const groupWanted = () => {
+  if (MZQA_G.length) return MZQA_G.some(k => curGroup.includes(k));
+  if (!MZQA_FULL && MZQA_HEAVY.some(k => curGroup.startsWith(k))) return false;
+  return true;
+};
+const group = g => { curGroup = g;
+  if (!groupWanted()) {
+    if (!MZQA_G.length && !MZQA_FULL) MZQA_SKIPPED++;
+    return;
+  }
   const d = document.createElement("div"); d.className = "grp"; d.textContent = g; out.appendChild(d); };
 async function test(name, fn) {
   if (!groupWanted()) return;
@@ -900,7 +928,11 @@ async function countSamples(ns, file, fromSec) {
   group("⑥ 画素レベルの黒抜け検知(本物のH.264を実行時に生成)");
   const EW = 320, EH = 180, EFPS = 30, EN = 45, elum = k => 40 + k * 4;
   let synth = null;
-  await test("repo同梱の mp4-muxer で moov末尾のH.264を作れる", async () => {
+  /* ★ 素材づくりを試験から独立させる(2026-08-07)。㉗の縮小版試験もこの素材を
+     使うが、標準セットは⑥を飛ばすし、?g=絞りでも⑥抜きがありうる。
+     「⑥が先に走っていないと㉗が偽FAIL」の依存を断つ ─ 要る側が作る */
+  async function buildSynth() {
+    if (synth) return synth;
     const mx = new Mp4Muxer.Muxer({ target: new Mp4Muxer.ArrayBufferTarget(),
       video: { codec: "avc", width: EW, height: EH }, fastStart: false });  // ← 本番 exporter.js と同じ設定
     let err = null;
@@ -916,7 +948,12 @@ async function countSamples(ns, file, fromSec) {
     }
     await enc.flush(); enc.close(); if (err) throw err;
     mx.finalize();
-    const buf = mx.target.buffer, dv = new DataView(buf);
+    synth = new File([mx.target.buffer], "synth_moov_tail.mp4", { type: "video/mp4" });
+    return synth;
+  }
+  await test("repo同梱の mp4-muxer で moov末尾のH.264を作れる", async () => {
+    const buf = await (await buildSynth()).arrayBuffer();
+    const dv = new DataView(buf);
     let pos = 0, order = [];
     while (pos < buf.byteLength - 8) {
       const sz = dv.getUint32(pos);
@@ -924,7 +961,6 @@ async function countSamples(ns, file, fromSec) {
       if (sz < 8) break; pos += sz;
     }
     eq(order.join(","), "ftyp,mdat,moov", "トップレベルの並び");
-    synth = new File([buf], "synth_moov_tail.mp4", { type: "video/mp4" });
     return `${buf.byteLength} bytes / ${EN}フレーム / moov末尾`;
   });
 
@@ -7135,7 +7171,7 @@ async function countSamples(ns, file, fromSec) {
      歯が1本も無く、「muxerが先頭ts≠0で必ずthrow→トリムが奥だとプロキシが
      一度も作られない」がすり抜けた。**本物のH.264で build→読み戻し**まで通す */
   await test("★縮小版: トリム開始が素材の途中でも、実際に作れて読み戻せる(P0再発防止)", async () => {
-    if (!synth) throw new Error("合成H.264が無い(⑥が先に失敗している)");
+    await buildSynth();   // ⑥を飛ばす標準セット/絞り込みでも自前で作る(2026-08-07)
     const w = await compEnv();
     const X = w.MC.exporter;
     if (!X.opfsSupported()) return "この環境はOPFS非対応(判定のみ)";
@@ -8289,7 +8325,7 @@ async function countSamples(ns, file, fromSec) {
        ・書き出し(exporter.js pump) → その場で失敗。"decode@[native code]"
        ・解析(visual.js)        → catch してシーク方式へ(遅くなるだけ)
      縦型は3本とも毎コマ描くので再シークが起きず、踏まなかった。 */
-  group("㉑ 再シーク直後の1本目がキーフレームであること(自動スイッチング即死)");
+  group("㉘ 再シーク直後の1本目がキーフレームであること(自動スイッチング即死)");
 
   /* mp4box の nb_samples(64)を跨ぐ長さが要る。45コマの synth では
      「最後まで読み切って全部配る」だけで、作りかけの束が生まれない */
@@ -9268,7 +9304,7 @@ async function countSamples(ns, file, fromSec) {
     return "順序=タイトル→輪→説明 / 重なり0 / 文字上限あり / はみ出し0 / 輪は大きいまま";
   });
 
-  group("㊳ 実機報告5件(2026-08-02 優さん)の見張り");
+  group("㊷ 実機報告5件(2026-08-02 優さん)の見張り");
 
   await test("★円ゲージの%は単調増加(巻き戻る進捗・不確定の合間・おまかせの全体通算)", async () => {
     const w = await compEnv();
@@ -11042,7 +11078,7 @@ async function countSamples(ns, file, fromSec) {
 
 
   /* ===== ㉞ 2026-08-02 追加: 完了・保存はファンファーレ、失敗もお知らせ(㉝は並行のWake Lock群) ===== */
-  group("㉞ 完了・保存はファンファーレ / 失敗もお知らせ");
+  group("㊶ 完了・保存はファンファーレ / 失敗もお知らせ");
 
   await test("★完了と保存で祝う(紙吹雪+振動)、取り消しでは祝わない", async () => {
     const e = await doneEnv();
@@ -11302,7 +11338,7 @@ async function countSamples(ns, file, fromSec) {
     }
   });
 
-  group("㉗ 縦型2本のおまかせ／同じ演奏でない動画(2026-08-02 優さん実機報告)");
+  group("㉙ 縦型2本のおまかせ／同じ演奏でない動画(2026-08-02 優さん実機報告)");
   /* 実機報告「縦動画で動画が2つのとき、全部同じカメラになって、この静止画のまま最後まで」
      への手当て3点をここで見張る:
      ① おまかせ×縦型×2本 = 中央=1本目/上下=2本目(全スロット同一なら落ちる)
@@ -11658,7 +11694,10 @@ async function countSamples(ns, file, fromSec) {
 
   /* ===== 集計 ===== */
   const bad = R.filter(r => !r.ok);
-  const scope = MZQA_G.length ? `〔絞り込み: ${MZQA_G.join(",")} — push前は全件を回すこと〕` : "";
+  const scope = MZQA_G.length
+    ? `〔絞り込み: ${MZQA_G.join(",")} — push前は push_check.py の指示する段を回すこと〕`
+    : (MZQA_FULL ? "〔全件〕"
+       : `〔標準セット: 重い実コーデック${MZQA_SKIPPED}群は飛ばした — エンジンを触ったpushの前は ?full=1〕`);
   sum.textContent = (bad.length
     ? `FAIL ${bad.length} / ${R.length} — ${bad.map(b => b.name).join(" / ")}`
     : `全 ${R.length} 件 PASS`) + scope;
