@@ -367,16 +367,23 @@ MC.storageDiag = (() => {
       out.detail.push(`${label}: Safari差 ${bytes(safari)} / OPFS差 ${bytes(opfs)} / OPFSで説明できない差 ${bytes(r.unexplained)}`); return r;
     };
     if (cps.length >= 2) {
-      const all = compare(cps[0], cps[cps.length - 1], "今回の試行");
+      /* 診断を続けたまま通常取り込みを挟むことがある。開始値から最後の値までは
+         全体像として残すが、これを「選択だけ」の増加と取り違えないよう明記する。 */
+      const all = compare(cps[0], cps[cps.length - 1], "診断開始からの累計（途中の通常取り込みを含む）");
       if (all.error) out.verdict = "OPFS計測エラーがあり、まだ分類できません";
       else if (all.safari > 300e6 && Math.abs(all.opfs) < all.safari * 0.25) out.verdict = "Safari内部コピー側の増加が強く疑われます（OPFSでは説明できません）";
       else if (all.opfs > 300e6 && all.opfs >= all.safari * 0.5) out.verdict = ps.length ? "OPFS増加を確認。プロキシの寄与も実測されました" : "OPFS内の書き出しデータ増加を確認しました";
       else if (all.safari < -300e6 && all.opfs > -100e6) out.verdict = "Safari終了後にOPFS以外の領域が解放された可能性が高いです";
       else out.verdict = "増減が混在しています。次の地点を記録すると分類できます";
     }
-    const baseline = cps.find(c => c.phase === "基準値") || cps[0];
     const picked = cps.find(c => c.phase === "選択のみ後");
-    const pick = compare(baseline, picked, "選択だけの区間");
+    /* ②は「選択した直前」と「選択だけを行った直後」の差である。
+       初回の基準値と比べると、その間に行った通常取り込みまで②の責任に
+       見えてしまう(優さんの実機で 10.88GB と誤表示した経路)。 */
+    const pickBefore = state.selectionOnly && state.selectionOnly.at
+      ? cps.filter(c => c.at < state.selectionOnly.at).slice(-1)[0]
+      : (cps.find(c => c.phase === "基準値") || cps[0]);
+    const pick = compare(pickBefore, picked, "選択だけの直前記録との差");
     if (pick && !pick.error && pick.safari > 300e6 && Math.abs(pick.opfs) < pick.safari * 0.25) {
       out.verdict = "ファイル選択だけでSafari内部コピー側が増えた可能性が高いです";
     }

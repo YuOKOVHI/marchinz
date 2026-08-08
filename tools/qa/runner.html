@@ -9781,6 +9781,18 @@ async function countSamples(ns, file, fromSec) {
       ];
       const a = D.analysis();
       if (!a.detail.join(" ").includes("3.55 GB")) throw new Error("過去試行が混ざり、今回の+3.55GBにならない: " + a.detail.join(" / "));
+      /* 実機で起きた「通常取り込みを挟んだ後の②」。選択だけの差は診断開始時
+         ではなく、②を押す直前の記録と比較しなければ10.88GBと誤表示する。 */
+      st.checkpoints = [
+        { at: 10, phase: "基準値", safariGb: 9.38, safariBytes: 9.38e9, snapshot: empty },
+        { at: 20, phase: "通常取り込み・分析後", safariGb: 16.71, safariBytes: 16.71e9, snapshot: empty },
+        { at: 30, phase: "選択のみ後", safariGb: 20.26, safariBytes: 20.26e9, snapshot: empty },
+      ];
+      st.selectionOnly = { at: 25, measured: true };
+      const pickedOnly = D.analysis().detail.join(" / ");
+      if (!pickedOnly.includes("選択だけの直前記録との差: Safari差 3.55 GB") || /選択だけの区間: Safari差 10\.88 GB/.test(pickedOnly)) {
+        throw new Error("選択だけの差分が直前記録でなく基準値から計算される: " + pickedOnly);
+      }
       const secret = "選択だけの秘密ファイル名.mov";
       D.selectionOnly([new w.File([new Uint8Array(2048)], secret, { type: "video/quicktime" })]);
       const json = JSON.stringify(D._test.getState());
@@ -9835,6 +9847,25 @@ async function countSamples(ns, file, fromSec) {
       w.document.getElementById("storageDiagToggle").click();
       if (!w.document.getElementById("storageDiagReturned").disabled) {
         throw new Error("⑤を記録済みでも、再度「Safariを開き直した」を押せて記録を壊せる");
+      }
+      /* iPhoneでは、OSの選択画面を開く前に実機で確認した容量増加を知らせ、
+         取り消したときは選択画面へ進まない。承諾したときだけ一度開く。 */
+      const input = w.document.getElementById("fileInputV");
+      const oldConfirm = w.confirm, oldMode = w.MC.S.mode;
+      let confirms = 0, opens = 0;
+      const seenOpen = () => { opens++; };
+      input.addEventListener("click", seenOpen);
+      try {
+        w.MC.S.mode = "vertical";
+        w.confirm = () => { confirms++; return false; };
+        w.MC.ui.openVideoPicker();
+        if (opens) throw new Error("容量警告を取り消しても動画選択が開く");
+        w.confirm = text => { confirms++; return /Safariを終了しても残る/.test(text); };
+        w.MC.ui.openVideoPicker();
+        if (confirms !== 2 || opens !== 1) throw new Error(`iPhoneの動画選択前確認が効かない: confirm=${confirms} open=${opens}`);
+      } finally {
+        input.removeEventListener("click", seenOpen);
+        w.confirm = oldConfirm; w.MC.S.mode = oldMode;
       }
       const css = await (await w.fetch("../switcher/css/style.css")).text();
       if (!/mz-storage-diag-active\s+#storageDiagDock\s*>\s*#storageDiag/.test(css)) {

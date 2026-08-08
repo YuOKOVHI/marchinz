@@ -2257,7 +2257,7 @@ MC.ui.updateActionBar = () => {
       } else {
         conf = { label: MC.ui.photosInvited() ? "動画・写真を選ぶ" : "動画を選ぶ",
           icon: "fa-folder-open",
-          act: () => MC.ui.$(MC.S.mode === "vertical" ? "#fileInputV" : "#fileInput").click() };
+          act: () => MC.ui.openVideoPicker() };
       }
     } else if (cur === "length") {
       /* 長さと開始位置(2026-07-31 UI/UXレビュー P0)。
@@ -2623,6 +2623,18 @@ MC.ui.renderResumeNote = () => {
 MC.ui.photosInvited = () =>
   MC.S.mode === "vertical" && !(MC.ui._autoFlow && MC.ui._setupTab !== "pro");
 
+/* iPhone Safariでは、実機で「ファイルを選択しただけ」の段階で選択容量ぶんの
+   「書類とデータ」が増え、Safariを完全終了しても残る結果を確認した。
+   ここはOSのファイル選択を開く直前の唯一の共通入口。動画を送信しないことと、
+   同じ素材の選び直しを避けることを明示してから開く。 */
+MC.ui.openVideoPicker = () => {
+  const input = MC.ui.$(MC.S.mode === "vertical" ? "#fileInputV" : "#fileInput");
+  if (!input) return false;
+  if (MC.isIOS && !window.confirm("iPhoneのSafariでは、動画を選ぶだけで選択した容量ぶんの「書類とデータ」が増え、Safariを終了しても残ることがあります。\n\n動画はMarchinZから送信されません。選び直しを避けるため、今回使う動画だけを一度で選んでください。\n\n動画を選びますか？")) return false;
+  input.click();
+  return true;
+};
+
 /* 端末に残っている書き出しデータの控え(app.js が起動時に測って入れる)。
    2026-08-06 優さん実機、容量対策3度目 ─ 「消えるはず」を3度外したので、
    今度は**残量を画面に出して本人が消せる**ようにする */
@@ -2702,7 +2714,7 @@ MC.ui.renderClips = () => {
            1画面に同じ文が3回並ぶ(2026-07-28 文言の棚卸し) */
         ? 'タップして動画・写真を選ぶ' + (firstEmpty ? '<br><span class="hint">まとめて選べます／ここにドロップでもOK</span>' : '')
         : 'タップして動画を選ぶ' + (firstEmpty ? '<br><span class="hint">まとめて選べます／ここにドロップでもOK</span>' : '');
-      btn.onclick = () => MC.ui.$(vertical ? "#fileInputV" : "#fileInput").click();
+      btn.onclick = () => MC.ui.openVideoPicker();
       slot.appendChild(btn);
       box.appendChild(slot);
       continue;
@@ -2835,7 +2847,7 @@ ${c.isImage ? "" : (c.tiltOk
       if (rp) rp.onclick = () => {
         if (MC.ui._autoFlow && MC.ui._setupTab !== "pro") MC.ui._repickHold = true;
         MC.media.removeClip(c.id);
-        MC.ui.$(vertical ? "#fileInputV" : "#fileInput").click();
+        MC.ui.openVideoPicker();
       }; }
     /* 傾きバッジ → その動画から確認/再調整(2026-07-31 カード内タスク化) */
     const tb = card.querySelector("[data-tilt]");
