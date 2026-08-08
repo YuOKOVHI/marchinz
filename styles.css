@@ -3878,6 +3878,24 @@ span.calendar-likers-avatar.calendar-ev-avatar-img--withdrawn {
   background: linear-gradient(90deg, var(--navy) 0%, var(--blue) 100%);
 }
 
+/* スマホではページ見出しを内容優先にする。英語の飾り見出しと区切り線を
+   外し、日本語見出しもPC基準の約65%へ抑える。 */
+@media (max-width: 700px) {
+  .mz-philosophy-header .mz-philosophy-label--en,
+  .mz-philosophy-header .mz-philosophy-rule {
+    display: none;
+  }
+
+  .mz-philosophy-header .mz-philosophy-heading {
+    font-size: clamp(1.05rem, 4.55vw, 1.15rem);
+    line-height: 1.36;
+  }
+
+  .mz-philosophy-header {
+    margin-bottom: 0.8rem;
+  }
+}
+
 .mz-philosophy-quote {
   margin: 0 0 1.35rem;
   padding: 0;
