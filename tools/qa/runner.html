@@ -7836,6 +7836,13 @@ async function countSamples(ns, file, fromSec) {
     if (!live.includes('watch?v=6yYK1BmhjWY') || !live.includes('約124万回')) {
       throw new Error("じぇねTUBEの再生回数1位(約124万回)が掲載されていない");
     }
+    const inlineText = await (await fetch("../../youtube-list/youtube-list.inline.js")).text();
+    const inlineMatch = inlineText.match(/window\.__YOUTUBE_LIST_ROWS\s*=\s*(.+);\s*$/s);
+    if (!inlineMatch) throw new Error("YouTube inlineデータを読めない");
+    const gene = JSON.parse(inlineMatch[1]).find(row => row["チャンネル名"] === "じぇねTUBE_マーチング情報");
+    if (!gene || gene["動画視聴回数1位URL"] !== "https://www.youtube.com/watch?v=6yYK1BmhjWY" || Number(gene["動画視聴回数1位再生回数"]) < 1000000) {
+      throw new Error("じぇねTUBEの実表示データTOP1が100万再生動画になっていない");
+    }
     if ((live.match(/magazine-card--video/g) || []).length !== 4) {
       throw new Error("じぇねTUBEの4カードが動画用の横型指定になっていない");
     }
