@@ -36,7 +36,7 @@ MC.storageDiag = (() => {
   const fresh = () => ({
     schema: SCHEMA, active: false, runId: "", startedAt: 0,
     events: [], checkpoints: [], clips: [], lastSnapshot: null,
-    selectionOnly: null, imported: null, released: null, returned: null,
+    selectionOnly: null, imported: null, released: null, returned: null, lastRecord: null,
     history: [], notice: "",
   });
   const runData = () => ({
@@ -44,10 +44,11 @@ MC.storageDiag = (() => {
     events: state.events || [], checkpoints: state.checkpoints || [], clips: state.clips || [],
     lastSnapshot: state.lastSnapshot || null, selectionOnly: state.selectionOnly || null,
     imported: state.imported || null, released: state.released || null, returned: state.returned || null,
+    lastRecord: state.lastRecord || null,
   });
   const blankRun = () => {
     Object.assign(state, { active: false, runId: "", startedAt: 0, events: [], checkpoints: [], clips: [],
-      lastSnapshot: null, selectionOnly: null, imported: null, released: null, returned: null });
+      lastSnapshot: null, selectionOnly: null, imported: null, released: null, returned: null, lastRecord: null });
   };
   const archive = reason => {
     if (!state || (!state.active && !(state.events || []).length && !(state.checkpoints || []).length)) return;
@@ -108,10 +109,23 @@ MC.storageDiag = (() => {
   const phaseFor = () => {
     if (!(state.checkpoints || []).length) return "基準値";
     if (state.selectionOnly && !state.selectionOnly.measured) return "選択のみ後";
+    /* ②だけを測ってSafariを閉じた最小試行では、③/④を経由していなくても
+       ⑤をそのまま記録する。従来は !imported が先に勝ち、終了後の数値を
+       「通常取り込み・分析後」と誤記録していた。 */
+    if (state.returned && !state.returned.measured) return "Safari完全終了後";
     if (state.imported && !state.imported.measured) return "通常取り込み・分析後";
     if (state.released && !state.released.measured) return "素材参照を外した後";
-    if (state.returned && !state.returned.measured) return "Safari完全終了後";
     return "追加測定";
+  };
+  const phaseShort = phase => ({
+    "基準値": "①基準値", "選択のみ後": "②選択のみ後", "通常取り込み・分析後": "③分析後",
+    "素材参照を外した後": "④参照解除後", "Safari完全終了後": "⑤Safari終了後",
+  }[phase] || phase);
+  const recordText = rec => {
+    if (!rec) return "";
+    const delta = Number(rec.deltaSafariBytes) || 0;
+    const diff = rec.hasPrevious ? `（${delta === 0 ? "差分 0B" : `${delta > 0 ? "+" : "−"}${bytes(Math.abs(delta))}`}）` : "";
+    return `記録済：${phaseShort(rec.phase)} Safari ${Number(rec.safariGb).toFixed(2)}GB${diff}／OPFS ${bytes(rec.opfsBytes)}`;
   };
 
   /* 実機では、診断欄を #dropSec の外へ出しただけでは足りなかった。
@@ -325,12 +339,15 @@ MC.storageDiag = (() => {
     if (phase === "通常取り込み・分析後") state.imported.measured = true;
     if (phase === "素材参照を外した後") state.released.measured = true;
     if (phase === "Safari完全終了後") state.returned.measured = true;
+    const previous = [...(state.checkpoints || [])].reverse().find(x => x && x.validForDelta);
+    state.lastRecord = { phase, safariGb: gb, opfsBytes: snap.opfs.bytes || 0,
+      hasPrevious: !!previous, deltaSafariBytes: previous ? cp.safariBytes - previous.safariBytes : 0 };
     state.checkpoints.push(cp); state.lastSnapshot = snap; state.events.push({ at: cp.at, type: "checkpoint", data: cp });
     save(); if (input) input.value = "";
     /* 記録が終われば素材操作へ戻る。診断が作業画面を覆い続けないことを優先する。 */
     if (MC.isIOS) D._expanded = false;
     D.render();
-    if (!cp.validForDelta && MC.ui) MC.ui.toast("0.00GBは記録しましたが、差分判定には使いません");
+    if (MC.ui) MC.ui.toast(cp.validForDelta ? recordText(state.lastRecord) : "0.00GBは記録しましたが、差分判定には使いません");
   };
 
   D.analysis = () => {
@@ -424,8 +441,13 @@ MC.storageDiag = (() => {
       host.querySelector("#storageDiagStart").onclick = () => D.start(); return;
     }
     const a = D.analysis(), cps = state.checkpoints || [], hasClips = !!(MC.S.clips || []).length;
+    const returnedPending = state.returned && !state.returned.measured;
+    const completedByReturn = state.returned && state.returned.measured;
+    const canMarkReturned = (state.selectionOnly || state.imported) && !completedByReturn;
     let next = cps.length === 0 ? "① いまの「書類とデータ」を入力して、基準値を記録してください"
       : state.selectionOnly && !state.selectionOnly.measured ? "② 「選択だけ」の直後の数値を入力してください"
+      : returnedPending ? "⑤ Safari完全終了後の数値を入力してください"
+      : completedByReturn ? "⑤ Safari完全終了後まで記録済みです。レポートをコピーしてください"
       : !state.selectionOnly ? "② まず「選択だけを試す」で、動画を処理せずに選択直後を測れます"
       : !state.imported ? "③ 通常の「動画を選ぶ」から分析まで進め、数値を入力してください"
       : !state.imported.measured ? "③ 通常取り込み・分析後の数値を入力してください"
@@ -437,6 +459,8 @@ MC.storageDiag = (() => {
     const snap = state.lastSnapshot;
     const compactNext = cps.length === 0 ? "① 基準値を記録"
       : state.selectionOnly && !state.selectionOnly.measured ? "② 選択後の数値を記録"
+      : returnedPending ? "⑤ 再起動後の数値を記録"
+      : completedByReturn ? "⑤ 再起動後まで記録済み"
       : !state.selectionOnly ? "② 選択だけを試す"
       : !state.imported ? "③ 3本を選んで分析"
       : !state.imported.measured ? "③ 分析後の数値を記録"
@@ -447,14 +471,15 @@ MC.storageDiag = (() => {
     const compact = !!MC.isIOS && !D._expanded;
     if (compact) {
       host.classList.add("sd-compact");
-      host.innerHTML = `<div class="sd-compact-bar"><div><b>Safari容量診断中</b><span>${compactNext}</span></div><button type="button" class="btn ghost" id="storageDiagToggle" aria-expanded="false">開く</button></div>`;
+      const compactStatus = recordText(state.lastRecord) || compactNext;
+      host.innerHTML = `<div class="sd-compact-bar"><div><b>Safari容量診断中</b><span>${compactStatus}</span></div><button type="button" class="btn ghost" id="storageDiagToggle" aria-expanded="false">開く</button></div>`;
       host.querySelector("#storageDiagToggle").onclick = () => { D._expanded = true; D.render(); };
       return;
     }
     host.classList.remove("sd-compact");
     host.innerHTML = `<div class="sd-head"><div><b>Safari容量診断中</b><span>${next}</span></div><div class="sd-head-actions"><span class="sd-live">記録中</span><button type="button" class="btn ghost sd-fold" id="storageDiagToggle" aria-expanded="true">たたむ</button></div></div>
-      <div class="sd-result"><b>${a.verdict}</b><span>プロキシ: ${a.proxy}</span><span>掃除: ${a.sweep}</span><span>現在のOPFS: ${snap ? `${bytes(snap.opfs.bytes)}（${snap.opfs.n}件）` : "計測前"}</span></div>
-      <div class="sd-plan"><b>今回の試行で分けること</b><span>①基準値　②ファイル選択だけ　③通常の分析　④MarchinZ側の参照解除　⑤Safari完全終了後</span><div class="sd-plan-actions"><button type="button" class="btn ghost" id="storageDiagOnly">② 選択だけを試す（動画を処理しない）</button><input id="storageDiagOnlyInput" type="file" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" multiple hidden><button type="button" class="btn ghost" id="storageDiagRelease" ${hasClips ? "" : "disabled"}>④ MarchinZ側の素材参照を外す</button><button type="button" class="btn ghost" id="storageDiagReturned">⑤ Safariを開き直した</button></div></div>
+      <div class="sd-result"><b>${a.verdict}</b>${state.lastRecord ? `<span class="sd-recorded">${recordText(state.lastRecord)}</span>` : ""}<span>プロキシ: ${a.proxy}</span><span>掃除: ${a.sweep}</span><span>現在のOPFS: ${snap ? `${bytes(snap.opfs.bytes)}（${snap.opfs.n}件）` : "計測前"}</span></div>
+      <div class="sd-plan"><b>今回の試行で分けること</b><span>①基準値　②ファイル選択だけ　③通常の分析　④MarchinZ側の参照解除　⑤Safari完全終了後</span><div class="sd-plan-actions"><button type="button" class="btn ghost" id="storageDiagOnly">② 選択だけを試す（動画を処理しない）</button><input id="storageDiagOnlyInput" type="file" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" multiple hidden><div class="sd-release-wrap"><button type="button" class="btn ghost" id="storageDiagRelease" ${hasClips ? "" : "disabled"} aria-describedby="storageDiagReleaseHint">④ MarchinZ側の素材参照を外す</button>${hasClips ? "" : `<span id="storageDiagReleaseHint" class="sd-release-hint">③通常取り込み後に使えます</span>`}</div><button type="button" class="btn ghost" id="storageDiagReturned" ${canMarkReturned ? "" : "disabled"}>⑤ Safariを開き直した</button></div></div>
       <label class="sd-label" for="storageDiagGb">設定 → Safari →「書類とデータ」</label><div class="sd-measure"><input id="storageDiagGb" type="number" min="0" step="0.01" inputmode="decimal" placeholder="例 5.49"><span>GB</span><button type="button" class="btn" id="storageDiagRecord">この数値を記録</button></div>
       <div class="sd-actions"><button type="button" class="btn ghost" id="storageDiagNew">新しい試行</button><button type="button" class="btn ghost" id="storageDiagSnap">内部だけ再計測</button><button type="button" class="btn ghost" id="storageDiagCopy">レポートをコピー</button><button type="button" class="btn ghost" id="storageDiagStop">診断を終了・記録削除</button></div><textarea id="storageDiagReport" class="sd-report" readonly hidden aria-label="診断レポート"></textarea>`;
     host.querySelector("#storageDiagRecord").onclick = () => D.recordCheckpoint();
@@ -468,6 +493,6 @@ MC.storageDiag = (() => {
     host.querySelector("#storageDiagReturned").onclick = () => D.markReturned();
     host.querySelector("#storageDiagToggle").onclick = () => { D._expanded = false; D.render(); };
   };
-  D._test = { fresh, bytes, category, sumCats, setState: s => { state = s; }, getState: () => state, archive, blankRun };
+  D._test = { fresh, bytes, category, sumCats, phaseFor, recordText, setState: s => { state = s; }, getState: () => state, archive, blankRun };
   return D;
 })();
