@@ -29,38 +29,71 @@ MC.media.sniffContainer = async f => {
 };
 
 MC.media.addFiles = async files => {
-  if (MC.storageDiag) MC.storageDiag.beforeImport(files);
+  if (MC.media._adding) {
+    MC.ui.toast("いま選んだ動画を端末内に準備しています。終わってから追加してください");
+    return;
+  }
+  MC.media._adding = true;
+  const queue = Array.isArray(files) ? files : Array.from(files || []);
+  if (MC.storageDiag) MC.storageDiag.beforeImport(queue);
   let added = 0;
   const skipped = [];   // 動画として扱えず見送ったファイル(最後にまとめて知らせる)
   let photoBlocked = 0; // おまかせに写真が混ざった数(最後に1行で知らせる)
   MC.media._importNote = null;   // 常設の断り書きは取り込みのたびに仕切り直す
-  for (const f of files) {
+  try {
+  for (let fileIndex = 0; fileIndex < queue.length; fileIndex++) {
+    let f = queue[fileIndex];
+    if (!f) continue;
     const isImage = /^image\//.test(f.type) || /\.(jpe?g|png|webp|heic|heif|gif)$/i.test(f.name);
     if (isImage) {
       /* ★ おまかせは動画のみ(2026-08-02 優さん指示「おまかせでは、写真は
          選べないようにしよう」)。accept は選択の窓しか守れず、ドラッグ&
          ドロップと「すべてを表示」はここへ届くので、取り込みの入口にも番人。
          黙って捨てず、ループ後に1行だけ知らせる。こだわり(proタブ)は従来どおり */
-      if (MC.ui._autoFlow && MC.ui._setupTab !== "pro") { photoBlocked++; continue; }
+      if (MC.ui._autoFlow && MC.ui._setupTab !== "pro") { photoBlocked++; queue[fileIndex] = null; continue; }
       // 画像・写真は縦型動画作成でのみ取り込める
-      if (MC.S.mode !== "vertical") { MC.ui.toast("画像・写真は「縦型動画作成」でのみ使えます"); continue; }
+      if (MC.S.mode !== "vertical") { MC.ui.toast("画像・写真は「縦型動画作成」でのみ使えます"); queue[fileIndex] = null; continue; }
       if (await MC.media.addImageFile(f)) added++;
+      queue[fileIndex] = null;
       continue;
     }
     /* ★ 黙って捨てない。ここを素通りさせていたため、学校のビデオカメラの
        AVCHD(.MTS)などをドロップすると**エラーも出ずに何も起きず**、
        「壊れている」と判断されて二度と開かれない(2026-07-31 顧問レビュー)。
        ドラッグ&ドロップは accept 属性を通らないので実際に起きる */
-    if (!/^video\//.test(f.type) && !/\.(mp4|mov|m4v)$/i.test(f.name)) { skipped.push(f.name); continue; }
+    if (!/^video\//.test(f.type) && !/\.(mp4|mov|m4v)$/i.test(f.name)) { skipped.push(f.name); queue[fileIndex] = null; continue; }
     const sniff = await MC.media.sniffContainer(f);
-    if (!sniff.ok) { skipped.push(`${f.name}（${sniff.kind}）`); continue; }
+    if (!sniff.ok) { skipped.push(`${f.name}（${sniff.kind}）`); queue[fileIndex] = null; continue; }
     const key = `${f.name}|${f.size}|${f.lastModified}`;
-    if (MC.S.clips.some(c => MC.clipKey(c) === key)) { MC.ui.toast(`${f.name} は読み込み済みです`); continue; }
+    if (MC.S.clips.some(c => MC.clipKey(c) === key)) { MC.ui.toast(`${f.name} は読み込み済みです`); queue[fileIndex] = null; continue; }
     if (MC.media.slotClips().length >= 3) { MC.ui.toast("素材は3つまでです"); break; }
+    /* Safariから受け取ったFileはここより先へ渡さない。OPFSへ1本ずつ移し、
+       サイズ検証後のFileを既存エンジンへ渡す。OPFSが使えない/失敗した端末は
+       sourceStoreが元Fileを返すため、従来経路のまま続けられる。 */
+    const original = { name: f.name, size: f.size, lastModified: f.lastModified, type: f.type };
+    let lastPct = -10;
+    MC.media._importProgress = { current: fileIndex + 1, total: queue.length, pct: 0 };
+    if (MC.ui.renderClips) MC.ui.renderClips();
+    const staged = MC.sourceStore ? await MC.sourceStore.stage(f, {
+      source: fileIndex + 1,
+      onProgress: ratio => {
+        const pct = Math.round(Math.max(0, Math.min(1, ratio)) * 100);
+        if (pct < lastPct + 10 && pct !== 100) return;
+        lastPct = pct;
+        MC.media._importProgress = { current: fileIndex + 1, total: queue.length, pct };
+        if (MC.ui.renderClips) MC.ui.renderClips();
+      },
+    }) : { file: f, storage: "file", name: "", fallback: true };
+    queue[fileIndex] = null;
+    f = null; // 以後、picker由来のFileをこの関数から参照しない
+    if (!staged || staged.aborted || !staged.file) continue;
+    const sourceFile = staged.file;
     const clip = {
-      id: MC.media.nextId++, file: f,
-      name: f.name, size: f.size, lastModified: f.lastModified,
-      url: URL.createObjectURL(f),
+      id: MC.media.nextId++, file: sourceFile,
+      name: original.name, size: original.size, lastModified: original.lastModified,
+      mimeType: original.type || sourceFile.type || "",
+      sourceStorage: staged.storage, sourceOpfsName: staged.name || "",
+      url: URL.createObjectURL(sourceFile),
       video: document.createElement("video"),
       duration: 0, width: 0, height: 0,
       offset: 0, confidence: null, syncMethod: "未同期",
@@ -77,8 +110,10 @@ MC.media.addFiles = async files => {
         v.onerror = () => rej(new Error("動画として読み込めません(コーデック非対応の可能性)"));
       });
     } catch (e) {
-      MC.ui.toast(`⚠ ${f.name}: ${e.message}`);
+      MC.ui.toast(`⚠ ${original.name}: ${e.message}`);
       URL.revokeObjectURL(clip.url);
+      clip.file = null; clip.video = null;
+      if (MC.sourceStore) MC.sourceStore.releaseClip(clip);
       continue;
     }
     /* ★ 断るときは必ず逃げ道を添える(2026-08-05)。
@@ -104,7 +139,7 @@ MC.media.addFiles = async files => {
          直書きしていた ─ 15分になるのは**登録×パソコン**だけなので、
          ゲストには嘘だった(ゲストはパソコンでも5分)。さらに条件が mobile だけ
          だったため、**パソコンのゲストには逃げ道が1つも出ず**行き止まりだった。 */
-      MC.ui.toast(`⚠ ${f.name} は${durLabel}です。`
+      MC.ui.toast(`⚠ ${original.name} は${durLabel}です。`
         + `この端末で扱えるのは1本${MZ_LIMITS.sourceLimitLabel}までです。`
         + MZ_LIMITS.sourceUpgradeHint()
         + "長い録画は、先に前半・後半などに分けてからお試しください");
@@ -113,12 +148,14 @@ MC.media.addFiles = async files => {
          同じ内容+具体的な切り方を、取り込み枠の下に**消えない形**でも置く
          (描画は renderClips。次の取り込みで上書き・成功だけなら消える) */
       MC.media._importNote = `<i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> `
-        + `${MC.ui.esc(f.name)}（${durLabel}）は取り込めませんでした ─ `
+        + `${MC.ui.esc(original.name)}（${durLabel}）は取り込めませんでした ─ `
         + `この端末で扱えるのは1本${MC.ui.esc(MZ_LIMITS.sourceLimitLabel)}までです。`
         + MC.ui.esc(MZ_LIMITS.sourceUpgradeHint())
         + `<b>短くするには:</b> iPhoneの写真アプリで動画を開き、`
         + `「編集」で黄色い枠の端をドラッグ → ✓ →「ビデオを保存」を選択`;
       URL.revokeObjectURL(clip.url);
+      clip.file = null; clip.video = null;
+      if (MC.sourceStore) MC.sourceStore.releaseClip(clip);
       continue;
     }
     clip.duration = v.duration;
@@ -145,6 +182,12 @@ MC.media.addFiles = async files => {
   /* 何も足せず断り書きだけが立ったときも描き直す ─ afterChange が走らないと
      renderClips が呼ばれず、常設の断り書きが画面に出ない */
   else if (MC.media._importNote && MC.ui.renderClips) MC.ui.renderClips();
+  } finally {
+    queue.fill(null);
+    MC.media._adding = false;
+    MC.media._importProgress = null;
+    if (MC.ui.renderClips) MC.ui.renderClips();
+  }
 };
 
 /* 入口の門番。**技術的な天井(maxSourceSec)**だけを見る ─ プランの壁
@@ -270,6 +313,10 @@ MC.media.removeClip = (id, opt = {}) => {
   try { c.video.pause(); } catch (e) {}
   if (window.MC && MC.proxy) MC.proxy.dispose(c);   // 縮小版も一緒に片付ける
   URL.revokeObjectURL(c.url);
+  /* OPFSエントリだけ先に消しても、File/VideoがBlobを握ったままでは実容量が
+     回収されない。参照を切ってから素材ストアへ削除を頼む。 */
+  c.file = null; c.video = null; c.url = "";
+  if (window.MC && MC.sourceStore) MC.sourceStore.releaseClip(c);
   MC.S.clips.splice(i, 1);
   MC.S.slots = MC.S.slots.map(s => (s === id ? null : s));
   if (MC.S.audioClipId === id) MC.S.audioClipId = null;

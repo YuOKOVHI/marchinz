@@ -158,7 +158,7 @@ MC.storageDiag = (() => {
       at: now(), reason: String(reason || "手動計測"),
       estimate: { supported: false, usage: null, quota: null, details: null, error: "" },
       locks: { supported: false, held: [], pending: [], error: "" },
-      opfs: { supported: false, directory: false, n: 0, bytes: 0, categories: {}, items: [], error: "" },
+      opfs: { supported: false, directory: false, directories: {}, n: 0, bytes: 0, categories: {}, items: [], error: "" },
     };
     try {
       if (navigator.storage && navigator.storage.estimate) {
@@ -180,19 +180,26 @@ MC.storageDiag = (() => {
       if (!(navigator.storage && navigator.storage.getDirectory)) return snap;
       snap.opfs.supported = true;
       const root = await navigator.storage.getDirectory();
-      const dir = await root.getDirectoryHandle(MC.exporter.OPFS_DIR, { create: false }).catch(e => {
-        if (e && e.name === "NotFoundError") return null;
-        throw e;
-      });
-      if (!dir) return snap;
-      snap.opfs.directory = true;
       const raw = [];
-      for await (const [name, handle] of dir.entries()) {
-        let size = 0, mtime = 0, readError = "";
-        try { const f = await handle.getFile(); size = f.size || 0; mtime = f.lastModified || 0; }
-        catch (e) { readError = errText(e); }
-        raw.push({ id: anonId(name), category: category(name), bytes: size,
-          ageSec: mtime ? Math.max(0, Math.round((now() - mtime) / 1000)) : null, readError });
+      const dirs = [
+        { key: "export", name: MC.exporter.OPFS_DIR, forcedCategory: "" },
+        { key: "source", name: MC.sourceStore && MC.sourceStore.DIR, forcedCategory: "source" },
+      ].filter(x => x.name);
+      for (const spec of dirs) {
+        const dir = await root.getDirectoryHandle(spec.name, { create: false }).catch(e => {
+          if (e && e.name === "NotFoundError") return null;
+          throw e;
+        });
+        snap.opfs.directories[spec.key] = !!dir;
+        if (!dir) continue;
+        snap.opfs.directory = true;
+        for await (const [name, handle] of dir.entries()) {
+          let size = 0, mtime = 0, readError = "";
+          try { const f = await handle.getFile(); size = f.size || 0; mtime = f.lastModified || 0; }
+          catch (e) { readError = errText(e); }
+          raw.push({ id: anonId(spec.key + ":" + name), category: spec.forcedCategory || category(name), bytes: size,
+            ageSec: mtime ? Math.max(0, Math.round((now() - mtime) / 1000)) : null, readError });
+        }
       }
       raw.sort((a, b) => b.bytes - a.bytes);
       snap.opfs.n = raw.length; snap.opfs.bytes = raw.reduce((s, v) => s + v.bytes, 0);
@@ -278,7 +285,7 @@ MC.storageDiag = (() => {
     const no = state.clips.length + 1;
     const c = { source: no, bytes: cleanNumber(clip.size || (clip.file && clip.file.size)),
       width: cleanNumber(clip.width), height: cleanNumber(clip.height), duration: cleanNumber(clip.duration),
-      type: String((clip.file && clip.file.type) || "unknown").slice(0, 40) };
+      type: String(clip.mimeType || (clip.file && clip.file.type) || "unknown").slice(0, 40) };
     state.clips.push(c); push("clip_loaded", c);
   };
   D.proxyDecision = (clip, spec, extra) => {
@@ -292,6 +299,9 @@ MC.storageDiag = (() => {
     if (!state || !state.active || !admin()) return;
     const idx = Math.max(0, (MC.S.clips || []).indexOf(clip)); push("proxy_" + phase, Object.assign({ source: idx + 1 }, data || {}));
   };
+  D.sourceHandoff = (phase, data) => push("source_" + phase, Object.assign({
+    bytes: cleanNumber(data && data.bytes), source: cleanNumber(data && data.source),
+  }, data || {}));
   D.pagehide = () => {
     if (!state || !state.active || !admin()) return;
     push("pagehide", { liveProxyN: (MC.proxy && MC.proxy._live && MC.proxy._live.size) || 0 });
@@ -302,6 +312,7 @@ MC.storageDiag = (() => {
       reason: String(r.reason || "").slice(0, 60), clips: Number(r.clips) || 0,
       files: Number(r.files) || 0, videos: Number(r.videos) || 0,
       urls: Number(r.urls) || 0, proxies: Number(r.proxies) || 0,
+      sources: Number(r.sources) || 0,
       workers: Number(r.workers) || 0, audioContexts: Number(r.audioContexts) || 0,
       result: Number(r.result) || 0,
     });
@@ -395,7 +406,7 @@ MC.storageDiag = (() => {
       const all = compare(cps[0], cps[cps.length - 1], "診断開始からの累計（途中の通常取り込みを含む）");
       if (all.error) out.verdict = "OPFS計測エラーがあり、まだ分類できません";
       else if (all.safari > 300e6 && Math.abs(all.opfs) < all.safari * 0.25) out.verdict = "Safari内部コピー側の増加が強く疑われます（OPFSでは説明できません）";
-      else if (all.opfs > 300e6 && all.opfs >= all.safari * 0.5) out.verdict = ps.length ? "OPFS増加を確認。プロキシの寄与も実測されました" : "OPFS内の書き出しデータ増加を確認しました";
+      else if (all.opfs > 300e6 && all.opfs >= all.safari * 0.5) out.verdict = ps.length ? "OPFS増加を確認。プロキシの寄与も実測されました" : "OPFS内の素材・書き出しデータ増加を確認しました";
       else if (all.safari < -300e6 && all.opfs > -100e6) out.verdict = "Safari終了後にOPFS以外の領域が解放された可能性が高いです";
       else out.verdict = "増減が混在しています。次の地点を記録すると分類できます";
     }

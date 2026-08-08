@@ -101,6 +101,9 @@ window.addEventListener("DOMContentLoaded", async () => {
     .then(() => MC.exporter.refreshEstimate())
     /* 掃除の**あと**に数える。残っていれば本人が消せるよう画面に出す */
     .then(() => MC.ui.refreshStorageNote()).catch(() => {});
+  /* 素材は書き出し物と別ディレクトリ・別ロック。別タブに作業中素材が無い
+     と確認できたときだけ、前ページやクラッシュで残った素材を回収する。 */
+  if (MC.sourceStore) MC.sourceStore.sweep().catch(() => {});
   // OPFSへ本当に書けるかを一度だけ実測してキャッシュ(G-1)。
   // これで maxExportableSec が「上限なし」と嘘をつかなくなる
   if (MC.storageDiag) MC.storageDiag.probeStart();

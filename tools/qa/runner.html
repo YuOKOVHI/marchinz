@@ -1261,6 +1261,92 @@ async function countSamples(ns, file, fromSec) {
       return `worker書き込み${n}回(うち書き戻し${backWrites}回) / ${fin.size}バイト → 正しく開けた`;
     } finally { w.terminate(); }
   });
+  await test("★素材は8MB超でもOPFSへ分割受け取りし、削除まで実測できる", async () => {
+    const w = await compEnv(), S = w.MC.sourceStore;
+    if (!S || !S.supported()) return "この環境は素材OPFS非対応なので省略";
+    await S.sweep();
+    const body = new w.Uint8Array(S.CHUNK + 123);
+    body[0] = 17; body[S.CHUNK - 1] = 34; body[body.length - 1] = 51;
+    const original = new w.File([body], "qa-source.mov", { type: "video/quicktime", lastModified: 1234 });
+    const progress = [];
+    const staged = await S.stage(original, { source: 1, onProgress: n => progress.push(n) });
+    if (!staged || staged.storage !== "opfs" || staged.file === original || !staged.name.startsWith(S.PREFIX)) {
+      throw new Error("素材がOPFS上の別Fileへ差し替わらない");
+    }
+    eq(staged.file.size, original.size, "OPFS素材サイズ");
+    const got = new w.Uint8Array(await staged.file.arrayBuffer());
+    if (got[0] !== 17 || got[S.CHUNK - 1] !== 34 || got[got.length - 1] !== 51) {
+      throw new Error("分割受け取りした素材の内容が一致しない");
+    }
+    if (progress.length < 2 || progress[progress.length - 1] !== 1) {
+      throw new Error("8MB境界をまたぐ進捗が届かない: " + progress.join(","));
+    }
+    let audit = await S.audit();
+    if (!audit || !audit.items.some(x => x.name === staged.name && x.size === original.size)) {
+      throw new Error("OPFS上に検証済み素材が存在しない");
+    }
+    const clip = { file: null, sourceOpfsName: staged.name, sourceStorage: "opfs" };
+    await S.releaseClip(clip);
+    audit = await S.audit();
+    if (audit && audit.items.some(x => x.name === staged.name)) throw new Error("素材を外してもOPFS実体が残る");
+    /* 書き込み不能端末で動画選択そのものを失敗にしないフォールバック。 */
+    const keepInit = S._initWorker;
+    try {
+      S.cancelWrites();
+      S._initWorker = async () => { throw new Error("QAでOPFS失敗"); };
+      const fallback = await S.stage(original, { source: 1 });
+      if (!fallback.fallback || fallback.file !== original || fallback.storage !== "file") {
+        throw new Error("OPFS失敗時に元Fileへ戻らない");
+      }
+    } finally { S._initWorker = keepInit; S.cancelWrites(); }
+    return `${original.size}バイトを${progress.length}回で受け取り・内容一致・削除・失敗時復帰`;
+  });
+  await test("★実際のaddFiles経路がpickerのFileをOPFS素材へ交換してから動画を開く", async () => {
+    const w = await compEnv(), M = w.MC, S = M.S, Store = M.sourceStore;
+    const keep = {
+      clips: S.clips, stage: Store.stage, create: w.document.createElement.bind(w.document),
+      thumb: M.media.makeThumb, auto: M.ui._autoFlow, tab: M.ui._setupTab,
+    };
+    let called = 0;
+    try {
+      S.clips = []; S.slots = [null, null, null]; M.ui._autoFlow = false; M.ui._setupTab = "pro";
+      Store.stage = async (file, opt) => {
+        called++; if (opt && opt.onProgress) opt.onProgress(1);
+        return { file: new w.File([file], "inside-opfs.mp4", { type: file.type }),
+          storage: "opfs", name: "mzsrc_qa.mp4", fallback: false };
+      };
+      M.media.makeThumb = () => {};
+      w.document.createElement = tag => {
+        const el = keep.create(tag);
+        if (String(tag).toLowerCase() === "video") {
+          Object.defineProperty(el, "duration", { get: () => 20, configurable: true });
+          Object.defineProperty(el, "videoWidth", { get: () => 1920, configurable: true });
+          Object.defineProperty(el, "videoHeight", { get: () => 1080, configurable: true });
+          Object.defineProperty(el, "src", { configurable: true, get: () => "blob:qa",
+            set: () => setTimeout(() => { if (el.onloadedmetadata) el.onloadedmetadata(); }, 0) });
+        }
+        return el;
+      };
+      const head = new w.Uint8Array(32); head.set([0x66, 0x74, 0x79, 0x70], 4);
+      const original = new w.File([head], "outside-picker.mp4", { type: "video/mp4", lastModified: 77 });
+      const selected = [original];
+      await M.media.addFiles(selected);
+      const clip = S.clips[0];
+      if (called !== 1 || !clip || clip.file === original || clip.sourceStorage !== "opfs") {
+        throw new Error(`addFiles→OPFSの橋が切れている: called=${called} clip=${!!clip}`);
+      }
+      if (clip.name !== "outside-picker.mp4" || clip.file.name !== "inside-opfs.mp4") {
+        throw new Error("表示名とOPFS実体の役割が混ざっている");
+      }
+      if (selected[0] !== null) throw new Error("addFiles完了後もpicker由来Fileの配列参照が残る");
+      clip.sourceOpfsName = ""; // QAの架空名を実OPFSから削除しない
+      return "file選択→sourceStore.stage→OPFS File→clip.file の受け取り経路を通過";
+    } finally {
+      Store.stage = keep.stage; w.document.createElement = keep.create; M.media.makeThumb = keep.thumb;
+      M.ui._autoFlow = keep.auto; M.ui._setupTab = keep.tab; S.clips = keep.clips;
+      M.media._adding = false; M.media._importProgress = null; M.ui.renderClips();
+    }
+  });
   await test("★StreamTargetで組み直したMP4が正しく開ける", async () => {
     AV = AV || await captureAV();
     const r = await probeTracks(new File([replay(AV, true, 4096).bytes], "s.mp4", { type: "video/mp4" }));
@@ -1542,8 +1628,10 @@ async function countSamples(ns, file, fromSec) {
      色処理は切って測る。色を通すと「GLで縮小→2Dへ1:1」と「2Dで縮小→GLで1:1」で
      リサンプルの経路が変わり、画素は厳密には一致しない(ここは許容差の話になる)。
      レイアウトの正しさ＝どのカメラがどこに出るか、は色と無関係に決まる。 */
-  let CF = null, CW = null, CD = null;
-  const compEnv = async () => {
+  /* 関数宣言と var はこのasync試験本体の先頭へ巻き上がる。
+     OPFS素材受け取りの実経路試験も同じ実画面を先に使えるようにする。 */
+  var CF, CW, CD;
+  async function compEnv() {
     if (CW) return CW;
     CF = document.createElement("iframe");
     CF.style.cssText = "position:fixed;left:-9999px;top:0;width:390px;height:844px;border:0";
@@ -1559,7 +1647,7 @@ async function countSamples(ns, file, fromSec) {
     }
     if (!(CW.MC && CW.MC.drawComposite)) throw new Error("MC.drawComposite が生えない");
     return CW;
-  };
+  }
   /* 合成だけを見る素の状態。色・水平補正・境界線・ウォーターマークは既定で切る
      (ウォーターマークは layout.js が window.MZWM を見るので iframe 側を空にする) */
   const compReset = w => {

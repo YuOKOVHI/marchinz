@@ -1303,7 +1303,8 @@ MC.ui.releaseToolSession = reason => {
   const clips = [...((MC.S && MC.S.clips) || [])];
   const report = {
     reason: String(reason || "意図した退出").slice(0, 60), clips: clips.length,
-    files: 0, videos: 0, urls: 0, proxies: 0, workers: 0, audioContexts: 0, result: 0,
+    files: 0, videos: 0, urls: 0, proxies: 0, sources: 0,
+    workers: 0, audioContexts: 0, result: 0,
   };
   try { if (MC.preview) MC.preview.pause(); } catch (_) {}
   for (const c of clips) {
@@ -1312,6 +1313,7 @@ MC.ui.releaseToolSession = reason => {
     if (c.video) report.videos++;
     if (c.url) report.urls++;
     if (c.proxy) report.proxies++;
+    if (c.sourceOpfsName) report.sources++;
   }
   /* proxy.disposeAll はOPFS上の縮小版も削除予約へ入れるため、clip.proxyを
      nullにする前に呼ぶ。 */
@@ -1329,6 +1331,9 @@ MC.ui.releaseToolSession = reason => {
     c.file = null; c.video = null; c.url = ""; c.proxy = null;
     c.audio8k = null; c.quickVisual = null; c.visual = null;
   }
+  /* 参照をすべて切った後で素材OPFSを削除する。遷移に負けても、同期で残す
+     pending控えを次回起動のsweepが回収する。 */
+  try { if (MC.sourceStore) MC.sourceStore.releaseAll(clips); } catch (_) {}
   if (MC.S) {
     MC.S.clips.length = 0;
     MC.S.slots = (MC.S.slots || []).map(() => null);
@@ -2711,6 +2716,10 @@ MC.ui.photosInvited = () =>
 MC.ui.openVideoPicker = () => {
   const input = MC.ui.$(MC.S.mode === "vertical" ? "#fileInputV" : "#fileInput");
   if (!input) return false;
+  if (MC.media && MC.media._adding) {
+    MC.ui.toast("いま選んだ動画を端末内に準備しています");
+    return false;
+  }
   if (MC.storageDiag && MC.storageDiag.allowPicker && !MC.storageDiag.allowPicker()) return false;
   if (MC.isIOS && !window.confirm("iPhoneのSafariでは、動画を選ぶだけで選択した容量ぶんの「書類とデータ」が増え、Safariを終了しても残ることがあります。\n\n動画はMarchinZから送信されません。選び直しを避けるため、今回使う動画だけを一度で選んでください。\n\n動画を選びますか？")) return false;
   input.click();
@@ -2761,6 +2770,16 @@ MC.ui.renderClips = () => {
   MC.ui.renderMobileLengthPick();
   const box = MC.ui.$("#clipSlots");
   box.innerHTML = "";
+  const importing = MC.media && MC.media._importProgress;
+  if (importing) {
+    const note = document.createElement("div");
+    note.id = "sourceImportNote";
+    note.className = "need-second-note";
+    note.setAttribute("role", "status");
+    note.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i> '
+      + `動画${importing.current}/${importing.total}を端末内に準備しています（${importing.pct}%）`;
+    box.appendChild(note);
+  }
   const vertical = MC.S.mode === "vertical";
   const withPhotos = MC.ui.photosInvited();
   /* 縦型は写真も入れられる。見出しの名詞をモードに合わせる(2026-07-23 B-4)。
