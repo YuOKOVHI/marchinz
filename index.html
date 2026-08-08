@@ -3285,6 +3285,11 @@
             『じぇねTUBE』は、ただの演奏アーカイブじゃない。現場で渦巻く剥き出しの情熱をそのまま映像に焼き付けたようなチャンネル。プレイヤーたちの息遣い、妥協のないパフォーマンス、そして100万再生を叩き出すエンタメ精神、様々なマーチング大会やイベントの情報満載！マーチング初心者から、これからこの熱狂に飛び込もうとする者まで必見のコンテンツ。理屈は抜きだ。再生ボタンを押した瞬間に伝わってくる、最高に熱い鼓動をその目で確かめろ！
           </p>
           <div id="marching-live-grid" class="magazine-grid" aria-label="じぇねTUBE_マーチング情報の動画一覧">
+            <a class="magazine-card magazine-card--video" href="https://www.youtube.com/watch?v=3rgxCdI8M4E" target="_blank" rel="noopener noreferrer">
+              <div class="magazine-thumb"><img src="https://i.ytimg.com/vi/3rgxCdI8M4E/hqdefault.jpg" alt="じぇねTUBE 最新動画" loading="lazy" /><span class="magazine-thumb-fallback">YouTube</span></div>
+              <p class="magazine-meta">最新動画 ・ 1,478回</p>
+              <p class="magazine-title">【本番直前】GENESIS LIVE2026ホールリハ</p>
+            </a>
             <a class="magazine-card magazine-card--video" href="https://www.youtube.com/watch?v=6yYK1BmhjWY" target="_blank" rel="noopener noreferrer">
               <div class="magazine-thumb"><img src="https://i.ytimg.com/vi/6yYK1BmhjWY/hqdefault.jpg" alt="じぇねTUBE 動画再生回数TOP1" loading="lazy" /><span class="magazine-thumb-fallback">YouTube</span></div>
               <p class="magazine-meta">動画再生回数 TOP 1 ・ 約124万回</p>
@@ -3295,27 +3300,33 @@
               <p class="magazine-meta">動画再生回数 TOP 2 ・ 7,313回</p>
               <p class="magazine-title">【DCJ本番】AJC2023でWInners SHOW！メンバーにGoPro付けてみた</p>
             </a>
-            <a class="magazine-card magazine-card--video" href="https://www.youtube.com/watch?v=mafzef8kpKo" target="_blank" rel="noopener noreferrer">
-              <div class="magazine-thumb"><img src="https://i.ytimg.com/vi/mafzef8kpKo/hqdefault.jpg" alt="じぇねTUBE 動画再生回数TOP3" loading="lazy" /><span class="magazine-thumb-fallback">YouTube</span></div>
-              <p class="magazine-meta">動画再生回数 TOP 3 ・ 7,297回</p>
+            <a id="marching-live-random" class="magazine-card magazine-card--video" href="https://www.youtube.com/watch?v=mafzef8kpKo" target="_blank" rel="noopener noreferrer">
+              <div class="magazine-thumb"><img src="https://i.ytimg.com/vi/mafzef8kpKo/hqdefault.jpg" alt="じぇねTUBE ランダム動画" loading="lazy" /><span class="magazine-thumb-fallback">YouTube</span></div>
+              <p class="magazine-meta">ランダム ・ 7,297回</p>
               <p class="magazine-title">【トランペット】初心者向け！JAZZでのアドリブのやり方を習ってきた①</p>
             </a>
-            <a class="magazine-card magazine-card--video" href="https://www.youtube.com/watch?v=Tuh22JQ-0E4" target="_blank" rel="noopener noreferrer">
-              <div class="magazine-thumb"><img src="https://i.ytimg.com/vi/Tuh22JQ-0E4/hqdefault.jpg" alt="じぇねTUBE 最新LIVE" loading="lazy" /><span class="magazine-thumb-fallback">YouTube</span></div>
-              <p class="magazine-meta">最新LIVE ・ 317回</p>
-              <p class="magazine-title">【雑談配信】2023年度振り返っていくよ〜！｜マーチング</p>
-            </a>
-            <a class="magazine-card magazine-card--video" href="https://www.youtube.com/watch?v=gHkOYPEAIDs" target="_blank" rel="noopener noreferrer">
-              <div class="magazine-thumb"><img src="https://i.ytimg.com/vi/gHkOYPEAIDs/hqdefault.jpg" alt="じぇねTUBE LIVE再生回数TOP" loading="lazy" /><span class="magazine-thumb-fallback">YouTube</span></div>
-              <p class="magazine-meta">LIVE再生回数 TOP ・ 3,423回</p>
-              <p class="magazine-title">【配信LIVE】マーチングバンドGENESIS〜G-Streaming#2〜</p>
-            </a>
-            <a class="magazine-card magazine-card--video" href="https://www.youtube.com/watch?v=3rgxCdI8M4E" target="_blank" rel="noopener noreferrer">
-              <div class="magazine-thumb"><img src="https://i.ytimg.com/vi/3rgxCdI8M4E/hqdefault.jpg" alt="じぇねTUBE 最新動画" loading="lazy" /><span class="magazine-thumb-fallback">YouTube</span></div>
-              <p class="magazine-meta">最新動画 ・ 1,478回</p>
-              <p class="magazine-title">【本番直前】GENESIS LIVE2026ホールリハ</p>
-            </a>
           </div>
+          <script>
+            /* 4枚目だけは、TOPと最新以外の3本から開くたびに1本を選ぶ。 */
+            (() => {
+              const card = document.getElementById("marching-live-random");
+              if (!card) return;
+              const choices = [
+                ["mafzef8kpKo", "7,297回", "【トランペット】初心者向け！JAZZでのアドリブのやり方を習ってきた①"],
+                ["Tuh22JQ-0E4", "317回", "【雑談配信】2023年度振り返っていくよ〜！｜マーチング"],
+                ["gHkOYPEAIDs", "3,423回", "【配信LIVE】マーチングバンドGENESIS〜G-Streaming#2〜"],
+              ];
+              const picked = choices[Math.floor(Math.random() * choices.length)];
+              const [videoId, views, title] = picked;
+              card.href = `https://www.youtube.com/watch?v=${videoId}`;
+              const image = card.querySelector("img");
+              if (image) image.src = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+              const meta = card.querySelector(".magazine-meta");
+              if (meta) meta.textContent = `ランダム ・ ${views}`;
+              const titleNode = card.querySelector(".magazine-title");
+              if (titleNode) titleNode.textContent = title;
+            })();
+          </script>
           <h3 id="media-manga" class="media-section-heading">マンガ</h3>
           <p class="section-top-link"><a href="#webmagazine">ページ上へ戻る</a></p>
           <h4 class="media-subheading">『みかづきマーチ』全6巻　作者：山田 はまち</h4>

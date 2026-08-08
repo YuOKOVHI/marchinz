@@ -10781,6 +10781,11 @@ body.mix3-about-active {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  /* じぇねTUBEは動画タイトルまで読みやすい1列。雑誌・マンガの2列は維持する。 */
+  #marching-live-grid {
+    grid-template-columns: 1fr;
+  }
+
   .magazine-thumb {
     min-height: 9rem;
   }
