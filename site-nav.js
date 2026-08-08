@@ -1626,6 +1626,18 @@
         ],
       },
       {
+        name: "FloMarching",
+        url: "https://www.youtube.com/@FloMarching",
+        category: "海外",
+        logo: "https://yt3.googleusercontent.com/0j_pRqOEvBv3dYaW0r7_y15p0lBIXl5QlciaEm59SdytrDHN3buIEaZkyhhWI0BUN-i8yZF-=s900-c-k-c0x00ffffff-no-rj",
+        thumbnails: [
+          "https://i.ytimg.com/vi/L_wn6u6SmvA/hqdefault.jpg",
+          "https://i.ytimg.com/vi/j9B3QjQ3VSo/hqdefault.jpg",
+          "https://i.ytimg.com/vi/4eyC0B7znaU/hqdefault.jpg",
+          "https://i.ytimg.com/vi/Jwm29vnh_0w/hqdefault.jpg",
+        ],
+      },
+      {
         name: "DCI",
         url: "https://www.youtube.com/@DCI",
         category: "海外",
