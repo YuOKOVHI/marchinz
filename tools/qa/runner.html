@@ -9754,8 +9754,11 @@ async function countSamples(ns, file, fromSec) {
 
   await test("★Safari容量診断: 今回の試行だけを比較し、選択のみ・分析後・参照解除を分ける", async () => {
     const w = await compEnv();
-    const D = w.MC.storageDiag, keepAdmin = w.MZ_LIMITS.admin;
+    const D = w.MC.storageDiag, keepAdmin = w.MZ_LIMITS.admin, keepIos = w.MC.isIOS;
     w.MZ_LIMITS.admin = true;
+    /* iPhoneは横向きで900pxを超えても診断をdockから戻さない。desktop QAでは
+       明示して、幅ではなく端末種別が退避の正本であることを測る。 */
+    w.MC.isIOS = true;
     try {
       await D.start();
       const st = D._test.getState();
@@ -9795,13 +9798,17 @@ async function countSamples(ns, file, fromSec) {
       if (!/mz-storage-diag-active\s+#storageDiagDock\s*>\s*#storageDiag/.test(css)) {
         throw new Error("診断欄をbody直下で前面固定するCSSが無い");
       }
+      const diagSrc = await (await w.fetch("../switcher/js/storage-diagnostics.js")).text();
+      if (!/const ios = !!\(window\.MC && MC\.isIOS\)/.test(diagSrc)) {
+        throw new Error("診断欄の退避先がiOS端末判定でなく、画面幅に依存している");
+      }
       /* 新しい試行は前の数値を履歴へ退避し、現在の差分に混ぜない。 */
       await D.start();
       const next = D._test.getState();
       if (next.checkpoints.length || !next.history.length || next.runId === "old") throw new Error("新しい試行へ切り替えても前回値が残る");
       return "今回の+3.55GBだけを比較 / 選択のみは匿名 / 分析後もbody直下に入力欄を保持";
     } finally {
-      w.MZ_LIMITS.admin = keepAdmin; D.stop(); D.render();
+      w.MZ_LIMITS.admin = keepAdmin; w.MC.isIOS = keepIos; D.stop(); D.render();
     }
   });
 
@@ -9834,7 +9841,7 @@ async function countSamples(ns, file, fromSec) {
       S.clips = [S.clips[0]]; S.slots = [S.clips[0].id, null, null]; S.mobileLengthDecided = false;
       U._autoFlow = false; U._setupTab = "easy"; U.renderClips(); U.setSetupTab("pro");
       const note = d.getElementById("needSecondNote");
-      if (U._setupTab !== "easy" || !note || !/2つ目の動画/.test(note.textContent)) {
+      if (U._setupTab !== "easy" || !U._autoFlow || !note || !/2つ目の動画/.test(note.textContent)) {
         throw new Error("動画1本でこだわりへ進める、または2つ目の案内が無い");
       }
       /* 変異: 2本目の門を外すと、こだわりへ入れてしまうことを確認する。
@@ -9846,6 +9853,48 @@ async function countSamples(ns, file, fromSec) {
     } finally {
       U.runAuto = keepRun; U.needSecondVideo = keepNeed;
       Object.assign(L, keepL); compReset(w); U.renderClips();
+    }
+  });
+
+  await test("★容量診断の素材一括解除は、自動遷移や仕上げダイアログを予約しない", async () => {
+    const w = await compEnv();
+    const D = w.MC.storageDiag, U = w.MC.ui, S = compReset(w);
+    const keep = { admin: w.MZ_LIMITS.admin, focus: U.focusNextAction };
+    w.MZ_LIMITS.admin = true;
+    let focusN = 0;
+    try {
+      U.focusNextAction = () => { focusN++; };
+      await D.start();
+      await D.releaseSources();
+      if (S.clips.length) throw new Error("素材参照の一括解除後もクリップが残る");
+      if (focusN) throw new Error("素材参照の一括解除中に次工程を予約した: " + focusN);
+      if (!D._test.getState().released) throw new Error("参照解除の診断記録が無い");
+      return "3本の一括解除後は素材0本・次工程0回・診断入力へ戻る";
+    } finally {
+      U.focusNextAction = keep.focus; w.MZ_LIMITS.admin = keep.admin;
+      D.stop(); compReset(w); U.renderClips();
+    }
+  });
+
+  await test("★スマホの失敗画面は、こだわりの抜け道でなく動画選び直しへ戻す", async () => {
+    const w = await compEnv();
+    const U = w.MC.ui, L = w.MZ_LIMITS, d = w.document;
+    const keep = { pro: L.proAllowed, repick: U.repickLand, auto: U._autoFlow };
+    let repicked = "";
+    try {
+      L.proAllowed = false; U._autoFlow = true;
+      U.repickLand = text => { repicked = text || ""; };
+      const stage = d.getElementById("autoStage"); stage.hidden = false;
+      U.autoStage.fail(new Error("QAの失敗"));
+      const b = d.getElementById("asManual");
+      if (!/動画を選び直す/.test(b.textContent)) throw new Error("スマホなのに手動仕上げの抜け道が表示される");
+      b.click();
+      if (!/こだわり/.test(repicked)) throw new Error("動画選び直しへ戻らない: " + repicked);
+      if (U._setupTab === "pro") throw new Error("失敗画面からスマホのこだわりへ入れた");
+      return "スマホ失敗=再試行/動画選び直し、PCのみ手動仕上げ";
+    } finally {
+      L.proAllowed = keep.pro; U.repickLand = keep.repick; U._autoFlow = keep.auto;
+      U.autoStage.close(); U.autoStage._fail = null; U.autoStage._failedStep = null;
     }
   });
 

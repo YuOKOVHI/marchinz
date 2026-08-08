@@ -1451,7 +1451,13 @@ MC.ui.focusNextAction = () => {
   /* 1本では、どの入口からも先へ進ませない。すでに「こだわり」を開いていた
      場合も素材工程へ戻し、常設の「2つ目の動画」案内を残す。 */
   if (MC.ui.needSecondVideo()) {
-    if (MC.ui._setupTab === "pro") MC.ui.setSetupTab("easy");
+    if (MC.ui._setupTab === "pro") {
+      /* 表示だけをeasyにして_autoFlow=false(こだわり)のままだと、2本目を
+         追加した瞬間に画面は「おまかせ」なのにこだわり分岐へ進む。1本時は
+         おまかせに揃え、2本目がそろったら表示どおり自動分析へ進める。 */
+      MC.ui._autoFlow = true;
+      MC.ui.setSetupTab("easy");
+    }
     return;
   }
   /* スマホでは、素材を読んだ直後・重い分析に入る前に30/60秒を選ぶ。 */
@@ -2848,7 +2854,7 @@ ${c.isImage ? "" : (c.tiltOk
     note.id = "needSecondNote";
     note.className = "need-second-note";
     note.innerHTML = '<i class="fa-solid fa-circle-info" aria-hidden="true"></i> '
-      + '2つ目の動画を選んでください（1本だけでは作れないため、そろったら自動で始まります）';
+      + '2つ目の動画を選んでください（1本だけでは作れないため、そろったらおまかせで始まります）';
     /* ★ 置き場所は「動画1のカードの直下=動画2の空き枠の直上」(2026-08-02
        push前レビュー)。末尾に足すと空き枠2つ(動画2・動画3)より下に落ち、
        375px では折り目の下 ─ 次にすべき行動(動画2を選ぶ)の手前で読ませる */
@@ -3480,9 +3486,13 @@ MC.ui.applyGuestLocks = () => {
 MC.ui.setSetupTab = (tab, opt = {}) => {
   /* 1本だけ入った後は、こだわりの細かな画面へ逃がさない。
      初期の0本は従来どおり選べる(そのまま2本を選ぶ入口)ので、素材が1本ある
-     場合だけ素材工程へ戻す。 */
+  場合だけ素材工程へ戻す。 */
   if (tab === "pro" && MC.ui.needSecondVideo()) {
     tab = "easy";
+    /* こだわりを止めて画面をおまかせへ戻すなら、内部の自走フラグも同時に
+       おまかせへ揃える。これをしないと2本目追加後に画面だけおまかせ、処理は
+       こだわりという二重状態になる。 */
+    MC.ui._autoFlow = true;
     if (!opt.quiet) MC.ui.toast("続けるには、2つ目の動画を選んでください");
   }
   const changed = MC.ui._setupTab !== tab;
@@ -4547,9 +4557,12 @@ MC.ui.autoStage = {
     /* ★ 失敗も端末から知らせる(2026-08-02)。自走中でも鳴らす ─ 失敗は進行ではなく
        **終端**で、人が戻らないと何も進まない。「途中では鳴らさない」鉄則は
        進行の通知(notifyUserTurn の silent)の話であって、止まったことは別 */
+    const canManual = MC.ui.proAllowed();
     MC.ui.notifyFail({
       title: "うまくいきませんでした",
-      body: "MarchinZ Switcher に戻って、もう一度やるか自分で仕上げるかを選べます",
+      body: canManual
+        ? "MarchinZ Switcher に戻って、もう一度やるか自分で仕上げるかを選べます"
+        : "MarchinZ Switcher に戻って、もう一度やるか動画を選び直すかを選べます",
       tab: "⚠ うまくいきませんでした — MarchinZ",
     });
     const head = MC.ui.$("#asHead"); if (head) head.textContent = "うまくいきませんでした";
@@ -4569,6 +4582,8 @@ MC.ui.autoStage = {
     const hint = MC.ui.$("#asFailHint");
     if (hint) hint.textContent = MC.ui.failHint(this._fail.message || "");
     const box = MC.ui.$("#asFail"); if (box) box.hidden = false;
+    const manual = MC.ui.$("#asManual");
+    if (manual) manual.textContent = canManual ? "自分で仕上げる" : "動画を選び直す";
     /* 押す前から読める形にしておく。コピーが断られる端末でも長押しで拾える。
        ★ 中身はコピーされるものと同じ関数から作る ─ 前は画面がログ40行、
          コピーが版・端末・素材つき60行と、同じ「記録」で別物だった */
@@ -5738,9 +5753,13 @@ MC.ui.runAuto = async (opt) => {
          畳んで裏へ逃がすと「画面がふっと消えた」だけになり、
          実機で何が起きたのかを本人が誰にも伝えられない */
       MC.ui.autoStage.fail(e);
-      MC.ui.setSetupTab("pro");
-      MC.ui._tabsForced = true;
-      MC.ui.refreshSetupTabs();
+      /* 入口では禁止しているスマホの「こだわり」へ、失敗した時だけ入れる
+         抜け道を作らない。PCで使える人だけ従来どおり手動復旧へ渡す。 */
+      if (MC.ui.proAllowed()) {
+        MC.ui.setSetupTab("pro");
+        MC.ui._tabsForced = true;
+        MC.ui.refreshSetupTabs();
+      }
     }
   } finally {
     if (tick) clearInterval(tick);
@@ -6767,6 +6786,10 @@ MC.ui.wire = () => {
   { const m = MC.ui.$("#asManual");
     if (m) m.onclick = () => {
       MC.ui.autoStage.close();
+      if (!MC.ui.proAllowed()) {
+        MC.ui.repickLand("この端末ではこだわり設定は使えません。動画を選び直すか、もう一度おまかせでお試しください");
+        return;
+      }
       MC.ui.setSetupTab("pro");
       MC.ui._tabsForced = true;
       MC.ui.refreshSetupTabs();

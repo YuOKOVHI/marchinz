@@ -262,7 +262,7 @@ MC.media.retryQuick = () => {
   return todo.length;
 };
 
-MC.media.removeClip = id => {
+MC.media.removeClip = (id, opt = {}) => {
   const i = MC.S.clips.findIndex(c => c.id === id);
   if (i < 0) return;
   MC.ui.resetEasyDone();   // 素材が変わったら「書き出すだけ」状態を解除
@@ -277,11 +277,11 @@ MC.media.removeClip = id => {
   if (MC.S.wipeMainId === id) MC.S.wipeMainId = null;
   if (MC.S.wipeClipId === id) MC.S.wipeClipId = null;
   if (MC.S.wipeClipId2 === id) MC.S.wipeClipId2 = null;
-  MC.media.afterChange();
+  if (!opt.deferAfterChange) MC.media.afterChange(opt);
 };
 
 /* クリップ増減後の既定値決め: スロット自動割当・レイアウト・音声・基準 */
-MC.media.afterChange = () => {
+MC.media.afterChange = (opt = {}) => {
   const slotClips = MC.media.slotClips();   // 音声のみを除いた素材(動画・画像)
   const n = slotClips.length;
   // 空スロットへ未割当クリップを順に入れる(音声のみはスロットに入れない)。
@@ -346,7 +346,9 @@ MC.media.afterChange = () => {
      この行が消し、次の保存で localStorage ごと壊していた(2026-07-31) */
   MC.ui.resetEasyDone(MC.restoreInfo.trim || MC.restoreInfo.cuts);
   MC.ui.renderAll();
-  MC.ui.focusNextAction();   // 次にすること(おまかせで開始)まで運ぶ
+  /* 診断の「素材参照を外す」は、全素材を捨てることだけが目的。
+     その最中に自走・仕上げダイアログを予約させない。 */
+  if (!opt.suppressNextAction) MC.ui.focusNextAction();
   /* 何がどこまで戻ったかを、実際の結果だけで伝える。
      以前は cutList の有無だけを見て「書き出し範囲も復元」と言っており、
      事実と違うことがあった(2026-07-21 レビュー指摘) */

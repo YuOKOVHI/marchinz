@@ -121,8 +121,12 @@ MC.storageDiag = (() => {
     const side = document.querySelector("#workspace .side");
     const dock = document.getElementById("storageDiagDock");
     if (!host || !side || !dock) return;
-    const mobile = !!(window.matchMedia && window.matchMedia("(max-width: 900px)").matches);
-    const target = state && state.active && mobile ? dock : side;
+    /* iPhone/iPadは回転するとCSS幅が900pxを超えることがある。幅で退避先を
+       決めると、診断中に横向きへした瞬間だけdockに残ったままfixed規則が外れ、
+       入力欄が分析画面の下へ潜る。端末判定はstate.jsのMC.isIOSを正本にし、
+       診断中のiOSは向きに関係なくbody直下へ置く。 */
+    const ios = !!(window.MC && MC.isIOS);
+    const target = state && state.active && ios ? dock : side;
     if (host.parentElement === target) return;
     if (target === side) {
       const before = side.querySelector("#setupTabs");
@@ -186,6 +190,16 @@ MC.storageDiag = (() => {
   D.start = async () => {
     if (!admin()) return;
     if (!state) state = load();
+    /* すでに開いていた別タブは、Aタブで診断を始めたことを知らないまま
+       「新しい試行」を押せる。そこでAの記録を上書きしないよう、開始直前に
+       localStorageの正本を読み直す。同一試行をSafari再起動後に続ける場合は
+       init時に同じrunIdを読んでいるので止めない。 */
+    const latest = load();
+    if (latest.active && latest.runId && latest.runId !== state.runId) {
+      state = latest; D.render();
+      if (MC.ui) MC.ui.toast("別のタブで容量診断を記録中です。その試行を続けてください");
+      return;
+    }
     archive("新しい試行を開始"); blankRun(); state.active = true; state.startedAt = now(); state.notice = "";
     state.runId = `${state.startedAt.toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
     save(); D.render(); await D.capture("診断開始");
@@ -200,6 +214,14 @@ MC.storageDiag = (() => {
     const host = document.getElementById("storageDiag");
     if (host) host.hidden = !admin();
     D.render();
+    /* 他タブで記録が進んだ場合も、古いinactive状態で上書きしない。 */
+    if (!D._storageWired) {
+      D._storageWired = true;
+      window.addEventListener("storage", e => {
+        if (e.key !== KEY || !admin()) return;
+        state = load(); D.render();
+      });
+    }
     if (admin() && state.active) push("page_open", {
       version: document.documentElement.getAttribute("data-mz-version") || "", ios: !!MC.isIOS,
     });
@@ -267,10 +289,14 @@ MC.storageDiag = (() => {
     if (MC.proxy) MC.proxy.disposeAll();
     for (const c of clips) {
       try { if (c.video) { c.video.pause(); c.video.removeAttribute("src"); c.video.load(); } } catch (_) {}
-      MC.media.removeClip(c.id);
+      /* 一括解除の途中でafterChange→focusNextActionを走らせると、3本→2本の
+         一瞬に「仕上げの好み」が予約され、素材が空になった後に診断欄を塞ぐ。
+         ここでは各clipの破棄だけを行い、最後に自走なしで1回描き直す。 */
+      MC.media.removeClip(c.id, { deferAfterChange: true });
       /* removeClip後に残るローカル変数にも、File/HTMLVideoElementを残さない。 */
       c.file = null; c.video = null; c.url = "";
     }
+    if (MC.media && MC.media.afterChange) MC.media.afterChange({ suppressNextAction: true });
     ["#fileInput", "#fileInputV"].forEach(sel => { const input = document.querySelector(sel); if (input) input.value = ""; });
     if (MC.preview) { MC.preview.soloId = null; MC.preview.draw(); }
     state.released = { at: now(), clips: clips.length, measured: false };
@@ -404,7 +430,7 @@ MC.storageDiag = (() => {
     const snap = state.lastSnapshot;
     host.innerHTML = `<div class="sd-head"><div><b>Safari容量診断中</b><span>${next}</span></div><span class="sd-live">記録中</span></div>
       <div class="sd-result"><b>${a.verdict}</b><span>プロキシ: ${a.proxy}</span><span>掃除: ${a.sweep}</span><span>現在のOPFS: ${snap ? `${bytes(snap.opfs.bytes)}（${snap.opfs.n}件）` : "計測前"}</span></div>
-      <div class="sd-plan"><b>今回の試行で分けること</b><span>①ファイル選択だけ　②通常の分析　③MarchinZ側の参照解除　④Safari完全終了後</span><div class="sd-plan-actions"><button type="button" class="btn ghost" id="storageDiagOnly">① 選択だけを試す（動画を処理しない）</button><input id="storageDiagOnlyInput" type="file" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" multiple hidden><button type="button" class="btn ghost" id="storageDiagRelease" ${hasClips ? "" : "disabled"}>③ MarchinZ側の素材参照を外す</button><button type="button" class="btn ghost" id="storageDiagReturned">⑤ Safariを開き直した</button></div></div>
+      <div class="sd-plan"><b>今回の試行で分けること</b><span>①基準値　②ファイル選択だけ　③通常の分析　④MarchinZ側の参照解除　⑤Safari完全終了後</span><div class="sd-plan-actions"><button type="button" class="btn ghost" id="storageDiagOnly">② 選択だけを試す（動画を処理しない）</button><input id="storageDiagOnlyInput" type="file" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" multiple hidden><button type="button" class="btn ghost" id="storageDiagRelease" ${hasClips ? "" : "disabled"}>④ MarchinZ側の素材参照を外す</button><button type="button" class="btn ghost" id="storageDiagReturned">⑤ Safariを開き直した</button></div></div>
       <label class="sd-label" for="storageDiagGb">設定 → Safari →「書類とデータ」</label><div class="sd-measure"><input id="storageDiagGb" type="number" min="0" step="0.01" inputmode="decimal" placeholder="例 5.49"><span>GB</span><button type="button" class="btn" id="storageDiagRecord">この数値を記録</button></div>
       <div class="sd-actions"><button type="button" class="btn ghost" id="storageDiagNew">新しい試行</button><button type="button" class="btn ghost" id="storageDiagSnap">内部だけ再計測</button><button type="button" class="btn ghost" id="storageDiagCopy">レポートをコピー</button><button type="button" class="btn ghost" id="storageDiagStop">診断を終了・記録削除</button></div><textarea id="storageDiagReport" class="sd-report" readonly hidden aria-label="診断レポート"></textarea>`;
     host.querySelector("#storageDiagRecord").onclick = () => D.recordCheckpoint();
