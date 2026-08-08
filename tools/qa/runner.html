@@ -12275,8 +12275,24 @@ async function countSamples(ns, file, fromSec) {
       if (!w?.__MZQA_CALENDAR_CARD_READY) throw new Error("ローカル専用の実カード生成まで届かない");
       let card = d.querySelector(".calendar-ev-card--ticket");
       if (!card) throw new Error("新しいチケット型カードが生成されない");
+      /* この試験の主眼はカードの実DOM。全件実行では直前の映像ツール試験の
+         hashchangeが遅れて届くため、計測対象ページだけ先に表示して文脈を固定する。 */
+      if (card.getBoundingClientRect().width === 0) {
+        d.querySelectorAll(".page").forEach((page) => { page.hidden = page.id !== "page-community"; });
+      }
       for (let i = 0; i < 120 && card.getBoundingClientRect().width === 0; i++) {
         await new Promise(r => setTimeout(r, 50));
+      }
+      /* 全件実行では直前のSwitcher試験の遅延timerが同一originで残り、
+         初回hash処理だけ競合することがある。非表示なら実リンクを踏み直し、
+         製品のルーター経由でイベント画面へ着地できることを測る。 */
+      if (card.getBoundingClientRect().width === 0) {
+        w.location.hash = "#top";
+        await new Promise(r => setTimeout(r, 50));
+        d.querySelector('a[href="#community/events"]')?.click();
+        for (let i = 0; i < 120 && card.getBoundingClientRect().width === 0; i++) {
+          await new Promise(r => setTimeout(r, 50));
+        }
       }
       card = d.querySelector(".calendar-ev-card--ticket");
       if (!card || card.getBoundingClientRect().width === 0) {
@@ -12326,6 +12342,71 @@ async function countSamples(ns, file, fromSec) {
       if (card.scrollWidth > card.clientWidth) throw new Error("390pxでカードが横にはみ出す");
       if (cr.height > 360) throw new Error(`カードがまだ縦に長すぎる: ${Math.round(cr.height)}px`);
       return `実DOM ${Math.round(cr.width)}×${Math.round(cr.height)}px / 操作${controls.length}個すべて44px以上 / 顔3+総数4`;
+    } finally {
+      f.remove();
+    }
+  });
+
+  group("㊹ デザインチームU Compact Deck（v2.9.5）");
+  await test("★実画面操作: 390pxヘッダー・TOP3導線・大会動画検索とカード", async () => {
+    const f = document.createElement("iframe");
+    f.style.cssText = "position:fixed;left:-9999px;top:0;width:390px;height:844px;border:0";
+    f.src = "../../index.html?mzQaTeamU=1#top";
+    document.body.appendChild(f);
+    try {
+      for (let i = 0; i < 160 && f.contentDocument?.documentElement?.dataset?.mzVersion !== "2.9.5"; i++) {
+        await new Promise(r => setTimeout(r, 50));
+      }
+      const w = f.contentWindow, d = f.contentDocument;
+      if (d?.documentElement?.dataset?.mzVersion !== "2.9.5") throw new Error("v2.9.5の実画面まで届かない");
+      for (let i = 0; i < 80 && d.querySelector(".site-brand")?.getBoundingClientRect().width === 0; i++) {
+        await new Promise(r => setTimeout(r, 50));
+      }
+      const header = d.querySelector(".site-brand")?.getBoundingClientRect();
+      const logo = d.querySelector(".site-logo")?.getBoundingClientRect();
+      if (!header || header.height > 68) throw new Error(`スマホヘッダーが高い: ${Math.round(header?.height || 0)}px`);
+      if (!logo || logo.width > 150) throw new Error(`ロゴが大きい: ${Math.round(logo?.width || 0)}px`);
+      const expected = ["大会・演奏会情報", "ショウ動画を見る", "マーチングYouTube"];
+      const rail = [...d.querySelectorAll(".mll-lp-hero-subcta a")];
+      if (rail.length !== 3) throw new Error(`TOP導線が3つでない: ${rail.length}`);
+      rail.forEach((a, i) => {
+        if (a.textContent.trim() !== expected[i]) throw new Error(`TOP導線${i + 1}の文言が違う: ${a.textContent.trim()}`);
+        const r = a.getBoundingClientRect();
+        if (r.width < 44 || r.height < 44) throw new Error(`TOP導線${i + 1}が44px未満: ${Math.round(r.width)}×${Math.round(r.height)}`);
+        if (!a.querySelector(".mz-ui-icon")) throw new Error(`TOP導線${i + 1}にアイコンが無い`);
+      });
+
+      w.location.hash = "#videos";
+      for (let i = 0; i < 160 && d.querySelector("#page-videos")?.hidden; i++) {
+        await new Promise(r => setTimeout(r, 50));
+      }
+      if (d.querySelector("#page-videos")?.hidden) throw new Error("大会動画ページへの実遷移が完了しない");
+      const omni = d.querySelector("#q-free");
+      if (!(omni instanceof w.HTMLInputElement) || omni.placeholder !== "団体・大会名で検索") {
+        throw new Error("大会動画の検索入口が1つのオムニ検索になっていない");
+      }
+      const filter = d.querySelector(".video-search-filter-disclosure > summary");
+      if (!filter) throw new Error("絞り込み入口が無い");
+      const fr = filter.getBoundingClientRect();
+      if (fr.width < 44 || fr.height < 44) throw new Error(`絞り込みが44px未満: ${Math.round(fr.width)}×${Math.round(fr.height)}`);
+      filter.click();
+      if (!d.querySelector(".video-search-filter-disclosure")?.open) throw new Error("絞り込みを押しても条件が開かない");
+      const filterButtons = d.querySelectorAll(".video-search-filter-sheet > .search-share-row > button");
+      for (const b of filterButtons) {
+        const r = b.getBoundingClientRect();
+        if (r.height < 44) throw new Error(`絞り込み内の操作が44px未満: ${b.textContent.trim()}`);
+      }
+      const card = d.querySelector("#video-list .recommend-item");
+      if (!card) throw new Error("大会動画カードが表示されない");
+      if (card.querySelector(".recommend-item-url-line")) throw new Error("大会動画カードに生URLが残っている");
+      const cardControls = card.querySelectorAll(".btn-mll-mylist-add,.share-toggle,.recommend-item-team-search-btn");
+      for (const b of cardControls) {
+        const r = b.getBoundingClientRect();
+        if (r.width < 44 || r.height < 44) throw new Error(`動画カード操作が44px未満: ${b.getAttribute("aria-label") || b.textContent.trim()}`);
+        if (!b.getAttribute("aria-label")) throw new Error("動画カードのアイコン操作にaria-labelが無い");
+      }
+      if (d.documentElement.scrollWidth > d.documentElement.clientWidth) throw new Error("390pxで画面が横にはみ出す");
+      return `header ${Math.round(header.height)}px / logo ${Math.round(logo.width)}px / TOP3導線 / 検索+絞り込み / 動画操作${cardControls.length}個`;
     } finally {
       f.remove();
     }

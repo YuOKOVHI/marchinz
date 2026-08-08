@@ -2428,7 +2428,7 @@
     if (totalMll > 0) {
       const kpiInner = document.createElement("div");
       kpiInner.className = "user-profile-mll-kpi-inner";
-      const kpiMedalKeys = PROFILE_ROLE_ORDER.filter((k) => (totals[k] || 0) > 0);
+      const kpiMedalKeys = PROFILE_ROLE_ORDER;
       const kpiMedalCount = kpiMedalKeys.length;
       if (kpiMedalCount >= 1 && kpiMedalCount <= 4) {
         kpiInner.classList.add(`user-profile-mll-kpi-inner--n${kpiMedalCount}`);
@@ -2437,13 +2437,6 @@
         kpiInner.appendChild(statMedal(k, totals[k]));
       });
       kpiInnerWrap.appendChild(kpiInner);
-      const overallSummary = formatRoleTotalsSummaryJa(totals);
-      if (overallSummary) {
-        const summaryEl = document.createElement("p");
-        summaryEl.className = "user-profile-mll-summary";
-        summaryEl.textContent = overallSummary;
-        kpiInnerWrap.appendChild(summaryEl);
-      }
     }
     kpiOuter.appendChild(kpiInnerWrap);
     host.appendChild(kpiOuter);
@@ -2540,7 +2533,8 @@
         const [yy, mm, dd] = dateStr.split("-");
         const left = document.createElement("div");
         left.className = "user-profile-mll-date";
-        left.textContent = yy && mm && dd ? `${yy}年 ${Number(mm)}月 ${Number(dd)}日` : String(dateStr || "").replace(/-/g, "/");
+        left.textContent = yy && mm && dd ? `${Number(mm)}/${Number(dd)}` : String(dateStr || "").replace(/-/g, "/");
+        if (yy && mm && dd) left.setAttribute("aria-label", `${yy}年${Number(mm)}月${Number(dd)}日`);
 
         const spine = document.createElement("div");
         spine.className = "user-profile-mll-spine";
@@ -2967,12 +2961,16 @@
     h3.textContent = meta.name;
     const countSpan = document.createElement("span");
     countSpan.className = "user-profile-mylist-count";
-    countSpan.textContent = String(itemCount);
+    countSpan.textContent = `${itemCount}${listKind === "videos" ? "本" : "件"}`;
+    const visibilitySpan = document.createElement("span");
+    visibilitySpan.className = `user-profile-mylist-visibility user-profile-mylist-visibility--${meta.visibility === "private" ? "private" : "public"}`;
+    visibilitySpan.innerHTML = `<i class="fa-solid ${meta.visibility === "private" ? "fa-lock" : "fa-earth-asia"}" aria-hidden="true"></i><span>${meta.visibility === "private" ? "非公開" : "公開"}</span>`;
     h3.appendChild(document.createTextNode(" "));
     h3.appendChild(countSpan);
     if (expandHit) expandHit.appendChild(h3);
     else titleBlock.appendChild(h3);
     if (expandHit) titleBlock.appendChild(expandHit);
+    titleBlock.appendChild(visibilitySpan);
 
     if (showLike && profUid && !listLocked) {
       const likeHost = document.createElement("div");
@@ -2996,7 +2994,9 @@
       editBtn.type = "button";
       editBtn.className = "btn-reset-search user-profile-mylist-edit-btn";
       editBtn.setAttribute("data-mz-prof-owner-action", "1");
-      editBtn.textContent = "編集する";
+      editBtn.title = "リストを編集";
+      editBtn.setAttribute("aria-label", "リストを編集");
+      editBtn.innerHTML = '<i class="fa-solid fa-pen mz-ui-icon" aria-hidden="true"></i><span class="mz-visually-hidden">編集</span>';
       editBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         onEdit();
@@ -3024,7 +3024,8 @@
         const shareBtn = document.createElement("button");
         shareBtn.type = "button";
         shareBtn.className = "btn-share-search btn-marchinz-spotlight";
-        shareBtn.textContent = "シェアする";
+        shareBtn.title = "リストをシェア";
+        shareBtn.innerHTML = '<i class="fa-solid fa-share-nodes mz-ui-icon" aria-hidden="true"></i><span class="mz-visually-hidden">シェア</span>';
         shareBtn.setAttribute(
           "aria-label",
           listKind === "videos"
@@ -3052,11 +3053,11 @@
     oshiP.className = `user-profile-oshi-display${oshiTextVal ? "" : " is-placeholder"}`;
     const oshiLabel = document.createElement("span");
     oshiLabel.className = "user-profile-oshi-badge-label";
-    oshiLabel.textContent = "推しポイント！";
+    oshiLabel.textContent = "推しポイント";
     oshiP.appendChild(oshiLabel);
     const oshiTextEl = document.createElement("span");
     oshiTextEl.className = "user-profile-oshi-badge-text";
-    oshiTextEl.textContent = oshiTextVal || "はまだ記入されていません";
+    oshiTextEl.textContent = oshiTextVal ? `「${oshiTextVal}」` : "推しポイントは未設定です";
     oshiP.appendChild(oshiTextEl);
     oshiWrap.appendChild(oshiP);
     head.appendChild(oshiWrap);

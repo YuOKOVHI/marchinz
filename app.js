@@ -921,6 +921,8 @@
       btn.type = "button";
       btn.className = ROW_SHARE_BTN_CLASS;
       btn.textContent = "シェアする";
+      btn.setAttribute("aria-label", "この動画をシェア");
+      btn.setAttribute("aria-expanded", "false");
       const menu = document.createElement("div");
       menu.className = "share-menu";
       menu.hidden = true;
@@ -939,6 +941,7 @@
           ev.stopPropagation();
           openShare(k, row);
           menu.hidden = true;
+          btn.setAttribute("aria-expanded", "false");
         });
         menu.appendChild(b);
       }
@@ -949,6 +952,7 @@
           m.hidden = true;
         });
         menu.hidden = !willOpen;
+        btn.setAttribute("aria-expanded", String(willOpen));
       });
       wrap.appendChild(btn);
       wrap.appendChild(menu);
@@ -2692,8 +2696,9 @@
       teamSearchBtn.className = "recommend-item-team-search-btn btn-share-search btn-marchinz-spotlight";
       const teamSearchLabel =
         state.tab === "スリークロスチーム" ? "このチームを検索" : "この団体を検索";
-      teamSearchBtn.textContent = teamSearchLabel;
       teamSearchBtn.setAttribute("aria-label", teamSearchLabel);
+      teamSearchBtn.title = teamSearchLabel;
+      teamSearchBtn.innerHTML = `<i class="fa-solid fa-magnifying-glass mz-ui-icon" aria-hidden="true"></i><span class="recommend-item-team-search-label">${teamSearchLabel}</span>`;
       teamSearchBtn.addEventListener("click", (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
@@ -2770,17 +2775,6 @@
       textStack.appendChild(metaLine);
     }
 
-    if (urlStr) {
-      const urlA = document.createElement("a");
-      urlA.href = urlStr;
-      urlA.target = "_blank";
-      urlA.rel = "noopener noreferrer";
-      urlA.className = "recommend-item-url-line";
-      renderUrlLineWithTimeAccent(urlA, urlStr);
-      enhanceVideoLink(urlA, urlStr);
-      textStack.appendChild(urlA);
-    }
-
     ytInfoRow.appendChild(avatarWrap);
     ytInfoRow.appendChild(textStack);
     body.appendChild(ytInfoRow);
@@ -2793,31 +2787,42 @@
     const mylistBtn = document.createElement("button");
     mylistBtn.type = "button";
     mylistBtn.className = "btn-mll-mylist-add";
-    mylistBtn.textContent = "マイリストに追加";
+    const renderMylistButton = (label) => {
+      mylistBtn.replaceChildren();
+      const icon = document.createElement("i");
+      icon.className = "fa-solid fa-bookmark mz-ui-icon";
+      icon.setAttribute("aria-hidden", "true");
+      const text = document.createElement("span");
+      text.className = "btn-mll-mylist-add-label";
+      text.textContent = label;
+      mylistBtn.append(icon, text);
+      mylistBtn.setAttribute("aria-label", label);
+    };
+    renderMylistButton("マイリストに追加");
     const syncMylistBtn = () => {
       const mod = window.MarchinZVideoMylist;
       const user = window.MLL_AUTH?.getUser?.();
       if (!urlStr) {
         mylistBtn.disabled = true;
-        mylistBtn.textContent = "マイリストに追加";
+        renderMylistButton("マイリストに追加");
         mylistBtn.title = "";
         return;
       }
       if (!mod) {
         mylistBtn.disabled = true;
-        mylistBtn.textContent = "マイリストに追加";
+        renderMylistButton("マイリストに追加");
         mylistBtn.title = "";
         return;
       }
       const inAny = mod.hasUrl?.(urlStr) ?? false;
       if (!user?.id) {
         mylistBtn.disabled = false;
-        mylistBtn.textContent = "マイリストに追加";
+        renderMylistButton("マイリストに追加");
         mylistBtn.title = "タップするとログイン／新規登録ページへ進みマイリストに保存できます（Google）";
         return;
       }
       mylistBtn.disabled = false;
-      mylistBtn.textContent = "マイリストに追加";
+      renderMylistButton(inAny ? "別のマイリストにも追加" : "マイリストに追加");
       mylistBtn.title = inAny ? "すでに保存した動画も、別のリストに追加できます" : "マーチンズのマイリストに保存";
     };
     syncMylistBtn();

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-version="2.9.4" data-mz-channel="beta">
+<html lang="ja" data-mz-version="2.9.5" data-mz-channel="beta">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -73,7 +73,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css" />
     <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css?v=1.25.64" />
     <link rel="stylesheet" href="styles.css?v=2.9.3" />
-    <link rel="stylesheet" href="marchinz-brushup.css?v=2.9.4" />
+    <link rel="stylesheet" href="marchinz-brushup.css?v=2.9.5" />
     <!-- Microsoft Clarity -->
     <script type="text/javascript">
       (function(c,l,a,r,i,t,y){
@@ -907,7 +907,61 @@
           </div>
         </div>
 
-        <section class="search-panel" aria-label="大会動画の検索">
+        <section class="search-panel video-search-deck" aria-label="大会動画の検索">
+          <div class="video-search-primary-row">
+            <label class="mz-visually-hidden" for="q-free">団体・大会名で検索</label>
+            <div class="video-search-omni">
+              <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+              <input
+                type="search"
+                id="q-free"
+                placeholder="団体・大会名で検索"
+                autocomplete="off"
+              />
+            </div>
+            <details class="video-search-filter-disclosure">
+              <summary aria-label="検索条件を絞り込む">
+                <i class="fa-solid fa-sliders" aria-hidden="true"></i>
+                <span class="video-search-filter-label">絞り込み</span>
+              </summary>
+              <div class="video-search-filter-sheet">
+                <div class="search-row">
+                  <div class="search-field search-field--team">
+                    <label class="search-label" for="q-team">団体/チーム名</label>
+                    <div class="search-team-line">
+                      <input
+                        type="search"
+                        id="q-team"
+                        placeholder="団体名だけで絞る"
+                        autocomplete="off"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div class="search-options" aria-label="検索オプション">
+                  <div class="search-options-row">
+                    <label class="search-option-box"><input type="checkbox" id="opt-match-exact" /> 完全一致のみ</label>
+                    <label class="search-option-box"
+                      ><input type="checkbox" id="opt-cross-both" checked /> マーチングとMIX3を表示</label
+                    >
+                  </div>
+                </div>
+                <div class="search-share-row">
+                  <button type="button" id="btn-reset-search" class="btn-reset-search">
+                    すべて解除
+                  </button>
+                  <button
+                    type="button"
+                    id="btn-share-search-inline"
+                    class="btn-share-search btn-marchinz-spotlight"
+                    data-marchinz-search-share
+                  >
+                    検索結果をシェア
+                  </button>
+                </div>
+              </div>
+            </details>
+          </div>
           <div class="search-inline-header">
             <div class="browse-inline-row">
               <div class="browse-inline-trigger-line">
@@ -924,45 +978,6 @@
               </div>
             </div>
           </div>
-          <div class="search-rows">
-            <div class="search-row">
-              <div class="search-field search-field--team">
-                <label class="search-label" for="q-team">団体/チーム名</label>
-                <div class="search-team-line">
-                  <input
-                    type="search"
-                    id="q-team"
-                    placeholder="部分一致"
-                    autocomplete="off"
-                  />
-                </div>
-              </div>
-            </div>
-            <div class="search-row">
-              <div class="search-field search-field--free">
-                <label class="search-label" for="q-free">フリーワード</label>
-                <input
-                  type="search"
-                  id="q-free"
-                  placeholder="大会名など"
-                  autocomplete="off"
-                />
-              </div>
-            </div>
-          </div>
-          <div class="search-share-row">
-            <button type="button" id="btn-reset-search" class="btn-reset-search">
-              検索結果をリセット
-            </button>
-            <button
-              type="button"
-              id="btn-share-search-inline"
-              class="btn-share-search btn-marchinz-spotlight"
-              data-marchinz-search-share
-            >
-              検索結果をシェアする
-            </button>
-          </div>
           <div class="search-history">
             <div class="search-history-heading">
               <p class="search-presets-title search-presets-title--history">最近検索した単語</p>
@@ -976,14 +991,6 @@
         </section>
 
         <p class="meta-bar" id="count">読み込み中…</p>
-        <div class="search-options" aria-label="検索オプション">
-          <div class="search-options-row">
-            <label class="search-option-box"><input type="checkbox" id="opt-match-exact" /> 検索ワードと完全一致のみ</label>
-            <label class="search-option-box"
-              ><input type="checkbox" id="opt-cross-both" checked /> マーチングとスリークロス動画表示</label
-            >
-          </div>
-        </div>
         <div class="visible-orgs" id="visible-orgs" hidden></div>
 
         <p id="data-fetch-meta" class="data-fetch-meta" hidden style="display:none"></p>
@@ -1116,9 +1123,9 @@
           <div id="mll-mylist-video-host"></div>
         </section>
 
-        <dialog id="mz-video-mylist-picker" class="mz-video-mylist-picker">
+        <dialog id="mz-video-mylist-picker" class="mz-video-mylist-picker" aria-labelledby="mz-video-mylist-picker-title">
           <div class="mz-picker-dialog-surface">
-            <h3 class="mz-picker-dialog-title" data-mz-picker-title>保存先のリスト</h3>
+            <h3 id="mz-video-mylist-picker-title" class="mz-picker-dialog-title" data-mz-picker-title>保存先のリスト</h3>
             <p class="mz-picker-dialog-lead">追加する大会動画の保存先を選んでください。</p>
             <div data-mz-picker-lists class="mz-picker-lists"></div>
             <div data-mz-picker-new class="mz-picker-new-block" hidden>
@@ -1292,10 +1299,17 @@
                     ><i class="fa-solid fa-drum" aria-hidden="true"></i> 練習を記録</a
                   >
                 </div>
-                <div class="mll-lp-hero-subcta">
-                  <a href="#community/events" data-page="community" class="mll-lp-inline-link">大会・演奏会を記録する</a>
-                  <a href="#videos" data-page="videos" class="mll-lp-inline-link">大会動画を探す</a>
-                  <a href="#youtube" data-page="youtube" class="mll-lp-inline-link">YouTube一覧</a>
+                <nav class="mll-lp-hero-subcta" aria-label="おすすめのページ">
+                  <a href="#community/events" data-page="community" class="mll-lp-inline-link">
+                    <i class="fa-solid fa-calendar-days mz-ui-icon" aria-hidden="true"></i><span>大会・演奏会情報</span>
+                  </a>
+                  <a href="#videos" data-page="videos" class="mll-lp-inline-link">
+                    <i class="fa-solid fa-circle-play mz-ui-icon" aria-hidden="true"></i><span>ショウ動画を見る</span>
+                  </a>
+                  <a href="#youtube" data-page="youtube" class="mll-lp-inline-link">
+                    <i class="fa-brands fa-youtube mz-ui-icon" aria-hidden="true"></i><span>マーチングYouTube</span>
+                  </a>
+                </nav>
                 </div>
               </div>
               <div class="mll-lp-hero-visual">
@@ -4350,16 +4364,16 @@
     <script defer src="marchinz-engage-ui.js?v=1.25.64"></script>
     <script defer src="marchinz-icons.js?v=2.5.1"></script>
     <script defer src="mll-role.js?v=1.28.1"></script>
-    <script defer src="mll-video-mylist.js?v=1.26.62"></script>
+    <script defer src="mll-video-mylist.js?v=2.9.5"></script>
     <script defer src="mll.js?v=1.26.62"></script>
     <script defer src="calendar-events.js?v=2.9.4"></script>
     <script defer src="community.js?v=1.99.2"></script>
     <script defer src="event-log-diary.js?v=1.99.4"></script>
     <script defer src="mln-public-feed.js?v=1.25.79"></script>
     <script defer src="mll-moment.js?v=1.26.63"></script>
-    <script defer src="user-profile-page.js?v=1.38.8"></script>
+    <script defer src="user-profile-page.js?v=2.9.5"></script>
     <script defer src="marchinz-base.js?v=1.39.66"></script>
-    <script defer src="app.js?v=1.99.0"></script>
+    <script defer src="app.js?v=2.9.5-u1"></script>
     <script defer src="marchinz-top-highlights.js?v=1.113.3"></script>
     <script defer src="marchinz-confetti.js?v=1.28.0"></script>
     <script defer src="marchinz-journey.js?v=1.30.1"></script>

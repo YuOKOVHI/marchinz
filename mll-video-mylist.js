@@ -756,6 +756,10 @@
       const t = ev.target;
       if (t === dlg) closePicker(null);
     });
+    dlg.addEventListener("cancel", (ev) => {
+      ev.preventDefault();
+      closePicker(null);
+    });
     dlg.querySelector("[data-mz-picker-cancel]")?.addEventListener("click", () => closePicker(null));
     dlg.querySelector("[data-mz-picker-confirm]")?.addEventListener("click", () => void confirmPicker());
   }
@@ -876,6 +880,7 @@
       try {
         dlg.showModal();
       } catch {
+        pickerResolver = null;
         resolve(lastUsedListId());
       }
     });
