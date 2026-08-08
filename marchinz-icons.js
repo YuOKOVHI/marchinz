@@ -212,6 +212,7 @@
   /** @type {Record<string, string[] | null>} */
   const MEDIA_SECTION_ICONS = {
     "media-free-magazine": [SOLID, "fa-music"],
+    "media-marching-live": [SOLID, "fa-tower-broadcast"],
     "media-manga": [SOLID, "fa-book-open-reader"],
     "media-books": [SOLID, "fa-newspaper"],
     "media-note": null,
@@ -376,6 +377,7 @@
       const map = {
         all: [SOLID, "fa-border-all"],
         大会: [SOLID, "fa-trophy"],
+        マーチング配信: [SOLID, "fa-tower-broadcast"],
         一般: [SOLID, "fa-music"],
         高校: [SOLID, "fa-school"],
         中学生以下: [SOLID, "fa-user-group"],

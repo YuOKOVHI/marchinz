@@ -1877,6 +1877,9 @@ body.mz-pin-force .tilt-step { width: 52px; min-height: 48px; font-size: 20px; }
 .storage-diag { margin: 10px 0 14px; padding: 14px; border-radius: 16px;
   background: #f7f9ff; border: 1px solid rgba(37, 84, 204, .18); color: #17213b; }
 .storage-diag[hidden] { display: none; }
+/* ?tool=reel|switcher|wipe は種類が確定済み。HTMLの解析途中で3枚カードを
+   描画させず、toolscope/ui.js が2段目を開くまで隠す。 */
+html[data-mz-tool-scope] #modeStepKind { display: none !important; }
 /* 管理者が容量診断を始めた回は、工程を進めても記録欄を見失わせない。
    通常画面では上端に追従し、おまかせの全画面分析と書き出し全画面では
    その上へ固定する。一般利用者には host 自体が hidden なので影響しない。 */

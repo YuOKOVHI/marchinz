@@ -7712,6 +7712,19 @@ async function countSamples(ns, file, fromSec) {
     }
     return out.join("/") + " 3スコープとも 2/2直行・名前・共有URL・内部ID不変";
   });
+  await test("★再編: ReelのURLは解析途中にも3枚の種類カードを描画しない", async () => {
+    const toolHtml = await (await fetch("../switcher/index.html")).text();
+    const css = await (await fetch("../switcher/css/style.css")).text();
+    const scopeMark = toolHtml.indexOf('data-mz-tool-scope", key');
+    const styleLink = toolHtml.indexOf('href="css/style.css?v=');
+    if (!(scopeMark >= 0 && scopeMark < styleLink)) {
+      throw new Error("URLのツール種別をCSS読込前に確定していないため、3枚カードが一瞬表示される");
+    }
+    if (!/html\[data-mz-tool-scope\]\s+#modeStepKind\s*\{\s*display:\s*none\s*!important/.test(css)) {
+      throw new Error("スコープURLで種類カードを描画抑止するCSSが無い");
+    }
+    return "URL判定をCSS前に実行し、Reel/Switcher/Wipeの3枚カードを初期描画から除外";
+  });
   await test("★再編: 未知の?tool=は従来の1段目へ落ちる(白画面を作らない)", async () => {
     try { localStorage.removeItem("marchcut_project"); } catch (_) {}
     for (const bad of ["?tool=xxx", "?tool=", "?tool=REEL"]) {
@@ -7817,13 +7830,27 @@ async function countSamples(ns, file, fromSec) {
     if (!media.includes('href="https://www.youtube.com/@genetube2018"')) throw new Error("じぇねTUBE配信元へのリンクが無い");
     const liveEnd = media.indexOf('<h3 id="media-manga"', pLive);
     const live = media.slice(pLive, liveEnd);
-    const cards = (live.match(/class="magazine-card"/g) || []).length;
+    const cards = (live.match(/class="magazine-card(?:\s|")/g) || []).length;
     if (cards !== 6) throw new Error(`じぇねTUBEの動画カードが ${cards} 枚(期待6)`);
+    if (!live.includes('watch?v=6yYK1BmhjWY') || !live.includes('約124万回')) {
+      throw new Error("じぇねTUBEの再生回数1位(約124万回)が掲載されていない");
+    }
+    if ((live.match(/magazine-card--video/g) || []).length !== 6) {
+      throw new Error("じぇねTUBEの6カードが動画用の横型指定になっていない");
+    }
     for (const label of ["動画再生回数 TOP 1", "動画再生回数 TOP 2", "動画再生回数 TOP 3", "最新LIVE", "LIVE再生回数 TOP", "最新動画"]) {
       if (!live.includes(label)) throw new Error(`じぇねTUBEのカード種別が無い: ${label}`);
     }
     const nav = await (await fetch("../../site-nav.js")).text();
     if (!nav.includes('const order = ["大会", "マーチング配信", "一般"')) throw new Error("掲載一覧のマーチング配信が大会の次でない");
+    const icons = await (await fetch("../../marchinz-icons.js")).text();
+    if (!/media-marching-live.*fa-tower-broadcast/.test(icons) || !/マーチング配信.*fa-tower-broadcast/.test(icons)) {
+      throw new Error("マーチング配信に他カテゴリと同じFAアイコンが無い");
+    }
+    const siteCss = await (await fetch("../../styles.css")).text();
+    if (!/#marching-live-grid \.magazine-thumb[\s\S]*?aspect-ratio:\s*16\s*\/\s*9/.test(siteCss)) {
+      throw new Error("じぇねTUBEのサムネイルが横型16:9でない");
+    }
     const highlights = await (await fetch("../../marchinz-top-highlights.js")).text();
     for (const needle of ["var MEDIA_NOTE_LIMIT = 2", "var MEDIA_LAUNDRY_LIMIT = 1", "var MEDIA_MARCHING_LIVE_LIMIT = 1", "badge: \"マーチング配信\"", ".sort(function (a, b) { return (b.publishedAt || 0) - (a.publishedAt || 0); })"]) {
       if (!highlights.includes(needle)) throw new Error(`TOPメディアの構成が無い: ${needle}`);

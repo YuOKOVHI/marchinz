@@ -4002,6 +4002,13 @@ span.calendar-likers-avatar.calendar-ev-avatar-img--withdrawn {
   background: var(--panel-tint);
 }
 
+/* じぇねTUBEは動画カードなので、スマホでもサムネイルを16:9で見せる。
+   既定の最小高は雑誌・マンガを想定しており、動画だけ縦長に見えていた。 */
+#marching-live-grid .magazine-thumb {
+  min-height: 0;
+  aspect-ratio: 16 / 9;
+}
+
 #manga-grid .magazine-thumb {
   background: #ffffff;
 }

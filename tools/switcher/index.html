@@ -1,11 +1,23 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-app-v="2.4.2" data-mz-channel="beta">
+<html lang="ja" data-mz-app-v="2.4.3" data-mz-channel="beta">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>MarchinZ Switcher — ランスルー同期・自動スイッチング〈ベータ版〉</title>
 <meta name="description" content="みんなで撮ったランスルー動画を音で自動同期。自動スイッチング・ワイプでMP4に。MarchinZの無料クリエイターツール。">
 <meta name="theme-color" content="#fefcef">
+<!-- URLのツール種別は、外部JSの取得待ちより前に印を付ける。
+     ?tool=reel で1段目の3枚が一瞬見える実機報告への対処。本文のtoolscope.jsが
+     名前・画面遷移の正本を続けて担当するため、ここでは描画を抑える印だけ持つ。 -->
+<script>
+(() => {
+  try {
+    const raw = String(new URLSearchParams(location.search).get("tool") || "").toLowerCase();
+    const key = ({ reel: "reel", switcher: "switcher", wipe: "wipe", vertical: "reel", switch: "switcher", wipecam: "wipe" })[raw];
+    if (key) document.documentElement.setAttribute("data-mz-tool-scope", key);
+  } catch (_) {}
+})();
+</script>
 <link rel="icon" type="image/x-icon" href="/favicon.ico?v=1.99.3">
 <link rel="icon" type="image/png" href="/favicon.png?v=1.99.3">
 <link rel="apple-touch-icon" href="/pwa/apple-touch-icon.png?v=1.108.5">
@@ -18,7 +30,7 @@
 <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
 <link rel="stylesheet" href="/tools/shared/progress.css?v=1.99.3">
 <link rel="stylesheet" href="/tools/shared/journey.css?v=1.110.1">
-<link rel="stylesheet" href="css/style.css?v=2.4.2">
+<link rel="stylesheet" href="css/style.css?v=2.4.3">
 <link rel="stylesheet" href="/tools/shared/sitechrome.css?v=2.0.0">
 </head>
 <body data-mz-tool="switcher">
