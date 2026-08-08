@@ -461,6 +461,7 @@
    */
   function appendCalendarEventLikeRow(hostEl, ev) {
     if (!hostEl || !ev?.id) return;
+    hostEl.dataset.calLikeEventId = String(ev.id);
     const me = getUser();
     const lb = normalizeLikedBy(ev.liked_by);
     const cnt = Object.keys(lb).filter((k) => lb[k]).length;
@@ -470,6 +471,20 @@
       count: cnt,
       onClick: () => toggleCalendarEventLike(ev.id),
       showLoginHint: !me?.id,
+    });
+  }
+
+  function syncCalendarEventLikeButtons(eventId, likedBy) {
+    const me = getUser();
+    const count = Object.keys(likedBy || {}).filter((uid) => likedBy[uid]).length;
+    const liked = Boolean(me?.id && likedBy?.[me.id]);
+    const Eu = window.MarchinZEngageUi;
+    document.querySelectorAll("[data-cal-like-event-id]").forEach((host) => {
+      if (host.dataset.calLikeEventId !== String(eventId)) return;
+      const btn = host.querySelector(".community-like-btn");
+      if (!btn) return;
+      Eu?.syncLikeButtonUi?.(btn, liked, { animate: false });
+      Eu?.setLikeButtonCount?.(btn, count);
     });
   }
 
@@ -527,8 +542,11 @@
       eventsCache = eventsCache.map((ev) =>
         String(ev.id) === String(eventId) ? { ...ev, liked_by: nextLb } : ev,
       );
-      renderCurrentView();
+      // カード全再描画は、押したボタンのフォーカスを失わせる。
+      // 一覧とオーバーレイに同じイベントがあれば、そのいいねだけを同期する。
+      syncCalendarEventLikeButtons(eventId, nextLb);
     }
+    return true;
   }
 
   function todayStr() {
@@ -1045,6 +1063,8 @@
   function openParticipantsDialog(eventId) {
     if (!participantsOverlay || !participantsTabsEl || !participantsBodyEl) return;
     const am = attendeesByEvent.get(eventId) || new Map();
+    const ev = eventsCache.find((item) => String(item.id) === String(eventId));
+    const ALL = "すべて";
     const OTHER = "その他";
     /** @type {Map<string, string[]>} */
     const byTab = new Map();
@@ -1062,8 +1082,10 @@
     for (const arr of byTab.values()) {
       arr.sort((a, b) => profileCard(a).name.localeCompare(profileCard(b).name, "ja"));
     }
+    const allPublicUids = ev ? getMllPublicFaceUids(ev) : [...am.keys()];
+    byTab.set(ALL, allPublicUids);
 
-    const tabKeys = [...ATTENDANCE_STYLE_FIRESTORE];
+    const tabKeys = [ALL, ...ATTENDANCE_STYLE_FIRESTORE];
     if ((byTab.get(OTHER) || []).length) tabKeys.push(OTHER);
 
     function renderPanel(key) {
@@ -1837,84 +1859,56 @@
   function buildCalendarCardLi(ev, me) {
     const li = document.createElement("li");
     const kSlug = kindSlugForCss(ev.kind);
-    li.className = `mll-log-item calendar-ev-card calendar-ev-card--kind-${kSlug}`;
+    li.className = `mll-log-item calendar-ev-card calendar-ev-card--ticket calendar-ev-card--kind-${kSlug}`;
     li.dataset.calEventId = String(ev.id || "");
 
-    const topMeta = renderTopMetaWithCreator(ev);
+    const header = document.createElement("header");
+    header.className = "calendar-ev-ticket-head";
+    header.appendChild(renderMetaChips(ev));
+    if (isSiteAdmin() && mergeSourceEventId === ev.id) {
+      const mergeBadge = document.createElement("span");
+      mergeBadge.className = "calendar-ev-merge-badge";
+      mergeBadge.textContent = "統合元";
+      header.appendChild(mergeBadge);
+    }
+    if (canManageEvent(ev)) header.appendChild(buildCalendarEventOverflow(ev));
 
     const titleRow = document.createElement("div");
-    titleRow.className = "calendar-ev-title-row calendar-ev-title-row--prominent";
+    titleRow.className = "calendar-ev-title-row calendar-ev-title-row--prominent calendar-ev-ticket-title-row";
 
     const titleCol = document.createElement("div");
     titleCol.className = "calendar-ev-title-col";
 
-    const titleEl = document.createElement("p");
+    const titleEl = document.createElement("h3");
     titleEl.className = "mll-log-title calendar-ev-title-text";
-    titleEl.textContent = ev.title;
-    titleCol.appendChild(titleEl);
-
     const trimmedUrl = String(ev.event_url || "").trim();
     if (trimmedUrl && /^https?:\/\/.+/i.test(trimmedUrl)) {
-      const urlRow = document.createElement("p");
-      urlRow.className = "calendar-ev-title-url mll-log-meta";
       const a = document.createElement("a");
+      a.className = "calendar-ev-title-link";
       a.href = trimmedUrl;
       a.target = "_blank";
       a.rel = "noopener noreferrer";
-      const host = trimmedUrl.length > 96 ? trimmedUrl.slice(0, 93) + "…" : trimmedUrl;
-      a.textContent = host;
-      urlRow.appendChild(a);
-      titleCol.appendChild(urlRow);
+      a.setAttribute("aria-label", `${String(ev.title || "イベント")}（公式サイトを新しいタブで開く）`);
+      const txt = document.createElement("span");
+      txt.textContent = ev.title;
+      const icon = document.createElement("i");
+      icon.className = "fa-solid fa-arrow-up-right-from-square calendar-ev-title-link-icon";
+      icon.setAttribute("aria-hidden", "true");
+      a.appendChild(txt);
+      a.appendChild(icon);
+      titleEl.appendChild(a);
+    } else {
+      titleEl.textContent = ev.title;
     }
-
-    const gcalUrl = buildGoogleCalendarUrl(ev);
-    if (gcalUrl) {
-      const gcalRow = document.createElement("p");
-      gcalRow.className = "calendar-ev-gcal-row";
-      const gcalBtn = document.createElement("a");
-      gcalBtn.className = "calendar-ev-gcal-btn";
-      gcalBtn.href = gcalUrl;
-      gcalBtn.target = "_blank";
-      gcalBtn.rel = "noopener noreferrer";
-      gcalBtn.innerHTML = '<i class="fa-solid fa-calendar-plus" aria-hidden="true"></i> カレンダーに登録';
-      gcalRow.appendChild(gcalBtn);
-      titleCol.appendChild(gcalRow);
-    }
-
+    titleCol.appendChild(titleEl);
     titleRow.appendChild(titleCol);
-    const likeHost = document.createElement("div");
-    likeHost.className = "calendar-ev-like-host mz-inline-like-host";
-    appendCalendarEventLikeRow(likeHost, ev);
-    window.MarchinZEngageUi?.appendInlineLike(titleRow, likeHost);
-    if (canManageEvent(ev)) {
-      titleRow.appendChild(buildCalendarEventOverflow(ev));
-    }
 
-    let ownerRow = null;
-    if (canManageEvent(ev) && isSiteAdmin()) {
-      ownerRow = document.createElement("div");
-      ownerRow.className = "calendar-ev-owner-row";
-      const pickBtn = document.createElement("button");
-      pickBtn.type = "button";
-      pickBtn.className = "calendar-ev-edit-btn";
-      pickBtn.textContent = mergeSourceEventId === ev.id ? "統合元選択中" : "統合元に指定";
-      pickBtn.disabled = mergeSourceEventId === ev.id;
-      pickBtn.addEventListener("click", () => setMergeSource(ev));
-      ownerRow.appendChild(pickBtn);
-      if (mergeSourceEventId && mergeSourceEventId !== ev.id) {
-        const mergeBtn = document.createElement("button");
-        mergeBtn.type = "button";
-        mergeBtn.className = "calendar-ev-edit-btn";
-        mergeBtn.textContent = "ここへ統合";
-        mergeBtn.addEventListener("click", () => void mergeEventIntoTarget(ev));
-        ownerRow.appendChild(mergeBtn);
-      }
-    }
-
-    li.appendChild(topMeta);
+    li.appendChild(header);
     li.appendChild(titleRow);
+    const placeLine = renderCalendarPlaceLine(ev);
+    if (placeLine) li.appendChild(placeLine);
+    li.appendChild(renderTopMetaWithCreator(ev));
     li.appendChild(buildMarchinZLogRow(ev, me));
-    if (ownerRow) li.appendChild(ownerRow);
     return li;
   }
 
@@ -1955,9 +1949,6 @@
   }
 
   function renderMetaChips(ev) {
-    const venueTxt = ev.venue_pref?.trim()
-      ? ev.venue_pref.trim()
-      : "開催地未登録";
     const kindLbl = kindChipLabel(ev.kind);
     const wrap = document.createElement("div");
     wrap.className = "calendar-ev-meta-chips";
@@ -1971,10 +1962,6 @@
     const end = String(ev.end_date || "").trim();
     const dateTxt = end ? `${displayDate(ev.date)}〜${displayDate(end)}` : displayDate(ev.date);
     wrap.appendChild(mk(dateTxt, "calendar-ev-meta-chip--date"));
-    const tm = String(ev.start_time || "").trim();
-    if (tm) wrap.appendChild(mk(`${tm}開演`, "calendar-ev-meta-chip--time"));
-    const vn = String(ev.venue_name || "").trim();
-    wrap.appendChild(mk(vn ? `${venueTxt}・${vn}` : venueTxt, "calendar-ev-meta-chip--venue"));
     wrap.appendChild(
       mk(
         kindLbl,
@@ -1982,6 +1969,24 @@
       ),
     );
     return wrap;
+  }
+
+  function renderCalendarPlaceLine(ev) {
+    const pref = String(ev.venue_pref || "").trim();
+    const venue = String(ev.venue_name || "").trim();
+    const time = String(ev.start_time || "").trim();
+    const place = pref && venue ? `${pref}・${venue}` : pref || venue;
+    if (!place && !time) return null;
+    const row = document.createElement("p");
+    row.className = "calendar-ev-ticket-place";
+    const icon = document.createElement("i");
+    icon.className = place ? "fa-solid fa-location-dot" : "fa-regular fa-clock";
+    icon.setAttribute("aria-hidden", "true");
+    row.appendChild(icon);
+    const txt = document.createElement("span");
+    txt.textContent = [place, time ? `${time}開演` : ""].filter(Boolean).join(" ・ ");
+    row.appendChild(txt);
+    return row;
   }
 
   function getMllPublicFaceUids(ev) {
@@ -2007,49 +2012,29 @@
 
   function renderTopMetaWithCreator(ev) {
     const row = document.createElement("div");
-    row.className = "calendar-ev-topline";
-    row.appendChild(renderMetaChips(ev));
-    const right = document.createElement("div");
-    right.className = "calendar-ev-topline-right";
-    const kiju = document.createElement("span");
-    kiju.className = "calendar-ev-topline-kinyuu";
-    kiju.textContent = "記入者";
-    const cr = document.createElement("span");
-    cr.className = "calendar-ev-topline-creator";
+    row.className = "calendar-ev-ticket-credit";
     const creatorUid = String(ev.created_by || "").trim();
     const pm = profileMini(ev.created_by);
     const creatorLabel = pm.name || UNKNOWN;
+    const canOpenProfile = Boolean(creatorUid && !pm.withdrawn);
+    const cr = document.createElement(canOpenProfile ? "a" : "span");
+    cr.className = "calendar-ev-topline-creator";
+    row.setAttribute("aria-label", `記入者：${creatorLabel}`);
+    if (canOpenProfile) {
+      cr.href = `#profile?uid=${encodeURIComponent(creatorUid)}`;
+      cr.setAttribute("aria-label", `記入者：${creatorLabel}のマイページ`);
+    }
     const creatorAvatar = document.createElement("img");
     creatorAvatar.className = "calendar-ev-topline-creator-avatar";
     creatorAvatar.alt = "";
     creatorAvatar.src = pm.avatar || "logo/marchinz-logo.png";
     if (!pm.avatar) creatorAvatar.style.opacity = "0.55";
-    if (creatorUid && !pm.withdrawn) {
-      const avLink = document.createElement("a");
-      avLink.className = "calendar-ev-topline-creator-avatar-link";
-      avLink.href = `#profile?uid=${encodeURIComponent(creatorUid)}`;
-      avLink.setAttribute("aria-label", `${creatorLabel}のマイページ`);
-      avLink.appendChild(creatorAvatar);
-      cr.appendChild(avLink);
-    } else {
-      cr.appendChild(creatorAvatar);
-    }
-    if (creatorUid && !pm.withdrawn) {
-      const nameLink = document.createElement("a");
-      nameLink.className = "calendar-ev-topline-creator-name calendar-ev-topline-creator-name-link";
-      nameLink.href = `#profile?uid=${encodeURIComponent(creatorUid)}`;
-      nameLink.textContent = creatorLabel;
-      nameLink.setAttribute("aria-label", `${creatorLabel}のマイページ`);
-      cr.appendChild(nameLink);
-    } else {
-      const creatorName = document.createElement("span");
-      creatorName.className = "calendar-ev-topline-creator-name";
-      creatorName.textContent = creatorLabel;
-      cr.appendChild(creatorName);
-    }
-    right.appendChild(kiju);
-    right.appendChild(cr);
-    row.appendChild(right);
+    cr.appendChild(creatorAvatar);
+    const creatorName = document.createElement("span");
+    creatorName.className = "calendar-ev-topline-creator-name";
+    creatorName.textContent = creatorLabel;
+    cr.appendChild(creatorName);
+    row.appendChild(cr);
     return row;
   }
 
@@ -2057,17 +2042,16 @@
     const uids = getMllPublicFaceUids(ev);
     const wrap = document.createElement("div");
     wrap.className = "calendar-ev-mll-faces";
-    for (const uid of uids) {
+    wrap.setAttribute("aria-hidden", "true");
+    for (const uid of uids.slice(0, 3)) {
       const p = profileMini(uid);
-      const a = document.createElement("a");
-      a.className = "calendar-ev-mll-face";
-      a.href = `#profile?uid=${encodeURIComponent(uid)}`;
-      a.title = p.name;
+      const face = document.createElement("span");
+      face.className = "calendar-ev-mll-face";
       if (p.withdrawn) {
         const ph = document.createElement("span");
         ph.className = "calendar-ev-mll-face-img calendar-ev-mll-face-img--withdrawn";
         ph.setAttribute("role", "presentation");
-        a.appendChild(ph);
+        face.appendChild(ph);
       } else {
         const img = document.createElement("img");
         img.className = "calendar-ev-mll-face-img";
@@ -2075,43 +2059,71 @@
         img.loading = "lazy";
         img.src = p.avatar || "logo/marchinz-logo.png";
         if (!p.avatar) img.style.opacity = "0.55";
-        a.appendChild(img);
+        face.appendChild(img);
       }
-      wrap.appendChild(a);
+      wrap.appendChild(face);
     }
     return wrap;
   }
 
   /** 3段目: MarchinZ Log 参加者 + 右端 CTA */
   function buildMarchinZLogRow(ev, me) {
-    const am = attendeesByEvent.get(ev.id) || new Map();
     const faceCount = getMllPublicFaceUids(ev).length;
     const row = document.createElement("div");
     row.className = "calendar-ev-mll-log-row";
-    const left = document.createElement("div");
+    const left = document.createElement(faceCount > 0 ? "button" : "span");
     left.className = "calendar-ev-mll-log-left";
     if (faceCount > 0) {
-      const chip = document.createElement(am.size > 0 ? "button" : "span");
-      chip.className = "calendar-ev-mll-log-label calendar-ev-mll-log-count-chip";
-      chip.textContent = `${CALENDAR_LOG_BTN_LABEL} ${faceCount}人`;
-      if (am.size > 0) {
-        chip.type = "button";
-        chip.setAttribute("aria-label", `${CALENDAR_LOG_BTN_LABEL} ${faceCount}人`);
-        chip.addEventListener("click", (e) => {
-          e.stopPropagation();
-          openParticipantsDialog(ev.id);
-        });
-      }
-      left.appendChild(chip);
+      left.type = "button";
+      left.setAttribute("aria-label", `${CALENDAR_LOG_BTN_LABEL}を残した${faceCount}人を見る`);
+      left.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openParticipantsDialog(ev.id);
+      });
+      left.appendChild(buildMllFacesWrap(ev));
+      const count = document.createElement("span");
+      count.className = "calendar-ev-mll-log-count";
+      count.textContent = String(faceCount);
+      left.appendChild(count);
     }
-    left.appendChild(buildMllFacesWrap(ev));
+    if (faceCount > 0) row.appendChild(left);
+
+    const utilities = document.createElement("div");
+    utilities.className = "calendar-ev-ticket-utilities";
+    const likeHost = document.createElement("div");
+    likeHost.className = "calendar-ev-like-host mz-inline-like-host";
+    appendCalendarEventLikeRow(likeHost, ev);
+    utilities.appendChild(likeHost);
+    const gcalUrl = buildGoogleCalendarUrl(ev);
+    if (gcalUrl) {
+      const gcalBtn = document.createElement("a");
+      gcalBtn.className = "calendar-ev-gcal-btn calendar-ev-ticket-icon-btn";
+      gcalBtn.href = gcalUrl;
+      gcalBtn.target = "_blank";
+      gcalBtn.rel = "noopener noreferrer";
+      gcalBtn.setAttribute("aria-label", "Googleカレンダーに登録");
+      gcalBtn.title = "Googleカレンダーに登録";
+      gcalBtn.innerHTML = '<i class="fa-solid fa-calendar-plus" aria-hidden="true"></i>';
+      utilities.appendChild(gcalBtn);
+    }
+    row.appendChild(utilities);
+
     const actions = document.createElement("div");
     actions.className = "calendar-ev-mll-log-actions";
     const btnState = resolveMarchinZLogBtnState(me, ev);
     const ctaBtn = document.createElement("button");
     ctaBtn.type = "button";
     ctaBtn.className = `calendar-ev-mll-log-save-btn calendar-ev-mll-log-save-btn--${btnState.variant}`;
-    ctaBtn.textContent = btnState.label;
+    const ctaIcon = document.createElement("i");
+    const ctaIconClass = btnState.variant === "view-log"
+      ? "fa-solid fa-book-open"
+      : btnState.variant === "note"
+        ? "fa-solid fa-pen-to-square"
+        : "fa-solid fa-calendar-check";
+    ctaIcon.className = `mz-ui-icon ${ctaIconClass}`;
+    ctaIcon.setAttribute("aria-hidden", "true");
+    ctaBtn.appendChild(ctaIcon);
+    ctaBtn.appendChild(document.createTextNode(btnState.label));
     ctaBtn.setAttribute("aria-label", btnState.label);
     ctaBtn.addEventListener("click", () => {
       const user = getUser();
@@ -2128,7 +2140,6 @@
       navigateToMyNote(ev, user);
     });
     actions.appendChild(ctaBtn);
-    row.appendChild(left);
     row.appendChild(actions);
     return row;
   }
@@ -2505,12 +2516,34 @@
         variant: "default",
         onClick: () => void openRegisterFormWithCopy(ev),
       },
-      {
-        label: "削除する",
-        variant: "danger",
-        onClick: () => void deleteCalendarEventRecord(ev),
-      },
     ];
+    if (isSiteAdmin()) {
+      if (mergeSourceEventId === ev.id) {
+        items.push({
+          label: "統合元の選択を解除",
+          variant: "default",
+          onClick: () => clearMergeSource(),
+        });
+      } else {
+        items.push({
+          label: "統合元に指定",
+          variant: "default",
+          onClick: () => setMergeSource(ev),
+        });
+        if (mergeSourceEventId) {
+          items.push({
+            label: "ここへ統合",
+            variant: "default",
+            onClick: () => void mergeEventIntoTarget(ev),
+          });
+        }
+      }
+    }
+    items.push({
+      label: "削除する",
+      variant: "danger",
+      onClick: () => void deleteCalendarEventRecord(ev),
+    });
     const Eu = window.MarchinZEngageUi;
     if (Eu?.buildActionOverflow) {
       return Eu.buildActionOverflow(items, {
@@ -2622,6 +2655,12 @@
     if (!ev?.id) return;
     mergeSourceEventId = String(ev.id);
     setFormMsg(`統合元を選択: 「${String(ev.title || "イベント").slice(0, 60)}」`, false);
+    renderCurrentView();
+  }
+
+  function clearMergeSource() {
+    mergeSourceEventId = "";
+    setFormMsg("統合元の選択を解除しました。", false);
     renderCurrentView();
   }
 
@@ -3765,6 +3804,61 @@
   window.addEventListener("marchinz-mll-updated", () => {
     void loadEventsAndAttendees();
   });
-  void loadEventsAndAttendees();
-})();
 
+  function renderQaCalendarCardFixture() {
+    const local = location.hostname === "127.0.0.1" || location.hostname === "localhost";
+    if (!local || new URLSearchParams(location.search).get("mzQaCalendarCard") !== "1") return false;
+    const me = { id: "qa-admin" };
+    window.MLL_AUTH = {
+      ...(window.MLL_AUTH || {}),
+      getUser: () => me,
+      getDb: () => null,
+      isAdmin: () => true,
+      getDisplayName: () => "QA管理者",
+    };
+    const qaEvent = {
+      id: "qa-event-ticket",
+      kind: "大会",
+      date: "2027-01-11",
+      title: "【中学/高校】マーチング祭AJCS 横浜FINAL 2026 中学/高校の部",
+      venue_pref: "神奈川県",
+      venue_name: "横浜BUNTAI",
+      start_time: "14:00",
+      event_url: "https://example.com/events/ajcs-final",
+      created_by: me.id,
+      liked_by: { "qa-face-1": true, "qa-face-2": true },
+    };
+    eventsCache = [qaEvent];
+    profileCache.clear();
+    [
+      [me.id, "おこち"],
+      ["qa-face-1", "参加者1"],
+      ["qa-face-2", "参加者2"],
+      ["qa-face-3", "参加者3"],
+      ["qa-face-4", "参加者4"],
+    ].forEach(([uid, name]) => {
+      profileCache.set(uid, {
+        display_name: name,
+        avatar_url: "logo/marchinz-logo.png",
+        withdrawn: false,
+        profile_attributes: [],
+        like_show_calendar: true,
+        like_show_mll: true,
+        section_vis_mll: "public",
+      });
+    });
+    const publicUids = new Set(["qa-face-1", "qa-face-2", "qa-face-3", "qa-face-4"]);
+    mllPublicUidsByEventId = new Map([[qaEvent.id, publicUids]]);
+    attendeesByEvent.clear();
+    attendeesByEvent.set(
+      qaEvent.id,
+      new Map([...publicUids].map((uid, i) => [uid, i % 2 ? "出演" : "観戦"])),
+    );
+    listEl.innerHTML = "";
+    listEl.appendChild(buildCalendarCardLi(qaEvent, me));
+    window.__MZQA_CALENDAR_CARD_READY = true;
+    return true;
+  }
+
+  if (!renderQaCalendarCardFixture()) void loadEventsAndAttendees();
+})();
