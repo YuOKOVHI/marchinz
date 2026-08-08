@@ -356,8 +356,15 @@ MC.storageDiag = (() => {
   };
   D.render = () => {
     const host = document.getElementById("storageDiag"); if (!host) return;
-    if (!admin()) { host.hidden = true; host.innerHTML = ""; return; }
+    if (!admin()) {
+      document.body.classList.remove("mz-storage-diag-active");
+      host.hidden = true; host.innerHTML = ""; return;
+    }
     if (!state) state = load(); host.hidden = false;
+    /* 診断中は工程が進んでも入口を見失わせない。おまかせの全画面分析・
+       書き出し全画面の上にも、CSSがこの印を使って記録欄を前面へ出す。
+       管理者が「分析後に入力欄が無い」と実機報告したため(2026-08-08)。 */
+    document.body.classList.toggle("mz-storage-diag-active", !!state.active);
     if (!state.active) {
       host.innerHTML = `<div class="sd-head"><div><b>Safari容量診断（管理者専用）</b><span>動画は送信せず、原因の数字だけ端末内に記録します。</span></div></div>${state.notice ? `<p class="sd-notice">${state.notice}</p>` : ""}<button type="button" class="btn sd-primary" id="storageDiagStart">新しい試行を開始</button>`;
       host.querySelector("#storageDiagStart").onclick = () => D.start(); return;

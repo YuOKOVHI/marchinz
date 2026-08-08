@@ -1877,6 +1877,30 @@ body.mz-pin-force .tilt-step { width: 52px; min-height: 48px; font-size: 20px; }
 .storage-diag { margin: 10px 0 14px; padding: 14px; border-radius: 16px;
   background: #f7f9ff; border: 1px solid rgba(37, 84, 204, .18); color: #17213b; }
 .storage-diag[hidden] { display: none; }
+/* 管理者が容量診断を始めた回は、工程を進めても記録欄を見失わせない。
+   通常画面では上端に追従し、おまかせの全画面分析と書き出し全画面では
+   その上へ固定する。一般利用者には host 自体が hidden なので影響しない。 */
+@media (max-width: 900px) {
+  body.mz-storage-diag-active #storageDiag {
+    position: sticky;
+    top: calc(var(--mz-journey-h, 72px) + env(safe-area-inset-top, 0px) + 4px);
+    z-index: 61;
+    max-height: calc(100dvh - var(--mz-journey-h, 72px) - env(safe-area-inset-top, 0px) - 12px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    box-shadow: 0 8px 20px rgba(15, 33, 86, .14);
+  }
+  body.mz-storage-diag-active:has(#autoStage:not([hidden])) #storageDiag,
+  body.mz-storage-diag-active.mz-export-open #storageDiag {
+    position: fixed;
+    top: calc(var(--mz-journey-h, 72px) + env(safe-area-inset-top, 0px) + 8px);
+    left: 10px;
+    right: 10px;
+    z-index: 151;
+    max-height: min(68dvh, 560px);
+    margin: 0;
+  }
+}
 .sd-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .sd-head > div { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
 .sd-head b { font-size: 14px; line-height: 1.4; }

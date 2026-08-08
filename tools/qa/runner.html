@@ -9738,6 +9738,17 @@ async function countSamples(ns, file, fromSec) {
       if (host.hidden || !w.document.getElementById("storageDiagOnly") || !w.document.getElementById("storageDiagRelease")) {
         throw new Error("工程が進んだ後に診断の選択のみ/参照解除の操作が残らない");
       }
+      /* おまかせの全画面分析中も、診断が前面へ出る印を必ず付ける。
+         以前の試験は dropSec の外かしか見ておらず、実機で通った
+         「分析中の全画面に覆われる」経路を見逃していた。 */
+      if (!w.document.body.classList.contains("mz-storage-diag-active")) {
+        throw new Error("診断中なのに全画面用の前面表示印が付かない");
+      }
+      const css = await (await w.fetch("../switcher/css/style.css")).text();
+      if (!/mz-storage-diag-active:has\(#autoStage:not\(\[hidden\]\)\).*#storageDiag/.test(css)
+          || !/mz-storage-diag-active\.mz-export-open\s+#storageDiag/.test(css)) {
+        throw new Error("分析中・書き出し中に診断欄を前面へ出すCSSが無い");
+      }
       /* 新しい試行は前の数値を履歴へ退避し、現在の差分に混ぜない。 */
       await D.start();
       const next = D._test.getState();
