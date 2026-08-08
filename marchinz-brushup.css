@@ -1335,6 +1335,300 @@ body {
   }
 }
 
+/* ===========================================================================
+   Team U — MarchinZ Pulse (v2.9.6)
+   Moment=今 / Board=相談 / Note=記憶 を混ぜず、同じ余白と操作規格でつなぐ。
+   ========================================================================== */
+
+.mz-pulse-top {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0.9rem 0 0.25rem;
+  padding: 1rem;
+  border: 1px solid rgba(15, 33, 56, 0.1);
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(15, 33, 56, 0.08);
+}
+
+.mz-pulse-top-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.mz-pulse-top-head h2 {
+  margin: 0;
+  color: var(--navy, #0f2138);
+  font-size: 1.05rem;
+  line-height: 1.4;
+}
+
+.mz-pulse-top-head a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--blue, #1e4fd6);
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.mz-pulse-top-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.mz-pulse-card {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  min-height: 88px;
+  gap: 0.75rem;
+  padding: 0.5rem;
+  overflow: hidden;
+  color: var(--navy, #0f2138);
+  text-decoration: none;
+  border: 1px solid rgba(15, 33, 56, 0.1);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.mz-pulse-card:hover { border-color: rgba(30, 79, 214, 0.3); }
+.mz-pulse-card:focus-visible { outline: 2px solid var(--blue, #1e4fd6); outline-offset: 2px; }
+
+.mz-pulse-card-photo {
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 12px;
+  color: var(--blue, #1e4fd6);
+  background: #edf2ff;
+}
+
+.mz-pulse-card-body {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  min-width: 0;
+}
+
+.mz-pulse-card-meta {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  color: var(--muted, #64748b);
+}
+
+.mz-pulse-card-meta img { width: 20px; height: 20px; border-radius: 50%; object-fit: cover; }
+.mz-pulse-card-meta b { min-width: 0; overflow: hidden; color: var(--navy, #0f2138); text-overflow: ellipsis; white-space: nowrap; }
+.mz-pulse-card-meta > span:last-child { margin-left: auto; white-space: nowrap; }
+
+.mz-pulse-card-text {
+  display: -webkit-box;
+  overflow: hidden;
+  margin-top: 0.18rem;
+  font-size: 0.85rem;
+  line-height: 1.42;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.mz-pulse-card-likes { justify-self: end; color: var(--muted, #64748b); font-size: 0.72rem; }
+
+.mz-pulse-composer {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 44px;
+  align-items: center;
+  width: 100%;
+  min-height: 56px;
+  padding: 0.35rem 0.45rem 0.35rem 0.75rem;
+  border: 1px solid rgba(30, 79, 214, 0.18);
+  border-radius: 16px;
+  color: var(--muted, #64748b);
+  background: #fff;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mz-pulse-composer > i:first-child { color: var(--blue, #1e4fd6); font-size: 1.65rem; }
+.mz-pulse-composer > i:last-child { display: grid; place-items: center; width: 44px; height: 44px; color: var(--blue, #1e4fd6); }
+.mz-pulse-composer span { font-weight: 700; }
+.mz-pulse-composer:hover { background: #f7f9ff; border-color: rgba(30, 79, 214, 0.35); }
+.mz-pulse-composer:focus-visible { outline: 2px solid var(--blue, #1e4fd6); outline-offset: 2px; }
+
+.mz-pulse-top--unread .mz-pulse-top-head h2::after {
+  content: "NEW";
+  display: inline-block;
+  margin-left: 0.45rem;
+  padding: 0.12rem 0.42rem;
+  border-radius: 999px;
+  color: #fff;
+  background: var(--blue, #1e4fd6);
+  font-size: 0.62rem;
+  vertical-align: 0.15em;
+}
+
+.mz-moment-new-badge {
+  position: absolute;
+  inset: 1px 2px auto auto;
+  padding: 1px 4px;
+  border-radius: 999px;
+  color: #fff;
+  background: #c62828;
+  font-size: 0.52rem;
+  font-weight: 900;
+  line-height: 1.4;
+}
+
+.mz-settings-like-item--pulse {
+  display: grid;
+  gap: 0.2rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(15, 33, 56, 0.1);
+}
+
+.mz-settings-like-item--pulse > span {
+  padding-left: 1.75rem;
+  color: var(--muted, #64748b);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+/* Moment: 一覧は会話の流れ。写真は4:3、本文は最大4行。 */
+#community-hub-panel-moments > .mll-panel,
+#community-hub-panel-board > .mll-panel { max-width: 680px; margin-inline: auto; }
+
+#community-hub-panel-moments .static-panel-lead,
+#community-hub-panel-board .community-board-lead-main { margin-bottom: 0.75rem; }
+
+#community-hub-panel-moments .mlm-feed-create-row { max-width: 640px; margin: 0 auto 0.75rem; }
+
+#community-hub-panel-moments .mln-feed-search,
+#community-hub-panel-notes .mln-feed-search,
+#community-hub-panel-board #community-board-search {
+  min-height: 48px;
+  border-radius: 14px;
+  background: #fff;
+}
+
+#community-hub-panel-moments .mln-feed-card .mln-feed-card-cover,
+#community-hub-panel-moments .mln-feed-card .mln-feed-card-cover:has(img.mz-img-portrait) {
+  width: 100%;
+  max-width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 14px;
+}
+
+#community-hub-panel-moments .mlm-feed-card-text {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 0.96rem;
+  line-height: 1.62;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
+#community-hub-panel-moments .mln-feed-card-head-avatar { width: 36px; height: 36px; }
+
+/* Board: 検索→カテゴリ→投稿入口→話題の順で読む。 */
+#community-hub-panel-board .community-compose-bar { margin: 0.65rem 0 0.75rem; }
+#community-hub-panel-board .community-open-compose-btn {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 44px;
+  align-items: center;
+  width: 100%;
+  min-height: 56px;
+  padding: 0.35rem 0.45rem 0.35rem 0.75rem;
+  border: 1px solid rgba(30, 79, 214, 0.18);
+  border-radius: 16px;
+  color: var(--muted, #64748b);
+  background: #fff;
+  font-weight: 700;
+  text-align: left;
+}
+#community-hub-panel-board .community-open-compose-btn i:first-child { color: var(--blue, #1e4fd6); font-size: 1.65rem; }
+#community-hub-panel-board .community-open-compose-btn i:last-child { justify-self: center; color: var(--blue, #1e4fd6); }
+#community-hub-panel-board .search-presets-title { display: none; }
+#community-hub-panel-board .community-thread {
+  padding: 1rem;
+  border: 1px solid rgba(15, 33, 56, 0.1);
+  border-left: 3px solid var(--blue, #1e4fd6);
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 6px 18px rgba(15, 33, 56, 0.06);
+}
+#community-hub-panel-board .mll-log-list { display: grid; gap: 0.75rem; }
+#community-hub-panel-board .community-theme-tag { width: fit-content; margin: 0; font-size: 0.7rem; color: var(--blue, #1e4fd6); }
+#community-hub-panel-board .community-thread .mll-log-title { font-size: 1.03rem; line-height: 1.45; font-weight: 800; }
+#community-hub-panel-board .community-thread > .community-thread-body > .mll-log-note {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #475569;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+/* Note: 記録物らしい3:2表紙と二段組。 */
+.mz-pulse-note-actions { display: flex; justify-content: flex-end; margin: 0 0 0.75rem; }
+.mz-pulse-note-write {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 44px;
+  padding: 0 0.85rem;
+  border: 1px solid rgba(30, 79, 214, 0.2);
+  border-radius: 12px;
+  color: var(--blue, #1e4fd6);
+  background: #fff;
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+#community-hub-panel-notes #mln-feed-cards { gap: 1rem; }
+#community-hub-panel-notes .mln-feed-card { border-radius: 16px; box-shadow: 0 8px 24px rgba(15, 33, 56, 0.08); }
+#community-hub-panel-notes .mln-feed-card-cover { aspect-ratio: 3 / 2; }
+#community-hub-panel-notes .mln-feed-card-title { font-size: 1.03rem; line-height: 1.45; }
+
+@media (max-width: 719px) {
+  .mz-pulse-top { margin-inline: -0.15rem; padding: 0.8rem; }
+  .mz-pulse-top-list { grid-template-columns: 1fr; gap: 0.5rem; }
+  .mz-pulse-card { min-height: 88px; }
+  .mz-pulse-top-head h2 { font-size: 1rem; }
+  .mz-pulse-top-head a { font-size: 0.76rem; }
+  #community-hub-panel-moments .static-panel-lead,
+  #community-hub-panel-board .community-board-lead-main,
+  #community-hub-panel-notes .static-panel-lead { display: none; }
+  #community-hub-panel-moments .page-hero,
+  #community-hub-panel-board .page-hero,
+  #community-hub-panel-notes .page-hero { margin-bottom: 0.65rem; }
+  #community-hub-panel-moments .mln-feed-card { padding-inline: 0; }
+  #community-hub-panel-notes #mln-feed-cards { grid-template-columns: 1fr; }
+  #community-hub-panel-board .community-updates { display: none !important; }
+  #community-hub-panel-board .youtube-tabs { margin-block: 0.5rem; }
+  #community-hub-panel-board .community-reply-list { margin-top: 0.3rem; }
+  .community-compose-dialog,
+  .mlm-moment-compose .eld-dialog-surface {
+    align-self: end;
+    width: 100%;
+    max-height: 88dvh;
+    border-radius: 20px 20px 0 0;
+  }
+  .mlm-moment-compose .mlm-vis-static { display: none; }
+}
+
+@media (min-width: 920px) {
+  .mz-pulse-top-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #community-hub-panel-notes #mln-feed-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 900px; }
+}
+
 /* ==========================================================================
    改善: 一覧カードの縦長画像(スマホスクショ等)はクロップせず全体を表示する。
    16:10 中央クロップだと、縦長スクショの文章の一部(例:「す。」)だけが
@@ -5881,3 +6175,28 @@ input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
   .video-result-list .recommend-item,
   #page-profile .user-profile-tab { transition: none !important; }
 }
+
+/* Team U Pulse final cascade: 後段の旧Moment指定より必ず優先する。 */
+#community-hub-panel-moments .mln-feed-card .mln-feed-card-cover,
+#community-hub-panel-moments .mln-feed-card .mln-feed-card-cover:has(img.mz-img-portrait) {
+  width: 100%;
+  max-width: 100%;
+  aspect-ratio: 4 / 3;
+  background: var(--row-alt, #eceff1);
+}
+
+#community-hub-panel-moments .mln-feed-card .mln-feed-card-cover img.mz-img-portrait {
+  object-fit: cover;
+}
+
+#community-hub-panel-moments .mlm-feed-card-text {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 0.96rem;
+  line-height: 1.62;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
+.mz-tabbar-link { position: relative; }
+.mz-pulse-top-empty { grid-column: 1 / -1; margin: 0; color: var(--muted, #64748b); font-size: 0.86rem; line-height: 1.6; }

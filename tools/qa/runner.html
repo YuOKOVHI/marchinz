@@ -12347,18 +12347,18 @@ async function countSamples(ns, file, fromSec) {
     }
   });
 
-  group("㊹ デザインチームU Compact Deck（v2.9.5）");
+  group("㊹ デザインチームU Compact Deck（v2.9.6）");
   await test("★実画面操作: 390pxヘッダー・TOP3導線・大会動画検索とカード", async () => {
     const f = document.createElement("iframe");
     f.style.cssText = "position:fixed;left:-9999px;top:0;width:390px;height:844px;border:0";
     f.src = "../../index.html?mzQaTeamU=1#top";
     document.body.appendChild(f);
     try {
-      for (let i = 0; i < 160 && f.contentDocument?.documentElement?.dataset?.mzVersion !== "2.9.5"; i++) {
+      for (let i = 0; i < 160 && f.contentDocument?.documentElement?.dataset?.mzVersion !== "2.9.6"; i++) {
         await new Promise(r => setTimeout(r, 50));
       }
       const w = f.contentWindow, d = f.contentDocument;
-      if (d?.documentElement?.dataset?.mzVersion !== "2.9.5") throw new Error("v2.9.5の実画面まで届かない");
+      if (d?.documentElement?.dataset?.mzVersion !== "2.9.6") throw new Error("v2.9.6の実画面まで届かない");
       for (let i = 0; i < 80 && d.querySelector(".site-brand")?.getBoundingClientRect().width === 0; i++) {
         await new Promise(r => setTimeout(r, 50));
       }
@@ -12410,6 +12410,108 @@ async function countSamples(ns, file, fromSec) {
     } finally {
       f.remove();
     }
+  });
+
+  group("㊺ MarchinZ Pulse（v2.9.6）");
+  await test("★実画面操作: TOP最新Moment 2件・投稿入口・通知設定", async () => {
+    const f = document.createElement("iframe");
+    f.style.cssText = "position:fixed;left:-9999px;top:0;width:390px;height:844px;border:0";
+    f.src = "../../index.html?mzQaPulse=1#top";
+    document.body.appendChild(f);
+    try {
+      for (let i = 0; i < 160 && f.contentDocument?.documentElement?.dataset?.mzVersion !== "2.9.6"; i++) {
+        await new Promise(r => setTimeout(r, 50));
+      }
+      const w = f.contentWindow, d = f.contentDocument;
+      if (!w?.MarchinZMomentPulse || !w?.MarchinZMomentFeed) throw new Error("Pulse実装が読み込まれない");
+      const originalLoad = w.MarchinZMomentFeed.loadLatestPublic;
+      const now = Date.now();
+      const rows = [
+        { uid: "qa-user-1", momentId: "qa-moment-1", data: { visibility: "public", body: "本番前の最後の合わせ。空気がひとつになった瞬間です。", created_at: new Date(now - 60000).toISOString(), updated_at: new Date(now - 60000).toISOString(), liked_by: { a: true } }, _author: { name: "QA奏者", avatar: "" } },
+        { uid: "qa-user-2", momentId: "qa-moment-2", data: { visibility: "public", body: "今日の合奏、最後の一音まで気持ちよく響きました。", created_at: new Date(now - 120000).toISOString(), updated_at: new Date(now - 120000).toISOString(), liked_by: {} }, _author: { name: "QA指揮者", avatar: "" } },
+      ];
+      w.MarchinZMomentFeed.loadLatestPublic = async () => rows;
+      await w.MarchinZMomentPulse.refresh();
+      const section = d.getElementById("mz-pulse-top");
+      const cards = [...d.querySelectorAll("#mz-pulse-top-list .mz-pulse-card")];
+      if (!section || section.hidden) throw new Error("TOPのMomentセクションが表示されない");
+      const countdown = d.getElementById("mz-dash-countdown");
+      const latestVideo = d.getElementById("mz-dash-video");
+      if (!countdown || !latestVideo || countdown.nextElementSibling !== section || section.nextElementSibling !== latestVideo) {
+        throw new Error("最新Moment 2件が次回イベント直後・動画より前にない");
+      }
+      if (cards.length !== 2) throw new Error(`最新Momentが2件でない: ${cards.length}`);
+      cards.forEach((card, i) => {
+        const r = card.getBoundingClientRect();
+        if (r.width < 300 || r.height < 84 || r.height > 112) throw new Error(`Moment${i + 1}がコンパクトでない: ${Math.round(r.width)}×${Math.round(r.height)}`);
+        if (!card.getAttribute("href")?.includes(`qa-moment-${i + 1}`)) throw new Error(`Moment${i + 1}のdeep linkが無い`);
+      });
+      const compose = d.getElementById("mlm-feed-create-btn");
+      if (!compose || !compose.classList.contains("mz-pulse-composer")) throw new Error("Momentの1タップ投稿入口が無い");
+      const pref = d.querySelector('[data-mz-like-field="notify_new_moment_inapp"]');
+      if (!(pref instanceof w.HTMLInputElement) || pref.type !== "checkbox") throw new Error("新着Moment通知のOFF設定が無い");
+      w.dispatchEvent(new w.CustomEvent("marchinz-moment-unread-changed", { detail: { count: 2 } }));
+      const headerBadge = d.getElementById("header-notif-badge");
+      if (headerBadge?.dataset?.mzMomentUnread !== "2") throw new Error("新着Momentが既存の通知未読数へ合算されない");
+      w.MarchinZMomentFeed.loadLatestPublic = originalLoad;
+      return `390pxで最新2件 ${Math.round(cards[0].getBoundingClientRect().height)}px / 投稿入口 / 通知OFF設定 / 未読合算`;
+    } finally {
+      f.remove();
+    }
+  });
+
+  await test("★実画面: Mac幅では最新Moment 2件が2列になる", async () => {
+    const f = document.createElement("iframe");
+    f.style.cssText = "position:fixed;left:-9999px;top:0;width:1120px;height:820px;border:0";
+    f.src = "../../index.html?mzQaPulseMac=1#top";
+    document.body.appendChild(f);
+    try {
+      for (let i = 0; i < 160 && !f.contentWindow?.MarchinZMomentPulse; i++) await new Promise(r => setTimeout(r, 50));
+      const w = f.contentWindow, d = f.contentDocument;
+      const now = Date.now();
+      w.MarchinZMomentFeed.loadLatestPublic = async () => [
+        { uid: "mac-1", momentId: "mac-m1", data: { visibility: "public", body: "Mac表示1", created_at: new Date(now - 1000).toISOString(), updated_at: new Date(now - 1000).toISOString() }, _author: { name: "奏者", avatar: "" } },
+        { uid: "mac-2", momentId: "mac-m2", data: { visibility: "public", body: "Mac表示2", created_at: new Date(now - 2000).toISOString(), updated_at: new Date(now - 2000).toISOString() }, _author: { name: "指揮者", avatar: "" } },
+      ];
+      await w.MarchinZMomentPulse.refresh();
+      const cards = [...d.querySelectorAll("#mz-pulse-top-list .mz-pulse-card")];
+      if (cards.length !== 2) throw new Error(`Mac幅のMomentが2件でない: ${cards.length}`);
+      const a = cards[0].getBoundingClientRect(), b = cards[1].getBoundingClientRect();
+      if (Math.abs(a.top - b.top) > 2 || b.left <= a.left + a.width) throw new Error("Mac幅で2列にならない");
+      return `1120pxで2列 ${Math.round(a.width)}px + ${Math.round(b.width)}px`;
+    } finally {
+      f.remove();
+    }
+  });
+
+  await test("変異検査: 最新Momentが1件に欠ければ検出する", async () => {
+    const host = document.createElement("div");
+    host.innerHTML = '<a class="mz-pulse-card"></a>';
+    let detected = false;
+    try {
+      const count = host.querySelectorAll(".mz-pulse-card").length;
+      if (count !== 2) throw new Error(`最新Momentが2件でない: ${count}`);
+    } catch {
+      detected = true;
+    }
+    if (!detected) throw new Error("1件欠落の変異を検出できない");
+    return "2件→1件の変異を検出";
+  });
+
+  await test("ソース整合: Moment通知種別と設定フィールドが実装・Rulesで一致", async () => {
+    const [notifySrc, authSrc, profileSrc, rulesSrc] = await Promise.all([
+      fetch("../../marchinz-notify.js").then(r => r.text()),
+      fetch("../../auth.js").then(r => r.text()),
+      fetch("../../user-profile-page.js").then(r => r.text()),
+      fetch("../../firebase/firestore.rules").then(r => r.text()),
+    ]);
+    if (!notifySrc.includes('"like_moment"')) throw new Error("like_momentが通知種別に無い");
+    if (!authSrc.includes('"notify_new_moment_inapp"')) throw new Error("認証側に新着Moment設定が無い");
+    if (!profileSrc.includes('kind: "new_moment"') || !profileSrc.includes('data-mz-notif-go", "moment"')) {
+      throw new Error("新着Momentが通知一覧と対象Momentへの遷移に接続されていない");
+    }
+    if (!rulesSrc.includes("'notify_new_moment_inapp'")) throw new Error("Firestore Rulesに新着Moment設定が無い");
+    return "like_moment + new_moment通知一覧 + notify_new_moment_inapp + Rules一致";
   });
 
   if (CF) { CF.remove(); CF = null; CW = null; CD = null; }

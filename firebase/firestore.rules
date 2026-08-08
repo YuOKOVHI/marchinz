@@ -465,6 +465,7 @@ service cloud.firestore {
         'like_show_video_bookmark',
         'like_show_channel_bookmark',
         'like_show_log_diary',
+        'notify_new_moment_inapp',
         // 利用規約・プライバシー等の最新版への同意（クライアントは LEGAL_POLICY_VERSION と一致する文字列を書く）
         'legal_policy_accepted_version',
         'legal_policy_accepted_at',
@@ -587,6 +588,8 @@ service cloud.firestore {
           || request.resource.data.like_show_channel_bookmark is bool)
         && (!aff.hasAny(['like_show_log_diary'])
           || request.resource.data.like_show_log_diary is bool)
+        && (!aff.hasAny(['notify_new_moment_inapp'])
+          || request.resource.data.notify_new_moment_inapp is bool)
         && (!aff.hasAny(['legal_policy_accepted_version'])
           || (request.resource.data.legal_policy_accepted_version is string
             && request.resource.data.legal_policy_accepted_version.size() > 0
@@ -715,6 +718,7 @@ service cloud.firestore {
         'like_show_video_bookmark',
         'like_show_channel_bookmark',
         'like_show_log_diary',
+        'notify_new_moment_inapp',
         'legal_policy_accepted_version',
         'legal_policy_accepted_at',
         // 登録時の同意記録(2026-08-06): 13歳以上+統計の第三者提供

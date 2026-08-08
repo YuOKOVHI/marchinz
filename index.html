@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-version="2.9.5" data-mz-channel="beta">
+<html lang="ja" data-mz-version="2.9.6" data-mz-channel="beta">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -73,7 +73,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css" />
     <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css?v=1.25.64" />
     <link rel="stylesheet" href="styles.css?v=2.9.3" />
-    <link rel="stylesheet" href="marchinz-brushup.css?v=2.9.5" />
+    <link rel="stylesheet" href="marchinz-brushup.css?v=2.9.6" />
     <!-- Microsoft Clarity -->
     <script type="text/javascript">
       (function(c,l,a,r,i,t,y){
@@ -630,11 +630,15 @@
           </section>
           <section class="mz-settings-like-section" aria-labelledby="mz-like-show-heading">
             <button type="button" class="mz-settings-accordion-toggle" id="mz-like-notif-toggle" aria-expanded="false" aria-controls="mz-like-notif-body">
-              <h3 id="mz-like-show-heading" class="mz-settings-subheading mz-settings-subheading--inline">いいね通知設定</h3>
+              <h3 id="mz-like-show-heading" class="mz-settings-subheading mz-settings-subheading--inline">通知設定</h3>
               <span class="mz-settings-accordion-icon">▸</span>
             </button>
             <div id="mz-like-notif-body" class="mz-settings-accordion-body" hidden>
               <ul class="mz-settings-like-list" id="mz-like-show-list">
+                <li class="mz-settings-like-item mz-settings-like-item--pulse">
+                  <label><input type="checkbox" id="mz-notify-new-moment" data-mz-like-field="notify_new_moment_inapp" checked /> 新しいモーメント</label>
+                  <span>MarchinZを開いている時と、次に開いた時にお知らせします</span>
+                </li>
                 <li class="mz-settings-like-item">
                   <label><input type="checkbox" id="mz-like-show-log-diary" data-mz-like-field="like_show_log_diary" checked /> MarchinZ Note</label>
                 </li>
@@ -1346,6 +1350,18 @@
                     </span>
                   </span>
                 </a>
+                <section id="mz-pulse-top" class="mz-pulse-top" aria-labelledby="mz-pulse-top-heading" hidden>
+                  <div class="mz-pulse-top-head">
+                    <h2 id="mz-pulse-top-heading">いまのモーメント</h2>
+                    <a href="#community/moments" data-page="community">すべて見る <i class="fa-solid fa-chevron-right" aria-hidden="true"></i></a>
+                  </div>
+                  <div id="mz-pulse-top-list" class="mz-pulse-top-list" aria-live="polite"></div>
+                  <button type="button" id="mz-pulse-top-compose" class="mz-pulse-composer mz-pulse-composer--top" hidden>
+                    <i class="fa-solid fa-circle-user" aria-hidden="true"></i>
+                    <span>いま、どんな瞬間？</span>
+                    <i class="fa-regular fa-image" aria-hidden="true"></i>
+                  </button>
+                </section>
                 <a id="mz-dash-video" class="mz-dash-video" target="_blank" rel="noopener noreferrer" hidden>
                   <img id="mz-dash-video-thumb" class="mz-dash-video-thumb" alt="" loading="lazy" decoding="async" />
                   <span class="mz-dash-video-body">
@@ -2540,8 +2556,10 @@
                 マーチングの&quot;今&quot;を「MarchinZ Moment」
               </p>
               <div class="mlm-feed-create-row">
-                <button type="button" id="mlm-feed-create-btn" class="btn-share-search btn-marchinz-spotlight" hidden>
-                  モーメントを投稿
+                <button type="button" id="mlm-feed-create-btn" class="mz-pulse-composer" hidden>
+                  <i class="fa-solid fa-circle-user" aria-hidden="true"></i>
+                  <span>いま、どんな瞬間？</span>
+                  <i class="fa-regular fa-image" aria-hidden="true"></i>
                 </button>
               </div>
               <p id="mlm-feed-msg" class="mll-create-msg mln-feed-msg" aria-live="polite"></p>
@@ -2588,6 +2606,11 @@
               <p class="static-panel-lead">
                 写真と文章で思い出を彩る「MarchinZ Note」
               </p>
+              <div class="mz-pulse-note-actions">
+                <a href="#profile?tab=logdiary" class="mz-pulse-note-write">
+                  <i class="fa-solid fa-pen" aria-hidden="true"></i><span>LogからNoteを書く</span>
+                </a>
+              </div>
               <p id="mln-feed-msg" class="mll-create-msg mln-feed-msg" aria-live="polite"></p>
               <input
                 type="search"
@@ -2665,7 +2688,9 @@
               id="community-open-compose"
               class="browse-inline-trigger community-open-compose-btn"
             >
-              投稿する
+              <i class="fa-solid fa-circle-user" aria-hidden="true"></i>
+              <span>みんなに聞く・話す</span>
+              <i class="fa-solid fa-plus" aria-hidden="true"></i>
             </button>
             <p id="community-board-guest-hint" class="community-board-guest-hint mll-log-meta" hidden>
               投稿するにはログインしてください。
@@ -4154,6 +4179,7 @@
       <a href="#community/moments" data-page="community" data-community-subtab="moments" class="mz-tabbar-link">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 3l-8 10h6l-1 8 8 -10h-6z" /></svg>
         <span>モーメント</span>
+        <span id="mz-moment-new-badge" class="mz-moment-new-badge" hidden aria-label="新しいモーメント">新着</span>
       </a>
       <a href="#community/events" data-page="community" data-community-subtab="events" class="mz-tabbar-link">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="2" /><path d="M4 10h16M9 3v4M15 3v4" /></svg>
@@ -4353,11 +4379,11 @@
     <script defer src="marchinz-usertype.js?v=1.39.52"></script>
     <script defer src="marchinz-usertype-ui.js?v=2.2.0"></script>
     <script defer src="auth-config.js?v=1.26.0"></script>
-    <script defer src="auth.js?v=2.2.0"></script>
+    <script defer src="auth.js?v=2.9.6"></script>
     <script defer src="marchinz-admin-ugc-log.js?v=2.2.0"></script>
     <script defer src="marchinz-community-updates.js?v=1.26.28"></script>
     <script defer src="marchinz-b-test.js?v=2.2.0"></script>
-    <script defer src="marchinz-notify.js?v=1.25.64"></script>
+    <script defer src="marchinz-notify.js?v=2.9.6"></script>
     <script defer src="marchinz-site-announcement.js?v=1.25.64"></script>
     <script defer src="marchinz-ops-announcement.js?v=1.25.64"></script>
     <script defer src="marchinz-like-show.js?v=1.26.61"></script>
@@ -4367,14 +4393,15 @@
     <script defer src="mll-video-mylist.js?v=2.9.5"></script>
     <script defer src="mll.js?v=1.26.62"></script>
     <script defer src="calendar-events.js?v=2.9.4"></script>
-    <script defer src="community.js?v=1.99.2"></script>
+    <script defer src="community.js?v=2.9.6"></script>
     <script defer src="event-log-diary.js?v=1.99.4"></script>
-    <script defer src="mln-public-feed.js?v=1.25.79"></script>
-    <script defer src="mll-moment.js?v=1.26.63"></script>
-    <script defer src="user-profile-page.js?v=2.9.5"></script>
+    <script defer src="mln-public-feed.js?v=2.9.6"></script>
+    <script defer src="mll-moment.js?v=2.9.6"></script>
+    <script defer src="marchinz-moment-pulse.js?v=2.9.6"></script>
+    <script defer src="user-profile-page.js?v=2.9.6"></script>
     <script defer src="marchinz-base.js?v=1.39.66"></script>
     <script defer src="app.js?v=2.9.5-u1"></script>
-    <script defer src="marchinz-top-highlights.js?v=1.113.3"></script>
+    <script defer src="marchinz-top-highlights.js?v=2.9.6"></script>
     <script defer src="marchinz-confetti.js?v=1.28.0"></script>
     <script defer src="marchinz-journey.js?v=1.30.1"></script>
     <script defer src="marchinz-journey-export.js?v=1.35.6"></script>

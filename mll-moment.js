@@ -381,6 +381,37 @@
     root.replaceChildren(frag);
   }
 
+  /**
+   * TOP と Moment 一覧で同じ公開判定を使う。凍結・退会プロフィールはここで除外する。
+   * @param {number} [limit]
+   * @returns {Promise<{ uid: string; momentId: string; data: Record<string, unknown>; _author: { name: string; avatar: string } }[]>}
+   */
+  async function loadLatestPublic(limit = LIMIT) {
+    const db = getDb();
+    if (!db) return [];
+    const n = Math.max(1, Math.min(LIMIT, Number(limit) || LIMIT));
+    const snap = await db.collectionGroup("moments").orderBy("updated_at", "desc").limit(n).get();
+    const rowsRaw = [];
+    snap.forEach((doc) => {
+      const pref = doc.ref.parent && doc.ref.parent.parent;
+      const uid =
+        pref && pref.id && typeof pref.path === "string" && pref.path.startsWith("mll_profiles/")
+          ? pref.id
+          : null;
+      if (!uid || !doc.id) return;
+      const data = doc.data() || {};
+      if (String(data.visibility || "") !== "public") return;
+      rowsRaw.push({ uid, momentId: doc.id, data });
+    });
+    const pmap = await loadProfilesMinimal(db, [...new Set(rowsRaw.map((r) => r.uid))]);
+    return rowsRaw
+      .filter((r) => !pmap.get(r.uid)?.hide)
+      .map((r) => ({
+        ...r,
+        _author: pmap.get(r.uid) || { name: "ユーザー", avatar: "" },
+      }));
+  }
+
   async function refresh() {
     const root = container();
     const msg = msgEl();
@@ -413,32 +444,7 @@
     root.replaceChildren();
 
     try {
-      const qs = db.collectionGroup("moments").orderBy("updated_at", "desc").limit(LIMIT);
-      const snap = await qs.get();
-
-      /** @type {{ uid: string; momentId: string; data: Record<string, unknown> }[]} */
-      const rowsRaw = [];
-      snap.forEach((doc) => {
-        const pref = doc.ref.parent && doc.ref.parent.parent;
-        const uid =
-          pref &&
-          pref.id &&
-          typeof pref.path === "string" &&
-          pref.path.startsWith("mll_profiles/")
-            ? pref.id
-            : null;
-        if (!uid || !doc.id) return;
-        rowsRaw.push({ uid, momentId: doc.id, data: doc.data() || {} });
-      });
-
-      const uids = [...new Set(rowsRaw.map((r) => r.uid))];
-      const pmap = await loadProfilesMinimal(db, uids);
-      cachedRows = rowsRaw
-        .filter((r) => !pmap.get(r.uid)?.hide)
-        .map((r) => ({
-          ...r,
-          _author: pmap.get(r.uid) || { name: "ユーザー", avatar: "" },
-        }));
+      cachedRows = await loadLatestPublic(LIMIT);
 
       paintCards();
       if (msg) msg.textContent = FEED_SUMMARY_TEXT;
@@ -1277,5 +1283,11 @@
     openCompose,
   };
 
-  window.MarchinZMomentFeed = { refresh, ensureInitialLoad, openCompose, openViewer };
+  window.MarchinZMomentFeed = {
+    refresh,
+    ensureInitialLoad,
+    openCompose,
+    openViewer,
+    loadLatestPublic,
+  };
 })();

@@ -364,6 +364,7 @@
     "like_show_video_bookmark",
     "like_show_channel_bookmark",
     "like_show_log_diary",
+    "notify_new_moment_inapp",
   ];
   const LIKE_SHOW_FIELD_SET = new Set(LIKE_SHOW_FIELD_NAMES);
 
@@ -1671,6 +1672,11 @@
         .collection("mll_profiles")
         .doc(currentUser.id)
         .set({ [field]: Boolean(checked), updated_at: new Date().toISOString() }, { merge: true });
+      window.dispatchEvent(
+        new CustomEvent("marchinz-notification-pref-changed", {
+          detail: { field, checked: Boolean(checked) },
+        }),
+      );
       if (status) {
         status.textContent = "保存しました";
         window.setTimeout(() => {
@@ -2024,6 +2030,7 @@
     "like_show_video_bookmark",
     "like_show_channel_bookmark",
     "like_show_log_diary",
+    "notify_new_moment_inapp",
     "legal_policy_accepted_version",
     "legal_policy_accepted_at",
     "banned",

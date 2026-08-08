@@ -8,6 +8,7 @@
     "like_channel_bookmark",
     "like_channel_list",
     "like_log_diary",
+    "like_moment",
   ]);
 
   const KIND_TO_PREF_FIELD = {
@@ -19,6 +20,7 @@
     like_channel_bookmark: "like_show_channel_bookmark",
     like_channel_list: "like_show_channel_bookmark",
     like_log_diary: "like_show_log_diary",
+    like_moment: "like_show_community",
   };
 
   /**

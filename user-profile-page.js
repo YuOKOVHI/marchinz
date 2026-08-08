@@ -659,6 +659,13 @@
       }
       return;
     }
+    if (k === "moment") {
+      const owner = String(goEl.getAttribute("data-mz-notif-owner") || "").trim();
+      if (!owner || !tid) return;
+      window.MarchinZMomentPulse?.markSeen?.();
+      window.location.hash = `#community/moments?uid=${encodeURIComponent(owner)}&moment=${encodeURIComponent(tid)}`;
+      return;
+    }
     if (k === "mll") {
       const href = String(goEl.getAttribute("data-mz-notif-href") || "#profile").trim();
       window.location.hash = href.startsWith("#") ? href : `#${href}`;
@@ -917,8 +924,11 @@
     empty.className = "user-profile-empty";
     empty.hidden = true;
     host.appendChild(empty);
+    const momentRows = Array.isArray(window.MarchinZMomentPulse?.getUnreadRows?.())
+      ? window.MarchinZMomentPulse.getUnreadRows()
+      : [];
     const hasLikeNotifs = Boolean(snap && !snap.empty);
-    if (!hasLikeNotifs) {
+    if (!hasLikeNotifs && !momentRows.length) {
       profNotifState = [];
       profNotifFilterMode = "unread";
       empty.textContent = "新規の通知はありません";
@@ -928,6 +938,18 @@
     }
     /** @type {{ id: string; kind?: string; actor_uid?: string; actor_name?: string; target_title?: string; target_id?: string; target_href?: string; thread_root_id?: string; read?: boolean; created_at?: string }[]} */
     const rows = [];
+    for (const row of momentRows) {
+      rows.push({
+        id: `moment:${String(row.uid || "")}:${String(row.momentId || "")}`,
+        kind: "new_moment",
+        actor_uid: String(row.uid || ""),
+        actor_name: String(row._author?.name || "ユーザー"),
+        target_title: String(row.data?.body || "モーメント").replace(/\s+/g, " ").trim().slice(0, 80),
+        target_id: String(row.momentId || ""),
+        read: false,
+        created_at: String(row.data?.created_at || row.data?.updated_at || ""),
+      });
+    }
     if (hasLikeNotifs) snap.forEach((d) => rows.push({ id: d.id, ...(d.data() || {}) }));
     profNotifState = rows.map((n) => ({
       id: String(n.id || ""),
@@ -958,6 +980,7 @@
       const isRead = isNotifDocRead(n.read);
       article.className = "user-prof-notif" + (isRead ? "" : " user-prof-notif--unread");
       article.dataset.mzNotifId = n.id;
+      if (String(n.kind || "") === "new_moment") article.dataset.mzMoment = "1";
       if (isRead) article.dataset.mzRead = "1";
 
       const avWrap = document.createElement("div");
@@ -1042,6 +1065,9 @@
       } else if (kindStr === "like_log_diary") {
         prefix = "あなたの MarchinZ Note（";
         suffix = "）にいいねしました。";
+      } else if (kindStr === "new_moment") {
+        prefix = "「";
+        suffix = "」を投稿しました。";
       }
       line2.appendChild(document.createTextNode(prefix));
       const tit = String(n.target_title || "").trim() || "（無題）";
@@ -1075,6 +1101,10 @@
         btn.setAttribute("data-mz-notif-go", "log_diary");
         btn.setAttribute("data-mz-notif-target-id", String(n.target_id || ""));
         btn.setAttribute("data-mz-notif-owner", String(targetUid));
+      } else if (kindStr === "new_moment") {
+        btn.setAttribute("data-mz-notif-go", "moment");
+        btn.setAttribute("data-mz-notif-target-id", String(n.target_id || ""));
+        btn.setAttribute("data-mz-notif-owner", String(n.actor_uid || ""));
       } else {
         btn.setAttribute("data-mz-notif-go", "mll");
         const href = String(n.target_href || `#profile?uid=${encodeURIComponent(targetUid)}&tab=mll`).trim();
@@ -1112,7 +1142,7 @@
         });
         body.appendChild(markBtn);
       }
-      if (article.dataset.mzAnnSite !== "1") {
+      if (article.dataset.mzAnnSite !== "1" && article.dataset.mzMoment !== "1") {
         const delBtn = document.createElement("button");
         delBtn.type = "button";
         delBtn.className = "user-prof-notif-delete";
@@ -1959,10 +1989,18 @@
     if (opsBadge && !opsBadge.hidden) total += Math.max(0, Number(opsBadge.textContent) || 0);
     const headerBadge = document.getElementById("header-notif-badge");
     if (headerBadge) {
+      total += Math.max(0, Number(headerBadge.dataset.mzMomentUnread) || 0);
       headerBadge.textContent = total > 99 ? "99+" : String(total);
       headerBadge.hidden = total === 0;
     }
   }
+
+  window.addEventListener("marchinz-moment-unread-changed", (event) => {
+    const headerBadge = document.getElementById("header-notif-badge");
+    if (!headerBadge) return;
+    headerBadge.dataset.mzMomentUnread = String(Math.max(0, Number(event.detail?.count) || 0));
+    refreshHeaderNotifBadgeCombined();
+  });
 
   /** @deprecated use setProfNotifBadgeCount */
   function setNotifBadgeCount(n) {
@@ -2059,6 +2097,14 @@
         console.warn("[MarchinZ] site announcement mark read failed", e);
         revertNotifArticleReadUi(art);
       }
+      return;
+    }
+    if (art.dataset.mzMoment === "1") {
+      window.MarchinZMomentPulse?.markSeen?.();
+      el("#prof-notifs-list")?.querySelectorAll('article[data-mz-moment="1"]').forEach((node) => {
+        if (node instanceof HTMLElement) applyNotifArticleReadUi(node);
+      });
+      refreshProfNotifListUi();
       return;
     }
     const nid = String(art.dataset.mzNotifId || art.getAttribute("data-mz-notif-id") || "").trim();
