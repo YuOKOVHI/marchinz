@@ -111,6 +111,25 @@ MC.storageDiag = (() => {
     return "追加測定";
   };
 
+  /* 実機では、診断欄を #dropSec の外へ出しただけでは足りなかった。
+     おまかせの全画面・工程の切替・Safariの描画順のどれかに #workspace 配下の
+     fixed要素が巻き込まれると、診断は記録中なのに入力欄へ戻れない。
+     診断中のスマホだけ body直下へ実体を移す。閉じれば元の素材欄上へ必ず戻すため、
+     通常の管理画面の配置・一般利用者の画面には影響しない。 */
+  D.placeHost = () => {
+    const host = document.getElementById("storageDiag");
+    const side = document.querySelector("#workspace .side");
+    const dock = document.getElementById("storageDiagDock");
+    if (!host || !side || !dock) return;
+    const mobile = !!(window.matchMedia && window.matchMedia("(max-width: 900px)").matches);
+    const target = state && state.active && mobile ? dock : side;
+    if (host.parentElement === target) return;
+    if (target === side) {
+      const before = side.querySelector("#setupTabs");
+      if (before) side.insertBefore(host, before); else side.prepend(host);
+    } else target.appendChild(host);
+  };
+
   D.captureRaw = async reason => {
     const snap = {
       at: now(), reason: String(reason || "手動計測"),
@@ -360,7 +379,9 @@ MC.storageDiag = (() => {
       document.body.classList.remove("mz-storage-diag-active");
       host.hidden = true; host.innerHTML = ""; return;
     }
-    if (!state) state = load(); host.hidden = false;
+    if (!state) state = load();
+    D.placeHost();
+    host.hidden = false;
     /* 診断中は工程が進んでも入口を見失わせない。おまかせの全画面分析・
        書き出し全画面の上にも、CSSがこの印を使って記録欄を前面へ出す。
        管理者が「分析後に入力欄が無い」と実機報告したため(2026-08-08)。 */

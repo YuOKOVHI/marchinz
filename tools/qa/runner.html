@@ -1592,7 +1592,7 @@ async function countSamples(ns, file, fromSec) {
        自分で約束している */
     S.audioPickedByUser = false;
     S.exportPreset = null; S.startKey = null; S.startAt = null;
-    S.lengthDecided = false; S.audioDecided = false; S.easyDone = false;
+    S.lengthDecided = false; S.mobileLengthDecided = false; S.audioDecided = false; S.easyDone = false;
     S.trimIn = 0; S.trimOut = null;
     /* 仕上げの好み(2026-08-03)。試験どうしの状態漏れ防止。
        ★ 既定は「選択済み」= 自走の門は開けておく(門そのものを試す試験だけが
@@ -6695,10 +6695,9 @@ async function countSamples(ns, file, fromSec) {
     } finally { w.MC.ui.runAuto = keep; w.MC.ui._autoFlow = false; }
   });
 
-  await test("★動画2の札: おまかせ=「必要」/ こだわり=「任意」(門と表示の一致)", async () => {
-    /* 2026-08-06 保護者レビューP1: おまかせは2本必須(needSecondVideoの門)なのに
-       枠の札が「任意」のまま ─ スマホ1台の人が「1本でいいのに動かない」と詰まる。
-       門と同じ判断(_autoFlow)で出し分けること。3本目は両方とも任意のまま */
+  await test("★動画2の札: おまかせ/こだわりとも「必要」(門と表示の一致)", async () => {
+    /* 2026-08-08 優さん指示: 1本ではこだわりへも進ませない。
+       入口の門と素材枠の札を同じ needSecondVideo で決め、3本目だけ任意にする。 */
     const w = await compEnv();
     const S = compReset(w);
     try {
@@ -6714,8 +6713,10 @@ async function countSamples(ns, file, fromSec) {
       if (!/任意/.test(labelOf(2))) throw new Error("3本目まで必要になっている: " + labelOf(2));
       w.MC.ui._autoFlow = false;
       w.MC.ui.renderClips();
-      if (!/任意/.test(labelOf(1))) throw new Error("こだわりの動画2が任意でない: " + labelOf(1));
-      return "おまかせ=必要 / こだわり=任意 / 3本目=任意";
+      if (!/必要/.test(labelOf(1)) || /任意/.test(labelOf(1))) {
+        throw new Error("こだわりの動画2が必要でない: " + labelOf(1));
+      }
+      return "おまかせ=必要 / こだわり=必要 / 3本目=任意";
     } finally { w.MC.ui._autoFlow = false; }
   });
 
@@ -9780,24 +9781,71 @@ async function countSamples(ns, file, fromSec) {
       if (host.hidden || !w.document.getElementById("storageDiagOnly") || !w.document.getElementById("storageDiagRelease")) {
         throw new Error("工程が進んだ後に診断の選択のみ/参照解除の操作が残らない");
       }
-      /* おまかせの全画面分析中も、診断が前面へ出る印を必ず付ける。
+      /* おまかせの全画面分析中も、診断を #workspace の外へ退避する。
          以前の試験は dropSec の外かしか見ておらず、実機で通った
-         「分析中の全画面に覆われる」経路を見逃していた。 */
+         「分析後に入力欄が無い」経路を見逃していた。 */
       if (!w.document.body.classList.contains("mz-storage-diag-active")) {
         throw new Error("診断中なのに全画面用の前面表示印が付かない");
       }
+      const dock = w.document.getElementById("storageDiagDock");
+      if (!dock || host.parentElement !== dock) {
+        throw new Error("診断中のスマホで入力欄がworkspace配下に残る(全画面分析で隠れる)");
+      }
       const css = await (await w.fetch("../switcher/css/style.css")).text();
-      if (!/mz-storage-diag-active:has\(#autoStage:not\(\[hidden\]\)\).*#storageDiag/.test(css)
-          || !/mz-storage-diag-active\.mz-export-open\s+#storageDiag/.test(css)) {
-        throw new Error("分析中・書き出し中に診断欄を前面へ出すCSSが無い");
+      if (!/mz-storage-diag-active\s+#storageDiagDock\s*>\s*#storageDiag/.test(css)) {
+        throw new Error("診断欄をbody直下で前面固定するCSSが無い");
       }
       /* 新しい試行は前の数値を履歴へ退避し、現在の差分に混ぜない。 */
       await D.start();
       const next = D._test.getState();
       if (next.checkpoints.length || !next.history.length || next.runId === "old") throw new Error("新しい試行へ切り替えても前回値が残る");
-      return "今回の+3.55GBだけを比較 / 選択のみは匿名 / 分析後も診断操作を保持";
+      return "今回の+3.55GBだけを比較 / 選択のみは匿名 / 分析後もbody直下に入力欄を保持";
     } finally {
       w.MZ_LIMITS.admin = keepAdmin; D.stop(); D.render();
+    }
+  });
+
+  await test("★素材1本では2本目を案内し、スマホは素材直後に30秒/60秒を選んでから分析する（変異つき）", async () => {
+    const w = await compEnv();
+    const S = compReset(w), U = w.MC.ui, L = w.MZ_LIMITS, d = w.document;
+    const keepL = { ...L }, keepRun = U.runAuto, keepNeed = U.needSecondVideo;
+    try {
+      /* 端末/会員の本体判定は limits.js の閉包だが、このUIテストは「許可された
+         30/60の札を素材直後に出し、選択をrunAutoまで保つ」経路そのものを測る。 */
+      Object.assign(L, { mobile: true, bigDevice: false, member: true, unlimited: false,
+        admin: false, proAllowed: false,
+        exportPresetsFor: () => [
+          { id: "s30", label: "ショート", sec: 30, hint: "SNSに投稿しやすい長さ", locked: false },
+          { id: "short", label: "スタンダード", sec: 60, hint: "1分でまとめる長さ", locked: false },
+        ] });
+      S.mode = "vertical"; S.finishPicked = true; U._autoFlow = true; U._setupTab = "easy";
+      let ran = 0; U.runAuto = async () => { ran++; };
+      U.renderClips(); U.focusNextAction();
+      const sec = d.getElementById("mobileLengthSec"), choices = d.querySelectorAll("#mobileLengthChoices .mobile-length-choice");
+      if (sec.hidden || choices.length !== 2 || ran) {
+        throw new Error(`素材直後の30/60選択が出ない/先走る: hidden=${sec.hidden} choices=${choices.length} run=${ran} videos=${U.videoClipCount()} need2=${U.needSecondVideo()} options=${U.mobileLengthOptions().length} needLength=${U.needsMobileLengthPick()} mobile=${L.mobile} member=${L.member}`);
+      }
+      choices[1].click(); await new Promise(r => setTimeout(r, 320));
+      if (S.exportPreset !== "short" || !S.mobileLengthDecided || ran !== 1) {
+        throw new Error(`60秒選択が分析へ渡らない: preset=${S.exportPreset} decided=${S.mobileLengthDecided} run=${ran}`);
+      }
+
+      /* 1本だけに戻すと、こだわりを直接押しても素材工程に留める。 */
+      S.clips = [S.clips[0]]; S.slots = [S.clips[0].id, null, null]; S.mobileLengthDecided = false;
+      U._autoFlow = false; U._setupTab = "easy"; U.renderClips(); U.setSetupTab("pro");
+      const note = d.getElementById("needSecondNote");
+      if (U._setupTab !== "easy" || !note || !/2つ目の動画/.test(note.textContent)) {
+        throw new Error("動画1本でこだわりへ進める、または2つ目の案内が無い");
+      }
+      /* 変異: 2本目の門を外すと、こだわりへ入れてしまうことを確認する。
+         これが通らなければ、このQAは表示だけを見て実際の門を測れていない。 */
+      U.needSecondVideo = () => false;
+      U.setSetupTab("pro");
+      if (U._setupTab !== "pro") throw new Error("変異してもこだわりへ入れない=2本目門の試験に歯が無い");
+      return "1本=2つ目を案内してこだわり停止 / 2本=30秒・60秒を先に選択 / 選択値を分析へ保持";
+    } finally {
+      U.runAuto = keepRun; U.needSecondVideo = keepNeed;
+      Object.assign(L, keepL); compReset(w); U.renderClips();
     }
   });
 

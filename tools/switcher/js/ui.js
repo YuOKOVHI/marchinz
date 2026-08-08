@@ -1397,14 +1397,69 @@ MC.ui.gentleScrollTo = (el, block = "nearest") => {
   el.scrollIntoView({ behavior: "smooth", block });
 };
 
-/* ★ おまかせは動画2本から(2026-08-02 優さん指示)。縦型/自動SW/ワイプの
-   3種類とも多カメラが前提 ─ 1本では比べる相手も切り替える先も無い。
-   写真・音声ファイルは数えない。こだわりはこの門を通らない(従来どおり) */
-MC.ui.needSecondVideo = () =>
-  !!MC.ui._autoFlow && MC.S.clips.filter(c => !c.isImage && !c.isAudio).length < 2;
+/* ★ 3種類とも動画2本から(2026-08-08 優さん指示)。1本では比べる相手も
+   切り替える先も無いので、おまかせだけでなく「こだわり」にも進ませない。
+   写真・音声ファイルは数えない。0本の入口は止めず、1本入った時だけ案内する。 */
+MC.ui.videoClipCount = () => MC.S.clips.filter(c => !c.isImage && !c.isAudio).length;
+MC.ui.needSecondVideo = () => {
+  const n = MC.ui.videoClipCount();
+  return n > 0 && n < 2;
+};
+
+/* スマホの登録ユーザーと管理者は、素材を選んだ直後に30/60秒を明示してから
+   分析へ進む。技術上30秒に制限されるモードは、limits.js が返す使える札だけを
+   出すので、実行できない60秒を約束しない。 */
+MC.ui.mobileLengthOptions = () => {
+  const L = window.MZ_LIMITS || {};
+  if (!L.mobile || !(L.member || L.unlimited) || !L.exportPresetsFor) return [];
+  return L.exportPresetsFor(MC.S.mode).filter(p => !p.locked && (p.id === "s30" || p.id === "short"));
+};
+MC.ui.needsMobileLengthPick = () =>
+  !MC.ui.needSecondVideo() && MC.ui.videoClipCount() >= 2
+  && MC.ui.mobileLengthOptions().length >= 2 && !MC.S.mobileLengthDecided;
+
+MC.ui.renderMobileLengthPick = () => {
+  const sec = document.getElementById("mobileLengthSec");
+  const box = document.getElementById("mobileLengthChoices");
+  if (!sec || !box) return;
+  const open = MC.ui.needsMobileLengthPick();
+  sec.hidden = !open;
+  if (!open) { box.innerHTML = ""; return; }
+  const options = MC.ui.mobileLengthOptions();
+  box.innerHTML = "";
+  for (const p of options) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "mobile-length-choice";
+    b.innerHTML = `<b>${MC.ui.esc(MC.ui.fmtLen(p.sec))}</b><span>${MC.ui.esc(p.hint)}</span><em>この長さで進む</em>`;
+    b.onclick = () => {
+      MC.S.exportPreset = p.id;
+      MC.S.mobileLengthDecided = true;
+      MC.S.lengthDecided = false; // 音の解析後に開始位置は改めて決める
+      MC.ui.invalidateCuts();
+      MC.saveState();
+      MC.ui.renderClips();
+      MC.ui.toast(`${MC.ui.fmtLen(p.sec)}で分析を始めます`);
+      MC.ui.focusNextAction();
+    };
+    box.appendChild(b);
+  }
+};
 
 MC.ui.focusNextAction = () => {
   if (!MC.S.clips.length) return;
+  /* 1本では、どの入口からも先へ進ませない。すでに「こだわり」を開いていた
+     場合も素材工程へ戻し、常設の「2つ目の動画」案内を残す。 */
+  if (MC.ui.needSecondVideo()) {
+    if (MC.ui._setupTab === "pro") MC.ui.setSetupTab("easy");
+    return;
+  }
+  /* スマホでは、素材を読んだ直後・重い分析に入る前に30/60秒を選ぶ。 */
+  if (MC.ui.needsMobileLengthPick()) {
+    MC.ui.renderMobileLengthPick();
+    MC.ui.gentleScrollTo(document.getElementById("mobileLengthSec"), "nearest");
+    return;
+  }
   /* ★ おまかせを選んでいるなら、ここから先は一度も止まらない(2026-08-01 優さん指示)。
      取り込みが終わった時点で自走を始める ─ これが「タップせずに最後まで」の入口。
      二重に走らないよう、実行中と書き出し済みは弾く */
@@ -1465,6 +1520,7 @@ MC.ui.resetEasyDone = (restored = false) => {
   /* 「同じ演奏ではない」2択の判断も素材が変わればやり直し(2026-08-02) */
   MC.S.syncDoubtAccepted = false;
   MC.S.lengthDecided = false;
+  MC.S.mobileLengthDecided = false;
   MC.ui._tabsForced = false;   // 同期失敗の前倒し開放は素材が変われば解除(2026-07-31)
   if (!restored) {
     MC.S.showIn = null;
@@ -2602,6 +2658,7 @@ MC.ui.renderClips = () => {
   MC.ui.renderResumeNote();
   MC.ui.renderStorageNote();
   if (MC.storageDiag) MC.storageDiag.render();
+  MC.ui.renderMobileLengthPick();
   const box = MC.ui.$("#clipSlots");
   box.innerHTML = "";
   const vertical = MC.S.mode === "vertical";
@@ -2624,12 +2681,8 @@ MC.ui.renderClips = () => {
     const lb = document.createElement("div");
     lb.className = "clip-slot-label";
     const noun = vertical ? "素材" : "動画";
-    /* こだわりは2本目から先が任意(1本でも成立する)。3本目だけに但し書きを
-       付けると、2本目は必須のように読める(2026-08-01)。
-       ★ おまかせは動画2本必須(needSecondVideoの門・2026-08-02)なのに
-         「任意」のままだった ─ スマホ1台の人が「1本でいいのに動かない」と
-         詰まる(2026-08-06 保護者レビューP1)。門と同じ判断で出し分ける */
-    const secondNeeded = slotIdx === 1 && !!MC.ui._autoFlow;
+    /* 1本では、どちらの進め方でも2本目が必要。3本目以降だけ任意と名乗る。 */
+    const secondNeeded = slotIdx === 1 && MC.ui.needSecondVideo();
     lb.innerHTML = `<i class="fa-solid fa-video"></i> ${noun}${slotIdx + 1}`
       + (secondNeeded ? ` <span class="hint">必要</span>`
          : slotIdx >= 1 ? ` <span class="hint">任意</span>` : "");
@@ -3424,7 +3477,14 @@ MC.ui.applyGuestLocks = () => {
   }
 };
 
-MC.ui.setSetupTab = tab => {
+MC.ui.setSetupTab = (tab, opt = {}) => {
+  /* 1本だけ入った後は、こだわりの細かな画面へ逃がさない。
+     初期の0本は従来どおり選べる(そのまま2本を選ぶ入口)ので、素材が1本ある
+     場合だけ素材工程へ戻す。 */
+  if (tab === "pro" && MC.ui.needSecondVideo()) {
+    tab = "easy";
+    if (!opt.quiet) MC.ui.toast("続けるには、2つ目の動画を選んでください");
+  }
   const changed = MC.ui._setupTab !== tab;
   MC.ui._setupTab = tab;
   const easy = tab !== "pro";
@@ -3492,7 +3552,7 @@ MC.ui.refreshSetupTabs = () => {
           ? "おまかせ＝同期もカット割も自動で仕上げます"
           : "おまかせ＝同期も色そろえも自動で仕上げます");
   }
-  MC.ui.setSetupTab(MC.ui._setupTab || "easy");
+  MC.ui.setSetupTab(MC.ui._setupTab || "easy", { quiet: true });
 };
 
 /* おまかせで開始: 同期 → (カット割モードなら)自動カット割 → カラーマッチ を続けて実行 */
@@ -4141,7 +4201,8 @@ MC.ui.AUTO = {
 
 /* おまかせで決め打ちにする設定を当てる。呼ぶのは自走の入口だけ */
 MC.ui.applyAutoChoices = () => {
-  MC.S.exportPreset = MC.ui.AUTO.preset;
+  /* スマホで本人が30秒/60秒を先に選んだ回は、その選択を自動設定で上書きしない。 */
+  if (!MC.S.mobileLengthDecided) MC.S.exportPreset = MC.ui.AUTO.preset;
   MC.S.startKey = MC.ui.AUTO.startKey;
   MC.S.startAt = null;
   MC.S.horizonOn = true;

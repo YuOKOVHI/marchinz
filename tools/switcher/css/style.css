@@ -1880,21 +1880,11 @@ body.mz-pin-force .tilt-step { width: 52px; min-height: 48px; font-size: 20px; }
 /* ?tool=reel|switcher|wipe は種類が確定済み。HTMLの解析途中で3枚カードを
    描画させず、toolscope/ui.js が2段目を開くまで隠す。 */
 html[data-mz-tool-scope] #modeStepKind { display: none !important; }
-/* 管理者が容量診断を始めた回は、工程を進めても記録欄を見失わせない。
-   通常画面では上端に追従し、おまかせの全画面分析と書き出し全画面では
-   その上へ固定する。一般利用者には host 自体が hidden なので影響しない。 */
+/* 管理者が容量診断を始めたスマホでは、host を body直下へ退避して固定する。
+   :has() と #workspace 配下の fixed に頼ると、全画面分析やSafariの再描画で
+   入力欄だけ触れない状態を作り得るため。一般利用者には host 自体が hidden。 */
 @media (max-width: 900px) {
-  body.mz-storage-diag-active #storageDiag {
-    position: sticky;
-    top: calc(var(--mz-journey-h, 72px) + env(safe-area-inset-top, 0px) + 4px);
-    z-index: 61;
-    max-height: calc(100dvh - var(--mz-journey-h, 72px) - env(safe-area-inset-top, 0px) - 12px);
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    box-shadow: 0 8px 20px rgba(15, 33, 86, .14);
-  }
-  body.mz-storage-diag-active:has(#autoStage:not([hidden])) #storageDiag,
-  body.mz-storage-diag-active.mz-export-open #storageDiag {
+  body.mz-storage-diag-active #storageDiagDock > #storageDiag {
     position: fixed;
     top: calc(var(--mz-journey-h, 72px) + env(safe-area-inset-top, 0px) + 8px);
     left: 10px;
@@ -1902,8 +1892,19 @@ html[data-mz-tool-scope] #modeStepKind { display: none !important; }
     z-index: 151;
     max-height: min(68dvh, 560px);
     margin: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    box-shadow: 0 8px 20px rgba(15, 33, 86, .14);
   }
 }
+.mobile-length-pick { border-color: rgba(37, 84, 204, .35); }
+.mobile-length-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.mobile-length-choice { min-height: 126px; padding: 14px 10px; border: 1px solid #b8c8f2; border-radius: 14px;
+  background: #f7f9ff; color: var(--navy); text-align: left; display: flex; flex-direction: column; gap: 5px; }
+.mobile-length-choice b { font-size: 24px; line-height: 1.05; }
+.mobile-length-choice span { color: var(--tx2); font-size: 12px; line-height: 1.35; }
+.mobile-length-choice em { margin-top: auto; color: var(--acc-deep); font-style: normal; font-weight: 700; font-size: 13px; }
+.mobile-length-choice:active { transform: scale(.98); background: #edf2ff; }
 .sd-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .sd-head > div { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
 .sd-head b { font-size: 14px; line-height: 1.4; }

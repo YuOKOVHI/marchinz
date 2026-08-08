@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-app-v="2.5.0" data-mz-channel="beta">
+<html lang="ja" data-mz-app-v="2.5.1" data-mz-channel="beta">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -30,7 +30,7 @@
 <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
 <link rel="stylesheet" href="/tools/shared/progress.css?v=1.99.3">
 <link rel="stylesheet" href="/tools/shared/journey.css?v=1.110.1">
-<link rel="stylesheet" href="css/style.css?v=2.5.0">
+<link rel="stylesheet" href="css/style.css?v=2.5.1">
 <link rel="stylesheet" href="/tools/shared/sitechrome.css?v=2.0.0">
 </head>
 <body data-mz-tool="switcher">
@@ -256,8 +256,9 @@
 <main class="wrap">
   <aside class="side">
 
-    <!-- 管理者だけに組み立てるSafari容量診断。工程ごとに隠れる #dropSec の外へ置き、
-         分析後・書き出し前・Safariを開き直した後も同じ記録欄を使えるようにする。 -->
+    <!-- 管理者だけに組み立てるSafari容量診断。通常はここ(素材欄の上)に置く。
+         診断中のスマホだけは storage-diagnostics.js が body直下の #storageDiagDock
+         へ移す。全画面分析や工程の display:none に巻き込ませないため。 -->
     <section id="storageDiag" class="storage-diag" hidden aria-label="Safari容量診断"></section>
 
     <div id="setupTabs" class="setup-tabs">
@@ -290,6 +291,14 @@
       <div id="clipSlots" class="clip-slots"></div>
       <input type="file" id="fileInput" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" multiple hidden>
       <input type="file" id="fileInputV" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v,image/*" multiple hidden>
+    </section>
+
+    <!-- スマホの登録ユーザー/管理者は、重い分析に入る前に完成尺だけ先に決める。
+         音の解析後は開始位置だけを選べるため、ここでは30秒/60秒の二択に絞る。 -->
+    <section class="panel mobile-length-pick" id="mobileLengthSec" hidden aria-labelledby="mobileLengthTitle">
+      <h2 id="mobileLengthTitle">動画の長さを選ぶ</h2>
+      <p class="sec-lead">分析の前に、完成動画を30秒か60秒か選びます。</p>
+      <div id="mobileLengthChoices" class="mobile-length-choices" aria-label="書き出す長さ"></div>
     </section>
 
     <!-- 傾きの確認(単独の工程)。自動検出は全廃し、1本ずつ本人の目で見て手で直す。
@@ -613,6 +622,10 @@
 </main>
 </div><!-- /#workspace -->
 
+<!-- 診断中のスマホでは #storageDiag をここへ退避する。
+     workspace の工程切替・全画面分析の祖先から外すことで、入力欄を必ず操作可能にする。 -->
+<div id="storageDiagDock" aria-live="off"></div>
+
 <!-- 書き出しの全画面(案B: 2026-07-24)。ジャーニーは4ドットのまま、
      書き出し中→保存 はこのオーバーレイ内で画面が切り替わる -->
 <!-- ============ おまかせ専用の1画面(2026-08-01 優さん指示) ============
@@ -813,7 +826,7 @@
 <script src="vendor/mp4box.all.min.js"></script>
 <script src="vendor/mp4-muxer.min.js"></script>
 <script src="vendor/fft.js"></script>
-<script src="js/state.js?v=1.113.8"></script>
+<script src="js/state.js?v=2.5.1"></script>
 <script src="js/layout.js?v=1.99.3"></script>
 <script src="js/media.js?v=2.4.1"></script>
 <script src="js/audio.js?v=1.113.10"></script>
@@ -836,8 +849,8 @@
 <!-- 縮小版(プロキシ)。exporter の掃除が MC.proxy.PREFIX を見るので先に読む -->
 <script src="js/proxy.js?v=2.4.0"></script>
 <script src="js/exporter.js?v=2.4.0"></script>
-<script src="js/storage-diagnostics.js?v=2.4.2"></script>
-<script src="js/ui.js?v=2.4.1"></script>
+<script src="js/storage-diagnostics.js?v=2.5.1"></script>
+<script src="js/ui.js?v=2.5.1"></script>
 <script src="js/app.js?v=2.4.1"></script>
 </body>
 </html>

@@ -21,6 +21,7 @@ window.MC = {
        だんだん短くなっていく(選び直せなくなる) */
     showIn: null, showOut: null,
     exportPreset: null,   // "short" | "mid" | "full"
+    mobileLengthDecided: false, // スマホの30秒/60秒を素材直後に選んだか(素材変更で戻す)
     startKey: null,       // "start"|"climax"|"ballad"|"drumline"|"solo"|"finale"|"manual"
     startAt: null,        // startKey==="manual" のときの開始位置(グローバル秒)
     lengthDecided: false, // 「この長さで進める」を押したか
