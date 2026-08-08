@@ -227,6 +227,15 @@ MC.media.queueQuick = clip => {
     .catch(() => {});
 };
 
+/* 容量診断で「アプリ側が握っている素材参照を外した後」を測る前の待ち合わせ。
+   quickProbe は同じ video/File を一時的に持つため、キューが終わる前に外したとは
+   名乗らない。15秒で終わらない場合は診断側が中断を報告し、無理に破棄しない。 */
+MC.media.waitForIdle = (ms = 15000) => new Promise(resolve => {
+  const q = (MC.media._quickQueue || Promise.resolve()).then(() => true, () => true);
+  const t = setTimeout(() => resolve(false), Math.max(0, Number(ms) || 0));
+  q.then(ok => { clearTimeout(t); resolve(ok); });
+});
+
 /* ★ 見送られた軽い判定を、手が空いたときに拾い直す(2026-08-07 未解決P2)。
    quickProbe は 再生中・おまかせ中・書き出し中 は黙って見送る。ところが
    本解析は director(mode==="switch")からしか走らないので、縦型・ワイプでは
