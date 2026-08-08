@@ -74,8 +74,21 @@ window.addEventListener("DOMContentLoaded", async () => {
      言いながら保存状態を消すことになる。退出=リセットは本当に離れる導線だけ */
   for (const sel of ["#eoToTools", "#doneToTools", ".foot-link"]) {
     document.querySelectorAll(sel).forEach(a =>
-      a.addEventListener("click", () => { MC.ui.resetSavedProject(); }));
+      a.addEventListener("click", () => { MC.ui.releaseToolSession("退出リンク"); }));
   }
+  /* sitechromeのメニューはDOMContentLoaded後に増えるため委譲で拾う。
+     作業中の「← 戻る」はui.jsがpreventDefaultしてツール内へ戻すので解放しない。
+     別タブで開く操作も現在のツールは残るため対象外。 */
+  document.addEventListener("click", e => {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const a = e.target && e.target.closest && e.target.closest("a[href]");
+    if (!a || a.target === "_blank" || a.hasAttribute("download")) return;
+    let dest;
+    try { dest = new URL(a.href, location.href); } catch (_) { return; }
+    if (dest.origin !== location.origin || dest.pathname === location.pathname) return;
+    if (MC.ui._busy || (MC.exporter && MC.exporter.running)) return;
+    MC.ui.releaseToolSession("MarchinZ内の別ページへ移動");
+  });
 
   /* ★ 掃除を probe の後ろにぶら下げない(2026-08-06 優さん実機 14.88GB、3度目の対策)。
      probeOpfs は Worker を起こして open/write/finalize の応答を待つ実測で、

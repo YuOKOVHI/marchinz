@@ -106,6 +106,8 @@ MC.storageDiag = (() => {
     return out;
   };
   const hasEvent = type => (state.events || []).some(e => e.type === type);
+  const hasBaseline = () => (state && state.checkpoints || []).some(c =>
+    c && c.phase === "基準値" && Number(c.safariGb) > 0.01 && c.validForDelta !== false);
   const phaseFor = () => {
     if (!(state.checkpoints || []).length) return "基準値";
     if (state.selectionOnly && !state.selectionOnly.measured) return "選択のみ後";
@@ -251,8 +253,19 @@ MC.storageDiag = (() => {
     push("files_selected", { n: arr.length, bytes: total,
       types: arr.map(f => String(f.type || "unknown").slice(0, 40)) });
   };
+  /* iOSのpickerは開いた時点で動画容量ぶんの内部コピーを作り得る。
+     onchange後に「基準値がありません」と止めても容量は戻らないため、
+     診断中だけはOSのpickerを開く共通入口より前で①を必須にする。 */
+  D.allowPicker = () => {
+    if (!state) state = load();
+    if (!admin() || !state.active || hasBaseline()) return true;
+    D._expanded = true; D.render();
+    if (MC.ui && MC.ui.toast) MC.ui.toast("先に①の基準値を記録してください。動画選択はまだ開きません");
+    return false;
+  };
   D.selectionOnly = files => {
     if (!state || !state.active || !admin()) return;
+    if (!D.allowPicker()) return false;
     const arr = Array.from(files || []), total = arr.reduce((s, f) => s + (Number(f.size) || 0), 0);
     if (!arr.length) return;
     state.selectionOnly = { at: now(), n: arr.length, bytes: total, measured: false };
@@ -282,6 +295,16 @@ MC.storageDiag = (() => {
   D.pagehide = () => {
     if (!state || !state.active || !admin()) return;
     push("pagehide", { liveProxyN: (MC.proxy && MC.proxy._live && MC.proxy._live.size) || 0 });
+  };
+  D.toolExit = report => {
+    const r = report || {};
+    push("tool_session_released", {
+      reason: String(r.reason || "").slice(0, 60), clips: Number(r.clips) || 0,
+      files: Number(r.files) || 0, videos: Number(r.videos) || 0,
+      urls: Number(r.urls) || 0, proxies: Number(r.proxies) || 0,
+      workers: Number(r.workers) || 0, audioContexts: Number(r.audioContexts) || 0,
+      result: Number(r.result) || 0,
+    });
   };
   D.probeStart = () => push("opfs_probe_start", {});
   D.probeResult = (ok, error) => push("opfs_probe_result", { ok: !!ok, error: error ? errText(error) : "" });
@@ -448,6 +471,7 @@ MC.storageDiag = (() => {
       host.querySelector("#storageDiagStart").onclick = () => D.start(); return;
     }
     const a = D.analysis(), cps = state.checkpoints || [], hasClips = !!(MC.S.clips || []).length;
+    const baselineReady = hasBaseline();
     const returnedPending = state.returned && !state.returned.measured;
     const completedByReturn = state.returned && state.returned.measured;
     const canMarkReturned = (state.selectionOnly || state.imported) && !completedByReturn;
@@ -486,7 +510,7 @@ MC.storageDiag = (() => {
     host.classList.remove("sd-compact");
     host.innerHTML = `<div class="sd-head"><div><b>Safari容量診断中</b><span>${next}</span></div><div class="sd-head-actions"><span class="sd-live">記録中</span><button type="button" class="btn ghost sd-fold" id="storageDiagToggle" aria-expanded="true">たたむ</button></div></div>
       <div class="sd-result"><b>${a.verdict}</b>${state.lastRecord ? `<span class="sd-recorded">${recordText(state.lastRecord)}</span>` : ""}<span>プロキシ: ${a.proxy}</span><span>掃除: ${a.sweep}</span><span>現在のOPFS: ${snap ? `${bytes(snap.opfs.bytes)}（${snap.opfs.n}件）` : "計測前"}</span></div>
-      <div class="sd-plan"><b>今回の試行で分けること</b><span>①基準値　②ファイル選択だけ　③通常の分析　④MarchinZ側の参照解除　⑤Safari完全終了後</span><div class="sd-plan-actions"><button type="button" class="btn ghost" id="storageDiagOnly">② 選択だけを試す（動画を処理しない）</button><input id="storageDiagOnlyInput" type="file" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" multiple hidden><div class="sd-release-wrap"><button type="button" class="btn ghost" id="storageDiagRelease" ${hasClips ? "" : "disabled"} aria-describedby="storageDiagReleaseHint">④ MarchinZ側の素材参照を外す</button>${hasClips ? "" : `<span id="storageDiagReleaseHint" class="sd-release-hint">③通常取り込み後に使えます</span>`}</div><button type="button" class="btn ghost" id="storageDiagReturned" ${canMarkReturned ? "" : "disabled"}>⑤ Safariを開き直した</button></div></div>
+      <div class="sd-plan"><b>今回の試行で分けること</b><span>①基準値　②ファイル選択だけ　③通常の分析　④MarchinZ側の参照解除　⑤Safari完全終了後</span><div class="sd-plan-actions"><div class="sd-release-wrap"><button type="button" class="btn ghost" id="storageDiagOnly" ${baselineReady ? "" : "disabled"} aria-describedby="storageDiagOnlyHint">② 選択だけを試す（動画を処理しない）</button>${baselineReady ? "" : `<span id="storageDiagOnlyHint" class="sd-release-hint">①基準値を記録すると使えます</span>`}</div><input id="storageDiagOnlyInput" type="file" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" multiple hidden><div class="sd-release-wrap"><button type="button" class="btn ghost" id="storageDiagRelease" ${hasClips ? "" : "disabled"} aria-describedby="storageDiagReleaseHint">④ MarchinZ側の素材参照を外す</button>${hasClips ? "" : `<span id="storageDiagReleaseHint" class="sd-release-hint">③通常取り込み後に使えます</span>`}</div><button type="button" class="btn ghost" id="storageDiagReturned" ${canMarkReturned ? "" : "disabled"}>⑤ Safariを開き直した</button></div></div>
       <label class="sd-label" for="storageDiagGb">設定 → Safari →「書類とデータ」</label><div class="sd-measure"><input id="storageDiagGb" type="number" min="0" step="0.01" inputmode="decimal" placeholder="例 5.49"><span>GB</span><button type="button" class="btn" id="storageDiagRecord">この数値を記録</button></div>
       <div class="sd-actions"><button type="button" class="btn ghost" id="storageDiagNew">新しい試行</button><button type="button" class="btn ghost" id="storageDiagSnap">内部だけ再計測</button><button type="button" class="btn ghost" id="storageDiagCopy">レポートをコピー</button><button type="button" class="btn ghost" id="storageDiagStop">診断を終了・記録削除</button></div><textarea id="storageDiagReport" class="sd-report" readonly hidden aria-label="診断レポート"></textarea>`;
     host.querySelector("#storageDiagRecord").onclick = () => D.recordCheckpoint();
@@ -494,12 +518,15 @@ MC.storageDiag = (() => {
     host.querySelector("#storageDiagCopy").onclick = () => D.copy();
     host.querySelector("#storageDiagNew").onclick = () => D.start();
     host.querySelector("#storageDiagStop").onclick = () => D.stop();
-    host.querySelector("#storageDiagOnly").onclick = () => host.querySelector("#storageDiagOnlyInput").click();
+    host.querySelector("#storageDiagOnly").onclick = () => {
+      if (D.allowPicker()) host.querySelector("#storageDiagOnlyInput").click();
+    };
     host.querySelector("#storageDiagOnlyInput").onchange = e => { const files = [...e.currentTarget.files]; e.currentTarget.value = ""; D.selectionOnly(files); };
     host.querySelector("#storageDiagRelease").onclick = () => D.releaseSources();
     host.querySelector("#storageDiagReturned").onclick = () => D.markReturned();
     host.querySelector("#storageDiagToggle").onclick = () => { D._expanded = false; D.render(); };
   };
-  D._test = { fresh, bytes, category, sumCats, phaseFor, recordText, setState: s => { state = s; }, getState: () => state, archive, blankRun };
+  D._test = { fresh, bytes, category, sumCats, phaseFor, recordText, hasBaseline,
+    setState: s => { state = s; }, getState: () => state, archive, blankRun };
   return D;
 })();

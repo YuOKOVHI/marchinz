@@ -1292,6 +1292,87 @@ MC.ui.resetSavedProject = () => {
   MC.exporter.releaseOpfs();
 };
 
+/* 意図してツールを離れるときの完全解放。
+   visibilitychange（通知確認・アプリ切替）やpagehideの推測では呼ばず、本人の
+   「ツールを終了」か、MarchinZ内の別ページへの明示リンクだけから呼ぶ。iOSのfile pickerが作る内部コピーを
+   JavaScriptから直接消すことはできないが、MarchinZ側が File / video / Object URL /
+   proxy / Worker / AudioContext を握り続ける条件はここで一度に断つ。 */
+MC.ui.releaseToolSession = reason => {
+  if (MC.ui._toolReleaseDone) return MC.ui._lastToolRelease;
+  MC.ui._toolReleaseDone = true;
+  const clips = [...((MC.S && MC.S.clips) || [])];
+  const report = {
+    reason: String(reason || "意図した退出").slice(0, 60), clips: clips.length,
+    files: 0, videos: 0, urls: 0, proxies: 0, workers: 0, audioContexts: 0, result: 0,
+  };
+  try { if (MC.preview) MC.preview.pause(); } catch (_) {}
+  for (const c of clips) {
+    if (!c) continue;
+    if (c.file) report.files++;
+    if (c.video) report.videos++;
+    if (c.url) report.urls++;
+    if (c.proxy) report.proxies++;
+  }
+  /* proxy.disposeAll はOPFS上の縮小版も削除予約へ入れるため、clip.proxyを
+     nullにする前に呼ぶ。 */
+  try { if (MC.proxy) MC.proxy.disposeAll(); } catch (_) {}
+  for (const c of clips) {
+    if (!c) continue;
+    try {
+      if (c.video) {
+        if (c.video.pause) c.video.pause();
+        if (c.video.removeAttribute) c.video.removeAttribute("src");
+        if (c.video.load) c.video.load();
+      }
+    } catch (_) {}
+    try { if (c.url) URL.revokeObjectURL(c.url); } catch (_) {}
+    c.file = null; c.video = null; c.url = ""; c.proxy = null;
+    c.audio8k = null; c.quickVisual = null; c.visual = null;
+  }
+  if (MC.S) {
+    MC.S.clips.length = 0;
+    MC.S.slots = (MC.S.slots || []).map(() => null);
+    MC.S.audioClipId = null; MC.S.refClipId = null;
+    MC.S.wipeMainId = null; MC.S.wipeClipId = null; MC.S.wipeClipId2 = null;
+    MC.S.playing = false;
+  }
+  ["#fileInput", "#fileInputV"].forEach(sel => {
+    const input = document.querySelector(sel); if (input) input.value = "";
+  });
+
+  const X = MC.exporter;
+  if (X) {
+    X.cancelFlag = true;
+    if (X.lastResult) report.result = 1;
+    try { X.releaseOpfs(); } catch (_) {}
+    X.lastResult = null;
+    try { if (X.dropResultLock) X.dropResultLock(); } catch (_) {}
+    if (X._writer) {
+      report.workers++;
+      try { X._writer.terminate(); } catch (_) {}
+      X._writer = null; X._writerP = null; X._writerBusy = false;
+    }
+    const V = MC.visual;
+    if (V && (V._fw || V._ort)) report.workers++;
+    try { if (X._releaseAnalysisWorkers) X._releaseAnalysisWorkers(); } catch (_) {}
+  }
+  const closeCtx = (owner, key) => {
+    const ctx = owner && owner[key];
+    if (!ctx) return;
+    report.audioContexts++;
+    try { const p = ctx.close && ctx.close(); if (p && p.catch) p.catch(() => {}); } catch (_) {}
+    owner[key] = null;
+  };
+  closeCtx(MC.sync, "_actx");
+  closeCtx(MC.exporter, "_actx");
+  closeCtx(MC.ui.eoLive, "_ctx");
+  try { localStorage.removeItem("marchcut_project"); } catch (_) {}
+  MC.restoreInfo = { sync: 0, cuts: false, trim: false };
+  MC.ui._lastToolRelease = report;
+  if (MC.storageDiag && MC.storageDiag.toolExit) MC.storageDiag.toolExit(report);
+  return report;
+};
+
 MC.ui.resetProject = () => {
   if (!confirm("最初からやり直します。\n\n読み込んだ動画を外し、同期・カット割・書き出し範囲の保存も消します。\n（動画ファイル自体は消えません）")) return;
   /* 先に素材を外す。removeClip は afterChange 経由で saveState() を呼ぶため、
@@ -2630,6 +2711,7 @@ MC.ui.photosInvited = () =>
 MC.ui.openVideoPicker = () => {
   const input = MC.ui.$(MC.S.mode === "vertical" ? "#fileInputV" : "#fileInput");
   if (!input) return false;
+  if (MC.storageDiag && MC.storageDiag.allowPicker && !MC.storageDiag.allowPicker()) return false;
   if (MC.isIOS && !window.confirm("iPhoneのSafariでは、動画を選ぶだけで選択した容量ぶんの「書類とデータ」が増え、Safariを終了しても残ることがあります。\n\n動画はMarchinZから送信されません。選び直しを避けるため、今回使う動画だけを一度で選んでください。\n\n動画を選びますか？")) return false;
   input.click();
   return true;
@@ -6704,8 +6786,20 @@ MC.ui.wire = () => {
         MC.ui.toast("取り込んだ動画はそのまま残っています");
         return;
       }
-      MC.ui.resetSavedProject();   // 素通し=退出。次に来たら最初から
+      MC.ui.releaseToolSession("ヘッダーから退出");
     }); }
+
+  { const b = $("#toolExitBtn");
+    if (b) b.onclick = () => {
+      if (MC.ui._busy || (MC.exporter && MC.exporter.running)) {
+        MC.ui.toast("処理中です。画面内の「中止」で止めてから終了してください");
+        return;
+      }
+      if ((MC.S.clips || []).length
+          && !confirm("ツールを終了します。\n\n取り込んだ動画をMarchinZから外して、映像ツール一覧へ戻ります。\n（元の動画ファイルは消えません）")) return;
+      MC.ui.releaseToolSession("ツールを終了");
+      location.href = "/#creators";
+    }; }
 
   /* 種類カード。**ここでは作業画面へ進まない**(2026-08-01)。
      選んだ種類を覚えて、2段目の「どちらで作りますか」へ送る */
@@ -7221,7 +7315,7 @@ MC.ui.wire = () => {
      未保存のまま閉じようとしたら1回だけ確認する ─ ページを離れると
      いま作った動画(メモリ上のblob)は消えるため、黙って失わせない */
   MC.ui.goToolList = () => {
-    MC.ui.resetSavedProject();   // 意図した退出=次は最初から(⑪)
+    MC.ui.releaseToolSession("完成後に退出");
     location.href = "/#creators";
   };
   const eoCloseByUser = () => {

@@ -1503,15 +1503,17 @@ async function countSamples(ns, file, fromSec) {
       if (!ids.includes(rm[1])) {
         throw new Error(`ルート "${rm[1]}" が pageIds に無い(ルーター不発でTOP先頭へ落ちる)`);
       }
-      /* 最上位のクリック=素通し(退出)でリセットが走る。実遷移は試験側で止める */
-      let reset = 0;
-      const keepReset = w.MC.ui.resetSavedProject;
-      w.MC.ui.resetSavedProject = () => { reset++; };
+      /* 最上位のクリック=素通し(退出)で完全解放が走る。実遷移は試験側で止める */
+      let released = 0;
+      const keepRelease = w.MC.ui.releaseToolSession;
+      w.MC.ui.releaseToolSession = () => { released++; };
       const stop = ev => ev.preventDefault();
       d.addEventListener("click", stop, false);
-      try { a.click(); } finally { d.removeEventListener("click", stop, false); }
-      if (!reset) throw new Error("最上位からの退出で保存状態をリセットしていない");
-      w.MC.ui.resetSavedProject = keepReset;
+      try { a.click(); } finally {
+        d.removeEventListener("click", stop, false);
+        w.MC.ui.releaseToolSession = keepRelease;
+      }
+      if (!released) throw new Error("最上位からの退出で動画参照を完全解放していない");
       /* 作業中: 横取りしてツール内の種類選択へ。URLも保存状態も動かさない */
       w.MC.ui.chooseMode("vertical", { silent: true });
       const href = w.location.href;
@@ -1525,7 +1527,7 @@ async function countSamples(ns, file, fromSec) {
           throw new Error("作業中の戻るで保存状態が消えた(「動画はそのまま」の約束が破れる)");
         }
       } finally { w.localStorage.removeItem("marchcut_project"); }
-      return "最上位=" + bhref + "(pageIds実在を確認)+退出リセット / 作業中=ツール内+保存維持";
+      return "最上位=" + bhref + "(pageIds実在を確認)+退出時完全解放 / 作業中=ツール内+保存維持";
     });
   });
 
@@ -9632,6 +9634,36 @@ async function countSamples(ns, file, fromSec) {
       if (w.localStorage.getItem("marchcut_project") != null) {
         throw new Error("退出しても前回状態が残る(次回また蘇る)");
       }
+      /* Safari容量対策: 通知確認・アプリ切替のvisibilitychangeでは素材を守り、
+         実際に別ページへ出るpagehideでだけFile/video/Object URL等を外す。
+         iOSの内部コピー自体はJSから触れないが、MarchinZが参照を握り続ける
+         条件を残さないことを実イベントで測る。 */
+      compReset(w);
+      const S = w.MC.S, clip = S.clips[0];
+      clip.file = new w.File([new Uint8Array(1024)], "退出試験.mov", { type: "video/quicktime" });
+      clip.url = "blob:mz-qa-exit";
+      clip.video = d.createElement("video");
+      clip.video.src = clip.url;
+      const beforeVis = S.clips.length;
+      d.dispatchEvent(new w.Event("visibilitychange"));
+      if (S.clips.length !== beforeVis || !clip.file) {
+        throw new Error("通知確認・アプリ切替だけで動画参照を捨てている");
+      }
+      const leave = d.createElement("a");
+      leave.href = "/#creators"; leave.textContent = "QA退出";
+      d.body.appendChild(leave);
+      /* 製品の委譲listenerより後に既定遷移だけ止める。製品側には本物のclickが届き、
+         iframe自身はQAランナーから移動しない。 */
+      const stopNav = e => e.preventDefault();
+      d.addEventListener("click", stopNav);
+      leave.click();
+      d.removeEventListener("click", stopNav); leave.remove();
+      if (!U._lastToolRelease || U._lastToolRelease.clips < 1) {
+        throw new Error("MarchinZの別ページへ移る操作で完全解放処理が走らない");
+      }
+      if (S.clips.length || clip.file || clip.video || clip.url) {
+        throw new Error("MarchinZの別ページへ移ってもFile/video/Object URL参照が残る");
+      }
       /* 退出の導線とbfcache対策の配線(実クリックは遷移するのでソースで見る) */
       const app = await (await fetch("../switcher/js/app.js?cb=" + Date.now())).text();
       if (!/pageshow[\s\S]{0,400}persisted[\s\S]{0,120}location\.reload/.test(app)) {
@@ -9639,17 +9671,17 @@ async function countSamples(ns, file, fromSec) {
       }
       /* ★ 「← 戻る」はツール内に留まる導線になった(2026-08-05) ─
          リセットしてはいけない。退出リセットは foot-link 等だけ */
-      if (!/foot-link[\s\S]{0,400}resetSavedProject/.test(app)) {
-        throw new Error("退出導線(フッター等)でリセットしていない");
+      if (!/foot-link[\s\S]{0,400}releaseToolSession/.test(app)) {
+        throw new Error("退出導線(フッター等)で動画参照を完全解放していない");
       }
       if (/\.back-link"[\s\S]{0,200}resetSavedProject/.test(app)) {
         throw new Error("「← 戻る」で保存状態を消している(ツール内に戻るだけなのに)");
       }
       const uiSrc = await (await fetch("../switcher/js/ui.js?cb=" + Date.now())).text();
-      if (!/goToolList[\s\S]{0,300}resetSavedProject/.test(uiSrc)) {
-        throw new Error("成功後の「閉じる」(ツール一覧行き)でリセットしていない");
+      if (!/goToolList[\s\S]{0,300}releaseToolSession/.test(uiSrc)) {
+        throw new Error("成功後の「閉じる」(ツール一覧行き)で動画参照を完全解放していない");
       }
-      return "一般=ログ非表示 / 管理者=表示 / 退出でリセット / bfcacheは読み直し";
+      return "一般=ログ非表示 / 管理者=表示 / アプリ切替は保持 / 実退出で動画参照を完全解放 / bfcacheは読み直し";
     } finally {
       w.MZ_LIMITS.admin = keepAdmin; X.lastStats = keepStats;
       if (host) { host.hidden = true; }
@@ -9767,8 +9799,39 @@ async function countSamples(ns, file, fromSec) {
        明示して、幅ではなく端末種別が退避の正本であることを測る。 */
     w.MC.isIOS = true;
     try {
+      /* 直前の失敗や別の絞り込み実行がlocalStorageへ診断中stateを残しても、
+         この試験自身が①未記録の状態を作る。古いrunIdをD.startが正しく
+         守った結果を「新規試行」と取り違えない。 */
+      D.stop();
       await D.start();
       const st = D._test.getState();
+      const host = w.document.getElementById("storageDiag");
+      /* 2026-08-08実機: ①を記録しないまま②で1.19GBを選べてしまい、
+         選択後の22.65GBが「基準値」になった。OSのpickerを開いた時点で
+         容量が増えるため、onchange後の帳尻合わせでは遅い。UIと共通入口の
+         両方で、①が無い限りpickerそのものを開かないことを測る。 */
+      const onlyBeforeBase = w.document.getElementById("storageDiagOnly");
+      const onlyHint = w.document.getElementById("storageDiagOnlyHint");
+      if (!onlyBeforeBase || !onlyBeforeBase.disabled || !onlyHint || !/①基準値/.test(onlyHint.textContent)) {
+        throw new Error("①基準値より先に②を押せる、または押せない理由が見えない");
+      }
+      D.selectionOnly([new w.File([new Uint8Array(1192)], "基準値前.mov", { type: "video/quicktime" })]);
+      if (st.selectionOnly || (st.events || []).some(e => e.type === "picker_only_selected")) {
+        throw new Error("UIを迂回すると①基準値より先に②の記録を作れる");
+      }
+      const pickerInput = w.document.getElementById("fileInputV");
+      const keepConfirmBeforeBase = w.confirm, keepModeBeforeBase = w.MC.S.mode;
+      let openedBeforeBase = 0;
+      const countBeforeBase = () => { openedBeforeBase++; };
+      pickerInput.addEventListener("click", countBeforeBase);
+      try {
+        w.MC.S.mode = "vertical"; w.confirm = () => true;
+        w.MC.ui.openVideoPicker();
+        if (openedBeforeBase) throw new Error("診断①の前に通常の動画選択からpickerを開ける");
+      } finally {
+        pickerInput.removeEventListener("click", countBeforeBase);
+        w.confirm = keepConfirmBeforeBase; w.MC.S.mode = keepModeBeforeBase;
+      }
       const empty = { opfs: { bytes: 0, error: "" } };
       /* 前日の5.47GB→0GBが残っていても、今回の5.81GB→9.36GBだけを使う。 */
       st.history = [{ runId: "old", checkpoints: [
@@ -9797,11 +9860,14 @@ async function countSamples(ns, file, fromSec) {
       D.selectionOnly([new w.File([new Uint8Array(2048)], secret, { type: "video/quicktime" })]);
       const json = JSON.stringify(D._test.getState());
       if (json.includes(secret) || !/picker_only_selected/.test(json)) throw new Error("選択のみの匿名記録ができない");
-      const host = w.document.getElementById("storageDiag"), drop = w.document.getElementById("dropSec");
+      const drop = w.document.getElementById("dropSec");
       if (drop.contains(host)) throw new Error("診断欄が取り込み工程の中にあり、分析後に消える");
       drop.classList.add("step-off"); D.render();
       if (host.hidden || !w.document.getElementById("storageDiagOnly") || !w.document.getElementById("storageDiagRelease")) {
         throw new Error("工程が進んだ後に診断の選択のみ/参照解除の操作が残らない");
+      }
+      if (w.document.getElementById("storageDiagOnly").disabled || w.document.getElementById("storageDiagOnlyHint")) {
+        throw new Error("①基準値があっても②のpickerを開けない");
       }
       /* おまかせの全画面分析中も、診断を #workspace の外へ退避する。
          以前の試験は dropSec の外かしか見ておらず、実機で通った
