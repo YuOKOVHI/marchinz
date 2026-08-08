@@ -1600,20 +1600,21 @@ async function countSamples(ns, file, fromSec) {
         w.MC.ui.releaseToolSession = keepRelease;
       }
       if (!released) throw new Error("最上位からの退出で動画参照を完全解放していない");
-      /* 作業中: 横取りしてツール内の種類選択へ。URLも保存状態も動かさない */
+      /* 作業中: 退出を止める。URLも保存状態も動かさない */
       w.MC.ui.chooseMode("vertical", { silent: true });
       const href = w.location.href;
       w.localStorage.setItem("marchcut_project", JSON.stringify({ clips: [{ key: "qa" }] }));
+      w.MC.ui.setBusy(true);
       try {
         a.click();
         await new Promise(r2 => setTimeout(r2, 50));
         if (w.location.href !== href) throw new Error("作業中の戻るでURLが動いた");
-        if (ms.hidden) throw new Error("種類選択に戻らない");
+        if (!ms.hidden) throw new Error("作業中の戻るで種類選択へ移動してしまう");
         if (w.localStorage.getItem("marchcut_project") == null) {
           throw new Error("作業中の戻るで保存状態が消えた(「動画はそのまま」の約束が破れる)");
         }
-      } finally { w.localStorage.removeItem("marchcut_project"); }
-      return "最上位=" + bhref + "(pageIds実在を確認)+退出時完全解放 / 作業中=ツール内+保存維持";
+      } finally { w.MC.ui.setBusy(false); w.localStorage.removeItem("marchcut_project"); }
+      return "最上位=" + bhref + "(pageIds実在を確認)+退出時完全解放 / 作業中=退出停止+保存維持";
     });
   });
 
@@ -2209,14 +2210,14 @@ async function countSamples(ns, file, fromSec) {
       throw new Error("一番いいシーンから始まらない: " + S.startKey);
     }
     const len = S.trimOut - S.trimIn;
-    if (!(len > 50 && len <= 60)) throw new Error(`完成が60秒前後でない: ${len.toFixed(0)}秒`);
+    if (!(len > 25 && len <= 30)) throw new Error(`完成が30秒前後でない: ${len.toFixed(0)}秒`);
     if (!S.clips.every(c => Math.abs(c.rot - 0.8) < 0.01)) throw new Error("傾きが自動で当たっていない");
     /* おすすめ = rms 最大の3番 */
     if (S.audioClipId !== 3) throw new Error("おすすめの音声が選ばれていない: " + S.audioClipId);
     /* ③ ★ 自動で直しただけの傾きに「確認ずみ」の印を付けない
        (こだわりへ切り替えたとき、見ていないものが✓では嘘になる) */
     if (S.clips.some(c => c.tiltOk)) throw new Error("見ていない傾きに確認ずみの印が付いた");
-    return `7段を無停止で通過 / 60秒(${len.toFixed(0)}s) / climax / 音声3 / 傾き0.8° / marchinz`;
+    return `7段を無停止で通過 / 30秒(${len.toFixed(0)}s) / climax / 音声3 / 傾き0.8° / marchinz`;
   });
   /* 2026-08-01 優さん指示「おまかせは完全にUIを分けて。1つの画面だけに。
      何をしてるかがわかる。プレビューがわかるように。できていってる！がわかる」 */
@@ -2382,7 +2383,7 @@ async function countSamples(ns, file, fromSec) {
     }
     return "確定の瞬間も無音 / GainNodeも0 / 変異で鳴る(歯あり) / 閉じたら音が戻る";
   });
-  await test("★自走は最後まで鍵が掛かったまま・残り時間が出る", async () => {
+  await test("★自走は最後まで鍵が掛かったまま・時間を急かす文言を出さない", async () => {
     const w = await compEnv();
     const S = compReset(w);
     S.clips.forEach((c, i) => Object.assign(c, {
@@ -2431,13 +2432,13 @@ async function countSamples(ns, file, fromSec) {
     const ex = seen.find(x => x.tag === "export");
     if (!ex) throw new Error("書き出しの段まで来ていない");
     if (ex.busy) throw new Error("鍵を掛けたまま書き出しを押している(本物のハンドラは即returnする)");
-    /* ③ 3〜9分待たせるのだから、残り時間を出す */
-    if (!seen.some(x => /あと およそ|まもなく|もう少し/.test(x.sub))) {
-      throw new Error("待ち時間がどこにも出ていない");
+    /* ③ 進捗は見せるが、「もう少しかかる」等の急かす文言は出さない。 */
+    if (seen.some(x => /あと およそ|まもなく|もう少し|時間がかか/.test(x.sub))) {
+      throw new Error("削除対象の待ち時間文言が残っている");
     }
     /* ④ 終わったら鍵は返す(押せないままにしない) */
     if (w.MC.ui._busy) throw new Error("終わっても鍵が掛かったまま");
-    return `${seen.length}段すべて施錠 / 残り時間あり / 終了後は解錠`;
+    return `${seen.length}段すべて施錠 / 待ち時間文言なし / 終了後は解錠`;
   });
   await test("★選択は2段: 種類を決めてから、おまかせ／こだわり", async () => {
     const w = await compEnv();
@@ -9757,19 +9758,15 @@ async function countSamples(ns, file, fromSec) {
       if (!/pageshow[\s\S]{0,400}persisted[\s\S]{0,120}location\.reload/.test(app)) {
         throw new Error("bfcache復帰の読み直しが無い(戻ると前の動画とエラーが蘇る)");
       }
-      /* ★ 「← 戻る」はツール内に留まる導線になった(2026-08-05) ─
-         リセットしてはいけない。退出リセットは foot-link 等だけ */
-      if (!/foot-link[\s\S]{0,400}releaseToolSession/.test(app)) {
-        throw new Error("退出導線(フッター等)で動画参照を完全解放していない");
-      }
-      if (/\.back-link"[\s\S]{0,200}resetSavedProject/.test(app)) {
-        throw new Error("「← 戻る」で保存状態を消している(ツール内に戻るだけなのに)");
-      }
       const uiSrc = await (await fetch("../switcher/js/ui.js?cb=" + Date.now())).text();
+      /* 「← 戻る」は映像ツール一覧へ出る明示的な退出なので、完全解放する。 */
+      if (!/backLink[\s\S]{0,900}releaseToolSession/.test(uiSrc)) {
+        throw new Error("「← 戻る」で動画参照を完全解放していない");
+      }
       if (!/goToolList[\s\S]{0,300}releaseToolSession/.test(uiSrc)) {
         throw new Error("成功後の「閉じる」(ツール一覧行き)で動画参照を完全解放していない");
       }
-      return "一般=ログ非表示 / 管理者=表示 / アプリ切替は保持 / 実退出で動画参照を完全解放 / bfcacheは読み直し";
+      return "一般=ログ非表示 / 管理者=表示 / アプリ切替は保持 / 映像ツール一覧への退出で動画参照を完全解放 / bfcacheは読み直し";
     } finally {
       w.MZ_LIMITS.admin = keepAdmin; X.lastStats = keepStats;
       if (host) { host.hidden = true; }
@@ -10002,8 +9999,8 @@ async function countSamples(ns, file, fromSec) {
       if (!w.document.getElementById("storageDiagReturned").disabled) {
         throw new Error("⑤を記録済みでも、再度「Safariを開き直した」を押せて記録を壊せる");
       }
-      /* iPhoneでは、OSの選択画面を開く前に実機で確認した容量増加を知らせ、
-         取り消したときは選択画面へ進まない。承諾したときだけ一度開く。 */
+      /* 通常利用では動画選択前にSafari容量警告を出さない。診断中だけ
+         storageDiag.allowPicker が選択専用の手順を守る。 */
       const input = w.document.getElementById("fileInputV");
       const oldConfirm = w.confirm, oldMode = w.MC.S.mode;
       let confirms = 0, opens = 0;
@@ -10013,10 +10010,7 @@ async function countSamples(ns, file, fromSec) {
         w.MC.S.mode = "vertical";
         w.confirm = () => { confirms++; return false; };
         w.MC.ui.openVideoPicker();
-        if (opens) throw new Error("容量警告を取り消しても動画選択が開く");
-        w.confirm = text => { confirms++; return /Safariを終了しても残る/.test(text); };
-        w.MC.ui.openVideoPicker();
-        if (confirms !== 2 || opens !== 1) throw new Error(`iPhoneの動画選択前確認が効かない: confirm=${confirms} open=${opens}`);
+        if (confirms || opens !== 1) throw new Error(`通常利用で動画選択前の容量警告が残っている: confirm=${confirms} open=${opens}`);
       } finally {
         input.removeEventListener("click", seenOpen);
         w.confirm = oldConfirm; w.MC.S.mode = oldMode;
@@ -10039,29 +10033,31 @@ async function countSamples(ns, file, fromSec) {
     }
   });
 
-  await test("★素材1本では2本目を案内し、スマホは素材直後に30秒/60秒を選んでから分析する（変異つき）", async () => {
+  await test("★素材1本では2本目を案内し、仕上げの好みで30秒/60秒/フルを選んでから分析する（変異つき）", async () => {
     const w = await compEnv();
     const S = compReset(w), U = w.MC.ui, L = w.MZ_LIMITS, d = w.document;
     const keepL = { ...L }, keepRun = U.runAuto, keepNeed = U.needSecondVideo;
     try {
-      /* 端末/会員の本体判定は limits.js の閉包だが、このUIテストは「許可された
-         30/60の札を素材直後に出し、選択をrunAutoまで保つ」経路そのものを測る。 */
+      /* 仕上げの好みが、端末を問わず完成尺の唯一の入口であることを測る。 */
       Object.assign(L, { mobile: true, bigDevice: false, member: true, unlimited: false,
         admin: false, proAllowed: false,
         exportPresetsFor: () => [
           { id: "s30", label: "ショート", sec: 30, hint: "SNSに投稿しやすい長さ", locked: false },
           { id: "short", label: "スタンダード", sec: 60, hint: "1分でまとめる長さ", locked: false },
+          { id: "full", label: "まるごと", sec: 600, hint: "演奏全体", locked: false },
         ] });
-      S.mode = "vertical"; S.finishPicked = true; U._autoFlow = true; U._setupTab = "easy";
+      S.mode = "vertical"; S.finishPicked = false; U._autoFlow = true; U._setupTab = "easy";
       let ran = 0; U.runAuto = async () => { ran++; };
       U.renderClips(); U.focusNextAction();
-      const sec = d.getElementById("mobileLengthSec"), choices = d.querySelectorAll("#mobileLengthChoices .mobile-length-choice");
-      if (sec.hidden || choices.length !== 2 || ran) {
-        throw new Error(`素材直後の30/60選択が出ない/先走る: hidden=${sec.hidden} choices=${choices.length} run=${ran} videos=${U.videoClipCount()} need2=${U.needSecondVideo()} options=${U.mobileLengthOptions().length} needLength=${U.needsMobileLengthPick()} mobile=${L.mobile} member=${L.member}`);
+      await new Promise(r => setTimeout(r, 320));
+      const choices = d.querySelectorAll("#fpDuration .fp-seg-btn");
+      if (d.getElementById("finishPick").hidden || choices.length !== 3 || ran || !choices[0].classList.contains("on")) {
+        throw new Error(`仕上げの好みの30/60/フルが出ない/先走る: open=${!d.getElementById("finishPick").hidden} choices=${choices.length} run=${ran}`);
       }
       choices[1].click(); await new Promise(r => setTimeout(r, 320));
+      U.finishPickGo();
       if (S.exportPreset !== "short" || !S.mobileLengthDecided || ran !== 1) {
-        throw new Error(`60秒選択が分析へ渡らない: preset=${S.exportPreset} decided=${S.mobileLengthDecided} run=${ran}`);
+        throw new Error(`仕上げの好みの60秒が分析へ渡らない: preset=${S.exportPreset} decided=${S.mobileLengthDecided} run=${ran}`);
       }
 
       /* 1本だけに戻すと、こだわりを直接押しても素材工程に留める。 */
@@ -10076,7 +10072,7 @@ async function countSamples(ns, file, fromSec) {
       U.needSecondVideo = () => false;
       U.setSetupTab("pro");
       if (U._setupTab !== "pro") throw new Error("変異してもこだわりへ入れない=2本目門の試験に歯が無い");
-      return "1本=2つ目を案内してこだわり停止 / 2本=30秒・60秒を先に選択 / 選択値を分析へ保持";
+      return "1本=2つ目を案内してこだわり停止 / 2本=仕上げの好みで30秒・60秒・フル / 選択値を分析へ保持";
     } finally {
       U.runAuto = keepRun; U.needSecondVideo = keepNeed;
       Object.assign(L, keepL); compReset(w); U.renderClips();
@@ -12131,7 +12127,7 @@ async function countSamples(ns, file, fromSec) {
       if (S.syncDoubtAccepted) throw new Error("②なのに同期なしの印が立った");
       /* ②は保留も立てる(2026-08-02)。無いと✕で外した瞬間に自走が再開する */
       if (!U._repickHold) throw new Error("②で選び直しの保留が立たない");
-      return "通知1回・①=印+再開+畳む・②=素材へ+動画は残る+保留";
+      return "通知1回・①=印+再開+畳む・②=素材へ+保留";
     } finally {
       U.notifyUserTurn = keepNotify; U.runAuto = keepRun;
       U.autoStage.close();
@@ -12142,7 +12138,7 @@ async function countSamples(ns, file, fromSec) {
     }
   });
 
-  await test("★自走の全画面「動画を選び直す」: 中止機構を流用して止め、素材の工程へ(動画は残る)", async () => {
+  await test("★自走の全画面「動画を選び直す」: 中止機構を流用して止め、素材の工程へ戻す", async () => {
     const w = await compEnv();
     const S = compReset(w);
     const U = w.MC.ui, d = w.document;
@@ -12169,7 +12165,7 @@ async function countSamples(ns, file, fromSec) {
       if (!w.MC.exporter.cancelFlag) throw new Error("exporter.cancelFlag が立たない");
       if (!cb.disabled || !/やめています/.test(cb.textContent)) throw new Error("止まるまでの顔(やめています…)になっていない");
       if (!b.disabled) throw new Error("選び直す自身が眠らない(二度押せる)");
-      /* runAuto の catch と同じ着地(repickLand): 素材の工程+動画は残る+保留 */
+      /* runAuto の catch と同じ着地(repickLand): 素材の工程+保留 */
       const nClips = S.clips.length;
       U.autoStage.close();
       U.repickLand();
@@ -12178,8 +12174,8 @@ async function countSamples(ns, file, fromSec) {
       if (S.clips.length !== nClips) throw new Error("動画が消えた");
       if (!U._repickHold) throw new Error("保留が立たない(外した瞬間に自走が再開してしまう)");
       if (U._repickAfterCancel) throw new Error("着地の印が消えていない(次の「やめる」まで飛ばされる)");
-      if (!toasts.some(t => /動画は残って/.test(t))) throw new Error("動画が残る案内が無い: " + toasts.join(" / "));
-      return "確認1回・鍵は既存の_autoCancel・着地=素材工程+動画残存+保留";
+      if (!toasts.some(t => /素材を入れ替え/.test(t))) throw new Error("素材を入れ替える案内が無い: " + toasts.join(" / "));
+      return "確認1回・鍵は既存の_autoCancel・着地=素材工程+保留";
     } finally {
       w.confirm = keepConfirm; U.toast = keepToast;
       U._autoCancel = false; U._repickAfterCancel = false; U._repickHold = false;

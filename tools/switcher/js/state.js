@@ -20,8 +20,8 @@ window.MC = {
        これを分けないと、長さを選び直すたびに元の演奏範囲が失われて
        だんだん短くなっていく(選び直せなくなる) */
     showIn: null, showOut: null,
-    exportPreset: null,   // "short" | "mid" | "full"
-    mobileLengthDecided: false, // スマホの30秒/60秒を素材直後に選んだか(素材変更で戻す)
+    exportPreset: null,   // "s30" | "short" | "mid" | "full"
+    mobileLengthDecided: false, // 仕上げの好みで完成尺を決めたか(素材変更で戻す)
     startKey: null,       // "start"|"climax"|"ballad"|"drumline"|"solo"|"finale"|"manual"
     startAt: null,        // startKey==="manual" のときの開始位置(グローバル秒)
     lengthDecided: false, // 「この長さで進める」を押したか

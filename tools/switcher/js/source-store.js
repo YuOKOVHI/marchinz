@@ -23,6 +23,14 @@ MC.sourceStore = (() => {
   S._activeRelease = null;
   S._activeP = null;
   S._epoch = 1;
+  S._removals = new Set();
+
+  S._trackRemoval = promise => {
+    let tracked;
+    tracked = Promise.resolve(promise).finally(() => S._removals.delete(tracked));
+    S._removals.add(tracked);
+    return tracked;
+  };
 
   const diag = (phase, data) => {
     try {
@@ -208,7 +216,7 @@ MC.sourceStore = (() => {
     const name = clip && clip.sourceOpfsName;
     const bytes = Number(clip && clip.size) || 0;
     if (clip) { clip.sourceOpfsName = ""; clip.sourceStorage = "released"; }
-    return name ? S._removeName(name, bytes) : Promise.resolve(false);
+    return name ? S._trackRemoval(S._removeName(name, bytes)) : Promise.resolve(false);
   };
 
   S.cancelWrites = () => {
@@ -221,10 +229,16 @@ MC.sourceStore = (() => {
     const names = (clips || []).map(c => ({ name: c && c.sourceOpfsName, bytes: Number(c && c.size) || 0 }))
       .filter(x => x.name);
     for (const c of clips || []) if (c) { c.sourceOpfsName = ""; c.sourceStorage = "released"; }
-    names.forEach(x => { S._removeName(x.name, x.bytes); });
+    const removals = names.map(x => S._trackRemoval(S._removeName(x.name, x.bytes)));
     S.cancelWrites();
     S._live.clear(); S._dropActiveIfIdle();
-    return names.length;
+    return Promise.allSettled(removals).then(() => names.length);
+  };
+
+  /* 診断では「削除を依頼した」ではなく、OPFSから実際に消えた後を測る。 */
+  S.waitForIdle = async () => {
+    while (S._removals.size) await Promise.allSettled([...S._removals]);
+    return true;
   };
 
   S.audit = async () => {

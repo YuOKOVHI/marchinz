@@ -954,11 +954,18 @@ MC.ui.sceneSignupHtml = () =>
   + '<a class="mzso-signup" href="/#signup">無料登録する</a>';
 
 MC.ui.renderSceneOffers = () => {
-  const offers = MC.ui.sceneOffers();
   const hosts = [
     { after: MC.ui.$("#doneNote"), id: "doneScenes" },
     { after: MC.ui.$("#eoDoneNote"), id: "eoDoneScenes" },
   ];
+  /* フルを選んだ回は、同じ素材から別シーンを勧めない。完成尺を最大10分まで
+     使う選択と「別のシーン」の提案を同時に出すと、意図がぶれるため。 */
+  if (MC.S.exportPreset === "full") {
+    for (const h of hosts) { const el = document.getElementById(h.id); if (el) el.remove(); }
+    MC.ui.renderRemakeOffer();
+    return;
+  }
+  const offers = MC.ui.sceneOffers();
   /* ★ 0個でも段を消さない(2026-08-04 優さん実機指摘 → レビューで穴を1つ塞いだ)。
      消すと「別のシーン」という見出しごと画面から無くなり、
      作れないのか壊れているのか区別が付かない。
@@ -1492,45 +1499,11 @@ MC.ui.needSecondVideo = () => {
   return n > 0 && n < 2;
 };
 
-/* スマホの登録ユーザーと管理者は、素材を選んだ直後に30/60秒を明示してから
-   分析へ進む。技術上30秒に制限されるモードは、limits.js が返す使える札だけを
-   出すので、実行できない60秒を約束しない。 */
-MC.ui.mobileLengthOptions = () => {
-  const L = window.MZ_LIMITS || {};
-  if (!L.mobile || !(L.member || L.unlimited) || !L.exportPresetsFor) return [];
-  return L.exportPresetsFor(MC.S.mode).filter(p => !p.locked && (p.id === "s30" || p.id === "short"));
-};
-MC.ui.needsMobileLengthPick = () =>
-  !MC.ui.needSecondVideo() && MC.ui.videoClipCount() >= 2
-  && MC.ui.mobileLengthOptions().length >= 2 && !MC.S.mobileLengthDecided;
-
-MC.ui.renderMobileLengthPick = () => {
-  const sec = document.getElementById("mobileLengthSec");
-  const box = document.getElementById("mobileLengthChoices");
-  if (!sec || !box) return;
-  const open = MC.ui.needsMobileLengthPick();
-  sec.hidden = !open;
-  if (!open) { box.innerHTML = ""; return; }
-  const options = MC.ui.mobileLengthOptions();
-  box.innerHTML = "";
-  for (const p of options) {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.className = "mobile-length-choice";
-    b.innerHTML = `<b>${MC.ui.esc(MC.ui.fmtLen(p.sec))}</b><span>${MC.ui.esc(p.hint)}</span><em>この長さで進む</em>`;
-    b.onclick = () => {
-      MC.S.exportPreset = p.id;
-      MC.S.mobileLengthDecided = true;
-      MC.S.lengthDecided = false; // 音の解析後に開始位置は改めて決める
-      MC.ui.invalidateCuts();
-      MC.saveState();
-      MC.ui.renderClips();
-      MC.ui.toast(`${MC.ui.fmtLen(p.sec)}で分析を始めます`);
-      MC.ui.focusNextAction();
-    };
-    box.appendChild(b);
-  }
-};
+/* 完成尺は「仕上げの好み」に一元化する。以前のスマホ専用30/60画面は、
+   分析前と仕上げ画面で選択が二重になり、実際の流れも説明しづらかったため廃止。 */
+MC.ui.mobileLengthOptions = () => [];
+MC.ui.needsMobileLengthPick = () => false;
+MC.ui.renderMobileLengthPick = () => {};
 
 MC.ui.focusNextAction = () => {
   if (!MC.S.clips.length) return;
@@ -1544,12 +1517,6 @@ MC.ui.focusNextAction = () => {
       MC.ui._autoFlow = true;
       MC.ui.setSetupTab("easy");
     }
-    return;
-  }
-  /* スマホでは、素材を読んだ直後・重い分析に入る前に30/60秒を選ぶ。 */
-  if (MC.ui.needsMobileLengthPick()) {
-    MC.ui.renderMobileLengthPick();
-    MC.ui.gentleScrollTo(document.getElementById("mobileLengthSec"), "nearest");
     return;
   }
   /* ★ おまかせを選んでいるなら、ここから先は一度も止まらない(2026-08-01 優さん指示)。
@@ -2709,10 +2676,9 @@ MC.ui.renderResumeNote = () => {
 MC.ui.photosInvited = () =>
   MC.S.mode === "vertical" && !(MC.ui._autoFlow && MC.ui._setupTab !== "pro");
 
-/* iPhone Safariでは、実機で「ファイルを選択しただけ」の段階で選択容量ぶんの
-   「書類とデータ」が増え、Safariを完全終了しても残る結果を確認した。
-   ここはOSのファイル選択を開く直前の唯一の共通入口。動画を送信しないことと、
-   同じ素材の選び直しを避けることを明示してから開く。 */
+/* OSのファイル選択を開く共通入口。Safari容量の管理者診断中だけは、
+   測定の順序を守るため storageDiag がここで止める。一般ユーザーへの
+   Safari容量ダイアログは表示しない。 */
 MC.ui.openVideoPicker = () => {
   const input = MC.ui.$(MC.S.mode === "vertical" ? "#fileInputV" : "#fileInput");
   if (!input) return false;
@@ -2721,7 +2687,6 @@ MC.ui.openVideoPicker = () => {
     return false;
   }
   if (MC.storageDiag && MC.storageDiag.allowPicker && !MC.storageDiag.allowPicker()) return false;
-  if (MC.isIOS && !window.confirm("iPhoneのSafariでは、動画を選ぶだけで選択した容量ぶんの「書類とデータ」が増え、Safariを終了しても残ることがあります。\n\n動画はMarchinZから送信されません。選び直しを避けるため、今回使う動画だけを一度で選んでください。\n\n動画を選びますか？")) return false;
   input.click();
   return true;
 };
@@ -3189,7 +3154,7 @@ MC.ui.renderExportMode = () => {
     el.innerHTML = "";   // 正常時は技術情報を出さない(そのまま保存できるのが当たり前の姿)
     btn.innerHTML = '<i class="fa-solid fa-file-export"></i> 動画を書き出す';
   } else if (mode === "realtime") {
-    el.innerHTML = `<span class="warn">この端末では、動画とおなじ長さの時間がかかります（3分の動画なら約3分）。おわるまで画面を閉じないでください</span>`;
+    el.innerHTML = `<span class="warn">この端末では再生しながら書き出します。</span>`;
     btn.innerHTML = '<i class="fa-solid fa-file-export"></i> 動画を書き出す';
   } else if (mode === "mute") {
     el.innerHTML = `<span class="warn">⚠ この端末では音声を付けられません(映像のみ)</span>`;
@@ -3975,7 +3940,7 @@ MC.ui.showInterruptNote = (ms, opts = {}) => {
         ? "離れていた間は止まっていました。"
         : "中断された可能性があります。";
   const body = opts.running
-    ? "続きから進めています。終わるまでこの画面のままお待ちください。"
+    ? "作業を再開しています。"
     : (opts.crashed && stalled)
       /* 「選び直せば書き出しからやり直せます」「◯分ぶんは書けています。
          もう一度押すと、そこから続きます」を削除(2026-07-31 優さん指示)。
@@ -4253,27 +4218,16 @@ MC.ui.notifyAnalysisDone = (opt) => {
   MC.ui._adoneTm = setTimeout(hide, 8000);   // 8秒で自動で引っ込む
 };
 
-/* 作業中だけ出す「このまま待ってて」の帯。guardLeave と運命共同体にする
-   (出し忘れ・消し忘れが構造的に起きない)。2026-07-21 優さん指示 */
+/* 待機を促す帯は出さない。離脱防止自体は guardLeave が継続する。 */
 MC.ui._stayBanner = on => {
   let el = document.getElementById("mzStayBanner");
-  if (on && !el) {
-    el = document.createElement("div");
-    el.id = "mzStayBanner";
-    el.className = "mz-stay-banner";
-    el.setAttribute("role", "status");
-    el.innerHTML = '<i class="fa-solid fa-mug-hot" aria-hidden="true"></i> '
-      + '作業中です。この画面のままお待ちください（切り替えると止まることがあります）';
-    document.body.appendChild(el);
-  } else if (!on && el) {
-    el.remove();
-  }
+  if (el) el.remove();
 };
 
 MC.ui.guardLeave = on => {
   if (on === MC.ui._leaveGuarded) return;
   MC.ui._leaveGuarded = on;
-  MC.ui._stayBanner(on);          // 帯はこのツール固有(共通側は見た目を持たない)
+  MC.ui._stayBanner(on);
   MZ_SESSION.guardLeave(on);      // beforeunload + Wake Lock
 };
 
@@ -4309,14 +4263,14 @@ MC.ui.initVisibility = () => {
 /* ============ おまかせ: 取り込んだら書き出しまで自走(2026-08-01 優さん指示) ============
    「できるだけタップやクリックせずに最後までやってほしい」。
    決め打ちにするのは4つ:
-     完成60秒 / 盛り上がるシーン / 音はおすすめ / 傾き自動 / 色は MarchinZカラー
+     完成30秒 / 盛り上がるシーン / 音はおすすめ / 傾き自動 / 色は MarchinZカラー
 
    ★ 途中で一度も止まらないので、**止まるべき所で止まらない**のがいちばん怖い。
      ・上限を超える長さは選ばない(ゲストは59秒までなので presetSec が丸める)
      ・失敗したらそこで止めて、こだわりへ逃がす(黙って続けない)
      ・すでに書き出し済みなら走らせない(二重書き出し) */
 MC.ui.AUTO = {
-  preset: "short",        // 完成60秒(実尺は上限で丸まる)
+  preset: "s30",          // 完成30秒(実尺は上限で丸まる)
   startKey: "best",       // 一番いいシーン(2026-08-05 DCI協議の採点1位)
   filterId: "marchinz",   // MarchinZカラー(=「仕上げの好み」のおすすめ)
   cutLevel: 2,            // 切り替えは「おすすめ」(同上)
@@ -4324,7 +4278,7 @@ MC.ui.AUTO = {
 
 /* おまかせで決め打ちにする設定を当てる。呼ぶのは自走の入口だけ */
 MC.ui.applyAutoChoices = () => {
-  /* スマホで本人が30秒/60秒を先に選んだ回は、その選択を自動設定で上書きしない。 */
+  /* 仕上げの好みで本人が選んだ長さは、自動設定で上書きしない。 */
   if (!MC.S.mobileLengthDecided) MC.S.exportPreset = MC.ui.AUTO.preset;
   MC.S.startKey = MC.ui.AUTO.startKey;
   MC.S.startAt = null;
@@ -4659,7 +4613,7 @@ MC.ui.autoStage = {
        これが無かったため、失敗した画面が
        ・見出しが「カメラを切り替える…」のまま(render が失敗時は head に触らない)
        ・失敗した段の青い点が脈打ち続ける(_now を消していない)
-       ・「もう少しかかっています・経過8分」を数え続ける
+       ・経過時間を数え続ける
        という、どう見ても「まだ動いています」の顔になっていた。
        しかも下に積まれた失敗の説明は画面の外(実測 375×635 で 21px、
        横向きでは 181px はみ出す)。v1.66.0 で潰した「失敗が見えない」が
@@ -4755,8 +4709,7 @@ MC.ui.autoStage = {
     }
     const pct = MC.ui.$("#asPct"); if (pct) pct.textContent = Math.round(r * 100) + "%";
     const eta = MC.ui.$("#asEta");
-    /* ★ 失敗したら数えるのをやめる。隣で「もう少しかかっています」が
-       動き続けると、失敗しているのかまだ動いているのか判らない */
+    /* ★ 失敗したら経過計測も止め、停止後に進行表示だけが残らないようにする。 */
     if (eta && !this._fail && !this._ask) eta.textContent = MC.ui.autoSub ? MC.ui.autoSub() : "";
     const cur = this.STEPS.find(s => s.key === this._now);
     const head = MC.ui.$("#asHead");
@@ -4852,20 +4805,7 @@ MC.ui.autoStage = {
 
 /* 自走の残り時間の一言。経過ぶんを引いて出す。
    1分未満は「まもなく」— 秒まで出すと正確に見えすぎる */
-MC.ui.autoSub = () => {
-  const total = MC.ui._autoEtaSec || 0;
-  if (!(total > 30)) return "";
-  const el = (performance.now() - (MC.ui._autoT0 || performance.now())) / 1000;
-  const left = total - el;
-  /* ★ 見積りを超えたら「まもなく」を言い続けない(2026-08-01 レビュー14件)。
-     iPhone の実測がまだ無い以上、見積りが外れるのは前提。外れたときに
-     嘘を言い続けるより、経過を正直に出すほうが不安が小さい */
-  if (left <= 0) return `もう少しかかっています・経過 ${Math.max(1, Math.round(el / 60))}分`;
-  if (left <= 45) return "まもなく完成します";
-  /* 「このままお待ちください」は画面下の固定文へ移した。ここに足すと
-     320px 幅で2行に折り返して、数字が読みにくくなる(実測 27px→46px) */
-  return `あと およそ${Math.max(1, Math.round(left / 60))}分`;
-};
+MC.ui.autoSub = () => "";
 
 /* 中止は「失敗」ではない。失敗の顔(理由と次の一手)を出すべきではないので、
    例外の型で分ける。message は使わないが name で判別する */
@@ -4967,7 +4907,15 @@ MC.ui.setFinishPickInert = on => {
    ★ 通常のおまかせでは決して S を読まない ─ 前回の色や頻度が新しいおまかせへ
      黙って漏れ戻るのを防ぐため(2026-08-03 push前レビュー)。
      作り直しは「いまの設定を変える」操作なので、そこだけ例外にする */
+MC.ui.finishDurationOptions = () => {
+  const all = window.MZ_LIMITS && MZ_LIMITS.exportPresetsFor
+    ? MZ_LIMITS.exportPresetsFor(MC.S.mode) : [];
+  return all.filter(p => p.id === "s30" || p.id === "short" || p.id === "full");
+};
+
 MC.ui.newFinishPrefs = fromState => ({
+  /* 初期は常に30秒。作り直しだけは、いま作った長さをそのまま見せる。 */
+  preset: fromState && MC.S.exportPreset ? MC.S.exportPreset : "s30",
   color: fromState && MC.S.filterId === "none" ? "natural" : "cinema",
   level: fromState ? (MC.S.cutLevel || MC.ui.AUTO.cutLevel) : MC.ui.AUTO.cutLevel,
   tilt: fromState ? MC.S.autoTilt !== false : true,   // 傾きの自動補正(既定ON)
@@ -5191,6 +5139,36 @@ MC.ui.renderFinishPick = () => {
         fp.level = lv; fp.changed = true; fp.focus = null;
         MC.ui.buzz([10]); MC.ui.renderFinishPick(); };
       box.appendChild(b);
+    }
+  }
+  /* --- 完成動画の長さ(全モード共通) --- */
+  { const box = MC.ui.$("#fpDuration");
+    if (box) {
+      const options = MC.ui.finishDurationOptions();
+      /* 旧保存やモード上限で使えない値を握っていた場合も、初期の30秒へ戻す。 */
+      if (!options.some(p => p.id === fp.preset && !p.locked)) fp.preset = "s30";
+      box.innerHTML = "";
+      const labels = { s30: "30秒", short: "60秒", full: "フル（最大10分）" };
+      for (const p of options) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "fp-seg-btn" + (fp.preset === p.id ? " on" : "") + (p.locked ? " locked" : "");
+        b.setAttribute("role", "radio");
+        b.setAttribute("aria-checked", fp.preset === p.id ? "true" : "false");
+        if (p.locked) {
+          b.setAttribute("aria-disabled", "true");
+          b.title = p.unlock || "この環境では使えません";
+        }
+        b.innerHTML = MC.ui.esc(labels[p.id] || p.label)
+          + (p.locked ? `<span class="fp-reco">${MC.ui.esc(p.unlock || "使えません")}</span>` : "");
+        b.onclick = () => {
+          if (p.locked) { MC.ui.toast(p.unlock || "この長さはこの環境では使えません"); return; }
+          if (fp.preset === p.id) return;
+          fp.preset = p.id; fp.changed = true; fp.focus = null;
+          MC.ui.buzz([10]); MC.ui.renderFinishPick();
+        };
+        box.appendChild(b);
+      }
     }
   }
   /* --- 傾きの自動補正(全モード共通・2026-08-04 優さん指示) --- */
@@ -5572,6 +5550,11 @@ MC.ui.finishPickGo = () => {
   const fp = MC.ui._fp;
   if (!fp) return;
   MC.ui.fpAuditionStop();               // 試聴を鳴らしたまま次へ行かせない
+  /* 仕上げ画面で選んだ完成尺を分析と書き出しの正本へ渡す。 */
+  MC.S.exportPreset = fp.preset || "s30";
+  MC.S.mobileLengthDecided = true;
+  MC.ui.invalidateCuts();
+  MC.S.lengthDecided = false;
   /* 使う音(2026-08-06)。おまかせなら従来どおり autoPickAudio に任せる */
   if (fp.audio && fp.audio !== "auto" && MC.getClip(fp.audio)) {
     MC.S.audioClipId = fp.audio;
@@ -5676,7 +5659,7 @@ MC.ui.repickLand = (msg) => {
   /* 言うことは呼び元で変える(2026-08-03 レビュー)。同じ着地でも、
      中止から来た人には「やめました」、好み画面の「動画を選び直す」から
      来た人には**やめていない**ので選び直しの手順を言う */
-  MC.ui.toast(msg || "やめました。動画は残っています ─ ✕で外して入れ替えられます");
+  MC.ui.toast(msg || "素材を入れ替えられます");
   window.scrollTo({ top: 0, behavior: "smooth" });
 };
 
@@ -6786,25 +6769,11 @@ MC.ui.wire = () => {
          director.run が走ったまま種類選択→mode書き換えまで到達できた */
       if (MC.ui._busy || (MC.exporter && MC.exporter.running)) {
         e.preventDefault();
-        MC.ui.toast("処理中です。終わるまでお待ちください(中止するには画面内の「中止」を)");
+        MC.ui.toast("処理中のため移動できません。中止するには画面内の「中止」を押してください");
         return;
       }
-      /* ★ 「← 戻る」の設計(2026-08-05 優さん)。
-         ・作業中: 横取りしてツール内の種類選択へ ─ ページ遷移すると
-           取り込んだ動画(メモリ上)が消えるため
-         ・最上位(種類選択): ふつうのリンクとして映像ツール一覧
-           (/#creators)へ遷移する。ここは意図した退出なので
-           保存状態も捨てる(goToolList と同じ扱い)。
-         ※ TOPはハッシュ=ルートのSPA。#creators は site-nav.js の pageIds に
-           登録された正規ルートで、#creators-heading(見出しのid)へ変えると
-           逆にルーター不発でTOP先頭へ落ちる(2026-08-06 レビューで実測) */
-      const modeSel = $("#modeSelect");
-      if (modeSel && modeSel.hidden) {
-        e.preventDefault();
-        MC.ui.showModeSelect();
-        MC.ui.toast("取り込んだ動画はそのまま残っています");
-        return;
-      }
+      /* 「← 戻る」は常に映像ツール一覧へ戻る明示的な退出。素材・OPFS・
+         Object URLを切ってから遷移するため、一覧に戻ったあと動画は残らない。 */
       MC.ui.releaseToolSession("ヘッダーから退出");
     }); }
 
@@ -7272,12 +7241,9 @@ MC.ui.wire = () => {
     MC.ui.exportOverlay.open();   // ここから全画面(案B)。進捗は下のmountへ実る
     const p = MZP.start({
       mount: "#eoProgress", chapter: "書き出し", delay: 0,
-      /* 書き出しは設計上10〜15分かかる。既定の8秒で「時間がかかっています」を
-         出すと、正常な待ちの間ずっと異常を宣告し続ける(2026-07-26) */
       slowMs: 0,
       label: mode === "realtime" ? "再生しながら録画しています…" : "映像を作っています…",
-      sub: mode === "realtime" ? "画面を閉じずにお待ちください"
-         : "終わるまで、この画面を開いたままにしてください",
+      sub: "",
       // 中止は枠の外の #cancelBtn が既に担っているので、ここでは出さない(二重表示の回避)
     });
     MC.ui.clearErrorLog();   // やり直しでは前回の失敗ログを見せない

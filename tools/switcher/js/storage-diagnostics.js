@@ -321,12 +321,19 @@ MC.storageDiag = (() => {
   D.probeResult = (ok, error) => push("opfs_probe_result", { ok: !!ok, error: error ? errText(error) : "" });
   D.probePending = () => push("opfs_probe_pending_15s", { meaning: "Worker応答待ち。起動掃除はこの処理とは独立です" });
   D.sweepCycle = async trigger => {
-    if (!admin() || !state || !state.active) return MC.exporter.opfsSweep();
+    const sweepAll = async () => {
+      let exporterError = "", sourceError = "", sourceReport = null;
+      try { await MC.exporter.opfsSweep(); } catch (e) { exporterError = errText(e); }
+      try { if (MC.sourceStore) sourceReport = await MC.sourceStore.sweep(); } catch (e) { sourceError = errText(e); }
+      return { exporterError, sourceError, sourceReport };
+    };
+    if (!admin() || !state || !state.active) return sweepAll();
     const before = await D.captureRaw(`${trigger}:掃除前`); let thrown = "";
-    try { await MC.exporter.opfsSweep(); } catch (e) { thrown = errText(e); }
+    const sweep = await sweepAll();
+    thrown = [sweep.exporterError, sweep.sourceError].filter(Boolean).join(" / ");
     const after = await D.captureRaw(`${trigger}:掃除後`); state.lastSnapshot = after;
     push("sweep", { trigger, before, after, freedObserved: Math.max(0, (before.opfs.bytes || 0) - (after.opfs.bytes || 0)),
-      report: MC.exporter._lastSweepReport || null, thrown }); return after;
+      report: MC.exporter._lastSweepReport || null, sourceReport: sweep.sourceReport, thrown }); return after;
   };
   D.releaseSources = async () => {
     if (!state || !state.active || !admin()) return;
@@ -348,6 +355,9 @@ MC.storageDiag = (() => {
       /* removeClip後に残るローカル変数にも、File/HTMLVideoElementを残さない。 */
       c.file = null; c.video = null; c.url = "";
     }
+    /* removeClip の素材OPFS削除は非同期。完了前のsnapshotを「残っている」と
+       誤記録しないため、ここで実削除まで待つ。 */
+    if (MC.sourceStore && MC.sourceStore.waitForIdle) await MC.sourceStore.waitForIdle();
     if (MC.media && MC.media.afterChange) MC.media.afterChange({ suppressNextAction: true });
     ["#fileInput", "#fileInputV"].forEach(sel => { const input = document.querySelector(sel); if (input) input.value = ""; });
     if (MC.preview) { MC.preview.soloId = null; MC.preview.draw(); }
@@ -392,7 +402,10 @@ MC.storageDiag = (() => {
     else if (pf.length) out.proxy = `作成を試したが失敗（${pf.length}本）`;
     else if (pd.length && pd.every(e => !e.data.candidate)) out.proxy = "作成対象にならなかった";
     const sw = ev.filter(e => e.type === "sweep").slice(-1)[0];
-    if (sw) { const r = sw.data.report || {}; out.sweep = `${r.deep ? "深い掃除" : "保守的な掃除"}・実測解放 ${bytes(sw.data.freedObserved)}` + (r.error || sw.data.thrown ? `・エラー ${r.error || sw.data.thrown}` : ""); }
+    if (sw) { const r = sw.data.report || {}, s = sw.data.sourceReport || {};
+      out.sweep = `${r.deep ? "深い掃除" : "保守的な掃除"}・実測解放 ${bytes(sw.data.freedObserved)}`
+        + (s.supported ? `・素材OPFS ${s.skipped ? "使用中のため保持" : bytes(s.freed || 0) + "解放"}` : "")
+        + (r.error || sw.data.thrown ? `・エラー ${r.error || sw.data.thrown}` : ""); }
     const cps = (state.checkpoints || []).filter(c => c.validForDelta !== false);
     const compare = (a, b, label) => {
       if (!a || !b) return null;
@@ -453,7 +466,8 @@ MC.storageDiag = (() => {
         const o = e.data.opfs || {}, est = e.data.estimate || {};
         lines.push(`${stamp(e.at)} snapshot(${e.data.reason}): OPFS ${bytes(o.bytes)} ${o.n}件 [${Object.keys(o.categories || {}).map(k => `${k}:${bytes(o.categories[k].bytes)}`).join(", ") || "空"}] / storage.usage ${bytes(est.usage)}${o.error ? " / ERROR " + o.error : ""}`);
       } else if (e.type === "sweep") {
-        const r = e.data.report || {}; lines.push(`${stamp(e.at)} sweep(${e.data.trigger}): ${r.deep ? "深" : "保守"} / before ${bytes(e.data.before.opfs.bytes)} -> after ${bytes(e.data.after.opfs.bytes)} / 解放 ${bytes(e.data.freedObserved)}${r.error ? " / ERROR " + r.error : ""}`);
+        const r = e.data.report || {}, s = e.data.sourceReport || {};
+        lines.push(`${stamp(e.at)} sweep(${e.data.trigger}): ${r.deep ? "深" : "保守"} / before ${bytes(e.data.before.opfs.bytes)} -> after ${bytes(e.data.after.opfs.bytes)} / 解放 ${bytes(e.data.freedObserved)}${s.supported ? ` / 素材OPFS ${s.skipped ? "使用中のため保持" : bytes(s.freed || 0) + "解放"}` : ""}${r.error ? " / ERROR " + r.error : ""}`);
       } else if (e.type === "checkpoint") lines.push(`${stamp(e.at)} checkpoint(${e.data.phase}): Safari ${e.data.safariGb.toFixed(2)} GB / OPFS ${bytes(e.data.snapshot.opfs.bytes)}`);
       else lines.push(`${stamp(e.at)} ${e.type}: ${JSON.stringify(e.data)}`);
     }
@@ -519,8 +533,10 @@ MC.storageDiag = (() => {
       return;
     }
     host.classList.remove("sd-compact");
+    const sourceCat = snap && snap.opfs && snap.opfs.categories && snap.opfs.categories.source;
+    const sourceText = sourceCat ? `（素材 ${bytes(sourceCat.bytes)}・${sourceCat.n}件）` : "";
     host.innerHTML = `<div class="sd-head"><div><b>Safari容量診断中</b><span>${next}</span></div><div class="sd-head-actions"><span class="sd-live">記録中</span><button type="button" class="btn ghost sd-fold" id="storageDiagToggle" aria-expanded="true">たたむ</button></div></div>
-      <div class="sd-result"><b>${a.verdict}</b>${state.lastRecord ? `<span class="sd-recorded">${recordText(state.lastRecord)}</span>` : ""}<span>プロキシ: ${a.proxy}</span><span>掃除: ${a.sweep}</span><span>現在のOPFS: ${snap ? `${bytes(snap.opfs.bytes)}（${snap.opfs.n}件）` : "計測前"}</span></div>
+      <div class="sd-result"><b>${a.verdict}</b>${state.lastRecord ? `<span class="sd-recorded">${recordText(state.lastRecord)}</span>` : ""}<span>プロキシ: ${a.proxy}</span><span>掃除: ${a.sweep}</span><span>現在のOPFS: ${snap ? `${bytes(snap.opfs.bytes)}（${snap.opfs.n}件）${sourceText}` : "計測前"}</span></div>
       <div class="sd-plan"><b>今回の試行で分けること</b><span>①基準値　②ファイル選択だけ　③通常の分析　④MarchinZ側の参照解除　⑤Safari完全終了後</span><div class="sd-plan-actions"><div class="sd-release-wrap"><button type="button" class="btn ghost" id="storageDiagOnly" ${baselineReady ? "" : "disabled"} aria-describedby="storageDiagOnlyHint">② 選択だけを試す（動画を処理しない）</button>${baselineReady ? "" : `<span id="storageDiagOnlyHint" class="sd-release-hint">①基準値を記録すると使えます</span>`}</div><input id="storageDiagOnlyInput" type="file" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" multiple hidden><div class="sd-release-wrap"><button type="button" class="btn ghost" id="storageDiagRelease" ${hasClips ? "" : "disabled"} aria-describedby="storageDiagReleaseHint">④ MarchinZ側の素材参照を外す</button>${hasClips ? "" : `<span id="storageDiagReleaseHint" class="sd-release-hint">③通常取り込み後に使えます</span>`}</div><button type="button" class="btn ghost" id="storageDiagReturned" ${canMarkReturned ? "" : "disabled"}>⑤ Safariを開き直した</button></div></div>
       <label class="sd-label" for="storageDiagGb">設定 → Safari →「書類とデータ」</label><div class="sd-measure"><input id="storageDiagGb" type="number" min="0" step="0.01" inputmode="decimal" placeholder="例 5.49"><span>GB</span><button type="button" class="btn" id="storageDiagRecord">この数値を記録</button></div>
       <div class="sd-actions"><button type="button" class="btn ghost" id="storageDiagNew">新しい試行</button><button type="button" class="btn ghost" id="storageDiagSnap">内部だけ再計測</button><button type="button" class="btn ghost" id="storageDiagCopy">レポートをコピー</button><button type="button" class="btn ghost" id="storageDiagStop">診断を終了・記録削除</button></div><textarea id="storageDiagReport" class="sd-report" readonly hidden aria-label="診断レポート"></textarea>`;

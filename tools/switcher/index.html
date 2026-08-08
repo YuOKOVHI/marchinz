@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-app-v="2.9.1" data-mz-channel="beta">
+<html lang="ja" data-mz-app-v="2.9.2" data-mz-channel="beta">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -199,6 +199,10 @@
       <div id="fpLevels" class="fp-seg" role="radiogroup" aria-label="カメラの切り替えの多さ"></div>
     </div>
     <div class="fp-sec">
+      <h3 class="fp-sec-title">動画の長さ</h3>
+      <div id="fpDuration" class="fp-seg" role="radiogroup" aria-label="完成動画の長さ"></div>
+    </div>
+    <div class="fp-sec">
       <h3 class="fp-sec-title">色</h3>
       <div id="fpColors" class="fp-colors" role="radiogroup" aria-label="色の仕上げ"></div>
     </div>
@@ -241,7 +245,7 @@
       <div id="fpRoleCards" class="wp-cards"></div>
     </div>
     <div class="wp-foot">
-      <!-- 押し間違いの逃げ道。閉じるだけで、取り込んだ動画はそのまま(戻る=左) -->
+      <!-- 押し間違いの逃げ道。素材を選び直すため、ここではツールから離れない。 -->
       <button type="button" id="fpBack" class="btn small ghost">← 動画を選び直す</button>
       <button type="button" id="fpGo" class="btn primary">このまま進む</button>
     </div>
@@ -293,14 +297,6 @@
       <div id="clipSlots" class="clip-slots"></div>
       <input type="file" id="fileInput" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" multiple hidden>
       <input type="file" id="fileInputV" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v,image/*" multiple hidden>
-    </section>
-
-    <!-- スマホの登録ユーザー/管理者は、重い分析に入る前に完成尺だけ先に決める。
-         音の解析後は開始位置だけを選べるため、ここでは30秒/60秒の二択に絞る。 -->
-    <section class="panel mobile-length-pick" id="mobileLengthSec" hidden aria-labelledby="mobileLengthTitle">
-      <h2 id="mobileLengthTitle">動画の長さを選ぶ</h2>
-      <p class="sec-lead">分析の前に、完成動画を30秒か60秒か選びます。</p>
-      <div id="mobileLengthChoices" class="mobile-length-choices" aria-label="書き出す長さ"></div>
     </section>
 
     <!-- 傾きの確認(単独の工程)。自動検出は全廃し、1本ずつ本人の目で見て手で直す。
@@ -657,7 +653,7 @@
 
     <!-- 全体の進み具合 -->
     <div class="as-bar"><div id="asBarFill" class="as-bar-fill"></div></div>
-    <p class="as-meta"><span id="asPct" class="as-pct">0%</span><span id="asEta" class="as-eta"></span></p>
+    <p class="as-meta"><span id="asPct" class="as-pct">0%</span></p>
 
     <!-- 段のチェックリスト。済んだものに✓が点いていく -->
     <!-- 段が進んだことを読み上げにも伝える。3分間、視覚以外の手がかりが
@@ -702,15 +698,6 @@
       </div>
     </div>
 
-    <!-- ★ 「画面を閉じても止まりません」は事実として誤り(2026-08-01 レビュー)。
-         iOS は画面が消えれば止まるし、タブを閉じても止まる。しかも #asWake の
-         「画面が消えると止まります」と正面衝突していた（普通の人にとって
-         「画面を閉じる」と「画面が消える」は同じ行為）。
-         書き出しの全画面と同じ言い方に揃える -->
-    <!-- ★ 書き出し中の #exportOverlay .eo-note と**同じ文**にする(2026-08-07 UI/UXレビュー🔴)。
-         連続して出る2画面が「止まります(=やり直し)」と「停止します(=再開しそう)」という
-         逆の期待を与えていた。6分の待ち時間中にLINEを見てよいかの判断が画面で変わる -->
-    <p class="as-wait">この画面のままお待ちください。ほかのアプリを開くと止まり、はじめからやり直しになります</p>
     <!-- 「動画を選び直す」と「やめる」の2本(2026-08-02 優さん指示)。
          統合しない理由: 止めたあとの行き先が別 ─
          選び直す=中止して素材の工程へ戻り、入れ替えてもう一度おまかせ /
@@ -743,8 +730,6 @@
            play() が通ったときだけ canvas と入れ替わって現れる(ui.js の eoLive) -->
       <video id="eoLiveVid" class="eo-live" hidden playsinline aria-hidden="true"></video>
       <div id="eoProgress"></div>
-      <p class="eo-note"><i class="fa-solid fa-mug-hot" aria-hidden="true"></i>
-        この画面のままお待ちください。ほかのアプリを開くと止まり、はじめからやり直しになります</p>
       <button type="button" id="eoCancel" class="btn danger">中止</button>
     </div>
     <div id="eoDone" hidden>
@@ -830,8 +815,8 @@
 <script src="vendor/fft.js"></script>
 <script src="js/state.js?v=2.5.1"></script>
 <script src="js/layout.js?v=1.99.3"></script>
-<script src="js/source-store.js?v=2.9.1"></script>
-<script src="js/media.js?v=2.9.1"></script>
+<script src="js/source-store.js?v=2.9.2"></script>
+<script src="js/media.js?v=2.9.2"></script>
 <script src="js/audio.js?v=1.113.10"></script>
 <script src="js/sync.js?v=1.113.10"></script>
 <script src="js/beats.js?v=1.99.3"></script>
@@ -852,8 +837,8 @@
 <!-- 縮小版(プロキシ)。exporter の掃除が MC.proxy.PREFIX を見るので先に読む -->
 <script src="js/proxy.js?v=2.4.0"></script>
 <script src="js/exporter.js?v=2.4.0"></script>
-<script src="js/storage-diagnostics.js?v=2.9.1"></script>
-<script src="js/ui.js?v=2.9.1"></script>
-<script src="js/app.js?v=2.9.1"></script>
+<script src="js/storage-diagnostics.js?v=2.9.2"></script>
+<script src="js/ui.js?v=2.9.2"></script>
+<script src="js/app.js?v=2.9.2"></script>
 </body>
 </html>

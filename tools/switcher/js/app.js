@@ -69,20 +69,20 @@ window.addEventListener("DOMContentLoaded", async () => {
      「一度戻ると、リセットした状態でスタート」)。対象は
      「最初から作り直す」(完成画面2箇所)・フッターの戻り。
      クラッシュ・リロードはここを通らないので、復元(続きから)は生きたまま */
-  /* ★ .back-link はここに入れない(2026-08-05 優さん実機)。「← 戻る」は
-     ツール内(種類選択)へ戻る導線になった ─ 「取り込んだ動画はそのまま」と
-     言いながら保存状態を消すことになる。退出=リセットは本当に離れる導線だけ */
+  /* 映像ツール一覧・別ページへ離れる導線は素材参照を完全に解放する。
+     ヘッダーの「← 戻る」は ui.js が作業中を止めてから退出するため、ここで
+     二重に配線しない。ツール内の「種類を変える」も ui.js 側で別扱い。 */
   for (const sel of ["#eoToTools", "#doneToTools", ".foot-link"]) {
     document.querySelectorAll(sel).forEach(a =>
       a.addEventListener("click", () => { MC.ui.releaseToolSession("退出リンク"); }));
   }
   /* sitechromeのメニューはDOMContentLoaded後に増えるため委譲で拾う。
-     作業中の「← 戻る」はui.jsがpreventDefaultしてツール内へ戻すので解放しない。
-     別タブで開く操作も現在のツールは残るため対象外。 */
+     .back-link は ui.js が作業中の停止と退出解放を一括して扱う。別タブで
+     開く操作も現在のツールは残るため対象外。 */
   document.addEventListener("click", e => {
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     const a = e.target && e.target.closest && e.target.closest("a[href]");
-    if (!a || a.target === "_blank" || a.hasAttribute("download")) return;
+    if (!a || a.matches(".back-link") || a.target === "_blank" || a.hasAttribute("download")) return;
     let dest;
     try { dest = new URL(a.href, location.href); } catch (_) { return; }
     if (dest.origin !== location.origin || dest.pathname === location.pathname) return;
@@ -101,9 +101,8 @@ window.addEventListener("DOMContentLoaded", async () => {
     .then(() => MC.exporter.refreshEstimate())
     /* 掃除の**あと**に数える。残っていれば本人が消せるよう画面に出す */
     .then(() => MC.ui.refreshStorageNote()).catch(() => {});
-  /* 素材は書き出し物と別ディレクトリ・別ロック。別タブに作業中素材が無い
-     と確認できたときだけ、前ページやクラッシュで残った素材を回収する。 */
-  if (MC.sourceStore) MC.sourceStore.sweep().catch(() => {});
+  /* sourceStore の掃除も storageDiag.sweepCycle 内で exporter と同じ観測点に
+     統合する。起動診断と実際の回収結果が食い違わないようにする。 */
   // OPFSへ本当に書けるかを一度だけ実測してキャッシュ(G-1)。
   // これで maxExportableSec が「上限なし」と嘘をつかなくなる
   if (MC.storageDiag) MC.storageDiag.probeStart();

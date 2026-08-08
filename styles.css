@@ -3961,6 +3961,11 @@ span.calendar-likers-avatar.calendar-ev-avatar-img--withdrawn {
   gap: 1rem;
 }
 
+/* じぇねTUBEは「最新 / TOP1 / TOP2 / ランダム」の4枚を、PCでは2×2で読む。 */
+#marching-live-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .magazine-card {
   display: block;
   padding: 0.75rem;
