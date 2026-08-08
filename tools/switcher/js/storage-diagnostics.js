@@ -8,6 +8,9 @@ MC.storageDiag = (() => {
   const KEY = "mz_storage_diag_v2";
   const SCHEMA = 3, MAX_EVENTS = 120, MAX_ITEMS = 80, MAX_HISTORY = 3;
   let state = null;
+  /* iPhoneでは全画面分析の上にも残すが、常に大きなカードを重ねない。
+     数値を記録する瞬間だけ管理者が開き、記録後は作業を邪魔しない帯へ戻す。 */
+  D._expanded = false;
 
   const admin = () => Boolean(window.MZ_LIMITS && MZ_LIMITS.admin);
   const now = () => Date.now();
@@ -201,13 +204,14 @@ MC.storageDiag = (() => {
       return;
     }
     archive("新しい試行を開始"); blankRun(); state.active = true; state.startedAt = now(); state.notice = "";
+    D._expanded = true; // ①の基準値だけは、開始直後に続けて入力できるよう開く
     state.runId = `${state.startedAt.toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
     save(); D.render(); await D.capture("診断開始");
   };
   D.stop = () => {
     if (!admin()) return;
     try { localStorage.removeItem(KEY); } catch (_) {}
-    state = fresh(); D.render();
+    state = fresh(); D._expanded = false; D.render();
   };
   D.init = () => {
     state = load();
@@ -322,7 +326,10 @@ MC.storageDiag = (() => {
     if (phase === "素材参照を外した後") state.released.measured = true;
     if (phase === "Safari完全終了後") state.returned.measured = true;
     state.checkpoints.push(cp); state.lastSnapshot = snap; state.events.push({ at: cp.at, type: "checkpoint", data: cp });
-    save(); if (input) input.value = ""; D.render();
+    save(); if (input) input.value = "";
+    /* 記録が終われば素材操作へ戻る。診断が作業画面を覆い続けないことを優先する。 */
+    if (MC.isIOS) D._expanded = false;
+    D.render();
     if (!cp.validForDelta && MC.ui) MC.ui.toast("0.00GBは記録しましたが、差分判定には使いません");
   };
 
@@ -428,7 +435,24 @@ MC.storageDiag = (() => {
       : !state.returned.measured ? "⑤ Safari完全終了後の数値を入力してください"
       : "今回の試行は記録済みです。レポートをコピーしてください";
     const snap = state.lastSnapshot;
-    host.innerHTML = `<div class="sd-head"><div><b>Safari容量診断中</b><span>${next}</span></div><span class="sd-live">記録中</span></div>
+    const compactNext = cps.length === 0 ? "① 基準値を記録"
+      : state.selectionOnly && !state.selectionOnly.measured ? "② 選択後の数値を記録"
+      : !state.selectionOnly ? "② 選択だけを試す"
+      : !state.imported ? "③ 3本を選んで分析"
+      : !state.imported.measured ? "③ 分析後の数値を記録"
+      : !state.released ? "④ 素材参照を外す"
+      : !state.released.measured ? "④ 解除後の数値を記録"
+      : !state.returned ? "⑤ Safariを開き直す"
+      : !state.returned.measured ? "⑤ 再起動後の数値を記録" : "記録完了";
+    const compact = !!MC.isIOS && !D._expanded;
+    if (compact) {
+      host.classList.add("sd-compact");
+      host.innerHTML = `<div class="sd-compact-bar"><div><b>Safari容量診断中</b><span>${compactNext}</span></div><button type="button" class="btn ghost" id="storageDiagToggle" aria-expanded="false">開く</button></div>`;
+      host.querySelector("#storageDiagToggle").onclick = () => { D._expanded = true; D.render(); };
+      return;
+    }
+    host.classList.remove("sd-compact");
+    host.innerHTML = `<div class="sd-head"><div><b>Safari容量診断中</b><span>${next}</span></div><div class="sd-head-actions"><span class="sd-live">記録中</span><button type="button" class="btn ghost sd-fold" id="storageDiagToggle" aria-expanded="true">たたむ</button></div></div>
       <div class="sd-result"><b>${a.verdict}</b><span>プロキシ: ${a.proxy}</span><span>掃除: ${a.sweep}</span><span>現在のOPFS: ${snap ? `${bytes(snap.opfs.bytes)}（${snap.opfs.n}件）` : "計測前"}</span></div>
       <div class="sd-plan"><b>今回の試行で分けること</b><span>①基準値　②ファイル選択だけ　③通常の分析　④MarchinZ側の参照解除　⑤Safari完全終了後</span><div class="sd-plan-actions"><button type="button" class="btn ghost" id="storageDiagOnly">② 選択だけを試す（動画を処理しない）</button><input id="storageDiagOnlyInput" type="file" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" multiple hidden><button type="button" class="btn ghost" id="storageDiagRelease" ${hasClips ? "" : "disabled"}>④ MarchinZ側の素材参照を外す</button><button type="button" class="btn ghost" id="storageDiagReturned">⑤ Safariを開き直した</button></div></div>
       <label class="sd-label" for="storageDiagGb">設定 → Safari →「書類とデータ」</label><div class="sd-measure"><input id="storageDiagGb" type="number" min="0" step="0.01" inputmode="decimal" placeholder="例 5.49"><span>GB</span><button type="button" class="btn" id="storageDiagRecord">この数値を記録</button></div>
@@ -442,6 +466,7 @@ MC.storageDiag = (() => {
     host.querySelector("#storageDiagOnlyInput").onchange = e => { const files = [...e.currentTarget.files]; e.currentTarget.value = ""; D.selectionOnly(files); };
     host.querySelector("#storageDiagRelease").onclick = () => D.releaseSources();
     host.querySelector("#storageDiagReturned").onclick = () => D.markReturned();
+    host.querySelector("#storageDiagToggle").onclick = () => { D._expanded = false; D.render(); };
   };
   D._test = { fresh, bytes, category, sumCats, setState: s => { state = s; }, getState: () => state, archive, blankRun };
   return D;

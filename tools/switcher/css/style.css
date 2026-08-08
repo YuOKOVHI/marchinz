@@ -1895,6 +1895,19 @@ body.mz-storage-diag-active #storageDiagDock > #storageDiag {
   overscroll-behavior: contain;
   box-shadow: 0 8px 20px rgba(15, 33, 86, .14);
 }
+/* 記録中でも素材操作を優先する。iPhoneでは普段は小さな帯だけを固定し、
+   管理者が「開く」を押した時だけ従来の詳細カードを出す。 */
+body.mz-storage-diag-active #storageDiagDock > #storageDiag.sd-compact {
+  padding: 8px 10px;
+  max-height: none;
+  overflow: visible;
+}
+.sd-compact-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.sd-compact-bar > div { min-width: 0; display: flex; align-items: baseline; gap: 7px; }
+.sd-compact-bar b { flex: none; font-size: 13px; color: #17213b; }
+.sd-compact-bar span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: #59647d; font-size: 12px; }
+.sd-compact-bar .btn { flex: none; min-height: 38px; padding: 6px 12px; }
 .mobile-length-pick { border-color: rgba(37, 84, 204, .35); }
 .mobile-length-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .mobile-length-choice { min-height: 126px; padding: 14px 10px; border: 1px solid #b8c8f2; border-radius: 14px;
@@ -1909,6 +1922,8 @@ body.mz-storage-diag-active #storageDiagDock > #storageDiag {
 .sd-head span, .sd-result span { color: #59647d; font-size: 12px; line-height: 1.5; }
 .sd-live { flex: none; padding: 3px 8px; border-radius: 999px; background: #e4ecff;
   color: #2754cc !important; font-size: 11px !important; font-weight: 700; }
+.sd-head-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+.sd-fold { min-height: 34px; padding: 4px 8px; font-size: 12px; }
 .sd-primary { width: 100%; min-height: 44px; margin-top: 12px; }
 .sd-result { display: flex; flex-direction: column; gap: 3px; margin: 12px 0;
   padding: 10px 11px; border-radius: 12px; background: #fff; border: 1px solid rgba(37,84,204,.12); }
@@ -1936,6 +1951,9 @@ body.mz-storage-diag-active #storageDiagDock > #storageDiag {
   .sd-measure .btn { grid-column: 1 / -1; width: 100%; }
   .sd-actions { grid-template-columns: 1fr; }
   .sd-actions .btn:last-child { grid-column: auto; }
+  .sd-compact-bar > div { display: block; }
+  .sd-compact-bar b, .sd-compact-bar span { display: block; }
+  .sd-compact-bar span { max-width: 210px; }
 }
 
 /* 前回のつづきの案内(2026-07-29) */

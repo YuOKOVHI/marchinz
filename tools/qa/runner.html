@@ -9794,6 +9794,17 @@ async function countSamples(ns, file, fromSec) {
       if (!dock || host.parentElement !== dock) {
         throw new Error("診断中のスマホで入力欄がworkspace配下に残る(全画面分析で隠れる)");
       }
+      /* 実機では前面固定そのものが素材工程を覆った。①を記録した後は小さな帯へ戻り、
+         開く操作でだけ入力フォームを再表示することを実操作で確かめる。 */
+      w.document.getElementById("storageDiagGb").value = "5.81";
+      await D.recordCheckpoint();
+      if (!host.classList.contains("sd-compact") || !w.document.getElementById("storageDiagToggle")) {
+        throw new Error("iPhoneで基準値記録後も診断カードが大きいまま素材工程を覆う");
+      }
+      w.document.getElementById("storageDiagToggle").click();
+      if (!w.document.getElementById("storageDiagOnly") || host.classList.contains("sd-compact")) {
+        throw new Error("iPhoneの診断帯を開いても、選択だけ/数値記録の操作へ戻れない");
+      }
       const css = await (await w.fetch("../switcher/css/style.css")).text();
       if (!/mz-storage-diag-active\s+#storageDiagDock\s*>\s*#storageDiag/.test(css)) {
         throw new Error("診断欄をbody直下で前面固定するCSSが無い");
