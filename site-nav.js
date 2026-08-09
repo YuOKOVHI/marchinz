@@ -795,12 +795,20 @@
       });
     }
     updateSiteBrandAuthEntryLinks();
-    if (id === "videos") {
+    const hasVideoShareState = (() => {
+      const p = new URLSearchParams(location.search);
+      return ["c", "tab", "o", "team", "t", "event", "e", "free", "f", "s", "sort", "src", "d", "dir", "page", "p", "pageSize", "z", "ex"].some((key) => p.has(key));
+    })();
+    if (id === "videos" && !hasVideoShareState) {
+      /* 共有URLの c=o / 検索条件は app.js が復元する。
+         ここで初期値へ戻すと、その復元前にクエリを消してしまう。 */
       if (typeof window.__marchinzResetVideosSearchTab === "function") {
         window.__marchinzResetVideosSearchTab();
       } else {
         window.__marchinzPendingVideosReset = true;
       }
+    }
+    if (id === "videos") {
       if (typeof window.MarchinZVideoMylist?.renderList === "function") {
         window.MarchinZVideoMylist.renderList();
       }
