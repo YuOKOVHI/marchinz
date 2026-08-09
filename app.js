@@ -1785,6 +1785,9 @@
   }
 
   function shouldUseInitialRandom() {
+    // 「マーチング祭だけをランダム表示」はマーチング等タブの初期表示専用。
+    // MIX3・海外へ適用すると、その分類の動画がすべて0件になる。
+    if (state.tab !== "マーチング団体等") return false;
     if (state.exactOrgTeam !== null || state.exactEvent !== null) return false;
     if ((qTeam?.value ?? "").trim()) return false;
     if ((qEvent?.value ?? "").trim()) return false;

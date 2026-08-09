@@ -1,5 +1,5 @@
 /*
- * marchinz-top-highlights.js (v1.27.0)
+ * marchinz-top-highlights.js (v2.10.1)
  * トップページ(#page-mll)に「新着の大会動画」「YouTube 新着」「今週のマーチング(AIダイジェスト)」を描画する。
  * データ源はすべて既存の inline データ(window.__MARCHINZ_DATA / __YOUTUBE_LIST_ROWS / __MARCHINZ_DIGEST)。
  * データが無い・壊れている場合はセクションを hidden のまま残し、他機能へ影響しない。
@@ -98,13 +98,11 @@
     return a;
   }
 
-  function renderFreshVideos() {
-    var grid = document.getElementById("mz-top-video-grid");
-    var data = window.__MARCHINZ_DATA;
-    if (!grid || !data || !Array.isArray(data.rows) || !data.rows.length) return;
-
+  /* TOPの新着大会動画は、海外と国内を最低1本ずつ確保してから、
+     選ばれた動画を配信日の新しい順に並べる（片方しか無い場合は存在する側で埋める）。 */
+  function selectFreshChampionshipRows(sourceRows, limit) {
     var seen = {};
-    var rows = data.rows
+    var uniqueRows = sourceRows
       .slice()
       .sort(function (a, b) {
         return parseDate(b["配信日"]) - parseDate(a["配信日"]);
@@ -114,8 +112,43 @@
         if (!id || seen[id]) return false;
         seen[id] = true;
         return true;
+      });
+    var selected = [];
+    var selectedIds = {};
+
+    function add(row) {
+      if (!row || selected.length >= limit) return;
+      var id = extractVideoId(row["URL"]);
+      if (!id || selectedIds[id]) return;
+      selectedIds[id] = true;
+      selected.push(row);
+    }
+
+    add(
+      uniqueRows.find(function (row) {
+        return String(row["分類"] || "").trim() === "海外";
       })
-      .slice(0, FRESH_LIMIT);
+    );
+    add(
+      uniqueRows.find(function (row) {
+        return String(row["分類"] || "").trim() !== "海外";
+      })
+    );
+    uniqueRows.forEach(add);
+
+    return selected
+      .slice(0, limit)
+      .sort(function (a, b) {
+        return parseDate(b["配信日"]) - parseDate(a["配信日"]);
+      });
+  }
+
+  function renderFreshVideos() {
+    var grid = document.getElementById("mz-top-video-grid");
+    var data = window.__MARCHINZ_DATA;
+    if (!grid || !data || !Array.isArray(data.rows) || !data.rows.length) return;
+
+    var rows = selectFreshChampionshipRows(data.rows, FRESH_LIMIT);
     if (!rows.length) return;
 
     var newestTs = parseDate(rows[0]["配信日"]);
