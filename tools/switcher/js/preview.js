@@ -160,6 +160,9 @@ MC.preview = {
     if (MC.S.t < tIn || MC.S.t >= tOut - 0.05) this.seek(tIn);
     this.applyMute();
     MC.S.playing = true;
+    /* 背景を同じ瞬間に止める。400msの監視は保険であり、iPhoneで二重decodeを
+       1フレームも続けない。 */
+    if (MC.background) MC.background.refresh();
     /* 回すのは「いま画面に出るもの＋次のカット＋音声担当」だけ(2026-08-01)。
        残りは driftFix が必要になった時点で起こす */
     for (const c of this.visibleClips()) {
@@ -181,6 +184,7 @@ MC.preview = {
 
   pause() {
     MC.S.playing = false;
+    if (MC.background) MC.background.refresh();
     MC.S.clips.forEach(c => { if (!c.video) return; try { c.video.pause(); c.video.playbackRate = 1; } catch (e) {} });
     MC.ui.updateTransport();
     /* 試聴中に見送られた軽い判定を拾い直す(2026-08-07 未解決P2)。

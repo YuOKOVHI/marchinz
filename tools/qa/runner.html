@@ -6801,13 +6801,17 @@ async function countSamples(ns, file, fromSec) {
       w.MC.ui.renderClips();
       if (!/必要/.test(labelOf(1))) throw new Error("おまかせの動画2が必要と言わない: " + labelOf(1));
       if (/任意/.test(labelOf(1))) throw new Error("おまかせの動画2に任意が残っている: " + labelOf(1));
-      if (!/任意/.test(labelOf(2))) throw new Error("3本目まで必要になっている: " + labelOf(2));
+      /* Team U 2026-08-09: 3本目は任意。空のときは同型枠を並べず、
+         2本目を入れた時点で初めて追加枠として現れてよい。 */
+      if (labelOf(2) !== "(無し)" && !/任意/.test(labelOf(2))) {
+        throw new Error("3本目まで必要になっている: " + labelOf(2));
+      }
       w.MC.ui._autoFlow = false;
       w.MC.ui.renderClips();
       if (!/必要/.test(labelOf(1)) || /任意/.test(labelOf(1))) {
         throw new Error("こだわりの動画2が必要でない: " + labelOf(1));
       }
-      return "おまかせ=必要 / こだわり=必要 / 3本目=任意";
+      return "おまかせ=必要 / こだわり=必要 / 3本目=任意（空枠は必要時だけ）";
     } finally { w.MC.ui._autoFlow = false; }
   });
 
@@ -12367,7 +12371,7 @@ async function countSamples(ns, file, fromSec) {
     }
   });
 
-  group("㊹ デザインチームU Action Rail + Finder Rail + Stage Poster（v2.11.2）");
+  group("㊹ デザインチームU Action Rail + Finder Rail + Stage Poster（v2.11.3）");
   await test("★実画面操作: 390pxヘッダー・目的起点TOP導線・大会動画検索とカード", async () => {
     const f = document.createElement("iframe");
     f.style.cssText = "position:fixed;left:-9999px;top:0;width:390px;height:844px;border:0";
@@ -12375,14 +12379,14 @@ async function countSamples(ns, file, fromSec) {
     document.body.appendChild(f);
     try {
       for (let i = 0; i < 160; i++) {
-        const ready = f.contentDocument?.documentElement?.dataset?.mzVersion === "2.11.2"
+        const ready = f.contentDocument?.documentElement?.dataset?.mzVersion === "2.11.3"
           && f.contentWindow?.MarchinZMomentPulse
           && f.contentWindow?.MarchinZMomentFeed;
         if (ready) break;
         await new Promise(r => setTimeout(r, 50));
       }
       const w = f.contentWindow, d = f.contentDocument;
-      if (d?.documentElement?.dataset?.mzVersion !== "2.11.2") throw new Error("v2.11.2の実画面まで届かない");
+      if (d?.documentElement?.dataset?.mzVersion !== "2.11.3") throw new Error("v2.11.3の実画面まで届かない");
       for (let i = 0; i < 80 && d.querySelector(".site-brand")?.getBoundingClientRect().width === 0; i++) {
         await new Promise(r => setTimeout(r, 50));
       }
@@ -12597,7 +12601,7 @@ async function countSamples(ns, file, fromSec) {
     return "件数・先頭動画を壊した比較結果を検出";
   });
 
-  group("㊺ MarchinZ Pulse（v2.11.2）");
+  group("㊺ MarchinZ Pulse（v2.11.3）");
   await test("★実画面操作: TOP最新Moment 2件・投稿入口・通知設定", async () => {
     const f = document.createElement("iframe");
     f.style.cssText = "position:fixed;left:-9999px;top:0;width:390px;height:844px;border:0";
@@ -12605,7 +12609,7 @@ async function countSamples(ns, file, fromSec) {
     document.body.appendChild(f);
     try {
       for (let i = 0; i < 160; i++) {
-        const ready = f.contentDocument?.documentElement?.dataset?.mzVersion === "2.11.2"
+        const ready = f.contentDocument?.documentElement?.dataset?.mzVersion === "2.11.3"
           && f.contentWindow?.MarchinZMomentPulse
           && f.contentWindow?.MarchinZMomentFeed;
         if (ready) break;
@@ -12731,7 +12735,7 @@ async function countSamples(ns, file, fromSec) {
     return "公開Moment query + Index + 地図初期OFF + like_moment + 新着通知 + Rules一致";
   });
 
-  group("㊻ Firebase保存4経路（v2.11.2）");
+  group("㊻ Firebase保存4経路（v2.11.3）");
   await test("契約検査: 新規登録・Log・Note・Momentの保存先とRulesが一致", async () => {
     const [authSrc, roleSrc, noteSrc, momentSrc, rulesSrc] = await Promise.all([
       fetch("../../auth.js").then(r => r.text()),
@@ -12795,7 +12799,7 @@ async function countSamples(ns, file, fromSec) {
     return "4保存先 + 必須payload + Rules + 半登録停止 / 保存先破壊の変異を検出";
   });
 
-  group("㊼ Google検索・クロール基盤（v2.11.2）");
+  group("㊼ Google検索・クロール基盤（v2.11.3）");
   await test("実配信ファイル: robots・sitemap・正規URL・サイト名をGoogleへ明示する", async () => {
     const [homeRes, robotsRes, sitemapRes, manifestRes] = await Promise.all([
       fetch("../../index.html"),
@@ -12846,6 +12850,143 @@ async function countSamples(ns, file, fromSec) {
     }
     if (manifest.name !== "MarchinZ（マーチンズ）") throw new Error("PWA名とサイト正式名が一致しない");
     return `title・canonical・WebSite JSON-LD・robots・sitemapを確認（${locs.length} URL）`;
+  });
+
+  /* 既存群が完全退出を試して背景モジュールもdispose済みの場合があるため、
+     この機能群は新品の実画面から始める。 */
+  if (CF) { CF.remove(); CF = null; CW = null; CD = null; }
+  group("㊽ Switcher 背景映像・Team U UI（v2.11.3）");
+  await test("背景は装飾専用video・ラベル付きswitch・端末内処理のまま", async () => {
+    const [html, css, bg, media, ui] = await Promise.all([
+      fetch("../switcher/index.html").then(r => r.text()),
+      fetch("../switcher/css/style.css").then(r => r.text()),
+      fetch("../switcher/js/background.js").then(r => r.text()),
+      fetch("../switcher/js/media.js").then(r => r.text()),
+      fetch("../switcher/js/ui.js").then(r => r.text()),
+    ]);
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const layer = doc.querySelector("#mzBgLayer");
+    const video = doc.querySelector("#mzBgVideo");
+    const toggle = doc.querySelector("#bgToggle");
+    if (!layer || layer.getAttribute("aria-hidden") !== "true") throw new Error("背景レイヤーが装飾扱いではない");
+    if (!video || !video.hasAttribute("muted") || !video.hasAttribute("loop")
+        || !video.hasAttribute("playsinline") || video.getAttribute("tabindex") !== "-1") {
+      throw new Error("背景videoの無音・ループ・非フォーカス契約が欠けている");
+    }
+    if (!toggle || toggle.getAttribute("role") !== "switch" || !/背景映像/.test(toggle.textContent)) {
+      throw new Error("背景切替が名前付きswitchではない");
+    }
+    if (!/pointer-events:\s*none/.test(css) || !/@media \(prefers-reduced-motion: reduce\)/.test(css)) {
+      throw new Error("タップ透過か視差軽減のCSSが欠けている");
+    }
+    if (/fetch\s*\(|XMLHttpRequest|sendBeacon|firebase/i.test(bg)) throw new Error("背景処理が外部送信経路を持つ");
+    if (!bg.includes("URL.createObjectURL(clip.file)") || !bg.includes("URL.revokeObjectURL(B.objectUrl)")) {
+      throw new Error("背景専用Object URLの生成・解放契約が欠けている");
+    }
+    if (!media.includes("MC.background.detachClip(c.id)") || !ui.includes("MC.background.dispose()")) {
+      throw new Error("素材削除・ツール終了時の背景解放が欠けている");
+    }
+    return "aria-hidden + muted/loop/playsinline + role=switch + 外部送信なし + URL解放";
+  });
+
+  await test("実画面: プレビューと別インスタンスで、OFFはsrcまで外す", async () => {
+    const w = await compEnv();
+    compReset(w);
+    const file = new w.File([new Uint8Array([0, 1, 2, 3])], "ambient.mp4", { type: "video/mp4" });
+    const preview = { currentTime: 17, pause() {} };
+    w.MC.S.clips[0].file = file;
+    w.MC.S.clips[0].video = preview;
+    const beforeTime = preview.currentTime;
+    w.MC.background.set(true);
+    w.MC.background.refresh();
+    const bgVideo = w.document.getElementById("mzBgVideo");
+    const sw = w.document.getElementById("bgToggle");
+    if (bgVideo === preview || !/^blob:/.test(bgVideo.src)) throw new Error("背景が専用video/Object URLではない");
+    if (preview.currentTime !== beforeTime) throw new Error("背景がプレビューのcurrentTimeを変更した");
+    await new Promise(r => setTimeout(r, 80));
+    if (sw.hidden || sw.getAttribute("aria-checked") !== "true") throw new Error("取込後に背景switchがONで現れない");
+    w.MC.background.set(false);
+    await new Promise(r => setTimeout(r, 30));
+    if (bgVideo.getAttribute("src") != null || !bgVideo.paused
+        || w.document.body.classList.contains("mz-bg-on")) {
+      throw new Error("OFFで背景のsrc/decode/表示を止めていない");
+    }
+    if (sw.getAttribute("aria-checked") !== "false"
+        || w.document.getElementById("bgToggleState").textContent !== "OFF") {
+      throw new Error("OFF状態を色以外で示していない");
+    }
+    return "専用video + preview currentTime不変 + OFFでpause/src破棄";
+  });
+
+  await test("解析・プレビュー・書出・タブ非表示・視差軽減で止まる（変異にも反応）", async () => {
+    const [src, previewSrc, exporterSrc, uiSrc] = await Promise.all([
+      fetch("../switcher/js/background.js").then(r => r.text()),
+      fetch("../switcher/js/preview.js").then(r => r.text()),
+      fetch("../switcher/js/exporter.js").then(r => r.text()),
+      fetch("../switcher/js/ui.js").then(r => r.text()),
+    ]);
+    const guard = code => {
+      for (const needle of [
+        "document.hidden", "B.isReduced()", "MC.S && MC.S.playing",
+        "MC.ui._busy", "MC.exporter.running", "MC.exporter.recording",
+      ]) if (!code.includes(needle)) throw new Error(`停止条件が欠けている: ${needle}`);
+    };
+    guard(src);
+    let caught = false;
+    try { guard(src.replace("MC.S && MC.S.playing", "MC.S && false")); }
+    catch (_) { caught = true; }
+    if (!caught) throw new Error("プレビュー中停止を壊してもQAが落ちない");
+    const directGuard = (previewCode, exporterCode, uiCode) => {
+      if (!/MC\.S\.playing\s*=\s*true;[\s\S]{0,180}MC\.background\.refresh\(\)/.test(previewCode)) {
+        throw new Error("プレビュー開始直後の背景停止がポーリング頼み");
+      }
+      const exportStarts = exporterCode.match(/MC\.exporter\.(?:running|recording)\s*=\s*true;[\s\S]{0,100}MC\.background\.refresh\(\)/g) || [];
+      if (exportStarts.length < 3) throw new Error(`書出開始直後の背景停止が不足: ${exportStarts.length}/3`);
+      if (!/MC\.ui\._busy\s*=\s*!!busy;[\s\S]{0,180}MC\.background\.refresh\(\)/.test(uiCode)) {
+        throw new Error("解析開始直後の背景停止がポーリング頼み");
+      }
+    };
+    directGuard(previewSrc, exporterSrc, uiSrc);
+    let directMutationCaught = false;
+    try { directGuard(previewSrc.replace("if (MC.background) MC.background.refresh();", ""), exporterSrc, uiSrc); }
+    catch (_) { directMutationCaught = true; }
+    if (!directMutationCaught) throw new Error("即時停止フックを外してもQAが落ちない");
+    const w = await compEnv();
+    w.MC.background.set(true);
+    w.MC.S.playing = true;
+    w.MC.background.refresh();
+    await new Promise(r => setTimeout(r, 30));
+    if (!w.document.getElementById("mzBgVideo").paused
+        || w.document.getElementById("bgToggleState").textContent !== "停止中") {
+      throw new Error("プレビュー中に背景の実再生が止まらない");
+    }
+    w.MC.S.playing = false;
+    w.MC.background.set(false);
+    return "6停止条件 + 解析/プレビュー/書出の即時停止 + 実動作 + 2種の変異を検出";
+  });
+
+  await test("UI: 空枠は1つ、背景switchは44px、主要5幅で横溢れしない", async () => {
+    const w = await compEnv();
+    compReset(w);
+    w.MC.S.clips = [];
+    w.MC.S.slots = [null, null, null];
+    w.MC.ui.renderClips();
+    if (w.document.querySelectorAll(".clip-slot").length !== 1
+        || !/まとめて選ぶ/.test(w.document.getElementById("clipSlots").textContent)) {
+      throw new Error("空の同型枠が3つ残っている");
+    }
+    const btn = w.document.getElementById("bgToggle");
+    btn.hidden = false;
+    if (btn.getBoundingClientRect().height < 44) throw new Error("背景switchが44px未満");
+    const overflow = [];
+    for (const width of [390, 430, 768, 1024, 1440]) {
+      CF.style.width = `${width}px`;
+      await new Promise(r => requestAnimationFrame(r));
+      if (w.document.documentElement.scrollWidth > width + 1) overflow.push(width);
+    }
+    CF.style.width = "390px";
+    if (overflow.length) throw new Error(`横溢れ: ${overflow.join("/")}px`);
+    return "空枠1つ + 44px switch + 390/430/768/1024/1440px";
   });
 
   if (CF) { CF.remove(); CF = null; CW = null; CD = null; }

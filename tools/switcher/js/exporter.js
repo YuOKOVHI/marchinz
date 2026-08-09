@@ -1928,6 +1928,7 @@ MC.exporter.exportMP4Parts = async (onProgress) => {
     { total: totalFrames, w, h, fps, cams: used.length, route: "OPFS(分割書き出し)",
       mbps: Math.round(MC.exporter.videoBitrate() / 1e5) / 10, ios: !!MC.isIOS });
   MC.exporter.running = true;
+  if (MC.background) MC.background.refresh();
   /* ★ ここで手放す(2026-08-01 実機)。running を立てた後に置くこと ─
      先に置くと、この後の分岐で書き出しを始めずに戻る経路が
      手放したまま帰ってしまう */
@@ -2097,6 +2098,7 @@ MC.exporter.exportMP4Parts = async (onProgress) => {
       MC.exporter.opfsRemove(finalOpfs.name);   // 完成品の書きかけだけ消す。パートは残す
     }
     MC.exporter.running = false;
+    if (MC.background) MC.background.refresh();
     MC.exporter.unparkVideoElements();   // ★ 失敗しても中止しても必ず戻す
   }
 
@@ -2231,6 +2233,7 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle, opts) => {
   MC.log("export素材: " + used.map(c =>
     `${MC.ui.shortName(c.name, 10)}=${c.width || "?"}x${c.height || "?"}`).join(" / "));
   MC.exporter.running = true;
+  if (MC.background) MC.background.refresh();
   /* ★ ここで手放す(2026-08-01 実機)。running を立てた後に置くこと ─
      先に置くと、この後の分岐で書き出しを始めずに戻る経路が
      手放したまま帰ってしまう */
@@ -2617,6 +2620,7 @@ MC.exporter.exportMP4 = async (onProgress, saveHandle, opts) => {
       MC.exporter.opfsRemove(opfs.name);
     }
     MC.exporter.running = false;
+    if (MC.background) MC.background.refresh();
     MC.exporter.unparkVideoElements();   // ★ 失敗しても中止しても必ず戻す
   }
 };
@@ -2634,10 +2638,12 @@ MC.exporter.exportRealtime = async onProgress => {
      preview.tick が running を見て draw() を止めるため、realtime で立てると
      録画するキャンバスが更新されず映像が固まる */
   MC.exporter.recording = true;
+  if (MC.background) MC.background.refresh();
   try {
     return await MC.exporter._exportRealtimeInner(onProgress);
   } finally {
     MC.exporter.recording = false;
+    if (MC.background) MC.background.refresh();
     MC.preview.overlayOn = true;
     MC.preview.draw();
     /* 録画中に黙らせたスピーカーを必ず戻す(失敗・キャンセルでも)。
