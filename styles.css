@@ -16120,3 +16120,42 @@ button.mz-site-announcement-banner-link {
   line-height: 1.8;
 }
 .mz-ctools-note--tip i { margin-right: 7px; }
+
+/* 掲示板はカテゴリが6つあるため、大会動画用の3列タブを流用しない。
+   スマホでは常に一行の横スクロールにして、ラベル同士の重なりを防ぐ。 */
+@media (max-width: 719px) {
+  /* コミュニティの4区分は全てを一目で選べる4列にする。 */
+  nav.tabs.youtube-tabs.community-hub-tabs.mz-tab-strip-yamap {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+
+  nav.tabs.youtube-tabs.community-hub-tabs.mz-tab-strip-yamap .youtube-tab-btn {
+    min-height: 44px;
+    padding: 0.55rem 0.12rem;
+    font-size: 0.76rem;
+  }
+
+  #community-hub-panel-board nav.mz-tab-strip-yamap[aria-label="話題一覧のカテゴリ絞り込み"] {
+    display: flex;
+    grid-template-columns: none;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 0.38rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding: 0.3rem;
+  }
+
+  #community-hub-panel-board nav.mz-tab-strip-yamap[aria-label="話題一覧のカテゴリ絞り込み"]::-webkit-scrollbar {
+    display: none;
+  }
+
+  #community-hub-panel-board nav.mz-tab-strip-yamap[aria-label="話題一覧のカテゴリ絞り込み"] .youtube-tab-btn {
+    flex: 0 0 auto;
+    min-height: 44px;
+    padding: 0.55rem 0.78rem;
+    white-space: nowrap;
+  }
+}
