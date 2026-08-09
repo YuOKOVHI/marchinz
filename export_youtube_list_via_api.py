@@ -185,6 +185,38 @@ def watch_url(video_id: str) -> str:
     return f"https://www.youtube.com/watch?v={video_id}" if video_id else ""
 
 
+def video_id_from_watch_url(url: str) -> str:
+    """CSVに保存済みの人気動画URLからIDを戻す（過去の大ヒットを再照会するため）。"""
+    try:
+        parsed = urllib.parse.urlparse(str(url or ""))
+        if "youtube.com" not in parsed.netloc.lower():
+            return ""
+        return urllib.parse.parse_qs(parsed.query).get("v", [""])[0].strip()
+    except ValueError:
+        return ""
+
+
+def prior_ranked_video_ids(previous: dict[str, str] | None) -> list[str]:
+    """直近取得範囲の外にある、前回のTOP4を次回も候補として再照会する。"""
+    if not previous:
+        return []
+    ids: list[str] = []
+    for rank in range(1, 5):
+        vid = video_id_from_watch_url(previous.get(f"動画視聴回数{rank}位URL", ""))
+        if vid and vid not in ids:
+            ids.append(vid)
+    return ids
+
+
+def merge_rank_candidate_ids(recent_ids: list[str], previous: dict[str, str] | None) -> list[str]:
+    """最新取得分と前回TOP4を重複なく結合する。新旧いずれの大ヒットも比較対象に残す。"""
+    merged: list[str] = []
+    for vid in [*recent_ids, *prior_ranked_video_ids(previous)]:
+        if vid and vid not in merged:
+            merged.append(vid)
+    return merged
+
+
 def rank_by_views(items: list[dict], take: int) -> list[dict]:
     s = sorted(
         items,
@@ -202,7 +234,13 @@ def latest_by_date(items: list[dict]) -> dict | None:
     return max(items, key=lambda x: str(x.get("published_at") or ""))
 
 
-def build_row_for_channel(api_key: str, display_name: str, channel_url: str, max_items: int) -> dict[str, str]:
+def build_row_for_channel(
+    api_key: str,
+    display_name: str,
+    channel_url: str,
+    max_items: int,
+    previous: dict[str, str] | None = None,
+) -> dict[str, str]:
     row = {k: "" for k in FIELDNAMES}
     row["チャンネル名"] = display_name
     row["チャンネルURL"] = normalize_channel_url(channel_url)
@@ -277,8 +315,12 @@ def build_row_for_channel(api_key: str, display_name: str, channel_url: str, max
     if not video_ids:
         return row
 
+    # APIはコストを抑えるため最新120本を基本にする。ただし過去TOP4を候補に足して
+    # 現在の再生数を再照会する。これをしないと、古い100万再生動画が120本の窓外に
+    # 出た時点で人気順から静かに落ちる。
+    rank_candidate_ids = merge_rank_candidate_ids(video_ids, previous)
     details: dict[str, dict] = {}
-    for ch in chunked(video_ids, 50):
+    for ch in chunked(rank_candidate_ids, 50):
         d = api_get(
             api_key,
             "videos",
@@ -310,17 +352,19 @@ def build_row_for_channel(api_key: str, display_name: str, channel_url: str, max
             }
             details[vid] = obj
 
-    vids = [details[v] for v in video_ids if v in details]
-    normal_videos = [v for v in vids if not is_short(v)]
+    recent_videos = [details[v] for v in video_ids if v in details]
+    ranked_candidates = [details[v] for v in rank_candidate_ids if v in details]
+    normal_recent_videos = [v for v in recent_videos if not is_short(v)]
+    normal_ranked_candidates = [v for v in ranked_candidates if not is_short(v)]
 
-    latest_video = latest_by_date(normal_videos)
+    latest_video = latest_by_date(normal_recent_videos)
     if latest_video:
         row["最新動画URL"] = watch_url(latest_video["id"])
         row["最新動画タイトル"] = latest_video["title"]
         row["最新動画再生回数"] = str(latest_video["view_count"])
         row["最新動画配信日"] = iso_to_ymd(latest_video["published_at"])
 
-    top4_video = rank_by_views(normal_videos, 4)
+    top4_video = rank_by_views(normal_ranked_candidates, 4)
     vf = [
         ("動画視聴回数1位URL", "動画視聴回数1位タイトル", "動画視聴回数1位再生回数"),
         ("動画視聴回数2位URL", "動画視聴回数2位タイトル", "動画視聴回数2位再生回数"),
@@ -362,7 +406,25 @@ def main() -> int:
     ap.add_argument("--max-channels", type=int, default=0, help="0 なら全チャンネル")
     ap.add_argument("--max-items", type=int, default=120, help="チャンネルごとに拾う uploads 件数上限")
     ap.add_argument("--dry-run", action="store_true", help="書き込みせず件数のみ表示")
+    ap.add_argument("--self-test", action="store_true", help="API通信なしで人気候補の保持規則を検証")
     args = ap.parse_args()
+
+    if args.self_test:
+        old_hit = "old-million-hit"
+        recent = ["recent-video"]
+        previous = {"動画視聴回数1位URL": watch_url(old_hit)}
+        candidates = merge_rank_candidate_ids(recent, previous)
+        assert candidates == ["recent-video", old_hit], candidates
+        ranked = rank_by_views(
+            [
+                {"id": "recent-video", "view_count": 1_769, "published_at": "2026-08-07"},
+                {"id": old_hit, "view_count": 1_240_000, "published_at": "2022-01-01"},
+            ],
+            1,
+        )
+        assert ranked[0]["id"] == old_hit, ranked
+        print("SELF-TEST OK: 窓外の過去TOP1を再照会候補として保持します")
+        return 0
 
     api_key = os.getenv("YOUTUBE_API_KEY", "").strip()
     if not api_key:
@@ -408,7 +470,12 @@ def main() -> int:
     for i, (name, url) in enumerate(pairs, start=1):
         print(f"[{i}/{len(pairs)}] {name}", file=sys.stderr)
         try:
-            rows.append(keep_previous_if_empty(build_row_for_channel(api_key, name, url, args.max_items), name, url))
+            previous = prev_by_url.get(normalize_channel_url(url)) or prev_by_name.get(name)
+            rows.append(
+                keep_previous_if_empty(
+                    build_row_for_channel(api_key, name, url, args.max_items, previous), name, url
+                )
+            )
         except Exception as ex:  # noqa: BLE001
             print(f"  warn: {name}: {ex}", file=sys.stderr)
             row = {k: "" for k in FIELDNAMES}
