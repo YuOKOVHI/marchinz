@@ -12347,7 +12347,7 @@ async function countSamples(ns, file, fromSec) {
     }
   });
 
-  group("㊹ デザインチームU Action Rail + Finder Rail + Stage Poster（v2.11.0）");
+  group("㊹ デザインチームU Action Rail + Finder Rail + Stage Poster（v2.11.1）");
   await test("★実画面操作: 390pxヘッダー・目的起点TOP導線・大会動画検索とカード", async () => {
     const f = document.createElement("iframe");
     f.style.cssText = "position:fixed;left:-9999px;top:0;width:390px;height:844px;border:0";
@@ -12355,14 +12355,14 @@ async function countSamples(ns, file, fromSec) {
     document.body.appendChild(f);
     try {
       for (let i = 0; i < 160; i++) {
-        const ready = f.contentDocument?.documentElement?.dataset?.mzVersion === "2.11.0"
+        const ready = f.contentDocument?.documentElement?.dataset?.mzVersion === "2.11.1"
           && f.contentWindow?.MarchinZMomentPulse
           && f.contentWindow?.MarchinZMomentFeed;
         if (ready) break;
         await new Promise(r => setTimeout(r, 50));
       }
       const w = f.contentWindow, d = f.contentDocument;
-      if (d?.documentElement?.dataset?.mzVersion !== "2.11.0") throw new Error("v2.11.0の実画面まで届かない");
+      if (d?.documentElement?.dataset?.mzVersion !== "2.11.1") throw new Error("v2.11.1の実画面まで届かない");
       for (let i = 0; i < 80 && d.querySelector(".site-brand")?.getBoundingClientRect().width === 0; i++) {
         await new Promise(r => setTimeout(r, 50));
       }
@@ -12577,7 +12577,7 @@ async function countSamples(ns, file, fromSec) {
     return "件数・先頭動画を壊した比較結果を検出";
   });
 
-  group("㊺ MarchinZ Pulse（v2.11.0）");
+  group("㊺ MarchinZ Pulse（v2.11.1）");
   await test("★実画面操作: TOP最新Moment 2件・投稿入口・通知設定", async () => {
     const f = document.createElement("iframe");
     f.style.cssText = "position:fixed;left:-9999px;top:0;width:390px;height:844px;border:0";
@@ -12585,7 +12585,7 @@ async function countSamples(ns, file, fromSec) {
     document.body.appendChild(f);
     try {
       for (let i = 0; i < 160; i++) {
-        const ready = f.contentDocument?.documentElement?.dataset?.mzVersion === "2.11.0"
+        const ready = f.contentDocument?.documentElement?.dataset?.mzVersion === "2.11.1"
           && f.contentWindow?.MarchinZMomentPulse
           && f.contentWindow?.MarchinZMomentFeed;
         if (ready) break;
@@ -12711,7 +12711,7 @@ async function countSamples(ns, file, fromSec) {
     return "公開Moment query + Index + 地図初期OFF + like_moment + 新着通知 + Rules一致";
   });
 
-  group("㊻ Firebase保存4経路（v2.11.0）");
+  group("㊻ Firebase保存4経路（v2.11.1）");
   await test("契約検査: 新規登録・Log・Note・Momentの保存先とRulesが一致", async () => {
     const [authSrc, roleSrc, noteSrc, momentSrc, rulesSrc] = await Promise.all([
       fetch("../../auth.js").then(r => r.text()),
@@ -12773,6 +12773,59 @@ async function countSamples(ns, file, fromSec) {
     }
     if (!mutationDetected) throw new Error("Moment保存先の破壊を検出できない");
     return "4保存先 + 必須payload + Rules + 半登録停止 / 保存先破壊の変異を検出";
+  });
+
+  group("㊼ Google検索・クロール基盤（v2.11.1）");
+  await test("実配信ファイル: robots・sitemap・正規URL・サイト名をGoogleへ明示する", async () => {
+    const [homeRes, robotsRes, sitemapRes, manifestRes] = await Promise.all([
+      fetch("../../index.html"),
+      fetch("../../robots.txt"),
+      fetch("../../sitemap.xml"),
+      fetch("../../manifest.webmanifest"),
+    ]);
+    if (![homeRes, robotsRes, sitemapRes, manifestRes].every(r => r.ok)) {
+      throw new Error(`SEOファイルを取得できない: ${[homeRes, robotsRes, sitemapRes, manifestRes].map(r => r.status).join("/")}`);
+    }
+    const [homeSrc, robotsSrc, sitemapSrc, manifest] = await Promise.all([
+      homeRes.text(), robotsRes.text(), sitemapRes.text(), manifestRes.json(),
+    ]);
+    const home = new DOMParser().parseFromString(homeSrc, "text/html");
+    const title = home.querySelector("title")?.textContent || "";
+    const description = home.querySelector('meta[name="description"]')?.getAttribute("content") || "";
+    const canonical = home.querySelector('link[rel="canonical"]')?.getAttribute("href") || "";
+    const robotsMeta = home.querySelector('meta[name="robots"]')?.getAttribute("content") || "";
+    const ogUrl = home.querySelector('meta[property="og:url"]')?.getAttribute("content") || "";
+    if (!title.includes("MarchinZ") || !title.includes("マーチンズ") || !title.includes("マーチング")) {
+      throw new Error(`titleがブランド検索を説明しない: ${title}`);
+    }
+    if (!description.includes("MarchinZ（マーチンズ）") || !description.includes("マーチング")) {
+      throw new Error("descriptionに正式名と用途が揃っていない");
+    }
+    if (canonical !== "https://marchinz.netlify.app/" || ogUrl !== canonical) {
+      throw new Error(`正規URLが統一されていない: canonical=${canonical} / og=${ogUrl}`);
+    }
+    if (!robotsMeta.includes("index") || robotsMeta.includes("noindex")) throw new Error("TOPがindex許可になっていない");
+    const ldScripts = [...home.querySelectorAll('script[type="application/ld+json"]')];
+    const ld = ldScripts.map(s => JSON.parse(s.textContent || "{}"))
+      .find(x => x["@type"] === "WebSite");
+    if (!ld || ld.url !== canonical || ld.name !== "MarchinZ"
+        || !Array.isArray(ld.alternateName) || !ld.alternateName.includes("マーチンズ")
+        || !ld.alternateName.includes("MarchinZ（マーチンズ）") || !ld.alternateName.includes("marchinz.netlify.app")) {
+      throw new Error("WebSite構造化データに正式名・別名・正規URLが揃っていない");
+    }
+    if (/<!doctype|<html/i.test(robotsSrc) || !/^User-agent:\s*\*/mi.test(robotsSrc)
+        || !/^Allow:\s*\/$/mi.test(robotsSrc)
+        || !/^Sitemap:\s*https:\/\/marchinz\.netlify\.app\/sitemap\.xml$/mi.test(robotsSrc)) {
+      throw new Error("robots.txtがトップHTMLへ化けたか、巡回・sitemap指定が欠けている");
+    }
+    const sitemap = new DOMParser().parseFromString(sitemapSrc, "application/xml");
+    if (sitemap.querySelector("parsererror")) throw new Error("sitemap.xmlがXMLとして壊れている");
+    const locs = [...sitemap.querySelectorAll("url > loc")].map(x => x.textContent.trim());
+    if (!locs.includes(canonical) || locs.some(x => x.includes("#"))) {
+      throw new Error(`sitemapの正規URLが不正: ${locs.join(", ")}`);
+    }
+    if (manifest.name !== "MarchinZ（マーチンズ）") throw new Error("PWA名とサイト正式名が一致しない");
+    return `title・canonical・WebSite JSON-LD・robots・sitemapを確認（${locs.length} URL）`;
   });
 
   if (CF) { CF.remove(); CF = null; CW = null; CD = null; }

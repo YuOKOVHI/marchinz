@@ -1,7 +1,7 @@
 {
-  "name": "マーチンズ / MarchinZ",
+  "name": "MarchinZ（マーチンズ）",
   "short_name": "MarchinZ",
-  "description": "参加したイベントの記録、ショウ動画の検索。マーチングコミュニティ「マーチンズ」",
+  "description": "マーチングの大会・演奏会の記録、ショウ動画の検索、仲間との交流ができるマーチングコミュニティ",
   "id": "./",
   "start_url": "./?source=pwa",
   "scope": "./",

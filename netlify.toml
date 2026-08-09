@@ -68,6 +68,24 @@
     Cache-Control = "public, max-age=3600"
 
 [[headers]]
+  for = "/robots.txt"
+  [headers.values]
+    Content-Type = "text/plain; charset=utf-8"
+    Cache-Control = "public, max-age=3600"
+
+[[headers]]
+  for = "/sitemap.xml"
+  [headers.values]
+    Content-Type = "application/xml; charset=utf-8"
+    Cache-Control = "public, max-age=3600"
+
+# 開発・検証画面は検索結果へ出さない。本番機能のクロールは妨げない。
+[[headers]]
+  for = "/tools/qa/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+
+[[headers]]
   for = "/*"
   [headers.values]
     X-Frame-Options = "DENY"
