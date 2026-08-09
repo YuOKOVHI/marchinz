@@ -6743,13 +6743,20 @@ async function countSamples(ns, file, fromSec) {
       w.MC.ui.renderClips();
       const note = w.document.getElementById("needSecondNote");
       if (!note) throw new Error("常設の案内が出ない");
-      if (!/2つ目の動画を選んでください/.test(note.textContent)) {
+      if (!/あと1本または2本、動画を選んでください/.test(note.textContent)) {
         throw new Error("案内の文言が違う: " + note.textContent);
       }
       /* トーストでなく常設(取り込み枠 #clipSlots の中に居る)こと */
       if (!w.document.getElementById("clipSlots").contains(note)) {
         throw new Error("案内が取り込み枠の近くに無い");
       }
+      /* 案内を読んだ本人が、その場で追加のpickerを開ける橋まで測る。 */
+      const keepPicker = w.MC.ui.openVideoPicker;
+      let pickerN = 0;
+      w.MC.ui.openVideoPicker = () => { pickerN++; return true; };
+      note.querySelector("#needSecondAdd").click();
+      w.MC.ui.openVideoPicker = keepPicker;
+      if (pickerN !== 1) throw new Error("追加ボタンから動画選択が開かない");
       /* focusNextAction が自走を始めない */
       w.MC.ui.runAuto = () => { called++; };
       w.MC.ui.focusNextAction();
@@ -6784,6 +6791,48 @@ async function countSamples(ns, file, fromSec) {
       if (!called) throw new Error("2本そろったのに自走が始まらない(=止めすぎ)");
       return "案内が消える / 同じ経路で自走が始まる";
     } finally { w.MC.ui.runAuto = keep; w.MC.ui._autoFlow = false; }
+  });
+
+  await test("★同じ動画は一般ユーザーでは拒否、管理者だけ3素材として区別できる", async () => {
+    const w = await compEnv();
+    const S = compReset(w), M = w.MC.media, U = w.MC.ui, L = w.MZ_LIMITS;
+    const keepAdmin = L.admin, keepFill = M.fillSameVideoForAdmin;
+    try {
+      const same = { ...S.clips[0], name: "same-camera.mov", size: 123456789,
+        lastModified: 987654321, isImage: false, isAudio: false };
+      S.clips = [{ id: 1, ...same }];
+      S.slots = [1, null, null];
+      L.admin = false;
+      const normal = M.duplicateDecision(same);
+      if (normal.allowed || normal.count !== 1) throw new Error("一般ユーザーの同じ動画を許可した");
+      U.renderClips();
+      if (w.document.getElementById("adminSameVideo")) throw new Error("一般ユーザーに同じ動画3枠ボタンが出た");
+
+      L.admin = true;
+      U.renderClips();
+      const sameButton = w.document.getElementById("adminSameVideo");
+      if (!sameButton) throw new Error("管理者に同じ動画3枠ボタンが出ない");
+      let fillN = 0;
+      M.fillSameVideoForAdmin = async () => { fillN++; return true; };
+      sameButton.click(); await new Promise(r => setTimeout(r, 0));
+      if (fillN !== 1) throw new Error("管理者の3枠ボタンが素材複製処理へ届かない");
+      const second = M.duplicateDecision(same);
+      if (!second.allowed || !/admin-copy:2$/.test(second.instanceKey)) {
+        throw new Error("管理者の同じ動画2本目を区別できない: " + JSON.stringify(second));
+      }
+      S.clips.push({ id: 2, ...same, instanceKey: second.instanceKey });
+      const third = M.duplicateDecision(same);
+      if (!third.allowed || !/admin-copy:3$/.test(third.instanceKey)) {
+        throw new Error("管理者の同じ動画3本目を区別できない: " + JSON.stringify(third));
+      }
+      S.clips.push({ id: 3, ...same, instanceKey: third.instanceKey });
+      const keys = new Set(S.clips.map(c => w.MC.clipKey(c)));
+      if (keys.size !== 3) throw new Error("同じ動画3本の保存キーが衝突した");
+
+      const mediaSrc = await (await w.fetch("../switcher/js/media.js")).text();
+      if (!/duplicateDecision\(f\)/.test(mediaSrc)) throw new Error("addFiles実経路が重複判定へ接続されていない");
+      return "一般=重複拒否 / 管理者=1本から3枠ボタン・同じ動画3本・保存キーも3つ";
+    } finally { M.fillSameVideoForAdmin = keepFill; L.admin = keepAdmin; compReset(w); }
   });
 
   await test("★動画2の札: おまかせ/こだわりとも「必要」(門と表示の一致)", async () => {
@@ -10080,19 +10129,23 @@ async function countSamples(ns, file, fromSec) {
         throw new Error(`仕上げの好みの60秒が分析へ渡らない: preset=${S.exportPreset} decided=${S.mobileLengthDecided} run=${ran}`);
       }
 
-      /* 1本だけに戻すと、こだわりを直接押しても素材工程に留める。 */
+      /* 1本だけに戻すと、こだわりを直接押しても素材工程に留める。
+         選んだ進め方は勝手におまかせへ変更しない。 */
       S.clips = [S.clips[0]]; S.slots = [S.clips[0].id, null, null]; S.mobileLengthDecided = false;
       U._autoFlow = false; U._setupTab = "easy"; U.renderClips(); U.setSetupTab("pro");
       const note = d.getElementById("needSecondNote");
-      if (U._setupTab !== "easy" || !U._autoFlow || !note || !/2つ目の動画/.test(note.textContent)) {
-        throw new Error("動画1本でこだわりへ進める、または2つ目の案内が無い");
+      if (U._setupTab !== "easy" || U._autoFlow || !note || !/あと1本または2本/.test(note.textContent)) {
+        throw new Error("動画1本でこだわりへ進める、選択モードを書き換える、または追加案内が無い");
       }
+      U._setupTab = "pro"; U._autoFlow = false;
+      U.focusNextAction();
+      if (U._setupTab !== "pro" || U._autoFlow) throw new Error("1本取り込み後に選んだこだわりがおまかせへ変わった");
       /* 変異: 2本目の門を外すと、こだわりへ入れてしまうことを確認する。
          これが通らなければ、このQAは表示だけを見て実際の門を測れていない。 */
       U.needSecondVideo = () => false;
       U.setSetupTab("pro");
       if (U._setupTab !== "pro") throw new Error("変異してもこだわりへ入れない=2本目門の試験に歯が無い");
-      return "1本=2つ目を案内してこだわり停止 / 2本=仕上げの好みで30秒・60秒・フル / 選択値を分析へ保持";
+      return "1本=あと1〜2本を案内・選んだ進め方を保持 / 2本=仕上げの好みで30秒・60秒・フル / 選択値を分析へ保持";
     } finally {
       U.runAuto = keepRun; U.needSecondVideo = keepNeed;
       Object.assign(L, keepL); compReset(w); U.renderClips();
@@ -12367,22 +12420,25 @@ async function countSamples(ns, file, fromSec) {
     }
   });
 
-  group("㊹ デザインチームU Action Rail + Finder Rail + Stage Poster（v2.12.0）");
+  group("㊹ デザインチームU Action Rail + Finder Rail + Stage Poster（現行版）");
   await test("★実画面操作: 390pxヘッダー・目的起点TOP導線・大会動画検索とカード", async () => {
+    const siteSrc = await (await fetch("../../index.html", { cache: "no-store" })).text();
+    const expectedVersion = /data-mz-version="([^"]+)"/.exec(siteSrc)?.[1];
+    if (!expectedVersion) throw new Error("現行版のバージョンを取得できない");
     const f = document.createElement("iframe");
     f.style.cssText = "position:fixed;left:-9999px;top:0;width:390px;height:844px;border:0";
     f.src = "../../index.html?mzQaTeamU=1#top";
     document.body.appendChild(f);
     try {
       for (let i = 0; i < 160; i++) {
-        const ready = f.contentDocument?.documentElement?.dataset?.mzVersion === "2.12.0"
+        const ready = f.contentDocument?.documentElement?.dataset?.mzVersion === expectedVersion
           && f.contentWindow?.MarchinZMomentPulse
           && f.contentWindow?.MarchinZMomentFeed;
         if (ready) break;
         await new Promise(r => setTimeout(r, 50));
       }
       const w = f.contentWindow, d = f.contentDocument;
-      if (d?.documentElement?.dataset?.mzVersion !== "2.12.0") throw new Error("v2.12.0の実画面まで届かない");
+      if (d?.documentElement?.dataset?.mzVersion !== expectedVersion) throw new Error(`現行版v${expectedVersion}の実画面まで届かない`);
       for (let i = 0; i < 80 && d.querySelector(".site-brand")?.getBoundingClientRect().width === 0; i++) {
         await new Promise(r => setTimeout(r, 50));
       }
@@ -12597,15 +12653,18 @@ async function countSamples(ns, file, fromSec) {
     return "件数・先頭動画を壊した比較結果を検出";
   });
 
-  group("㊺ MarchinZ Pulse（v2.12.0）");
+  group("㊺ MarchinZ Pulse（現行版）");
   await test("★実画面操作: TOP最新Moment 2件・投稿入口・通知設定", async () => {
+    const siteSrc = await (await fetch("../../index.html", { cache: "no-store" })).text();
+    const expectedVersion = /data-mz-version="([^"]+)"/.exec(siteSrc)?.[1];
+    if (!expectedVersion) throw new Error("現行版のバージョンを取得できない");
     const f = document.createElement("iframe");
     f.style.cssText = "position:fixed;left:-9999px;top:0;width:390px;height:844px;border:0";
     f.src = "../../index.html?mzQaPulse=1#top";
     document.body.appendChild(f);
     try {
       for (let i = 0; i < 160; i++) {
-        const ready = f.contentDocument?.documentElement?.dataset?.mzVersion === "2.12.0"
+        const ready = f.contentDocument?.documentElement?.dataset?.mzVersion === expectedVersion
           && f.contentWindow?.MarchinZMomentPulse
           && f.contentWindow?.MarchinZMomentFeed;
         if (ready) break;

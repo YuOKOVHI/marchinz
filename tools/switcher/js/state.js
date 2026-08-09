@@ -102,7 +102,11 @@ MC.waitDequeue = (codec, ms = 100) => new Promise(r => {
   const tm = setTimeout(() => { codec.removeEventListener("dequeue", h); r(); }, ms);
 });
 
-MC.clipKey = c => `${c.name}|${c.size}|${c.lastModified}`;
+/* 元ファイルの同一性と、編集中の素材インスタンスを分ける。
+   管理者の検証では同じ動画を最大3枠へ入れるため、2本目以降だけ
+   instanceKeyを持たせる。通常ユーザーの重複判定はsourceKeyで行う。 */
+MC.sourceKey = c => `${c.name}|${c.size}|${c.lastModified}`;
+MC.clipKey = c => c.instanceKey || MC.sourceKey(c);
 MC.getClip = id => MC.S.clips.find(c => c.id === id) || null;
 MC.debug = [];
 /* 不具合のご連絡用にログを残す(端末内のみ)。

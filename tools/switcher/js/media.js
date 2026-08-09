@@ -28,6 +28,19 @@ MC.media.sniffContainer = async f => {
   }
 };
 
+/* 同じ動画を複数枠へ入れるのは管理者の比較試験だけに限定する。
+   一般ユーザーには従来どおり誤選択として止める。instanceKeyを分けることで、
+   同期結果・カット割・再読込時の照合が同名素材同士で衝突しない。 */
+MC.media.duplicateDecision = file => {
+  const key = MC.sourceKey(file);
+  const count = MC.S.clips.filter(c => !c.isImage && MC.sourceKey(c) === key).length;
+  const admin = Boolean(window.MZ_LIMITS && MZ_LIMITS.admin);
+  return {
+    key, count, allowed: count === 0 || admin,
+    instanceKey: count ? `${key}|admin-copy:${count + 1}` : "",
+  };
+};
+
 MC.media.addFiles = async files => {
   if (MC.media._adding) {
     MC.ui.toast("いま選んだ動画を端末内に準備しています。終わってから追加してください");
@@ -64,8 +77,8 @@ MC.media.addFiles = async files => {
     if (!/^video\//.test(f.type) && !/\.(mp4|mov|m4v)$/i.test(f.name)) { skipped.push(f.name); queue[fileIndex] = null; continue; }
     const sniff = await MC.media.sniffContainer(f);
     if (!sniff.ok) { skipped.push(`${f.name}（${sniff.kind}）`); queue[fileIndex] = null; continue; }
-    const key = `${f.name}|${f.size}|${f.lastModified}`;
-    if (MC.S.clips.some(c => MC.clipKey(c) === key)) { MC.ui.toast(`${f.name} は読み込み済みです`); queue[fileIndex] = null; continue; }
+    const duplicate = MC.media.duplicateDecision(f);
+    if (!duplicate.allowed) { MC.ui.toast(`${f.name} は読み込み済みです`); queue[fileIndex] = null; continue; }
     if (MC.media.slotClips().length >= 3) { MC.ui.toast("素材は3つまでです"); break; }
     /* Safariから受け取ったFileはここより先へ渡さない。OPFSへ1本ずつ移し、
        サイズ検証後のFileを既存エンジンへ渡す。OPFSが使えない/失敗した端末は
@@ -91,6 +104,7 @@ MC.media.addFiles = async files => {
     const clip = {
       id: MC.media.nextId++, file: sourceFile,
       name: original.name, size: original.size, lastModified: original.lastModified,
+      instanceKey: duplicate.instanceKey,
       mimeType: original.type || sourceFile.type || "",
       sourceStorage: staged.storage, sourceOpfsName: staged.name || "",
       url: URL.createObjectURL(sourceFile),
@@ -187,6 +201,63 @@ MC.media.addFiles = async files => {
     MC.media._adding = false;
     MC.media._importProgress = null;
     if (MC.ui.renderClips) MC.ui.renderClips();
+  }
+};
+
+/* 管理者の比較試験専用: 1本のFileを再コピーせず、独立したvideo要素3つで使う。
+   iPhoneの写真選択画面では同じ項目を同時に複数選べないため、重複許可だけでは
+   3枠へ到達できない。元File/OPFSエントリは共有し、余計な容量を増やさない。 */
+MC.media.fillSameVideoForAdmin = async () => {
+  if (!(window.MZ_LIMITS && MZ_LIMITS.admin)) return false;
+  const videos = MC.S.clips.filter(c => !c.isImage && !c.isAudio);
+  if (videos.length !== 1 || MC.media.slotClips().length !== 1) return false;
+  const source = videos[0];
+  if (!source.file) return false;
+  const made = [];
+  let pendingUrl = "";
+  try {
+    for (let copyNo = 2; copyNo <= 3; copyNo++) {
+      const v = document.createElement("video");
+      v.muted = true; v.playsInline = true; v.setAttribute("playsinline", "");
+      v.preload = MC.isIOS ? "metadata" : "auto";
+      const ready = new Promise((resolve, reject) => {
+        v.onloadedmetadata = resolve;
+        v.onerror = () => reject(new Error("同じ動画の準備に失敗しました"));
+      });
+      const url = URL.createObjectURL(source.file);
+      pendingUrl = url;
+      v.src = url;
+      await ready;
+      const clip = {
+        id: MC.media.nextId++, file: source.file,
+        name: source.name, size: source.size, lastModified: source.lastModified,
+        instanceKey: `${MC.sourceKey(source)}|admin-copy:${copyNo}`,
+        mimeType: source.mimeType || source.file.type || "",
+        sourceStorage: "shared", sourceOpfsName: "",
+        url, video: v,
+        duration: v.duration || source.duration, width: v.videoWidth || source.width,
+        height: v.videoHeight || source.height,
+        offset: 0, confidence: null, syncMethod: "未同期",
+        pan: 0.5, role: "auto", freq: "auto", rig: "auto",
+        audio8k: null, stats: null, thumb: null, hasAudio: null,
+      };
+      clip.restored = MC.restoreClipState(clip);
+      made.push(clip);
+      pendingUrl = "";
+    }
+    MC.S.clips.push(...made);
+    made.forEach(c => {
+      if (MC.storageDiag) MC.storageDiag.clipLoaded(c);
+      MC.media.makeThumb(c);
+    });
+    MC.media.afterChange();
+    MC.ui.toast("同じ動画を3つの素材枠に入れました");
+    return true;
+  } catch (e) {
+    if (pendingUrl) URL.revokeObjectURL(pendingUrl);
+    made.forEach(c => { try { c.video.pause(); } catch (_) {} URL.revokeObjectURL(c.url); });
+    MC.ui.toast("同じ動画を3枠に準備できませんでした");
+    return false;
   }
 };
 

@@ -142,8 +142,21 @@ body::before {
 body.mz-export-open .toast { z-index: 125; }
 .need-second-note { font-size: 13px; color: var(--acc-deep); background: #f4f7ff;
   overflow-wrap: anywhere;   /* 長い無改行ファイル名(importNote)でも枠から溢れない */
-  border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+  border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .need-second-note i { margin-right: 4px; }
+.need-second-note span { display: block; margin-top: 3px; color: var(--tx2); font-size: 11.5px; }
+.need-second-actions { display: flex; flex: 0 0 auto; gap: 7px; }
+.need-second-add { flex: 0 0 auto; min-height: 44px; padding: 0 13px; border: 1px solid var(--acc);
+  border-radius: 10px; background: #fff; color: var(--acc-deep); font: 700 12.5px/1.2 inherit;
+  cursor: pointer; }
+.need-second-add.admin-same { border-style: dashed; }
+.need-second-add:hover, .need-second-add:focus-visible { background: var(--sel-tint); }
+@media (max-width: 430px) {
+  .need-second-note { align-items: stretch; flex-direction: column; }
+  .need-second-actions { flex-direction: column; }
+  .need-second-add { width: 100%; }
+}
 /* ★ 押せないラベルに操作色(--acc)を使わない(2026-08-07 ビジュアルレビュー🟢)。
    「動画1」は見出しであって押せない。青は「押せる/選ばれている」専用に温存する */
 .clip-slot-label { font-size: 11px; font-weight: 700; color: var(--tx2); margin-bottom: 6px; letter-spacing: 0.02em; }

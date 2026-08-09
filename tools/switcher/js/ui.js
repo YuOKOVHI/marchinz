@@ -1510,13 +1510,9 @@ MC.ui.focusNextAction = () => {
   /* 1本では、どの入口からも先へ進ませない。すでに「こだわり」を開いていた
      場合も素材工程へ戻し、常設の「2つ目の動画」案内を残す。 */
   if (MC.ui.needSecondVideo()) {
-    if (MC.ui._setupTab === "pro") {
-      /* 表示だけをeasyにして_autoFlow=false(こだわり)のままだと、2本目を
-         追加した瞬間に画面は「おまかせ」なのにこだわり分岐へ進む。1本時は
-         おまかせに揃え、2本目がそろったら表示どおり自動分析へ進める。 */
-      MC.ui._autoFlow = true;
-      MC.ui.setSetupTab("easy");
-    }
+    /* 選んだ「おまかせ／こだわり」は勝手に変更しない。以前は1本入ると
+       こだわりをおまかせへ書き換えており、本人の選択と次の処理が変わった。
+       ここでは素材工程に留め、あと1〜2本の追加だけを待つ。 */
     return;
   }
   /* ★ おまかせを選んでいるなら、ここから先は一度も止まらない(2026-08-01 優さん指示)。
@@ -2931,8 +2927,21 @@ ${c.isImage ? "" : (c.tiltOk
     const note = document.createElement("div");
     note.id = "needSecondNote";
     note.className = "need-second-note";
-    note.innerHTML = '<i class="fa-solid fa-circle-info" aria-hidden="true"></i> '
-      + '2つ目の動画を選んでください（1本だけでは作れないため、そろったらおまかせで始まります）';
+    const adminSame = MC.ui.isAdmin() && slotClips.length === 1;
+    note.innerHTML = '<div><i class="fa-solid fa-circle-info" aria-hidden="true"></i> '
+      + '<b>あと1本または2本、動画を選んでください</b>'
+      + '<span>同じ演奏を別の場所から撮った動画を使います。</span></div>'
+      + '<div class="need-second-actions">'
+      + '<button type="button" class="need-second-add" id="needSecondAdd">動画を追加する</button>'
+      + (adminSame ? '<button type="button" class="need-second-add admin-same" id="adminSameVideo">この動画を3枠で試す</button>' : '')
+      + '</div>';
+    note.querySelector("#needSecondAdd").onclick = () => MC.ui.openVideoPicker();
+    const sameBtn = note.querySelector("#adminSameVideo");
+    if (sameBtn) sameBtn.onclick = async () => {
+      sameBtn.disabled = true; sameBtn.textContent = "準備しています…";
+      const ok = await MC.media.fillSameVideoForAdmin();
+      if (!ok && sameBtn.isConnected) { sameBtn.disabled = false; sameBtn.textContent = "この動画を3枠で試す"; }
+    };
     /* ★ 置き場所は「動画1のカードの直下=動画2の空き枠の直上」(2026-08-02
        push前レビュー)。末尾に足すと空き枠2つ(動画2・動画3)より下に落ち、
        375px では折り目の下 ─ 次にすべき行動(動画2を選ぶ)の手前で読ませる */
@@ -3566,12 +3575,9 @@ MC.ui.setSetupTab = (tab, opt = {}) => {
      初期の0本は従来どおり選べる(そのまま2本を選ぶ入口)ので、素材が1本ある
   場合だけ素材工程へ戻す。 */
   if (tab === "pro" && MC.ui.needSecondVideo()) {
-    tab = "easy";
-    /* こだわりを止めて画面をおまかせへ戻すなら、内部の自走フラグも同時に
-       おまかせへ揃える。これをしないと2本目追加後に画面だけおまかせ、処理は
-       こだわりという二重状態になる。 */
-    MC.ui._autoFlow = true;
-    if (!opt.quiet) MC.ui.toast("続けるには、2つ目の動画を選んでください");
+    /* 1本時は細かな工程へ進ませないが、本人が選んだ進め方も書き換えない。 */
+    if (!opt.quiet) MC.ui.toast("あと1本または2本、動画を選んでください");
+    return false;
   }
   const changed = MC.ui._setupTab !== tab;
   MC.ui._setupTab = tab;
@@ -3597,6 +3603,7 @@ MC.ui.setSetupTab = (tab, opt = {}) => {
   /* おまかせ⇄こだわりで素材カードの中身が変わる(おまかせは解像度と長さだけ)。
      タブが変わったら描き直す */
   if (changed && MC.S.clips.length) MC.ui.renderClips();
+  return true;
 };
 
 /* 「おまかせ / こだわり」はモード選択の直後から出す(2026-07-23 B-1)。
