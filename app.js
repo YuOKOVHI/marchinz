@@ -40,6 +40,14 @@
   const VIDEO_SOURCE_FILTER_LABELS = {
     matsuri: "マーチング祭",
     drumcorps: "DrumcorpsfunTV",
+    dci: "FloMarching（DCI）",
+  };
+  /** 大会動画の公開分類。タブ・保存した検索・URL復元で同じ正本を使う。 */
+  const VIDEO_CATEGORIES = ["マーチング団体等", "スリークロスチーム", "海外"];
+  const VIDEO_CATEGORY_LABELS = {
+    マーチング団体等: "マーチング等",
+    スリークロスチーム: "MIX3",
+    海外: "海外",
   };
   /** 大会動画・初期表示で必ず先頭に試す団体（順固定・各1動画・最大3枠）。動画が無い団体はスキップ。 */
   const INITIAL_RANDOM_PRIORITY_SLOTS = 3;
@@ -149,6 +157,7 @@
     if (!state.sourceFilter) return true;
     if (state.sourceFilter === "matsuri") return isMarchingMatsuriVideo(row);
     if (state.sourceFilter === "drumcorps") return isDrumcorpsFunTvChannelRow(row);
+    if (state.sourceFilter === "dci") return isFloMarchingChannelRow(row);
     return true;
   }
 
@@ -500,6 +509,15 @@
       .includes("drumcorpsfuntv");
   }
 
+  function isFloMarchingChannelRow(row) {
+    const name = String(rowChannelName(row) || "")
+      .toLowerCase()
+      .normalize("NFKC")
+      .replace(/\s+/g, "");
+    const url = String(rowChannelUrl(row) || "").toLowerCase().normalize("NFKC");
+    return name.includes("flomarching") || url.includes("@flomarching");
+  }
+
   /**
    * DrumcorpsfunTV × 注目チーム（INITIAL_RANDOM 相当）向け：決勝／WINNERS を
    * 「出場チーム紹介」等の前に並べるためのスコア。0 は「このルール対象外」。
@@ -577,14 +595,13 @@
 
   function updateBrowseOverlaySwitchButton() {
     if (!browseOrgSwitchCategory) return;
-    const label =
-      state.tab === "スリークロスチーム" ? "マーチング等" : "MIX3";
+    const index = VIDEO_CATEGORIES.indexOf(state.tab);
+    const next = VIDEO_CATEGORIES[(index + 1) % VIDEO_CATEGORIES.length];
+    const label = VIDEO_CATEGORY_LABELS[next];
     browseOrgSwitchCategory.textContent = label;
     browseOrgSwitchCategory.setAttribute(
       "aria-label",
-      state.tab === "スリークロスチーム"
-        ? "団体一覧（マーチング等）に切り替え"
-        : "チーム一覧（MIX3）に切り替え"
+      `${label}の一覧に切り替え`
     );
   }
 
@@ -604,8 +621,9 @@
 
   function updateBrowseOverlayHead() {
     if (!browseOrgOverlayHeading || !browseOrgOverlayCount) return;
-    const listHead = state.tab === "スリークロスチーム" ? "チーム一覧" : "団体一覧";
-    const countUnit = state.tab === "スリークロスチーム" ? "チーム" : "団体";
+    const isTeam = state.tab === "スリークロスチーム";
+    const listHead = isTeam ? "チーム一覧" : "団体一覧";
+    const countUnit = isTeam ? "チーム" : "団体";
     const n = browseOrgOverlayFullNames.length;
     browseOrgOverlayHeading.textContent = listHead;
     browseOrgOverlayCount.textContent = `（${n}${countUnit}）`;
@@ -646,8 +664,9 @@
   function renderBrowsePanel() {
     if (!browseButtonList || !browseByOrg) return;
 
-    const mainLabel = state.tab === "スリークロスチーム" ? "チーム一覧表示" : "団体一覧表示";
-    const countUnit = state.tab === "スリークロスチーム" ? "チーム" : "団体";
+    const isTeam = state.tab === "スリークロスチーム";
+    const mainLabel = isTeam ? "チーム一覧表示" : "団体一覧表示";
+    const countUnit = isTeam ? "チーム" : "団体";
     const browseN = uniqOrgNamesForTab().length;
     if (browseByOrgLabel) browseByOrgLabel.textContent = mainLabel;
     if (browseByOrgCount) browseByOrgCount.textContent = `${browseN}${countUnit}`;
@@ -818,7 +837,7 @@
     cancelSearchDebounce();
     clearExactFilters();
     clearExcludedOrgs();
-    state.tab = c.tab === "スリークロスチーム" ? "スリークロスチーム" : "マーチング団体等";
+    state.tab = VIDEO_CATEGORIES.includes(c.tab) ? c.tab : "マーチング団体等";
     state.sortKey = SORT_KEYS.includes(c.sortKey) ? c.sortKey : "配信日";
     state.sortDir = c.sortDir === "asc" ? "asc" : "desc";
     if (qTeam) qTeam.value = c.team || "";
@@ -1028,7 +1047,7 @@
   }
 
   /** 共有・履歴用の短いクエリキー。団体は `o=団体ID`（CSV「団体ID」優先・空なら団体名から導出）、従来の tab / team / t も readUrlState で読める */
-  const SHARE_C_TO_TAB = { m: "マーチング団体等", x: "スリークロスチーム" };
+  const SHARE_C_TO_TAB = { m: "マーチング団体等", x: "スリークロスチーム", o: "海外" };
   const SHARE_SORT_TO_S = { 配信日: "dt", "団体/チーム": "tm" };
   const SHARE_S_TO_SORT = { dt: "配信日", tm: "団体/チーム" };
 
@@ -1093,13 +1112,13 @@
     const p = new URLSearchParams(window.location.search);
     const tab = p.get("tab");
     const cTab = p.get("c");
-    if (tab === "マーチング団体等" || tab === "スリークロスチーム") {
+    if (VIDEO_CATEGORIES.includes(tab)) {
       state.tab = tab;
       document.querySelectorAll('.tabs button[role="tab"]').forEach((b) => {
         const cat = b.getAttribute("data-category");
         b.setAttribute("aria-selected", cat === tab ? "true" : "false");
       });
-    } else if (cTab === "m" || cTab === "x") {
+    } else if (Object.prototype.hasOwnProperty.call(SHARE_C_TO_TAB, cTab || "")) {
       const t = SHARE_C_TO_TAB[cTab];
       if (t) {
         state.tab = t;
@@ -1135,6 +1154,7 @@
     const src = p.get("src");
     if (src === "m" || src === "matsuri") state.sourceFilter = "matsuri";
     else if (src === "d" || src === "drumcorps") state.sourceFilter = "drumcorps";
+    else if (src === "f" || src === "flo" || src === "dci") state.sourceFilter = "dci";
     const dir = p.has("dir") ? p.get("dir") : p.get("d");
     if (dir === "asc" || dir === "desc") state.sortDir = dir;
     const ps = p.get("pageSize") ?? p.get("z");
@@ -1194,6 +1214,8 @@
     const p = new URLSearchParams();
     if (state.tab === "スリークロスチーム") {
       p.set("c", "x");
+    } else if (state.tab === "海外") {
+      p.set("c", "o");
     } else if (state.tab !== "マーチング団体等") {
       p.set("tab", state.tab);
     }
@@ -1215,6 +1237,7 @@
     if (state.sortDir !== "desc") p.set("d", state.sortDir);
     if (state.sourceFilter === "matsuri") p.set("src", "m");
     else if (state.sourceFilter === "drumcorps") p.set("src", "d");
+    else if (state.sourceFilter === "dci") p.set("src", "f");
     if (state.page > 1) p.set("p", String(state.page));
     if (state.pageSize !== 10) p.set("z", String(state.pageSize));
     if (state.excludedOrgTeams.size > 0) {
@@ -1926,8 +1949,7 @@
    * 各プール内: 同じ配信日（別団体）→ 同じ大会（別団体）→ 似ている大会（別団体）。
    */
   function computeRecommendations() {
-    const otherCategory =
-      state.tab === "スリークロスチーム" ? "マーチング団体等" : "スリークロスチーム";
+    const otherCategory = VIDEO_CATEGORIES.find((category) => category !== state.tab) || state.tab;
     const rowsPreferred = rowsInCategory(otherCategory);
     const rowsFallback = rowsInCurrentTab();
 
@@ -3233,7 +3255,7 @@
       item.addEventListener("click", (e) => {
         e.stopPropagation();
         const v = item.getAttribute("data-source") || "";
-        state.sourceFilter = v === "matsuri" || v === "drumcorps" ? v : "";
+        state.sourceFilter = ["matsuri", "drumcorps", "dci"].includes(v) ? v : "";
         closeVideoSourceFilterMenu();
         cancelSearchDebounce();
         applyFilter();
@@ -3331,7 +3353,7 @@
     }
     return new Promise((resolve) => {
       const script = document.createElement("script");
-      script.src = "data.inline.js?v=1.7.48";
+      script.src = "data.inline.js?v=1.26.38";
       script.async = true;
       script.onload = () => resolve(window.__MARCHINZ_DATA || null);
       script.onerror = () => resolve(null);
@@ -3560,8 +3582,8 @@
 
   if (browseOrgSwitchCategory) {
     browseOrgSwitchCategory.addEventListener("click", () => {
-      const next =
-        state.tab === "スリークロスチーム" ? "マーチング団体等" : "スリークロスチーム";
+      const index = VIDEO_CATEGORIES.indexOf(state.tab);
+      const next = VIDEO_CATEGORIES[(index + 1) % VIDEO_CATEGORIES.length];
       switchVideosCategoryTab(next);
     });
   }

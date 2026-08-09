@@ -2,8 +2,8 @@
 
 ## 1) 日常運用
 
-- **ショウ動画の一覧データは `大会動画リスト_マーチング祭.csv` が正（Single source of truth）**です。新規取り込み・追記は **必ず先にこの CSV** を更新し、`python3 sync_csv_to_json.py` で派生ファイルへ反映します（`data.json` / `data.inline.js` を直接いじらない）。
-- 物理パス例: `…/CursorLogs/010_MarchinZ/大会動画リスト_マーチング祭.csv`。Google Drive 上ではフォルダ名が `マイドライブ` と `マイドライブ`（Unicode の分解の違い）のように **表記が変わっても同一フォルダを指す**ことがありますが、**必ず `010_MarchinZ/大会動画リスト_マーチング祭.csv` を開いて編集**してください。
+- **ショウ動画の一覧データは `sync_csv_to_json.py` の `SOURCE_CSVS` に登録したCSV群が正（Single source of truth）**です。現在はマーチング祭・DrumcorpsfunTV・FloMarching（DCI）の3本です。新規取り込み・追記は **必ず先に該当CSV** を更新し、`python3 sync_csv_to_json.py` で派生ファイルへ反映します（`data.json` / `data.inline.js` を直接いじらない）。
+- Google Drive 上ではフォルダ名が `マイドライブ` と `マイドライブ`（Unicode の分解の違い）のように **表記が変わっても同一フォルダを指す**ことがあります。必ず `010_MarchinZ` 直下の対象CSVを編集してください。
 - MLLはFirestoreの `mll_logs` / `mll_profiles` に保存されます。
 - 画像やバナー差し替えは `logo/` と `images/` を更新します。
 - 本番反映は **手動デプロイのみ**（`netlify deploy --prod --dir .`）で行います。**自動本番デプロイは停止済み**（Netlify `build_settings.stop_builds=true`）。
@@ -123,11 +123,11 @@ firebase deploy --only firestore:rules,storage
 - URLが出ない: `ticket_url` / `official_url` フィールドが保存されているか確認
 - 認証が動かない: `auth-config.js` の `firebase` 設定（apiKey/authDomain/projectId/appId）を確認
 
-## 6) `大会動画リスト_マーチング祭.csv` の取り込み・修正と反映ルール（必須）
+## 6) 大会動画CSVの取り込み・修正と反映ルール（必須）
 
 ### データの流向（順序を変えない）
 
-1. **`大会動画リスト_マーチング祭.csv` に追記・編集**（これが唯一の正）
+1. `sync_csv_to_json.py` の **`SOURCE_CSVS` にある該当CSVへ追記・編集**（CSV群が唯一の正）
 2. **（任意）** 団体/チーム名の表記ゆれをまとめる: `python3 normalize_team_names.py --dry-run` → 問題なければ `python3 normalize_team_names.py`（処理内容は同スクリプト先頭）。
 3. **`python3 sync_csv_to_json.py`** を実行 → **`data.json` と `data.inline.js` の両方**を CSV から再生成する（別途 `data.inline.js` を手編集しない）。
 4. **`python3 check_data.py`** で件数・列・CSV と JSON の一致を確認する。
@@ -142,6 +142,7 @@ firebase deploy --only firestore:rules,storage
 - **`--replace`**: 同じ動画 ID を含む既存行を消してから再マージする（誤った 1 行だけ残っている場合など）。
 - **配信前・待機中のみの URL**（まだ VOD になっていない）: `yt-dlp` でチャプターが取れないため、**この方法では CSV に行を足せない**。アーカイブ公開後に再実行する。
 - **`build_data.py`**: チャンネル全体の取得・一覧再構築用。**手で整えた `大会動画リスト_マーチング祭.csv` を上書きし得る**（`--full` は特に全置換）。手修正済みの CSV を正とする運用では、**安易に `--full` を使わない**。増分で追加される行は必要に応じて CSV 側で後から整える。
+- **FloMarchingのDCI FULL SHOWを再取得**する場合: macOSで、yt-dlpを入れたPythonから `python3 import_flomarching_dci_full_shows.py` を実行する。公開動画を全件確認し、**10分以上**かつ**タイトルまたはサムネイルOCRに `FULL SHOW`**がある動画だけを `大会動画リスト_FloMarching_DCI.csv` へ出力する。その後、上記手順3〜4を実行する。
 
 ### 反映確認の最小チェック
 

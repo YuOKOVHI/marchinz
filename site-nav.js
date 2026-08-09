@@ -225,7 +225,7 @@
     videos: {
       title: "MarchinZ/マーチンズ — 大会動画",
       description:
-        "マーチンズ/MarchinZ。マーチング団体等・スリークロスチームの動画一覧を検索してシェアできます。",
+        "マーチンズ/MarchinZ。マーチング等・MIX3・海外の大会動画を検索してシェアできます。",
       image: defaultOgImage,
     },
     mll: {

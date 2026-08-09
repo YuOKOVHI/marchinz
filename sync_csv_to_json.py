@@ -4,8 +4,8 @@
 取り込み・追記時の順序は必ず:
   1) この CSV を更新する（単一 URL の追加は手書きまたは append_live_chapters_from_youtube.py）
      ・「団体ID」列は任意（空ならアプリが団体名から決定論 ID にフォールバック）。表記ゆれを束ねるときだけ手で同一 ID を振る。
-  2) python3 sync_csv_to_json.py（`大会動画リスト_マーチング祭.csv` と `大会動画リスト_DrumcorpsfunTV.csv` を常に併読）
-  3) python3 check_data.py（上記 2 CSV と JSON の列・件数を同時検査）
+  2) python3 sync_csv_to_json.py（SOURCE_CSVS の大会動画CSVを常に併読）
+  3) python3 check_data.py（全CSVとJSONの列・件数を同時検査）
 
 data.json と data.inline.js を別々に編集しない。詳細は docs/OPS_GUIDE.md 参照。
 
@@ -22,7 +22,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 PRIMARY_CSV = ROOT / "大会動画リスト_マーチング祭.csv"
 DRUMCORPS_CSV = ROOT / "大会動画リスト_DrumcorpsfunTV.csv"
-SOURCE_CSVS = (PRIMARY_CSV, DRUMCORPS_CSV)
+FLO_MARCHING_CSV = ROOT / "大会動画リスト_FloMarching_DCI.csv"
+SOURCE_CSVS = (PRIMARY_CSV, DRUMCORPS_CSV, FLO_MARCHING_CSV)
 # backward compatibility for scripts importing OUT_CSV
 OUT_CSV = PRIMARY_CSV
 OUT_JSON = ROOT / "data.json"

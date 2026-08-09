@@ -153,6 +153,7 @@
   function decorateVideosPage() {
     prependIcon(document.getElementById("tab-marching"), [SOLID, "fa-drum"]);
     prependIcon(document.getElementById("tab-threecross"), [SOLID, "fa-layer-group"]);
+    prependIcon(document.getElementById("tab-overseas"), [SOLID, "fa-earth-americas"]);
     prependIcon(document.getElementById("browse-by-org"), [SOLID, "fa-table-list"]);
     prependIcon(document.getElementById("btn-reset-search"), [SOLID, "fa-rotate-left"]);
     document.querySelectorAll("[data-marchinz-search-share]").forEach((btn) => {

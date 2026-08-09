@@ -100,8 +100,12 @@ def main() -> int:
         "paths",
         nargs="*",
         type=Path,
-        default=[ROOT / "大会動画リスト_マーチング祭.csv", ROOT / "大会動画リスト_DrumcorpsfunTV.csv"],
-        help="対象 CSV（省略時はマーチング祭 + DrumcorpsfunTV）",
+        default=[
+            ROOT / "大会動画リスト_マーチング祭.csv",
+            ROOT / "大会動画リスト_DrumcorpsfunTV.csv",
+            ROOT / "大会動画リスト_FloMarching_DCI.csv",
+        ],
+        help="対象 CSV（省略時はマーチング祭 + DrumcorpsfunTV + FloMarching）",
     )
     args = ap.parse_args()
     total = 0

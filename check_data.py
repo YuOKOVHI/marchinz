@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""data.json と大会動画 CSV（2 本同時）の整合を検査する（ビルド後の確認用）。
+"""data.json と大会動画 CSV（全ソース同時）の整合を検査する（ビルド後の確認用）。
 
 加えて **YouTubeリスト.csv と youtube-list.inline.js の一致**（サイトは inline を読むため）を検証する。
 
-`sync_csv_to_json.SOURCE_CSVS` と同じ並び・同じ 2 ファイルを必ずまとめて検査する。
-片方だけの CSV では `check_data.py` を通さない運用にしてください。
+`sync_csv_to_json.SOURCE_CSVS` と同じ全ファイルを必ずまとめて検査する。
+一部CSVだけでは `check_data.py` を通さない運用にしてください。
 """
 from __future__ import annotations
 
