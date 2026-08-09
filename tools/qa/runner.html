@@ -12347,7 +12347,7 @@ async function countSamples(ns, file, fromSec) {
     }
   });
 
-  group("㊹ デザインチームU Action Rail + Finder Rail + Stage Poster（v2.10.6）");
+  group("㊹ デザインチームU Action Rail + Finder Rail + Stage Poster（v2.11.0）");
   await test("★実画面操作: 390pxヘッダー・目的起点TOP導線・大会動画検索とカード", async () => {
     const f = document.createElement("iframe");
     f.style.cssText = "position:fixed;left:-9999px;top:0;width:390px;height:844px;border:0";
@@ -12355,14 +12355,14 @@ async function countSamples(ns, file, fromSec) {
     document.body.appendChild(f);
     try {
       for (let i = 0; i < 160; i++) {
-        const ready = f.contentDocument?.documentElement?.dataset?.mzVersion === "2.10.6"
+        const ready = f.contentDocument?.documentElement?.dataset?.mzVersion === "2.11.0"
           && f.contentWindow?.MarchinZMomentPulse
           && f.contentWindow?.MarchinZMomentFeed;
         if (ready) break;
         await new Promise(r => setTimeout(r, 50));
       }
       const w = f.contentWindow, d = f.contentDocument;
-      if (d?.documentElement?.dataset?.mzVersion !== "2.10.6") throw new Error("v2.10.6の実画面まで届かない");
+      if (d?.documentElement?.dataset?.mzVersion !== "2.11.0") throw new Error("v2.11.0の実画面まで届かない");
       for (let i = 0; i < 80 && d.querySelector(".site-brand")?.getBoundingClientRect().width === 0; i++) {
         await new Promise(r => setTimeout(r, 50));
       }
@@ -12577,7 +12577,7 @@ async function countSamples(ns, file, fromSec) {
     return "件数・先頭動画を壊した比較結果を検出";
   });
 
-  group("㊺ MarchinZ Pulse（v2.10.6）");
+  group("㊺ MarchinZ Pulse（v2.11.0）");
   await test("★実画面操作: TOP最新Moment 2件・投稿入口・通知設定", async () => {
     const f = document.createElement("iframe");
     f.style.cssText = "position:fixed;left:-9999px;top:0;width:390px;height:844px;border:0";
@@ -12585,7 +12585,7 @@ async function countSamples(ns, file, fromSec) {
     document.body.appendChild(f);
     try {
       for (let i = 0; i < 160; i++) {
-        const ready = f.contentDocument?.documentElement?.dataset?.mzVersion === "2.10.6"
+        const ready = f.contentDocument?.documentElement?.dataset?.mzVersion === "2.11.0"
           && f.contentWindow?.MarchinZMomentPulse
           && f.contentWindow?.MarchinZMomentFeed;
         if (ready) break;
@@ -12711,7 +12711,7 @@ async function countSamples(ns, file, fromSec) {
     return "公開Moment query + Index + 地図初期OFF + like_moment + 新着通知 + Rules一致";
   });
 
-  group("㊻ Firebase保存4経路（v2.10.6）");
+  group("㊻ Firebase保存4経路（v2.11.0）");
   await test("契約検査: 新規登録・Log・Note・Momentの保存先とRulesが一致", async () => {
     const [authSrc, roleSrc, noteSrc, momentSrc, rulesSrc] = await Promise.all([
       fetch("../../auth.js").then(r => r.text()),
