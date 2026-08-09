@@ -12347,22 +12347,22 @@ async function countSamples(ns, file, fromSec) {
     }
   });
 
-  group("㊹ デザインチームU Finder Rail + Stage Poster（v2.10.4）");
-  await test("★実画面操作: 390pxヘッダー・TOP3導線・大会動画検索とカード", async () => {
+  group("㊹ デザインチームU Action Rail + Finder Rail + Stage Poster（v2.10.6）");
+  await test("★実画面操作: 390pxヘッダー・目的起点TOP導線・大会動画検索とカード", async () => {
     const f = document.createElement("iframe");
     f.style.cssText = "position:fixed;left:-9999px;top:0;width:390px;height:844px;border:0";
     f.src = "../../index.html?mzQaTeamU=1#top";
     document.body.appendChild(f);
     try {
       for (let i = 0; i < 160; i++) {
-        const ready = f.contentDocument?.documentElement?.dataset?.mzVersion === "2.10.4"
+        const ready = f.contentDocument?.documentElement?.dataset?.mzVersion === "2.10.6"
           && f.contentWindow?.MarchinZMomentPulse
           && f.contentWindow?.MarchinZMomentFeed;
         if (ready) break;
         await new Promise(r => setTimeout(r, 50));
       }
       const w = f.contentWindow, d = f.contentDocument;
-      if (d?.documentElement?.dataset?.mzVersion !== "2.10.4") throw new Error("v2.10.4の実画面まで届かない");
+      if (d?.documentElement?.dataset?.mzVersion !== "2.10.6") throw new Error("v2.10.6の実画面まで届かない");
       for (let i = 0; i < 80 && d.querySelector(".site-brand")?.getBoundingClientRect().width === 0; i++) {
         await new Promise(r => setTimeout(r, 50));
       }
@@ -12370,15 +12370,46 @@ async function countSamples(ns, file, fromSec) {
       const logo = d.querySelector(".site-logo")?.getBoundingClientRect();
       if (!header || header.height > 68) throw new Error(`スマホヘッダーが高い: ${Math.round(header?.height || 0)}px`);
       if (!logo || logo.width > 128) throw new Error(`ロゴが大きい: ${Math.round(logo?.width || 0)}px`);
-      const expected = ["大会・イベント", "ショウ動画", "マーチングYouTube"];
-      const rail = [...d.querySelectorAll(".mll-lp-hero-subcta a")];
+      const expected = [
+        ["record", "記録する", "#community/events"],
+        ["watch", "動画を見る", "#videos"],
+        ["talk", "話す", "#community/moments"],
+      ];
+      const rail = [...d.querySelectorAll(".mz-action-rail-link")];
       if (rail.length !== 3) throw new Error(`TOP導線が3つでない: ${rail.length}`);
       rail.forEach((a, i) => {
-        if (a.textContent.trim() !== expected[i]) throw new Error(`TOP導線${i + 1}の文言が違う: ${a.textContent.trim()}`);
+        const [action, label, href] = expected[i];
+        if (a.dataset.mzTopAction !== action || a.querySelector("strong")?.textContent.trim() !== label || a.getAttribute("href") !== href) {
+          throw new Error(`TOP導線${i + 1}が目的起点でない: ${a.textContent.trim()}`);
+        }
         const r = a.getBoundingClientRect();
         if (r.width < 44 || r.height < 44) throw new Error(`TOP導線${i + 1}が44px未満: ${Math.round(r.width)}×${Math.round(r.height)}`);
-        if (!a.querySelector(".mz-ui-icon")) throw new Error(`TOP導線${i + 1}にアイコンが無い`);
+        if (!a.getAttribute("aria-label") || !a.querySelector(".mz-action-rail-icon")) throw new Error(`TOP導線${i + 1}に意味のあるアイコンまたは名前が無い`);
       });
+      if (!d.querySelector(".mz-gate-band")?.hidden) throw new Error("説明的な3分類カードがTOPに残っている");
+      rail[0].click();
+      for (let i = 0; i < 80 && d.querySelector("#page-community")?.hidden; i++) {
+        await new Promise(r => setTimeout(r, 50));
+      }
+      if (d.querySelector("#page-community")?.hidden || w.location.hash !== "#community/events") {
+        throw new Error("「記録する」から大会・演奏会の入口へ進めない");
+      }
+      w.location.hash = "#top";
+      for (let i = 0; i < 80 && d.querySelector("#page-community") && !d.querySelector("#page-community")?.hidden; i++) {
+        await new Promise(r => setTimeout(r, 50));
+      }
+      const railAfterRecord = [...d.querySelectorAll(".mz-action-rail-link")];
+      railAfterRecord[2]?.click();
+      for (let i = 0; i < 80 && d.querySelector("#page-community")?.hidden; i++) {
+        await new Promise(r => setTimeout(r, 50));
+      }
+      if (d.querySelector("#page-community")?.hidden || w.location.hash !== "#community/moments") {
+        throw new Error("「話す」からモーメントの入口へ進めない");
+      }
+      w.location.hash = "#top";
+      for (let i = 0; i < 80 && d.querySelector("#page-community") && !d.querySelector("#page-community")?.hidden; i++) {
+        await new Promise(r => setTimeout(r, 50));
+      }
       const topEntry = d.querySelector("[data-mll-top-user-only]");
       const entryWasHidden = Boolean(topEntry?.hidden);
       if (topEntry) topEntry.hidden = false;
@@ -12389,7 +12420,7 @@ async function countSamples(ns, file, fromSec) {
       if (!heroVisualRect || heroVisualRect.width > 335) throw new Error(`スマホTOPキービジュアルが大きすぎる: ${Math.round(heroVisualRect?.width || 0)}px`);
       if (topEntry) topEntry.hidden = entryWasHidden;
 
-      w.location.hash = "#videos";
+      d.querySelector('.mz-action-rail-link[data-mz-top-action="watch"]')?.click();
       for (let i = 0; i < 160 && d.querySelector("#page-videos")?.hidden; i++) {
         await new Promise(r => setTimeout(r, 50));
       }
@@ -12546,7 +12577,7 @@ async function countSamples(ns, file, fromSec) {
     return "件数・先頭動画を壊した比較結果を検出";
   });
 
-  group("㊺ MarchinZ Pulse（v2.10.4）");
+  group("㊺ MarchinZ Pulse（v2.10.6）");
   await test("★実画面操作: TOP最新Moment 2件・投稿入口・通知設定", async () => {
     const f = document.createElement("iframe");
     f.style.cssText = "position:fixed;left:-9999px;top:0;width:390px;height:844px;border:0";
@@ -12554,7 +12585,7 @@ async function countSamples(ns, file, fromSec) {
     document.body.appendChild(f);
     try {
       for (let i = 0; i < 160; i++) {
-        const ready = f.contentDocument?.documentElement?.dataset?.mzVersion === "2.10.4"
+        const ready = f.contentDocument?.documentElement?.dataset?.mzVersion === "2.10.6"
           && f.contentWindow?.MarchinZMomentPulse
           && f.contentWindow?.MarchinZMomentFeed;
         if (ready) break;
@@ -12680,7 +12711,7 @@ async function countSamples(ns, file, fromSec) {
     return "公開Moment query + Index + 地図初期OFF + like_moment + 新着通知 + Rules一致";
   });
 
-  group("㊻ Firebase保存4経路（v2.10.4）");
+  group("㊻ Firebase保存4経路（v2.10.6）");
   await test("契約検査: 新規登録・Log・Note・Momentの保存先とRulesが一致", async () => {
     const [authSrc, roleSrc, noteSrc, momentSrc, rulesSrc] = await Promise.all([
       fetch("../../auth.js").then(r => r.text()),

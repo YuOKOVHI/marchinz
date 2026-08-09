@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-version="2.10.5" data-mz-channel="beta">
+<html lang="ja" data-mz-version="2.10.6" data-mz-channel="beta">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -73,7 +73,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css" />
     <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css?v=1.25.64" />
     <link rel="stylesheet" href="styles.css?v=2.9.3" />
-    <link rel="stylesheet" href="marchinz-brushup.css?v=2.10.4" />
+    <link rel="stylesheet" href="marchinz-brushup.css?v=2.10.6" />
     <!-- Microsoft Clarity -->
     <script type="text/javascript">
       (function(c,l,a,r,i,t,y){
@@ -1306,15 +1306,21 @@
                     ><i class="fa-solid fa-drum" aria-hidden="true"></i> 練習を記録</a
                   >
                 </div>
-                <nav class="mll-lp-hero-subcta" aria-label="おすすめのページ">
-                  <a href="#community/events" data-page="community" class="mll-lp-inline-link">
-                    <i class="fa-solid fa-calendar-days mz-ui-icon" aria-hidden="true"></i><span>大会・イベント</span>
+                <nav class="mll-lp-hero-subcta mz-action-rail" aria-label="したいことから選ぶ">
+                  <a href="#community/events" data-page="community" data-mz-top-action="record" class="mz-action-rail-link" aria-label="大会・演奏会を記録する">
+                    <span class="mz-action-rail-icon"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i></span>
+                    <span class="mz-action-rail-copy"><strong>記録する</strong><small>大会・演奏会を残す</small></span>
+                    <i class="fa-solid fa-chevron-right mz-action-rail-go" aria-hidden="true"></i>
                   </a>
-                  <a href="#videos" data-page="videos" class="mll-lp-inline-link">
-                    <i class="fa-solid fa-circle-play mz-ui-icon" aria-hidden="true"></i><span>ショウ動画</span>
+                  <a href="#videos" data-page="videos" data-mz-top-action="watch" class="mz-action-rail-link" aria-label="ショウ動画を見る">
+                    <span class="mz-action-rail-icon"><i class="fa-solid fa-circle-play" aria-hidden="true"></i></span>
+                    <span class="mz-action-rail-copy"><strong>動画を見る</strong><small>ショウを探す</small></span>
+                    <i class="fa-solid fa-chevron-right mz-action-rail-go" aria-hidden="true"></i>
                   </a>
-                  <a href="#youtube" data-page="youtube" class="mll-lp-inline-link">
-                    <i class="fa-brands fa-youtube mz-ui-icon" aria-hidden="true"></i><span>マーチングYouTube</span>
+                  <a href="#community/moments" data-page="community" data-community-subtab="moments" data-mz-top-action="talk" class="mz-action-rail-link" aria-label="マーチングの雑談を話す">
+                    <span class="mz-action-rail-icon"><i class="fa-solid fa-comments" aria-hidden="true"></i></span>
+                    <span class="mz-action-rail-copy"><strong>話す</strong><small>マーチングの雑談</small></span>
+                    <i class="fa-solid fa-chevron-right mz-action-rail-go" aria-hidden="true"></i>
                   </a>
                 </nav>
                 </div>
@@ -1426,7 +1432,7 @@
             </div>
           </section>
 
-          <section class="mll-lp-band mz-gate-band" aria-labelledby="mz-gate-h" data-mll-top-guest-only>
+          <section class="mll-lp-band mz-gate-band" aria-labelledby="mz-gate-h" data-mll-top-guest-only hidden>
             <div class="mll-lp-container">
               <h2 id="mz-gate-h" class="mll-lp-section-head">あなたに合わせた、3つの入口。</h2>
               <p class="mll-lp-section-sub">観る人も、演じる人も、つくる人も。よく使う機能へ、ここからまっすぐ。</p>

@@ -5517,8 +5517,8 @@ input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
   --mzu-shadow: 0 6px 20px rgba(15, 33, 56, 0.06);
 }
 
-/* TOP action rail */
-.mll-lp-hero-subcta {
+/* TOP action rail: 機能名ではなく、したい行動から入る。 */
+.mz-action-rail {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: stretch;
@@ -5527,36 +5527,49 @@ input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
   margin-top: 1rem;
 }
 
-.mll-lp-hero-subcta .mll-lp-inline-link {
+.mz-action-rail-link {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.6rem;
   min-width: 0;
-  min-height: 74px;
-  padding: 0.75rem 0.45rem;
-  flex-direction: column;
-  justify-content: center;
-  gap: 0.38rem;
+  min-height: 76px;
+  padding: 0.7rem 0.75rem;
   border: 1px solid var(--mzu-line);
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.9);
   box-shadow: var(--mzu-shadow);
   color: var(--mzu-ink);
-  font-size: 0.76rem;
-  font-weight: 800;
-  line-height: 1.25;
-  text-align: center;
   text-decoration: none;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
 }
 
-.mll-lp-hero-subcta .mll-lp-inline-link:hover,
-.mll-lp-hero-subcta .mll-lp-inline-link:focus-visible {
+.mz-action-rail-link:hover,
+.mz-action-rail-link:focus-visible {
   border-color: rgba(36, 87, 230, 0.38);
+  background: var(--mzu-blue-soft);
+  color: var(--mzu-blue);
+  text-decoration: none;
+  transform: translateY(-1px);
+}
+
+.mz-action-rail-icon {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 12px;
   background: var(--mzu-blue-soft);
   color: var(--mzu-blue);
 }
 
-.mll-lp-hero-subcta .mll-lp-inline-link .mz-ui-icon {
-  font-size: 1.25rem;
-  color: var(--mzu-blue);
-}
+.mz-action-rail-icon i { font-size: 1.05rem; }
+.mz-action-rail-copy { min-width: 0; display: grid; gap: 0.14rem; }
+.mz-action-rail-copy strong { font-size: 0.88rem; line-height: 1.25; }
+.mz-action-rail-copy small { color: var(--mzu-muted); font-size: 0.7rem; line-height: 1.3; }
+.mz-action-rail-go { color: var(--mzu-muted); font-size: 0.72rem; }
+
+.mz-gate-band[hidden] { display: none !important; }
 
 /* Video search deck */
 #page-videos .video-search-deck {
@@ -6008,12 +6021,20 @@ input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
   .mll-lp-hero:has([data-mll-top-user-only]:not([hidden])) .mll-lp-hero-visual {
     display: none !important;
   }
-  .mll-lp-hero-subcta { gap: 0.45rem; margin-top: 0; }
-  .mll-lp-hero-subcta .mll-lp-inline-link {
+  .mz-action-rail { gap: 0.45rem; margin-top: 0; }
+  .mz-action-rail-link {
+    grid-template-columns: 1fr;
+    justify-items: center;
     min-height: 76px;
-    padding-inline: 0.3rem;
-    font-size: 0.68rem;
+    padding: 0.55rem 0.25rem;
+    gap: 0.3rem;
+    text-align: center;
   }
+  .mz-action-rail-icon { width: 1.9rem; height: 1.9rem; border-radius: 10px; }
+  .mz-action-rail-icon i { font-size: 0.88rem; }
+  .mz-action-rail-copy small,
+  .mz-action-rail-go { display: none; }
+  .mz-action-rail-copy strong { font-size: 0.76rem; }
 
   #page-profile .page-hero { display: none; }
   #page-profile .user-profile-panel { padding: 0.75rem; border: 0; box-shadow: none; }
@@ -6148,7 +6169,7 @@ input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .mll-lp-hero-subcta .mll-lp-inline-link,
+  .mz-action-rail-link,
   .video-result-list .recommend-item,
   #page-profile .user-profile-tab { transition: none !important; }
 }
