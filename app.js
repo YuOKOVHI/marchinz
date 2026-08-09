@@ -3456,22 +3456,35 @@
     setSearchOverlay(false);
   }
 
-  function onSearchInput() {
+  /**
+   * 上部のオムニ検索は「次の検索を始める」入口です。
+   * 動画カードから入れた団体条件を残すと、URL が `o=…&f=…` となり、
+   * ユーザーには見えない AND 条件で 0 件になってしまいます。
+   * 詳細フィルター欄で意図的に条件を足す場合は従来どおり維持し、
+   * オムニ検索へ入力した時だけ前の団体・大会条件を置き換えます。
+   * @param {"free"|"team"|"event"|"option"} [source]
+   */
+  function onSearchInput(source = "option") {
     clearExactFilters();
     clearExcludedOrgs();
     state.browseOpen = false;
+    if (source === "free" && (qFree?.value ?? "").trim()) {
+      if (qTeam) qTeam.value = "";
+      if (qEvent) qEvent.value = "";
+    }
     applyFilter();
     logVideoSearchUgc({ force: true });
     renderBrowsePanel();
     setSearchOverlay(false);
   }
 
-  function onSearchInputDebounced() {
+  /** @param {"free"|"team"|"event"|"option"} [source] */
+  function onSearchInputDebounced(source = "option") {
     cancelSearchDebounce();
     setSearchOverlay(true);
     searchDebounceTimer = window.setTimeout(() => {
       searchDebounceTimer = null;
-      onSearchInput();
+      onSearchInput(source);
       if (recentSearchTimer !== null) {
         clearTimeout(recentSearchTimer);
       }
@@ -3482,9 +3495,9 @@
     }, SEARCH_DEBOUNCE_MS);
   }
 
-  if (qTeam) qTeam.addEventListener("input", onSearchInputDebounced);
-  if (qEvent) qEvent.addEventListener("input", onSearchInputDebounced);
-  if (qFree) qFree.addEventListener("input", onSearchInputDebounced);
+  if (qTeam) qTeam.addEventListener("input", () => onSearchInputDebounced("team"));
+  if (qEvent) qEvent.addEventListener("input", () => onSearchInputDebounced("event"));
+  if (qFree) qFree.addEventListener("input", () => onSearchInputDebounced("free"));
   if (optMatchExact) {
     optMatchExact.addEventListener("change", () => {
       onSearchInputDebounced();
