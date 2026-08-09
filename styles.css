@@ -485,18 +485,17 @@ a.user-account-dropdown-item {
 
   nav.tabs.youtube-tabs.mz-tab-strip-yamap,
   .youtube-tabs.mz-tab-strip-yamap {
-    display: flex;
-    flex-wrap: nowrap;
-    gap: 0 1rem;
-    overflow-x: auto;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
+    /* 大会動画の3分類は、右へスワイプしないと海外が見えない設計にしない。
+       初見でも全分類を発見できるよう、スマホでは常に一列に収める。 */
+    display: grid;
+    grid-template-columns: 1.35fr 1fr 0.82fr;
+    gap: 4px;
+    overflow: visible;
     margin-bottom: 0.38rem;
-    padding-bottom: 0;
-    padding-inline-end: 0.85rem;
-    scroll-padding-inline-end: 0.85rem;
-    border-bottom: 1px solid var(--border);
+    padding: 4px;
+    border: none;
+    border-radius: 12px;
+    background: rgba(15, 33, 56, 0.06);
     max-width: 100%;
     min-width: 0;
   }
@@ -510,16 +509,20 @@ a.user-account-dropdown-item {
   nav.tabs.youtube-tabs.mz-tab-strip-yamap button[role="tab"],
   .youtube-tabs.mz-tab-strip-yamap .youtube-tab-btn,
   .youtube-tabs.mz-tab-strip-yamap button[role="tab"] {
-    flex: 0 0 auto;
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: center;
+    flex: 1 1 0;
     border: none !important;
-    border-radius: 0 !important;
+    border-radius: 9px !important;
     background: none !important;
     box-shadow: none !important;
-    padding: 0.52rem 0.35rem;
-    margin-bottom: -1px;
+    padding: 0.62rem 0.24rem;
+    margin-bottom: 0;
     color: var(--muted);
     font-weight: 500;
-    border-bottom: 3px solid transparent !important;
+    border-bottom: none !important;
     white-space: nowrap;
     max-width: none;
   }
@@ -528,9 +531,16 @@ a.user-account-dropdown-item {
   nav.tabs.youtube-tabs.mz-tab-strip-yamap button[role="tab"][aria-selected="true"],
   .youtube-tabs.mz-tab-strip-yamap .youtube-tab-btn[aria-selected="true"],
   .youtube-tabs.mz-tab-strip-yamap button[role="tab"][aria-selected="true"] {
-    color: var(--text) !important;
+    color: var(--navy) !important;
     font-weight: 700 !important;
-    border-bottom-color: var(--text) !important;
+    background: #fff !important;
+    box-shadow: 0 1px 3px rgba(15, 33, 56, 0.14) !important;
+  }
+
+  /* 3分類を表示するため、長い補足は読み上げ名に残して視覚上だけ省略する。 */
+  nav.tabs.youtube-tabs.mz-tab-strip-yamap .tabs-tab-cross-sub,
+  .youtube-tabs.mz-tab-strip-yamap .tabs-tab-cross-sub {
+    display: none;
   }
 
   .media-jump-links.youtube-tabs.mz-tab-strip-yamap {
