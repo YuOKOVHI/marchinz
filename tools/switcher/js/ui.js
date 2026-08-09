@@ -1307,9 +1307,6 @@ MC.ui.resetSavedProject = () => {
 MC.ui.releaseToolSession = reason => {
   if (MC.ui._toolReleaseDone) return MC.ui._lastToolRelease;
   MC.ui._toolReleaseDone = true;
-  /* 背景専用video/Object URLを最初に解放する。以降でclip.fileをnullにしても
-     背景側にBlob参照を残さないための順序。 */
-  try { if (MC.background) MC.background.dispose(); } catch (_) {}
   const clips = [...((MC.S && MC.S.clips) || [])];
   const report = {
     reason: String(reason || "意図した退出").slice(0, 60), clips: clips.length,
@@ -2760,10 +2757,7 @@ MC.ui.renderClips = () => {
   /* 空き枠の補足を出す最初の1枠。3枠すべてに同じ説明を繰り返さない */
   const firstEmptyIdx = [0, 1, 2].find(i => !slotClips[i]);
 
-  /* 空の同型枠を3つ並べない。最初は大きな入口を1つ、取り込み後は
-     次に足せる1枠だけを見せる（素材3本の上限・既存の割当は不変）。 */
-  const visibleSlotCount = slotClips.length === 0 ? 1 : Math.min(3, slotClips.length + 1);
-  for (let slotIdx = 0; slotIdx < visibleSlotCount; slotIdx++) {
+  for (let slotIdx = 0; slotIdx < 3; slotIdx++) {
     const c = slotClips[slotIdx];
     const firstEmpty = slotIdx === firstEmptyIdx;
     const slot = document.createElement("div");
@@ -2781,16 +2775,11 @@ MC.ui.renderClips = () => {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "clip-slot-add";
-      btn.innerHTML = slotClips.length === 0
-        ? (withPhotos
-          ? '動画・写真をまとめて選ぶ<br><span class="hint">同じ演奏の素材を一度に選べます</span>'
-          : '動画をまとめて選ぶ<br><span class="hint">同じ演奏を別の場所から撮った動画を一度に選べます</span>')
-        : withPhotos
+      btn.innerHTML = withPhotos
         /* 補足は最初の空き枠にだけ付ける。3枠すべてに同じ説明を繰り返すと、
            1画面に同じ文が3回並ぶ(2026-07-28 文言の棚卸し) */
         ? 'タップして動画・写真を選ぶ' + (firstEmpty ? '<br><span class="hint">まとめて選べます／ここにドロップでもOK</span>' : '')
-        : (slotClips.length === 1 ? 'もう1本追加する' : '動画を追加する')
-          + (firstEmpty ? '<br><span class="hint">ここにドロップでもOK</span>' : '');
+        : 'タップして動画を選ぶ' + (firstEmpty ? '<br><span class="hint">まとめて選べます／ここにドロップでもOK</span>' : '');
       btn.onclick = () => MC.ui.openVideoPicker();
       slot.appendChild(btn);
       box.appendChild(slot);
@@ -3666,8 +3655,6 @@ MC.ui.setBusy = busy => {
      解放は runAuto が最後に一度だけ行う */
   if (!busy && MC.ui._autoRunning) return;
   MC.ui._busy = !!busy;
-  /* 解析開始と同時に背景decodeを止める。ポーリングだけに任せない。 */
-  if (MC.background) MC.background.refresh();
   /* 「作業中」の印を sessionStorage に置く(2026-07-23 E-3 / F-1で修正)。
      _hiddenAt はメモリ上なので、iOSがタブごと捨てて再読込になると消える。
      本当に作業が飛ぶのはその破棄ケースなのに、そこでは何も出せなかった。

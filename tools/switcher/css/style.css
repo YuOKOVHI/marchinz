@@ -30,7 +30,6 @@
   --muted: #667085;
   --sub: rgba(12, 15, 20, 0.55);
   --acc2-text: #b45309;
-  --stage: #07111f; --surface-glass: rgba(249, 251, 254, 0.94); --brass: #f4c84a;
 }
 /* ★ キャンバスを一段沈める(2026-08-07 ビジュアルレビュー🔴)。
    実測で ページ#eef1f5 → パネル#f4f8ff が 1.064:1、白カードでも 1.133:1 しかなく、
@@ -49,7 +48,7 @@ body { background: transparent; color: var(--tx); font-family: -apple-system, Bl
   /* ★ 和文の行間(2026-08-07 ビジュアルレビュー🟡)。line-height:normal(≒1.18)の
      可視テキストが20種あり、1行に収まっている今は目立たないが、2行に
      折り返した瞬間に詰まって見える。和文の下限は1.6〜1.75 */
-  line-height: 1.7; min-height: 100vh; isolation: isolate; }
+  line-height: 1.7; }
 
 /* 3ツール共通: キービジュアルの上に白い透明を重ねた背景(iOS配慮でposition:fixed) */
 body::before {
@@ -64,67 +63,9 @@ body::before {
   background-repeat: no-repeat;
 }
 
-/* Team U 2026-08-09: MIDNIGHT FIELD ─ 取り込んだ演奏の気配を編集席の背面へ。
-   背景は完全に装飾扱いで、入力もフォーカスも奪わない。 */
-.mz-bg-layer {
-  position: fixed; inset: 0; z-index: -2; overflow: hidden; pointer-events: none;
-  background: radial-gradient(circle at 75% 20%, #173b78 0, #0b2446 34%, var(--stage) 74%);
-  opacity: 0; transition: opacity 300ms ease;
-}
-.mz-bg-layer video {
-  width: 100%; height: 100%; object-fit: cover; object-position: center;
-  opacity: 0; transform: scale(1.015);
-  filter: saturate(.72) brightness(.62) contrast(1.04);
-  transition: opacity 300ms ease;
-}
-.mz-bg-layer video.ready { opacity: 1; }
-.mz-bg-scrim {
-  position: absolute; inset: 0;
-  background:
-    linear-gradient(180deg, rgba(7,17,31,.28) 0%, rgba(7,17,31,.48) 48%, rgba(7,17,31,.84) 100%),
-    linear-gradient(90deg, rgba(7,17,31,.48), transparent 55%);
-}
-body.mz-bg-on .mz-bg-layer { opacity: 1; }
-body.mz-bg-on::before { opacity: .12; }
-body.mz-bg-on .topbar { background: rgba(249,251,254,.94); backdrop-filter: blur(18px); }
-body.mz-bg-on .panel,
-body.mz-bg-on .mode-inner,
-body.mz-bg-on .beta-disclaimer,
-body.mz-bg-on .mode-tip { background-color: var(--surface-glass); backdrop-filter: blur(18px); }
-body.mz-bg-on .mode-back-bar {
-  background: var(--surface-glass); backdrop-filter: blur(18px);
-  border: 1px solid rgba(255,255,255,.34); box-shadow: 0 10px 28px rgba(7,17,31,.16);
-}
-@media (prefers-reduced-motion: reduce) {
-  .mz-bg-layer, .mz-bg-layer video { transition: none; }
-}
-/* iPhoneは全画面動画＋多層backdrop blurでGPU合成が重くなる。
-   暗さと可読性はscrim/不透明度で作り、モバイルではブラーを使わない。 */
-@media (max-width: 768px) {
-  .mz-bg-layer video { filter: brightness(.64); }
-  body.mz-bg-on .topbar,
-  body.mz-bg-on .panel,
-  body.mz-bg-on .mode-inner,
-  body.mz-bg-on .beta-disclaimer,
-  body.mz-bg-on .mode-tip,
-  body.mz-bg-on .mode-back-bar {
-    -webkit-backdrop-filter: none; backdrop-filter: none;
-    background-color: rgba(249,251,254,.98);
-  }
-}
-
 /* ヘッダーは本体TOPと同じクリーム地+ネイビー文字 */
 .topbar { display: flex; align-items: center; justify-content: space-between; padding: 10px 18px;
   background: var(--cream); border-bottom: 1px solid var(--line); }
-/* 編集ツールではサイト用の大きなブランドヘッダーを重ねず、アプリバーに小さく統合。 */
-.mzsc-brand, .mzsc-nav { display: none !important; }
-.tool-brand { display: inline-flex; align-items: center; flex-shrink: 0; }
-.tool-brand img { width: 78px; height: auto; display: block; }
-/* 編集セッション中はサイトフッター/下部サイトナビを操作面から退避する。
-   法務要素はDOMから消さず、種類選択へ戻れば従来どおり表示する。 */
-body:has(#workspace:not([hidden])) .mzsc-foot,
-body:has(#workspace:not([hidden])) .mzsc-tabbar,
-body:has(#workspace:not([hidden])) .mzsc-note { display: none !important; }
 /* MarchinZ本体のロゴを先頭に置き、あくまでMarchinZページ内であることを示す */
 .head-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .mz-home { display: inline-flex; align-items: center; flex-shrink: 0; }
@@ -147,27 +88,6 @@ body:has(#workspace:not([hidden])) .mzsc-note { display: none !important; }
   white-space: nowrap; vertical-align: 2px;
 }
 .head-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-.bg-toggle {
-  min-height: 44px; display: inline-flex; align-items: center; gap: 7px;
-  border: 1px solid rgba(11,22,40,.16); border-radius: var(--r-pill);
-  padding: 4px 6px 4px 12px; background: #fff; color: var(--navy);
-  font: 700 12px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  cursor: pointer; white-space: nowrap;
-}
-.bg-toggle i { color: var(--tx2); }
-.bg-toggle-state {
-  min-width: 38px; min-height: 30px; display: inline-flex; align-items: center; justify-content: center;
-  padding: 0 8px; border-radius: var(--r-pill); color: #fff; background: #697386;
-  font-size: 11px; letter-spacing: .03em;
-}
-.bg-toggle.on .bg-toggle-state { background: var(--acc); }
-.bg-toggle.on i { color: var(--acc); }
-.bg-toggle:hover { border-color: var(--acc); }
-.sr-only {
-  position: absolute !important; width: 1px !important; height: 1px !important;
-  padding: 0 !important; margin: -1px !important; overflow: hidden !important;
-  clip: rect(0,0,0,0) !important; white-space: nowrap !important; border: 0 !important;
-}
 /* ★ 左端に移した戻る(2026-08-02 ⑨)の指の的を44ptに(2026-08-03 push前レビュー実測: 38×18px)。
    縦は負のマージンで相殺し、ヘッダーの高さは変えない(的だけ広げる) */
 .back-link { display: inline-flex; align-items: center; min-height: 44px; min-width: 44px;
@@ -235,14 +155,6 @@ body.mz-export-open .toast { z-index: 125; }
      操作対象(319x80px x 3)が塗りゼロで、破線は親パネルに対し 1.58:1 しか
      無かった ─ 「置ける場所」が面として存在していなかった */
   background: #fff; box-shadow: 0 1px 2px rgba(15, 33, 56, 0.04);
-}
-.clip-slots > .clip-slot:only-child .clip-slot-add {
-  min-height: 112px; border-radius: 14px; border-color: rgba(30,79,214,.42);
-  color: var(--acc-deep); font-size: 15px; font-weight: 700;
-  background: linear-gradient(145deg, #fff, #f3f7ff);
-}
-.clip-slots > .clip-slot:only-child .clip-slot-add .hint {
-  display: inline-block; margin-top: 6px; font-size: 12px; line-height: 1.55;
 }
 .clip-slot.empty .clip-slot-add:hover, .clip-slots.over .clip-slot.empty .clip-slot-add {
   /* ドラッグ中は色だけでなく**形**も変える(破線→実線)。
@@ -2509,58 +2421,4 @@ html:has(body.mz-auto-stage), body.mz-auto-stage {
 }
 @media (max-width: 460px) {
   .mode-tip { font-size: 12px; padding: 9px 11px; }
-}
-
-/* ============ Team U UI統合（2026-08-09） ============ */
-/* 進め方は、おすすめを明確な主役、詳細設定を静かな二番手にする。 */
-#modeStepFlow .mode-card--easy {
-  background: linear-gradient(145deg, #163b9e 0%, #1e4fd6 100%);
-  box-shadow: 0 16px 38px rgba(22,59,158,.28);
-}
-#modeStepFlow .mode-card--easy .mode-card-name,
-#modeStepFlow .mode-card--easy .mode-card-desc { color: #fff; }
-#modeStepFlow .mode-card--easy .mode-card-icon { background: rgba(255,255,255,.16); color: #fff; }
-#modeStepFlow .mode-card:not(.mode-card--easy) { background: rgba(249,251,254,.90); border: 1px solid var(--line); box-shadow: none; }
-
-/* デスクトップは左の操作ドックと、右の演奏キャンバスを明確に分ける。 */
-@media (min-width: 1100px) {
-  .wrap { max-width: 1500px; margin: 0 auto; gap: 24px; padding: 24px; }
-  .side { width: 410px; gap: 14px; }
-  .stage {
-    min-height: calc(100vh - 154px); justify-content: flex-start;
-    padding: 22px; border: 1px solid rgba(255,255,255,.22); border-radius: 20px;
-    background: rgba(7,17,31,.62); box-shadow: 0 24px 60px rgba(7,17,31,.28);
-    backdrop-filter: blur(12px);
-  }
-  body:not(.mz-bg-on) .stage { background: linear-gradient(145deg, #0b1d35, #173d74); }
-  .stage canvas { box-shadow: 0 18px 48px rgba(0,0,0,.32); }
-  body.mz-has-clips .mode-back-bar { max-width: 1500px; margin: 0 auto; padding-inline: 24px; }
-}
-
-@media (max-width: 560px) {
-  .topbar { min-height: 56px; padding: 6px 10px; }
-  .head-left { gap: 5px; }
-  .back-link { padding-right: 3px; font-size: 11px; }
-  .tool-name { padding-left: 7px; gap: 4px; font-size: 13px; }
-  .tool-brand img { width: 64px; }
-  .beta-badge { display: none; }
-  .head-right { gap: 4px; }
-  .bg-toggle { padding: 3px 4px 3px 9px; gap: 5px; }
-  .bg-toggle-label { font-size: 11px; }
-  .bg-toggle-state { min-width: 32px; padding: 0 6px; }
-  /* 6工程の正本とタップ先は残し、現在工程の名前だけを読ませる。 */
-  .mzj-phase:not(.current) .mzj-label { display: none; }
-  .mzj-phase.current .mzj-label { font-size: 12px; white-space: nowrap; max-width: none; }
-  .mzj-track { justify-content: center; gap: 5px; }
-  .mode-select { padding-top: 18px; }
-  body.mz-bg-on .mode-back-bar { margin: 12px 12px 0; padding: 8px 10px; border-radius: 16px; }
-  .mode-title { font-size: 22px; }
-  #modeStepFlow .mode-cards { gap: 10px; }
-  #modeStepFlow .mode-card--easy { order: -1; }
-  .panel h2 { font-size: 13px; }
-  .clip-slot-label { font-size: 12px; }
-}
-
-@media (max-width: 370px) {
-  .bg-toggle-label { display: none; }
 }

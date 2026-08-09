@@ -310,9 +310,6 @@ MC.media.removeClip = (id, opt = {}) => {
   if (i < 0) return;
   MC.ui.resetEasyDone();   // 素材が変わったら「書き出すだけ」状態を解除
   const c = MC.S.clips[i];
-  /* 背景はプレビューと別のvideo/Object URLを使う。素材参照を切る前に、
-     背景専用URLだけを確実に破棄する。clip.urlはbackground側で触らない。 */
-  if (window.MC && MC.background) MC.background.detachClip(c.id);
   try { c.video.pause(); } catch (e) {}
   if (window.MC && MC.proxy) MC.proxy.dispose(c);   // 縮小版も一緒に片付ける
   URL.revokeObjectURL(c.url);
@@ -396,7 +393,6 @@ MC.media.afterChange = (opt = {}) => {
      この行が消し、次の保存で localStorage ごと壊していた(2026-07-31) */
   MC.ui.resetEasyDone(MC.restoreInfo.trim || MC.restoreInfo.cuts);
   MC.ui.renderAll();
-  if (window.MC && MC.background) MC.background.refresh();
   /* 診断の「素材参照を外す」は、全素材を捨てることだけが目的。
      その最中に自走・仕上げダイアログを予約させない。 */
   if (!opt.suppressNextAction) MC.ui.focusNextAction();
