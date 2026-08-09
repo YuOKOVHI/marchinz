@@ -6680,12 +6680,22 @@ input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
 @media (min-width: 941px) {
   .mll-lp-hero-inner {
     grid-template-columns: minmax(0, 1fr) minmax(320px, 440px);
+    grid-template-areas:
+      "copy visual"
+      "rail visual"
+      "auth visual";
+    align-items: start;
     max-width: 1120px;
   }
+  .mll-lp-hero-copy { grid-area: copy; }
   .mll-lp-hero-visual {
+    grid-area: visual;
+    align-self: center;
     width: min(100%, 440px);
     justify-self: end;
   }
+  .mll-lp-hero-inner > .mz-action-rail { grid-area: rail; }
+  .mll-lp-hero-auth-row { grid-area: auth; }
 }
 
 @media (max-width: 719px) {

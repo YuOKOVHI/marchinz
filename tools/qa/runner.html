@@ -12447,9 +12447,9 @@ async function countSamples(ns, file, fromSec) {
       if (!header || header.height > 68) throw new Error(`スマホヘッダーが高い: ${Math.round(header?.height || 0)}px`);
       if (!logo || logo.width > 128) throw new Error(`ロゴが大きい: ${Math.round(logo?.width || 0)}px`);
       const expected = [
-        ["record", "記録する", "#community/events"],
-        ["watch", "動画を見る", "#videos"],
-        ["talk", "話す", "#community/moments"],
+        ["record", "大会・演奏会", "#community/events"],
+        ["watch", "ショウ動画", "#videos"],
+        ["talk", "タイムライン", "#community/moments"],
       ];
       const rail = [...d.querySelectorAll(".mz-action-rail-link")];
       if (rail.length !== 3) throw new Error(`TOP導線が3つでない: ${rail.length}`);
