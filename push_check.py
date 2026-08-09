@@ -129,7 +129,13 @@ for f in js_changed:
     base = re.escape(os.path.basename(f))
     pat = re.compile(base.encode() + rb"\?v=([0-9.]+)")
     old_vers, new_vers = set(), set()
-    for ref in sh("grep", "-l", os.path.basename(f) + "?v=", "HEAD").splitlines():
+    # 削除済み JS は HEAD から参照されない。git grep は該当なしで
+    # exit 1 になるが、これは版番不整合ではないため空集合として扱う。
+    refs = subprocess.run(
+        ["git", "-C", ROOT, "grep", "-l", os.path.basename(f) + "?v=", "HEAD"],
+        capture_output=True, text=True
+    )
+    for ref in refs.stdout.splitlines():
         ref = ref.split(":", 1)[1]
         new_vers |= set(pat.findall(shb("show", f"HEAD:{ref}")))
         try:
