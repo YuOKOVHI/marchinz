@@ -12347,18 +12347,22 @@ async function countSamples(ns, file, fromSec) {
     }
   });
 
-  group("㊹ デザインチームU Stage Poster Card（v2.10.3）");
+  group("㊹ デザインチームU Finder Rail + Stage Poster（v2.10.4）");
   await test("★実画面操作: 390pxヘッダー・TOP3導線・大会動画検索とカード", async () => {
     const f = document.createElement("iframe");
     f.style.cssText = "position:fixed;left:-9999px;top:0;width:390px;height:844px;border:0";
     f.src = "../../index.html?mzQaTeamU=1#top";
     document.body.appendChild(f);
     try {
-      for (let i = 0; i < 160 && f.contentDocument?.documentElement?.dataset?.mzVersion !== "2.10.3"; i++) {
+      for (let i = 0; i < 160; i++) {
+        const ready = f.contentDocument?.documentElement?.dataset?.mzVersion === "2.10.4"
+          && f.contentWindow?.MarchinZMomentPulse
+          && f.contentWindow?.MarchinZMomentFeed;
+        if (ready) break;
         await new Promise(r => setTimeout(r, 50));
       }
       const w = f.contentWindow, d = f.contentDocument;
-      if (d?.documentElement?.dataset?.mzVersion !== "2.10.3") throw new Error("v2.10.3の実画面まで届かない");
+      if (d?.documentElement?.dataset?.mzVersion !== "2.10.4") throw new Error("v2.10.4の実画面まで届かない");
       for (let i = 0; i < 80 && d.querySelector(".site-brand")?.getBoundingClientRect().width === 0; i++) {
         await new Promise(r => setTimeout(r, 50));
       }
@@ -12455,6 +12459,14 @@ async function countSamples(ns, file, fromSec) {
       teamFilter.click();
       await new Promise(r => setTimeout(r, 80));
       if (qTeamInput?.value !== teamName) throw new Error("団体名のボタンから団体絞込みが動かない");
+      const activeTeamClear = d.querySelector('.visible-orgs-tag-remove[data-clear-team-filter="1"]');
+      if (!activeTeamClear) throw new Error("選択中の団体条件を解除する導線が無い");
+      const clearRect = activeTeamClear.getBoundingClientRect();
+      if (clearRect.width < 44 || clearRect.height < 44) throw new Error("団体条件の解除が44px未満");
+      activeTeamClear.click();
+      await new Promise(r => setTimeout(r, 100));
+      if (qTeamInput?.value !== "") throw new Error("団体条件の×が検索条件を解除しない");
+      if (!d.querySelector("#video-list .recommend-item")) throw new Error("団体条件を解除したら動画が0件になった");
       if (d.documentElement.scrollWidth > d.documentElement.clientWidth) throw new Error("390pxで画面が横にはみ出す");
       return `header ${Math.round(header.height)}px / logo ${Math.round(logo.width)}px / Stage Poster ${Math.round(cardRect.height)}px / 動画操作${cardControls.length}個`;
     } finally {
@@ -12462,19 +12474,98 @@ async function countSamples(ns, file, fromSec) {
     }
   });
 
-  group("㊺ MarchinZ Pulse（v2.10.3）");
+  await test("★実画面操作: 検索履歴だけを削除しても検索条件・件数・先頭動画は変わらない", async () => {
+    const key = "marchinz_recent_searches_v1";
+    const beforeStorage = localStorage.getItem(key);
+    localStorage.setItem(key, JSON.stringify([{
+      id: "qa-history",
+      label: "DCI",
+      criteria: { tab: "マーチング団体等", team: "", event: "", free: "DCI", sortKey: "配信日", sortDir: "desc" },
+    }]));
+    const f = document.createElement("iframe");
+    f.style.cssText = "position:fixed;left:-9999px;top:0;width:390px;height:844px;border:0";
+    f.src = "../../index.html?mzQaHistory=1#videos";
+    document.body.appendChild(f);
+    try {
+      for (let i = 0; i < 160 && !f.contentWindow?.document?.querySelector("#video-list .recommend-item"); i++) {
+        await new Promise(r => setTimeout(r, 50));
+      }
+      const w = f.contentWindow, d = f.contentDocument;
+      const qTeam = d.getElementById("q-team");
+      if (!(qTeam instanceof w.HTMLInputElement)) throw new Error("団体検索欄が無い");
+      const teamFilter = d.querySelector("#video-list .recommend-item-team-search-btn");
+      const teamName = teamFilter?.querySelector(".recommend-item-team-filter-name")?.textContent?.trim();
+      if (!(teamFilter instanceof w.HTMLButtonElement) || !teamName) throw new Error("動画カードの団体絞込みボタンが無い");
+      teamFilter.click();
+      await new Promise(r => setTimeout(r, 150));
+      if (qTeam.value !== teamName) throw new Error("動画カードから団体絞込みが動かない");
+      const history = d.querySelector(".search-history");
+      if (!history || history.hidden) throw new Error("保存済み検索履歴が表示されない");
+      history.open = true;
+      const before = {
+        query: qTeam.value,
+        count: d.getElementById("count")?.textContent,
+        first: d.querySelector("#video-list .recommend-item-thumb-link")?.getAttribute("href"),
+        hash: w.location.hash,
+      };
+      d.getElementById("btn-reset-recent-searches")?.click();
+      await new Promise(r => setTimeout(r, 550));
+      const after = {
+        query: qTeam.value,
+        count: d.getElementById("count")?.textContent,
+        first: d.querySelector("#video-list .recommend-item-thumb-link")?.getAttribute("href"),
+        hash: w.location.hash,
+      };
+      if (JSON.stringify(after) !== JSON.stringify(before)) {
+        throw new Error(`履歴削除で結果が変化: ${JSON.stringify(before)} → ${JSON.stringify(after)}`);
+      }
+      if (!history.hidden) throw new Error("履歴0件なのに空の履歴枠が残る");
+      return `${before.count}・検索語・先頭動画・URLを維持して履歴だけ削除`;
+    } finally {
+      f.remove();
+      if (beforeStorage === null) localStorage.removeItem(key);
+      else localStorage.setItem(key, beforeStorage);
+    }
+  });
+
+  await test("検査器の自己試験: 履歴削除で結果が変われば検出する", async () => {
+    const baseline = { query: "YOKOHAMA ROBINS", count: "14本の動画", first: "video-a", url: "#videos?q=YOKOHAMA" };
+    const assertUnchanged = (before, after) => {
+      if (JSON.stringify(before) !== JSON.stringify(after)) {
+        throw new Error("履歴削除で検索条件・件数・先頭動画・URLが変わった");
+      }
+    };
+    assertUnchanged(baseline, { ...baseline });
+    let detected = false;
+    try {
+      assertUnchanged(baseline, { ...baseline, count: "0本の動画", first: null });
+    } catch {
+      detected = true;
+    }
+    if (!detected) throw new Error("履歴削除で結果を壊す変異を検出できない");
+    return "件数・先頭動画を壊した比較結果を検出";
+  });
+
+  group("㊺ MarchinZ Pulse（v2.10.4）");
   await test("★実画面操作: TOP最新Moment 2件・投稿入口・通知設定", async () => {
     const f = document.createElement("iframe");
     f.style.cssText = "position:fixed;left:-9999px;top:0;width:390px;height:844px;border:0";
     f.src = "../../index.html?mzQaPulse=1#top";
     document.body.appendChild(f);
     try {
-      for (let i = 0; i < 160 && f.contentDocument?.documentElement?.dataset?.mzVersion !== "2.10.3"; i++) {
+      for (let i = 0; i < 160; i++) {
+        const ready = f.contentDocument?.documentElement?.dataset?.mzVersion === "2.10.4"
+          && f.contentWindow?.MarchinZMomentPulse
+          && f.contentWindow?.MarchinZMomentFeed;
+        if (ready) break;
         await new Promise(r => setTimeout(r, 50));
       }
       const w = f.contentWindow, d = f.contentDocument;
       if (!w?.MarchinZMomentPulse || !w?.MarchinZMomentFeed) throw new Error("Pulse実装が読み込まれない");
       const originalLoad = w.MarchinZMomentFeed.loadLatestPublic;
+      const originalGetUser = w.MLL_AUTH?.getUser;
+      if (!w.MLL_AUTH) throw new Error("認証APIが読み込まれない");
+      w.MLL_AUTH.getUser = () => ({ id: "qa-current-user" });
       const now = Date.now();
       const rows = [
         { uid: "qa-user-1", momentId: "qa-moment-1", data: { visibility: "public", body: "本番前の最後の合わせ。空気がひとつになった瞬間です。", created_at: new Date(now - 60000).toISOString(), updated_at: new Date(now - 60000).toISOString(), liked_by: { a: true } }, _author: { name: "QA奏者", avatar: "" } },
@@ -12498,13 +12589,27 @@ async function countSamples(ns, file, fromSec) {
       });
       const compose = d.getElementById("mlm-feed-create-btn");
       if (!compose || !compose.classList.contains("mz-pulse-composer")) throw new Error("Momentの1タップ投稿入口が無い");
+      const topCompose = d.getElementById("mz-pulse-top-compose");
+      if (!topCompose || topCompose.hidden) throw new Error("TOPの投稿入口がログイン中に表示されない");
+      if (!topCompose.textContent.includes("マーチングの雑談なんでも！")) throw new Error("TOPの投稿文言が更新されていない");
+      topCompose.click();
+      await new Promise(r => setTimeout(r, 120));
+      const composeDialog = d.getElementById("mlm-moment-compose");
+      const composeBody = composeDialog?.querySelector('textarea[aria-label="本文"]');
+      if (!composeDialog?.open || composeDialog.closest("[hidden]") || composeDialog.getBoundingClientRect().height < 100) {
+        throw new Error("TOPの投稿入口を押しても投稿画面が見えない");
+      }
+      if (composeDialog.parentElement !== d.body) throw new Error("投稿画面が非表示タブ内に残っている");
+      if (d.activeElement !== composeBody) throw new Error("投稿画面を開いたあと本文へフォーカスしない");
+      composeDialog.querySelector("[data-mlm-compose-close]")?.click();
       const pref = d.querySelector('[data-mz-like-field="notify_new_moment_inapp"]');
       if (!(pref instanceof w.HTMLInputElement) || pref.type !== "checkbox") throw new Error("新着Moment通知のOFF設定が無い");
       w.dispatchEvent(new w.CustomEvent("marchinz-moment-unread-changed", { detail: { count: 2 } }));
       const headerBadge = d.getElementById("header-notif-badge");
       if (headerBadge?.dataset?.mzMomentUnread !== "2") throw new Error("新着Momentが既存の通知未読数へ合算されない");
       w.MarchinZMomentFeed.loadLatestPublic = originalLoad;
-      return `390pxで最新2件 ${Math.round(cards[0].getBoundingClientRect().height)}px / 投稿入口 / 通知OFF設定 / 未読合算`;
+      w.MLL_AUTH.getUser = originalGetUser;
+      return `390pxで最新2件 ${Math.round(cards[0].getBoundingClientRect().height)}px / TOP投稿画面を実表示 / 通知OFF設定 / 未読合算`;
     } finally {
       f.remove();
     }
@@ -12573,6 +12678,70 @@ async function countSamples(ns, file, fromSec) {
     }
     if (!rulesSrc.includes("'notify_new_moment_inapp'")) throw new Error("Firestore Rulesに新着Moment設定が無い");
     return "公開Moment query + Index + 地図初期OFF + like_moment + 新着通知 + Rules一致";
+  });
+
+  group("㊻ Firebase保存4経路（v2.10.4）");
+  await test("契約検査: 新規登録・Log・Note・Momentの保存先とRulesが一致", async () => {
+    const [authSrc, roleSrc, noteSrc, momentSrc, rulesSrc] = await Promise.all([
+      fetch("../../auth.js").then(r => r.text()),
+      fetch("../../mll-role.js").then(r => r.text()),
+      fetch("../../event-log-diary.js").then(r => r.text()),
+      fetch("../../mll-moment.js").then(r => r.text()),
+      fetch("../../firebase/firestore.rules").then(r => r.text()),
+    ]);
+    const verify = (srcs) => {
+      if (!srcs.auth.includes('db.collection("mll_profiles").doc(user.id)')
+          || !srcs.auth.includes('await ref.set(payload, { merge: true })')) {
+        throw new Error("新規登録プロフィールの保存契約が欠けている");
+      }
+      const halfSignupStart = srcs.auth.indexOf("if (isSignupEntry && ensureProfileFailed)");
+      const halfSignupEnd = srcs.auth.indexOf("await applyPendingSignupProfileAttributes", halfSignupStart);
+      const halfSignupBlock = halfSignupStart >= 0 && halfSignupEnd > halfSignupStart
+        ? srcs.auth.slice(halfSignupStart, halfSignupEnd)
+        : "";
+      if (!halfSignupBlock.includes("await auth.signOut()")
+          || !halfSignupBlock.includes("currentUser = null")
+          || !halfSignupBlock.includes("rawAuthUserForAdmin = null")
+          || !halfSignupBlock.includes('new CustomEvent("mll-auth-changed", { detail: { user: null, isAdmin: false } })')
+          || !halfSignupBlock.includes("return;")) {
+        throw new Error("新規登録のプロフィール保存失敗時に半登録を止めない");
+      }
+      if (!srcs.role.includes('.collection("attendees")')
+          || !srcs.role.includes('db.collection("mll_logs").doc(logId).set(logPayload, { merge: true })')) {
+        throw new Error("Logの参加登録→mll_logs保存契約が欠けている");
+      }
+      if (!srcs.note.includes("ensureAttendeeForDiarySave(db, user, row)")
+          || !srcs.note.includes('.collection("event_log_diaries")')
+          || !srcs.note.includes(".set(toWrite)")) {
+        throw new Error("Noteの参加確認→日記保存契約が欠けている");
+      }
+      if (!srcs.moment.includes('.collection("moments")')
+          || !srcs.moment.includes('visibility: "public"')
+          || !srcs.moment.includes(".set(payload, { merge: isEdit })")) {
+        throw new Error("Momentの公開保存契約が欠けている");
+      }
+      for (const needle of [
+        "match /mll_profiles/{uid}",
+        "match /mll_logs/{logId}",
+        "match /event_log_diaries/{eventId}",
+        "match /moments/{momentId}",
+        "function mllProfileCreateValuesOk(uid)",
+        "function diaryFieldsOk()",
+        "function momentFieldsOk()",
+      ]) {
+        if (!srcs.rules.includes(needle)) throw new Error(`Firestore Rules契約が欠けている: ${needle}`);
+      }
+    };
+    const srcs = { auth: authSrc, role: roleSrc, note: noteSrc, moment: momentSrc, rules: rulesSrc };
+    verify(srcs);
+    let mutationDetected = false;
+    try {
+      verify({ ...srcs, moment: momentSrc.split('.collection("moments")').join('.collection("broken")') });
+    } catch {
+      mutationDetected = true;
+    }
+    if (!mutationDetected) throw new Error("Moment保存先の破壊を検出できない");
+    return "4保存先 + 必須payload + Rules + 半登録停止 / 保存先破壊の変異を検出";
   });
 
   if (CF) { CF.remove(); CF = null; CW = null; CD = null; }

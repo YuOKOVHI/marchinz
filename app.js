@@ -868,6 +868,13 @@
 
   function renderRecentSearches() {
     renderSearchList(recentSearchesEl, state.recentSearches, "最近検索した単語はまだありません。");
+    const history = recentSearchesEl?.closest(".search-history");
+    const hasHistory = state.recentSearches.length > 0;
+    if (history) {
+      history.hidden = !hasHistory;
+      if (!hasHistory && history instanceof HTMLDetailsElement) history.open = false;
+    }
+    if (btnResetRecentSearches) btnResetRecentSearches.hidden = !hasHistory;
   }
 
   function openShare(kind, row) {
@@ -3005,6 +3012,7 @@
       visibleOrgs.innerHTML = "";
       return;
     }
+    const directTeamFilter = String(state.exactOrgTeam ?? (qTeam?.value ?? "")).trim();
     const names = [];
     const seen = new Set();
     for (const row of state.filtered) {
@@ -3038,12 +3046,13 @@
 
     const label = document.createElement("p");
     label.className = "visible-orgs-label";
-    label.textContent = "表示中の団体/チーム";
+    label.textContent = directTeamFilter ? "選択中の条件" : "表示中の団体/チーム";
     visibleOrgs.appendChild(label);
 
     const tags = document.createElement("div");
     tags.className = "visible-orgs-tags";
-    for (const name of names) {
+    const shownNames = directTeamFilter ? [directTeamFilter] : names;
+    for (const name of shownNames) {
       const chip = document.createElement("div");
       chip.className = "visible-orgs-chip";
       const nameSpan = document.createElement("span");
@@ -3053,8 +3062,12 @@
       clearBtn.type = "button";
       clearBtn.className = "visible-orgs-tag-remove";
       clearBtn.dataset.org = name;
-      clearBtn.title = "この団体/チームの動画を一覧から外す";
-      clearBtn.setAttribute("aria-label", `${name} の動画を表示から外す`);
+      if (directTeamFilter) clearBtn.dataset.clearTeamFilter = "1";
+      clearBtn.title = directTeamFilter ? "この検索条件を解除" : "この団体/チームの動画を一覧から外す";
+      clearBtn.setAttribute(
+        "aria-label",
+        directTeamFilter ? `${name} の検索条件を解除` : `${name} の動画を表示から外す`,
+      );
       clearBtn.innerHTML = '<span class="visible-orgs-tag-remove-x" aria-hidden="true">\u00d7</span>';
       chip.appendChild(nameSpan);
       chip.appendChild(clearBtn);
@@ -3096,6 +3109,32 @@
       for (const row of pageRows) {
         videoList.appendChild(buildVideoCard(row));
       }
+      if (total === 0) {
+        const empty = document.createElement("div");
+        empty.className = "video-results-empty";
+        const title = document.createElement("h3");
+        title.textContent = "動画が見つかりませんでした";
+        const note = document.createElement("p");
+        note.textContent = "検索語や絞り込み条件を少し広げてください。";
+        const actions = document.createElement("div");
+        actions.className = "video-results-empty-actions";
+        const reset = document.createElement("button");
+        reset.type = "button";
+        reset.className = "btn-share-search";
+        reset.textContent = "条件をすべて解除";
+        reset.addEventListener("click", resetSearchResults);
+        const browse = document.createElement("button");
+        browse.type = "button";
+        browse.className = "btn-reset-search";
+        browse.textContent = "団体一覧から探す";
+        browse.addEventListener("click", () => {
+          state.browseOpen = true;
+          renderBrowsePanel();
+        });
+        actions.append(reset, browse);
+        empty.append(title, note, actions);
+        videoList.appendChild(empty);
+      }
       if (useInlinePeek && peekRow && videoListMoreBtn) {
         videoList.appendChild(
           buildVideoPeekSlot(peekRow, videoListMoreBtn),
@@ -3117,8 +3156,7 @@
       videoResultMoreWrap.hidden =
         Boolean(useInlinePeek) || !moreAvailable;
     }
-    const visibleAll = state.rows.filter((r) => isVisibleRow(r)).length;
-    $("#count").textContent = `表示 ${total} 件（ 全体 ${visibleAll} 件）`;
+    $("#count").textContent = `${total}本の動画`;
     renderVisibleOrgsLine();
 
     if (paginationStatus) {
@@ -3541,6 +3579,14 @@
     visibleOrgs.addEventListener("click", (ev) => {
       const btn = ev.target.closest(".visible-orgs-tag-remove[data-org]");
       if (!btn) return;
+      if (btn.dataset.clearTeamFilter === "1") {
+        cancelSearchDebounce();
+        state.exactOrgTeam = null;
+        if (qTeam) qTeam.value = "";
+        clearExcludedOrgs();
+        applyFilter();
+        return;
+      }
       const org = String(btn.dataset.org ?? "").trim();
       if (!org) return;
       state.excludedOrgTeams.add(org);
@@ -3666,9 +3712,14 @@
 
   if (btnResetRecentSearches) {
     btnResetRecentSearches.addEventListener("click", () => {
+      const beforeCount = state.filtered.length;
       state.recentSearches = [];
       saveJsonStorage(LS_KEY_RECENT_SEARCHES, state.recentSearches);
       renderRecentSearches();
+      window.MZToast?.ok?.("検索履歴だけを削除しました");
+      if (state.filtered.length !== beforeCount) {
+        console.error("[MarchinZ] recent search reset changed results unexpectedly");
+      }
     });
   }
 

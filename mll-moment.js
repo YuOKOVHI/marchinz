@@ -31,6 +31,9 @@
   /** @param {HTMLDialogElement|null|undefined} dialog */
   function showMomentDialog(dialog) {
     if (!dialog) return;
+    // TOPから開くと、dialogの元位置はhiddenなMomentタブの内側にある。
+    // 非表示祖先の中でshowModalしてもSafariでは見えないため、表示直前にbody直下へ移す。
+    if (dialog.closest("[hidden]")) document.body.appendChild(dialog);
     dialog.removeAttribute("hidden");
     try {
       if (!dialog.open) dialog.showModal();
@@ -964,6 +967,7 @@
     });
 
     showMomentDialog(dialog);
+    requestAnimationFrame(() => ta.focus({ preventScroll: true }));
   }
 
   /**

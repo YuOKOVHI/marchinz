@@ -638,6 +638,46 @@ service cloud.firestore {
       return mllProfileOptionalFieldsOkForAffected(request.resource.data.keys());
     }
 
+    // 新規登録専用。全プロフィール項目を列挙する更新用バリデータは、項目増加により
+    // Rules の1リクエスト1000式上限へ達する。登録時にクライアントが実際に書く
+    // 初期フィールドだけへ絞り、型・長さ・値を個別に厳格検証する。
+    function mllProfileCreateValuesOk(uid) {
+      let d = request.resource.data;
+      let k = d.keys();
+      return k.hasOnly([
+          'id', 'display_name', 'avatar_url',
+          'created_at', 'updated_at', 'marchinz_public_id',
+          'legal_policy_accepted_version', 'legal_policy_accepted_at',
+          'b_test_opt_in', 'b_test_opt_in_at',
+          'b_test_consent_version', 'b_test_prompt_dismissed_at'
+        ])
+        && mllProfileIdOk(uid)
+        && mllProfileDisplayNameOk()
+        && mllProfileTimestampsOk()
+        && (!k.hasAny(['avatar_url'])
+          || (d.avatar_url is string && d.avatar_url.size() <= 2048))
+        && (!k.hasAny(['marchinz_public_id'])
+          || (d.marchinz_public_id is string
+            && d.marchinz_public_id.size() <= 20
+            && (d.marchinz_public_id == '' || d.marchinz_public_id.matches('^[0-9]{1,20}$'))))
+        && (!k.hasAny(['legal_policy_accepted_version'])
+          || (d.legal_policy_accepted_version is string
+            && d.legal_policy_accepted_version.size() > 0
+            && d.legal_policy_accepted_version.size() <= 48))
+        && (!k.hasAny(['legal_policy_accepted_at'])
+          || d.legal_policy_accepted_at is timestamp
+          || (d.legal_policy_accepted_at is string
+            && d.legal_policy_accepted_at.size() >= 10
+            && d.legal_policy_accepted_at.size() <= 48))
+        && (!k.hasAny(['b_test_opt_in']) || d.b_test_opt_in is bool)
+        && (!k.hasAny(['b_test_opt_in_at'])
+          || (d.b_test_opt_in_at is string && d.b_test_opt_in_at.size() <= 48))
+        && (!k.hasAny(['b_test_consent_version'])
+          || (d.b_test_consent_version is string && d.b_test_consent_version.size() <= 48))
+        && (!k.hasAny(['b_test_prompt_dismissed_at'])
+          || (d.b_test_prompt_dismissed_at is string && d.b_test_prompt_dismissed_at.size() <= 48));
+    }
+
     // created_at は通常不変だが、退会→再登録（withdrawn true→false）時のみ更新を許可
     function mllProfileCreatedAtImmutOk() {
       return !resource.data.keys().hasAny(['created_at'])
@@ -1349,7 +1389,7 @@ service cloud.firestore {
         && (
           isPrivileged()
           || (
-            mllProfileValuesOk(uid)
+            mllProfileCreateValuesOk(uid)
             && (!request.resource.data.keys().hasAny(['withdrawn'])
               || request.resource.data.withdrawn == false)
             && (!request.resource.data.keys().hasAny(['banned'])

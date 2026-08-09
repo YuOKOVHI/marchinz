@@ -6178,6 +6178,267 @@ input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
 .mz-tabbar-link { position: relative; }
 .mz-pulse-top-empty { grid-column: 1 / -1; margin: 0; color: var(--muted, #64748b); font-size: 0.86rem; line-height: 1.6; }
 
+/* v2.10.4 — Finder Rail。検索→条件→結果を一続きにし、最初の動画を早く見せる。 */
+#page-videos .video-search-deck {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+#page-videos .video-search-primary-row {
+  gap: 0.5rem;
+}
+
+#page-videos .video-search-omni {
+  min-height: 52px;
+  border-color: rgba(15, 33, 56, 0.14);
+  border-radius: 14px;
+  box-shadow: 0 3px 12px rgba(15, 33, 56, 0.05);
+}
+
+#page-videos .video-search-filter-disclosure > summary {
+  min-width: 104px;
+  min-height: 52px;
+  border-color: rgba(15, 33, 56, 0.14);
+  border-radius: 14px;
+  box-shadow: 0 3px 12px rgba(15, 33, 56, 0.05);
+}
+
+#page-videos .video-search-filter-label {
+  display: inline !important;
+}
+
+#page-videos .search-inline-header {
+  margin-top: 0.45rem;
+}
+
+#page-videos .browse-inline-trigger-line {
+  justify-content: flex-start;
+}
+
+#page-videos .search-inline-header .browse-inline-trigger {
+  min-height: 44px;
+  padding: 0 0.75rem;
+  border: 0;
+  background: transparent;
+  color: var(--mzu-blue);
+  box-shadow: none;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+#page-videos .search-inline-header .browse-inline-trigger::after {
+  content: "›";
+  margin-left: 0.35rem;
+  font-size: 1.15rem;
+}
+
+#page-videos .search-history {
+  margin-top: 0.35rem;
+  padding: 0.45rem 0.7rem 0.65rem;
+  border: 1px solid rgba(15, 33, 56, 0.1);
+  border-radius: 12px;
+  background: #f7f9fc;
+}
+
+#page-videos .search-history > summary {
+  min-height: 44px;
+  color: var(--mzu-muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 44px;
+  cursor: pointer;
+}
+
+#page-videos .search-history-heading {
+  margin-top: 0.35rem;
+}
+
+#page-videos .search-history-heading .btn-reset-search--history {
+  min-height: 44px;
+  padding: 0 0.65rem;
+  border: 0;
+  color: var(--mzu-muted);
+  background: transparent;
+  box-shadow: none;
+  font-size: 0.75rem;
+}
+
+#page-videos .video-results-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
+  margin: 1rem 0 0.45rem;
+}
+
+#page-videos .video-results-summary .meta-bar {
+  order: 2;
+  margin: 0;
+  color: var(--mzu-muted);
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+#page-videos .video-results-summary .visible-orgs {
+  order: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+#page-videos .video-results-summary .visible-orgs-label {
+  margin: 0;
+  color: var(--mzu-muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+#page-videos #visible-orgs .visible-orgs-tags {
+  display: flex;
+  flex: 1;
+  flex-wrap: nowrap;
+  gap: 0.4rem;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+#page-videos .visible-orgs-chip {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding-left: 0.75rem;
+  border-color: rgba(36, 87, 230, 0.25);
+  border-radius: 999px;
+  background: #eef3ff;
+  color: var(--mzu-blue);
+}
+
+#page-videos .visible-orgs-tag-remove {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  color: var(--mzu-blue);
+}
+
+#page-videos .results-panel {
+  padding-top: 0;
+}
+
+#page-videos .result-sort-bar {
+  margin: 0 0 0.6rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+#page-videos .result-sort-bar-main {
+  width: 100%;
+  gap: 0.45rem;
+  padding: 0;
+  background: transparent;
+}
+
+#page-videos .result-sort-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+#page-videos .result-sort-btn-group,
+#page-videos .video-source-filter-wrap {
+  padding: 2px;
+  border: 1px solid rgba(15, 33, 56, 0.08);
+  background: #f4f7fa;
+}
+
+#page-videos .mz-year-chips {
+  flex-wrap: nowrap;
+  gap: 0.4rem;
+  margin: 0 0 0.75rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+#page-videos .mz-year-chips-label {
+  flex: 0 0 auto;
+  align-self: center;
+  color: var(--mzu-muted);
+  font-size: 0.72rem;
+}
+
+#page-videos .mz-year-chip {
+  flex: 0 0 auto;
+  min-width: 64px;
+  min-height: 44px;
+  padding: 0 0.75rem;
+}
+
+.video-results-empty {
+  grid-column: 1 / -1;
+  padding: 2rem 1rem;
+  border: 1px dashed rgba(15, 33, 56, 0.2);
+  border-radius: 16px;
+  background: #fff;
+  text-align: center;
+}
+
+.video-results-empty h3 { margin: 0; color: var(--mzu-ink); font-size: 1.05rem; }
+.video-results-empty p { margin: 0.45rem 0 0; color: var(--mzu-muted); font-size: 0.86rem; }
+.video-results-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+.video-results-empty-actions button { min-height: 44px; }
+
+@media (max-width: 719px) {
+  #page-videos .video-search-filter-disclosure > summary {
+    min-width: 52px;
+    width: 52px;
+    padding: 0;
+  }
+  #page-videos .video-search-filter-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+  }
+  #page-videos .video-search-filter-sheet {
+    position: fixed;
+    z-index: 180;
+    top: auto;
+    right: 0;
+    bottom: calc(var(--mz-tabbar-h, 72px) + env(safe-area-inset-bottom));
+    left: 0;
+    width: 100%;
+    max-height: 72dvh;
+    overflow-y: auto;
+    border-radius: 20px 20px 0 0;
+  }
+  #page-videos .result-sort-bar-main {
+    flex-wrap: nowrap;
+    justify-content: space-between;
+    overflow-x: auto;
+  }
+  #page-videos .result-sort-group,
+  #page-videos .result-filter-group { flex: 0 0 auto; }
+}
+
 /* v2.10.3 — Stage Poster Card。動画再生を主役にし、団体絞込みの意味を文字で示す。 */
 .video-result-list .recommend-item {
   display: flex;

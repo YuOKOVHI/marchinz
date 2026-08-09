@@ -291,9 +291,27 @@
     );
   }
 
+  /** TOPの投稿入口から、読み込み完了を待って投稿面を開く。 */
+  function openTopComposer() {
+    const reportUnavailable = (message) => {
+      console.error(`[MarchinZ] ${message}`);
+      window.MZToast?.err?.("投稿画面を開けませんでした。ページを再読み込みして、もう一度お試しください。");
+    };
+    const api = window.MarchinZMomentFeed;
+    if (!api || typeof api.openCompose !== "function") {
+      reportUnavailable("MarchinZMomentFeed.openCompose is unavailable");
+      return;
+    }
+    // 投稿面は一覧取得を待たずに開く。通信待ちを挟むと、Safariではタップ後に
+    // 何も起きないように見えるうえ、ユーザー操作由来のdialog表示条件も失いやすい。
+    api.openCompose(null);
+    void Promise.resolve(api.ensureInitialLoad?.())
+      .catch((error) => console.warn("[MarchinZ] Moment initial load", error));
+  }
+
   function wire() {
     document.getElementById("mz-pulse-top-compose")?.addEventListener("click", () => {
-      window.MarchinZMomentFeed?.openCompose?.(null);
+      openTopComposer();
     });
     document.querySelectorAll('a[href^="#community/moments"], [data-community-hub-tab="moments"]').forEach((node) => {
       node.addEventListener("click", markSeen);

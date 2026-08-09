@@ -2632,6 +2632,17 @@
         await migrateSensitiveProfileOffRoot(user.id);
         await ensureProfile(user, { recordSignupLegalConsent: isSignupEntry });
         if (runId !== profileSyncRunId) return;
+        // 新規登録でプロフィール本体を書けなかった場合、登録成功の画面へ進ませない。
+        // 認証だけ成立した「半登録」状態を残すと、Log・Note・Momentの保存が連鎖して失敗する。
+        if (isSignupEntry && ensureProfileFailed) {
+          try { await auth.signOut(); } catch { /* 失敗表示はensureProfile側で済んでいる */ }
+          currentUser = null;
+          rawAuthUserForAdmin = null;
+          showLoggedOut();
+          window.dispatchEvent(new CustomEvent("mll-auth-changed", { detail: { user: null, isAdmin: false } }));
+          scheduleMllEventFormResync();
+          return;
+        }
         await applyPendingSignupProfileAttributes(user);
         const prof = await refreshProfileView(user);
         // 新規登録は #signup のチェックで同意済み。ログインのみ規約改定時の再同意モーダルを出す。
