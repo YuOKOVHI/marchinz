@@ -808,13 +808,8 @@
     const uploadNotice = document.createElement("p");
     uploadNotice.className = "eld-upload-notice";
     const uploadLead = document.createElement("strong");
-    uploadLead.textContent = "オリジナル写真の保管は、必ずご自身の端末やバックアップで行ってください。";
-    uploadNotice.append(
-      uploadLead,
-      document.createTextNode(
-        "システム障害・データ消失・復旧不能、第三者の行為等に起因する損害について、運営は一切の責任を負いません。",
-      ),
-    );
+    uploadLead.textContent = "オリジナル画像はご自身で保管して下さい";
+    uploadNotice.appendChild(uploadLead);
     shell.appendChild(uploadNotice);
 
     const err = document.createElement("p");
