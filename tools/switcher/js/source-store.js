@@ -1,12 +1,9 @@
 "use strict";
-/* ============ 素材の OPFS 先行受け取り ============
-   iOS の file picker が File を返す境界自体は変えられない。MarchinZ はその
-   File を解析へ渡す前に OPFS へ分割書き込みし、サイズ検証後は OPFS 上の
-   File だけを clip.file として使う。失敗時は元 File へ戻し、取り込みを止めない。
-
-   書き出し用 exporter の Worker はプロキシ/完成品と共有すると競合するため、
-   同じ exportwriter.js を**別Worker**として起動する。ディレクトリも mz-source
-   へ分離し、書き出し掃除から作業中の素材を守る。 */
+/* ============ 旧 mz-source の回収 ============
+   素材のOPFS先行複製は2026-08-09に停止した。実機で、素材サイズと同量の
+   永続OPFS容量を増やし、Safari File picker由来の内部コピー問題を解決しない
+   ことが確認されたためである。このモジュールは旧版が残したmz-sourceを安全に
+   回収するためだけに残す。 */
 
 MC.sourceStore = (() => {
   const S = {};
@@ -153,6 +150,11 @@ MC.sourceStore = (() => {
   };
 
   S.stage = async (file, options = {}) => {
+    /* 新規素材をOPFSへ複製しない。呼び出し元が増えても再発しないよう、
+       従来のFileを明示的に返す。旧mz-sourceのsweep/release APIは維持する。 */
+    diag("bypassed", { bytes: Number(file && file.size) || 0, source: Number(options.source) || 0 });
+    return { file, storage: "file", name: "", fallback: true, bypassed: true };
+    /* 以下は旧実装。後方互換の参照用に当面残すが、上で必ずreturnする。 */
     if (!file || !S.supported()) {
       diag("fallback", { bytes: Number(file && file.size) || 0, reason: "opfs_unavailable" });
       return { file, storage: "file", name: "", fallback: true };

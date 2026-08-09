@@ -80,33 +80,21 @@ MC.media.addFiles = async files => {
     const duplicate = MC.media.duplicateDecision(f);
     if (!duplicate.allowed) { MC.ui.toast(`${f.name} は読み込み済みです`); queue[fileIndex] = null; continue; }
     if (MC.media.slotClips().length >= 3) { MC.ui.toast("素材は3つまでです"); break; }
-    /* Safariから受け取ったFileはここより先へ渡さない。OPFSへ1本ずつ移し、
-       サイズ検証後のFileを既存エンジンへ渡す。OPFSが使えない/失敗した端末は
-       sourceStoreが元Fileを返すため、従来経路のまま続けられる。 */
+    /* Safariから受け取ったFileをそのまま既存エンジンへ渡す。
+       2026-08-09の実機検証で、素材をOPFSへ先行複製すると、その複製だけで
+       元素材と同量の永続容量を増やすことを確認した。File picker側の内部コピー
+       はこの時点で既に起こり得るため、ここで第二の全量コピーを作らない。
+       sourceStoreは旧版mz-sourceの掃除だけを続ける。 */
     const original = { name: f.name, size: f.size, lastModified: f.lastModified, type: f.type };
-    let lastPct = -10;
-    MC.media._importProgress = { current: fileIndex + 1, total: queue.length, pct: 0 };
-    if (MC.ui.renderClips) MC.ui.renderClips();
-    const staged = MC.sourceStore ? await MC.sourceStore.stage(f, {
-      source: fileIndex + 1,
-      onProgress: ratio => {
-        const pct = Math.round(Math.max(0, Math.min(1, ratio)) * 100);
-        if (pct < lastPct + 10 && pct !== 100) return;
-        lastPct = pct;
-        MC.media._importProgress = { current: fileIndex + 1, total: queue.length, pct };
-        if (MC.ui.renderClips) MC.ui.renderClips();
-      },
-    }) : { file: f, storage: "file", name: "", fallback: true };
+    const sourceFile = f;
     queue[fileIndex] = null;
-    f = null; // 以後、picker由来のFileをこの関数から参照しない
-    if (!staged || staged.aborted || !staged.file) continue;
-    const sourceFile = staged.file;
+    f = null; // sourceFile以外からpicker由来のFileを参照しない
     const clip = {
       id: MC.media.nextId++, file: sourceFile,
       name: original.name, size: original.size, lastModified: original.lastModified,
       instanceKey: duplicate.instanceKey,
       mimeType: original.type || sourceFile.type || "",
-      sourceStorage: staged.storage, sourceOpfsName: staged.name || "",
+      sourceStorage: "file", sourceOpfsName: "",
       url: URL.createObjectURL(sourceFile),
       video: document.createElement("video"),
       duration: 0, width: 0, height: 0,
