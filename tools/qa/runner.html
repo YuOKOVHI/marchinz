@@ -7556,6 +7556,26 @@ async function countSamples(ns, file, fromSec) {
                        ".mz-drawer-usertype", ".mzsc-drawer-admin"]) {
       if (css.indexOf(cls) < 0) throw new Error(`${cls} のCSSが無い(素の文字で崩れる)`);
     }
+    /* 映像ツールのロゴは本文を押し下げないよう、従来最大252pxの約1/4に固定する。 */
+    const assertCompactLogo = (source) => {
+      if (!source.includes("width: min(16.1vw, 63px);") || !source.includes("max-width: 63px;")) {
+        throw new Error("映像ツール共通ロゴが最大63px(従来の約1/4)になっていない");
+      }
+    };
+    assertCompactLogo(css);
+    let logoMutationCaught = false;
+    try {
+      assertCompactLogo(css.replace("width: min(16.1vw, 63px);", "width: min(64.4vw, 252px);"));
+    } catch {
+      logoMutationCaught = true;
+    }
+    if (!logoMutationCaught) throw new Error("ロゴの大型化変異を検出できない");
+    for (const tool of ["switcher", "privacy", "reangle", "vlog"]) {
+      const html = await (await fetch(`../${tool}/index.html`)).text();
+      if (!html.includes('/tools/shared/sitechrome.css?v=2.11.2')) {
+        throw new Error(`${tool} が新しい共通ヘッダーCSSを再取得しない`);
+      }
+    }
     return "バッジ・アカウント枠・管理者ページ・正本の読み込み順・CSS すべて有";
   });
   /* ---- 「作る動画を選ぶ」の下のマージン(2026-08-07 優さん指示) ---- */
@@ -12347,7 +12367,7 @@ async function countSamples(ns, file, fromSec) {
     }
   });
 
-  group("㊹ デザインチームU Action Rail + Finder Rail + Stage Poster（v2.11.1）");
+  group("㊹ デザインチームU Action Rail + Finder Rail + Stage Poster（v2.11.2）");
   await test("★実画面操作: 390pxヘッダー・目的起点TOP導線・大会動画検索とカード", async () => {
     const f = document.createElement("iframe");
     f.style.cssText = "position:fixed;left:-9999px;top:0;width:390px;height:844px;border:0";
@@ -12355,14 +12375,14 @@ async function countSamples(ns, file, fromSec) {
     document.body.appendChild(f);
     try {
       for (let i = 0; i < 160; i++) {
-        const ready = f.contentDocument?.documentElement?.dataset?.mzVersion === "2.11.1"
+        const ready = f.contentDocument?.documentElement?.dataset?.mzVersion === "2.11.2"
           && f.contentWindow?.MarchinZMomentPulse
           && f.contentWindow?.MarchinZMomentFeed;
         if (ready) break;
         await new Promise(r => setTimeout(r, 50));
       }
       const w = f.contentWindow, d = f.contentDocument;
-      if (d?.documentElement?.dataset?.mzVersion !== "2.11.1") throw new Error("v2.11.1の実画面まで届かない");
+      if (d?.documentElement?.dataset?.mzVersion !== "2.11.2") throw new Error("v2.11.2の実画面まで届かない");
       for (let i = 0; i < 80 && d.querySelector(".site-brand")?.getBoundingClientRect().width === 0; i++) {
         await new Promise(r => setTimeout(r, 50));
       }
@@ -12577,7 +12597,7 @@ async function countSamples(ns, file, fromSec) {
     return "件数・先頭動画を壊した比較結果を検出";
   });
 
-  group("㊺ MarchinZ Pulse（v2.11.1）");
+  group("㊺ MarchinZ Pulse（v2.11.2）");
   await test("★実画面操作: TOP最新Moment 2件・投稿入口・通知設定", async () => {
     const f = document.createElement("iframe");
     f.style.cssText = "position:fixed;left:-9999px;top:0;width:390px;height:844px;border:0";
@@ -12585,7 +12605,7 @@ async function countSamples(ns, file, fromSec) {
     document.body.appendChild(f);
     try {
       for (let i = 0; i < 160; i++) {
-        const ready = f.contentDocument?.documentElement?.dataset?.mzVersion === "2.11.1"
+        const ready = f.contentDocument?.documentElement?.dataset?.mzVersion === "2.11.2"
           && f.contentWindow?.MarchinZMomentPulse
           && f.contentWindow?.MarchinZMomentFeed;
         if (ready) break;
@@ -12711,7 +12731,7 @@ async function countSamples(ns, file, fromSec) {
     return "公開Moment query + Index + 地図初期OFF + like_moment + 新着通知 + Rules一致";
   });
 
-  group("㊻ Firebase保存4経路（v2.11.1）");
+  group("㊻ Firebase保存4経路（v2.11.2）");
   await test("契約検査: 新規登録・Log・Note・Momentの保存先とRulesが一致", async () => {
     const [authSrc, roleSrc, noteSrc, momentSrc, rulesSrc] = await Promise.all([
       fetch("../../auth.js").then(r => r.text()),
@@ -12775,7 +12795,7 @@ async function countSamples(ns, file, fromSec) {
     return "4保存先 + 必須payload + Rules + 半登録停止 / 保存先破壊の変異を検出";
   });
 
-  group("㊼ Google検索・クロール基盤（v2.11.1）");
+  group("㊼ Google検索・クロール基盤（v2.11.2）");
   await test("実配信ファイル: robots・sitemap・正規URL・サイト名をGoogleへ明示する", async () => {
     const [homeRes, robotsRes, sitemapRes, manifestRes] = await Promise.all([
       fetch("../../index.html"),
