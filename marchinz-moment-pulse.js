@@ -267,7 +267,12 @@
       setUnread(false);
       return;
     }
-    const query = db.collectionGroup("moments").orderBy("updated_at", "desc").limit(QUERY_LIMIT);
+    // 一覧と同じ公開条件をクエリに載せる。Rules は非公開文書を後から除外してはくれない。
+    const query = db
+      .collectionGroup("moments")
+      .where("visibility", "==", "public")
+      .orderBy("updated_at", "desc")
+      .limit(QUERY_LIMIT);
     unsubscribe = query.onSnapshot(
       () => {
         void (async () => {

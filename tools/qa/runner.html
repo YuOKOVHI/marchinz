@@ -12347,26 +12347,26 @@ async function countSamples(ns, file, fromSec) {
     }
   });
 
-  group("㊹ デザインチームU Compact Deck（v2.10.1）");
+  group("㊹ デザインチームU Compact Deck（v2.10.2）");
   await test("★実画面操作: 390pxヘッダー・TOP3導線・大会動画検索とカード", async () => {
     const f = document.createElement("iframe");
     f.style.cssText = "position:fixed;left:-9999px;top:0;width:390px;height:844px;border:0";
     f.src = "../../index.html?mzQaTeamU=1#top";
     document.body.appendChild(f);
     try {
-      for (let i = 0; i < 160 && f.contentDocument?.documentElement?.dataset?.mzVersion !== "2.10.1"; i++) {
+      for (let i = 0; i < 160 && f.contentDocument?.documentElement?.dataset?.mzVersion !== "2.10.2"; i++) {
         await new Promise(r => setTimeout(r, 50));
       }
       const w = f.contentWindow, d = f.contentDocument;
-      if (d?.documentElement?.dataset?.mzVersion !== "2.10.1") throw new Error("v2.10.1の実画面まで届かない");
+      if (d?.documentElement?.dataset?.mzVersion !== "2.10.2") throw new Error("v2.10.2の実画面まで届かない");
       for (let i = 0; i < 80 && d.querySelector(".site-brand")?.getBoundingClientRect().width === 0; i++) {
         await new Promise(r => setTimeout(r, 50));
       }
       const header = d.querySelector(".site-brand")?.getBoundingClientRect();
       const logo = d.querySelector(".site-logo")?.getBoundingClientRect();
       if (!header || header.height > 68) throw new Error(`スマホヘッダーが高い: ${Math.round(header?.height || 0)}px`);
-      if (!logo || logo.width > 150) throw new Error(`ロゴが大きい: ${Math.round(logo?.width || 0)}px`);
-      const expected = ["大会・演奏会情報", "ショウ動画を見る", "マーチングYouTube"];
+      if (!logo || logo.width > 128) throw new Error(`ロゴが大きい: ${Math.round(logo?.width || 0)}px`);
+      const expected = ["大会・イベント", "ショウ動画", "マーチングYouTube"];
       const rail = [...d.querySelectorAll(".mll-lp-hero-subcta a")];
       if (rail.length !== 3) throw new Error(`TOP導線が3つでない: ${rail.length}`);
       rail.forEach((a, i) => {
@@ -12375,6 +12375,15 @@ async function countSamples(ns, file, fromSec) {
         if (r.width < 44 || r.height < 44) throw new Error(`TOP導線${i + 1}が44px未満: ${Math.round(r.width)}×${Math.round(r.height)}`);
         if (!a.querySelector(".mz-ui-icon")) throw new Error(`TOP導線${i + 1}にアイコンが無い`);
       });
+      const topEntry = d.querySelector("[data-mll-top-user-only]");
+      const entryWasHidden = Boolean(topEntry?.hidden);
+      if (topEntry) topEntry.hidden = false;
+      await new Promise(r => setTimeout(r, 50));
+      const heroVisual = d.querySelector(".mll-lp-hero-visual");
+      const heroVisualRect = heroVisual?.getBoundingClientRect();
+      if (!heroVisual || w.getComputedStyle(heroVisual).display === "none") throw new Error("ログイン時のスマホTOPキービジュアルが隠れている");
+      if (!heroVisualRect || heroVisualRect.width > 335) throw new Error(`スマホTOPキービジュアルが大きすぎる: ${Math.round(heroVisualRect?.width || 0)}px`);
+      if (topEntry) topEntry.hidden = entryWasHidden;
 
       w.location.hash = "#videos";
       for (let i = 0; i < 160 && d.querySelector("#page-videos")?.hidden; i++) {
@@ -12399,6 +12408,9 @@ async function countSamples(ns, file, fromSec) {
       const card = d.querySelector("#video-list .recommend-item");
       if (!card) throw new Error("大会動画カードが表示されない");
       if (card.querySelector(".recommend-item-url-line")) throw new Error("大会動画カードに生URLが残っている");
+      const thumb = card.querySelector(".recommend-item-thumb-wrap")?.getBoundingClientRect();
+      const cardRect = card.getBoundingClientRect();
+      if (!thumb || thumb.width < cardRect.width * .88) throw new Error(`大会動画のサムネイルが主役でない: ${Math.round(thumb?.width || 0)}px / ${Math.round(cardRect.width)}px`);
       const cardControls = card.querySelectorAll(".btn-mll-mylist-add,.share-toggle,.recommend-item-team-search-btn");
       for (const b of cardControls) {
         const r = b.getBoundingClientRect();
@@ -12412,14 +12424,14 @@ async function countSamples(ns, file, fromSec) {
     }
   });
 
-  group("㊺ MarchinZ Pulse（v2.10.1）");
+  group("㊺ MarchinZ Pulse（v2.10.2）");
   await test("★実画面操作: TOP最新Moment 2件・投稿入口・通知設定", async () => {
     const f = document.createElement("iframe");
     f.style.cssText = "position:fixed;left:-9999px;top:0;width:390px;height:844px;border:0";
     f.src = "../../index.html?mzQaPulse=1#top";
     document.body.appendChild(f);
     try {
-      for (let i = 0; i < 160 && f.contentDocument?.documentElement?.dataset?.mzVersion !== "2.10.1"; i++) {
+      for (let i = 0; i < 160 && f.contentDocument?.documentElement?.dataset?.mzVersion !== "2.10.2"; i++) {
         await new Promise(r => setTimeout(r, 50));
       }
       const w = f.contentWindow, d = f.contentDocument;
@@ -12498,20 +12510,31 @@ async function countSamples(ns, file, fromSec) {
     return "2件→1件の変異を検出";
   });
 
-  await test("ソース整合: Moment通知種別と設定フィールドが実装・Rulesで一致", async () => {
-    const [notifySrc, authSrc, profileSrc, rulesSrc] = await Promise.all([
+  await test("ソース整合: Moment公開取得・通知・Index・地図初期OFFが一致", async () => {
+    const [momentSrc, pulseSrc, notifySrc, authSrc, profileSrc, rulesSrc, indexSrc, mapSrc] = await Promise.all([
+      fetch("../../mll-moment.js").then(r => r.text()),
+      fetch("../../marchinz-moment-pulse.js").then(r => r.text()),
       fetch("../../marchinz-notify.js").then(r => r.text()),
       fetch("../../auth.js").then(r => r.text()),
       fetch("../../user-profile-page.js").then(r => r.text()),
       fetch("../../firebase/firestore.rules").then(r => r.text()),
+      fetch("../../firebase/firestore.indexes.json").then(r => r.text()),
+      fetch("../../marchinz-event-map.js").then(r => r.text()),
     ]);
+    if (!momentSrc.includes('.where("visibility", "==", "public")') || !pulseSrc.includes('.where("visibility", "==", "public")')) {
+      throw new Error("Momentの公開限定問い合わせが一覧またはTOPに無い");
+    }
+    if (!indexSrc.includes('"collectionGroup": "moments"') || !indexSrc.includes('"fieldPath": "visibility"') || !indexSrc.includes('"fieldPath": "updated_at"')) {
+      throw new Error("公開Moment取得に必要なFirestore Indexが無い");
+    }
+    if (!mapSrc.includes('applyOpen(saved === "1")')) throw new Error("大会情報マップの初期OFFが実装されていない");
     if (!notifySrc.includes('"like_moment"')) throw new Error("like_momentが通知種別に無い");
     if (!authSrc.includes('"notify_new_moment_inapp"')) throw new Error("認証側に新着Moment設定が無い");
     if (!profileSrc.includes('kind: "new_moment"') || !profileSrc.includes('data-mz-notif-go", "moment"')) {
       throw new Error("新着Momentが通知一覧と対象Momentへの遷移に接続されていない");
     }
     if (!rulesSrc.includes("'notify_new_moment_inapp'")) throw new Error("Firestore Rulesに新着Moment設定が無い");
-    return "like_moment + new_moment通知一覧 + notify_new_moment_inapp + Rules一致";
+    return "公開Moment query + Index + 地図初期OFF + like_moment + 新着通知 + Rules一致";
   });
 
   if (CF) { CF.remove(); CF = null; CW = null; CD = null; }

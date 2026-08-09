@@ -404,8 +404,8 @@
         });
         var saved = null;
         try { saved = localStorage.getItem(cfg.storageKey); } catch (e) { /* noop */ }
-        // マップ表示がデフォルト。チェックを外した場合のみ次回以降も閉じたまま(端末を問わず記憶)
-        applyOpen(saved !== "0");
+        // 初期状態は閉じる。利用者が明示して開いた場合だけ次回もその選択を保つ。
+        applyOpen(saved === "1");
       }
       b.querySelectorAll("[data-evmap-period]").forEach(function (chip) {
         chip.addEventListener("click", function () {

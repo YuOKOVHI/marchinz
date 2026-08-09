@@ -390,7 +390,14 @@
     const db = getDb();
     if (!db) return [];
     const n = Math.max(1, Math.min(LIMIT, Number(limit) || LIMIT));
-    const snap = await db.collectionGroup("moments").orderBy("updated_at", "desc").limit(n).get();
+    // Firestore Rules はフィルターではない。公開一覧はクエリ自体を public に限定する。
+    // これが無いと、他人の非公開文書を含み得る collectionGroup 問い合わせ全体が拒否される。
+    const snap = await db
+      .collectionGroup("moments")
+      .where("visibility", "==", "public")
+      .orderBy("updated_at", "desc")
+      .limit(n)
+      .get();
     const rowsRaw = [];
     snap.forEach((doc) => {
       const pref = doc.ref.parent && doc.ref.parent.parent;

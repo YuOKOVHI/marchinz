@@ -1,6 +1,14 @@
 {
   "indexes": [
     {
+      "collectionGroup": "moments",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "visibility", "order": "ASCENDING" },
+        { "fieldPath": "updated_at", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "event_log_diaries",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
