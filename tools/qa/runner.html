@@ -12347,18 +12347,18 @@ async function countSamples(ns, file, fromSec) {
     }
   });
 
-  group("㊹ デザインチームU Compact Deck（v2.10.2）");
+  group("㊹ デザインチームU Stage Poster Card（v2.10.3）");
   await test("★実画面操作: 390pxヘッダー・TOP3導線・大会動画検索とカード", async () => {
     const f = document.createElement("iframe");
     f.style.cssText = "position:fixed;left:-9999px;top:0;width:390px;height:844px;border:0";
     f.src = "../../index.html?mzQaTeamU=1#top";
     document.body.appendChild(f);
     try {
-      for (let i = 0; i < 160 && f.contentDocument?.documentElement?.dataset?.mzVersion !== "2.10.2"; i++) {
+      for (let i = 0; i < 160 && f.contentDocument?.documentElement?.dataset?.mzVersion !== "2.10.3"; i++) {
         await new Promise(r => setTimeout(r, 50));
       }
       const w = f.contentWindow, d = f.contentDocument;
-      if (d?.documentElement?.dataset?.mzVersion !== "2.10.2") throw new Error("v2.10.2の実画面まで届かない");
+      if (d?.documentElement?.dataset?.mzVersion !== "2.10.3") throw new Error("v2.10.3の実画面まで届かない");
       for (let i = 0; i < 80 && d.querySelector(".site-brand")?.getBoundingClientRect().width === 0; i++) {
         await new Promise(r => setTimeout(r, 50));
       }
@@ -12411,27 +12411,65 @@ async function countSamples(ns, file, fromSec) {
       const thumb = card.querySelector(".recommend-item-thumb-wrap")?.getBoundingClientRect();
       const cardRect = card.getBoundingClientRect();
       if (!thumb || thumb.width < cardRect.width * .88) throw new Error(`大会動画のサムネイルが主役でない: ${Math.round(thumb?.width || 0)}px / ${Math.round(cardRect.width)}px`);
+      const thumbLink = card.querySelector(".recommend-item-thumb-link");
+      if (!thumbLink?.getAttribute("aria-label")?.includes("再生")) throw new Error("サムネイル再生リンクの意味が読み上げられない");
+      if (!thumbLink.querySelector(".recommend-item-play-mark")) throw new Error("サムネイルに再生の視覚表示が無い");
+      const body = card.querySelector(".recommend-item-body");
+      const title = body?.querySelector(".recommend-item-event");
+      const teamFilter = body?.querySelector(".recommend-item-team-filter-btn");
+      const source = body?.querySelector(".recommend-item-source-row");
+      if (!body || !title || !teamFilter || !source) throw new Error("カードの情報階層が不足している");
+      if (!(title.compareDocumentPosition(teamFilter) & w.Node.DOCUMENT_POSITION_FOLLOWING)
+          || !(teamFilter.compareDocumentPosition(source) & w.Node.DOCUMENT_POSITION_FOLLOWING)) {
+        throw new Error("カードが 動画名→団体絞込み→配信元 の順でない");
+      }
+      const teamKind = teamFilter.querySelector(".recommend-item-team-filter-kind")?.textContent.trim();
+      const teamName = teamFilter.querySelector(".recommend-item-team-filter-name")?.textContent.trim();
+      if (!teamKind || !teamName || teamFilter.textContent.trim().length < 3) {
+        throw new Error("団体検索が意味不明な虫眼鏡だけに戻っている");
+      }
+      if (!teamFilter.getAttribute("aria-label")?.includes(teamName)) throw new Error("団体絞込みのaria-labelが団体名を説明していない");
+      if (!source.querySelector(".recommend-item-yt-avatar")) throw new Error("配信元ロゴが配信元行に無い");
+      if (teamFilter.querySelector(".recommend-item-yt-avatar")) throw new Error("配信元ロゴが団体ロゴのように誤配置されている");
       const cardControls = card.querySelectorAll(".btn-mll-mylist-add,.share-toggle,.recommend-item-team-search-btn");
       for (const b of cardControls) {
         const r = b.getBoundingClientRect();
         if (r.width < 44 || r.height < 44) throw new Error(`動画カード操作が44px未満: ${b.getAttribute("aria-label") || b.textContent.trim()}`);
         if (!b.getAttribute("aria-label")) throw new Error("動画カードのアイコン操作にaria-labelが無い");
       }
+      const saveBtn = card.querySelector(".btn-mll-mylist-add");
+      const shareBtn = card.querySelector(".share-toggle");
+      if (!saveBtn?.textContent.trim()) throw new Error("保存操作がアイコンだけで意味不明になっている");
+      if (shareBtn?.textContent.trim() !== "共有") throw new Error("共有操作の表示名が無い");
+      shareBtn.click();
+      const shareMenu = card.querySelector(".share-menu");
+      if (!shareMenu || shareMenu.hidden || shareBtn.getAttribute("aria-expanded") !== "true") {
+        throw new Error("共有メニューの状態が支援技術へ伝わらない");
+      }
+      const menuRect = shareMenu.getBoundingClientRect();
+      if (menuRect.left < 0 || menuRect.right > w.innerWidth) throw new Error("共有メニューが画面外にはみ出す");
+      shareMenu.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      if (!shareMenu.hidden || shareBtn.getAttribute("aria-expanded") !== "false") throw new Error("Escapeで共有メニューを閉じられない");
+      if (cardRect.height > 520) throw new Error(`大会動画カードがまだ縦に長すぎる: ${Math.round(cardRect.height)}px`);
+      const qTeamInput = d.querySelector("#q-team");
+      teamFilter.click();
+      await new Promise(r => setTimeout(r, 80));
+      if (qTeamInput?.value !== teamName) throw new Error("団体名のボタンから団体絞込みが動かない");
       if (d.documentElement.scrollWidth > d.documentElement.clientWidth) throw new Error("390pxで画面が横にはみ出す");
-      return `header ${Math.round(header.height)}px / logo ${Math.round(logo.width)}px / TOP3導線 / 検索+絞り込み / 動画操作${cardControls.length}個`;
+      return `header ${Math.round(header.height)}px / logo ${Math.round(logo.width)}px / Stage Poster ${Math.round(cardRect.height)}px / 動画操作${cardControls.length}個`;
     } finally {
       f.remove();
     }
   });
 
-  group("㊺ MarchinZ Pulse（v2.10.2）");
+  group("㊺ MarchinZ Pulse（v2.10.3）");
   await test("★実画面操作: TOP最新Moment 2件・投稿入口・通知設定", async () => {
     const f = document.createElement("iframe");
     f.style.cssText = "position:fixed;left:-9999px;top:0;width:390px;height:844px;border:0";
     f.src = "../../index.html?mzQaPulse=1#top";
     document.body.appendChild(f);
     try {
-      for (let i = 0; i < 160 && f.contentDocument?.documentElement?.dataset?.mzVersion !== "2.10.2"; i++) {
+      for (let i = 0; i < 160 && f.contentDocument?.documentElement?.dataset?.mzVersion !== "2.10.3"; i++) {
         await new Promise(r => setTimeout(r, 50));
       }
       const w = f.contentWindow, d = f.contentDocument;

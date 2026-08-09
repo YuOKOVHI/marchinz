@@ -32,6 +32,7 @@
   const LS_KEY_RECENT_SEARCHES = "marchinz_recent_searches_v1";
   /** 動画カード行の「シェアする」（検索結果シェアと同じ CTA 配色） */
   const ROW_SHARE_BTN_CLASS = "btn-share-search btn-marchinz-spotlight share-toggle";
+  let videoShareMenuSeq = 0;
 
   /** 一覧の並べ替えキー（data-sort・URL の sort= と一致） */
   const SORT_KEYS = ["配信日", "団体/チーム"];
@@ -920,11 +921,15 @@
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = ROW_SHARE_BTN_CLASS;
-      btn.textContent = "シェアする";
+      btn.innerHTML = '<i class="fa-solid fa-share-nodes mz-ui-icon" aria-hidden="true"></i><span>共有</span>';
       btn.setAttribute("aria-label", "この動画をシェア");
       btn.setAttribute("aria-expanded", "false");
+      btn.setAttribute("aria-haspopup", "menu");
       const menu = document.createElement("div");
       menu.className = "share-menu";
+      menu.id = `video-share-menu-${++videoShareMenuSeq}`;
+      menu.setAttribute("role", "menu");
+      btn.setAttribute("aria-controls", menu.id);
       menu.hidden = true;
       const items = [
         ["copy", "リンクをコピー"],
@@ -936,6 +941,7 @@
       for (const [k, label] of items) {
         const b = document.createElement("button");
         b.type = "button";
+        b.setAttribute("role", "menuitem");
         b.textContent = label;
         b.addEventListener("click", (ev) => {
           ev.stopPropagation();
@@ -950,9 +956,18 @@
         const willOpen = menu.hidden;
         document.querySelectorAll(".share-menu").forEach((m) => {
           m.hidden = true;
+          m.previousElementSibling?.setAttribute("aria-expanded", "false");
         });
         menu.hidden = !willOpen;
         btn.setAttribute("aria-expanded", String(willOpen));
+        if (willOpen) menu.querySelector("button")?.focus();
+      });
+      menu.addEventListener("keydown", (ev) => {
+        if (ev.key !== "Escape") return;
+        ev.preventDefault();
+        menu.hidden = true;
+        btn.setAttribute("aria-expanded", "false");
+        btn.focus();
       });
       wrap.appendChild(btn);
       wrap.appendChild(menu);
@@ -2536,7 +2551,7 @@
   }
 
   /**
-   * おすすめ・検索結果の共通カード（サムネ＋本文左／シェア中央）
+   * おすすめ・検索結果の共通カード（再生→動画名→団体絞込み→配信元→保存/共有）
    * @param {{ rootTag?: 'li'|'div' }} [options]
    */
   function buildVideoCard(row, options = {}) {
@@ -2567,6 +2582,7 @@
       a.rel = "noopener noreferrer";
       a.className = "recommend-item-thumb-link";
       a.title = "動画を開く";
+      a.setAttribute("aria-label", `「${eventTitle || orgTeam || "大会動画"}」を再生`);
       enhanceVideoLink(a, urlStr);
       const img = document.createElement("img");
       img.className = "recommend-item-thumb";
@@ -2592,6 +2608,11 @@
         }
       });
       a.appendChild(img);
+      const playMark = document.createElement("span");
+      playMark.className = "recommend-item-play-mark";
+      playMark.setAttribute("aria-hidden", "true");
+      playMark.innerHTML = '<i class="fa-solid fa-play"></i>';
+      a.appendChild(playMark);
       thumbWrap.appendChild(a);
     } else if (urlStr) {
       const fallback = document.createElement("a");
@@ -2623,10 +2644,77 @@
     const body = document.createElement("div");
     body.className = "recommend-item-body";
 
-    const ytInfoRow = document.createElement("div");
-    ytInfoRow.className = "recommend-item-yt-info-row";
-
     const chUrlForRow = String(rowChannelUrl(row) ?? "").trim();
+    const orgLabel = String(orgTeam ?? "").trim() || rowDisplayName(row);
+    const searchTeamVal = String(orgTeam ?? "").trim() || String(rowDisplayName(row) ?? "").trim();
+
+    if (eventTitle || urlStr) {
+      const evP = document.createElement("p");
+      evP.className = "recommend-item-event";
+      if (urlStr) {
+        const evLink = document.createElement("a");
+        evLink.href = urlStr;
+        evLink.target = "_blank";
+        evLink.rel = "noopener noreferrer";
+        evLink.className = "recommend-item-event-link";
+        if (chNameNorm.includes("drumcorpsfuntv")) {
+          evLink.classList.add("recommend-item-event-link--drum");
+        } else if (chNameNorm.includes("マーチング祭")) {
+          evLink.classList.add("recommend-item-event-link--marching");
+        }
+        evLink.title = "動画を開く";
+        evLink.setAttribute("aria-label", `「${eventTitle || "大会動画"}」を再生`);
+        evLink.textContent = eventTitle || "動画を開く";
+        enhanceVideoLink(evLink, urlStr);
+        evP.appendChild(evLink);
+      } else {
+        const plain = document.createElement("span");
+        plain.className = "recommend-item-event-plain";
+        plain.textContent = eventTitle;
+        evP.appendChild(plain);
+      }
+      body.appendChild(evP);
+    }
+
+    if (searchTeamVal) {
+      const teamSearchBtn = document.createElement("button");
+      teamSearchBtn.type = "button";
+      teamSearchBtn.className = "recommend-item-team-search-btn recommend-item-team-filter-btn";
+      const teamSearchLabel = `${searchTeamVal}の動画を探す`;
+      teamSearchBtn.setAttribute("aria-label", teamSearchLabel);
+      teamSearchBtn.title = teamSearchLabel;
+      const teamKind = document.createElement("span");
+      teamKind.className = "recommend-item-team-filter-kind";
+      teamKind.textContent = state.tab === "スリークロスチーム" ? "チーム" : "団体";
+      const teamName = document.createElement("span");
+      teamName.className = "recommend-item-org recommend-item-team-filter-name";
+      teamName.textContent = orgLabel;
+      const searchIcon = document.createElement("i");
+      searchIcon.className = "fa-solid fa-magnifying-glass mz-ui-icon";
+      searchIcon.setAttribute("aria-hidden", "true");
+      teamSearchBtn.append(teamKind, teamName, searchIcon);
+      teamSearchBtn.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        trackEvent("card_team_search", { tab: state.tab });
+        cancelSearchDebounce();
+        clearExactFilters();
+        clearExcludedOrgs();
+        state.browseOpen = false;
+        if (qTeam) qTeam.value = searchTeamVal;
+        onSearchInput();
+        document.getElementById("results-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+      body.appendChild(teamSearchBtn);
+    } else if (orgLabel) {
+      const orgEl = document.createElement("p");
+      orgEl.className = "recommend-item-org recommend-item-team-static";
+      orgEl.textContent = orgLabel;
+      body.appendChild(orgEl);
+    }
+
+    const sourceRow = document.createElement("div");
+    sourceRow.className = "recommend-item-yt-info-row recommend-item-source-row";
 
     const avatarWrap = document.createElement("div");
     avatarWrap.className = "recommend-item-yt-avatar-wrap";
@@ -2638,6 +2726,7 @@
       avatarEl.target = "_blank";
       avatarEl.rel = "noopener noreferrer";
       avatarEl.title = "配信元チャンネルを開く";
+      avatarEl.setAttribute("aria-label", `配信元「${chName || "チャンネル"}」を開く`);
     }
     const avLetter = document.createElement("span");
     avLetter.className = "recommend-item-yt-avatar-letter";
@@ -2673,84 +2762,16 @@
     }
     avatarWrap.appendChild(avatarEl);
 
-    const textStack = document.createElement("div");
-    textStack.className = "recommend-item-yt-text-stack";
+    const sourceStack = document.createElement("div");
+    sourceStack.className = "recommend-item-source-stack";
 
-    const headRow = document.createElement("div");
-    headRow.className = "recommend-item-head-row";
-
-    const orgLabel = String(orgTeam ?? "").trim() || rowDisplayName(row);
-    const searchTeamVal = String(orgTeam ?? "").trim() || String(rowDisplayName(row) ?? "").trim();
-
-    const orgSearchWrap = document.createElement("span");
-    orgSearchWrap.className = "recommend-item-org-search-wrap";
-
-    const orgEl = document.createElement("span");
-    orgEl.className = "recommend-item-org";
-    orgEl.textContent = orgLabel;
-    orgSearchWrap.appendChild(orgEl);
-
-    if (searchTeamVal) {
-      const teamSearchBtn = document.createElement("button");
-      teamSearchBtn.type = "button";
-      teamSearchBtn.className = "recommend-item-team-search-btn btn-share-search btn-marchinz-spotlight";
-      const teamSearchLabel =
-        state.tab === "スリークロスチーム" ? "このチームを検索" : "この団体を検索";
-      teamSearchBtn.setAttribute("aria-label", teamSearchLabel);
-      teamSearchBtn.title = teamSearchLabel;
-      teamSearchBtn.innerHTML = `<i class="fa-solid fa-magnifying-glass mz-ui-icon" aria-hidden="true"></i><span class="recommend-item-team-search-label">${teamSearchLabel}</span>`;
-      teamSearchBtn.addEventListener("click", (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        trackEvent("card_team_search", { tab: state.tab });
-        cancelSearchDebounce();
-        clearExactFilters();
-        clearExcludedOrgs();
-        state.browseOpen = false;
-        if (qTeam) qTeam.value = searchTeamVal;
-        onSearchInput();
-        document.getElementById("results-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      });
-      orgSearchWrap.appendChild(teamSearchBtn);
-    }
-
-    headRow.appendChild(orgSearchWrap);
-    textStack.appendChild(headRow);
-
-    if (eventTitle || urlStr) {
-      const evP = document.createElement("p");
-      evP.className = "recommend-item-event";
-      if (urlStr) {
-        const evLink = document.createElement("a");
-        evLink.href = urlStr;
-        evLink.target = "_blank";
-        evLink.rel = "noopener noreferrer";
-        evLink.className = "recommend-item-event-link";
-        if (chNameNorm.includes("drumcorpsfuntv")) {
-          evLink.classList.add("recommend-item-event-link--drum");
-        } else if (chNameNorm.includes("マーチング祭")) {
-          evLink.classList.add("recommend-item-event-link--marching");
-        }
-        evLink.title = "動画を開く";
-        evLink.textContent = eventTitle || "動画を開く";
-        enhanceVideoLink(evLink, urlStr);
-        evP.appendChild(evLink);
-      } else {
-        const plain = document.createElement("span");
-        plain.className = "recommend-item-event-plain";
-        plain.textContent = eventTitle;
-        evP.appendChild(plain);
-      }
-      textStack.appendChild(evP);
-    }
-
-    /** 配信元（小さめラベル）＋ チャンネル名 · 配信日 */
+    /** 配信元＋チャンネル名・配信日 */
     if (dateStr || chName) {
       const metaLine = document.createElement("p");
       metaLine.className = "recommend-item-yt-meta-line";
       const metaPrefix = document.createElement("span");
       metaPrefix.className = "recommend-item-yt-meta-prefix";
-      metaPrefix.textContent = "配信元\u3000";
+      metaPrefix.textContent = "配信元";
       metaLine.appendChild(metaPrefix);
       if (chUrlForRow && chName) {
         const chLink = document.createElement("a");
@@ -2762,22 +2783,22 @@
         chLink.textContent = chName;
         metaLine.appendChild(chLink);
         if (dateStr) {
-          metaLine.appendChild(document.createTextNode(` ${dateStr}`));
+          metaLine.appendChild(document.createTextNode(` ・ ${dateStr}`));
         }
       } else if (chName) {
         metaLine.appendChild(document.createTextNode(chName));
         if (dateStr) {
-          metaLine.appendChild(document.createTextNode(` ${dateStr}`));
+          metaLine.appendChild(document.createTextNode(` ・ ${dateStr}`));
         }
       } else if (dateStr) {
         metaLine.appendChild(document.createTextNode(dateStr));
       }
-      textStack.appendChild(metaLine);
+      sourceStack.appendChild(metaLine);
     }
 
-    ytInfoRow.appendChild(avatarWrap);
-    ytInfoRow.appendChild(textStack);
-    body.appendChild(ytInfoRow);
+    sourceRow.appendChild(avatarWrap);
+    sourceRow.appendChild(sourceStack);
+    body.appendChild(sourceRow);
 
     const actions = document.createElement("div");
     actions.className = "recommend-item-actions";
@@ -2794,7 +2815,7 @@
       icon.setAttribute("aria-hidden", "true");
       const text = document.createElement("span");
       text.className = "btn-mll-mylist-add-label";
-      text.textContent = label;
+      text.textContent = label.includes("別の") ? "保存済み" : "保存";
       mylistBtn.append(icon, text);
       mylistBtn.setAttribute("aria-label", label);
     };
@@ -3564,6 +3585,7 @@
     if (ev.target.closest?.(".share-wrap")) return;
     document.querySelectorAll(".share-menu").forEach((m) => {
       m.hidden = true;
+      m.previousElementSibling?.setAttribute("aria-expanded", "false");
     });
   });
 
