@@ -12347,18 +12347,18 @@ async function countSamples(ns, file, fromSec) {
     }
   });
 
-  group("㊹ デザインチームU Compact Deck（v2.9.6）");
+  group("㊹ デザインチームU Compact Deck（v2.10.0）");
   await test("★実画面操作: 390pxヘッダー・TOP3導線・大会動画検索とカード", async () => {
     const f = document.createElement("iframe");
     f.style.cssText = "position:fixed;left:-9999px;top:0;width:390px;height:844px;border:0";
     f.src = "../../index.html?mzQaTeamU=1#top";
     document.body.appendChild(f);
     try {
-      for (let i = 0; i < 160 && f.contentDocument?.documentElement?.dataset?.mzVersion !== "2.9.6"; i++) {
+      for (let i = 0; i < 160 && f.contentDocument?.documentElement?.dataset?.mzVersion !== "2.10.0"; i++) {
         await new Promise(r => setTimeout(r, 50));
       }
       const w = f.contentWindow, d = f.contentDocument;
-      if (d?.documentElement?.dataset?.mzVersion !== "2.9.6") throw new Error("v2.9.6の実画面まで届かない");
+      if (d?.documentElement?.dataset?.mzVersion !== "2.10.0") throw new Error("v2.10.0の実画面まで届かない");
       for (let i = 0; i < 80 && d.querySelector(".site-brand")?.getBoundingClientRect().width === 0; i++) {
         await new Promise(r => setTimeout(r, 50));
       }
@@ -12412,14 +12412,14 @@ async function countSamples(ns, file, fromSec) {
     }
   });
 
-  group("㊺ MarchinZ Pulse（v2.9.6）");
+  group("㊺ MarchinZ Pulse（v2.10.0）");
   await test("★実画面操作: TOP最新Moment 2件・投稿入口・通知設定", async () => {
     const f = document.createElement("iframe");
     f.style.cssText = "position:fixed;left:-9999px;top:0;width:390px;height:844px;border:0";
     f.src = "../../index.html?mzQaPulse=1#top";
     document.body.appendChild(f);
     try {
-      for (let i = 0; i < 160 && f.contentDocument?.documentElement?.dataset?.mzVersion !== "2.9.6"; i++) {
+      for (let i = 0; i < 160 && f.contentDocument?.documentElement?.dataset?.mzVersion !== "2.10.0"; i++) {
         await new Promise(r => setTimeout(r, 50));
       }
       const w = f.contentWindow, d = f.contentDocument;
