@@ -145,6 +145,30 @@ firebase deploy --only firestore:rules,storage
 - **FloMarchingのDCI FULL SHOWを再取得**する場合: macOSで、yt-dlpを入れたPythonから `python3 import_flomarching_dci_full_shows.py` を実行する。公開動画を全件確認し、**10分以上**かつ**タイトルまたはサムネイルOCRに `FULL SHOW`**がある動画だけを `大会動画リスト_FloMarching_DCI.csv` へ出力する。その後、上記手順3〜4を実行する。
 - **POV（プレイヤー視点）を追加**する場合: `大会動画リスト_POV.csv` のみを更新する。DCI CSVへ混在させず、`分類` は必ず `POV` とする。**YouTube上で公開・5分以上・奏者本人の頭部／胸部／楽器付近からの視点を確認できる動画**だけを採用する。
 
+  **手で検索して拾ってはいけない。必ず `scout_pov_videos.py` を通す。**
+
+  ```bash
+  python3 scout_pov_videos.py            # 探索 → pov_candidates.tsv
+  python3 scout_pov_videos.py --quick    # 収録済みチャンネルの新着だけ見る(速い)
+  python3 scout_pov_videos.py --accept ID1 ID2 ...   # 採る
+  python3 scout_pov_videos.py --reject ID3 ID4 ...   # 採らない
+  python3 scout_pov_videos.py --apply    # 採用ぶんをCSVへ追記(大会名は下書き。手で整える)
+  ```
+
+  他の3ソースは「特定チャンネルを全件なめる」ので母集団が定まっているが、**POVだけは
+  母集団がYouTube全体**で、しかも**投稿者の多くが個人チャンネル**（奏者本人が自分の
+  ヘッドカムを1〜3本だけ上げる）。だから検索の目視では必ず取りこぼす。
+  実際 2026-08-10 に、同じ Bluecoats 2026 Victory Run のヘッドカムが
+  **3つの別々の個人チャンネル**から上がっていたのに1本しか収録できなかった。
+
+  `scout_pov_videos.py` は3軸で母集団を作り、**タイトルと概要欄の両方**で判定する
+  （個人投稿はタイトルが素っ気なく、楽器名が概要欄にしか無いことがある）。
+  判断は `pov_ledger.json` に貯まるので、再実行しても既に見た動画は出てこない。
+
+  判定を変えたら **`python3 test_scout_pov_videos.py`** を必ず通す（18件）。
+  この試験には過去に取りこぼした3本が回帰として入っている。**落ちたときに試験の方を
+  書き換えない**こと（通るだけの試験になる）。
+
 ### 反映確認の最小チェック
 
 - `CSV` / `data.json` / `data.inline.js` の件数が一致している（`check_data.py` が通る）
