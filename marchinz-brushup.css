@@ -6804,19 +6804,23 @@ input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
   /* プロフィール画像が大きく描画されても、表示名の先頭を覆わない。
      iPhone では画像と本文を同じ行の別列に明示的に固定する。 */
   #page-profile .user-profile-identity-row {
-    grid-template-columns: 80px minmax(0, 1fr);
-    align-items: start;
+    /* styles.css の 600px 以上用112pxアバターにも余白を確保する。 */
+    grid-template-columns: 112px minmax(0, 1fr);
+    align-items: center;
   }
   #page-profile .user-profile-avatar-lg,
   #page-profile .user-profile-identity-row .marchinz-protected-photo-inner {
     grid-column: 1;
     grid-row: 1;
+    justify-self: start;
+    align-self: center;
     position: relative;
     z-index: 0;
   }
   #page-profile .user-profile-identity-text {
     grid-column: 2;
     grid-row: 1;
+    align-self: center;
     position: relative;
     z-index: 1;
     width: auto;
