@@ -104,8 +104,9 @@ def main() -> int:
             ROOT / "大会動画リスト_マーチング祭.csv",
             ROOT / "大会動画リスト_DrumcorpsfunTV.csv",
             ROOT / "大会動画リスト_FloMarching_DCI.csv",
+            ROOT / "大会動画リスト_POV.csv",
         ],
-        help="対象 CSV（省略時はマーチング祭 + DrumcorpsfunTV + FloMarching）",
+        help="対象 CSV（省略時はマーチング祭 + DrumcorpsfunTV + FloMarching + POV）",
     )
     args = ap.parse_args()
     total = 0

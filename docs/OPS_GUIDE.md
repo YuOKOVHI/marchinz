@@ -2,7 +2,7 @@
 
 ## 1) 日常運用
 
-- **ショウ動画の一覧データは `sync_csv_to_json.py` の `SOURCE_CSVS` に登録したCSV群が正（Single source of truth）**です。現在はマーチング祭・DrumcorpsfunTV・FloMarching（DCI）の3本です。新規取り込み・追記は **必ず先に該当CSV** を更新し、`python3 sync_csv_to_json.py` で派生ファイルへ反映します（`data.json` / `data.inline.js` を直接いじらない）。
+- **ショウ動画の一覧データは `sync_csv_to_json.py` の `SOURCE_CSVS` に登録したCSV群が正（Single source of truth）**です。現在はマーチング祭・DrumcorpsfunTV（DCJ）・FloMarching（DCI）・POVの4本です。新規取り込み・追記は **必ず先に該当CSV** を更新し、`python3 sync_csv_to_json.py` で派生ファイルへ反映します（`data.json` / `data.inline.js` を直接いじらない）。
 - Google Drive 上ではフォルダ名が `マイドライブ` と `マイドライブ`（Unicode の分解の違い）のように **表記が変わっても同一フォルダを指す**ことがあります。必ず `010_MarchinZ` 直下の対象CSVを編集してください。
 - MLLはFirestoreの `mll_logs` / `mll_profiles` に保存されます。
 - 画像やバナー差し替えは `logo/` と `images/` を更新します。
@@ -143,6 +143,7 @@ firebase deploy --only firestore:rules,storage
 - **配信前・待機中のみの URL**（まだ VOD になっていない）: `yt-dlp` でチャプターが取れないため、**この方法では CSV に行を足せない**。アーカイブ公開後に再実行する。
 - **`build_data.py`**: チャンネル全体の取得・一覧再構築用。**手で整えた `大会動画リスト_マーチング祭.csv` を上書きし得る**（`--full` は特に全置換）。手修正済みの CSV を正とする運用では、**安易に `--full` を使わない**。増分で追加される行は必要に応じて CSV 側で後から整える。
 - **FloMarchingのDCI FULL SHOWを再取得**する場合: macOSで、yt-dlpを入れたPythonから `python3 import_flomarching_dci_full_shows.py` を実行する。公開動画を全件確認し、**10分以上**かつ**タイトルまたはサムネイルOCRに `FULL SHOW`**がある動画だけを `大会動画リスト_FloMarching_DCI.csv` へ出力する。その後、上記手順3〜4を実行する。
+- **POV（プレイヤー視点）を追加**する場合: `大会動画リスト_POV.csv` のみを更新する。DCI CSVへ混在させず、**YouTube上で公開・5分以上・奏者本人の頭部／胸部／楽器付近からの視点を確認できる動画**だけを採用する。
 
 ### 反映確認の最小チェック
 

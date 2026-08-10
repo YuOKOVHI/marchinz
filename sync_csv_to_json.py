@@ -23,7 +23,9 @@ ROOT = Path(__file__).resolve().parent
 PRIMARY_CSV = ROOT / "大会動画リスト_マーチング祭.csv"
 DRUMCORPS_CSV = ROOT / "大会動画リスト_DrumcorpsfunTV.csv"
 FLO_MARCHING_CSV = ROOT / "大会動画リスト_FloMarching_DCI.csv"
-SOURCE_CSVS = (PRIMARY_CSV, DRUMCORPS_CSV, FLO_MARCHING_CSV)
+POV_CSV = ROOT / "大会動画リスト_POV.csv"
+# 表示・取り込みの順序: マーチング祭 → DCJ → DCI → POV。
+SOURCE_CSVS = (PRIMARY_CSV, DRUMCORPS_CSV, FLO_MARCHING_CSV, POV_CSV)
 # backward compatibility for scripts importing OUT_CSV
 OUT_CSV = PRIMARY_CSV
 OUT_JSON = ROOT / "data.json"

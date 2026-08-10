@@ -41,6 +41,7 @@
     matsuri: "マーチング祭",
     drumcorps: "DrumcorpsfunTV",
     dci: "FloMarching（DCI）",
+    pov: "POV（プレイヤー視点）",
   };
   /** 大会動画の公開分類。タブ・保存した検索・URL復元で同じ正本を使う。 */
   const VIDEO_CATEGORIES = ["マーチング団体等", "スリークロスチーム", "海外"];
@@ -79,7 +80,7 @@
     recommendVisibleCount: RECOMMEND_INITIAL,
     /** 表示中タグで手動除外した団体/チーム名 */
     excludedOrgTeams: new Set(),
-    /** 配信元絞り込み（""=すべて, "matsuri"=マーチング祭, "drumcorps"=DrumcorpsfunTV） */
+    /** 配信元絞り込み（""=すべて、マーチング祭／DCJ／DCI／POV） */
     sourceFilter: "",
     /** 配信年での絞り込み（null=すべて, "2026" など西暦4桁の文字列） */
     yearFilter: null,
@@ -158,6 +159,7 @@
     if (state.sourceFilter === "matsuri") return isMarchingMatsuriVideo(row);
     if (state.sourceFilter === "drumcorps") return isDrumcorpsFunTvChannelRow(row);
     if (state.sourceFilter === "dci") return isFloMarchingChannelRow(row);
+    if (state.sourceFilter === "pov") return isPovChannelRow(row);
     return true;
   }
 
@@ -297,7 +299,10 @@
 
   function rowChannelUrl(row) {
     const u = String(row["動画配信元URL"] ?? "").trim();
-    return u || DEFAULT_CHANNEL_URL;
+    if (u) return u;
+    // POV のように独立した配信元名はあるが単一チャンネルを持たない編集リストは、
+    // マーチング祭チャンネルへ誤ってリンクしない。
+    return String(row["動画配信元"] ?? "").trim() ? "" : DEFAULT_CHANNEL_URL;
   }
 
   /** @type {{ byUrl: Map<string,string>; byChannelId: Map<string,string>; byName: Map<string,string> } | null} */
@@ -516,6 +521,13 @@
       .replace(/\s+/g, "");
     const url = String(rowChannelUrl(row) || "").toLowerCase().normalize("NFKC");
     return name.includes("flomarching") || url.includes("@flomarching");
+  }
+
+  function isPovChannelRow(row) {
+    return String(rowChannelName(row) || "")
+      .toLowerCase()
+      .normalize("NFKC")
+      .replace(/\s+/g, "") === "pov";
   }
 
   /**
@@ -1155,6 +1167,7 @@
     if (src === "m" || src === "matsuri") state.sourceFilter = "matsuri";
     else if (src === "d" || src === "drumcorps") state.sourceFilter = "drumcorps";
     else if (src === "f" || src === "flo" || src === "dci") state.sourceFilter = "dci";
+    else if (src === "p" || src === "pov") state.sourceFilter = "pov";
     const dir = p.has("dir") ? p.get("dir") : p.get("d");
     if (dir === "asc" || dir === "desc") state.sortDir = dir;
     const ps = p.get("pageSize") ?? p.get("z");
@@ -1238,6 +1251,7 @@
     if (state.sourceFilter === "matsuri") p.set("src", "m");
     else if (state.sourceFilter === "drumcorps") p.set("src", "d");
     else if (state.sourceFilter === "dci") p.set("src", "f");
+    else if (state.sourceFilter === "pov") p.set("src", "p");
     if (state.page > 1) p.set("p", String(state.page));
     if (state.pageSize !== 10) p.set("z", String(state.pageSize));
     if (state.excludedOrgTeams.size > 0) {
@@ -3258,7 +3272,7 @@
       item.addEventListener("click", (e) => {
         e.stopPropagation();
         const v = item.getAttribute("data-source") || "";
-        state.sourceFilter = ["matsuri", "drumcorps", "dci"].includes(v) ? v : "";
+        state.sourceFilter = ["matsuri", "drumcorps", "dci", "pov"].includes(v) ? v : "";
         closeVideoSourceFilterMenu();
         cancelSearchDebounce();
         applyFilter();
@@ -3356,7 +3370,7 @@
     }
     return new Promise((resolve) => {
       const script = document.createElement("script");
-      script.src = "data.inline.js?v=1.26.38";
+      script.src = "data.inline.js?v=1.26.39";
       script.async = true;
       script.onload = () => resolve(window.__MARCHINZ_DATA || null);
       script.onerror = () => resolve(null);
