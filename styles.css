@@ -16177,3 +16177,123 @@ button.mz-site-announcement-banner-link {
     white-space: nowrap;
   }
 }
+
+/* イベント一覧: 種別・年を1行で見せ、登録を唯一の主操作にする。 */
+@media (max-width: 719px) {
+  .calendar-events-head-band nav.tabs.youtube-tabs.mz-tab-strip-yamap[aria-label="イベント種別の絞り込み"] {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px;
+    overflow: visible;
+    padding: 4px;
+  }
+
+  .calendar-events-head-band nav.tabs.youtube-tabs.mz-tab-strip-yamap[aria-label="イベント種別の絞り込み"] .youtube-tab-btn {
+    min-height: 44px;
+    padding: 0.5rem 0.08rem;
+    font-size: 0.72rem;
+  }
+
+  .calendar-events-head-band .calendar-ev-register-action-row {
+    padding: 0.5rem 0 0.42rem;
+  }
+
+  .calendar-events-head-band .calendar-ev-open-register-btn {
+    width: 100%;
+    min-height: 52px;
+    padding: 0.7rem 1rem;
+    border: 0;
+    border-radius: 14px;
+    background: var(--accent, #1e4fd6);
+    color: #fff;
+    font-size: 1rem;
+    font-weight: 800;
+    box-shadow: 0 8px 18px rgba(30, 79, 214, 0.24);
+  }
+
+  .calendar-events-head-band .calendar-ev-open-register-btn:hover,
+  .calendar-events-head-band .calendar-ev-open-register-btn[aria-expanded="true"] {
+    border: 0;
+    background: #173faa;
+    color: #fff;
+  }
+
+  .calendar-events-head-band .calendar-ev-view-switcher {
+    margin-top: 0.1rem;
+  }
+
+  .calendar-ev-controls-row {
+    flex-wrap: nowrap;
+    gap: 0.42rem;
+    margin: 0.1rem 0 0.35rem;
+  }
+
+  .calendar-ev-controls-row .calendar-ev-sort-bar {
+    flex: 1 1 0;
+    min-width: 0;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding: 2px;
+  }
+
+  .calendar-ev-controls-row .calendar-ev-sort-bar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .calendar-ev-controls-row .calendar-ev-sort-intro {
+    display: none;
+  }
+
+  .calendar-ev-controls-row .calendar-ev-filter-intro {
+    margin-left: 0;
+  }
+
+  .calendar-ev-controls-row .calendar-ev-sort-btn,
+  .calendar-ev-controls-row .calendar-ev-upcoming-filter {
+    min-height: 40px;
+  }
+
+  .calendar-ev-controls-row .calendar-ev-sort-btn {
+    flex: 0 0 auto;
+    padding: 0.36rem 0.58rem;
+    font-size: 0.72rem;
+    white-space: nowrap;
+  }
+
+  .calendar-ev-controls-row .calendar-ev-upcoming-filter {
+    flex: 0 0 auto;
+    padding: 0 0.42rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--panel, #fff);
+    font-size: 0.72rem;
+    white-space: nowrap;
+  }
+
+  #calendar-ev-year-reel.calendar-ev-year-reel {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 0.38rem;
+    margin: 0.25rem 0 0.6rem;
+    padding: 0.3rem;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  #calendar-ev-year-reel.calendar-ev-year-reel[hidden] {
+    display: none !important;
+  }
+
+  #calendar-ev-year-reel.calendar-ev-year-reel::-webkit-scrollbar {
+    display: none;
+  }
+
+  #calendar-ev-year-reel.calendar-ev-year-reel .youtube-tab-btn {
+    flex: 0 0 auto;
+    min-width: 5.7rem;
+    min-height: 44px;
+    padding: 0.48rem 0.7rem;
+  }
+}
