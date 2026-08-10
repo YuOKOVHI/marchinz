@@ -485,7 +485,7 @@ a.user-account-dropdown-item {
 
   nav.tabs.youtube-tabs.mz-tab-strip-yamap,
   .youtube-tabs.mz-tab-strip-yamap {
-    /* 大会動画の3分類は、右へスワイプしないと海外が見えない設計にしない。
+    /* 大会動画の分類は、右へスワイプしないと見えない設計にしない。
        初見でも全分類を発見できるよう、スマホでは常に一列に収める。 */
     display: grid;
     grid-template-columns: 1.35fr 1fr 0.82fr;
@@ -498,6 +498,12 @@ a.user-account-dropdown-item {
     background: rgba(15, 33, 56, 0.06);
     max-width: 100%;
     min-width: 0;
+  }
+
+  /* 大会動画はPOVを含む4分類。日本語の長い「マーチング等」を保ちながら
+     「海外」と「POV」をそれぞれ独立して発見できる幅にする。 */
+  #page-videos nav.tabs.youtube-tabs.mz-tab-strip-yamap[aria-label="大会動画の分類"] {
+    grid-template-columns: 1.35fr 1fr 0.82fr 0.68fr;
   }
 
   nav.tabs.youtube-tabs.mz-tab-strip-yamap::-webkit-scrollbar,
@@ -9294,6 +9300,11 @@ html.calendar-ev-compose-active #calendar-edit-overlay {
 
 .youtube-tabs {
   margin-bottom: 0.95rem;
+}
+
+/* 大会動画の分類は、端末や表示幅にかかわらず44px以上のタップ領域を保つ。 */
+#page-videos nav.tabs.youtube-tabs[aria-label="大会動画の分類"] button[role="tab"] {
+  min-height: 44px;
 }
 
 .youtube-tab-btn {

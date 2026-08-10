@@ -44,11 +44,12 @@
     pov: "POV（プレイヤー視点）",
   };
   /** 大会動画の公開分類。タブ・保存した検索・URL復元で同じ正本を使う。 */
-  const VIDEO_CATEGORIES = ["マーチング団体等", "スリークロスチーム", "海外"];
+  const VIDEO_CATEGORIES = ["マーチング団体等", "スリークロスチーム", "海外", "POV"];
   const VIDEO_CATEGORY_LABELS = {
     マーチング団体等: "マーチング等",
     スリークロスチーム: "MIX3",
     海外: "海外",
+    POV: "POV",
   };
   /** 大会動画・初期表示で必ず先頭に試す団体（順固定・各1動画・最大3枠）。動画が無い団体はスキップ。 */
   const INITIAL_RANDOM_PRIORITY_SLOTS = 3;
@@ -160,6 +161,46 @@
     if (state.sourceFilter === "drumcorps") return isDrumcorpsFunTvChannelRow(row);
     if (state.sourceFilter === "dci") return isFloMarchingChannelRow(row);
     if (state.sourceFilter === "pov") return isPovChannelRow(row);
+    return true;
+  }
+
+  function videoCategoryTabs() {
+    return document.querySelectorAll(
+      '#page-videos nav[aria-label="大会動画の分類"] button[role="tab"]',
+    );
+  }
+
+  function setSelectedVideoCategoryTab(category) {
+    let selectedId = "";
+    videoCategoryTabs().forEach((btn) => {
+      const selected = btn.getAttribute("data-category") === category;
+      btn.setAttribute("aria-selected", selected ? "true" : "false");
+      btn.tabIndex = selected ? 0 : -1;
+      if (selected) selectedId = btn.id;
+    });
+    if (resultsPanel && selectedId) {
+      resultsPanel.setAttribute("aria-labelledby", selectedId);
+    }
+  }
+
+  function categoryHasRowsForSourceFilter(category, source = state.sourceFilter) {
+    if (!source || !state.rows.length) return true;
+    return state.rows.some(
+      (row) => rowCategory(row) === category && rowMatchesVideoSourceFilter(row),
+    );
+  }
+
+  function firstVideoCategoryForSourceFilter(source) {
+    if (!source || !state.rows.length) return "";
+    return (
+      VIDEO_CATEGORIES.find((category) => categoryHasRowsForSourceFilter(category, source)) || ""
+    );
+  }
+
+  function clearIncompatibleVideoSourceFilter(category) {
+    if (!state.sourceFilter || categoryHasRowsForSourceFilter(category)) return false;
+    state.sourceFilter = "";
+    syncVideoSourceFilterButton();
     return true;
   }
 
@@ -617,16 +658,15 @@
     );
   }
 
-  function switchVideosCategoryTab(category) {
+  function switchVideosCategoryTab(category, { recordHistory = true } = {}) {
     if (!category || category === state.tab) return;
+    if (recordHistory) history.pushState(null, "", window.location.href);
     cancelSearchDebounce();
     state.tab = category;
     clearExactFilters();
     clearExcludedOrgs();
-    document.querySelectorAll('.tabs button[role="tab"]').forEach((b) => {
-      const cat = b.getAttribute("data-category");
-      b.setAttribute("aria-selected", cat === category ? "true" : "false");
-    });
+    clearIncompatibleVideoSourceFilter(category);
+    setSelectedVideoCategoryTab(category);
     applyFilter();
     renderBrowsePanel();
   }
@@ -855,10 +895,8 @@
     if (qTeam) qTeam.value = c.team || "";
     if (qEvent) qEvent.value = c.event || "";
     if (qFree) qFree.value = c.free || "";
-    document.querySelectorAll('.tabs button[role="tab"]').forEach((b) => {
-      const cat = b.getAttribute("data-category");
-      b.setAttribute("aria-selected", cat === state.tab ? "true" : "false");
-    });
+    clearIncompatibleVideoSourceFilter(state.tab);
+    setSelectedVideoCategoryTab(state.tab);
     applyFilter();
     renderBrowsePanel();
   }
@@ -1059,7 +1097,7 @@
   }
 
   /** 共有・履歴用の短いクエリキー。団体は `o=団体ID`（CSV「団体ID」優先・空なら団体名から導出）、従来の tab / team / t も readUrlState で読める */
-  const SHARE_C_TO_TAB = { m: "マーチング団体等", x: "スリークロスチーム", o: "海外" };
+  const SHARE_C_TO_TAB = { m: "マーチング団体等", x: "スリークロスチーム", o: "海外", p: "POV" };
   const SHARE_SORT_TO_S = { 配信日: "dt", "団体/チーム": "tm" };
   const SHARE_S_TO_SORT = { dt: "配信日", tm: "団体/チーム" };
 
@@ -1122,22 +1160,24 @@
   /** URL クエリから検索・タブ・並べ替えを復元。戻り値: URL に page があればその番号、なければ null */
   function readUrlState() {
     const p = new URLSearchParams(window.location.search);
+    state.tab = "マーチング団体等";
+    state.sortKey = "配信日";
+    state.sortDir = "desc";
+    state.sourceFilter = "";
+    state.pageSize = 10;
+    state.excludedOrgTeams = new Set();
+    if (qTeam) qTeam.value = "";
+    if (qEvent) qEvent.value = "";
+    if (qFree) qFree.value = "";
+    if (pageSizeSelect) pageSizeSelect.value = "10";
     const tab = p.get("tab");
     const cTab = p.get("c");
     if (VIDEO_CATEGORIES.includes(tab)) {
       state.tab = tab;
-      document.querySelectorAll('.tabs button[role="tab"]').forEach((b) => {
-        const cat = b.getAttribute("data-category");
-        b.setAttribute("aria-selected", cat === tab ? "true" : "false");
-      });
     } else if (Object.prototype.hasOwnProperty.call(SHARE_C_TO_TAB, cTab || "")) {
       const t = SHARE_C_TO_TAB[cTab];
       if (t) {
         state.tab = t;
-        document.querySelectorAll('.tabs button[role="tab"]').forEach((b) => {
-          const cat = b.getAttribute("data-category");
-          b.setAttribute("aria-selected", cat === t ? "true" : "false");
-        });
       }
     }
     if (qTeam) {
@@ -1182,6 +1222,8 @@
     if (ex) {
       state.excludedOrgTeams = new Set(ex.split("|").map((s) => s.trim()).filter(Boolean));
     }
+    clearIncompatibleVideoSourceFilter(state.tab);
+    setSelectedVideoCategoryTab(state.tab);
     const pg = p.has("page") ? p.get("page") : p.get("p");
     if (pg) {
       const n = Math.max(1, parseInt(pg, 10) || 1);
@@ -1229,6 +1271,8 @@
       p.set("c", "x");
     } else if (state.tab === "海外") {
       p.set("c", "o");
+    } else if (state.tab === "POV") {
+      p.set("c", "p");
     } else if (state.tab !== "マーチング団体等") {
       p.set("tab", state.tab);
     }
@@ -3239,7 +3283,7 @@
     shareSearchBtns().forEach((b) => {
       b.disabled = dis;
     });
-    document.querySelectorAll('.tabs button[role="tab"]').forEach((btn) => {
+    videoCategoryTabs().forEach((btn) => {
       btn.disabled = dis;
     });
     if (browseByOrg) browseByOrg.disabled = dis;
@@ -3275,6 +3319,11 @@
         state.sourceFilter = ["matsuri", "drumcorps", "dci", "pov"].includes(v) ? v : "";
         closeVideoSourceFilterMenu();
         cancelSearchDebounce();
+        const category = firstVideoCategoryForSourceFilter(v);
+        if (category && category !== state.tab) {
+          switchVideosCategoryTab(category);
+          return;
+        }
         applyFilter();
       });
     });
@@ -3370,7 +3419,7 @@
     }
     return new Promise((resolve) => {
       const script = document.createElement("script");
-      script.src = "data.inline.js?v=1.26.39";
+      script.src = "data.inline.js?v=1.26.40";
       script.async = true;
       script.onload = () => resolve(window.__MARCHINZ_DATA || null);
       script.onerror = () => resolve(null);
@@ -3671,11 +3720,28 @@
     });
   }
 
-  document.querySelectorAll('.tabs button[role="tab"]').forEach((btn) => {
+  videoCategoryTabs().forEach((btn) => {
     btn.addEventListener("click", () => {
       const cat = btn.getAttribute("data-category");
       if (!cat) return;
       switchVideosCategoryTab(cat);
+    });
+    btn.addEventListener("keydown", (event) => {
+      const tabs = [...videoCategoryTabs()];
+      const index = tabs.indexOf(btn);
+      if (index < 0) return;
+      let nextIndex = -1;
+      if (event.key === "ArrowRight") nextIndex = (index + 1) % tabs.length;
+      else if (event.key === "ArrowLeft") nextIndex = (index - 1 + tabs.length) % tabs.length;
+      else if (event.key === "Home") nextIndex = 0;
+      else if (event.key === "End") nextIndex = tabs.length - 1;
+      if (nextIndex < 0) return;
+      event.preventDefault();
+      const next = tabs[nextIndex];
+      const category = next.getAttribute("data-category");
+      if (!category) return;
+      switchVideosCategoryTab(category);
+      next.focus();
     });
   });
 
@@ -3798,11 +3864,9 @@
 
   function resetVideosPageToDefaultTab() {
     state.tab = "マーチング団体等";
-    document.querySelectorAll('#page-videos nav.tabs[role="tablist"] button[role="tab"]').forEach((b) => {
-      const cat = b.getAttribute("data-category");
-      if (!cat) return;
-      b.setAttribute("aria-selected", cat === state.tab ? "true" : "false");
-    });
+    state.sourceFilter = "";
+    syncVideoSourceFilterButton();
+    setSelectedVideoCategoryTab(state.tab);
     cancelSearchDebounce();
     clearExactFilters();
     clearExcludedOrgs();

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-version="2.18.1" data-mz-channel="beta">
+<html lang="ja" data-mz-version="2.18.3" data-mz-channel="beta">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -88,7 +88,7 @@
     />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css" />
     <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css?v=1.25.64" />
-    <link rel="stylesheet" href="styles.css?v=2.9.6" />
+    <link rel="stylesheet" href="styles.css?v=2.9.8" />
   <link rel="stylesheet" href="marchinz-brushup.css?v=2.13.0" />
     <!-- Microsoft Clarity -->
     <script type="text/javascript">
@@ -900,14 +900,17 @@
           </header>
 
           <nav class="tabs youtube-tabs mz-tab-strip-yamap" role="tablist" aria-label="大会動画の分類">
-          <button type="button" role="tab" id="tab-marching" aria-selected="true" data-category="マーチング団体等">
+          <button type="button" role="tab" id="tab-marching" aria-controls="results-panel" aria-selected="true" tabindex="0" data-category="マーチング団体等">
             マーチング等
           </button>
-          <button type="button" role="tab" id="tab-threecross" aria-label="MIX3（スリークロス）" aria-selected="false" data-category="スリークロスチーム">
+          <button type="button" role="tab" id="tab-threecross" aria-label="MIX3（スリークロス）" aria-controls="results-panel" aria-selected="false" tabindex="-1" data-category="スリークロスチーム">
             MIX3<span class="tabs-tab-cross-sub">（スリークロス）</span>
           </button>
-          <button type="button" role="tab" id="tab-overseas" aria-selected="false" data-category="海外">
+          <button type="button" role="tab" id="tab-overseas" aria-controls="results-panel" aria-selected="false" tabindex="-1" data-category="海外">
             海外
+          </button>
+          <button type="button" role="tab" id="tab-pov" aria-label="POV（プレイヤー視点）" aria-controls="results-panel" aria-selected="false" tabindex="-1" data-category="POV">
+            POV
           </button>
         </nav>
         <div class="videos-tab-notice-block">
@@ -965,7 +968,7 @@
                   <div class="search-options-row">
                     <label class="search-option-box"><input type="checkbox" id="opt-match-exact" /> 完全一致のみ</label>
                     <label class="search-option-box"
-                      ><input type="checkbox" id="opt-cross-both" checked /> マーチング、MIX3、海外を表示</label
+                      ><input type="checkbox" id="opt-cross-both" checked /> すべての分類を表示</label
                     >
                   </div>
                 </div>
@@ -1021,7 +1024,7 @@
 
         <p id="data-fetch-meta" class="data-fetch-meta" hidden style="display:none"></p>
 
-        <div class="results-panel" id="results-panel">
+        <div class="results-panel" id="results-panel" role="tabpanel" aria-labelledby="tab-marching">
           <div class="result-sort-bar" role="toolbar" aria-label="一覧の並び順と絞込み">
             <div class="result-sort-bar-main">
               <div class="result-sort-group">
@@ -4387,7 +4390,7 @@
     <script defer src="marchinz-admin-trash.js?v=1.25.105"></script>
     <script defer src="marchinz-admin-banned.js?v=1.25.64"></script>
     <script defer src="site-nav.js?v=2.11.4"></script>
-    <script defer src="data.inline.js?v=1.26.39"></script>
+    <script defer src="data.inline.js?v=1.26.40"></script>
     <script defer src="digest.inline.js?v=1.27.0"></script>
     <script defer src="marchinz-data-refresh.js?v=1.36.0"></script>
     <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
@@ -4414,7 +4417,7 @@
     <script defer src="marchinz-ops-announcement.js?v=1.25.64"></script>
     <script defer src="marchinz-like-show.js?v=1.26.61"></script>
     <script defer src="marchinz-engage-ui.js?v=1.25.64"></script>
-    <script defer src="marchinz-icons.js?v=2.5.2"></script>
+    <script defer src="marchinz-icons.js?v=2.5.3"></script>
     <script defer src="mll-role.js?v=1.28.1"></script>
     <script defer src="mll-video-mylist.js?v=2.9.5"></script>
     <script defer src="mll.js?v=1.26.62"></script>
@@ -4426,7 +4429,7 @@
     <script defer src="marchinz-moment-pulse.js?v=2.10.4"></script>
     <script defer src="user-profile-page.js?v=2.10.0"></script>
     <script defer src="marchinz-base.js?v=1.39.66"></script>
-    <script defer src="app.js?v=2.14.4"></script>
+    <script defer src="app.js?v=2.14.6"></script>
     <script defer src="marchinz-top-highlights.js?v=2.10.1"></script>
     <script defer src="marchinz-confetti.js?v=1.28.0"></script>
     <script defer src="marchinz-journey.js?v=1.30.1"></script>
