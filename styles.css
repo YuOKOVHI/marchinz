@@ -16297,3 +16297,13 @@ button.mz-site-announcement-banner-link {
     padding: 0.48rem 0.7rem;
   }
 }
+
+/* 写真がないモーメントは、メディア用の高さを確保しない。 */
+#community-hub-panel-moments .mlm-feed-card:not(.mlm-feed-card--with-photo) {
+  height: auto;
+  min-height: 0;
+}
+
+#community-hub-panel-moments .mlm-feed-card:not(.mlm-feed-card--with-photo) .mln-feed-card-body {
+  flex: 0 0 auto;
+}

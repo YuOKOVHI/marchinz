@@ -290,9 +290,11 @@
   function buildCardEl(row, author) {
     const d = row.data;
     const bodyExcerpt = excerptBody(d.body, 160);
+    const photoUrls = userPhotoUrls(d.photo_urls);
 
     const art = document.createElement("article");
-    art.className = "mln-feed-card mln-feed-card--media mln-feed-card--openable mlm-feed-card";
+    art.className = "mln-feed-card mln-feed-card--openable mlm-feed-card";
+    if (photoUrls.length) art.classList.add("mln-feed-card--media", "mlm-feed-card--with-photo");
     art.tabIndex = 0;
     art.setAttribute("role", "button");
     art.setAttribute("aria-label", `${bodyExcerpt} の詳細を開く`);
@@ -300,7 +302,7 @@
     const cardBody = document.createElement("div");
     cardBody.className = "mln-feed-card-body";
 
-    if (userPhotoUrls(d.photo_urls).length) {
+    if (photoUrls.length) {
       appendFeedCover(cardBody, d);
     }
 
