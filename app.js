@@ -118,7 +118,6 @@
   const qEvent = $("#q-event");
   const qFree = $("#q-free");
   const optMatchExact = $("#opt-match-exact");
-  const optCrossBoth = $("#opt-cross-both");
   const mix3Notice = $("#mix3-notice");
   const mix3AboutChipWrap = $("#mix3-about-chip-wrap");
   const mix3AboutOverlay = $("#mix3-about-overlay");
@@ -673,7 +672,6 @@
     if (qEvent) qEvent.value = "";
     if (qFree) qFree.value = "";
     if (optMatchExact) optMatchExact.checked = false;
-    if (optCrossBoth) optCrossBoth.checked = true;
     if (browseOrgFilterInput) browseOrgFilterInput.value = "";
     syncVideoSourceFilterButton();
   }
@@ -1704,24 +1702,13 @@
     const selectedOrg = String(state.exactOrgTeam ?? "").trim();
     const isFocusQuery = hasTheFocusToken(qTeam?.value ?? "");
     const isFocusSelected = hasTheFocusToken(selectedOrg);
-    const crossTabFocusMode = isFocusQuery || isFocusSelected;
-    const hasSearchOrExact =
-      crossTabFocusMode ||
-      Boolean(teamQ) ||
-      Boolean(e) ||
-      Boolean(f) ||
-      state.exactOrgTeam !== null ||
-      state.exactEvent !== null;
-    // POV / 海外はタブ意図が強い。団体・大会検索しても「すべての分類を表示」で他分類を混ぜない。
-    const tabLocksCategory = state.tab === "POV" || state.tab === "海外";
-    const crossTabSearchMode =
-      !tabLocksCategory && Boolean(optCrossBoth?.checked ?? true) && hasSearchOrExact;
-
+    const isFocusMatch = isFocusQuery || isFocusSelected;
     const useExactMatch = Boolean(optMatchExact?.checked);
-
-    const sourceRows = crossTabSearchMode
-      ? state.rows.filter((row) => isVisibleRow(row))
-      : state.rows.filter((row) => rowCategory(row) === state.tab && isVisibleRow(row));
+    // 検索・完全一致・配信元・年のすべてを、選択中の分類内だけで行う。
+    // カテゴリをまたぐ検索は意図しない0件/混在の原因になるため提供しない。
+    const sourceRows = state.rows.filter(
+      (row) => rowCategory(row) === state.tab && isVisibleRow(row)
+    );
 
     const filterPredicate = (row, { skipYear = false } = {}) => {
       const orgTeam = normalize(rowOrgTeam(row));
@@ -1753,7 +1740,7 @@
       }
 
       if (
-        crossTabFocusMode &&
+        isFocusMatch &&
         !state.exactOrgTeam &&
         teamQ &&
         hasTheFocusToken(qTeam?.value ?? "") &&
@@ -3563,7 +3550,6 @@
     if (qEvent) qEvent.value = "";
     if (qFree) qFree.value = "";
     if (optMatchExact) optMatchExact.checked = false;
-    if (optCrossBoth) optCrossBoth.checked = true;
     state.yearFilter = null;
     renderYearChipActiveState();
     applyFilter();
@@ -3615,11 +3601,6 @@
   if (qFree) qFree.addEventListener("input", () => onSearchInputDebounced("free"));
   if (optMatchExact) {
     optMatchExact.addEventListener("change", () => {
-      onSearchInputDebounced();
-    });
-  }
-  if (optCrossBoth) {
-    optCrossBoth.addEventListener("change", () => {
       onSearchInputDebounced();
     });
   }
