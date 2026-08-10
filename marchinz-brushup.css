@@ -6699,6 +6699,76 @@ input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
 }
 
 @media (max-width: 719px) {
+  /* YouTube のカテゴリは8個あるため、大会動画などの3分類と同じ
+     1行グリッドを流用すると長い名前が衝突する。スマホでは2列に固定し、
+     すべての分類を読み切れるボタンとして扱う。 */
+  #page-youtube nav.youtube-tabs[aria-label="YouTubeカテゴリ"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 8px;
+  }
+
+  #page-youtube nav.youtube-tabs[aria-label="YouTubeカテゴリ"] .youtube-tab-btn {
+    width: 100%;
+    min-height: 44px;
+    padding: 0.55rem 0.65rem;
+    justify-content: flex-start;
+    gap: 0.42rem;
+    line-height: 1.25;
+    text-align: left;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  /* Moment は Board/Note と同じ幅の契約にする。
+     以前はここだけ mll-panel の固定カード幅が残り、投稿入口と投稿本文が
+     iPhone の画面外へ伸びることがあった。 */
+  #community-hub-panel-moments > .mll-panel {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    margin-inline: 0;
+    padding: 1.1rem 0 1.5rem;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    overflow-x: clip;
+  }
+
+  #community-hub-panel-moments .mlm-feed-create-row,
+  #community-hub-panel-moments #mlm-feed-cards,
+  #community-hub-panel-moments .mln-feed-card,
+  #community-hub-panel-moments .mln-feed-card-body,
+  #community-hub-panel-moments .mln-feed-card-title-row {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  #community-hub-panel-moments .mlm-feed-create-row {
+    margin: 0.5rem 0 0.75rem;
+  }
+
+  #community-hub-panel-moments .mz-pulse-composer {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  #community-hub-panel-moments .mz-pulse-composer span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  #community-hub-panel-moments .mlm-feed-card-text,
+  #community-hub-panel-moments .mln-feed-card-author {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
   .site-logo {
     max-width: 128px;
     max-height: 48px;
