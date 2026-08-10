@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-version="2.23.4" data-mz-channel="beta">
+<html lang="ja" data-mz-version="2.23.5" data-mz-channel="beta">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -89,7 +89,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css" />
     <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css?v=1.25.64" />
     <link rel="stylesheet" href="styles.css?v=2.23.4" />
-    <link rel="stylesheet" href="marchinz-brushup.css?v=2.23.4" />
+    <link rel="stylesheet" href="marchinz-brushup.css?v=2.23.5" />
     <!-- Microsoft Clarity -->
     <script type="text/javascript">
       (function(c,l,a,r,i,t,y){
@@ -2582,21 +2582,28 @@
               <p class="static-panel-lead">
                 マーチングの&quot;今&quot;を「MarchinZ Moment」
               </p>
-              <div class="mlm-feed-create-row">
-                <button type="button" id="mlm-feed-create-btn" class="mz-pulse-composer" aria-label="マーチングの雑談を投稿" hidden>
-                  <i class="fa-solid fa-circle-user" aria-hidden="true"></i>
-                  <span>マーチングの雑談なんでも！</span>
-                  <i class="fa-regular fa-image" aria-hidden="true"></i>
+              <div class="mlm-feed-toolbar">
+                <div class="mlm-feed-create-row">
+                  <button type="button" id="mlm-feed-create-btn" class="mz-pulse-composer" aria-label="マーチングの雑談を投稿" hidden>
+                    <i class="fa-solid fa-circle-user" aria-hidden="true"></i>
+                    <span>マーチングの雑談なんでも！</span>
+                    <i class="fa-regular fa-image" aria-hidden="true"></i>
+                  </button>
+                </div>
+                <button type="button" id="mlm-feed-search-toggle" class="mlm-feed-search-toggle" aria-label="モーメントを検索" aria-controls="mlm-feed-search-wrap" aria-expanded="false">
+                  <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
                 </button>
               </div>
               <p id="mlm-feed-msg" class="mll-create-msg mln-feed-msg" aria-live="polite"></p>
-              <input
-                type="search"
-                id="mlm-feed-search"
-                class="mz-search-input mln-feed-search"
-                placeholder="本文、投稿者で検索"
-                autocomplete="off"
-              />
+              <div id="mlm-feed-search-wrap" class="mlm-feed-search-wrap" hidden>
+                <input
+                  type="search"
+                  id="mlm-feed-search"
+                  class="mz-search-input mln-feed-search"
+                  placeholder="本文、投稿者で検索"
+                  autocomplete="off"
+                />
+              </div>
               <div id="mlm-feed-cards" class="mln-feed-grid" aria-busy="false"></div>
               <dialog id="mlm-moment-compose" class="eld-dialog mlm-moment-compose" hidden>
                 <div class="eld-dialog-surface" role="document">
@@ -4422,7 +4429,7 @@
     <script defer src="community.js?v=2.10.0"></script>
     <script defer src="event-log-diary.js?v=1.99.4"></script>
     <script defer src="mln-public-feed.js?v=2.10.0"></script>
-    <script defer src="mll-moment.js?v=2.10.7"></script>
+    <script defer src="mll-moment.js?v=2.10.8"></script>
     <script defer src="marchinz-moment-pulse.js?v=2.10.4"></script>
     <script defer src="user-profile-page.js?v=2.10.0"></script>
     <script defer src="marchinz-base.js?v=1.39.66"></script>

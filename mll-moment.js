@@ -513,6 +513,7 @@
         });
       }
       wireCreateButton();
+      wireSearchToggle();
       wireDialogs();
       await refresh();
     }
@@ -525,6 +526,12 @@
   function wireCreateButton() {
     const btn = document.getElementById("mlm-feed-create-btn");
     if (!btn || btn.dataset.mlmWired) return;
+    const row = btn.closest(".mlm-feed-create-row");
+    const syncVisibility = () => {
+      const hidden = !window.MLL_AUTH?.getUser?.()?.id;
+      btn.hidden = hidden;
+      if (row) row.hidden = hidden;
+    };
     btn.dataset.mlmWired = "1";
     btn.addEventListener("click", () => {
       const me = window.MLL_AUTH?.getUser?.();
@@ -535,11 +542,29 @@
       openCompose(null);
     });
     window.addEventListener("mll-auth-changed", () => {
-      const user = window.MLL_AUTH?.getUser?.();
-      btn.hidden = !user?.id;
+      syncVisibility();
     });
-    const user = window.MLL_AUTH?.getUser?.();
-    btn.hidden = !user?.id;
+    syncVisibility();
+  }
+
+  function wireSearchToggle() {
+    const btn = document.getElementById("mlm-feed-search-toggle");
+    const wrap = document.getElementById("mlm-feed-search-wrap");
+    const input = searchEl();
+    if (!btn || !wrap || !input || btn.dataset.mlmSearchToggleWired) return;
+    btn.dataset.mlmSearchToggleWired = "1";
+    btn.addEventListener("click", () => {
+      const opening = wrap.hidden;
+      wrap.hidden = !opening;
+      btn.setAttribute("aria-expanded", String(opening));
+      if (opening) {
+        requestAnimationFrame(() => input.focus());
+        return;
+      }
+      input.value = "";
+      searchQuery = "";
+      paintCards();
+    });
   }
 
   /** @param {HTMLElement} shell @param {{ editUrls: string[]; pendingFiles: File[]; coverPhotoIndex: number; err: HTMLElement }} ctx */

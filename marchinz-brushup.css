@@ -6847,6 +6847,53 @@ input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
   .site-logo { max-height: 54px; }
 }
 
+/* Moment: 書くことを主役にし、検索は必要な時だけアイコンから開く。 */
+#community-hub-panel-moments .mlm-feed-toolbar {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+  max-width: 640px;
+  margin: 0 auto 0.45rem;
+}
+
+#community-hub-panel-moments .mlm-feed-toolbar .mlm-feed-create-row {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+
+#community-hub-panel-moments .mlm-feed-search-toggle {
+  display: grid;
+  flex: 0 0 52px;
+  place-items: center;
+  min-height: 52px;
+  padding: 0;
+  border: 1px solid rgba(30, 79, 214, 0.24);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--blue, #1e4fd6);
+  font-size: 1.15rem;
+  cursor: pointer;
+}
+
+#community-hub-panel-moments .mlm-feed-search-toggle:hover,
+#community-hub-panel-moments .mlm-feed-search-toggle[aria-expanded="true"] {
+  border-color: var(--blue, #1e4fd6);
+  background: #f4f7ff;
+}
+
+#community-hub-panel-moments .mlm-feed-search-toggle:focus-visible {
+  outline: 2px solid var(--blue, #1e4fd6);
+  outline-offset: 2px;
+}
+
+#community-hub-panel-moments .mlm-feed-search-wrap {
+  max-width: 640px;
+  margin: 0 auto 0.45rem;
+}
+
+#community-hub-panel-moments .mlm-feed-search-wrap[hidden] { display: none; }
+
 /* Moment: 見出し・投稿入口・検索の順を保ちつつ、スマホの縦余白だけを整える。 */
 @media (max-width: 719px) {
   #community-hub-panel-moments > .mll-panel {
@@ -6861,6 +6908,10 @@ input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
 
   #community-hub-panel-moments .mlm-feed-create-row {
     margin: 0.2rem 0 0.45rem;
+  }
+
+  #community-hub-panel-moments .mlm-feed-toolbar .mlm-feed-create-row {
+    margin: 0;
   }
 
   #community-hub-panel-moments .mln-feed-search {
