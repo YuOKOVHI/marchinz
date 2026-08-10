@@ -1,0 +1,8 @@
+# POV探索の個人チャンネル見張り台帳
+#
+# ユーザーから提示された動画、または個人投稿だと確認できた候補のチャンネルURLを
+# 1行ずつ追加する。scout_pov_videos.py は通常探索・--quick の両方で全行を再訪する。
+# 公式団体を無差別に追加しない(投稿数が多く検索母集団を汚すため)。
+
+# 2026-08-10: Blue Devils 2026 Euphonium Soloist Cam (BLHa1LK_ib8)
+https://www.youtube.com/@chasethomasmusic

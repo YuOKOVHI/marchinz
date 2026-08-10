@@ -37,6 +37,9 @@ REGRESSION_MISSED = [
     ("0_eeiZoTLYY", "Bluecoats 2026 - Victory Run - Lead Mellophone Cam", 846),
     ("FQfM-hTy3uA", "Bluecoats 2026 “Gravity & Grace” Lead Trumpet Cam - Victory Run", 932),
     ("7y2sDQ-Lmg4", "Bluecoats 2026 Trumpet Screamer Cam - Victory Run - Jack Zirkelbach", 955),
+    # 2026-08-10に優さんから提示。個人投稿者 Chase Thomas の動画は横断探索時点で
+    # 新着だったため未収録だった。Soloist Cam は楽器×cam と団体文脈で拾う。
+    ("BLHa1LK_ib8", "Blue Devils 2026 | Zei | Euphonium Soloist Cam | Chase Thomas", 807),
 ]
 
 # ── 拾うべき(概要欄にしか手掛かりが無い個人投稿を含む) ──────────
@@ -115,8 +118,11 @@ def main() -> int:
         fails.append("個人チャンネルの直近確認上限が小さすぎる")
     if S.SNOWBALL_CHANNEL_SCAN_LIMIT < 10:
         fails.append("雪だるま探索の個人チャンネル確認上限が小さすぎる")
+    if "https://www.youtube.com/@chasethomasmusic" not in S.watch_channels():
+        fails.append("個人投稿者Chase Thomasが見張り台帳から抜けた")
 
-    total = len(REGRESSION_MISSED) + len(SHOULD_KEEP) + len(SHOULD_DROP) + 3
+    # 直近365日・尺・個人チャンネル再訪の3つの候補門に加え、見張り台帳の保持も数える。
+    total = len(REGRESSION_MISSED) + len(SHOULD_KEEP) + len(SHOULD_DROP) + 4
     if fails:
         print(f"FAIL {len(fails)}/{total}")
         for f in fails:

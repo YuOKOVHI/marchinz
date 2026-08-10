@@ -13,6 +13,7 @@
     軸1 検索      団体 × 年 × 役割/楽器 × カメラ語 を掛け合わせて横断検索
     軸2 雪だるま  本判定を通った投稿者の最新20本を列挙(個人chは小さいので安い)
     軸3 再訪      CSV に載っているチャンネルは毎回全件列挙(新着に追随)
+    軸4 見張り    個人チャンネルの提示・発見元を watchlist で毎回再訪
 
 ■ 判定はタイトルと **概要欄** の両方を読む
   個人投稿はタイトルが素っ気ない("Victory Run 2026" だけ等)ことがあり、
@@ -49,6 +50,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 POV_CSV = ROOT / "大会動画リスト_POV.csv"
 LEDGER = ROOT / "pov_ledger.json"
+WATCHLIST = ROOT / "pov_channel_watchlist.txt"
 CACHE = Path.home() / "Movies" / ".cache" / "marchinz-pov-scout"
 
 MIN_SEC = 300  # 5分
@@ -319,6 +321,22 @@ def csv_channels() -> set[str]:
     return out
 
 
+def watch_channels() -> set[str]:
+    """人手で確認済みの個人投稿者を、CSV採用状況と無関係に毎回再訪する。
+
+    個人チャンネルは投稿数が少なく、横断検索の順位変動で落ちやすい。ユーザーから
+    提示された動画・調査で見つけた発信者は `pov_channel_watchlist.txt` に残し、
+    次回以降の探索でも必ず母集団へ戻す。空行と # コメントは許容する。
+    """
+    if not WATCHLIST.exists():
+        return set()
+    return {
+        line.strip().rstrip("/")
+        for line in WATCHLIST.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+
+
 # ── 本体 ───────────────────────────────────────────────
 def scout(quick: bool, workers: int, since: date, search_results: int) -> list[dict]:
     known = csv_ids()
@@ -343,9 +361,11 @@ def scout(quick: bool, workers: int, since: date, search_results: int) -> list[d
             n += 1
         return n
 
-    # ── 軸3: CSV収録チャンネルの再訪(新着追随) ──
-    print("[軸3] 収録済みチャンネルを再訪", file=sys.stderr)
-    for cu in sorted(csv_channels()):
+    # ── 軸3/4: 収録済み・見張りチャンネルの再訪(新着追随) ──
+    # watchlist は「まだCSVに追加できない/初回の個人投稿者」も救う。
+    revisit = csv_channels() | watch_channels()
+    print(f"[軸3/4] 収録済み・見張りチャンネルを再訪 ({len(revisit)}件)", file=sys.stderr)
+    for cu in sorted(revisit):
         channels_done.add(cu)
         n = absorb(flat_list(cu.rstrip("/") + "/videos", playlist_end=CHANNEL_SCAN_LIMIT),
                    f"revisit:{cu}")
