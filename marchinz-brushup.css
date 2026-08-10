@@ -1734,7 +1734,9 @@ body {
 }
 
 .page-hero.mz-philosophy-header {
-  margin: 0.3rem 0 1.4rem;
+  /* 全ページ共通の見出し。見出し→内容の段差だけを残し、
+     スマホでも最初の操作が一画面内へ収まる密度にする。 */
+  margin: 0.2rem 0 0.72rem;
 }
 
 .mll-lp-section-head {

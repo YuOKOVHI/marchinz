@@ -15635,7 +15635,14 @@ button.mz-site-announcement-banner-link {
 
   /* ①外側グレーを狭くする: main の左右余白だけ縮小 */
   body main {
-    padding: 0.75rem 0.45rem 1.3rem;
+    padding: 0.52rem 0.45rem 1.3rem;
+  }
+
+  /* ページ名は読み取れる行高を維持しつつ、上部ナビや次のタブとの
+     空白を詰める。コミュニティ、YouTube、大会動画など共通で効く。 */
+  body .page-hero.mz-philosophy-header {
+    margin-top: 0;
+    margin-bottom: 0.56rem;
   }
 
   body .static-panel {
