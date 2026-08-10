@@ -120,17 +120,22 @@ python3 scout_pov_videos.py --coverage
 ### 年を決めて掘る
 
 ```bash
-python3 scout_pov_videos.py --year-from 2012 --year-to 2015
+python3 scout_pov_videos.py --year-from 2012 --year-to 2015 --skip-revisit
 ```
 
 - 「団体 × 年 × カメラ語」で検索します
 - 過去の年は新着順では拾えないので、**関連度順**に切り替わります
 - `--since` は自動でその年の1月1日まで下がります（指定すれば上書きできます）
+- **`--skip-revisit` を付けてください。** 付けないと、先に見張りチャンネル
+  140件超の再訪が走って20分以上待たされます。再訪は「新着を拾う」ための軸なので、
+  過去の年を掘るときは不要です
+
+所要時間の目安: 1年あたり検索が約120本。`--search-results` を小さく（3〜5）すると速くなります。
 
 ### 他のAIへ出す依頼文のひな形
 
 > `010_MarchinZ/docs/POV_LIST_GUIDE.md` を読んでから作業してください。
-> `python3 scout_pov_videos.py --year-from 2013 --year-to 2014` を回し、
+> `python3 scout_pov_videos.py --year-from 2013 --year-to 2014 --skip-revisit` を回し、
 > 出てきた候補を1本ずつ確認して、採用基準（5分以上・奏者本人の視点）を
 > 満たすものだけ `--accept`、それ以外は `--reject` で台帳へ入れてください。
 > 団体名が他分野と衝突する罠（§1）に必ず注意してください。

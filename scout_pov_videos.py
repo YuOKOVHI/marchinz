@@ -468,7 +468,8 @@ def print_coverage() -> int:
 
 
 def scout(quick: bool, workers: int, since: date, search_results: int,
-          year_from: int | None = None, year_to: int | None = None) -> list[dict]:
+          year_from: int | None = None, year_to: int | None = None,
+          skip_revisit: bool = False) -> list[dict]:
     known = csv_ids()
     ledger = load_ledger()
     decided = set(ledger) | known
@@ -493,14 +494,19 @@ def scout(quick: bool, workers: int, since: date, search_results: int,
 
     # ── 軸3/4: 収録済み・見張りチャンネルの再訪(新着追随) ──
     # watchlist は「まだCSVに追加できない/初回の個人投稿者」も救う。
-    revisit = csv_channels() | watch_channels()
-    print(f"[軸3/4] 収録済み・見張りチャンネルを再訪 ({len(revisit)}件)", file=sys.stderr)
-    for cu in sorted(revisit):
-        channels_done.add(cu)
-        n = absorb(flat_list(cu.rstrip("/") + "/videos", playlist_end=CHANNEL_SCAN_LIMIT),
-                   f"revisit:{cu}")
-        if n:
-            print(f"  +{n:>3} {cu}", file=sys.stderr)
+    # チャンネル数が多く(140件超)ここだけで20分以上かかるので、
+    # 過去の年を掘るだけのときは --skip-revisit で飛ばせる。
+    if skip_revisit:
+        print("[軸3/4] 再訪を飛ばしました(--skip-revisit)", file=sys.stderr)
+    else:
+        revisit = csv_channels() | watch_channels()
+        print(f"[軸3/4] 収録済み・見張りチャンネルを再訪 ({len(revisit)}件)", file=sys.stderr)
+        for cu in sorted(revisit):
+            channels_done.add(cu)
+            n = absorb(flat_list(cu.rstrip("/") + "/videos", playlist_end=CHANNEL_SCAN_LIMIT),
+                       f"revisit:{cu}")
+            if n:
+                print(f"  +{n:>3} {cu}", file=sys.stderr)
 
     # ── 軸1: 横断検索 ──
     if not quick:
@@ -793,6 +799,8 @@ def main() -> int:
     ap.add_argument("--year-from", type=int, metavar="YYYY",
                     help="この年から掘る(--year-to と対で使う)")
     ap.add_argument("--year-to", type=int, metavar="YYYY", help="この年まで掘る")
+    ap.add_argument("--skip-revisit", action="store_true",
+                    help="収録済み・見張りチャンネルの再訪を飛ばす(過去の年を掘るときに速い)")
     ap.add_argument("--no-network-meta", action="store_true",
                     help="判定時に本メタをネット取得しない(キャッシュと題名のみ)")
     args = ap.parse_args()
@@ -859,7 +867,7 @@ def main() -> int:
 
     print(f"[対象期間] {since.isoformat()} 以降", file=sys.stderr)
     cands = scout(args.quick, args.workers, since, args.search_results,
-                  args.year_from, args.year_to)
+                  args.year_from, args.year_to, args.skip_revisit)
     with args.out.open("w", encoding="utf-8", newline="") as f:
         w = csv.writer(f, delimiter="\t", lineterminator="\n")
         w.writerow(["video_id", "公開日", "尺秒", "チャンネル", "題名", "判定理由", "URL"])
