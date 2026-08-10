@@ -138,7 +138,8 @@ CORPS_EN = [
     "Madison Scouts", "Mandarins", "Blue Knights", "Crossmen", "Colts",
     "Blue Stars", "Spirit of Atlanta", "Troopers", "Pacific Crest",
     "Genesis", "Seattle Cascades", "The Academy", "Jersey Surf",
-    "Music City", "Cadets", "River City Rhythm", "Gold drum corps",
+    "Music City", "Cadets2", "Cadets", "River City Rhythm", "Gold drum corps",
+    "Oregon Crusaders",
 ]
 CORPS_JP = [
     "YOKOHAMA ROBINS", "IPU Marching Band", "SATSUKI DREAMERS",
