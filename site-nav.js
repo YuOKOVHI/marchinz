@@ -41,6 +41,29 @@
   };
 
   const publicBaseUrl = "https://marchinz.netlify.app/";
+  const VIDEO_SEARCH_QUERY_KEYS = [
+    "c", "tab", "o", "team", "t", "event", "e", "free", "f",
+    "s", "sort", "src", "d", "dir", "page", "p", "pageSize", "z", "ex",
+  ];
+
+  function hasVideoSearchState() {
+    const p = new URLSearchParams(location.search);
+    return VIDEO_SEARCH_QUERY_KEYS.some((key) => p.has(key));
+  }
+
+  /** 大会動画を離れたら、そのページ専用の検索条件をURLからも外す。 */
+  function clearVideoSearchStateFromUrl() {
+    const p = new URLSearchParams(location.search);
+    let changed = false;
+    VIDEO_SEARCH_QUERY_KEYS.forEach((key) => {
+      if (!p.has(key)) return;
+      p.delete(key);
+      changed = true;
+    });
+    if (!changed) return;
+    const query = p.toString();
+    history.replaceState(null, "", `${location.pathname}${query ? `?${query}` : ""}${location.hash}`);
+  }
 
   /**
    * LINE / X / Instagram / Facebook 等のアプリ内 WebView（Google OAuth 403 対策）
@@ -795,10 +818,8 @@
       });
     }
     updateSiteBrandAuthEntryLinks();
-    const hasVideoShareState = (() => {
-      const p = new URLSearchParams(location.search);
-      return ["c", "tab", "o", "team", "t", "event", "e", "free", "f", "s", "sort", "src", "d", "dir", "page", "p", "pageSize", "z", "ex"].some((key) => p.has(key));
-    })();
+    if (id !== "videos") clearVideoSearchStateFromUrl();
+    const hasVideoShareState = hasVideoSearchState();
     if (id === "videos" && !hasVideoShareState) {
       /* 共有URLの c=o / 検索条件は app.js が復元する。
          ここで初期値へ戻すと、その復元前にクエリを消してしまう。 */

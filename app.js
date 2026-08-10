@@ -1779,6 +1779,9 @@
     if (shouldUseInitialRandom()) {
       const matsuriOnly = state.filtered.filter((row) => isMarchingMatsuriVideo(row));
       state.filtered = applyInitialRandomOrder(matsuriOnly);
+    } else if (shouldUseUnfilteredCategoryRandom()) {
+      // 海外・POVは、検索前だけその分類の中で出会いを作る。
+      state.filtered = shuffleArray(state.filtered);
     } else {
       sortRows();
     }
@@ -1856,17 +1859,26 @@
     return out;
   }
 
-  function shouldUseInitialRandom() {
-    // 「マーチング祭だけをランダム表示」はマーチング等タブの初期表示専用。
-    // MIX3・海外へ適用すると、その分類の動画がすべて0件になる。
-    if (state.tab !== "マーチング団体等") return false;
+  function hasNoVideoSearchConditions() {
     if (state.exactOrgTeam !== null || state.exactEvent !== null) return false;
     if ((qTeam?.value ?? "").trim()) return false;
     if ((qEvent?.value ?? "").trim()) return false;
     if ((qFree?.value ?? "").trim()) return false;
     if (state.excludedOrgTeams.size > 0) return false;
-    if (state.sourceFilter) return false;
+    if (state.sourceFilter || state.yearFilter) return false;
     return true;
+  }
+
+  function shouldUseInitialRandom() {
+    // 「マーチング祭だけをランダム表示」はマーチング等タブの初期表示専用。
+    // MIX3・海外へ適用すると、その分類の動画がすべて0件になる。
+    if (state.tab !== "マーチング団体等") return false;
+    return hasNoVideoSearchConditions();
+  }
+
+  function shouldUseUnfilteredCategoryRandom() {
+    if (state.tab !== "海外" && state.tab !== "POV") return false;
+    return hasNoVideoSearchConditions();
   }
 
   function isMarchingMatsuriVideo(row) {
