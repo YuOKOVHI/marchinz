@@ -60,11 +60,14 @@ DEFAULT_SEARCH_RESULTS = 20
 # /videos は公開日を返さないことがあるため、公式チャンネルを全件候補化しない。
 CHANNEL_SCAN_LIMIT = 80
 SNOWBALL_CHANNEL_SCAN_LIMIT = 20
+# True のとき判定の本メタ取得をネットに投げない(キャッシュ+題名のみ)
+_JUDGE_NO_NETWORK = False
 
-# yt-dlp は venv 側にしか無い環境があるので順に探す
+# yt-dlp は venv 側にしか無い環境があるので順に探す。
+# CutStudy 側を先に見る(MarchShot 同梱が古いと SABR で落ちることがある)。
 YTDLP_CANDIDATES = [
-    Path.home() / "Movies/venvs/MarchShot/bin/yt-dlp",
     Path.home() / "Movies/venvs/CutStudy/bin/yt-dlp",
+    Path.home() / "Movies/venvs/MarchShot/bin/yt-dlp",
     Path("/usr/local/bin/yt-dlp"),
     Path("/opt/homebrew/bin/yt-dlp"),
 ]
@@ -74,7 +77,7 @@ YTDLP_CANDIDATES = [
 STRONG_POV = re.compile(
     r"(\bpov\b|head\s*cam|headcam|helmet\s*cam|chest\s*cam|"
     r"go\s?pro|body\s*cam|player\s*cam|member\s*cam|"
-    r"ヘッドカム|ヘルメットカム|奏者視点|プレイヤー視点|一人称)", re.I)
+    r"ヘッドカム|ヘルメットカム|奏者視点|プレイヤー視点|一人称|楽器視点)", re.I)
 
 # 楽器・役割(これ単体では弱い。cam 語と組んで初めて効く)
 PART = re.compile(
@@ -100,12 +103,15 @@ MARCHING_CONTEXT = re.compile(
     r"spirit\s*of\s*atlanta|troopers|pacific\s*crest|river\s*city\s*rhythm|"
     r"gold\s*(dbc|drum\s*corps)|yokohama\s*(robins|scouts)|ipu\s*marching|"
     r"satsuki\s*dreamers|aimachi|marching\s*band\s*courage|"
+    r"\bcadets\b|jersey\s*surf|music\s*city|the\s*academy|seattle\s*cascades|"
+    r"\bgenesis\b|"
     r"マーチング|ドラムコー|ドラムライン|ホーンライン|カラーガード|吹奏楽|全国大会|"
     r"ヘッドカム|奏者視点|プレイヤー視点)", re.I)
 
 # 団体名の一部はゲーム等にも出るため、明確な別ジャンルは先に除く。
 NOT_MARCHING = re.compile(
-    r"(counter[\s-]*strike|\bcs2?\b|\besea\b|gameplay|mythic\+|"
+    r"(counter[\s-]*strike|\bcs2?\b|\besea\b|faceit|\belo\b|gameplay|mythic\+|"
+    r"trottah|win[\s-]*streak|bounce\s*back|"
     r"test\s*drive|night\s*drive|road\s*trip|traffic\s*stop|police\s*chase|"
     r"suv|sedan|motorcycle|world\s*of\s*warcraft|pacific\s*crest\s*trail|"
     r"thru[\s-]*hiker|hiking|bleeding\s*mandarins|vaelgor)", re.I)
@@ -113,7 +119,7 @@ NOT_MARCHING = re.compile(
 # 奏者視点ではない固定/編集カメラ(強い除外)
 NOT_POV = re.compile(
     r"(catwalk|overhead|high\s*cam|press\s*box|crowd\s*cam|stands\s*cam|"
-    r"multi[\s\-_]?cam|multicam|wide[\s\-]?angle|split[\s\-]?cam|"
+    r"multi[\s\-_]?cam|multicam|wide[\s\-]?angle|広角|split[\s\-]?cam|"
     r"retreat\s*cam|side\s*line\s*cam|drone|"
     r"react(ion)?|反応|解説|review|podcast|interview|"
     r"trailer|teaser|announce|recap\b|highlight\s*reel|sync(ed)?|archive|vlog|"
@@ -141,6 +147,9 @@ TEAM_ALIASES = {
     "Paris High School Marching Band": "Paris High School Marching Band",
     "UTA Maverick Marching Band": "UTA Maverick Marching Band",
     "Auburn Tigers Marching Band": "Auburn Tigers Marching Band",
+    "The Academy": "The Academy",
+    "Academy": "The Academy",
+    "Jersey Surf": "Jersey Surf",
 }
 # カメラ語だけでなく **大会の段** も混ぜる。
 # ヘッドカムは Victory Run(決勝後のアンコール)だけでなく
@@ -148,6 +157,9 @@ TEAM_ALIASES = {
 # 「Victory Run しか探していない」と準決勝ぶんを丸ごと落とす。
 CAM_TERMS = [
     "headcam", "head cam", "POV", "gopro",
+    "soloist cam", "lead trumpet cam", "mellophone cam",
+    "euphonium cam", "snare cam", "tenor cam", "battery cam",
+    "player cam", "member cam", "helmet cam", "chest cam",
     "cam victory run", "cam finals week",
     "cam semifinals", "cam prelims", "cam full run",
 ]
@@ -156,6 +168,7 @@ JP_QUERIES = [
     "マーチング GoPro 視点", "ドラムライン 視点カメラ", "カラーガード 視点",
     "ドラムメジャー 視点 カメラ", "マーチング 一人称 カメラ",
     "吹奏楽 マーチング ヘッドカム", "全国大会 マーチング GoPro",
+    "マーチング 楽器視点", "マーチング プレイヤー視点", "奏者視点 ヘッドカム",
 ]
 
 
@@ -202,8 +215,14 @@ def flat_list(target: str, timeout: int = 300, playlist_end: int | None = None) 
     return rows
 
 
-def fetch_meta(vid: str) -> dict | None:
-    """概要欄つきの本メタ。ディスクにキャッシュする。"""
+def fetch_meta(vid: str, *, allow_network: bool = True) -> dict | None:
+    """概要欄つきの本メタ。ディスクにキャッシュする。
+
+    概要欄にタブや改行が混ざる動画があるため、TSVではなく JSON 1オブジェクトで取る。
+    allow_network=False ならキャッシュ命中時だけ返す(一括判定で YouTube 待ちに溶かさない)。
+    """
+    if not vid or len(vid) != 11:
+        return None
     CACHE.mkdir(parents=True, exist_ok=True)
     cf = CACHE / f"{vid}.json"
     if cf.exists():
@@ -211,24 +230,71 @@ def fetch_meta(vid: str) -> dict | None:
             return json.loads(cf.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             cf.unlink(missing_ok=True)
-    fmt = "%(id)s\t%(title)s\t%(duration)s\t%(channel)s\t%(channel_url)s\t%(upload_date)s\t%(description)s"
-    out = run_ytdlp([
-        "--skip-download", "--no-warnings",
-        # SABR 由来の一時失敗を避けるため複数クライアントを指定
-        "--extractor-args", "youtube:player_client=android,web_safari",
-        "--print", fmt, f"https://www.youtube.com/watch?v={vid}",
-    ], timeout=90)
-    f = out.replace("\n", " ").split("\t")
-    if len(f) < 7 or len(f[0]) != 11:
+    if not allow_network:
+        return None
+    clients = [
+        "youtube:player_client=android,web_safari",
+        "youtube:player_client=ios,web",
+    ]
+    raw = None
+    for client in clients:
+        out = run_ytdlp([
+            "--skip-download", "--no-warnings",
+            "--extractor-args", client,
+            "--print", "%(.{id,title,duration,channel,channel_url,upload_date,description})j",
+            f"https://www.youtube.com/watch?v={vid}",
+        ], timeout=35)
+        line = (out or "").strip().splitlines()
+        if not line:
+            continue
+        try:
+            raw = json.loads(line[0])
+            break
+        except json.JSONDecodeError:
+            continue
+    if not raw:
+        return None
+    vid_id = str(raw.get("id") or "")
+    if len(vid_id) != 11:
         return None
     try:
-        dur = int(float(f[2]))
+        dur = int(float(raw["duration"])) if raw.get("duration") is not None else None
     except (ValueError, TypeError):
         dur = None
-    meta = {"id": f[0], "title": f[1], "dur": dur, "channel": f[3],
-            "channel_url": f[4], "upload_date": f[5], "desc": f[6][:1500]}
+    meta = {
+        "id": vid_id,
+        "title": str(raw.get("title") or ""),
+        "dur": dur,
+        "channel": str(raw.get("channel") or ""),
+        "channel_url": str(raw.get("channel_url") or ""),
+        "upload_date": str(raw.get("upload_date") or ""),
+        "desc": str(raw.get("description") or "")[:1500],
+    }
     cf.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
     return meta
+
+
+def meta_from_flat(row: dict) -> dict | None:
+    """本メタが取れないときの題名だけの仮メタ。強い手掛かりがある行だけ使う。"""
+    title = row.get("title") or ""
+    if not title or row.get("dur") is None:
+        return None
+    if NOT_POV.search(title):
+        return None
+    if not (STRONG_POV.search(title) or (PART.search(title) and CAM.search(title))):
+        return None
+    up = row.get("upload_date") or ""
+    if up in ("NA", "None"):
+        up = ""
+    return {
+        "id": row["id"],
+        "title": title,
+        "dur": row["dur"],
+        "channel": row.get("channel") or "",
+        "channel_url": row.get("channel_url") or "",
+        "upload_date": up if re.fullmatch(r"\d{8}", up or "") else "",
+        "desc": "",
+    }
 
 
 # ── 判定 ───────────────────────────────────────────────
@@ -312,12 +378,18 @@ def csv_ids() -> set[str]:
 
 
 def csv_channels() -> set[str]:
-    """CSV収録動画のチャンネルURL(キャッシュ済みメタから引ける分)。"""
+    """CSV収録のチャンネルURL。配信元URL列を優先し、無いときだけメタへ。"""
+    raw = POV_CSV.read_text(encoding="utf-8")
+    rows = list(csv.DictReader(io.StringIO(raw)))
     out = set()
-    for v in csv_ids():
-        m = fetch_meta(v)
+    for r in rows:
+        u = (r.get("動画配信元URL") or "").strip().rstrip("/")
+        if u:
+            out.add(u)
+            continue
+        m = fetch_meta(video_id(r.get("URL", "")))
         if m and m.get("channel_url"):
-            out.add(m["channel_url"])
+            out.add(m["channel_url"].rstrip("/"))
     return out
 
 
@@ -387,27 +459,50 @@ def scout(quick: bool, workers: int, since: date, search_results: int) -> list[d
                 print(f"  ..{i}/{len(queries)} (母集団 {len(pool)})", file=sys.stderr)
 
     def judge_ids(ids: list[str], label: str) -> list[dict]:
-        """概要欄・尺・公開日を実メタで読み、通過した候補だけを返す。"""
-        print(f"[判定:{label}] 概要欄を取得 {len(ids)}本 (並列{workers})", file=sys.stderr)
+        """キャッシュ／題名で通し、足りない分だけ概要欄をネットワーク取得する。"""
+        print(f"[判定:{label}] {len(ids)}本", file=sys.stderr)
         metas = []
-        with ThreadPoolExecutor(max_workers=workers) as ex:
-            for i, m in enumerate(ex.map(fetch_meta, ids), 1):
-                if m:
-                    metas.append(m)
-                if i % 50 == 0:
-                    print(f"  ..{i}/{len(ids)}", file=sys.stderr)
+        need_net = []
+        for vid in ids:
+            m = fetch_meta(vid, allow_network=False)
+            if m:
+                metas.append(m)
+                continue
+            flat = meta_from_flat(pool.get(vid) or {})
+            if flat:
+                # 題名だけで採れるものは概要欄待ちにせず通す
+                ok, _ = judge(flat)
+                if ok:
+                    metas.append(flat)
+                    continue
+            need_net.append(vid)
+        print(f"  キャッシュ/題名 {len(metas)} / ネット要 {len(need_net)}", file=sys.stderr)
+        if need_net and _JUDGE_NO_NETWORK:
+            print(f"  ネット取得スキップ ({len(need_net)}本)", file=sys.stderr)
+        elif need_net:
+            # 件数が多いときは上限を設け、残りは次回キャッシュが育ってから
+            cap = 200
+            todo = need_net[:cap]
+            if len(need_net) > cap:
+                print(f"  ネット取得は先頭{cap}本に制限 (残り{len(need_net)-cap}は次回)",
+                      file=sys.stderr)
+            with ThreadPoolExecutor(max_workers=min(workers, 4)) as ex:
+                for i, m in enumerate(ex.map(fetch_meta, todo), 1):
+                    if m:
+                        metas.append(m)
+                    if i % 50 == 0:
+                        print(f"  ..net {i}/{len(todo)}", file=sys.stderr)
         accepted = []
         for m in metas:
-            # 今回の標準運用は直近365日の再調査。公開日を確認できない動画は候補として
-            # 出しても採用しない(期間外を混ぜない)。
-            if parse_upload_date(m.get("upload_date", "")) is None:
+            published = parse_upload_date(m.get("upload_date", ""))
+            if published is None and since > date.min:
                 continue
             if not eligible_flat(m, since):
                 continue
             ok, why = judge(m)
             if ok:
                 m["why"] = why
-                m["src"] = pool[m["id"]].get("src", "")
+                m["src"] = pool[m["id"]].get("src", "") if m["id"] in pool else ""
                 accepted.append(m)
         return accepted
 
@@ -463,6 +558,64 @@ def guess_show(title: str) -> str:
     return ""
 
 
+def write_pov_csv(rows: list[dict], bom: bool) -> None:
+    if not rows:
+        raise SystemExit("POV CSV が空です")
+    fields = list(rows[0].keys())
+    buf = io.StringIO()
+    w = csv.DictWriter(buf, fieldnames=fields, lineterminator="\n")
+    w.writeheader()
+    w.writerows(rows)
+    POV_CSV.write_text(("﻿" if bom else "") + buf.getvalue(), encoding="utf-8")
+
+
+def fix_publishers(workers: int = 6) -> int:
+    """既存CSVで動画配信元が『POV』等の誤りの行を、実チャンネル名へ直す。"""
+    raw = POV_CSV.read_text(encoding="utf-8")
+    bom = raw.startswith("﻿")
+    rows = list(csv.DictReader(io.StringIO(raw)))
+    before = len(rows)
+    need = []
+    for i, r in enumerate(rows):
+        src = (r.get("動画配信元") or "").strip()
+        url = (r.get("動画配信元URL") or "").strip()
+        if src in ("", "POV") or not url:
+            need.append(i)
+    if not need:
+        print("配信元の修正は不要です")
+        return 0
+
+    print(f"配信元を直す対象: {len(need)} / {before} 行", file=sys.stderr)
+    vids = [video_id(rows[i]["URL"]) for i in need]
+    metas: dict[str, dict] = {}
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        for i, m in enumerate(ex.map(fetch_meta, vids), 1):
+            if i % 20 == 0 or i == len(vids):
+                print(f"  meta {i}/{len(vids)}", file=sys.stderr)
+            if m and m.get("id"):
+                metas[m["id"]] = m
+
+    fixed, failed = 0, []
+    for i, vid in zip(need, vids):
+        m = metas.get(vid)
+        if not m or not (m.get("channel") or "").strip():
+            failed.append(vid or rows[i].get("URL", ""))
+            continue
+        rows[i]["動画配信元"] = m["channel"].strip()
+        rows[i]["動画配信元URL"] = (m.get("channel_url") or "").strip()
+        # ロゴは YouTube名簿に無い個人chが多いので空のまま(既存方針)
+        fixed += 1
+
+    write_pov_csv(rows, bom)
+    check = list(csv.DictReader(io.StringIO(POV_CSV.read_text(encoding="utf-8"))))
+    assert len(check) == before, f"行数が変わった {before}→{len(check)}"
+    still = sum(1 for r in check if (r.get("動画配信元") or "").strip() in ("", "POV"))
+    print(f"配信元を更新: {fixed}件 / 失敗 {len(failed)}件 / 残POV表記 {still}件")
+    for v in failed[:20]:
+        print(f"  - 失敗 {v}")
+    return 0 if not failed else 1
+
+
 def apply_accepted() -> int:
     """台帳の accepted のうち CSV に無いものを追記する。
 
@@ -482,7 +635,6 @@ def apply_accepted() -> int:
     raw = POV_CSV.read_text(encoding="utf-8")
     bom = raw.startswith("﻿")
     rows = list(csv.DictReader(io.StringIO(raw)))
-    fields = list(rows[0].keys())
     before = len(rows)
     known_id = {r["団体/チーム名"]: r["団体ID"] for r in rows if r["団体ID"]}
 
@@ -511,6 +663,13 @@ def apply_accepted() -> int:
         if show:
             display += f"「{show}」"
         display += f"【{part_s}】"
+        # 動画配信元は分類名「POV」ではなく実チャンネル名。
+        # （カードの配信元表示・ロゴ照合が配信元名を見るため）
+        ch_name = (m.get("channel") or "").strip()
+        ch_url = (m.get("channel_url") or "").strip()
+        if not ch_name:
+            skipped.append((v, f"チャンネル名が取れない: {m['title'][:60]}"))
+            continue
         row = {
             "種別": "動画", "分類": "POV",
             "動画での表示名": team, "団体/チーム名": team,
@@ -518,22 +677,20 @@ def apply_accepted() -> int:
             "配信日": f"{up[:4]}-{up[4:6]}-{up[6:8]}" if len(up) == 8 else "",
             "大会名": display,
             "URL": f"https://www.youtube.com/watch?v={v}",
-            "動画配信元": "POV", "動画配信元URL": "", "動画配信元ロゴURL": "",
+            "動画配信元": ch_name,
+            "動画配信元URL": ch_url,
+            "動画配信元ロゴURL": "",
         }
         rows.append(row)
         added.append(row)
 
     if added:
-        buf = io.StringIO()
-        w = csv.DictWriter(buf, fieldnames=fields, lineterminator="\n")
-        w.writeheader()
-        w.writerows(rows)
-        POV_CSV.write_text(("﻿" if bom else "") + buf.getvalue(), encoding="utf-8")
+        write_pov_csv(rows, bom)
         check = list(csv.DictReader(io.StringIO(POV_CSV.read_text(encoding="utf-8"))))
         assert len(check) == before + len(added), f"行数不一致 {len(check)}"
         print(f"追記 {len(added)}件 ({before} → {len(check)} 行)")
         for r in added:
-            print(f"  + {r['大会名']}  {r['URL']}")
+            print(f"  + {r['大会名']}  {r['URL']}  [{r['動画配信元']}]")
         print("\n★ 大会名は自動で組んだ下書きです。ショウ名・役割を手で整えてください。")
         print("  そのあと: python3 sync_csv_to_json.py && python3 check_data.py")
     for v, why in skipped:
@@ -559,10 +716,19 @@ def main() -> int:
     ap.add_argument("--reject-file", type=Path, metavar="FILE",
                     help="却下するvideo_idを1行ずつ書いたファイル")
     ap.add_argument("--apply", action="store_true", help="採用ぶんをCSVへ追記")
+    ap.add_argument("--fix-publishers", action="store_true",
+                    help="既存CSVの動画配信元『POV』を実チャンネル名へ直す")
+    ap.add_argument("--no-network-meta", action="store_true",
+                    help="判定時に本メタをネット取得しない(キャッシュと題名のみ)")
     args = ap.parse_args()
 
+    if args.fix_publishers:
+        return fix_publishers(args.workers)
     if args.apply:
         return apply_accepted()
+    # scout() から読む
+    global _JUDGE_NO_NETWORK
+    _JUDGE_NO_NETWORK = bool(args.no_network_meta)
 
     def ids_from_file(path: Path | None) -> list[str]:
         if not path:

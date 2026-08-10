@@ -46,10 +46,15 @@ REGRESSION_MISSED = [
 SHOULD_KEEP = [
     ("題名にPOV語", "Bluecoats 2024 GoPro Victory Run", 900, ""),
     ("題名に楽器×cam", "Boston Crusaders 2025 Snare Cam", 700, ""),
+    ("Soloist Cam", "Blue Devils 2026 Zei Euphonium Soloist Cam", 800, ""),
+    ("Lead Trumpet Cam", "Bluecoats 2026 Lead Trumpet Cam Victory Run", 900, ""),
+    ("Academy Drumset", "In The Center of the Ring (The Academy) - Drumset Headcam", 693, ""),
+    ("Jersey Surf Quads", "Jersey Surf Quad 24' Headcam", 982, ""),
     ("概要欄だけにPOV語", "Victory Run 2026", 900,
      "Bluecoats 2026 victory run. Filmed with a GoPro mounted on my helmet."),
     ("概要欄だけに楽器", "2026 run - my cam", 900, "I marched mellophone this season."),
     ("日本語のヘッドカム", "【全国大会】ヘッドカム", 620, "トランペットを吹きながら撮りました"),
+    ("楽器視点", "全国大会 メロフォン 楽器視点", 600, "本番全曲の記録です"),
 ]
 
 # ── 落とすべき ────────────────────────────────────────
@@ -70,6 +75,8 @@ SHOULD_DROP = [
     ("手掛かり皆無", "2026 DCI Finals Results", 900, "The results are in."),
     ("車載POV", "2026 SUV POV test drive", 900, "Filmed with a GoPro on my chest."),
     ("ゲームPOV", "Troopers ESEA Match POV", 900, "Counter-Strike gameplay."),
+    ("CS配信がTroopersに化ける", "Can Troopers Bounce Back?! | @TrottahCS POV", 2700, ""),
+    ("広角パレード", "京都橘高校 トランペット 広角カメラ ヘッドカム", 1100, ""),
 ]
 
 

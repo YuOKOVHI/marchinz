@@ -171,9 +171,11 @@ firebase deploy --only firestore:rules,storage
   （個人投稿はタイトルが素っ気なく、楽器名が概要欄にしか無いことがある）。
   判断は `pov_ledger.json` に貯まるので、再実行しても既に見た動画は出てこない。
 
-  判定を変えたら **`python3 test_scout_pov_videos.py`** を必ず通す（23件）。
-  この試験には過去に取りこぼした3本が回帰として入っている。**落ちたときに試験の方を
+  判定を変えたら **`python3 test_scout_pov_videos.py`** を必ず通す。
+  この試験には過去に取りこぼした動画が回帰として入っている。**落ちたときに試験の方を
   書き換えない**こと（通るだけの試験になる）。
+  CSVの **`動画配信元` は実チャンネル名**（Curzy 等）。分類名の `POV` を書かない。
+  既存行の誤りは `python3 scout_pov_videos.py --fix-publishers` で直す。
 
 ### 反映確認の最小チェック
 
