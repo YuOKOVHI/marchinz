@@ -1,0 +1,158 @@
+# 大会動画の「海外(FloMarching)」と「POV」を毎日見張り、確実なものは自動で反映する
+# (2026-08-11 優さん指示)
+#
+# ■ なぜ macOS ランナーなのか
+#   海外の採用条件は「10分以上 かつ タイトル or サムネイルに FULL SHOW」。
+#   実測すると採用15件のうち **10件(67%)はサムネイルOCRでしか判定できず**、
+#   OCRは macOS Vision を使う。Linuxで走らせるとルールが黙って弱くなり、
+#   「更新なし」に見えてしまうので macos ランナーを使う。
+#
+# ■ 自動で入れるもの / 人が決めるもの
+#   海外 … ルールが機械的なので全自動
+#   POV  … 「収録実績のあるチャンネル × 題名にPOV語 × 楽器名 × 団体名 × 5〜20分」
+#          だけ自動。それ以外は Issue を立てて人(またはAI)が動画を見て決める。
+#          2026-08-10 に混入した18件は全て「CSVに1本も無いチャンネル」から来たため。
+#
+# ■ クレジット
+#   コミットするのは CSV と派生データだけ。netlify.toml の ignore に入れてあるので
+#   ビルドは走らず、Netlify のクレジットは減らない。
+#   サイトの鮮度は marchinz-data-refresh.js が実行時にGitHubから取り直して担保する。
+#
+# ■ マーチング等(マーチング祭・DCJ)と MIX3 は手動のまま。ここでは触らない。
+name: 大会動画の自動更新 (海外 / POV)
+
+on:
+  schedule:
+    # 毎日 06:00 JST (21:00 UTC)。DCIは日本時間の午前に結果が出るので、
+    # その日のうちに上がったヘッドカムを翌朝には拾える。
+    - cron: "0 21 * * *"
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "調べる対象"
+        type: choice
+        options: [all, overseas, pov]
+        default: all
+      dry_run:
+        description: "コミットしない(調べるだけ)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: videos-daily-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    # ★ サムネイルOCR(macOS Vision)のため macOS でなければならない
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: yt-dlp を入れる
+        run: python3 -m pip install --quiet --upgrade yt-dlp
+
+      - name: 対象を決める
+        id: pick
+        env:
+          SCHEDULE: ${{ github.event.schedule }}
+          INPUT_TARGET: ${{ github.event.inputs.target }}
+          INPUT_DRY: ${{ github.event.inputs.dry_run }}
+        run: |
+          if [ -n "$SCHEDULE" ]; then target=all; else target="${INPUT_TARGET:-all}"; fi
+          # 想定の3語以外は受け付けない(run: へ値を渡す前にここで閉じる)
+          case "$target" in
+            all|overseas|pov) ;;
+            *) echo "知らない対象: $target" >&2; exit 1 ;;
+          esac
+          echo "target=$target" >> "$GITHUB_OUTPUT"
+          echo "dry=${INPUT_DRY:-false}" >> "$GITHUB_OUTPUT"
+          echo "対象: $target / dry-run: ${INPUT_DRY:-false}"
+
+      # ── 海外(FloMarching) ──
+      # ★赤くするのは「調べ方が壊れた」ときだけ。YouTubeに弾かれた日は緑のまま
+      #   (理由はログに必ず出す)。毎日走るので、弾かれた日まで赤くすると
+      #   失敗通知に埋もれて誰も見なくなる。
+      - name: 海外(FloMarching)を取り込む
+        if: steps.pick.outputs.target != 'pov'
+        run: |
+          if python3 import_flomarching_dci_full_shows.py; then
+            echo "海外: 取り込み完了"
+          else
+            echo "::warning::海外の取り込みに失敗（今日は見送り）。ログを確認してください"
+          fi
+
+      # ── POV ──
+      - name: POVの新着を調べ、確実なものだけ入れる
+        id: pov
+        if: steps.pick.outputs.target != 'overseas'
+        run: python3 check_pov_updates.py --auto-apply --github-output
+
+      # ── 反映と検算 ──
+      - name: 派生ファイルを作り直して検算
+        run: |
+          python3 sync_csv_to_json.py
+          python3 check_data.py
+
+      - name: 変わったかを見る
+        id: diff
+        run: |
+          if git diff --quiet -- '大会動画リスト_*.csv' data.json data.inline.js pov_ledger.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"; echo "変更なし"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git diff --stat -- '大会動画リスト_*.csv' data.json data.inline.js pov_ledger.json
+          fi
+
+      - name: コミットして反映する
+        if: steps.diff.outputs.changed == 'true' && steps.pick.outputs.dry != 'true'
+        env:
+          APPLIED: ${{ steps.pov.outputs.applied }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # ★CSVと派生データだけを載せる。他が混ざるとNetlifyのビルドが走る
+          git add '大会動画リスト_*.csv' data.json data.inline.js pov_ledger.json
+          git commit -m "chore(videos): 海外/POVの日次更新（POV自動採用 ${APPLIED:-0}件）"
+          # 毎朝5時のデータ更新botと同じ時間帯に走るので、衝突したら取り込み直す
+          for i in 1 2 3; do
+            git pull --rebase origin main && git push && exit 0
+            echo "push に失敗（$i回目）。取り込み直して再試行します"
+            sleep 10
+          done
+          echo "::error::3回試しても push できませんでした"
+          exit 1
+
+      - name: 人が見るべきPOV候補があれば Issue を立てる
+        # always(): 前の段が赤くても、見つけた候補は必ず知らせる
+        if: always() && steps.pov.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TITLE: ${{ steps.pov.outputs.issue_title }}
+        run: |
+          # 開いている POV新着 Issue があれば追記し、毎日新しく積まない
+          prev=$(gh issue list --state open --limit 50 \
+                   --search "POV新着 in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$prev" ]; then
+            gh issue comment "$prev" --body-file pov-update-issue.md
+          else
+            gh issue create --title "$TITLE" --body-file pov-update-issue.md
+          fi
+
+      - name: 候補の一覧を成果物として残す
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pov-candidates
+          path: pov_candidates.tsv
+          if-no-files-found: ignore
+          retention-days: 30

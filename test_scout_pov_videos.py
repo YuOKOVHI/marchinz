@@ -80,6 +80,76 @@ SHOULD_DROP = [
 ]
 
 
+
+# ── 自動採用の門(無人で本番へ入るので、いちばん厳しく見張る) ──────
+# 2026-08-10 に混入した18件は全て「CSVに1本も無いチャンネル」から来た。
+# だから known_channels に居ることを必須にしている。ここを緩める変更は
+# 本番へ直接ゴミを入れるので、必ずこの試験を通すこと。
+KNOWN = {"https://www.youtube.com/channel/KNOWN"}
+UNKNOWN = "https://www.youtube.com/channel/OTHER"
+
+
+def am(title, dur, ch):
+    return {"title": title, "dur": dur, "channel_url": ch, "desc": ""}
+
+
+AUTO_OK = [
+    ("既知ch・題名にPOV語と楽器と団体",
+     "Bluecoats 2026 Lead Mellophone Headcam", 846, list(KNOWN)[0]),
+    ("既知ch・楽器×cam",
+     "Boston Crusaders 2025 Snare Cam", 700, list(KNOWN)[0]),
+]
+
+AUTO_NG = [
+    ("未知のチャンネル(混入18件はすべてこれ)",
+     "Bluecoats 2026 Lead Mellophone Headcam", 846, UNKNOWN),
+    ("尺が5分未満", "Bluecoats 2026 Snare Cam", 240, list(KNOWN)[0]),
+    ("尺が20分超", "Bluecoats 2026 Snare Cam", 1500, list(KNOWN)[0]),
+    ("尺が不明", "Bluecoats 2026 Snare Cam", None, list(KNOWN)[0]),
+    ("概要欄だけが手掛かり(自動では採らない)",
+     "Victory Run 2026", 900, list(KNOWN)[0]),
+    # ★楽器も団体もあるが「カメラ語」が無い。ただの演奏動画かもしれない。
+    #   この一件だけが「題名だけではPOVと読めない」の門を実際に踏む。
+    #   これを外すと、門を消しても試験が通ってしまう(2026-08-11 に変異試験で発覚)
+    ("楽器と団体はあるがカメラ語が無い",
+     "Bluecoats 2026 Snare Line", 700, list(KNOWN)[0]),
+    ("団体が読めない", "Some Random Snare Cam", 700, list(KNOWN)[0]),
+    ("楽器が無い", "Bluecoats 2026 Headcam", 700, list(KNOWN)[0]),
+    ("除外語(Multi Cam)",
+     "Multi Cam: Bluecoats 2026 Snare Line", 700, list(KNOWN)[0]),
+    ("別ジャンル(ロングトレイル)",
+     "Pacific Crest Trail Snare Cam hiking", 700, list(KNOWN)[0]),
+]
+
+
+def check_generated_title(fails):
+    """--apply が組む大会名が 【POV/YYYY】 の形であること。
+
+    2026-08-11、CSV側だけ 【POV/YYYY】 へ統一したのに、apply_accepted() は
+    【POV｜YYYY】(全角縦棒)を作り続けていた。毎日の自動反映が動き出すと、
+    統一した表記が日々崩れるところだった。生成側も見張る。
+    """
+    import inspect
+    src = inspect.getsource(S.apply_accepted)
+    if "【POV｜" in src:
+        fails.append("apply_accepted が全角縦棒【POV｜】を作っている")
+    if "【POV/" not in src:
+        fails.append("apply_accepted が【POV/YYYY】を作っていない")
+    return 2
+
+
+def check_auto(fails):
+    for name, title, dur, ch in AUTO_OK:
+        ok, why = S.auto_safe(am(title, dur, ch), KNOWN)
+        if not ok:
+            fails.append(f"自動採用すべきが落ちた [{name}] {title} [{why}]")
+    for name, title, dur, ch in AUTO_NG:
+        ok, why = S.auto_safe(am(title, dur, ch), KNOWN)
+        if ok:
+            fails.append(f"自動採用してはいけないのに通った [{name}] {title}")
+    return len(AUTO_OK) + len(AUTO_NG)
+
+
 def meta(title: str, dur: int, desc: str) -> dict:
     return {"id": "x" * 11, "title": title, "dur": dur, "desc": desc,
             "channel": "test", "channel_url": ""}
@@ -129,7 +199,9 @@ def main() -> int:
         fails.append("個人投稿者Chase Thomasが見張り台帳から抜けた")
 
     # 直近365日・尺・個人チャンネル再訪の3つの候補門に加え、見張り台帳の保持も数える。
-    total = len(REGRESSION_MISSED) + len(SHOULD_KEEP) + len(SHOULD_DROP) + 4
+    n_auto = check_auto(fails) + check_generated_title(fails)
+
+    total = len(REGRESSION_MISSED) + len(SHOULD_KEEP) + len(SHOULD_DROP) + 4 + n_auto
     if fails:
         print(f"FAIL {len(fails)}/{total}")
         for f in fails:

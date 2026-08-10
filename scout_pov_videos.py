@@ -148,6 +148,9 @@ CORPS_JP = [
 TEAM_ALIASES = {
     "Cavaliers": "The Cavaliers",
     "SCV": "Santa Clara Vanguard",
+    "Cascades": "Seattle Cascades",
+    "Cadets2": "Cadets2",
+    "Oregon Crusaders": "Oregon Crusaders",
     "Gold DBC": "Gold",
     "Paris High School Marching Band": "Paris High School Marching Band",
     "UTA Maverick Marching Band": "UTA Maverick Marching Band",
@@ -607,6 +610,42 @@ def scout(quick: bool, workers: int, since: date, search_results: int,
     return cands
 
 
+# ── 自動採用の門(毎日の無人反映で使う) ───────────────────
+# 人が動画を見ずに採るので、**題名だけで疑いようがないもの**に限る。
+# 2026-08-10 に混入した18件は全て「CSVに1本も無いチャンネル」から来た。
+# だから「すでに収録実績のある投稿者」であることを必須にしている。
+AUTO_MIN_SEC = 300      # 5分
+AUTO_MAX_SEC = 1200     # 20分。これを超える通し映像は別物のことが多い
+
+
+def auto_safe(meta: dict, known_channels: set[str]) -> tuple[bool, str]:
+    """無人で採ってよいほど確実かを判定する。
+
+    戻り: (採ってよいか, 理由)
+    ここを緩めると本番へ直接ゴミが入る。緩めるときは必ず試験を足すこと。
+    """
+    title = meta.get("title", "")
+    dur = meta.get("dur")
+    ch = (meta.get("channel_url") or "").rstrip("/")
+
+    if not ch or ch not in {c.rstrip("/") for c in known_channels}:
+        return False, "収録実績のないチャンネル"
+    if dur is None:
+        return False, "尺が分からない"
+    if not (AUTO_MIN_SEC <= dur <= AUTO_MAX_SEC):
+        return False, f"尺 {dur}s が自動採用の範囲外"
+    if NOT_POV.search(title) or NOT_MARCHING.search(title):
+        return False, "除外語が題名にある"
+    # 題名だけで、POV語 と 楽器語 の両方が読めること(概要欄頼みは自動では採らない)
+    if not STRONG_POV.search(title) and not (PART.search(title) and CAM.search(title)):
+        return False, "題名だけではPOVと読めない"
+    if not PART.search(title):
+        return False, "題名に楽器・パートが無い"
+    if not guess_team(title):
+        return False, "題名から団体を特定できない"
+    return True, "確実な線"
+
+
 def guess_team(text: str) -> str:
     """題名・概要欄から団体名を当てる。既にCSVにある団体名を優先。"""
     rows = list(csv.DictReader(io.StringIO(POV_CSV.read_text(encoding="utf-8"))))
@@ -692,10 +731,55 @@ def fix_publishers(workers: int = 6) -> int:
     return 0 if not failed else 1
 
 
+def load_candidate_index() -> dict[str, dict]:
+    """探索結果TSVから video_id → 行。メタ取得が死んでも追記できるようにする。"""
+    out: dict[str, dict] = {}
+    for path in sorted(ROOT.glob("pov_candidates*.tsv")):
+        try:
+            with path.open(encoding="utf-8", newline="") as f:
+                for r in csv.DictReader(f, delimiter="\t"):
+                    vid = (r.get("video_id") or "").strip()
+                    if len(vid) == 11 and vid not in out:
+                        out[vid] = r
+        except OSError:
+            continue
+    return out
+
+
+def meta_from_candidate(vid: str, cand: dict | None) -> dict | None:
+    """候補TSVの1行を fetch_meta 互換の辞書へ。"""
+    if not cand:
+        return None
+    title = (cand.get("題名") or "").strip()
+    channel = (cand.get("チャンネル") or "").strip()
+    if not title or not channel:
+        return None
+    up = (cand.get("公開日") or "").strip()
+    if up.isdigit() and len(up) == 8:
+        pass
+    else:
+        up = ""
+    try:
+        dur = int(float(cand.get("尺秒") or 0))
+    except (TypeError, ValueError):
+        dur = None
+    return {
+        "id": vid,
+        "title": title,
+        "desc": "",
+        "duration": dur,
+        "channel": channel,
+        "channel_url": "",
+        "upload_date": up,
+        "_from_candidate": True,
+    }
+
+
 def apply_accepted() -> int:
     """台帳の accepted のうち CSV に無いものを追記する。
 
-    大会名は 【POV｜YYYY】団体【役割】 の形に自動で組むが、あくまで下書き。
+    大会名は 【POV/YYYY】団体【役割】 の形に自動で組むが、あくまで下書き。
+    ★プレフィックスは半角スラッシュ。全角縦棒は使わない(2026-08-11 に全936件を統一済み)。
     団体を当てられない行は書かずに一覧で報せる(勝手に埋めない)。
     """
     from marchinz_org_id import stable_org_id_for_team_name
@@ -713,10 +797,15 @@ def apply_accepted() -> int:
     rows = list(csv.DictReader(io.StringIO(raw)))
     before = len(rows)
     known_id = {r["団体/チーム名"]: r["団体ID"] for r in rows if r["団体ID"]}
+    cand_idx = load_candidate_index()
 
     added, skipped = [], []
     for v in sorted(todo):
         m = fetch_meta(v)
+        src = "meta"
+        if not m:
+            m = meta_from_candidate(v, cand_idx.get(v))
+            src = "candidate"
         if not m:
             skipped.append((v, "メタを取得できない"))
             continue
@@ -733,9 +822,21 @@ def apply_accepted() -> int:
             year = m["upload_date"][:4]
         part = PART.search(m["title"])
         part_s = part.group(0) if part else "POV"
+        # 候補題名のよくある略称を役割に正規化
+        if part_s == "POV":
+            for label, pat in (
+                ("Euphonium", r"\beuph\b"),
+                ("Baritone", r"\bbari\b"),
+                ("Mellophone", r"\bmello\b"),
+                ("Rack", r"\brack\s*cam\b"),
+                ("Drum Set", r"\bdrum\s*set\b|\bdrumset\b"),
+            ):
+                if re.search(pat, m["title"], re.I):
+                    part_s = label
+                    break
         up = m.get("upload_date") or ""
         show = guess_show(m["title"])
-        display = f"【POV｜{year}】{team}"
+        display = f"【POV/{year}】{team}"
         if show:
             display += f"「{show}」"
         display += f"【{part_s}】"
@@ -759,6 +860,8 @@ def apply_accepted() -> int:
         }
         rows.append(row)
         added.append(row)
+        if src == "candidate":
+            print(f"  (候補TSVから) {v}", file=sys.stderr)
 
     if added:
         write_pov_csv(rows, bom)

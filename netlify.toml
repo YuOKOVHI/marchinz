@@ -7,7 +7,12 @@
   # 毎朝5時のbot(YouTube/note/digestデータのみのpush)ではビルドしない(クレジット節約)。
   # exit 0 = ビルドをスキップ。データ系以外に差分があるときだけビルドが走る。
   # スキップ中のデータ鮮度は marchinz-data-refresh.js が実行時にGitHubから直接取得して担保する。
-  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- . ':(exclude)data.json' ':(exclude)data.inline.js' ':(exclude)digest.inline.js' ':(exclude)marchinz-notes.inline.js' ':(exclude)youtube-list/'"
+  #
+  # 2026-08-11: 大会動画の各CSVも除外へ追加した。海外(FloMarching)とPOVの
+  # 日次自動反映がここへコミットするため。CSVはブラウザへ配信されず、
+  # 派生の data.inline.js だけが読まれる(それも実行時にGitHubから取り直す)ので、
+  # CSVが変わってもビルドは要らない。
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- . ':(exclude)data.json' ':(exclude)data.inline.js' ':(exclude)digest.inline.js' ':(exclude)marchinz-notes.inline.js' ':(exclude)youtube-list/' ':(exclude)大会動画リスト_*.csv' ':(exclude)pov_ledger.json' ':(exclude)pov_channel_watchlist.txt'"
 
 # イベント登録の「URLから仮入力」用サーバレス関数(CORS回避のためサーバ側でページを取得)
 [functions]
