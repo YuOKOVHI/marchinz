@@ -3871,13 +3871,13 @@
   setupVideoSourceFilter();
 
   function resetVideosPageToDefaultTab() {
-    state.tab = "マーチング団体等";
-    state.sourceFilter = "";
-    syncVideoSourceFilterButton();
-    setSelectedVideoCategoryTab(state.tab);
+    // 通常のページ遷移では前回の検索・絞り込みを持ち込まない。
+    // URLに検索条件がある共有リンクは site-nav.js 側でこの関数を呼ばない。
     cancelSearchDebounce();
-    clearExactFilters();
-    clearExcludedOrgs();
+    state.tab = "マーチング団体等";
+    state.page = 1;
+    clearVideoFiltersForCategorySwitch();
+    setSelectedVideoCategoryTab(state.tab);
     if (state.rows.length) {
       applyFilter();
       renderBrowsePanel();
