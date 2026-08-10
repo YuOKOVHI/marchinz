@@ -1,4 +1,4 @@
-# 2日おき(奇数日) JST 05:00 頃に YouTube Data API でリストを、note 公式 RSS で新着記事を更新し、
+# 毎日 JST 05:00 頃に YouTube Data API でリストを、note 公式 RSS で新着記事を更新し、
 # 差分があれば main に push。Netlify が GitHub連携なら、この push で本番デプロイが走る。
 #
 # 新着が無いときは何もしない:
@@ -12,14 +12,14 @@
 #   YOUTUBE_API_KEY … Google Cloud の YouTube Data API v3 用キー（リポジトリシークレット）
 #   （note は公式 RSS を使うためキー不要）
 #
-# 手動実行: Actions タブ → 「YouTube + note refresh (2日おき)」→ Run workflow
+# 手動実行: Actions タブ → 「YouTube + note refresh (daily)」→ Run workflow
 
-name: YouTube + note refresh (2日おき)
+name: YouTube + note refresh (daily)
 
 on:
   schedule:
-    # 20:00 UTC = 翌日 05:00 JST。日次→2日おき(UTC奇数日)に変更しAPI/Actions消費を半減(2026-07-18)
-    - cron: "0 20 1-31/2 * *"
+    # 20:00 UTC = 翌日 05:00 JST
+    - cron: "0 20 * * *"
   workflow_dispatch:
 
 permissions:

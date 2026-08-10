@@ -12,8 +12,8 @@ name: メディア更新チェック (Laundry Day!! / マーチングエクス�
 
 on:
   schedule:
-    # 毎日 06:00 JST (21:00 UTC)。2誌まとめて調べる
-    - cron: "0 21 * * *"
+    # 毎日 05:00 JST (20:00 UTC)。2誌まとめて調べる
+    - cron: "0 20 * * *"
   workflow_dispatch:
     inputs:
       target:
