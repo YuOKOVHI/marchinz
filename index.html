@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-version="2.23.6" data-mz-channel="beta">
+<html lang="ja" data-mz-version="2.23.7" data-mz-channel="beta">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -1322,6 +1322,24 @@
                   参加した大会・演奏会の記録からショウ動画の検索まで、ひとつの場で。あなたのマーチングライフを、もっと色鮮やかに。
                 </p>
               </div>
+              <!-- ログイン中は、主な行動をキービジュアルより先に置く。 -->
+              <nav class="mll-lp-hero-subcta mz-action-rail" aria-label="したいことから選ぶ" data-mll-top-user-only hidden>
+                <a href="#community/events" data-page="community" data-mz-top-action="record" class="mz-action-rail-link" aria-label="大会・演奏会を記録する">
+                  <span class="mz-action-rail-icon"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i></span>
+                  <span class="mz-action-rail-copy"><strong>大会・演奏会</strong><small>記録を残す</small></span>
+                  <i class="fa-solid fa-chevron-right mz-action-rail-go" aria-hidden="true"></i>
+                </a>
+                <a href="#videos" data-page="videos" data-mz-top-action="watch" class="mz-action-rail-link" aria-label="ショウ動画を見る">
+                  <span class="mz-action-rail-icon"><i class="fa-solid fa-circle-play" aria-hidden="true"></i></span>
+                  <span class="mz-action-rail-copy"><strong>ショウ動画</strong><small>ショウを探す</small></span>
+                  <i class="fa-solid fa-chevron-right mz-action-rail-go" aria-hidden="true"></i>
+                </a>
+                <a href="#community/moments" data-page="community" data-community-subtab="moments" data-mz-top-action="talk" class="mz-action-rail-link" aria-label="タイムラインを見る">
+                  <span class="mz-action-rail-icon"><i class="fa-solid fa-comments" aria-hidden="true"></i></span>
+                  <span class="mz-action-rail-copy"><strong>タイムライン</strong><small>雑談を読む・書く</small></span>
+                  <i class="fa-solid fa-chevron-right mz-action-rail-go" aria-hidden="true"></i>
+                </a>
+              </nav>
               <div class="mll-lp-hero-visual">
                 <div class="mll-lp-hero-art" aria-hidden="true">
                   <img
@@ -1334,7 +1352,8 @@
                   />
                 </div>
               </div>
-              <nav class="mll-lp-hero-subcta mz-action-rail" aria-label="したいことから選ぶ">
+              <!-- 未ログイン時は、説明とキービジュアルの後に行動を選べる。 -->
+              <nav class="mll-lp-hero-subcta mz-action-rail" aria-label="したいことから選ぶ" data-mll-top-guest-only>
                 <a href="#community/events" data-page="community" data-mz-top-action="record" class="mz-action-rail-link" aria-label="大会・演奏会を記録する">
                   <span class="mz-action-rail-icon"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i></span>
                   <span class="mz-action-rail-copy"><strong>大会・演奏会</strong><small>記録を残す</small></span>
@@ -4201,7 +4220,7 @@
 
     </main>
 
-    <!-- 下部タブ: top/モーメント/イベント/掲示板/各属性/マイページ の6枠(2026-07-24 優さん指示)。
+    <!-- 下部タブ: top/モーメント/イベント/大会動画/各属性/マイページ の6枠(2026-07-24 優さん指示)。
          5番目(#mz-tabbar-attr)だけ usertype-ui.js が属性に合わせて中身を差し替える。
          6枠すべて data-page を持たせ、site-nav の navLinks(静的取得)に拾わせる -->
     <nav class="mz-tabbar" aria-label="モバイル下部ナビゲーション">
@@ -4218,9 +4237,9 @@
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="2" /><path d="M4 10h16M9 3v4M15 3v4" /></svg>
         <span>イベント</span>
       </a>
-      <a href="#community/board" data-page="community" data-community-subtab="board" class="mz-tabbar-link">
-        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 14a2 2 0 0 1 -2 2h-6l-4 3v-3h-2a2 2 0 0 1 -2 -2v-8a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2z" /></svg>
-        <span>掲示板</span>
+      <a href="#videos" data-page="videos" class="mz-tabbar-link">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 21v-5.6m8 5.6v-5.6M4 15.4h16M7.2 3h9.6l1.7 4.7a3 3 0 0 1-2.8 4H8.3a3 3 0 0 1-2.8-4z" /><path d="M12 7.1l1.35 2.74 3.02 .44-2.18 2.12 .51 3-2.7-1.42-2.7 1.42 .51-3-2.18-2.12 3.02-.44z" /></svg>
+        <span>大会動画</span>
       </a>
       <a href="#community/events" data-page="community" id="mz-tabbar-attr" class="mz-tabbar-link">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="7" r="4" /><path d="M3 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /><path d="M21 21v-2a4 4 0 0 0 -3 -3.85" /></svg>
