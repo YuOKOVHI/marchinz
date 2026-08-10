@@ -6804,14 +6804,20 @@ input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
   }
 
   /* プロフィール画像が大きく描画されても、表示名の先頭を覆わない。
-     iPhone では画像と本文を同じ行の別列に明示的に固定する。 */
+     iPhone ではカバーの下に画像と本文を同じ行の別列で固定する。 */
   #page-profile .user-profile-identity-row {
-    /* styles.css の 600px 以上用112pxアバターにも余白を確保する。 */
-    grid-template-columns: 112px minmax(0, 1fr);
+    display: grid;
+    grid-template-columns: 88px minmax(0, 1fr);
     align-items: center;
+    gap: 0.72rem;
+    margin-top: 0.65rem;
+    text-align: left;
   }
   #page-profile .user-profile-avatar-lg,
   #page-profile .user-profile-identity-row .marchinz-protected-photo-inner {
+    width: 88px;
+    height: 88px;
+    margin-top: 0;
     grid-column: 1;
     grid-row: 1;
     justify-self: start;
@@ -6827,6 +6833,15 @@ input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
     z-index: 1;
     width: auto;
     margin: 0;
+    align-items: flex-start;
+    text-align: left;
+  }
+  #page-profile .user-profile-name-row,
+  #page-profile .user-profile-id-pref-row,
+  #page-profile .user-profile-pills--inline {
+    align-items: flex-start;
+    justify-content: flex-start;
+    text-align: left;
   }
   #page-profile .user-profile-display-name {
     display: block;
