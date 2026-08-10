@@ -6801,6 +6801,34 @@ input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
     line-height: 1.3;
   }
 
+  /* プロフィール画像が大きく描画されても、表示名の先頭を覆わない。
+     iPhone では画像と本文を同じ行の別列に明示的に固定する。 */
+  #page-profile .user-profile-identity-row {
+    grid-template-columns: 80px minmax(0, 1fr);
+    align-items: start;
+  }
+  #page-profile .user-profile-avatar-lg,
+  #page-profile .user-profile-identity-row .marchinz-protected-photo-inner {
+    grid-column: 1;
+    grid-row: 1;
+    position: relative;
+    z-index: 0;
+  }
+  #page-profile .user-profile-identity-text {
+    grid-column: 2;
+    grid-row: 1;
+    position: relative;
+    z-index: 1;
+    width: auto;
+    margin: 0;
+  }
+  #page-profile .user-profile-display-name {
+    display: block;
+    overflow: visible;
+    text-indent: 0;
+    clip-path: none;
+  }
+
   .video-result-list .recommend-item-event-link,
   .video-result-list .recommend-item-event-plain {
     -webkit-line-clamp: 3;
