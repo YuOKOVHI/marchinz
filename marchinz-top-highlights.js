@@ -1,5 +1,5 @@
 /*
- * marchinz-top-highlights.js (v2.10.1)
+ * marchinz-top-highlights.js (v2.21.5)
  * トップページ(#page-mll)に「新着の大会動画」「YouTube 新着」「今週のマーチング(AIダイジェスト)」を描画する。
  * データ源はすべて既存の inline データ(window.__MARCHINZ_DATA / __YOUTUBE_LIST_ROWS / __MARCHINZ_DIGEST)。
  * データが無い・壊れている場合はセクションを hidden のまま残し、他機能へ影響しない。
@@ -98,8 +98,8 @@
     return a;
   }
 
-  /* TOPの新着大会動画は、海外と国内を最低1本ずつ確保してから、
-     選ばれた動画を配信日の新しい順に並べる（片方しか無い場合は存在する側で埋める）。 */
+  /* TOPの新着大会動画は、海外とPOVを合計2本までに制限する。
+     国内の新着を主役に保ちつつ、選ばれた動画は配信日の新しい順で表示する。 */
   function selectFreshChampionshipRows(sourceRows, limit) {
     var seen = {};
     var uniqueRows = sourceRows
@@ -115,25 +115,22 @@
       });
     var selected = [];
     var selectedIds = {};
+    var overseasOrPovCount = 0;
+
+    function isOverseasOrPov(row) {
+      var category = String(row["分類"] || "").trim();
+      return category === "海外" || category === "POV";
+    }
 
     function add(row) {
       if (!row || selected.length >= limit) return;
       var id = extractVideoId(row["URL"]);
       if (!id || selectedIds[id]) return;
+      if (isOverseasOrPov(row) && overseasOrPovCount >= 2) return;
       selectedIds[id] = true;
       selected.push(row);
+      if (isOverseasOrPov(row)) overseasOrPovCount += 1;
     }
-
-    add(
-      uniqueRows.find(function (row) {
-        return String(row["分類"] || "").trim() === "海外";
-      })
-    );
-    add(
-      uniqueRows.find(function (row) {
-        return String(row["分類"] || "").trim() !== "海外";
-      })
-    );
     uniqueRows.forEach(add);
 
     return selected

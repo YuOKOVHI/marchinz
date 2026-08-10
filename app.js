@@ -658,14 +658,38 @@
     );
   }
 
-  function switchVideosCategoryTab(category, { recordHistory = true } = {}) {
+  /**
+   * 分類タブは独立した「探す場所」。前の分類で入れた検索語・配信元・年などを
+   * 持ち越すと、切替直後に「動画がない」と見えるため、タブ操作では必ず初期化する。
+   * 配信元フィルタから分類を自動選択する時だけは、選択した配信元を保つ。
+   */
+  function clearVideoFiltersForCategorySwitch() {
+    clearExactFilters();
+    clearExcludedOrgs();
+    state.sourceFilter = "";
+    state.yearFilter = null;
+    state.browseOpen = false;
+    if (qTeam) qTeam.value = "";
+    if (qEvent) qEvent.value = "";
+    if (qFree) qFree.value = "";
+    if (optMatchExact) optMatchExact.checked = false;
+    if (optCrossBoth) optCrossBoth.checked = true;
+    if (browseOrgFilterInput) browseOrgFilterInput.value = "";
+    syncVideoSourceFilterButton();
+  }
+
+  function switchVideosCategoryTab(category, { recordHistory = true, resetFilters = true } = {}) {
     if (!category || category === state.tab) return;
     if (recordHistory) history.pushState(null, "", window.location.href);
     cancelSearchDebounce();
     state.tab = category;
-    clearExactFilters();
-    clearExcludedOrgs();
-    clearIncompatibleVideoSourceFilter(category);
+    if (resetFilters) {
+      clearVideoFiltersForCategorySwitch();
+    } else {
+      clearExactFilters();
+      clearExcludedOrgs();
+      clearIncompatibleVideoSourceFilter(category);
+    }
     setSelectedVideoCategoryTab(category);
     applyFilter();
     renderBrowsePanel();
@@ -3324,7 +3348,7 @@
         cancelSearchDebounce();
         const category = firstVideoCategoryForSourceFilter(v);
         if (category && category !== state.tab) {
-          switchVideosCategoryTab(category);
+          switchVideosCategoryTab(category, { resetFilters: false });
           return;
         }
         applyFilter();
