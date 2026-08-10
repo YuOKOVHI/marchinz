@@ -148,9 +148,11 @@ firebase deploy --only firestore:rules,storage
   **手で検索して拾ってはいけない。必ず `scout_pov_videos.py` を通す。**
 
   ```bash
-  python3 scout_pov_videos.py            # 探索 → pov_candidates.tsv
+  python3 scout_pov_videos.py            # 直近365日を探索 → pov_candidates.tsv
   python3 scout_pov_videos.py --quick    # 収録済みチャンネルの新着だけ見る(速い)
+  python3 scout_pov_videos.py --since 2025-08-10  # 公開日の下限を固定して再調査
   python3 scout_pov_videos.py --accept ID1 ID2 ...   # 採る
+  python3 scout_pov_videos.py --accept-file ids.txt  # IDを複数まとめて採る
   python3 scout_pov_videos.py --reject ID3 ID4 ...   # 採らない
   python3 scout_pov_videos.py --apply    # 採用ぶんをCSVへ追記(大会名は下書き。手で整える)
   ```
@@ -161,7 +163,11 @@ firebase deploy --only firestore:rules,storage
   実際 2026-08-10 に、同じ Bluecoats 2026 Victory Run のヘッドカムが
   **3つの別々の個人チャンネル**から上がっていたのに1本しか収録できなかった。
 
-  `scout_pov_videos.py` は3軸で母集団を作り、**タイトルと概要欄の両方**で判定する
+  `scout_pov_videos.py` は3軸で母集団を作り、**タイトルと概要欄の両方**で判定する。
+  検索結果の題名が素っ気なくても、概要欄に POV 語がある可能性があるため、候補門では
+  タイトルの語彙だけで捨てない。通常は**直近365日**に絞り、検索は新着順で行う。
+  個人チャンネルは、概要欄まで読んでPOV候補と判定できた投稿者の最新20本を深掘りする
+  （実際の個人投稿は通常1〜3本）。動画数が極端に多い公式チャンネルは最新80本を再訪する。
   （個人投稿はタイトルが素っ気なく、楽器名が概要欄にしか無いことがある）。
   判断は `pov_ledger.json` に貯まるので、再実行しても既に見た動画は出てこない。
 

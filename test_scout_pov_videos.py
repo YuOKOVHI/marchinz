@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -64,12 +65,19 @@ SHOULD_DROP = [
     ("尺が5分未満", "Bluecoats 2026 Snare Cam", 240, ""),
     ("楽器と無関係", "Iron Cobra 600 -featuring DUO GLIDE CAM!", 600, ""),
     ("手掛かり皆無", "2026 DCI Finals Results", 900, "The results are in."),
+    ("車載POV", "2026 SUV POV test drive", 900, "Filmed with a GoPro on my chest."),
+    ("ゲームPOV", "Troopers ESEA Match POV", 900, "Counter-Strike gameplay."),
 ]
 
 
 def meta(title: str, dur: int, desc: str) -> dict:
     return {"id": "x" * 11, "title": title, "dur": dur, "desc": desc,
             "channel": "test", "channel_url": ""}
+
+
+def flat(title: str, dur: int, upload_date: str) -> dict:
+    return {"id": "x" * 11, "title": title, "dur": dur,
+            "upload_date": upload_date, "channel": "test", "channel_url": ""}
 
 
 def main() -> int:
@@ -94,7 +102,21 @@ def main() -> int:
         if ok:
             fails.append(f"落とすべきが残った [{name}] {title} [{why}]")
 
-    total = len(REGRESSION_MISSED) + len(SHOULD_KEEP) + len(SHOULD_DROP)
+    # 題名にカメラ語がなくても、検索結果から概要欄を読むところまで進める。
+    # これを title 判定に戻すと「概要欄だけに GoPro」と書いた個人投稿を落とす。
+    since = date(2025, 8, 10)
+    if not S.eligible_flat(flat("Victory Run 2026", 900, "20260810"), since):
+        fails.append("概要欄待ちの素っ気ない題名を候補門で落とした")
+    if S.eligible_flat(flat("Bluecoats 2024 GoPro", 900, "20240810"), since):
+        fails.append("対象期間より前の動画が候補門に残った")
+    if S.eligible_flat(flat("Bluecoats 2026 Snare Cam", 240, "20260810"), since):
+        fails.append("5分未満が候補門に残った")
+    if S.CHANNEL_SCAN_LIMIT < 30:
+        fails.append("個人チャンネルの直近確認上限が小さすぎる")
+    if S.SNOWBALL_CHANNEL_SCAN_LIMIT < 10:
+        fails.append("雪だるま探索の個人チャンネル確認上限が小さすぎる")
+
+    total = len(REGRESSION_MISSED) + len(SHOULD_KEEP) + len(SHOULD_DROP) + 3
     if fails:
         print(f"FAIL {len(fails)}/{total}")
         for f in fails:

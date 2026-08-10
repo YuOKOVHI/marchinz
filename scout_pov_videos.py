@@ -43,7 +43,7 @@ import subprocess
 import sys
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -52,6 +52,12 @@ LEDGER = ROOT / "pov_ledger.json"
 CACHE = Path.home() / "Movies" / ".cache" / "marchinz-pov-scout"
 
 MIN_SEC = 300  # 5分
+DEFAULT_LOOKBACK_DAYS = 365
+DEFAULT_SEARCH_RESULTS = 20
+# 個人チャンネルは通常数本だが、団体公式には数千本ある。
+# /videos は公開日を返さないことがあるため、公式チャンネルを全件候補化しない。
+CHANNEL_SCAN_LIMIT = 80
+SNOWBALL_CHANNEL_SCAN_LIMIT = 20
 
 # yt-dlp は venv 側にしか無い環境があるので順に探す
 YTDLP_CANDIDATES = [
@@ -80,13 +86,35 @@ PART = re.compile(
 
 CAM = re.compile(r"(\bcam\b|\bcamera\b|カメラ|視点)", re.I)
 
+# 「POV」だけでは車載・ゲーム・警察映像などが大量に混ざる。タイトルと概要欄の
+# どちらかにマーチングの文脈も必要とする。団体名だけでなく、題名が簡素な個人投稿を
+# 救うための一般語(DCI / marching / drum corps / 楽器セクション)も含める。
+MARCHING_CONTEXT = re.compile(
+    r"(\bdci\b|drum\s*corps|marching|marched|drumline|hornline|"
+    r"front\s*ensemble|battery|victory\s*run|finals\s*(week|day)|"
+    r"semifinals|prelims|bluecoats|blue\s*devils|boston\s*crusaders|"
+    r"carolina\s*crown|santa\s*clara|cavaliers|phantom\s*regiment|"
+    r"madison\s*scouts|mandarins|blue\s*knights|crossmen|colts|blue\s*stars|"
+    r"spirit\s*of\s*atlanta|troopers|pacific\s*crest|river\s*city\s*rhythm|"
+    r"gold\s*(dbc|drum\s*corps)|yokohama\s*(robins|scouts)|ipu\s*marching|"
+    r"satsuki\s*dreamers|aimachi|marching\s*band\s*courage|"
+    r"マーチング|ドラムコー|ドラムライン|ホーンライン|カラーガード|吹奏楽|全国大会|"
+    r"ヘッドカム|奏者視点|プレイヤー視点)", re.I)
+
+# 団体名の一部はゲーム等にも出るため、明確な別ジャンルは先に除く。
+NOT_MARCHING = re.compile(
+    r"(counter[\s-]*strike|\bcs2?\b|\besea\b|gameplay|mythic\+|"
+    r"test\s*drive|night\s*drive|road\s*trip|traffic\s*stop|police\s*chase|"
+    r"suv|sedan|motorcycle|world\s*of\s*warcraft|pacific\s*crest\s*trail|"
+    r"thru[\s-]*hiker|hiking|bleeding\s*mandarins|vaelgor)", re.I)
+
 # 奏者視点ではない固定/編集カメラ(強い除外)
 NOT_POV = re.compile(
     r"(catwalk|overhead|high\s*cam|press\s*box|crowd\s*cam|stands\s*cam|"
     r"multi[\s\-_]?cam|multicam|wide[\s\-]?angle|split[\s\-]?cam|"
     r"retreat\s*cam|side\s*line\s*cam|drone|"
     r"react(ion)?|反応|解説|review|podcast|interview|"
-    r"trailer|teaser|announce|recap\b|highlight\s*reel|"
+    r"trailer|teaser|announce|recap\b|highlight\s*reel|sync(ed)?|archive|vlog|"
     r"glide\s*cam|slider|jib|"
     r"full\s*show\b(?!.*cam))", re.I)
 
@@ -104,7 +132,23 @@ CORPS_JP = [
     "MARCHING BAND COURAGE", "Aimachi", "THE YOKOHAMA SCOUTS",
     "つつじが丘ジュニアマーチングバンド", "龍桜高校",
 ]
-CAM_TERMS = ["headcam", "head cam", "POV", "cam victory run", "gopro"]
+TEAM_ALIASES = {
+    "Cavaliers": "The Cavaliers",
+    "SCV": "Santa Clara Vanguard",
+    "Gold DBC": "Gold",
+    "Paris High School Marching Band": "Paris High School Marching Band",
+    "UTA Maverick Marching Band": "UTA Maverick Marching Band",
+    "Auburn Tigers Marching Band": "Auburn Tigers Marching Band",
+}
+# カメラ語だけでなく **大会の段** も混ぜる。
+# ヘッドカムは Victory Run(決勝後のアンコール)だけでなく
+# Prelims / Semifinals / Finals Week でも撮られる。
+# 「Victory Run しか探していない」と準決勝ぶんを丸ごと落とす。
+CAM_TERMS = [
+    "headcam", "head cam", "POV", "gopro",
+    "cam victory run", "cam finals week",
+    "cam semifinals", "cam prelims", "cam full run",
+]
 JP_QUERIES = [
     "マーチング ヘッドカム", "マーチング 奏者視点", "マーチングバンド POV",
     "マーチング GoPro 視点", "ドラムライン 視点カメラ", "カラーガード 視点",
@@ -135,21 +179,24 @@ def run_ytdlp(args: list[str], timeout: int = 300) -> str:
         return ""
 
 
-def flat_list(target: str, timeout: int = 300) -> list[dict]:
+def flat_list(target: str, timeout: int = 300, playlist_end: int | None = None) -> list[dict]:
     """チャンネル/検索結果を軽く列挙(概要欄は付かない)。"""
-    fmt = "%(id)s\t%(title)s\t%(duration)s\t%(channel)s\t%(channel_url)s"
-    out = run_ytdlp(["--flat-playlist", "--print", fmt, target], timeout)
+    fmt = "%(id)s\t%(title)s\t%(duration)s\t%(channel)s\t%(channel_url)s\t%(upload_date)s"
+    args = ["--flat-playlist"]
+    if playlist_end:
+        args += ["--playlist-end", str(playlist_end)]
+    out = run_ytdlp([*args, "--print", fmt, target], timeout)
     rows = []
     for ln in out.strip().splitlines():
         f = ln.split("\t")
-        if len(f) < 5 or len(f[0]) != 11:
+        if len(f) < 6 or len(f[0]) != 11:
             continue
         try:
             dur = int(float(f[2]))
         except (ValueError, TypeError):
             dur = None
         rows.append({"id": f[0], "title": f[1], "dur": dur,
-                     "channel": f[3], "channel_url": f[4]})
+                     "channel": f[3], "channel_url": f[4], "upload_date": f[5]})
     return rows
 
 
@@ -190,18 +237,48 @@ def loose_hit(title: str) -> bool:
     return bool(STRONG_POV.search(title) or CAM.search(title))
 
 
+def parse_upload_date(raw: str) -> date | None:
+    """yt-dlp の YYYYMMDD を日付へ。取れない動画は後段で実メタ確認する。"""
+    try:
+        return datetime.strptime(raw, "%Y%m%d").date()
+    except (TypeError, ValueError):
+        return None
+
+
+def eligible_flat(row: dict, since: date) -> bool:
+    """本メタ取得前の候補門。
+
+    タイトルに POV 語がなくても、検索語との一致が概要欄にだけ出る個人投稿がある。
+    ここで title の語彙判定をすると、概要欄を読む前に取りこぼすため使わない。
+    """
+    if row.get("dur") is not None and row["dur"] < MIN_SEC:
+        return False
+    if NOT_POV.search(row.get("title", "")):
+        return False
+    published = parse_upload_date(row.get("upload_date", ""))
+    return published is None or published >= since
+
+
 def judge(meta: dict) -> tuple[bool, str]:
     """タイトル＋概要欄で採否を決める。戻り: (候補にするか, 理由)"""
     title, desc = meta["title"], meta.get("desc", "")
     both = f"{title}\n{desc}"
 
-    if meta["dur"] is not None and meta["dur"] < MIN_SEC:
+    if meta["dur"] is None:
+        return False, "尺を確認できない"
+    if meta["dur"] < MIN_SEC:
         return False, f"尺 {meta['dur']}s < {MIN_SEC}s"
 
     # 除外語はタイトルにあるときだけ効かせる
     # (概要欄には他の動画の宣伝で multi cam 等が混ざるため)
     if NOT_POV.search(title):
         return False, "固定/編集カメラの語"
+
+    if NOT_MARCHING.search(both):
+        return False, "別ジャンルの語"
+
+    if not MARCHING_CONTEXT.search(both):
+        return False, "マーチング文脈なし"
 
     if STRONG_POV.search(both):
         where = "題名" if STRONG_POV.search(title) else "概要欄"
@@ -243,7 +320,7 @@ def csv_channels() -> set[str]:
 
 
 # ── 本体 ───────────────────────────────────────────────
-def scout(quick: bool, workers: int) -> list[dict]:
+def scout(quick: bool, workers: int, since: date, search_results: int) -> list[dict]:
     known = csv_ids()
     ledger = load_ledger()
     decided = set(ledger) | known
@@ -257,7 +334,9 @@ def scout(quick: bool, workers: int) -> list[dict]:
         for r in rows:
             if r["id"] in decided or r["id"] in pool:
                 continue
-            if not loose_hit(r["title"]):
+            # ここは「題名がPOVっぽいか」では絞らない。概要欄だけに GoPro 等が
+            # 書かれた個人投稿を、本判定(judge)まで必ず通すため。
+            if not eligible_flat(r, since):
                 continue
             r["src"] = src
             pool[r["id"]] = r
@@ -268,7 +347,8 @@ def scout(quick: bool, workers: int) -> list[dict]:
     print("[軸3] 収録済みチャンネルを再訪", file=sys.stderr)
     for cu in sorted(csv_channels()):
         channels_done.add(cu)
-        n = absorb(flat_list(cu.rstrip("/") + "/videos"), f"revisit:{cu}")
+        n = absorb(flat_list(cu.rstrip("/") + "/videos", playlist_end=CHANNEL_SCAN_LIMIT),
+                   f"revisit:{cu}")
         if n:
             print(f"  +{n:>3} {cu}", file=sys.stderr)
 
@@ -279,41 +359,58 @@ def scout(quick: bool, workers: int) -> list[dict]:
                    + JP_QUERIES)
         print(f"[軸1] 横断検索 {len(queries)}本", file=sys.stderr)
         for i, q in enumerate(queries, 1):
-            n = absorb(flat_list(f"ytsearch20:{q}", timeout=150), f"search:{q}")
+            # YouTubeの関連度順では古い定番動画に押し出されるため、新着順で取得する。
+            n = absorb(flat_list(f"ytsearchdate{search_results}:{q}", timeout=150), f"search:{q}")
             if n:
                 print(f"  +{n:>3} {q}", file=sys.stderr)
             if i % 25 == 0:
                 print(f"  ..{i}/{len(queries)} (母集団 {len(pool)})", file=sys.stderr)
 
-    # ── 軸2: 雪だるま(当たったチャンネルを全件) ──
-    print("[軸2] 雪だるま列挙", file=sys.stderr)
-    targets = {r["channel_url"] for r in pool.values()
-               if r.get("channel_url")} - channels_done
+    def judge_ids(ids: list[str], label: str) -> list[dict]:
+        """概要欄・尺・公開日を実メタで読み、通過した候補だけを返す。"""
+        print(f"[判定:{label}] 概要欄を取得 {len(ids)}本 (並列{workers})", file=sys.stderr)
+        metas = []
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            for i, m in enumerate(ex.map(fetch_meta, ids), 1):
+                if m:
+                    metas.append(m)
+                if i % 50 == 0:
+                    print(f"  ..{i}/{len(ids)}", file=sys.stderr)
+        accepted = []
+        for m in metas:
+            # 今回の標準運用は直近365日の再調査。公開日を確認できない動画は候補として
+            # 出しても採用しない(期間外を混ぜない)。
+            if parse_upload_date(m.get("upload_date", "")) is None:
+                continue
+            if not eligible_flat(m, since):
+                continue
+            ok, why = judge(m)
+            if ok:
+                m["why"] = why
+                m["src"] = pool[m["id"]].get("src", "")
+                accepted.append(m)
+        return accepted
+
+    # まず検索・再訪の全結果を本判定する。題名に手掛かりがない動画もここまで届く。
+    first_ids = list(pool)
+    cands = judge_ids(first_ids, "一次")
+
+    # ── 軸2: 雪だるま ──
+    # タイトルではなく、概要欄まで読んで実際にPOV判定を通過した投稿者だけを深掘りする。
+    # これにより個人チャンネルは漏らさず追いつつ、大型チャンネルを無差別に列挙しない。
+    print("[軸2] 採用候補チャンネルを雪だるま列挙", file=sys.stderr)
+    targets = {m["channel_url"] for m in cands if m.get("channel_url")} - channels_done
     print(f"  対象 {len(targets)}チャンネル", file=sys.stderr)
     for cu in sorted(targets):
         channels_done.add(cu)
-        n = absorb(flat_list(cu.rstrip("/") + "/videos", timeout=180), f"snowball:{cu}")
+        n = absorb(flat_list(cu.rstrip("/") + "/videos", timeout=180,
+                             playlist_end=SNOWBALL_CHANNEL_SCAN_LIMIT), f"snowball:{cu}")
         if n:
             print(f"  +{n:>3} {cu}", file=sys.stderr)
 
-    # ── 概要欄つきで本判定 ──
-    print(f"[判定] 概要欄を取得 {len(pool)}本 (並列{workers})", file=sys.stderr)
-    ids = list(pool)
-    metas = []
-    with ThreadPoolExecutor(max_workers=workers) as ex:
-        for i, m in enumerate(ex.map(fetch_meta, ids), 1):
-            if m:
-                metas.append(m)
-            if i % 50 == 0:
-                print(f"  ..{i}/{len(ids)}", file=sys.stderr)
-
-    cands = []
-    for m in metas:
-        ok, why = judge(m)
-        if ok:
-            m["why"] = why
-            m["src"] = pool[m["id"]].get("src", "")
-            cands.append(m)
+    extra_ids = [v for v in pool if v not in set(first_ids)]
+    if extra_ids:
+        cands.extend(judge_ids(extra_ids, "雪だるま"))
     cands.sort(key=lambda x: (x.get("upload_date") or "", x["channel"]), reverse=True)
     print(f"\n=== 未判定の候補 {len(cands)}本 / 母集団 {len(pool)}本", file=sys.stderr)
     return cands
@@ -331,6 +428,18 @@ def guess_team(text: str) -> str:
         n = n.replace(" drum corps", "")
         if re.search(re.escape(n), text, re.I):
             return n
+    for alias, team in TEAM_ALIASES.items():
+        if re.search(re.escape(alias), text, re.I):
+            return team
+    return ""
+
+
+def guess_show(title: str) -> str:
+    """既存POVの表示規則に合わせ、題名に明示されたショウ名だけを拾う。"""
+    for pattern in (r"[“\"]([^”\"]{2,80})[”\"]", r"「([^」]{2,80})」"):
+        m = re.search(pattern, title)
+        if m:
+            return m.group(1).strip()
     return ""
 
 
@@ -377,12 +486,17 @@ def apply_accepted() -> int:
         part = PART.search(m["title"])
         part_s = part.group(0) if part else "POV"
         up = m.get("upload_date") or ""
+        show = guess_show(m["title"])
+        display = f"【POV｜{year}】{team}"
+        if show:
+            display += f"「{show}」"
+        display += f"【{part_s}】"
         row = {
             "種別": "動画", "分類": "POV",
             "動画での表示名": team, "団体/チーム名": team,
             "団体ID": known_id.get(team) or stable_org_id_for_team_name(team),
             "配信日": f"{up[:4]}-{up[4:6]}-{up[6:8]}" if len(up) == 8 else "",
-            "大会名": f"【POV｜{year}】{team}【{part_s}】",
+            "大会名": display,
             "URL": f"https://www.youtube.com/watch?v={v}",
             "動画配信元": "POV", "動画配信元URL": "", "動画配信元ロゴURL": "",
         }
@@ -412,29 +526,66 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--quick", action="store_true", help="横断検索を省く(再訪+雪だるまのみ)")
     ap.add_argument("--workers", type=int, default=6)
+    ap.add_argument("--since", metavar="YYYY-MM-DD",
+                    help="公開日の下限。省略時は直近365日")
+    ap.add_argument("--all-time", action="store_true", help="公開日で絞らない(通常は使わない)")
+    ap.add_argument("--search-results", type=int, default=DEFAULT_SEARCH_RESULTS,
+                    help=f"検索語ごとの新着取得件数(既定{DEFAULT_SEARCH_RESULTS})")
     ap.add_argument("--out", type=Path, default=ROOT / "pov_candidates.tsv")
     ap.add_argument("--accept", nargs="*", metavar="ID", help="台帳で採用にする")
     ap.add_argument("--reject", nargs="*", metavar="ID", help="台帳で却下にする")
+    ap.add_argument("--accept-file", type=Path, metavar="FILE",
+                    help="採用するvideo_idを1行ずつ書いたファイル")
+    ap.add_argument("--reject-file", type=Path, metavar="FILE",
+                    help="却下するvideo_idを1行ずつ書いたファイル")
     ap.add_argument("--apply", action="store_true", help="採用ぶんをCSVへ追記")
     args = ap.parse_args()
 
     if args.apply:
         return apply_accepted()
 
-    if args.accept or args.reject:
+    def ids_from_file(path: Path | None) -> list[str]:
+        if not path:
+            return []
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except OSError as e:
+            ap.error(f"IDファイルを読めません: {e}")
+        ids = [x.strip() for x in lines if x.strip()]
+        bad = [x for x in ids if not re.fullmatch(r"[A-Za-z0-9_-]{11}", x)]
+        if bad:
+            ap.error(f"IDファイルに不正なvideo_idがあります: {bad[0]}")
+        return ids
+
+    accept_ids = list(args.accept or []) + ids_from_file(args.accept_file)
+    reject_ids = list(args.reject or []) + ids_from_file(args.reject_file)
+    if accept_ids or reject_ids:
         led = load_ledger()
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        for v in args.accept or []:
+        for v in accept_ids:
             led.setdefault(v, {})["status"] = "accepted"
             led[v]["decided"] = now
-        for v in args.reject or []:
+        for v in reject_ids:
             led.setdefault(v, {})["status"] = "rejected"
             led[v]["decided"] = now
         save_ledger(led)
-        print(f"台帳を更新: 採用{len(args.accept or [])} / 却下{len(args.reject or [])}")
+        print(f"台帳を更新: 採用{len(accept_ids)} / 却下{len(reject_ids)}")
         return 0
 
-    cands = scout(args.quick, args.workers)
+    if args.since:
+        try:
+            since = datetime.strptime(args.since, "%Y-%m-%d").date()
+        except ValueError:
+            ap.error("--since は YYYY-MM-DD で指定してください")
+    else:
+        since = datetime.now(timezone.utc).date() - timedelta(days=DEFAULT_LOOKBACK_DAYS)
+    if args.all_time:
+        since = date.min
+    if args.search_results < 1:
+        ap.error("--search-results は1以上にしてください")
+
+    print(f"[対象期間] {since.isoformat()} 以降", file=sys.stderr)
+    cands = scout(args.quick, args.workers, since, args.search_results)
     with args.out.open("w", encoding="utf-8", newline="") as f:
         w = csv.writer(f, delimiter="\t", lineterminator="\n")
         w.writerow(["video_id", "公開日", "尺秒", "チャンネル", "題名", "判定理由", "URL"])
