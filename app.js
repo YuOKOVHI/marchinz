@@ -1688,7 +1688,10 @@
       Boolean(f) ||
       state.exactOrgTeam !== null ||
       state.exactEvent !== null;
-    const crossTabSearchMode = Boolean(optCrossBoth?.checked ?? true) && hasSearchOrExact;
+    // POV / 海外はタブ意図が強い。団体・大会検索しても「すべての分類を表示」で他分類を混ぜない。
+    const tabLocksCategory = state.tab === "POV" || state.tab === "海外";
+    const crossTabSearchMode =
+      !tabLocksCategory && Boolean(optCrossBoth?.checked ?? true) && hasSearchOrExact;
 
     const useExactMatch = Boolean(optMatchExact?.checked);
 
