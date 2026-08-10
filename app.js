@@ -51,6 +51,31 @@
     海外: "海外",
     POV: "POV",
   };
+  /**
+   * 楽器／パートの専用列はないため、動画名・団体名などに実際に書かれた語だけで絞る。
+   * 推測による楽器判定はしない。単体パートは英語表記も含めて検索する。
+   */
+  const VIDEO_PART_FILTERS = {
+    color_guard: { label: "カラーガード", terms: ["カラーガード", "color guard", "colorguard"] },
+    brass: {
+      label: "ブラス",
+      terms: ["ブラス", "金管", "brass", "trumpet", "trombone", "euphonium", "tuba", "mellophone", "baritone", "horn"],
+    },
+    percussion: {
+      label: "パーカッション",
+      terms: ["打楽器", "パーカッション", "percussion", "battery", "front ensemble", "snare", "tenor", "marimba", "vibraphone", "cymbal"],
+    },
+    trumpet: { label: "トランペット", terms: ["trumpet"] },
+    trombone: { label: "トロンボーン", terms: ["trombone"] },
+    euphonium: { label: "ユーフォニアム", terms: ["euphonium"] },
+    tuba: { label: "チューバ", terms: ["tuba"] },
+    mellophone: { label: "メロフォン", terms: ["mellophone"] },
+    baritone: { label: "バリトン", terms: ["baritone"] },
+    snare: { label: "スネア", terms: ["snare"] },
+    marimba: { label: "マリンバ", terms: ["marimba"] },
+    vibraphone: { label: "ビブラフォン", terms: ["vibraphone"] },
+    cymbal: { label: "シンバル", terms: ["cymbal"] },
+  };
   /** 大会動画・初期表示で必ず先頭に試す団体（順固定・各1動画・最大3枠）。動画が無い団体はスキップ。 */
   const INITIAL_RANDOM_PRIORITY_SLOTS = 3;
   const INITIAL_RANDOM_PRIORITY_TEAMS = [
@@ -110,6 +135,30 @@
     return collatorJa.compare(String(a), String(b));
   }
 
+  /** 団体／チーム一覧は英字（ABC）を先にし、その後を日本語の並びにする。 */
+  function compareOrgNameOrder(a, b) {
+    const fallbackClassify = (raw) => {
+      const ch = Array.from(String(raw ?? "").trim().normalize("NFKC"))[0] || "";
+      if (!ch) return 4;
+      if (/[A-Za-z]/.test(ch)) return 1;
+      if (/[0-9]/.test(ch)) return 2;
+      if (/[぀-ヿ㐀-鿿]/.test(ch)) return 0;
+      return 3;
+    };
+    const classify =
+      typeof MarchinZSort !== "undefined" && typeof MarchinZSort?.classifyFirst === "function"
+        ? MarchinZSort.classifyFirst
+        : fallbackClassify;
+    const rank = (raw) => {
+      const group = classify(raw);
+      // marchinz-sort.js: 日本語=0 / 英字=1 / 数字=2 / その他=3 / 空=4
+      return group === 1 ? 0 : group === 0 ? 1 : group;
+    };
+    const ra = rank(a);
+    const rb = rank(b);
+    return ra === rb ? compareScriptOrder(a, b) : ra - rb;
+  }
+
   const videoList = $("#video-list");
   const resultsSkeleton = $("#results-skeleton");
   const resultsPanel = $("#results-panel");
@@ -117,6 +166,7 @@
   const qTeam = $("#q-team");
   const qEvent = $("#q-event");
   const qFree = $("#q-free");
+  const videoPartFilter = $("#video-part-filter");
   const optMatchExact = $("#opt-match-exact");
   const mix3Notice = $("#mix3-notice");
   const mix3AboutChipWrap = $("#mix3-about-chip-wrap");
@@ -616,7 +666,7 @@
 
   function sortBrowseStrings(arr) {
     const uniq = [...new Set(arr)];
-    return uniq.sort((a, b) => compareScriptOrder(String(a), String(b)));
+    return uniq.sort((a, b) => compareOrgNameOrder(String(a), String(b)));
   }
 
   function uniqOrgNamesForTab() {
@@ -671,6 +721,7 @@
     if (qTeam) qTeam.value = "";
     if (qEvent) qEvent.value = "";
     if (qFree) qFree.value = "";
+    if (videoPartFilter) videoPartFilter.value = "";
     if (optMatchExact) optMatchExact.checked = false;
     if (browseOrgFilterInput) browseOrgFilterInput.value = "";
     syncVideoSourceFilterButton();
@@ -900,6 +951,7 @@
       team: (qTeam?.value ?? "").trim(),
       event: (qEvent?.value ?? "").trim(),
       free: (qFree?.value ?? "").trim(),
+      part: videoPartFilter?.value ?? "",
       tab: state.tab,
       sortKey: state.sortKey,
       sortDir: state.sortDir,
@@ -917,6 +969,7 @@
     if (qTeam) qTeam.value = c.team || "";
     if (qEvent) qEvent.value = c.event || "";
     if (qFree) qFree.value = c.free || "";
+    if (videoPartFilter) videoPartFilter.value = VIDEO_PART_FILTERS[c.part] ? c.part : "";
     clearIncompatibleVideoSourceFilter(state.tab);
     setSelectedVideoCategoryTab(state.tab);
     applyFilter();
@@ -925,8 +978,8 @@
 
   function pushRecentSearch() {
     const c = currentSearchState();
-    if (!c.team && !c.event && !c.free) return;
-    const label = [c.team, c.event, c.free].filter(Boolean).join(" / ");
+    if (!c.team && !c.event && !c.free && !c.part) return;
+    const label = [c.team, c.event, c.free, VIDEO_PART_FILTERS[c.part]?.label].filter(Boolean).join(" / ");
     if (!label) return;
     const dedup = state.recentSearches.filter((x) => x.label !== label);
     state.recentSearches = [{ id: `${Date.now()}`, label, criteria: c }, ...dedup].slice(0, 10);
@@ -1091,6 +1144,20 @@
     );
   }
 
+  /** 楽器／パートは、動画情報に実際に書かれた語だけを対象にする。 */
+  function rowPartSearchText(row) {
+    return normalize(
+      [rowDisplayName(row), rowOrgTeam(row), row["大会名"], row["種別"]].join(" ")
+    );
+  }
+
+  function rowMatchesVideoPartFilter(row, key) {
+    const filter = VIDEO_PART_FILTERS[key];
+    if (!filter) return true;
+    const hay = rowPartSearchText(row);
+    return filter.terms.some((term) => hay.includes(normalize(term)));
+  }
+
   /** 表示中チップの並び: 完全一致 > 接頭 > 接尾(例: Nana→KaeNana) > その他の部分一致 */
   function scoreOrgChipForTeamQuery(orgRaw, dispRaw, qk) {
     if (!qk) return 0;
@@ -1191,6 +1258,7 @@
     if (qTeam) qTeam.value = "";
     if (qEvent) qEvent.value = "";
     if (qFree) qFree.value = "";
+    if (videoPartFilter) videoPartFilter.value = "";
     if (pageSizeSelect) pageSizeSelect.value = "10";
     const tab = p.get("tab");
     const cTab = p.get("c");
@@ -1215,6 +1283,8 @@
     if (qEvent && (p.has("event") || p.has("e"))) qEvent.value = eventQ ?? "";
     const freeQ = p.has("free") ? p.get("free") : p.get("f");
     if (qFree && (p.has("free") || p.has("f"))) qFree.value = freeQ ?? "";
+    const partQ = p.get("part");
+    if (videoPartFilter && VIDEO_PART_FILTERS[partQ]) videoPartFilter.value = partQ;
     const sort = p.has("sort") ? p.get("sort") : p.get("s");
     if (sort) {
       if (SHARE_S_TO_SORT[sort]) {
@@ -1308,6 +1378,8 @@
     }
     if (event) p.set("e", event);
     if (free) p.set("f", free);
+    const part = videoPartFilter?.value ?? "";
+    if (VIDEO_PART_FILTERS[part]) p.set("part", part);
     if (state.sortKey !== "配信日") {
       const sc = SHARE_SORT_TO_S[state.sortKey];
       if (sc) p.set("s", sc);
@@ -1418,9 +1490,11 @@
     const team = (qTeam?.value ?? "").trim() || String(state.exactOrgTeam ?? "").trim();
     const event = (qEvent?.value ?? "").trim() || String(state.exactEvent ?? "").trim();
     const free = (qFree?.value ?? "").trim();
+    const part = VIDEO_PART_FILTERS[videoPartFilter?.value]?.label || "";
     if (team) parts.push(team);
     if (event) parts.push(event);
     if (free) parts.push(free);
+    if (part) parts.push(part);
     return parts.length ? parts.join(" / ") : "現在の検索条件";
   }
 
@@ -1699,11 +1773,22 @@
     const teamQ = normalizeTeamSearchKey((qTeam?.value ?? "").trim());
     const e = normalize((qEvent?.value ?? "").trim());
     const f = normalize((qFree?.value ?? "").trim());
+    const partKey = VIDEO_PART_FILTERS[videoPartFilter?.value] ? videoPartFilter.value : "";
     const selectedOrg = String(state.exactOrgTeam ?? "").trim();
     const isFocusQuery = hasTheFocusToken(qTeam?.value ?? "");
     const isFocusSelected = hasTheFocusToken(selectedOrg);
     const isFocusMatch = isFocusQuery || isFocusSelected;
     const useExactMatch = Boolean(optMatchExact?.checked);
+    const hasSearchOrExact = Boolean(
+      teamQ ||
+        e ||
+        f ||
+        partKey ||
+        selectedOrg ||
+        state.exactEvent !== null ||
+        state.sourceFilter ||
+        state.yearFilter
+    );
     // 検索・完全一致・配信元・年のすべてを、選択中の分類内だけで行う。
     // カテゴリをまたぐ検索は意図しない0件/混在の原因になるため提供しない。
     const sourceRows = state.rows.filter(
@@ -1770,6 +1855,7 @@
         ].join(" ")
       );
       if (f && !hay.includes(f)) return false;
+      if (partKey && !rowMatchesVideoPartFilter(row, partKey)) return false;
       if (!rowMatchesVideoSourceFilter(row)) return false;
       return true;
     };
@@ -1802,6 +1888,7 @@
         has_team: Boolean(teamQ),
         has_event: Boolean(e),
         has_free: Boolean(f),
+        has_part: Boolean(partKey),
         result_bucket: bucket,
       });
       if (state.filtered.length === 0) {
@@ -1837,7 +1924,7 @@
       const db = vb || "0000-00-00";
       return da.localeCompare(db);
     }
-    return compareScriptOrder(String(va), String(vb));
+    return compareOrgNameOrder(String(va), String(vb));
   }
 
   function sortRows() {
@@ -1864,6 +1951,7 @@
     if ((qTeam?.value ?? "").trim()) return false;
     if ((qEvent?.value ?? "").trim()) return false;
     if ((qFree?.value ?? "").trim()) return false;
+    if (videoPartFilter?.value) return false;
     if (state.excludedOrgTeams.size > 0) return false;
     if (state.sourceFilter || state.yearFilter) return false;
     return true;
@@ -3146,7 +3234,7 @@
         const sb = scoreOrgChipForTeamQuery(b, dispForOrg(b), chipQuery);
         const sa = scoreOrgChipForTeamQuery(a, dispForOrg(a), chipQuery);
         if (sb !== sa) return sb - sa;
-        return compareScriptOrder(a, b);
+        return compareOrgNameOrder(a, b);
       });
     }
 
@@ -3561,6 +3649,7 @@
     if (qTeam) qTeam.value = "";
     if (qEvent) qEvent.value = "";
     if (qFree) qFree.value = "";
+    if (videoPartFilter) videoPartFilter.value = "";
     if (optMatchExact) optMatchExact.checked = false;
     state.yearFilter = null;
     renderYearChipActiveState();
@@ -3611,6 +3700,7 @@
   if (qTeam) qTeam.addEventListener("input", () => onSearchInputDebounced("team"));
   if (qEvent) qEvent.addEventListener("input", () => onSearchInputDebounced("event"));
   if (qFree) qFree.addEventListener("input", () => onSearchInputDebounced("free"));
+  if (videoPartFilter) videoPartFilter.addEventListener("change", () => onSearchInputDebounced("part"));
   if (optMatchExact) {
     optMatchExact.addEventListener("change", () => {
       onSearchInputDebounced();

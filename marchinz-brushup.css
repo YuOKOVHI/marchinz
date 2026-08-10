@@ -5692,6 +5692,24 @@ input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
   grid-row: auto;
 }
 
+#page-videos .video-search-filter-sheet #video-part-filter {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 0.75rem;
+  border: 1px solid var(--mzu-line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--mzu-ink);
+  font: inherit;
+}
+
+#page-videos .video-search-filter-sheet .video-part-filter-note {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
 #page-videos .video-search-filter-sheet .search-options {
   margin: 0.7rem 0;
   border: 0;
