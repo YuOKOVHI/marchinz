@@ -6846,3 +6846,24 @@ input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
 @media (min-width: 720px) {
   .site-logo { max-height: 54px; }
 }
+
+/* Moment: 見出し・投稿入口・検索の順を保ちつつ、スマホの縦余白だけを整える。 */
+@media (max-width: 719px) {
+  #community-hub-panel-moments > .mll-panel {
+    padding-top: 0.72rem;
+    padding-bottom: 1rem;
+    gap: 0.52rem;
+  }
+
+  #community-hub-panel-moments .page-hero.mz-philosophy-header {
+    margin: 0.05rem 0 0.4rem;
+  }
+
+  #community-hub-panel-moments .mlm-feed-create-row {
+    margin: 0.2rem 0 0.45rem;
+  }
+
+  #community-hub-panel-moments .mln-feed-search {
+    margin-top: 0;
+  }
+}

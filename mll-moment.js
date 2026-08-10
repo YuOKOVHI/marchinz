@@ -5,7 +5,6 @@
   const LIMIT = 48;
   const MAX_BODY = 400;
   const MAX_PHOTOS = 4;
-  const FEED_SUMMARY_TEXT = `更新が新しい順 · 最大 ${LIMIT} 件を表示しています`;
   const AVATAR_FALLBACK = "logo/marchinz-logo.png";
 
   /** @type {boolean} */
@@ -449,9 +448,10 @@
     }
 
     busy = true;
+    // 通常時は件数の説明を出さない。投稿を読む・探す操作を最優先にする。
     if (msg) {
-      msg.textContent = FEED_SUMMARY_TEXT;
-      msg.hidden = false;
+      msg.textContent = "";
+      msg.hidden = true;
     }
     root.replaceChildren();
 
@@ -459,7 +459,10 @@
       cachedRows = await loadLatestPublic(LIMIT);
 
       paintCards();
-      if (msg) msg.textContent = FEED_SUMMARY_TEXT;
+      if (msg) {
+        msg.textContent = "";
+        msg.hidden = true;
+      }
     } catch (e) {
       const code = typeof e?.code === "string" ? e.code : "";
       console.warn("[MarchinZ] Moment feed", e);
