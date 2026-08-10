@@ -147,6 +147,20 @@ firebase deploy --only firestore:rules,storage
 
   **手で検索して拾ってはいけない。必ず `scout_pov_videos.py` を通す。**
 
+  **▶ 詳しい手順・採用基準・他AIへの依頼文は [`docs/POV_LIST_GUIDE.md`](POV_LIST_GUIDE.md) に集約した。
+  POVを触る作業は、AIも人も、まずそれを読むこと。**
+
+  新着は **毎日 06:00 JST に GitHub Actions が見張る**（`.github/workflows/pov-update-check.yml`）。
+  候補が出た日だけ Issue が立つ。**サイトのファイルは書き換えないのでビルドは走らず、
+  Netlify のクレジットは減らない**。採否と CSV への追記は人（または指示を受けたAI）が行う。
+
+  いま何年分あるかを見る / 年を決めて掘る:
+
+  ```bash
+  python3 scout_pov_videos.py --coverage                    # 年別の件数と、掘る価値のある年
+  python3 scout_pov_videos.py --year-from 2012 --year-to 2015  # その年だけ掘る
+  ```
+
   ```bash
   python3 scout_pov_videos.py            # 直近365日を探索 → pov_candidates.tsv
   python3 scout_pov_videos.py --quick    # 収録済みチャンネルの新着だけ見る(速い)

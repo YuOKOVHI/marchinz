@@ -55,6 +55,11 @@ CACHE = Path.home() / "Movies" / ".cache" / "marchinz-pov-scout"
 
 MIN_SEC = 300  # 5分
 DEFAULT_LOOKBACK_DAYS = 365
+
+# 年ごとのカバー状況を読むときの目安
+COVID_YEARS = {2020}      # DCIのシーズンが中止。少ないのが正しい
+PREGOPRO_YEAR = 2012      # これ以前はヘッドカム自体がほとんど無い
+THIN_THRESHOLD = 40       # これ未満なら「掘る価値あり」と見なす
 DEFAULT_SEARCH_RESULTS = 20
 # 個人チャンネルは通常数本だが、団体公式には数千本ある。
 # /videos は公開日を返さないことがあるため、公式チャンネルを全件候補化しない。
@@ -163,6 +168,8 @@ CAM_TERMS = [
     "cam victory run", "cam finals week",
     "cam semifinals", "cam prelims", "cam full run",
 ]
+# 年を指定して掘るときの語。年が入るぶんクエリが増えるので数を絞る。
+YEAR_CAM_TERMS = ["headcam", "head cam", "POV", "gopro", "cam victory run"]
 JP_QUERIES = [
     "マーチング ヘッドカム", "マーチング 奏者視点", "マーチングバンド POV",
     "マーチング GoPro 視点", "ドラムライン 視点カメラ", "カラーガード 視点",
@@ -410,7 +417,58 @@ def watch_channels() -> set[str]:
 
 
 # ── 本体 ───────────────────────────────────────────────
-def scout(quick: bool, workers: int, since: date, search_results: int) -> list[dict]:
+def coverage() -> dict:
+    """CSVが何年分をどれだけ持っているかを数える(ネットに触らない)。"""
+    rows = list(csv.DictReader(io.StringIO(POV_CSV.read_text(encoding="utf-8"))))
+    per = {}
+    unknown = 0
+    for r in rows:
+        m = re.match(r"^【POV/(\d{4})】", r["大会名"])
+        if m:
+            per[int(m.group(1))] = per.get(int(m.group(1)), 0) + 1
+        else:
+            unknown += 1
+    return {"total": len(rows), "per_year": per, "unknown": unknown}
+
+
+def print_coverage() -> int:
+    """年ごとの収録数を棒で見せ、薄い年を名指しする。"""
+    c = coverage()
+    per = c["per_year"]
+    if not per:
+        print("年つきの行がありません")
+        return 1
+    lo, hi = min(per), max(per)
+    print(f"収録 {c['total']}件 / {lo}〜{hi} の {hi - lo + 1}年分"
+          + (f" / 年不明 {c['unknown']}件" if c["unknown"] else ""))
+    print()
+    print("年     件数  ")
+    for y in range(hi, lo - 1, -1):
+        n = per.get(y, 0)
+        note = ""
+        if y in COVID_YEARS and n <= 5:
+            note = "  ← コロナでDCIシーズン中止。少なくて正しい"
+        elif n == 0:
+            note = "  ← 収録なし"
+        elif y >= PREGOPRO_YEAR and n < THIN_THRESHOLD:
+            note = "  ← 薄い。掘る価値あり"
+        print(f"{y}  {n:>5}  {'█' * min(52, n // 3)}{note}")
+    print()
+    thin = [y for y in range(lo, hi + 1)
+            if per.get(y, 0) < THIN_THRESHOLD
+            and y not in COVID_YEARS and y >= PREGOPRO_YEAR]
+    if thin:
+        print(f"掘るとよい年({THIN_THRESHOLD}件未満): {', '.join(map(str, thin))}")
+        print(f"  例: python3 scout_pov_videos.py --year-from {thin[0]} --year-to {thin[-1]}")
+    else:
+        print(f"{PREGOPRO_YEAR}年以降はどの年も{THIN_THRESHOLD}件以上あります")
+    print(f"\n※ {PREGOPRO_YEAR}年より前はヘッドカム自体がほとんど存在しないため、"
+          "少ないのが自然です")
+    return 0
+
+
+def scout(quick: bool, workers: int, since: date, search_results: int,
+          year_from: int | None = None, year_to: int | None = None) -> list[dict]:
     known = csv_ids()
     ledger = load_ledger()
     decided = set(ledger) | known
@@ -446,13 +504,25 @@ def scout(quick: bool, workers: int, since: date, search_results: int) -> list[d
 
     # ── 軸1: 横断検索 ──
     if not quick:
-        queries = ([f"{c} {t}" for c in CORPS_EN for t in CAM_TERMS]
-                   + [f"{c} {t}" for c in CORPS_JP for t in ("POV", "ヘッドカム", "視点")]
-                   + JP_QUERIES)
-        print(f"[軸1] 横断検索 {len(queries)}本", file=sys.stderr)
-        for i, q in enumerate(queries, 1):
+        if year_from and year_to:
+            # 年を指定したときは「団体 × 年 × カメラ語」で掘る。
+            # 過去の年は新着順(ytsearchdate)だと拾えないので関連度順(ytsearch)にする。
+            years = range(year_from, year_to + 1)
+            queries = [f"{c} {y} {t}"
+                       for y in years for c in CORPS_EN for t in YEAR_CAM_TERMS]
+            queries += [f"{c} {y} ヘッドカム" for y in years for c in CORPS_JP]
+            prefix = f"ytsearch{search_results}"
+            print(f"[軸1] 年を指定した横断検索 {year_from}〜{year_to} / {len(queries)}本",
+                  file=sys.stderr)
+        else:
+            queries = ([f"{c} {t}" for c in CORPS_EN for t in CAM_TERMS]
+                       + [f"{c} {t}" for c in CORPS_JP for t in ("POV", "ヘッドカム", "視点")]
+                       + JP_QUERIES)
             # YouTubeの関連度順では古い定番動画に押し出されるため、新着順で取得する。
-            n = absorb(flat_list(f"ytsearchdate{search_results}:{q}", timeout=150), f"search:{q}")
+            prefix = f"ytsearchdate{search_results}"
+            print(f"[軸1] 横断検索 {len(queries)}本", file=sys.stderr)
+        for i, q in enumerate(queries, 1):
+            n = absorb(flat_list(f"{prefix}:{q}", timeout=150), f"search:{q}")
             if n:
                 print(f"  +{n:>3} {q}", file=sys.stderr)
             if i % 25 == 0:
@@ -718,14 +788,25 @@ def main() -> int:
     ap.add_argument("--apply", action="store_true", help="採用ぶんをCSVへ追記")
     ap.add_argument("--fix-publishers", action="store_true",
                     help="既存CSVの動画配信元『POV』を実チャンネル名へ直す")
+    ap.add_argument("--coverage", action="store_true",
+                    help="何年分をどれだけ持っているかを表示して終わる(ネット無し)")
+    ap.add_argument("--year-from", type=int, metavar="YYYY",
+                    help="この年から掘る(--year-to と対で使う)")
+    ap.add_argument("--year-to", type=int, metavar="YYYY", help="この年まで掘る")
     ap.add_argument("--no-network-meta", action="store_true",
                     help="判定時に本メタをネット取得しない(キャッシュと題名のみ)")
     args = ap.parse_args()
 
+    if args.coverage:
+        return print_coverage()
     if args.fix_publishers:
         return fix_publishers(args.workers)
     if args.apply:
         return apply_accepted()
+    if bool(args.year_from) != bool(args.year_to):
+        ap.error("--year-from と --year-to は対で指定してください")
+    if args.year_from and args.year_from > args.year_to:
+        ap.error("--year-from が --year-to より後になっています")
     # scout() から読む
     global _JUDGE_NO_NETWORK
     _JUDGE_NO_NETWORK = bool(args.no_network_meta)
@@ -770,8 +851,15 @@ def main() -> int:
     if args.search_results < 1:
         ap.error("--search-results は1以上にしてください")
 
+    # 年を掘るときは、公開日の下限が邪魔をする(2015年の動画は直近365日に無い)。
+    # 明示の --since が無ければ、その年の1月1日まで自動でさかのぼる。
+    if args.year_from and not args.since and not args.all_time:
+        since = date(args.year_from, 1, 1)
+        print(f"[年指定] --since を {since.isoformat()} へ自動で下げました", file=sys.stderr)
+
     print(f"[対象期間] {since.isoformat()} 以降", file=sys.stderr)
-    cands = scout(args.quick, args.workers, since, args.search_results)
+    cands = scout(args.quick, args.workers, since, args.search_results,
+                  args.year_from, args.year_to)
     with args.out.open("w", encoding="utf-8", newline="") as f:
         w = csv.writer(f, delimiter="\t", lineterminator="\n")
         w.writerow(["video_id", "公開日", "尺秒", "チャンネル", "題名", "判定理由", "URL"])

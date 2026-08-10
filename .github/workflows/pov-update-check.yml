@@ -1,0 +1,78 @@
+# POV(奏者視点)動画の新着を毎日見張る(2026-08-11 優さん指示)
+#
+# 個人チャンネルの奏者が、DCIの本番直後に自分のヘッドカムを上げる。
+# 2026-08-10 には同じ Bluecoats の Victory Run が3つの別々の個人チャンネルから
+# 上がっていたのに、手作業では1本しか拾えなかった。だから毎日機械で見張る。
+#
+# ★ サイトのファイルは一切書き換えない。見つけたら Issue を立てるだけ。
+#   コミットしないので Netlify のビルドも走らず、クレジットは減らない。
+#   採否の判断と CSV への追記は、人(または指示を受けたAI)が後から行う。
+name: POV新着チェック
+
+on:
+  schedule:
+    # 毎日 06:00 JST (21:00 UTC)。DCIは日本時間の午前に結果が出るので、
+    # その日のうちに上がったヘッドカムを翌朝には拾える。
+    - cron: "0 21 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: pov-update-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    # 探索は長いので余裕を持たせる(スクリプト側でも --timeout で切る)
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: yt-dlp を入れる
+        run: python3 -m pip install --quiet --upgrade yt-dlp
+
+      # ★赤くなるのは「調べ方が壊れた」ときだけ(yt-dlpが無い・CSVが読めない等)。
+      # YouTubeに弾かれただけの日は緑のまま(理由はログに必ず出る) ─ 毎日走るので、
+      # 弾かれた日まで赤くすると失敗メールに埋もれて誰も見なくなる。
+      # 「黙って“新着なし”に見える」ことだけは絶対にさせない。
+      - name: 新着チェック
+        id: check
+        run: python3 check_pov_updates.py --github-output
+
+      - name: 新着があれば Issue を立てる
+        # always(): check が exit 2 で赤くなっても、見つけた新着は必ず知らせる
+        # (if に状態関数が無いと GitHub が暗黙に success() を AND してスキップするため)
+        if: always() && steps.check.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TITLE: ${{ steps.check.outputs.issue_title }}
+        run: |
+          # 前回の POV新着 Issue が開いたままなら、そこへ追記して重ねて立てない
+          # (毎日1本ずつ増えると通知だけが積み上がって読まれなくなる)
+          prev=$(gh issue list --state open --limit 50 \
+                   --search "POV新着 in:title" --json number,title \
+                   --jq '.[0].number // empty')
+          if [ -n "$prev" ]; then
+            echo "開いている Issue #$prev へ追記します"
+            gh issue comment "$prev" --body-file pov-update-issue.md
+          else
+            gh issue create --title "$TITLE" --body-file pov-update-issue.md
+          fi
+
+      # 候補の一覧は成果物としても残す(Issueは頭40件しか出さないため)
+      - name: 候補ファイルを残す
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pov-candidates
+          path: pov_candidates.tsv
+          if-no-files-found: ignore
+          retention-days: 30
