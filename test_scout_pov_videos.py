@@ -153,6 +153,26 @@ def check_team_guess(fails):
     return 1
 
 
+def check_part_guess(fails):
+    """楽器・パートは団体名の部分文字列に釣られないこと。
+
+    2026-08-13、優さんの指摘で発覚。"Santa Clara Vanguard" は団体名自体に
+    "guard" を含むため、本当の楽器(Baritone等)より先にタイトル中の
+    団体名の "guard" を拾ってしまい、SCVの44件で【guard】に上書きされていた。
+    """
+    title = '2026 Santa Clara Vanguard "With Reckless Abandon" Baritone Head Cam'
+    part = S.guess_part(title, "Santa Clara Vanguard")
+    if part.lower() != "baritone":
+        fails.append(f"団体名中の'guard'に釣られて誤楽器になった: {part!r}(正しくはBaritone)")
+
+    # 本物のguard(カラーガード)動画は引き続きguardと当てられること。
+    title2 = "Santa Clara Vanguard 2022 guard cam"
+    part2 = S.guess_part(title2, "Santa Clara Vanguard")
+    if part2.lower() != "guard":
+        fails.append(f"本物のguard動画がguardと当たらなくなった: {part2!r}")
+    return 2
+
+
 def check_generated_title(fails):
     """--apply が組む大会名が 【POV/YYYY】 の形であること。
 
@@ -230,7 +250,8 @@ def main() -> int:
         fails.append("個人投稿者Chase Thomasが見張り台帳から抜けた")
 
     # 直近365日・尺・個人チャンネル再訪の3つの候補門に加え、見張り台帳の保持も数える。
-    n_auto = check_auto(fails) + check_generated_title(fails) + check_team_guess(fails)
+    n_auto = (check_auto(fails) + check_generated_title(fails) + check_team_guess(fails)
+              + check_part_guess(fails))
 
     total = len(REGRESSION_MISSED) + len(SHOULD_KEEP) + len(SHOULD_DROP) + 4 + n_auto
     if fails:
