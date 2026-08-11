@@ -53,28 +53,41 @@
   };
   /**
    * 楽器／パートの専用列はないため、大会動画リストのタイトル（大会名）に実際に書かれた語だけで絞る。
-   * 団体名・大会名などからの推測はしない。単体パートは英語表記も含めて検索する。
+   * 団体名・種別などからの推測はしない。英語で表記されたタイトルだけを検索する。
    */
   const VIDEO_PART_FILTERS = {
-    color_guard: { label: "カラーガード", terms: ["カラーガード", "color guard", "colorguard"] },
+    color_guard: { label: "Color Guard", terms: ["color guard", "colorguard", "guard"] },
     brass: {
-      label: "ブラス",
-      terms: ["ブラス", "金管", "brass", "trumpet", "trombone", "euphonium", "tuba", "mellophone", "baritone", "horn"],
+      label: "Brass",
+      terms: ["brass", "trumpet", "trombone", "euphonium", "euph", "tuba", "contra", "mellophone", "mello", "baritone", "bari", "horn", "flugel"],
     },
     percussion: {
-      label: "パーカッション",
-      terms: ["打楽器", "パーカッション", "percussion", "battery", "front ensemble", "snare", "tenor", "marimba", "vibraphone", "cymbal"],
+      label: "Percussion",
+      terms: ["percussion", "battery", "snare", "tenor", "quad", "bass", "cymbal", "marimba", "vibraphone", "vibe", "xylophone", "xylo", "timpani", "drum set", "drumset", "rack"],
     },
-    trumpet: { label: "トランペット", terms: ["trumpet"] },
-    trombone: { label: "トロンボーン", terms: ["trombone"] },
-    euphonium: { label: "ユーフォニアム", terms: ["euphonium"] },
-    tuba: { label: "チューバ", terms: ["tuba"] },
-    mellophone: { label: "メロフォン", terms: ["mellophone"] },
-    baritone: { label: "バリトン", terms: ["baritone"] },
-    snare: { label: "スネア", terms: ["snare"] },
-    marimba: { label: "マリンバ", terms: ["marimba"] },
-    vibraphone: { label: "ビブラフォン", terms: ["vibraphone"] },
-    cymbal: { label: "シンバル", terms: ["cymbal"] },
+    trumpet: { label: "Trumpet", terms: ["trumpet"] },
+    trombone: { label: "Trombone", terms: ["trombone"] },
+    euphonium: { label: "Euphonium", terms: ["euphonium", "euph"] },
+    tuba: { label: "Tuba", terms: ["tuba"] },
+    contra: { label: "Contra", terms: ["contra"] },
+    mellophone: { label: "Mellophone", terms: ["mellophone", "mello"] },
+    baritone: { label: "Baritone", terms: ["baritone", "bari"] },
+    french_horn: { label: "French Horn", terms: ["french horn", "horn"] },
+    flugel: { label: "Flugel", terms: ["flugel"] },
+    snare: { label: "Snare", terms: ["snare"] },
+    tenor: { label: "Tenor", terms: ["tenor"] },
+    quad: { label: "Quad", terms: ["quad"] },
+    bass_drum: { label: "Bass Drum", terms: ["bass"] },
+    cymbal: { label: "Cymbal", terms: ["cymbal"] },
+    marimba: { label: "Marimba", terms: ["marimba"] },
+    vibraphone: { label: "Vibraphone", terms: ["vibraphone", "vibe"] },
+    xylophone: { label: "Xylophone", terms: ["xylophone", "xylo", "glockenspiel", "glock"] },
+    timpani: { label: "Timpani", terms: ["timpani"] },
+    drum_set: { label: "Drum Set", terms: ["drum set", "drumset"] },
+    battery: { label: "Battery", terms: ["battery"] },
+    drum_major: { label: "Drum Major", terms: ["drum major"] },
+    synth: { label: "Synth", terms: ["synth"] },
+    rack: { label: "Rack", terms: ["rack"] },
   };
   /** 大会動画・初期表示で必ず先頭に試す団体（順固定・各1動画・最大3枠）。動画が無い団体はスキップ。 */
   const INITIAL_RANDOM_PRIORITY_SLOTS = 3;
