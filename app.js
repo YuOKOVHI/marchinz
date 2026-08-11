@@ -1957,7 +1957,7 @@
     state.listLoadMoreExtra = 0;
     document.querySelectorAll(".result-sort-bar button[data-sort]").forEach((btn) => {
       btn.classList.remove("sorted-asc", "sorted-desc");
-      const randomInitial = shouldUseInitialRandom() || shouldUseUnfilteredCategoryRandom();
+      const randomInitial = shouldUseInitialRandom();
       if (btn.getAttribute("data-sort") === state.sortKey && (!randomInitial || state.sortExplicit)) {
         btn.classList.add(state.sortDir === "asc" ? "sorted-asc" : "sorted-desc");
       }
@@ -2050,9 +2050,9 @@
   }
 
   function shouldUseUnfilteredCategoryRandom() {
-    if (state.sortExplicit) return false;
-    if (state.tab !== "海外" && state.tab !== "POV") return false;
-    return hasNoVideoSearchConditions();
+    // 海外・POVは、初期表示や分類切替時も配信日の新しい順を既定にする。
+    // 検索・絞り込みのない状態でもランダム化せず、最新の投稿を先頭に置く。
+    return false;
   }
 
   function isMarchingMatsuriVideo(row) {
@@ -3626,7 +3626,7 @@
     }
     return new Promise((resolve) => {
       const script = document.createElement("script");
-      script.src = "data.inline.js?v=2.27.0";
+      script.src = "data.inline.js?v=2.28.0";
       script.async = true;
       script.onload = () => resolve(window.__MARCHINZ_DATA || null);
       script.onerror = () => resolve(null);
