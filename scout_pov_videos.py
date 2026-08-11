@@ -665,6 +665,20 @@ def guess_team(text: str) -> str:
     return ""
 
 
+def guess_team_title_first(title: str, desc: str = "") -> str:
+    """団体名はタイトルを優先して当てる。概要欄はタイトルに手掛かりが無いときだけ。
+
+    2026-08-11、Blue Devils の動画が概要欄の自己紹介文
+    「2015年にPacific Crestで始めた」に反応して Pacific Crest 扱いになる
+    誤爆が発覚した。概要欄は自伝的文章で過去に所属した別団体名が出ることが
+    あるため、タイトルに手掛かりが無い場合の補助にとどめる。
+    """
+    team = guess_team(title)
+    if team:
+        return team
+    return guess_team(f"{title}\n{desc}")
+
+
 def guess_show(title: str) -> str:
     """既存POVの表示規則に合わせ、題名に明示されたショウ名だけを拾う。"""
     for pattern in (r"[“\"]([^”\"]{2,80})[”\"]", r"「([^」]{2,80})」"):
@@ -810,8 +824,7 @@ def apply_accepted() -> int:
         if not m:
             skipped.append((v, "メタを取得できない"))
             continue
-        text = f"{m['title']}\n{m.get('desc', '')}"
-        team = guess_team(text)
+        team = guess_team_title_first(m["title"], m.get("desc", ""))
         if not team:
             skipped.append((v, f"団体を当てられない: {m['title'][:60]}"))
             continue

@@ -125,6 +125,23 @@ AUTO_NG = [
 ]
 
 
+def check_team_guess(fails):
+    """団体名はタイトルを優先すること(概要欄の自己紹介文に釣られない)。
+
+    2026-08-11、Blue Devils の動画「Blue Devils 2017 | Metamorph | ...」が、
+    概要欄の「Everett Kim started his drum corps career in 2015 with
+    Pacific Crest」という自己紹介文に反応して Pacific Crest 扱いで
+    CSVへ入ってしまった(guess_team がタイトル+概要欄を無差別に検索していたため)。
+    """
+    title = "Blue Devils 2017 | Metamorph | Encore / Rehearsal Run | Everett Kim"
+    desc = ("Headcam by Everett Kim of the Blue Devils Trumpet section. "
+            "Everett Kim started his drum corps career in 2015 with Pacific Crest.")
+    team = S.guess_team_title_first(title, desc)
+    if team != "Blue Devils":
+        fails.append(f"概要欄の経歴紹介に釣られて誤団体になった: {team!r}(正しくはBlue Devils)")
+    return 1
+
+
 def check_generated_title(fails):
     """--apply が組む大会名が 【POV/YYYY】 の形であること。
 
@@ -202,7 +219,7 @@ def main() -> int:
         fails.append("個人投稿者Chase Thomasが見張り台帳から抜けた")
 
     # 直近365日・尺・個人チャンネル再訪の3つの候補門に加え、見張り台帳の保持も数える。
-    n_auto = check_auto(fails) + check_generated_title(fails)
+    n_auto = check_auto(fails) + check_generated_title(fails) + check_team_guess(fails)
 
     total = len(REGRESSION_MISSED) + len(SHOULD_KEEP) + len(SHOULD_DROP) + 4 + n_auto
     if fails:
