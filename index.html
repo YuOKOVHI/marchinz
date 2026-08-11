@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-version="2.24.0" data-mz-channel="beta">
+<html lang="ja" data-mz-version="2.24.1" data-mz-channel="beta">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -89,7 +89,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css" />
     <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css?v=1.25.64" />
     <link rel="stylesheet" href="styles.css?v=2.23.4" />
-    <link rel="stylesheet" href="marchinz-brushup.css?v=2.24.0" />
+    <link rel="stylesheet" href="marchinz-brushup.css?v=2.24.1" />
     <!-- Microsoft Clarity -->
     <script type="text/javascript">
       (function(c,l,a,r,i,t,y){
@@ -946,11 +946,18 @@
               />
             </div>
             <details class="video-search-filter-disclosure">
-              <summary aria-label="検索条件を絞り込む">
+              <summary aria-label="検索条件を絞り込む" aria-expanded="false">
                 <i class="fa-solid fa-sliders" aria-hidden="true"></i>
                 <span class="video-search-filter-label">絞り込み</span>
               </summary>
               <div class="video-search-filter-sheet">
+                <div class="video-search-filter-sheet-head">
+                  <p>検索条件</p>
+                  <button type="button" id="video-search-filter-close" class="video-search-filter-close">
+                    <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                    <span>閉じる</span>
+                  </button>
+                </div>
                 <div class="search-row">
                   <div class="search-field search-field--team">
                     <label class="search-label" for="q-team">団体/チーム名</label>
@@ -964,30 +971,6 @@
                     </div>
                   </div>
                 </div>
-                <div class="search-row">
-                  <div class="search-field search-field--team">
-                    <label class="search-label" for="video-part-filter">楽器／パート</label>
-                    <div class="search-team-line">
-                      <select id="video-part-filter" aria-describedby="video-part-filter-note">
-                        <option value="">指定なし</option>
-                        <option value="color_guard">カラーガード</option>
-                        <option value="brass">ブラス</option>
-                        <option value="percussion">パーカッション</option>
-                        <option value="trumpet">トランペット</option>
-                        <option value="trombone">トロンボーン</option>
-                        <option value="euphonium">ユーフォニアム</option>
-                        <option value="tuba">チューバ</option>
-                        <option value="mellophone">メロフォン</option>
-                        <option value="baritone">バリトン</option>
-                        <option value="snare">スネア</option>
-                        <option value="marimba">マリンバ</option>
-                        <option value="vibraphone">ビブラフォン</option>
-                        <option value="cymbal">シンバル</option>
-                      </select>
-                    </div>
-                  </div>
-                  <p id="video-part-filter-note" class="video-part-filter-note">動画名・団体名などに明記のあるものだけを表示します</p>
-                </div>
                 <div class="search-options" aria-label="検索オプション">
                   <div class="search-options-row">
                     <label class="search-option-box"><input type="checkbox" id="opt-match-exact" /> 完全一致のみ</label>
@@ -996,14 +979,6 @@
                 <div class="search-share-row">
                   <button type="button" id="btn-reset-search" class="btn-reset-search">
                     すべて解除
-                  </button>
-                  <button
-                    type="button"
-                    id="btn-share-search-inline"
-                    class="btn-share-search btn-marchinz-spotlight"
-                    data-marchinz-search-share
-                  >
-                    検索結果をシェア
                   </button>
                 </div>
               </div>
@@ -1096,6 +1071,26 @@
             </div>
           </div>
           <div id="video-year-chips" class="mz-year-chips" hidden role="group" aria-label="配信年で絞り込み"></div>
+          <section id="video-part-filter-section" class="video-part-filter-section" aria-label="楽器／パートで絞り込み">
+            <label class="mz-year-chips-label" for="video-part-filter">楽器／パート</label>
+            <select id="video-part-filter" aria-describedby="video-part-filter-note">
+              <option value="">指定なし</option>
+              <option value="color_guard">カラーガード</option>
+              <option value="brass">ブラス</option>
+              <option value="percussion">パーカッション</option>
+              <option value="trumpet">トランペット</option>
+              <option value="trombone">トロンボーン</option>
+              <option value="euphonium">ユーフォニアム</option>
+              <option value="tuba">チューバ</option>
+              <option value="mellophone">メロフォン</option>
+              <option value="baritone">バリトン</option>
+              <option value="snare">スネア</option>
+              <option value="marimba">マリンバ</option>
+              <option value="vibraphone">ビブラフォン</option>
+              <option value="cymbal">シンバル</option>
+            </select>
+            <p id="video-part-filter-note" class="video-part-filter-note">大会動画のタイトルに書かれたものだけを表示します</p>
+          </section>
           <p class="rights-notice rights-notice--page-foot rights-notice--youtube-foot rights-notice--videos-under-sort" role="note">
             動画はYouTube等の共有機能（埋め込み）を利用して表示しています。掲載されている動画の著作権、肖像権、および一切の権利は、各権利所有者および配信元に帰属します。
           </p>
@@ -1139,14 +1134,6 @@
                 <option value="100">100</option>
               </select>
             </label>
-            <button
-              type="button"
-              id="btn-share-search"
-              class="btn-share-search btn-marchinz-spotlight pagination-share-btn"
-              data-marchinz-search-share
-            >
-              検索結果をシェアする
-            </button>
           </div>
           <div class="pagination-inner">
             <button type="button" class="page-btn" id="page-first">最初</button>
@@ -1156,6 +1143,18 @@
             <button type="button" class="page-btn" id="page-last">最後</button>
           </div>
         </nav>
+
+        <div id="video-search-share-float-anchor" class="video-search-share-float-anchor" hidden>
+          <button
+            type="button"
+            id="btn-share-search-float"
+            class="btn-share-search video-search-share-float"
+            data-marchinz-search-share
+          >
+            <i class="fa-solid fa-share-nodes" aria-hidden="true"></i>
+            <span>結果をシェア</span>
+          </button>
+        </div>
 
         <section
           id="recommend-section"
@@ -4476,7 +4475,7 @@
     <script defer src="marchinz-moment-pulse.js?v=2.10.4"></script>
     <script defer src="user-profile-page.js?v=2.10.0"></script>
     <script defer src="marchinz-base.js?v=1.39.66"></script>
-    <script defer src="app.js?v=2.24.0"></script>
+    <script defer src="app.js?v=2.24.1"></script>
     <script defer src="marchinz-top-highlights.js?v=2.21.5"></script>
     <script defer src="marchinz-confetti.js?v=1.28.0"></script>
     <script defer src="marchinz-journey.js?v=1.30.1"></script>

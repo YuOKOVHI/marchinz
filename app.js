@@ -52,8 +52,8 @@
     POV: "POV",
   };
   /**
-   * 楽器／パートの専用列はないため、動画名・団体名などに実際に書かれた語だけで絞る。
-   * 推測による楽器判定はしない。単体パートは英語表記も含めて検索する。
+   * 楽器／パートの専用列はないため、大会動画リストのタイトル（大会名）に実際に書かれた語だけで絞る。
+   * 団体名・大会名などからの推測はしない。単体パートは英語表記も含めて検索する。
    */
   const VIDEO_PART_FILTERS = {
     color_guard: { label: "カラーガード", terms: ["カラーガード", "color guard", "colorguard"] },
@@ -200,6 +200,10 @@
   const recommendList = $("#recommend-list");
   const recommendMoreBtn = $("#recommend-more");
   const btnResetSearch = $("#btn-reset-search");
+  const videoSearchFilterDisclosure = document.querySelector(".video-search-filter-disclosure");
+  const videoSearchFilterSummary = videoSearchFilterDisclosure?.querySelector("summary");
+  const videoSearchFilterClose = $("#video-search-filter-close");
+  const videoSearchShareFloatAnchor = $("#video-search-share-float-anchor");
   const shareSearchBtns = () => document.querySelectorAll("[data-marchinz-search-share]");
   const btnResetRecentSearches = $("#btn-reset-recent-searches");
   const recentSearchesEl = $("#recent-searches");
@@ -1144,11 +1148,9 @@
     );
   }
 
-  /** 楽器／パートは、動画情報に実際に書かれた語だけを対象にする。 */
+  /** 楽器／パートは、大会動画リストのタイトル（大会名）に実際に書かれた語だけを対象にする。 */
   function rowPartSearchText(row) {
-    return normalize(
-      [rowDisplayName(row), rowOrgTeam(row), row["大会名"], row["種別"]].join(" ")
-    );
+    return normalize(row["大会名"]);
   }
 
   function rowMatchesVideoPartFilter(row, key) {
@@ -1708,6 +1710,17 @@
     shareSearchBtns().forEach((btn) => setupSearchShareMenuForButton(btn));
   }
 
+  function syncSearchShareFloat(hasActiveCriteria) {
+    if (!videoSearchShareFloatAnchor) return;
+    videoSearchShareFloatAnchor.hidden = !hasActiveCriteria;
+  }
+
+  function closeVideoSearchFilter({ restoreFocus = false } = {}) {
+    if (!videoSearchFilterDisclosure?.open) return;
+    videoSearchFilterDisclosure.open = false;
+    if (restoreFocus) videoSearchFilterSummary?.focus({ preventScroll: true });
+  }
+
   let searchDebounceTimer = null;
   let recentSearchTimer = null;
 
@@ -1789,6 +1802,7 @@
         state.sourceFilter ||
         state.yearFilter
     );
+    syncSearchShareFloat(hasSearchOrExact);
     // 検索・完全一致・配信元・年のすべてを、選択中の分類内だけで行う。
     // カテゴリをまたぐ検索は意図しない0件/混在の原因になるため提供しない。
     const sourceRows = state.rows.filter(
@@ -3664,7 +3678,7 @@
    * ユーザーには見えない AND 条件で 0 件になってしまいます。
    * 詳細フィルター欄で意図的に条件を足す場合は従来どおり維持し、
    * オムニ検索へ入力した時だけ前の団体・大会条件を置き換えます。
-   * @param {"free"|"team"|"event"|"option"} [source]
+   * @param {"free"|"team"|"event"|"part"|"option"} [source]
    */
   function onSearchInput(source = "option") {
     clearExactFilters();
@@ -3680,7 +3694,7 @@
     setSearchOverlay(false);
   }
 
-  /** @param {"free"|"team"|"event"|"option"} [source] */
+  /** @param {"free"|"team"|"event"|"part"|"option"} [source] */
   function onSearchInputDebounced(source = "option") {
     cancelSearchDebounce();
     setSearchOverlay(true);
@@ -3704,6 +3718,18 @@
   if (optMatchExact) {
     optMatchExact.addEventListener("change", () => {
       onSearchInputDebounced();
+    });
+  }
+
+  if (videoSearchFilterClose) {
+    videoSearchFilterClose.addEventListener("click", () => {
+      closeVideoSearchFilter({ restoreFocus: true });
+    });
+  }
+
+  if (videoSearchFilterDisclosure) {
+    videoSearchFilterDisclosure.addEventListener("toggle", () => {
+      videoSearchFilterSummary?.setAttribute("aria-expanded", String(videoSearchFilterDisclosure.open));
     });
   }
 
@@ -3773,6 +3799,11 @@
   }
 
   document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape" && videoSearchFilterDisclosure?.open) {
+      ev.preventDefault();
+      closeVideoSearchFilter({ restoreFocus: true });
+      return;
+    }
     if (ev.key !== "Escape" || !state.browseOpen) return;
     ev.preventDefault();
     state.browseOpen = false;
@@ -3856,6 +3887,9 @@
   });
 
   document.addEventListener("click", (ev) => {
+    if (videoSearchFilterDisclosure?.open && !videoSearchFilterDisclosure.contains(ev.target)) {
+      closeVideoSearchFilter();
+    }
     if (ev.target.closest?.(".share-wrap")) return;
     document.querySelectorAll(".share-menu").forEach((m) => {
       m.hidden = true;
@@ -3882,6 +3916,7 @@
   renderRecentSearches();
 
   setupSearchShareMenus();
+  syncSearchShareFloat(false);
 
   window.MarchinZShareMenu = {
     buildAbsoluteUrlForHash,
