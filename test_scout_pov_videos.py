@@ -40,6 +40,10 @@ REGRESSION_MISSED = [
     # 2026-08-10に優さんから提示。個人投稿者 Chase Thomas の動画は横断探索時点で
     # 新着だったため未収録だった。Soloist Cam は楽器×cam と団体文脈で拾う。
     ("BLHa1LK_ib8", "Blue Devils 2026 | Zei | Euphonium Soloist Cam | Chase Thomas", 807),
+    # 2026-08-13に優さんから提示。判定は元々通っていたが、**探索が届いていなかった**。
+    # 検索語が "cam victory run" の語順固定で、「VICTORY RUN が先・CAM が後」の
+    # この題名に引っかからなかった(check_cam_terms_word_order で見張る)。
+    ("mKAwGCOez6I", "BLUECOATS 2026 VICTORY RUN SNARE CAM - COLE READ", 950),
 ]
 
 # ── 拾うべき(概要欄にしか手掛かりが無い個人投稿を含む) ──────────
@@ -173,6 +177,30 @@ def check_part_guess(fails):
     return 2
 
 
+def check_cam_terms_word_order(fails):
+    """大会の段(victory run 等)は「段+cam」「cam+段」の両方向で検索すること。
+
+    2026-08-13、"BLUECOATS 2026 VICTORY RUN SNARE CAM" を取りこぼした。
+    判定(judge)は通っていたのに、検索語が "cam victory run" の語順固定で
+    「VICTORY RUN が先・CAM が後」の題名に届かなかった。
+    YouTube検索は語順の影響を受けるため、両方向を必ず持つ。
+    """
+    n = 0
+    for stage in ("victory run", "finals week", "semifinals", "prelims", "full run"):
+        n += 1
+        has_cam_first = any(t.lower() == f"cam {stage}" for t in S.CAM_TERMS)
+        has_stage_first = any(t.lower() == f"{stage} cam" for t in S.CAM_TERMS)
+        if not (has_cam_first and has_stage_first):
+            missing = "cam+段" if not has_cam_first else "段+cam"
+            fails.append(f"CAM_TERMSに{stage!r}の{missing}の向きが無い(語順違いを取りこぼす)")
+    # 年指定で掘るときの語にも両方向を持たせる(過去の年ほど新着順で拾えない)
+    n += 1
+    yl = [t.lower() for t in S.YEAR_CAM_TERMS]
+    if "cam victory run" not in yl or "victory run cam" not in yl:
+        fails.append("YEAR_CAM_TERMSにvictory runの両方向が無い")
+    return n
+
+
 def check_generated_title(fails):
     """--apply が組む大会名が 【POV/YYYY】 の形であること。
 
@@ -251,7 +279,7 @@ def main() -> int:
 
     # 直近365日・尺・個人チャンネル再訪の3つの候補門に加え、見張り台帳の保持も数える。
     n_auto = (check_auto(fails) + check_generated_title(fails) + check_team_guess(fails)
-              + check_part_guess(fails))
+              + check_part_guess(fails) + check_cam_terms_word_order(fails))
 
     total = len(REGRESSION_MISSED) + len(SHOULD_KEEP) + len(SHOULD_DROP) + 4 + n_auto
     if fails:

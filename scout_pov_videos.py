@@ -171,9 +171,18 @@ CAM_TERMS = [
     "player cam", "member cam", "helmet cam", "chest cam",
     "cam victory run", "cam finals week",
     "cam semifinals", "cam prelims", "cam full run",
+    # ★語順を逆にした形も必ず入れる。
+    # 2026-08-13、"BLUECOATS 2026 VICTORY RUN SNARE CAM" を取りこぼした。
+    # "cam victory run" という語順固定の検索語では
+    # 「VICTORY RUN が先、CAM が後」の題名に届かない。
+    # 大会の段は「段+cam」と「cam+段」の両方向で引く。
+    "victory run cam", "finals week cam",
+    "semifinals cam", "prelims cam", "full run cam",
+    "victory run headcam", "victory run gopro",
 ]
 # 年を指定して掘るときの語。年が入るぶんクエリが増えるので数を絞る。
-YEAR_CAM_TERMS = ["headcam", "head cam", "hedcam", "POV", "gopro", "cam victory run"]
+YEAR_CAM_TERMS = ["headcam", "head cam", "hedcam", "POV", "gopro",
+                  "cam victory run", "victory run cam"]
 JP_QUERIES = [
     "マーチング ヘッドカム", "マーチング 奏者視点", "マーチングバンド POV",
     "マーチング GoPro 視点", "ドラムライン 視点カメラ", "カラーガード 視点",
