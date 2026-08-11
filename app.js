@@ -103,6 +103,8 @@
     filtered: [],
     sortKey: "配信日",
     sortDir: "desc",
+    /** 並び順ボタンをユーザーが押した／共有URLから明示された場合だけ true。初期ランダム表示と区別する。 */
+    sortExplicit: false,
     tab: "マーチング団体等",
     /** 1 始まり */
     page: 1,
@@ -179,6 +181,7 @@
   const qTeam = $("#q-team");
   const qEvent = $("#q-event");
   const qFree = $("#q-free");
+  const videoYearFilter = $("#video-year-filter");
   const videoPartFilter = $("#video-part-filter");
   const optMatchExact = $("#opt-match-exact");
   const mix3Notice = $("#mix3-notice");
@@ -734,10 +737,14 @@
     clearExcludedOrgs();
     state.sourceFilter = "";
     state.yearFilter = null;
+    state.sortKey = "配信日";
+    state.sortDir = "desc";
+    state.sortExplicit = false;
     state.browseOpen = false;
     if (qTeam) qTeam.value = "";
     if (qEvent) qEvent.value = "";
     if (qFree) qFree.value = "";
+    if (videoYearFilter) videoYearFilter.value = "";
     if (videoPartFilter) videoPartFilter.value = "";
     if (optMatchExact) optMatchExact.checked = false;
     if (browseOrgFilterInput) browseOrgFilterInput.value = "";
@@ -969,9 +976,11 @@
       event: (qEvent?.value ?? "").trim(),
       free: (qFree?.value ?? "").trim(),
       part: videoPartFilter?.value ?? "",
+      year: state.yearFilter ?? "",
       tab: state.tab,
       sortKey: state.sortKey,
       sortDir: state.sortDir,
+      sortExplicit: state.sortExplicit,
     };
   }
 
@@ -983,9 +992,12 @@
     state.tab = VIDEO_CATEGORIES.includes(c.tab) ? c.tab : "マーチング団体等";
     state.sortKey = SORT_KEYS.includes(c.sortKey) ? c.sortKey : "配信日";
     state.sortDir = c.sortDir === "asc" ? "asc" : "desc";
+    state.sortExplicit = c.sortExplicit !== false;
+    state.yearFilter = /^\d{4}$/.test(String(c.year ?? "")) ? String(c.year) : null;
     if (qTeam) qTeam.value = c.team || "";
     if (qEvent) qEvent.value = c.event || "";
     if (qFree) qFree.value = c.free || "";
+    if (videoYearFilter) videoYearFilter.value = state.yearFilter ?? "";
     if (videoPartFilter) videoPartFilter.value = VIDEO_PART_FILTERS[c.part] ? c.part : "";
     clearIncompatibleVideoSourceFilter(state.tab);
     setSelectedVideoCategoryTab(state.tab);
@@ -995,8 +1007,8 @@
 
   function pushRecentSearch() {
     const c = currentSearchState();
-    if (!c.team && !c.event && !c.free && !c.part) return;
-    const label = [c.team, c.event, c.free, VIDEO_PART_FILTERS[c.part]?.label].filter(Boolean).join(" / ");
+    if (!c.team && !c.event && !c.free && !c.part && !c.year) return;
+    const label = [c.team, c.event, c.free, c.year, VIDEO_PART_FILTERS[c.part]?.label].filter(Boolean).join(" / ");
     if (!label) return;
     const dedup = state.recentSearches.filter((x) => x.label !== label);
     state.recentSearches = [{ id: `${Date.now()}`, label, criteria: c }, ...dedup].slice(0, 10);
@@ -1292,12 +1304,15 @@
     state.tab = "マーチング団体等";
     state.sortKey = "配信日";
     state.sortDir = "desc";
+    state.sortExplicit = false;
     state.sourceFilter = "";
+    state.yearFilter = null;
     state.pageSize = 10;
     state.excludedOrgTeams = new Set();
     if (qTeam) qTeam.value = "";
     if (qEvent) qEvent.value = "";
     if (qFree) qFree.value = "";
+    if (videoYearFilter) videoYearFilter.value = "";
     if (videoPartFilter) videoPartFilter.value = "";
     if (pageSizeSelect) pageSizeSelect.value = "10";
     const tab = p.get("tab");
@@ -1325,8 +1340,14 @@
     if (qFree && (p.has("free") || p.has("f"))) qFree.value = freeQ ?? "";
     const partQ = p.get("part");
     if (videoPartFilter && VIDEO_PART_FILTERS[partQ]) videoPartFilter.value = partQ;
+    const yearQ = p.get("y") ?? p.get("year");
+    if (yearQ && /^\d{4}$/.test(yearQ)) {
+      state.yearFilter = yearQ;
+      if (videoYearFilter) videoYearFilter.value = yearQ;
+    }
     const sort = p.has("sort") ? p.get("sort") : p.get("s");
     if (sort) {
+      state.sortExplicit = true;
       if (SHARE_S_TO_SORT[sort]) {
         state.sortKey = SHARE_S_TO_SORT[sort];
       } else if (SORT_KEYS.includes(sort)) {
@@ -1341,7 +1362,10 @@
     else if (src === "f" || src === "flo" || src === "dci") state.sourceFilter = "dci";
     else if (src === "p" || src === "pov") state.sourceFilter = "pov";
     const dir = p.has("dir") ? p.get("dir") : p.get("d");
-    if (dir === "asc" || dir === "desc") state.sortDir = dir;
+    if (dir === "asc" || dir === "desc") {
+      state.sortDir = dir;
+      state.sortExplicit = true;
+    }
     const ps = p.get("pageSize") ?? p.get("z");
     if (ps) {
       const n = Number.parseInt(ps, 10);
@@ -1420,7 +1444,8 @@
     if (free) p.set("f", free);
     const part = videoPartFilter?.value ?? "";
     if (VIDEO_PART_FILTERS[part]) p.set("part", part);
-    if (state.sortKey !== "配信日") {
+    if (state.yearFilter) p.set("y", state.yearFilter);
+    if (state.sortExplicit || state.sortKey !== "配信日") {
       const sc = SHARE_SORT_TO_S[state.sortKey];
       if (sc) p.set("s", sc);
       else p.set("s", state.sortKey);
@@ -1774,49 +1799,54 @@
     setSearchOverlay(false);
   }
 
-  /** 年フィルタチップ: 現在のタブ/検索/絞込み(年フィルタ自体を除く)に該当する行の配信年からチップを生成(降順)。クリックでトグル */
-  function renderYearChips(rows) {
-    const wrap = $("#video-year-chips");
-    if (!wrap) return;
+  /** 楽器等は英語表記をABC順で生成し、定義追加時にもHTMLとの並びずれを起こさない。 */
+  function renderVideoPartFilterOptions() {
+    if (!videoPartFilter) return;
+    const selected = videoPartFilter.value;
+    videoPartFilter.replaceChildren();
+    const none = document.createElement("option");
+    none.value = "";
+    none.textContent = "指定なし";
+    videoPartFilter.appendChild(none);
+    const entries = Object.entries(VIDEO_PART_FILTERS).sort((a, b) =>
+      a[1].label.localeCompare(b[1].label, "en", { sensitivity: "base" })
+    );
+    for (const [key, filter] of entries) {
+      const option = document.createElement("option");
+      option.value = key;
+      option.textContent = filter.label;
+      videoPartFilter.appendChild(option);
+    }
+    videoPartFilter.value = VIDEO_PART_FILTERS[selected] ? selected : "";
+  }
+
+  /** 現在の分類・検索条件に存在する配信年を、最新年から選べるプルダウンに反映する。 */
+  function renderYearFilter(rows) {
+    if (!videoYearFilter) return;
     const sourceForYears = rows ?? state.rows;
     const years = [...new Set(sourceForYears.map((row) => uploadYear(row)))]
       .filter((y) => /^\d{4}$/.test(y))
-      .filter((y) => Number(y) >= 2018) // 2017以前は対象動画が少ないためチップを出さない
       .sort((a, b) => b.localeCompare(a));
-    wrap.replaceChildren();
-    if (!years.length) {
-      wrap.hidden = true;
-      return;
-    }
-    const label = document.createElement("span");
-    label.className = "mz-year-chips-label";
-    label.textContent = "年で絞り込み";
-    wrap.appendChild(label);
+    const selected = state.yearFilter ?? "";
+    videoYearFilter.replaceChildren();
+    const all = document.createElement("option");
+    all.value = "";
+    all.textContent = "すべて";
+    videoYearFilter.appendChild(all);
     for (const y of years) {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "mz-year-chip";
-      btn.dataset.year = y;
-      btn.textContent = y;
-      btn.setAttribute("aria-pressed", "false");
-      btn.addEventListener("click", () => {
-        state.yearFilter = state.yearFilter === y ? null : y;
-        renderYearChipActiveState();
-        applyFilter();
-        render();
-      });
-      wrap.appendChild(btn);
+      const option = document.createElement("option");
+      option.value = y;
+      option.textContent = y;
+      videoYearFilter.appendChild(option);
     }
-    wrap.hidden = false;
-    renderYearChipActiveState();
-  }
-
-  function renderYearChipActiveState() {
-    document.querySelectorAll("#video-year-chips .mz-year-chip").forEach((btn) => {
-      const active = btn.dataset.year === state.yearFilter;
-      btn.classList.toggle("mz-year-chip--active", active);
-      btn.setAttribute("aria-pressed", active ? "true" : "false");
-    });
+    // URLや保存済み検索から復元した年が現在の候補に無い場合も、解除できるよう選択肢を残す。
+    if (selected && !years.includes(selected)) {
+      const option = document.createElement("option");
+      option.value = selected;
+      option.textContent = selected;
+      videoYearFilter.appendChild(option);
+    }
+    videoYearFilter.value = selected;
   }
 
   function applyFilter() {
@@ -1913,7 +1943,7 @@
     };
 
     state.filtered = sourceRows.filter((row) => filterPredicate(row));
-    renderYearChips(sourceRows.filter((row) => filterPredicate(row, { skipYear: true })));
+    renderYearFilter(sourceRows.filter((row) => filterPredicate(row, { skipYear: true })));
     if (shouldUseInitialRandom()) {
       const matsuriOnly = state.filtered.filter((row) => isMarchingMatsuriVideo(row));
       state.filtered = applyInitialRandomOrder(matsuriOnly);
@@ -1927,7 +1957,8 @@
     state.listLoadMoreExtra = 0;
     document.querySelectorAll(".result-sort-bar button[data-sort]").forEach((btn) => {
       btn.classList.remove("sorted-asc", "sorted-desc");
-      if (btn.getAttribute("data-sort") === state.sortKey) {
+      const randomInitial = shouldUseInitialRandom() || shouldUseUnfilteredCategoryRandom();
+      if (btn.getAttribute("data-sort") === state.sortKey && (!randomInitial || state.sortExplicit)) {
         btn.classList.add(state.sortDir === "asc" ? "sorted-asc" : "sorted-desc");
       }
     });
@@ -2014,11 +2045,12 @@
   function shouldUseInitialRandom() {
     // 「マーチング祭だけをランダム表示」はマーチング等タブの初期表示専用。
     // MIX3・海外へ適用すると、その分類の動画がすべて0件になる。
-    if (state.tab !== "マーチング団体等") return false;
+    if (state.sortExplicit || state.tab !== "マーチング団体等") return false;
     return hasNoVideoSearchConditions();
   }
 
   function shouldUseUnfilteredCategoryRandom() {
+    if (state.sortExplicit) return false;
     if (state.tab !== "海外" && state.tab !== "POV") return false;
     return hasNoVideoSearchConditions();
   }
@@ -3516,11 +3548,16 @@
         cancelSearchDebounce();
         const key = btn.getAttribute("data-sort");
         if (!key || !SORT_KEYS.includes(key)) return;
-        if (state.sortKey === key) {
+        if (!state.sortExplicit) {
+          state.sortKey = key;
+          state.sortDir = key === "配信日" ? "desc" : "asc";
+          state.sortExplicit = true;
+        } else if (state.sortKey === key) {
           state.sortDir = state.sortDir === "asc" ? "desc" : "asc";
         } else {
           state.sortKey = key;
           state.sortDir = key === "配信日" ? "desc" : "asc";
+          state.sortExplicit = true;
         }
         applyFilter();
       };
@@ -3672,7 +3709,7 @@
       });
       state.filtered = [...state.rows];
       rebuildMarchinzOrgMaps();
-      renderYearChips();
+      renderYearFilter();
       const urlPage = readUrlState();
       applyFilter();
       if (urlPage !== null) {
@@ -3708,7 +3745,7 @@
     if (videoPartFilter) videoPartFilter.value = "";
     if (optMatchExact) optMatchExact.checked = false;
     state.yearFilter = null;
-    renderYearChipActiveState();
+    if (videoYearFilter) videoYearFilter.value = "";
     applyFilter();
     renderBrowsePanel();
     setSearchOverlay(false);
@@ -3756,6 +3793,12 @@
   if (qTeam) qTeam.addEventListener("input", () => onSearchInputDebounced("team"));
   if (qEvent) qEvent.addEventListener("input", () => onSearchInputDebounced("event"));
   if (qFree) qFree.addEventListener("input", () => onSearchInputDebounced("free"));
+  if (videoYearFilter) {
+    videoYearFilter.addEventListener("change", () => {
+      state.yearFilter = /^\d{4}$/.test(videoYearFilter.value) ? videoYearFilter.value : null;
+      onSearchInput("option");
+    });
+  }
   if (videoPartFilter) videoPartFilter.addEventListener("change", () => onSearchInputDebounced("part"));
   if (optMatchExact) {
     optMatchExact.addEventListener("change", () => {
@@ -4048,6 +4091,7 @@
 
   setupSortHeaders();
   setupVideoSourceFilter();
+  renderVideoPartFilterOptions();
 
   function resetVideosPageToDefaultTab() {
     // 通常のページ遷移では前回の検索・絞り込みを持ち込まない。

@@ -6452,51 +6452,37 @@ input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
 }
 
 #page-videos .video-filter-secondary-row {
-  display: flex;
-  align-items: center;
-  gap: 0.7rem;
-  margin: 0 0 0.65rem;
-  overflow-x: auto;
-  scrollbar-width: none;
+  display: grid;
+  grid-template-columns: minmax(0, 0.72fr) minmax(0, 1.28fr);
+  align-items: end;
+  gap: 0.55rem;
+  margin: 0 0 0.45rem;
+  overflow: visible;
 }
 
 #page-videos .video-filter-secondary-row::-webkit-scrollbar { display: none; }
 
-#page-videos .mz-year-chips {
-  flex: 0 0 auto;
-  flex-wrap: nowrap;
-  gap: 0.4rem;
+#page-videos .video-year-filter-section,
+#page-videos .video-part-filter-section {
+  display: grid;
+  min-width: 0;
+  gap: 0.22rem;
   margin: 0;
 }
 
-#page-videos .mz-year-chips-label {
-  flex: 0 0 auto;
-  align-self: center;
+#page-videos .video-year-filter-section label,
+#page-videos .video-part-filter-section label {
+  margin: 0;
   color: var(--mzu-muted);
   font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.2;
 }
 
-#page-videos .mz-year-chip {
-  flex: 0 0 auto;
-  min-width: 64px;
-  min-height: 44px;
-  padding: 0 0.75rem;
-}
-
-#page-videos .video-part-filter-section {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 0.4rem;
-  margin: 0;
-}
-
-#page-videos .video-part-filter-section .mz-year-chips-label {
-  margin: 0;
-}
-
+#page-videos .video-year-filter-section #video-year-filter,
 #page-videos .video-part-filter-section #video-part-filter {
-  width: 9.5rem;
+  width: 100%;
+  min-width: 0;
   min-height: 44px;
   padding: 0 0.75rem;
   border: 1px solid rgba(15, 33, 56, 0.14);
@@ -6607,9 +6593,23 @@ input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
     overflow-y: auto;
     border-radius: 20px 20px 0 0;
   }
-  #page-videos .video-filter-secondary-row { gap: 0.55rem; }
-  #page-videos .video-part-filter-section { gap: 0.35rem; }
-  #page-videos .video-part-filter-section #video-part-filter { width: 8.75rem; }
+  #page-videos .videos-page-main {
+    gap: 0.28rem;
+    padding-top: 0.7rem;
+    padding-bottom: 0.55rem;
+  }
+  #page-videos .videos-page-main > header.page-hero.mz-philosophy-header {
+    margin-bottom: 0.05rem;
+  }
+  #page-videos .video-search-deck { gap: 0.3rem; }
+  #page-videos .search-inline-header { margin-top: 0.15rem; }
+  #page-videos .search-history {
+    margin-top: 0.15rem;
+    padding: 0 0.65rem;
+  }
+  #page-videos .video-results-summary { margin: 0.2rem 0; }
+  #page-videos .result-sort-bar { margin-bottom: 0.35rem; }
+  #page-videos .video-filter-secondary-row { gap: 0.5rem; }
   #page-videos .result-sort-bar-main {
     flex-wrap: nowrap;
     justify-content: space-between;

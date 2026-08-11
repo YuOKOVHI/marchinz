@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-version="2.26.0" data-mz-channel="beta">
+<html lang="ja" data-mz-version="2.26.1" data-mz-channel="beta">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -89,7 +89,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css" />
     <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css?v=1.25.64" />
     <link rel="stylesheet" href="styles.css?v=2.23.4" />
-    <link rel="stylesheet" href="marchinz-brushup.css?v=2.25.1" />
+    <link rel="stylesheet" href="marchinz-brushup.css?v=2.26.1" />
     <!-- Microsoft Clarity -->
     <script type="text/javascript">
       (function(c,l,a,r,i,t,y){
@@ -1070,37 +1070,16 @@
             </div>
           </div>
           <div class="video-filter-secondary-row">
-            <div id="video-year-chips" class="mz-year-chips" hidden role="group" aria-label="配信年で絞り込み"></div>
+            <section id="video-year-filter-section" class="video-year-filter-section" aria-label="年で絞り込み">
+              <label for="video-year-filter">年</label>
+              <select id="video-year-filter">
+                <option value="">すべて</option>
+              </select>
+            </section>
             <section id="video-part-filter-section" class="video-part-filter-section" aria-label="楽器等で絞り込み">
-              <label class="mz-year-chips-label" for="video-part-filter">楽器等</label>
+              <label for="video-part-filter">楽器等</label>
               <select id="video-part-filter" aria-describedby="video-part-filter-note">
                 <option value="">指定なし</option>
-                <option value="color_guard">Color Guard</option>
-                <option value="brass">Brass</option>
-                <option value="percussion">Percussion</option>
-                <option value="trumpet">Trumpet</option>
-                <option value="trombone">Trombone</option>
-                <option value="euphonium">Euphonium</option>
-                <option value="tuba">Tuba</option>
-                <option value="contra">Contra</option>
-                <option value="mellophone">Mellophone</option>
-                <option value="baritone">Baritone</option>
-                <option value="french_horn">French Horn</option>
-                <option value="flugel">Flugel</option>
-                <option value="snare">Snare</option>
-                <option value="tenor">Tenor</option>
-                <option value="quad">Quad</option>
-                <option value="bass_drum">Bass Drum</option>
-                <option value="cymbal">Cymbal</option>
-                <option value="marimba">Marimba</option>
-                <option value="vibraphone">Vibraphone</option>
-                <option value="xylophone">Xylophone</option>
-                <option value="timpani">Timpani</option>
-                <option value="drum_set">Drum Set</option>
-                <option value="battery">Battery</option>
-                <option value="drum_major">Drum Major</option>
-                <option value="synth">Synth</option>
-                <option value="rack">Rack</option>
               </select>
               <p id="video-part-filter-note" class="video-part-filter-note">大会動画のタイトルに書かれたものだけを表示します</p>
             </section>
@@ -4493,7 +4472,7 @@
     <script defer src="marchinz-moment-pulse.js?v=2.10.4"></script>
     <script defer src="user-profile-page.js?v=2.10.0"></script>
     <script defer src="marchinz-base.js?v=1.39.66"></script>
-    <script defer src="app.js?v=2.25.1"></script>
+    <script defer src="app.js?v=2.26.1"></script>
     <script defer src="marchinz-top-highlights.js?v=2.21.5"></script>
     <script defer src="marchinz-confetti.js?v=1.28.0"></script>
     <script defer src="marchinz-journey.js?v=1.30.1"></script>
