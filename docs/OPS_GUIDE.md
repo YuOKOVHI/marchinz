@@ -136,6 +136,8 @@ firebase deploy --only firestore:rules,storage
 
 ### YouTube を取り込むときのルール
 
+- **配信日を必ず正しく入れる**: `配信日` は大会日・撮影日ではなく、動画配信元が公開した日です。既定の並び順と年絞り込みの正本になります。`YYYY-MM-DD` で記入し、公開日が確認できない場合は推測せず空欄＋URLと理由を報告してください。詳細なAI向け指示は [`docs/TOURNAMENT_VIDEO_LIST_INSTRUCTIONS.md`](TOURNAMENT_VIDEO_LIST_INSTRUCTIONS.md)。
+
 - **単一のアーカイブ動画からチャプター行を一括追加**する場合: プロジェクト内の **`append_live_chapters_from_youtube.py`** を使う（**出力先は常に `大会動画リスト_マーチング祭.csv`**）。アーカイブにチャプターが付いている前提。例:  
   `python3 append_live_chapters_from_youtube.py --video-id <VIDEO_ID> [--replace]`  
   のあと、上記 **手順 3〜4** を実行する。
