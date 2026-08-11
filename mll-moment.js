@@ -592,7 +592,17 @@
     fileIn.hidden = true;
     const phoBtn = document.createElement("span");
     phoBtn.className = "eld-photo-add-btn";
-    phoBtn.textContent = "写真を追加";
+    const setPhotoButtonLabel = (label, withIcon = true) => {
+      phoBtn.replaceChildren();
+      if (withIcon) {
+        const icon = document.createElement("i");
+        icon.className = "fa-regular fa-image";
+        icon.setAttribute("aria-hidden", "true");
+        phoBtn.appendChild(icon);
+      }
+      phoBtn.appendChild(document.createTextNode(label));
+    };
+    setPhotoButtonLabel("写真を追加");
     phoLabel.appendChild(fileIn);
     phoLabel.appendChild(phoBtn);
 
@@ -723,7 +733,7 @@
         let skippedBig = 0;
         let compressFail = 0;
         const rawMax = rawInputMaxBytes();
-        phoBtn.textContent = "圧縮中…";
+        setPhotoButtonLabel("圧縮中…", false);
         phoLabel.style.pointerEvents = "none";
         try {
           for (const f of incoming) {
@@ -742,7 +752,7 @@
             }
           }
         } finally {
-          phoBtn.textContent = "写真を追加";
+          setPhotoButtonLabel("写真を追加");
           phoLabel.style.pointerEvents = "";
         }
         if (skippedBig > 0) {
@@ -834,13 +844,6 @@
     hint.className = "eld-hint";
     hint.textContent = `最大 ${MAX_BODY} 文字 · 写真は合計 ${MAX_PHOTOS} 枚まで。`;
     shell.append(ta, hint);
-
-    const uploadNotice = document.createElement("p");
-    uploadNotice.className = "eld-upload-notice";
-    const uploadLead = document.createElement("strong");
-    uploadLead.textContent = "オリジナル画像はご自身で保管して下さい";
-    uploadNotice.appendChild(uploadLead);
-    shell.appendChild(uploadNotice);
 
     const err = document.createElement("p");
     err.className = "eld-error";

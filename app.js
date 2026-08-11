@@ -12,6 +12,17 @@
   const RECOMMEND_FIRST_EXPAND = 10;
   const RECOMMEND_STEP = 10;
   const SHARE_X_SUFFIX = " @marchinz2026";
+  const COMMUNITY_SHARE_URL = "https://marchinz.netlify.app/?part=brass#top";
+  const COMMUNITY_SHARE_EMOJIS = ["🥁", "🎺", "🚩"];
+
+  function communityShareFooter() {
+    const emoji = COMMUNITY_SHARE_EMOJIS[Math.floor(Math.random() * COMMUNITY_SHARE_EMOJIS.length)];
+    return `MarchinZ/マーチングの新しいコミュニティからシェア${emoji}\n${COMMUNITY_SHARE_URL}`;
+  }
+
+  function withCommunityShareFooter(body) {
+    return `${String(body || "").trim()}\n\n${communityShareFooter()}`;
+  }
 
   /** カードメタ行用（2025-11-24 → 2025/11/24） */
   function formatVideoMetaDate(raw) {
@@ -870,7 +881,7 @@
     } else if (!orgTeam) {
       line1 = display;
     }
-    return `${line1}\n${ev}\n${url}\nマーチンズからシェアしました♪`;
+    return withCommunityShareFooter(`${line1}\n${ev}\n${url}`);
   }
 
   /**
@@ -934,27 +945,28 @@
   }
 
   /**
-   * Instagram 用: URL のみコピー（Web から Instagram 投稿 API はない）
+   * Instagram 用: 共有本文を渡し、Web Share 非対応時は本文をコピーする。
    * @param {string} url
    * @param {"search" | "mylist" | "mll" | "card"} analyticsTarget
    */
-  function shareInstagramLinkOnly(url, analyticsTarget) {
+  function shareInstagramLinkOnly(url, analyticsTarget, shareTextValue = "") {
     const link = String(url || "").trim();
+    const text = String(shareTextValue || "").trim() || link;
     if (!link) {
       MZToast.err("リンクがありません。");
       return;
     }
     trackEvent("share_click", { kind: "instagram", target: analyticsTarget });
     const notifyCopyOk = () => {
-      MZToast.ok("リンクをコピーしました。\nInstagramで新規投稿を開き、キャプションに貼り付けてください。");
+      MZToast.ok("共有文をコピーしました。\nInstagramで新規投稿を開き、キャプションに貼り付けてください。");
     };
     const notifyCopyFail = () => {
       MZToast.err("クリップボードにコピーできませんでした。リンクを手動でコピーしてください。");
     };
-    const runCopy = () => copyText(link).then(notifyCopyOk).catch(notifyCopyFail);
+    const runCopy = () => copyText(text).then(notifyCopyOk).catch(notifyCopyFail);
 
     if (typeof navigator.share === "function") {
-      const shareData = { url: link };
+      const shareData = { text };
       const canTry =
         typeof navigator.canShare !== "function" || navigator.canShare(shareData);
       if (canTry) {
@@ -1065,8 +1077,7 @@
         break;
       case "x": {
         trackEvent("share_click", { kind, target: "card" });
-        const textX = `${text}${SHARE_X_SUFFIX}`;
-        const encX = encodeURIComponent(textX);
+        const encX = encodeURIComponent(tweetTextWithXHandleOnFirstLine(text));
         window.open(
           `https://twitter.com/intent/tweet?text=${encX}`,
           "_blank",
@@ -1087,7 +1098,7 @@
         );
         break;
       case "instagram":
-        shareInstagramLinkOnly(url, "card");
+        shareInstagramLinkOnly(url, "card", text);
         break;
       default:
         break;
@@ -1581,7 +1592,7 @@
     const summary = currentSearchSummary();
     const url = buildShareUrl();
     const count = state.filtered.length;
-    return `「${summary}」の動画一覧（${count}件）。マーチンズで作成。\n${url}`;
+    return withCommunityShareFooter(`「${summary}」の動画一覧（${count}件）\n${url}`);
   }
 
   /** X 用: 1 行目の末尾にのみ @marchinz2026（改行より前）。以降の行（URL 等）はそのまま。 */
@@ -1666,7 +1677,7 @@
         );
         break;
       case "instagram":
-        shareInstagramLinkOnly(url, target);
+        shareInstagramLinkOnly(url, target, text);
         break;
       default:
         break;
@@ -4010,7 +4021,7 @@
       const t = String(listTitle || "マイリスト").trim() || "マイリスト";
       const k = kind === "yt" ? "yt" : "videos";
       const label = k === "yt" ? "YouTubeマイリスト" : "大会動画マイリスト";
-      return `「${t}」の${label}。\n${url}\nマーチンズからシェアしました♪`;
+      return withCommunityShareFooter(`「${t}」の${label}。\n${url}`);
     },
     /**
      * @param {string} displayName
@@ -4030,17 +4041,17 @@
         if (piece) parts.push(piece);
       }
       const tally = parts.length ? `これまで${parts.join("、")}。` : "";
-      return `${name}のMarchinZ Log。${tally}\n${url}`;
+      return withCommunityShareFooter(`${name}のMarchinZ Log。${tally}\n${url}`);
     },
     /** @param {string} noteTitle @param {string} url */
     noteShareText(noteTitle, url) {
       const t = String(noteTitle || "MarchinZ Note").trim() || "MarchinZ Note";
-      return `「${t}」のMarchinZ Note。\n${url}\nマーチンズからシェアしました♪`;
+      return withCommunityShareFooter(`「${t}」のMarchinZ Note。\n${url}`);
     },
     /** @param {string} threadTitle @param {string} url */
     boardShareText(threadTitle, url) {
       const t = String(threadTitle || "MarchinZ Board 話題").trim() || "MarchinZ Board 話題";
-      return `「${t}」のMarchinZ Board 話題。\n${url}\nマーチンズからシェアしました♪`;
+      return withCommunityShareFooter(`「${t}」のMarchinZ Board 話題。\n${url}`);
     },
     setupSearchLikeShareMenuForButton,
   };

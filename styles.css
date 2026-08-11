@@ -13986,13 +13986,19 @@ html[data-mz-prof-guest-preview="1"] .user-profile-layout {
 }
 
 .eld-photo-add-btn {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
   padding: 0.38rem 0.75rem;
   border-radius: 8px;
   border: 1px dashed rgba(30, 79, 214, 0.45);
   font-size: 0.84rem;
   font-weight: 600;
   color: var(--link);
+}
+
+.eld-photo-add-btn > i {
+  font-size: 1rem;
 }
 
 .eld-photo-previews {
