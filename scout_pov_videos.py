@@ -172,7 +172,7 @@ CAM_TERMS = [
     "cam victory run", "cam finals week",
     "cam semifinals", "cam prelims", "cam full run",
     # ★語順を逆にした形も必ず入れる。
-    # 2026-08-13、"BLUECOATS 2026 VICTORY RUN SNARE CAM" を取りこぼした。
+    # 2026-08-11、"BLUECOATS 2026 VICTORY RUN SNARE CAM" を取りこぼした。
     # "cam victory run" という語順固定の検索語では
     # 「VICTORY RUN が先、CAM が後」の題名に届かない。
     # 大会の段は「段+cam」と「cam+段」の両方向で引く。
@@ -699,7 +699,7 @@ def guess_team_title_first(title: str, desc: str = "") -> str:
 def guess_part(title: str, team: str = "") -> str:
     """タイトルから楽器・パートを当てる。団体名の部分文字列に釣られない。
 
-    2026-08-13、優さんの指摘で発覚。"Santa Clara Vanguard" というタイトルは
+    2026-08-11、優さんの指摘で発覚。"Santa Clara Vanguard" というタイトルは
     団体名自体に "guard" を含むため、PART の正規表現がタイトル中の本当の
     楽器名(例: Baritone)より先に団体名の中の "guard" を拾ってしまい、
     SCVの44件で本当の楽器が【guard】に上書きされていた。
