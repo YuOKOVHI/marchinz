@@ -33,6 +33,7 @@ OUT_CSV = PRIMARY_CSV
 OUT_JSON = ROOT / "data.json"
 OUT_INLINE = ROOT / "data.inline.js"
 INDEX_HTML = ROOT / "index.html"
+APP_JS = ROOT / "app.js"
 META_FILE = ROOT / "fetch_meta.json"
 
 META_SITE = "取得サイト"
@@ -158,24 +159,33 @@ def write_data_json(rows: list[dict], meta: dict | None = None) -> None:
 
 
 def update_inline_cache_key() -> str:
-    """data.inline.js の内容に連動して、HTML側のキャッシュキーを更新する。
+    """data.inline.js の内容に連動して、参照側のキャッシュキーを更新する。
 
     大会動画の正本CSVだけが日次更新される場合でも、静的キャッシュが古い
     data.inline.js を返さないようにする。アプリ本体の版番号は変更しない。
+
+    ★参照は index.html と app.js の2箇所ある。
+      app.js の loadInlineDataScript() は、インラインデータが未読込のときに
+      data.inline.js を動的に読み直す**実経路**。
+      2026-08-12 まで index.html しか更新しておらず、app.js 側は
+      `?v=2.28.0` で固定されたままだった(この経路を通ると旧データを掴む)。
+      片方だけ直すと必ず食い違うので、両方を同じ鍵で更新する。
     """
     digest = hashlib.sha256(OUT_INLINE.read_bytes()).hexdigest()[:12]
     cache_key = f"data-{digest}"
-    text = INDEX_HTML.read_text(encoding="utf-8")
-    updated, count = re.subn(
-        r'(data\.inline\.js\?v=)[^"\']+',
-        rf'\g<1>{cache_key}',
-        text,
-        count=1,
-    )
-    if count != 1:
-        raise RuntimeError("index.html 内の data.inline.js キャッシュキーを特定できません")
-    if updated != text:
-        INDEX_HTML.write_text(updated, encoding="utf-8")
+    for path in (INDEX_HTML, APP_JS):
+        text = path.read_text(encoding="utf-8")
+        updated, count = re.subn(
+            r'(data\.inline\.js\?v=)[^"\']+',
+            rf'\g<1>{cache_key}',
+            text,
+            count=1,
+        )
+        if count != 1:
+            raise RuntimeError(
+                f"{path.name} 内の data.inline.js キャッシュキーを特定できません")
+        if updated != text:
+            path.write_text(updated, encoding="utf-8")
     return cache_key
 
 

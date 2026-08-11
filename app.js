@@ -3664,7 +3664,7 @@
     }
     return new Promise((resolve) => {
       const script = document.createElement("script");
-      script.src = "data.inline.js?v=2.28.0";
+      script.src = "data.inline.js?v=data-daa0b83c1f1e";
       script.async = true;
       script.onload = () => resolve(window.__MARCHINZ_DATA || null);
       script.onerror = () => resolve(null);
