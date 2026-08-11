@@ -40,6 +40,7 @@ import csv
 import io
 import json
 import re
+import shutil
 import subprocess
 import sys
 import urllib.parse
@@ -197,7 +198,17 @@ def ytdlp_bin() -> str:
     for p in YTDLP_CANDIDATES:
         if p.exists():
             return str(p)
-    raise SystemExit("yt-dlp が見つかりません(~/Movies/venvs/*/bin/yt-dlp を確認)")
+    # PATH も見る。GitHub Actions(ubuntu-latest)では
+    # `pip install yt-dlp` が /opt/hostedtoolcache/Python/*/x64/bin/ へ置くため、
+    # 上のMac固有の候補だけでは見つからない。
+    # 2026-08-12、日次ワークフローがこれで13秒で全滅した
+    # (scout が SystemExit → check_pov_updates が die() → ジョブが赤)。
+    found = shutil.which("yt-dlp")
+    if found:
+        return found
+    raise SystemExit(
+        "yt-dlp が見つかりません"
+        "(~/Movies/venvs/*/bin/yt-dlp か PATH 上を確認)")
 
 
 def video_id(url: str) -> str:

@@ -201,6 +201,45 @@ def check_cam_terms_word_order(fails):
     return n
 
 
+def check_ytdlp_lookup_finds_path(fails):
+    """yt-dlp はPATHからも見つけられること(Linuxランナーで死なないため)。
+
+    2026-08-12、日次ワークフロー(POV動画の自動更新)が13秒で全滅した。
+    ランナーが macOS から ubuntu-latest へ変わったのに、探索先が
+    ~/Movies/venvs/... と /opt/homebrew/... という **Mac固有のパスだけ**で、
+    ubuntu の `pip install yt-dlp` が置く
+    /opt/hostedtoolcache/Python/3.11.x/x64/bin/yt-dlp を見ていなかった。
+    scout が SystemExit → check_pov_updates が die() → ジョブが赤くなる。
+    """
+    import os
+    import shutil
+    import stat
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as d:
+        fake = Path(d) / "yt-dlp"
+        fake.write_text("#!/bin/sh\nexit 0\n")
+        fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+
+        orig_candidates = S.YTDLP_CANDIDATES
+        orig_path = os.environ.get("PATH", "")
+        try:
+            # Mac固有の候補が1つも無い状況(=Linuxランナー)を作る
+            S.YTDLP_CANDIDATES = [Path(d) / "絶対に無いパス"]
+            os.environ["PATH"] = d + os.pathsep + orig_path
+            try:
+                got = S.ytdlp_bin()
+            except SystemExit as exc:
+                fails.append(f"PATH上のyt-dlpを見つけられずSystemExit: {exc}")
+                return 1
+            if shutil.which("yt-dlp") != got:
+                fails.append(f"PATH上のyt-dlpを返さなかった: {got!r}")
+        finally:
+            S.YTDLP_CANDIDATES = orig_candidates
+            os.environ["PATH"] = orig_path
+    return 1
+
+
 def check_generated_title(fails):
     """--apply が組む大会名が 【POV/YYYY】 の形であること。
 
@@ -279,7 +318,8 @@ def main() -> int:
 
     # 直近365日・尺・個人チャンネル再訪の3つの候補門に加え、見張り台帳の保持も数える。
     n_auto = (check_auto(fails) + check_generated_title(fails) + check_team_guess(fails)
-              + check_part_guess(fails) + check_cam_terms_word_order(fails))
+              + check_part_guess(fails) + check_cam_terms_word_order(fails)
+              + check_ytdlp_lookup_finds_path(fails))
 
     total = len(REGRESSION_MISSED) + len(SHOULD_KEEP) + len(SHOULD_DROP) + 4 + n_auto
     if fails:
