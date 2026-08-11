@@ -672,11 +672,19 @@ def guess_team_title_first(title: str, desc: str = "") -> str:
     「2015年にPacific Crestで始めた」に反応して Pacific Crest 扱いになる
     誤爆が発覚した。概要欄は自伝的文章で過去に所属した別団体名が出ることが
     あるため、タイトルに手掛かりが無い場合の補助にとどめる。
+
+    さらに同日、概要欄がSEO目的の無関係なタグの羅列(他団体名を含む)で
+    埋まっている動画で同種の誤爆が発覚した(Blue Devils の動画が
+    "boston crusaders" 等を含む大量のハッシュタグ群に反応して
+    Boston Crusaders 扱いになった)。実際の説明文は概要欄の先頭に書かれ、
+    タグの羅列は後半に付くのが通例のため、補助として使う概要欄は
+    先頭2行だけに絞る。
     """
     team = guess_team(title)
     if team:
         return team
-    return guess_team(f"{title}\n{desc}")
+    desc_head = "\n".join(desc.splitlines()[:2])
+    return guess_team(f"{title}\n{desc_head}")
 
 
 def guess_show(title: str) -> str:

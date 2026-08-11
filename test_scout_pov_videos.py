@@ -139,6 +139,17 @@ def check_team_guess(fails):
     team = S.guess_team_title_first(title, desc)
     if team != "Blue Devils":
         fails.append(f"概要欄の経歴紹介に釣られて誤団体になった: {team!r}(正しくはBlue Devils)")
+
+    # 2026-08-11 その2: 概要欄がSEOタグの羅列で埋まっている動画で同種の誤爆。
+    title2 = "UP ROCK!"
+    desc2 = ('Blue Devils 2025 "Variations on a Gathering" Mello Cam\n\n\n\n'
+             '#dci #dci2025 #bluedevil #bluedevils\n\n\n'
+             'drum corps international,\n'
+             'drum corps international 2024 boston crusaders,\n'
+             'boston crusaders drum and bugle corps,\n')
+    team2 = S.guess_team_title_first(title2, desc2)
+    if team2 != "Blue Devils":
+        fails.append(f"SEOタグの羅列に釣られて誤団体になった: {team2!r}(正しくはBlue Devils)")
     return 1
 
 
