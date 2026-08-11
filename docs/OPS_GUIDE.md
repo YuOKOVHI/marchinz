@@ -150,9 +150,11 @@ firebase deploy --only firestore:rules,storage
   **▶ 詳しい手順・採用基準・他AIへの依頼文は [`docs/POV_LIST_GUIDE.md`](POV_LIST_GUIDE.md) に集約した。
   POVを触る作業は、AIも人も、まずそれを読むこと。**
 
-  新着は **毎日 06:00 JST に GitHub Actions が見張る**（`.github/workflows/pov-update-check.yml`）。
-  候補が出た日だけ Issue が立つ。**サイトのファイルは書き換えないのでビルドは走らず、
-  Netlify のクレジットは減らない**。採否と CSV への追記は人（または指示を受けたAI）が行う。
+  新着は **毎日 00:00 JST に GitHub Actions が見張る**（`.github/workflows/videos-daily-update.yml`）。
+  初回だけ過去4日分、以後は過去1日分を確認する。題名だけで確実なものは自動でPOV CSVへ
+  追記し、それ以外の候補だけ Issue を立てる。**変更対象はPOV CSV・POV台帳・派生データだけで、
+  他の3分類CSVは触らない**。データだけの反映では Netlify のビルドをスキップするため、
+  クレジットは消費しない。
 
   いま何年分あるかを見る / 年を決めて掘る:
 

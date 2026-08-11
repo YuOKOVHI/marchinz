@@ -1,38 +1,23 @@
-# 大会動画の「海外(FloMarching)」と「POV」を毎日見張り、確実なものは自動で反映する
-# (2026-08-11 優さん指示)
+# POV（奏者視点）だけを毎日見張り、確実な新着だけを自動反映する。
 #
-# ■ なぜ macOS ランナーなのか
-#   海外の採用条件は「10分以上 かつ タイトル or サムネイルに FULL SHOW」。
-#   実測すると採用15件のうち **10件(67%)はサムネイルOCRでしか判定できず**、
-#   OCRは macOS Vision を使う。Linuxで走らせるとルールが黙って弱くなり、
-#   「更新なし」に見えてしまうので macos ランナーを使う。
+# 対象は「大会動画リスト_POV.csv」とPOV台帳、その2つから生成する data.json / data.inline.js
+# のみ。マーチング等・MIX3・海外のCSVには一切触れない。
 #
-# ■ 自動で入れるもの / 人が決めるもの
-#   海外 … ルールが機械的なので全自動
-#   POV  … 「収録実績のあるチャンネル × 題名にPOV語 × 楽器名 × 団体名 × 5〜20分」
-#          だけ自動。それ以外は Issue を立てて人(またはAI)が動画を見て決める。
-#          2026-08-10 に混入した18件は全て「CSVに1本も無いチャンネル」から来たため。
-#
-# ■ クレジット
-#   コミットするのは CSV と派生データだけ。netlify.toml の ignore に入れてあるので
-#   ビルドは走らず、Netlify のクレジットは減らない。
-#   サイトの鮮度は marchinz-data-refresh.js が実行時にGitHubから取り直して担保する。
-#
-# ■ マーチング等(マーチング祭・DCJ)と MIX3 は手動のまま。ここでは触らない。
-name: 大会動画の自動更新 (海外 / POV)
+# 自動採用: 収録実績のあるチャンネル × 題名にPOV/headcam等 × 楽器名 × 団体名 × 5〜20分。
+# それ以外はIssueを立て、動画を見て人が採否を決める（無関係動画の混入を防ぐため）。
+name: POV動画の自動更新
 
 on:
   schedule:
-    # 毎日 06:00 JST (21:00 UTC)。DCIは日本時間の午前に結果が出るので、
-    # その日のうちに上がったヘッドカムを翌朝には拾える。
-    - cron: "0 21 * * *"
+    # 毎日 00:00 JST (15:00 UTC)
+    - cron: "0 15 * * *"
   workflow_dispatch:
     inputs:
-      target:
-        description: "調べる対象"
+      lookback_days:
+        description: "公開日を何日前まで遡るか（手動実行用）"
         type: choice
-        options: [all, overseas, pov]
-        default: all
+        options: [1, 4]
+        default: "1"
       dry_run:
         description: "コミットしない(調べるだけ)"
         type: boolean
@@ -43,13 +28,12 @@ permissions:
   issues: write
 
 concurrency:
-  group: videos-daily-update
+  group: pov-daily-update
   cancel-in-progress: false
 
 jobs:
   update:
-    # ★ サムネイルOCR(macOS Vision)のため macOS でなければならない
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
@@ -61,41 +45,37 @@ jobs:
       - name: yt-dlp を入れる
         run: python3 -m pip install --quiet --upgrade yt-dlp
 
-      - name: 対象を決める
+      - name: 探索期間を決める
         id: pick
         env:
           SCHEDULE: ${{ github.event.schedule }}
-          INPUT_TARGET: ${{ github.event.inputs.target }}
+          INPUT_LOOKBACK: ${{ github.event.inputs.lookback_days }}
           INPUT_DRY: ${{ github.event.inputs.dry_run }}
         run: |
-          if [ -n "$SCHEDULE" ]; then target=all; else target="${INPUT_TARGET:-all}"; fi
-          # 想定の3語以外は受け付けない(run: へ値を渡す前にここで閉じる)
-          case "$target" in
-            all|overseas|pov) ;;
-            *) echo "知らない対象: $target" >&2; exit 1 ;;
-          esac
-          echo "target=$target" >> "$GITHUB_OUTPUT"
-          echo "dry=${INPUT_DRY:-false}" >> "$GITHUB_OUTPUT"
-          echo "対象: $target / dry-run: ${INPUT_DRY:-false}"
-
-      # ── 海外(FloMarching) ──
-      # ★赤くするのは「調べ方が壊れた」ときだけ。YouTubeに弾かれた日は緑のまま
-      #   (理由はログに必ず出す)。毎日走るので、弾かれた日まで赤くすると
-      #   失敗通知に埋もれて誰も見なくなる。
-      - name: 海外(FloMarching)を取り込む
-        if: steps.pick.outputs.target != 'pov'
-        run: |
-          if python3 import_flomarching_dci_full_shows.py; then
-            echo "海外: 取り込み完了"
+          export TZ=Asia/Tokyo
+          today="$(date +%F)"
+          if [ -n "$SCHEDULE" ]; then
+            # 2026-08-12 00:00 JST の初回だけ、優さん指定の過去4日分を補足する。
+            # 以後の定期実行は前日からの1日分。手動実行は下の入力で再実行できる。
+            if [ "$today" = "2026-08-12" ]; then days=4; else days=1; fi
           else
-            echo "::warning::海外の取り込みに失敗（今日は見送り）。ログを確認してください"
+            days="${INPUT_LOOKBACK:-1}"
           fi
+          case "$days" in
+            1|4) ;;
+            *) echo "許可されない遡及日数: $days" >&2; exit 1 ;;
+          esac
+          since="$(date -d "$days days ago" +%F)"
+          echo "since=$since" >> "$GITHUB_OUTPUT"
+          echo "days=$days" >> "$GITHUB_OUTPUT"
+          echo "dry=${INPUT_DRY:-false}" >> "$GITHUB_OUTPUT"
+          echo "POVのみ / 公開日下限: $since（過去${days}日） / dry-run: ${INPUT_DRY:-false}"
 
-      # ── POV ──
       - name: POVの新着を調べ、確実なものだけ入れる
         id: pov
-        if: steps.pick.outputs.target != 'overseas'
-        run: python3 check_pov_updates.py --auto-apply --github-output
+        run: >-
+          python3 check_pov_updates.py --since "${{ steps.pick.outputs.since }}"
+          --auto-apply --github-output
 
       # ── 反映と検算 ──
       - name: 派生ファイルを作り直して検算
@@ -106,11 +86,11 @@ jobs:
       - name: 変わったかを見る
         id: diff
         run: |
-          if git diff --quiet -- '大会動画リスト_*.csv' data.json data.inline.js pov_ledger.json; then
+          if git diff --quiet -- '大会動画リスト_POV.csv' data.json data.inline.js pov_ledger.json; then
             echo "changed=false" >> "$GITHUB_OUTPUT"; echo "変更なし"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
-            git diff --stat -- '大会動画リスト_*.csv' data.json data.inline.js pov_ledger.json
+            git diff --stat -- '大会動画リスト_POV.csv' data.json data.inline.js pov_ledger.json
           fi
 
       - name: コミットして反映する
@@ -120,9 +100,9 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # ★CSVと派生データだけを載せる。他が混ざるとNetlifyのビルドが走る
-          git add '大会動画リスト_*.csv' data.json data.inline.js pov_ledger.json
-          git commit -m "chore(videos): 海外/POVの日次更新（POV自動採用 ${APPLIED:-0}件）"
+          # ★POV正本と派生データだけを載せる。ほかの3分類のCSVは変更できない。
+          git add '大会動画リスト_POV.csv' data.json data.inline.js pov_ledger.json
+          git commit -m "chore(pov): 日次更新（自動採用 ${APPLIED:-0}件）"
           # 毎朝5時のデータ更新botと同じ時間帯に走るので、衝突したら取り込み直す
           for i in 1 2 3; do
             git pull --rebase origin main && git push && exit 0

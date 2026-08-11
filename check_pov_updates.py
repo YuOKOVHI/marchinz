@@ -38,7 +38,7 @@ import json
 import os
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -80,6 +80,22 @@ def known_channels_from_csv() -> set[str]:
     rows = list(csv.DictReader(io.StringIO(POV_CSV.read_text(encoding="utf-8"))))
     return {r["動画配信元URL"].rstrip("/") for r in rows
             if (r.get("動画配信元URL") or "").startswith("http")}
+
+
+def build_scout_command(since: str | None) -> list[str]:
+    """日次見張り用の scout 呼び出しを作る。
+
+    ``since`` は JST で計算した公開日の下限。ここで一度検証してから子プロセスへ
+    引き渡すことで、workflow_dispatch の入力値をそのまま実行引数にしない。
+    """
+    cmd = [sys.executable, str(SCOUT), "--quick", "--out", str(OUT_TSV)]
+    if since:
+        try:
+            date.fromisoformat(since)
+        except ValueError as exc:
+            raise ValueError("--since は YYYY-MM-DD で指定してください") from exc
+        cmd.extend(["--since", since])
+    return cmd
 
 
 def auto_apply(rows: list[dict]) -> tuple[list[str], list[dict]]:
@@ -127,6 +143,8 @@ def main() -> int:
                     help="GITHUB_OUTPUT へ found / issue_title を書く")
     ap.add_argument("--auto-apply", action="store_true",
                     help="題名だけで疑いようがないものをCSVへ自動で入れる")
+    ap.add_argument("--since", metavar="YYYY-MM-DD",
+                    help="日次探索の公開日下限（JSTで算出した日付を渡す）")
     ap.add_argument("--timeout", type=int, default=3000, help="探索の制限秒(既定50分)")
     args = ap.parse_args()
 
@@ -140,7 +158,12 @@ def main() -> int:
 
     # --quick = 収録済み/見張りチャンネルの再訪 + 雪だるま。
     # 横断検索(重い)は毎日は回さない。新着は投稿者のチャンネルに必ず出るため。
-    cmd = [sys.executable, str(SCOUT), "--quick", "--out", str(OUT_TSV)]
+    try:
+        cmd = build_scout_command(args.since)
+    except ValueError as exc:
+        ap.error(str(exc))
+    if args.since:
+        print(f"公開日下限: {args.since}", file=sys.stderr)
     try:
         p = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True,
                            timeout=args.timeout)
