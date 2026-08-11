@@ -63,6 +63,15 @@ Genesis       → ヒュンダイの車種（GV80 POV drive など）
 （snare / marimba / trumpet / mellophone / guard など）があることを必ず確かめてください。
 `scout_pov_videos.py` の `MARCHING_CONTEXT` がこの門です。
 
+### ★ もう一つの罠: "headcam" の誤記 "hedcam"
+
+2026-08-11、優さんの指摘で発覚。投稿者が "headcam" を "hedcam"（aが抜けた誤記）と
+綴ることがあり、`STRONG_POV` / `CAM_TERMS` / `YEAR_CAM_TERMS` の3箇所が
+"headcam" 表記しか見ていなかったため、この綴りの動画を丸ごと取りこぼしていた。
+**"hedcam" を全て追加済み**（scout_pov_videos.py・`test_scout_pov_videos.py` の
+`SHOULD_KEEP` に回帰試験も追加済み）。今後もう1文字違いの誤記を見かけたら
+同様に3箇所へ追加し、必ず試験を通すこと。
+
 ---
 
 ## 2. 毎日の流れ（新着を拾う）

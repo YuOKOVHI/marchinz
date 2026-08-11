@@ -80,7 +80,7 @@ YTDLP_CANDIDATES = [
 # ── 語彙 ───────────────────────────────────────────────
 # 明確に奏者視点を示す語
 STRONG_POV = re.compile(
-    r"(\bpov\b|head\s*cam|headcam|helmet\s*cam|chest\s*cam|"
+    r"(\bpov\b|head\s*cam|headcam|hedcam|helmet\s*cam|chest\s*cam|"
     r"go\s?pro|body\s*cam|player\s*cam|member\s*cam|"
     r"ヘッドカム|ヘルメットカム|奏者視点|プレイヤー視点|一人称|楽器視点)", re.I)
 
@@ -165,7 +165,7 @@ TEAM_ALIASES = {
 # Prelims / Semifinals / Finals Week でも撮られる。
 # 「Victory Run しか探していない」と準決勝ぶんを丸ごと落とす。
 CAM_TERMS = [
-    "headcam", "head cam", "POV", "gopro",
+    "headcam", "head cam", "hedcam", "POV", "gopro",
     "soloist cam", "lead trumpet cam", "mellophone cam",
     "euphonium cam", "snare cam", "tenor cam", "battery cam",
     "player cam", "member cam", "helmet cam", "chest cam",
@@ -173,7 +173,7 @@ CAM_TERMS = [
     "cam semifinals", "cam prelims", "cam full run",
 ]
 # 年を指定して掘るときの語。年が入るぶんクエリが増えるので数を絞る。
-YEAR_CAM_TERMS = ["headcam", "head cam", "POV", "gopro", "cam victory run"]
+YEAR_CAM_TERMS = ["headcam", "head cam", "hedcam", "POV", "gopro", "cam victory run"]
 JP_QUERIES = [
     "マーチング ヘッドカム", "マーチング 奏者視点", "マーチングバンド POV",
     "マーチング GoPro 視点", "ドラムライン 視点カメラ", "カラーガード 視点",
