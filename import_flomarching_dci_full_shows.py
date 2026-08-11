@@ -264,6 +264,7 @@ def build_rows(entries: list[dict], ocr_by_id: dict[str, str]) -> tuple[list[dic
                 "団体ID": stable_org_id_for_team_name(org),
                 "配信日": item["date"],
                 "大会名": DISPLAY_TITLE_BY_VIDEO_ID.get(item["id"], item["title"]),
+                "元動画タイトル": item["title"],
                 "URL": f"https://www.youtube.com/watch?v={item['id']}",
                 "動画配信元": CHANNEL_NAME,
                 "動画配信元URL": CHANNEL_URL,

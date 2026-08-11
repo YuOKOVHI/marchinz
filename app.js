@@ -1817,7 +1817,7 @@
     videoPartFilter.replaceChildren();
     const none = document.createElement("option");
     none.value = "";
-    none.textContent = "指定なし";
+    none.textContent = "ALL";
     videoPartFilter.appendChild(none);
     const entries = Object.entries(VIDEO_PART_FILTERS).sort((a, b) =>
       a[1].label.localeCompare(b[1].label, "en", { sensitivity: "base" })
@@ -2490,6 +2490,9 @@
   let youtubeEmbedTitleEl = null;
   /** @type {HTMLAnchorElement | null} */
   let youtubeEmbedOpenExternal = null;
+  /** @type {object | null} */
+  let youtubeEmbedShareRow = null;
+  let youtubeEmbedCurrentUrl = "";
   /** @type {Element | null} */
   let youtubeEmbedReturnAnchor = null;
 
@@ -2711,7 +2714,12 @@
     openExt.target = "_blank";
     openExt.rel = "noopener noreferrer";
     openExt.textContent = "YouTubeで開く";
-    footActions.append(miniBtn, fullscreenBtn, openExt);
+    const copyLink = document.createElement("button");
+    copyLink.type = "button";
+    copyLink.className = "mz-youtube-embed-copy-link";
+    copyLink.innerHTML = '<i class="fa-solid fa-link" aria-hidden="true"></i> シェア';
+    copyLink.setAttribute("aria-label", "リンクをコピー");
+    footActions.append(miniBtn, fullscreenBtn, copyLink, openExt);
     foot.append(qualityHint, footActions);
 
     /* ミニプレイヤーの小窓ヘッダー(縮小中だけCSSで表示)。
@@ -2744,6 +2752,15 @@
 
     fullscreenBtn.addEventListener("click", () => {
       void requestYouTubeEmbedFullscreen();
+    });
+    copyLink.addEventListener("click", () => {
+      const text = youtubeEmbedShareRow
+        ? shareText(youtubeEmbedShareRow)
+        : youtubeWatchUrlWithForcedStart(youtubeEmbedCurrentUrl);
+      if (!text) return;
+      copyText(text)
+        .then(() => MZToast.ok("リンクをコピーしました"))
+        .catch(() => MZToast.err("リンクをコピーできませんでした。"));
     });
 
     miniBtn.addEventListener("click", minimizeYouTubeEmbedModal);
@@ -2782,7 +2799,7 @@
   /**
    * YouTube 動画をサイト内 iframe モーダルで再生（Universal Links / アプリ強制起動を回避）
    * @param {string} urlStr
-   * @param {{ titleHint?: string, anchor?: Element | null }} [opts]
+   * @param {{ titleHint?: string, anchor?: Element | null, shareRow?: object | null }} [opts]
    */
   function openYouTubeEmbedModal(urlStr, opts = {}) {
     const raw = String(urlStr || "").trim();
@@ -2793,6 +2810,8 @@
       return;
     }
     youtubeEmbedReturnAnchor = opts.anchor instanceof Element ? opts.anchor : null;
+    youtubeEmbedShareRow = opts.shareRow && typeof opts.shareRow === "object" ? opts.shareRow : null;
+    youtubeEmbedCurrentUrl = raw;
     const overlay = ensureYoutubeEmbedOverlay();
     if (youtubeEmbedMini) restoreYouTubeEmbedModal(); // ミニ再生中に別の動画を開いたら全画面へ戻す
     const titleText = resolveYouTubeEmbedTitle(raw, opts);
@@ -2820,7 +2839,7 @@
     trackEvent("video_open", { platform: "embed_modal" });
   }
 
-  function enhanceVideoLink(anchor, urlStr) {
+  function enhanceVideoLink(anchor, urlStr, opts = {}) {
     if (!anchor || !urlStr) return;
     const id = youtubeVideoIdFromUrl(urlStr);
     if (!id) {
@@ -2836,7 +2855,7 @@
     anchor.dataset.ytEmbed = "1";
     anchor.addEventListener("click", (ev) => {
       ev.preventDefault();
-      openYouTubeEmbedModal(urlStr, { anchor });
+      openYouTubeEmbedModal(urlStr, { anchor, shareRow: opts.shareRow ?? null });
     });
   }
 
@@ -2884,7 +2903,7 @@
       a.className = "recommend-item-thumb-link";
       a.title = "動画を開く";
       a.setAttribute("aria-label", `「${eventTitle || orgTeam || "大会動画"}」を再生`);
-      enhanceVideoLink(a, urlStr);
+      enhanceVideoLink(a, urlStr, { shareRow: row });
       const img = document.createElement("img");
       img.className = "recommend-item-thumb";
       img.src = thumbSrc;
@@ -2902,7 +2921,7 @@
           fallback.className = "recommend-item-thumb-fallback";
           fallback.title = "動画を開く";
           fallback.setAttribute("aria-label", "動画を開く");
-          enhanceVideoLink(fallback, urlStr);
+          enhanceVideoLink(fallback, urlStr, { shareRow: row });
           thumbWrap.appendChild(fallback);
         } else {
           thumbWrap.classList.add("recommend-item-thumb-wrap--empty");
@@ -2923,7 +2942,7 @@
       fallback.className = "recommend-item-thumb-fallback";
       fallback.title = "動画を開く";
       fallback.setAttribute("aria-label", "動画を開く");
-      enhanceVideoLink(fallback, urlStr);
+      enhanceVideoLink(fallback, urlStr, { shareRow: row });
       thumbWrap.appendChild(fallback);
     } else if (thumbSrc) {
       const img = document.createElement("img");
@@ -2966,7 +2985,7 @@
         evLink.title = "動画を開く";
         evLink.setAttribute("aria-label", `「${eventTitle || "大会動画"}」を再生`);
         evLink.textContent = eventTitle || "動画を開く";
-        enhanceVideoLink(evLink, urlStr);
+        enhanceVideoLink(evLink, urlStr, { shareRow: row });
         evP.appendChild(evLink);
       } else {
         const plain = document.createElement("span");
@@ -3066,8 +3085,9 @@
     const sourceStack = document.createElement("div");
     sourceStack.className = "recommend-item-source-stack";
 
-    /** 配信元＋チャンネル名・配信日 */
-    if (dateStr || chName) {
+    /** 配信元＋チャンネル名・元動画タイトル（カードでは常に一行）。 */
+    const originalTitle = String(row["元動画タイトル"] ?? "").trim();
+    if (dateStr || chName || originalTitle) {
       const metaLine = document.createElement("p");
       metaLine.className = "recommend-item-yt-meta-line";
       const metaPrefix = document.createElement("span");
@@ -3083,16 +3103,23 @@
         chLink.title = "配信元チャンネルを開く";
         chLink.textContent = chName;
         metaLine.appendChild(chLink);
-        if (dateStr) {
-          metaLine.appendChild(document.createTextNode(` ・ ${dateStr}`));
-        }
       } else if (chName) {
-        metaLine.appendChild(document.createTextNode(chName));
-        if (dateStr) {
-          metaLine.appendChild(document.createTextNode(` ・ ${dateStr}`));
-        }
+        const chNameEl = document.createElement("span");
+        chNameEl.className = "recommend-item-yt-meta-channel";
+        chNameEl.textContent = chName;
+        metaLine.appendChild(chNameEl);
+      }
+      if (originalTitle) {
+        const rawTitle = document.createElement("span");
+        rawTitle.className = "recommend-item-yt-original-title";
+        rawTitle.textContent = originalTitle;
+        rawTitle.title = originalTitle;
+        metaLine.appendChild(rawTitle);
       } else if (dateStr) {
-        metaLine.appendChild(document.createTextNode(dateStr));
+        const date = document.createElement("span");
+        date.className = "recommend-item-yt-date";
+        date.textContent = dateStr;
+        metaLine.appendChild(date);
       }
       sourceStack.appendChild(metaLine);
     }

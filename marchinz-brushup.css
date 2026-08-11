@@ -6493,7 +6493,27 @@ input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
 }
 
 #page-videos .video-part-filter-section .video-part-filter-note {
-  display: none;
+  display: block;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--mzu-muted);
+  font-size: 0.62rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#page-videos .video-part-filter-heading {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  gap: 0.32rem;
+}
+
+#page-videos .video-part-filter-heading label {
+  flex: 0 0 auto;
 }
 
 #page-videos .videos-heading-count {
@@ -6527,17 +6547,42 @@ input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
 #page-videos .video-search-share-float {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  min-height: 40px;
-  padding: 0 0.7rem;
-  border: 1px solid rgba(15, 33, 56, 0.18);
+  gap: 0.42rem;
+  min-height: 42px;
+  padding: 0 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.5);
   border-radius: 999px;
-  background: #fff;
-  color: var(--mzu-ink);
-  box-shadow: 0 8px 20px rgba(15, 33, 56, 0.15);
+  background: linear-gradient(135deg, #2457e6, #163f9d);
+  color: #fff;
+  box-shadow: 0 10px 24px rgba(15, 33, 56, 0.28);
   font: inherit;
-  font-size: 0.76rem;
+  font-size: 0.8rem;
   font-weight: 800;
+}
+
+#page-videos .video-search-share-float:hover,
+#page-videos .video-search-share-float:focus-visible {
+  color: #fff;
+  background: linear-gradient(135deg, #3268f7, #1747b5);
+  box-shadow: 0 13px 28px rgba(15, 33, 56, 0.36);
+}
+
+@media (min-width: 768px) {
+  #page-videos .video-search-share-float-anchor {
+    right: clamp(1.25rem, 2.5vw, 3rem);
+    bottom: clamp(1.25rem, 2.5vh, 2.5rem);
+  }
+
+  #page-videos .video-search-share-float {
+    gap: 0.58rem;
+    min-height: 52px;
+    padding: 0 1.3rem;
+    font-size: 0.98rem;
+  }
+
+  #page-videos .video-search-share-float .fa-share-nodes {
+    font-size: 1.05em;
+  }
 }
 
 #page-videos .video-search-share-float-anchor .share-menu {
@@ -6747,25 +6792,55 @@ input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
   height: 30px;
 }
 
-.video-result-list .recommend-item-source-stack { min-width: 0; }
+.video-result-list .recommend-item-source-stack {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
 
 .video-result-list .recommend-item-yt-meta-line {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: baseline;
   gap: 0.18rem;
+  min-width: 0;
   margin: 0;
+  overflow: hidden;
   color: var(--mzu-muted);
   font-size: 0.76rem;
   line-height: 1.4;
+  white-space: nowrap;
 }
 
 .video-result-list .recommend-item-yt-meta-prefix {
-  flex: 0 0 100%;
+  flex: 0 0 auto;
   color: var(--mzu-muted);
   font-size: 0.65rem;
   font-weight: 700;
   line-height: 1.1;
+}
+
+.video-result-list .recommend-item-yt-meta-channel,
+.video-result-list .recommend-item-yt-original-title,
+.video-result-list .recommend-item-yt-date {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.video-result-list .recommend-item-yt-meta-channel {
+  flex: 0 1 auto;
+}
+
+.video-result-list .recommend-item-yt-original-title::before,
+.video-result-list .recommend-item-yt-date::before {
+  content: "·";
+  margin-right: 0.18rem;
+}
+
+.video-result-list .recommend-item-yt-original-title {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .video-result-list .recommend-item-actions {

@@ -823,7 +823,8 @@ html.mz-inapp-browser-blocked main {
 }
 
 .mz-youtube-embed-fullscreen-btn,
-.mz-youtube-embed-open-external {
+.mz-youtube-embed-open-external,
+.mz-youtube-embed-copy-link {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -861,6 +862,17 @@ html.mz-inapp-browser-blocked main {
   text-decoration: none;
 }
 
+.mz-youtube-embed-copy-link {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.mz-youtube-embed-copy-link:hover {
+  background: rgba(30, 79, 214, 0.08);
+}
+
 .mz-youtube-embed-open-external:hover {
   color: var(--text);
   background: rgba(0, 0, 0, 0.03);
@@ -895,7 +907,8 @@ html.mz-inapp-browser-blocked main {
   }
 
   .mz-youtube-embed-fullscreen-btn,
-  .mz-youtube-embed-open-external {
+  .mz-youtube-embed-open-external,
+  .mz-youtube-embed-copy-link {
     flex: 0 0 auto;
     padding: 0.3rem 0.9rem;
     font-size: 0.68rem;

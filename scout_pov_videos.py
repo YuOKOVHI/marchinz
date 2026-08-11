@@ -687,6 +687,32 @@ def guess_team_title_first(title: str, desc: str = "") -> str:
     return guess_team(f"{title}\n{desc_head}")
 
 
+def guess_part(title: str, team: str = "") -> str:
+    """タイトルから楽器・パートを当てる。団体名の部分文字列に釣られない。
+
+    2026-08-13、優さんの指摘で発覚。"Santa Clara Vanguard" というタイトルは
+    団体名自体に "guard" を含むため、PART の正規表現がタイトル中の本当の
+    楽器名(例: Baritone)より先に団体名の中の "guard" を拾ってしまい、
+    SCVの44件で本当の楽器が【guard】に上書きされていた。
+    役割を当てる前に、団体名の部分だけタイトルから取り除く。
+    """
+    title_wo_team = re.sub(re.escape(team), " ", title, flags=re.I) if team else title
+    part = PART.search(title_wo_team)
+    part_s = part.group(0) if part else "POV"
+    if part_s == "POV":
+        for label, pat in (
+            ("Euphonium", r"\beuph\b"),
+            ("Baritone", r"\bbari\b"),
+            ("Mellophone", r"\bmello\b"),
+            ("Rack", r"\brack\s*cam\b"),
+            ("Drum Set", r"\bdrum\s*set\b|\bdrumset\b"),
+        ):
+            if re.search(pat, title_wo_team, re.I):
+                part_s = label
+                break
+    return part_s
+
+
 def guess_show(title: str) -> str:
     """既存POVの表示規則に合わせ、題名に明示されたショウ名だけを拾う。"""
     for pattern in (r"[“\"]([^”\"]{2,80})[”\"]", r"「([^」]{2,80})」"):
@@ -842,20 +868,7 @@ def apply_accepted() -> int:
             year = ym.group(0)
         elif m.get("upload_date"):
             year = m["upload_date"][:4]
-        part = PART.search(m["title"])
-        part_s = part.group(0) if part else "POV"
-        # 候補題名のよくある略称を役割に正規化
-        if part_s == "POV":
-            for label, pat in (
-                ("Euphonium", r"\beuph\b"),
-                ("Baritone", r"\bbari\b"),
-                ("Mellophone", r"\bmello\b"),
-                ("Rack", r"\brack\s*cam\b"),
-                ("Drum Set", r"\bdrum\s*set\b|\bdrumset\b"),
-            ):
-                if re.search(pat, m["title"], re.I):
-                    part_s = label
-                    break
+        part_s = guess_part(m["title"], team)
         up = m.get("upload_date") or ""
         show = guess_show(m["title"])
         display = f"【POV/{year}】{team}"
@@ -875,6 +888,7 @@ def apply_accepted() -> int:
             "団体ID": known_id.get(team) or stable_org_id_for_team_name(team),
             "配信日": f"{up[:4]}-{up[4:6]}-{up[6:8]}" if len(up) == 8 else "",
             "大会名": display,
+            "元動画タイトル": m["title"],
             "URL": f"https://www.youtube.com/watch?v={v}",
             "動画配信元": ch_name,
             "動画配信元URL": ch_url,

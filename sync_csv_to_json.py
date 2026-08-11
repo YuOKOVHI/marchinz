@@ -15,7 +15,9 @@ data.json と data.inline.js を別々に編集しない。詳細は docs/OPS_GU
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -30,6 +32,7 @@ SOURCE_CSVS = (PRIMARY_CSV, DRUMCORPS_CSV, FLO_MARCHING_CSV, POV_CSV)
 OUT_CSV = PRIMARY_CSV
 OUT_JSON = ROOT / "data.json"
 OUT_INLINE = ROOT / "data.inline.js"
+INDEX_HTML = ROOT / "index.html"
 META_FILE = ROOT / "fetch_meta.json"
 
 META_SITE = "取得サイト"
@@ -45,6 +48,7 @@ FIELDNAMES = (
     "団体ID",
     "配信日",
     "大会名",
+    "元動画タイトル",
     "URL",
     "動画配信元",
     "動画配信元URL",
@@ -153,14 +157,37 @@ def write_data_json(rows: list[dict], meta: dict | None = None) -> None:
     )
 
 
+def update_inline_cache_key() -> str:
+    """data.inline.js の内容に連動して、HTML側のキャッシュキーを更新する。
+
+    大会動画の正本CSVだけが日次更新される場合でも、静的キャッシュが古い
+    data.inline.js を返さないようにする。アプリ本体の版番号は変更しない。
+    """
+    digest = hashlib.sha256(OUT_INLINE.read_bytes()).hexdigest()[:12]
+    cache_key = f"data-{digest}"
+    text = INDEX_HTML.read_text(encoding="utf-8")
+    updated, count = re.subn(
+        r'(data\.inline\.js\?v=)[^"\']+',
+        rf'\g<1>{cache_key}',
+        text,
+        count=1,
+    )
+    if count != 1:
+        raise RuntimeError("index.html 内の data.inline.js キャッシュキーを特定できません")
+    if updated != text:
+        INDEX_HTML.write_text(updated, encoding="utf-8")
+    return cache_key
+
+
 def main() -> int:
     rows = read_all_rows()
     meta = load_meta()
     if not META_FILE.is_file() and OUT_JSON.is_file():
         save_meta(meta)
     write_data_json(rows, meta)
+    cache_key = update_inline_cache_key()
     print(
-        f"OK: {OUT_JSON} + {OUT_INLINE}（{len(rows)} 行、正は {', '.join(str(p.name) for p in SOURCE_CSVS)}）",
+        f"OK: {OUT_JSON} + {OUT_INLINE}（{len(rows)} 行、キャッシュキー {cache_key}、正は {', '.join(str(p.name) for p in SOURCE_CSVS)}）",
         file=sys.stderr,
     )
     return 0

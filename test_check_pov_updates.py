@@ -31,7 +31,7 @@ def main() -> int:
             tmp = Path(d)
             c.POV_CSV = tmp / "大会動画リスト_POV.csv"
             c.POV_CSV.write_text(
-                "種別,分類,動画での表示名,団体/チーム名,団体ID,配信日,大会名,URL,動画配信元,動画配信元URL,動画配信元ロゴURL\n",
+                "種別,分類,動画での表示名,団体/チーム名,団体ID,配信日,大会名,元動画タイトル,URL,動画配信元,動画配信元URL,動画配信元ロゴURL\n",
                 encoding="utf-8",
             )
             c.OUT_TSV = tmp / "pov_candidates.tsv"
