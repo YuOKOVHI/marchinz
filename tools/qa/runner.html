@@ -12423,7 +12423,8 @@ async function countSamples(ns, file, fromSec) {
         ["watch", "ショウ動画", "#videos"],
         ["talk", "タイムライン", "#community/moments"],
       ];
-      const rail = [...d.querySelectorAll(".mz-action-rail-link")];
+      // ログイン用・ゲスト用の2組をDOMに保持し、表示中の導線だけを検査する。
+      const rail = [...d.querySelectorAll(".mz-action-rail-link")].filter((a) => a.getClientRects().length > 0);
       if (rail.length !== 3) throw new Error(`TOP導線が3つでない: ${rail.length}`);
       rail.forEach((a, i) => {
         const [action, label, href] = expected[i];
