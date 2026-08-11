@@ -78,6 +78,11 @@ jobs:
           --auto-apply --github-output
 
       # ── 反映と検算 ──
+      - name: POV配信元のチャンネル画像を補完する
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+        run: python3 enrich_video_source_logos.py --csv '大会動画リスト_POV.csv'
+
       - name: 派生ファイルを作り直して検算
         run: |
           python3 sync_csv_to_json.py

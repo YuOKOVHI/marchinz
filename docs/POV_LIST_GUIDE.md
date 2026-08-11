@@ -85,6 +85,13 @@ Genesis       → ヒュンダイの車種（GV80 POV drive など）
 | **POV（それ以外）** | **Issue を立てて人が決める** |
 | マーチング等・MIX3・海外 | **触らない**（手動のまま） |
 
+POVの反映時は `enrich_video_source_logos.py` が YouTube Data API から配信元の
+チャンネル画像を取得し、空の `動画配信元ロゴURL` を補完します。個人チャンネルは
+公式YouTube一覧に無いため、この工程を飛ばすと画面が頭文字アイコンへ戻ります。
+チャンネルURLが空の行も、動画URLの video ID からチャンネルIDを復元して
+`/channel/UC...` へ正規化します。APIキー未設定・一時的なAPI失敗時は警告だけを
+出して日次の動画更新は続行し、解決できなかった行だけ頭文字表示を維持します。
+
 > **なぜPOVは全自動にしないのか**: 「本当に奏者本人の視点か」は題名と概要欄だけでは
 > 決められません。2026-08-10 に18件の無関係動画が混入したのがその証拠です。
 > 混入した18件は **全て「CSVに1本も無いチャンネル」から来た**ので、
@@ -111,7 +118,10 @@ python3 scout_pov_videos.py --apply
 
 # 5) 大会名を手で整える（下の §4 の形に）
 
-# 6) 派生ファイルを作り直して検算
+# 6) 配信元画像を補完（YOUTUBE_API_KEY が必要）
+python3 enrich_video_source_logos.py --csv 大会動画リスト_POV.csv
+
+# 7) 派生ファイルを作り直して検算
 python3 sync_csv_to_json.py && python3 check_data.py
 ```
 
@@ -206,6 +216,7 @@ python3 scout_pov_videos.py --year-from 2012 --year-to 2015 --skip-revisit
 | `scout_pov_videos.py` | 探索と判定。変えたら試験を通す |
 | `test_scout_pov_videos.py` | 判定の見張り |
 | `check_pov_updates.py` | 日次チェックの本体 |
+| `enrich_video_source_logos.py` | 配信元チャンネル画像をAPIからCSVへ補完 |
 | `docs/POV_LIST_GUIDE.md` | この文書 |
 
 ### 触らない
