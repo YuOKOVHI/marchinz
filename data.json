@@ -31220,7 +31220,7 @@
       "URL": "https://www.youtube.com/watch?v=3YLDcGOBOtM",
       "動画配信元": "Patrick Ragland",
       "動画配信元URL": "https://www.youtube.com/channel/UCEZLKzownWUJo2oBy-H08jQ",
-      "動画配信元ロゴURL": "https://yt3.googleusercontent.com/ytc/AIdro_lM0jl1edeTSh_BPOubR6A5_suOSeaWpHj8NVBsW486ZvI=s900-c-k-c0x00ffffff-no-rj"
+      "動画配信元ロゴURL": ""
     },
     {
       "種別": "動画",
@@ -34511,6 +34511,62 @@
       "動画配信元": "Noah Burgess",
       "動画配信元URL": "https://www.youtube.com/channel/UCXbWprFit_dgKhnVSF9mm2w",
       "動画配信元ロゴURL": "https://yt3.googleusercontent.com/ytc/AIdro_kww5f1byb0M26QeBYKuDY-Gnodwzybs1wRVzfXdCLOvgg=s900-c-k-c0x00ffffff-no-rj"
+    },
+    {
+      "種別": "動画",
+      "分類": "POV",
+      "動画での表示名": "Bluecoats",
+      "団体/チーム名": "Bluecoats",
+      "団体ID": "o1nysy0o",
+      "配信日": "2026-08-10",
+      "大会名": "【POV/2026】Bluecoats「Gravity & Grace」【Snare／Victory Run】",
+      "元動画タイトル": "BLUECOATS 2026 VICTORY RUN SNARE CAM - COLE READ",
+      "URL": "https://www.youtube.com/watch?v=mKAwGCOez6I",
+      "動画配信元": "Cole Read",
+      "動画配信元URL": "https://www.youtube.com/channel/UC39sfNgMt_5ZXv_tDvmeKVQ",
+      "動画配信元ロゴURL": ""
+    },
+    {
+      "種別": "動画",
+      "分類": "POV",
+      "動画での表示名": "Madison Scouts",
+      "団体/チーム名": "Madison Scouts",
+      "団体ID": "o1y49u8i",
+      "配信日": "2026-08-08",
+      "大会名": "【POV/2026】Madison Scouts「MadiSpin」【Color Guard Weapon Soloist】",
+      "元動画タイトル": "Madison Scouts 2026 “MadiSpin” Weapon Soloist Chest Cam",
+      "URL": "https://www.youtube.com/watch?v=IUcpsuR9AdY",
+      "動画配信元": "Will Starr",
+      "動画配信元URL": "https://www.youtube.com/channel/UCfzmskHs3Qmq4tlNID5RseQ",
+      "動画配信元ロゴURL": ""
+    },
+    {
+      "種別": "動画",
+      "分類": "POV",
+      "動画での表示名": "Boston Crusaders",
+      "団体/チーム名": "Boston Crusaders",
+      "団体ID": "o19kp8xp",
+      "配信日": "2026-06-21",
+      "大会名": "【POV/2023】Boston Crusaders【Euphonium】",
+      "元動画タイトル": "Boston Crusaders 2023 Euphonium Cam",
+      "URL": "https://www.youtube.com/watch?v=RF6d_7YH1Gk",
+      "動画配信元": "Denver Henrichsen",
+      "動画配信元URL": "https://www.youtube.com/channel/UC2iRNii4ZWXN-QYiT7dFBWw",
+      "動画配信元ロゴURL": ""
+    },
+    {
+      "種別": "動画",
+      "分類": "POV",
+      "動画での表示名": "Carolina Crown",
+      "団体/チーム名": "Carolina Crown",
+      "団体ID": "o46167m",
+      "配信日": "2026-08-09",
+      "大会名": "【POV/2026】Carolina Crown「The Doors of Perception」【Mello】",
+      "元動画タイトル": "Carolina Crown 2026 “The Doors of Perception” Mello Cam - Slightly Chopped Edition",
+      "URL": "https://www.youtube.com/watch?v=VkT-fS3A8tg",
+      "動画配信元": "Liv Krajnak",
+      "動画配信元URL": "https://www.youtube.com/channel/UCPGadqsPrQgb2fI9ravd1Zw",
+      "動画配信元ロゴURL": ""
     }
   ]
 }
