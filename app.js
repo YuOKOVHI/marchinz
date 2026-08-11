@@ -1200,6 +1200,31 @@
     return row[key] ?? "";
   }
 
+  /** CSV正本の配信日を日付として扱う。表記ゆれ・欠測は年絞り込みから外し、一覧の末尾へ置く。 */
+  function uploadDateMs(row) {
+    const raw = String(row?.["配信日"] ?? "").trim();
+    const match = raw.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})(?:\D|$)/);
+    if (!match) return null;
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const ms = Date.UTC(year, month - 1, day);
+    const check = new Date(ms);
+    if (
+      check.getUTCFullYear() !== year ||
+      check.getUTCMonth() !== month - 1 ||
+      check.getUTCDate() !== day
+    ) {
+      return null;
+    }
+    return ms;
+  }
+
+  function uploadYear(row) {
+    const ms = uploadDateMs(row);
+    return ms === null ? "" : String(new Date(ms).getUTCFullYear());
+  }
+
   /** 共有・履歴用の短いクエリキー。団体は `o=団体ID`（CSV「団体ID」優先・空なら団体名から導出）、従来の tab / team / t も readUrlState で読める */
   const SHARE_C_TO_TAB = { m: "マーチング団体等", x: "スリークロスチーム", o: "海外", p: "POV" };
   const SHARE_SORT_TO_S = { 配信日: "dt", "団体/チーム": "tm" };
@@ -1754,7 +1779,7 @@
     const wrap = $("#video-year-chips");
     if (!wrap) return;
     const sourceForYears = rows ?? state.rows;
-    const years = [...new Set(sourceForYears.map((row) => String(row["配信日"] ?? "").slice(0, 4)))]
+    const years = [...new Set(sourceForYears.map((row) => uploadYear(row)))]
       .filter((y) => /^\d{4}$/.test(y))
       .filter((y) => Number(y) >= 2018) // 2017以前は対象動画が少ないためチップを出さない
       .sort((a, b) => b.localeCompare(a));
@@ -1832,7 +1857,7 @@
 
       if (state.excludedOrgTeams.has(rawOrg)) return false;
 
-      if (!skipYear && state.yearFilter && String(row["配信日"] ?? "").slice(0, 4) !== state.yearFilter) {
+      if (!skipYear && state.yearFilter && uploadYear(row) !== state.yearFilter) {
         return false;
       }
 
@@ -1943,22 +1968,24 @@
     return false;
   }
 
-  function cmp(a, b, key) {
-    const va = sortValue(a, key);
-    const vb = sortValue(b, key);
-    if (key === "配信日") {
-      const da = va || "0000-00-00";
-      const db = vb || "0000-00-00";
-      return da.localeCompare(db);
-    }
-    return compareOrgNameOrder(String(va), String(vb));
-  }
-
   function sortRows() {
     const key = SORT_KEYS.includes(state.sortKey) ? state.sortKey : "配信日";
     const dir = state.sortDir === "asc" ? 1 : -1;
+    if (key === "配信日") {
+      // 配信元のアップロード日だけを正本にする。同日内はCSVの元順を保つ。
+      state.filtered.sort((a, b) => {
+        const aMs = uploadDateMs(a);
+        const bMs = uploadDateMs(b);
+        if (aMs === null || bMs === null) {
+          if (aMs === bMs) return 0;
+          return aMs === null ? 1 : -1;
+        }
+        return (aMs - bMs) * dir;
+      });
+      return;
+    }
     state.filtered.sort((a, b) => {
-      const prim = cmp(a, b, key) * dir;
+      const prim = compareOrgNameOrder(String(sortValue(a, key)), String(sortValue(b, key))) * dir;
       if (prim !== 0) return prim;
       return drumcorpsFinalIntroPairCmp(a, b);
     });
@@ -3381,6 +3408,8 @@
         Boolean(useInlinePeek) || !moreAvailable;
     }
     $("#count").textContent = `${total}本の動画`;
+    const headingCount = $("#videos-heading-count");
+    if (headingCount) headingCount.textContent = `${total}本`;
     renderVisibleOrgsLine();
 
     if (paginationStatus) {

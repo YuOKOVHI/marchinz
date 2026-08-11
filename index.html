@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-version="2.25.0" data-mz-channel="beta">
+<html lang="ja" data-mz-version="2.25.1" data-mz-channel="beta">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -89,7 +89,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css" />
     <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css?v=1.25.64" />
     <link rel="stylesheet" href="styles.css?v=2.23.4" />
-    <link rel="stylesheet" href="marchinz-brushup.css?v=2.25.0" />
+    <link rel="stylesheet" href="marchinz-brushup.css?v=2.25.1" />
     <!-- Microsoft Clarity -->
     <script type="text/javascript">
       (function(c,l,a,r,i,t,y){
@@ -895,7 +895,9 @@
         <section class="mll-panel videos-page-main" aria-labelledby="videos-heading">
           <header class="page-hero mz-philosophy-header">
             <p class="mz-philosophy-label mz-philosophy-label--en" lang="en">Championship Archives</p>
-            <h2 id="videos-heading" class="mz-philosophy-heading">大会動画</h2>
+            <h2 id="videos-heading" class="mz-philosophy-heading">
+              大会動画<span id="videos-heading-count" class="videos-heading-count" aria-live="polite">読み込み中</span>
+            </h2>
             <div class="mz-philosophy-rule" aria-hidden="true"></div>
           </header>
 
@@ -914,9 +916,6 @@
           </button>
         </nav>
         <div class="videos-tab-notice-block">
-          <p class="rights-notice rights-notice-mix3 videos-tab-notice-line">
-            *検索の都合上、表記を揃えている項目があります
-          </p>
           <p id="mix3-notice" class="rights-notice rights-notice-mix3 videos-tab-notice-line" hidden>
             *MIX3 （スリークロス）は、NPO法人マーチング祭の商標登録です。
           </p>
@@ -1014,7 +1013,7 @@
         </section>
 
         <div class="video-results-summary" aria-live="polite">
-          <p class="meta-bar" id="count">読み込み中…</p>
+          <p class="meta-bar mz-visually-hidden" id="count">読み込み中…</p>
           <div class="visible-orgs" id="visible-orgs" hidden></div>
         </div>
 
@@ -1070,40 +1069,42 @@
               </div>
             </div>
           </div>
-          <div id="video-year-chips" class="mz-year-chips" hidden role="group" aria-label="配信年で絞り込み"></div>
-          <section id="video-part-filter-section" class="video-part-filter-section" aria-label="楽器／パートで絞り込み">
-            <label class="mz-year-chips-label" for="video-part-filter">楽器／パート</label>
-            <select id="video-part-filter" aria-describedby="video-part-filter-note">
-              <option value="">指定なし</option>
-              <option value="color_guard">Color Guard</option>
-              <option value="brass">Brass</option>
-              <option value="percussion">Percussion</option>
-              <option value="trumpet">Trumpet</option>
-              <option value="trombone">Trombone</option>
-              <option value="euphonium">Euphonium</option>
-              <option value="tuba">Tuba</option>
-              <option value="contra">Contra</option>
-              <option value="mellophone">Mellophone</option>
-              <option value="baritone">Baritone</option>
-              <option value="french_horn">French Horn</option>
-              <option value="flugel">Flugel</option>
-              <option value="snare">Snare</option>
-              <option value="tenor">Tenor</option>
-              <option value="quad">Quad</option>
-              <option value="bass_drum">Bass Drum</option>
-              <option value="cymbal">Cymbal</option>
-              <option value="marimba">Marimba</option>
-              <option value="vibraphone">Vibraphone</option>
-              <option value="xylophone">Xylophone</option>
-              <option value="timpani">Timpani</option>
-              <option value="drum_set">Drum Set</option>
-              <option value="battery">Battery</option>
-              <option value="drum_major">Drum Major</option>
-              <option value="synth">Synth</option>
-              <option value="rack">Rack</option>
-            </select>
-            <p id="video-part-filter-note" class="video-part-filter-note">大会動画のタイトルに書かれたものだけを表示します</p>
-          </section>
+          <div class="video-filter-secondary-row">
+            <div id="video-year-chips" class="mz-year-chips" hidden role="group" aria-label="配信年で絞り込み"></div>
+            <section id="video-part-filter-section" class="video-part-filter-section" aria-label="楽器等で絞り込み">
+              <label class="mz-year-chips-label" for="video-part-filter">楽器等</label>
+              <select id="video-part-filter" aria-describedby="video-part-filter-note">
+                <option value="">指定なし</option>
+                <option value="color_guard">Color Guard</option>
+                <option value="brass">Brass</option>
+                <option value="percussion">Percussion</option>
+                <option value="trumpet">Trumpet</option>
+                <option value="trombone">Trombone</option>
+                <option value="euphonium">Euphonium</option>
+                <option value="tuba">Tuba</option>
+                <option value="contra">Contra</option>
+                <option value="mellophone">Mellophone</option>
+                <option value="baritone">Baritone</option>
+                <option value="french_horn">French Horn</option>
+                <option value="flugel">Flugel</option>
+                <option value="snare">Snare</option>
+                <option value="tenor">Tenor</option>
+                <option value="quad">Quad</option>
+                <option value="bass_drum">Bass Drum</option>
+                <option value="cymbal">Cymbal</option>
+                <option value="marimba">Marimba</option>
+                <option value="vibraphone">Vibraphone</option>
+                <option value="xylophone">Xylophone</option>
+                <option value="timpani">Timpani</option>
+                <option value="drum_set">Drum Set</option>
+                <option value="battery">Battery</option>
+                <option value="drum_major">Drum Major</option>
+                <option value="synth">Synth</option>
+                <option value="rack">Rack</option>
+              </select>
+              <p id="video-part-filter-note" class="video-part-filter-note">大会動画のタイトルに書かれたものだけを表示します</p>
+            </section>
+          </div>
           <p class="rights-notice rights-notice--page-foot rights-notice--youtube-foot rights-notice--videos-under-sort" role="note">
             動画はYouTube等の共有機能（埋め込み）を利用して表示しています。掲載されている動画の著作権、肖像権、および一切の権利は、各権利所有者および配信元に帰属します。
           </p>
@@ -1156,6 +1157,10 @@
             <button type="button" class="page-btn" id="page-last">最後</button>
           </div>
         </nav>
+
+        <p class="rights-notice rights-notice--page-foot rights-notice--youtube-foot rights-notice--videos-footer" role="note">
+          *検索の都合上、表記を揃えている項目があります
+        </p>
 
         <div id="video-search-share-float-anchor" class="video-search-share-float-anchor" hidden>
           <button
@@ -4488,7 +4493,7 @@
     <script defer src="marchinz-moment-pulse.js?v=2.10.4"></script>
     <script defer src="user-profile-page.js?v=2.10.0"></script>
     <script defer src="marchinz-base.js?v=1.39.66"></script>
-    <script defer src="app.js?v=2.24.2"></script>
+    <script defer src="app.js?v=2.25.1"></script>
     <script defer src="marchinz-top-highlights.js?v=2.21.5"></script>
     <script defer src="marchinz-confetti.js?v=1.28.0"></script>
     <script defer src="marchinz-journey.js?v=1.30.1"></script>
