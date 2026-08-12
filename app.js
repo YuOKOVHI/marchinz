@@ -17,8 +17,12 @@
   const COMMUNITY_SHARE_URL = "https://marchinz.netlify.app/#top";
   const COMMUNITY_SHARE_EMOJIS = ["🥁", "🎺", "🚩"];
 
+  function randomCommunityShareEmoji() {
+    return COMMUNITY_SHARE_EMOJIS[Math.floor(Math.random() * COMMUNITY_SHARE_EMOJIS.length)];
+  }
+
   function communityShareFooter() {
-    const emoji = COMMUNITY_SHARE_EMOJIS[Math.floor(Math.random() * COMMUNITY_SHARE_EMOJIS.length)];
+    const emoji = randomCommunityShareEmoji();
     return `MarchinZ/マーチングの新しいコミュニティからシェア${emoji}\n${COMMUNITY_SHARE_URL}`;
   }
 
@@ -1594,9 +1598,10 @@
     const summary = currentSearchSummary();
     const url = buildShareUrl();
     const count = state.filtered.length;
+    const emoji = randomCommunityShareEmoji();
     const head = summary === "現在の検索条件"
-      ? `💡動画一覧（${count}件）`
-      : `💡${summary}の動画一覧（${count}件）`;
+      ? `${emoji}動画一覧（${count}件）`
+      : `${emoji}${summary}の動画一覧（${count}件）`;
     return withCommunityShareFooter(`${head}\n${url}`);
   }
 
@@ -3669,7 +3674,7 @@
     }
     return new Promise((resolve) => {
       const script = document.createElement("script");
-      script.src = "data.inline.js?v=data-c050f7d2f1af";
+      script.src = "data.inline.js?v=data-0e19790fbda3";
       script.async = true;
       script.onload = () => resolve(window.__MARCHINZ_DATA || null);
       script.onerror = () => resolve(null);
