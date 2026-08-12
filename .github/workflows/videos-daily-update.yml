@@ -91,11 +91,11 @@ jobs:
       - name: 変わったかを見る
         id: diff
         run: |
-          if git diff --quiet -- '大会動画リスト_POV.csv' data.json data.inline.js pov_ledger.json index.html; then
+          if git diff --quiet -- '大会動画リスト_POV.csv' data.json data.inline.js pov_ledger.json pov_channel_cursors.json index.html; then
             echo "changed=false" >> "$GITHUB_OUTPUT"; echo "変更なし"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
-            git diff --stat -- '大会動画リスト_POV.csv' data.json data.inline.js pov_ledger.json index.html
+            git diff --stat -- '大会動画リスト_POV.csv' data.json data.inline.js pov_ledger.json pov_channel_cursors.json index.html
           fi
 
       - name: コミットして反映する
@@ -106,7 +106,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # ★POV正本と派生データだけを載せる。ほかの3分類のCSVは変更できない。
-          git add '大会動画リスト_POV.csv' data.json data.inline.js pov_ledger.json index.html
+          git add '大会動画リスト_POV.csv' data.json data.inline.js pov_ledger.json pov_channel_cursors.json index.html
           git commit -m "chore(pov): 日次更新（自動採用 ${APPLIED:-0}件）"
           # 毎朝5時のデータ更新botと同じ時間帯に走るので、衝突したら取り込み直す
           for i in 1 2 3; do
