@@ -81,7 +81,7 @@ Genesis       → ヒュンダイの車種（GV80 POV drive など）
 
 | 対象 | 反映 |
 |---|---|
-| **POV（確実な線）** | **自動**。収録実績のあるチャンネル × 題名にPOV語 × 楽器名 × 団体名 × 5〜20分 |
+| **POV（確実な線）** | **自動**。収録実績のあるチャンネル × 題名にPOV語 × 楽器名 × 団体名 × 5〜25分（大会の段語があれば40分まで） |
 | **POV（それ以外）** | **Issue を立てて人が決める** |
 | マーチング等・MIX3・海外 | **触らない**（手動のまま） |
 
@@ -103,6 +103,15 @@ POVの反映時は `enrich_video_source_logos.py` が YouTube Data API から配
 
 > **探索期間**: 初回（2026-08-12 00:00 JST）だけは過去4日分、以後は毎日過去1日分を
 > 確認します。手動実行では 1日 / 4日を選べます。
+
+> **チャンネルカーソル(2026-08-12〜)**: 既知チャンネル（収録済み・見張り）の
+> 再訪は `pov_channel_cursors.json` に「前回どこまで見たか」を覚えていて、
+> そこより新しい動画だけを見ます。この再訪は横断検索と別枠で扱い、
+> 上限（cap）に切られず**必ず全件を判定**します。並び替え・欠落が心配なら
+> `python3 scout_pov_videos.py --resync-channel` で全チャンネルをフル再走査。
+> 横断検索（軸1）自体は、`--since` が直近14日以内なら検索語ごとの取得件数を
+> 20→8へ自動で絞ります（弱い候補の母集団を抑えるため）。
+> 詳しい経緯は `docs/POV_SEARCH_REVIEW_2026-08-12.md`。
 
 Issue が来たら:
 
@@ -213,6 +222,7 @@ python3 scout_pov_videos.py --year-from 2012 --year-to 2015 --skip-revisit
 | `大会動画リスト_POV.csv` | **正本**。POVの行はここだけを編集する |
 | `pov_ledger.json` | 採用/却下の台帳。`--accept` / `--reject` が書く |
 | `pov_channel_watchlist.txt` | 見張る個人チャンネル。1行1URL |
+| `pov_channel_cursors.json` | チャンネルごとの再訪カーソル。scoutが自動で書く(手で編集しない) |
 | `scout_pov_videos.py` | 探索と判定。変えたら試験を通す |
 | `test_scout_pov_videos.py` | 判定の見張り |
 | `check_pov_updates.py` | 日次チェックの本体 |

@@ -105,13 +105,40 @@ AUTO_OK = [
      "Bluecoats 2026 Lead Mellophone Headcam", 846, list(KNOWN)[0]),
     ("既知ch・楽器×cam",
      "Boston Crusaders 2025 Snare Cam", 700, list(KNOWN)[0]),
+    # 2026-08-12、優さん提示の実在の取りこぼし2本。旧上限1200sでは
+    # 自動採用から漏れていた(そのため人力でのみ拾えた)。P4で1500sへ拡張。
+    ("実際に自動採用から漏れていた本物1(1218s)",
+     "Bluecoats 2026 Lead Baritone Headcam - James Baxter", 1218, list(KNOWN)[0]),
+    ("実際に自動採用から漏れていた本物2(1207s)",
+     "Bluecoats 2026 Victory Run Snare Cam - AJ Manila", 1207, list(KNOWN)[0]),
+    # 通常帯の新しい境界(25分ちょうど)。段語が無くても通常帯なら採る。
+    ("通常帯の境界(1500s・段語なし)",
+     "Bluecoats 2026 Snare Cam", 1500, list(KNOWN)[0]),
+    # 拡張帯(25〜40分)は段語があれば採る。
+    ("拡張帯(1800s・victory run)",
+     "Bluecoats 2026 Snare Cam Victory Run", 1800, list(KNOWN)[0]),
+    ("拡張帯の境界(2400sちょうど・finals)",
+     "Bluecoats 2026 Snare Cam Finals", 2400, list(KNOWN)[0]),
 ]
 
 AUTO_NG = [
     ("未知のチャンネル(混入18件はすべてこれ)",
      "Bluecoats 2026 Lead Mellophone Headcam", 846, UNKNOWN),
+    # 2026-08-12、拡張帯を足したときに18件再発防止の歯が消えていないかの変異試験。
+    # 拡張帯の条件を全部満たしていても、未知チャンネルなら通ってはいけない。
+    ("未知チャンネル+拡張帯の条件は全部満たす(18件再発防止)",
+     "Bluecoats 2026 Snare Cam Victory Run", 1800, UNKNOWN),
     ("尺が5分未満", "Bluecoats 2026 Snare Cam", 240, list(KNOWN)[0]),
-    ("尺が20分超", "Bluecoats 2026 Snare Cam", 1500, list(KNOWN)[0]),
+    # 拡張帯だが段語が題名に無い(2026-08-12、AUTO_MAX_SEC 1200→1500に伴い
+    # 境界値を更新。段語が無ければ拡張帯には入れない)。
+    ("拡張帯だが大会の段語が題名に無い(1800s)",
+     "Bluecoats 2026 Snare Cam", 1800, list(KNOWN)[0]),
+    ("拡張帯上限超(2401s)",
+     "Bluecoats 2026 Snare Cam Victory Run", 2401, list(KNOWN)[0]),
+    # 拡張帯で段語はあっても楽器が無い(概要欄頼みではなく題名の楽器チェックは
+    # 尺の帯に関わらず必須であることの確認)。
+    ("拡張帯+段語はあるが楽器が無い",
+     "Bluecoats 2026 Victory Run Headcam", 1800, list(KNOWN)[0]),
     ("尺が不明", "Bluecoats 2026 Snare Cam", None, list(KNOWN)[0]),
     ("概要欄だけが手掛かり(自動では採らない)",
      "Victory Run 2026", 900, list(KNOWN)[0]),
@@ -202,6 +229,72 @@ def check_net_fetch_priority(fails):
     if S.title_strong_signal(weak):
         fails.append(f"手掛かりが薄い題名まで強い扱いになった(門がゆるすぎる): {weak}")
     return len(real_missed_titles) + 1
+
+
+def check_channel_cursor(fails):
+    """再訪はカーソルより新しい行だけを返し、カーソル自体は含まないこと。
+
+    2026-08-12(P0)。flat_list は公開日を返さないため、既知チャンネルの
+    「前回どこまで見たか」を video_id で覚えて新着だけに絞る。
+    [new1, new2, CURSOR, older...] を渡したら new1/new2 だけが返ること、
+    新カーソルが先頭行(new1)になることを見る。
+    """
+    def fake_flat_list(target, timeout=300, playlist_end=None):
+        all_rows = [
+            {"id": "new1", "title": "t1", "dur": None, "channel": "c",
+             "channel_url": "u", "upload_date": "NA"},
+            {"id": "new2", "title": "t2", "dur": None, "channel": "c",
+             "channel_url": "u", "upload_date": "NA"},
+            {"id": "CURSOR", "title": "t3", "dur": None, "channel": "c",
+             "channel_url": "u", "upload_date": "NA"},
+            {"id": "older1", "title": "t4", "dur": None, "channel": "c",
+             "channel_url": "u", "upload_date": "NA"},
+        ]
+        return all_rows[:playlist_end] if playlist_end else all_rows
+
+    orig = S.flat_list
+    S.flat_list = fake_flat_list
+    try:
+        cu = "https://example.com/channel/X"
+        rows, newest = S.revisit_channel(cu, {cu: {"newest_seen_id": "CURSOR"}})
+        got = [r["id"] for r in rows]
+        if got != ["new1", "new2"]:
+            fails.append(f"カーソルより新しい行だけにならない: {got}")
+        if newest != "new1":
+            fails.append(f"新カーソルが先頭行にならない: {newest!r}")
+
+        # カーソルが無い(初回)ときは絞らず全部返す
+        rows2, newest2 = S.revisit_channel(cu, {})
+        if [r["id"] for r in rows2] != ["new1", "new2", "CURSOR", "older1"]:
+            fails.append("カーソル無し(初回)なのに全件返っていない")
+        if newest2 != "new1":
+            fails.append(f"初回のカーソル確定が先頭行にならない: {newest2!r}")
+
+        # カーソルに一致する行が無い(見逃しの恐れ) → 安全側に全件返す
+        rows3, _ = S.revisit_channel(cu, {cu: {"newest_seen_id": "NOT_IN_LIST"}})
+        if [r["id"] for r in rows3] != ["new1", "new2", "CURSOR", "older1"]:
+            fails.append("カーソルに当たらないとき全件返す安全側の動作になっていない")
+    finally:
+        S.flat_list = orig
+    return 3
+
+
+def check_judge_lane_separation(fails):
+    """既知チャンネルの再訪(枠0)は横断検索(枠1)と別capであること。
+
+    2026-08-12(P0)。既知チャンネルの新着なのに、横断検索と同じ判定列・
+    同じcap=600に無差別に並べられ、母集団が万単位だと弾かれていた
+    (優さん提示の7件中4件がこれで漏れていた)。
+    scout() のソースを見て、再訪由来(revisit_ids)は cap=None(上限なし)、
+    それ以外(横断検索)は cap=600 で judge_ids を呼んでいることを確かめる。
+    """
+    import inspect
+    src = inspect.getsource(S.scout)
+    if 'judge_ids(revisit_ids' not in src or "cap=None" not in src:
+        fails.append("再訪(枠0)がcap無しでjudge_idsを呼んでいない")
+    if "judge_ids(other_ids" not in src or "cap=600" not in src:
+        fails.append("横断検索(枠1)がcap=600でjudge_idsを呼んでいない")
+    return 2
 
 
 def check_cam_terms_word_order(fails):
@@ -346,7 +439,8 @@ def main() -> int:
     # 直近365日・尺・個人チャンネル再訪の3つの候補門に加え、見張り台帳の保持も数える。
     n_auto = (check_auto(fails) + check_generated_title(fails) + check_team_guess(fails)
               + check_part_guess(fails) + check_cam_terms_word_order(fails)
-              + check_ytdlp_lookup_finds_path(fails) + check_net_fetch_priority(fails))
+              + check_ytdlp_lookup_finds_path(fails) + check_net_fetch_priority(fails)
+              + check_channel_cursor(fails) + check_judge_lane_separation(fails))
 
     total = len(REGRESSION_MISSED) + len(SHOULD_KEEP) + len(SHOULD_DROP) + 4 + n_auto
     if fails:

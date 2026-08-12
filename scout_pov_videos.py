@@ -52,6 +52,7 @@ ROOT = Path(__file__).resolve().parent
 POV_CSV = ROOT / "大会動画リスト_POV.csv"
 LEDGER = ROOT / "pov_ledger.json"
 WATCHLIST = ROOT / "pov_channel_watchlist.txt"
+CURSOR_FILE = ROOT / "pov_channel_cursors.json"
 CACHE = Path.home() / "Movies" / ".cache" / "marchinz-pov-scout"
 
 MIN_SEC = 300  # 5分
@@ -62,9 +63,16 @@ COVID_YEARS = {2020}      # DCIのシーズンが中止。少ないのが正し�
 PREGOPRO_YEAR = 2012      # これ以前はヘッドカム自体がほとんど無い
 THIN_THRESHOLD = 40       # これ未満なら「掘る価値あり」と見なす
 DEFAULT_SEARCH_RESULTS = 20
+# --since が直近何日以内なら「日次寄り」とみなし、横断検索を浅くするか。
+# 2026-08-12、優さん提示の7件から「強い手掛かりだけで1444本、上限600でも
+# 844本切り捨て」が発覚した。過去を掘る(--year-from等)のではなく
+# 直近を見張るだけなら、弱い候補の母集団そのものを絞ったほうが効く。
+NEAR_TERM_DAYS = 14
+NEAR_TERM_SEARCH_RESULTS = 8
 # 個人チャンネルは通常数本だが、団体公式には数千本ある。
 # /videos は公開日を返さないことがあるため、公式チャンネルを全件候補化しない。
-CHANNEL_SCAN_LIMIT = 80
+CHANNEL_SCAN_LIMIT = 80       # カーソルが無い(初回/resync)ときのフル走査
+REVISIT_SCAN_LIMIT = 40       # カーソルがあるときの通常走査(新着だけ拾えれば足りる)
 SNOWBALL_CHANNEL_SCAN_LIMIT = 20
 # True のとき判定の本メタ取得をネットに投げない(キャッシュ+題名のみ)
 _JUDGE_NO_NETWORK = False
@@ -456,6 +464,56 @@ def watch_channels() -> set[str]:
     }
 
 
+# ── チャンネルカーソル(P0) ──────────────────────────────
+# 2026-08-12、既知チャンネルの新着4本が判定に届かない事故が発覚した。
+# 真因は flat_list が公開日を返さず「新着だけ」を安く絞れないこと。
+# ここでは日付の代わりに「前回どこまで見たか(video_id)」をチャンネルごとに
+# 台帳へ持ち、/videos を新しい順で読んで**そのIDに当たったら打ち切る**。
+# YouTubeの/videos既定並びが「最新順」であることに依存するが、
+# 前提が崩れて破線が見つからなくても「全部新着扱い」に倒れるだけで
+# (absorb側でdecided集合により重複は弾かれる)安全側に壊れる。
+def load_cursors() -> dict:
+    if CURSOR_FILE.exists():
+        try:
+            return json.loads(CURSOR_FILE.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def save_cursors(d: dict) -> None:
+    CURSOR_FILE.write_text(json.dumps(d, ensure_ascii=False, indent=1, sort_keys=True),
+                           encoding="utf-8")
+
+
+def revisit_channel(channel_url: str, cursors: dict, resync: bool = False,
+                     ) -> tuple[list[dict], str | None]:
+    """1チャンネルの新着だけを返す。戻り: (新着行, 更新後のnewest_seen_id)。
+
+    カーソルが無い(初回)か resync のときは CHANNEL_SCAN_LIMIT でフル走査し、
+    先頭行のIDをカーソルにする。カーソルがあるときは REVISIT_SCAN_LIMIT
+    (軽い)で読み、カーソルのIDに当たった時点で打ち切る。
+    limit本読んでもカーソルに当たらなければ(投稿が多い/並びが変わった等)、
+    見逃しを避けて読んだ分を全部返す(次回 --resync-channel でフルに戻せる)。
+    """
+    cu = channel_url.rstrip("/")
+    cursor = None if resync else (cursors.get(cu) or {}).get("newest_seen_id")
+    limit = CHANNEL_SCAN_LIMIT if (resync or not cursor) else REVISIT_SCAN_LIMIT
+    rows = flat_list(cu + "/videos", playlist_end=limit)
+    if not rows:
+        return [], cursor  # 取得できなかった。カーソルは動かさない
+    newest = rows[0]["id"]
+    if not cursor:
+        return rows, newest
+    out = []
+    for r in rows:
+        if r["id"] == cursor:
+            return out, newest
+        out.append(r)
+    # カーソルに当たらなかった(見逃しの恐れ) → 読んだ分は全部返す
+    return out, newest
+
+
 # ── 本体 ───────────────────────────────────────────────
 def coverage() -> dict:
     """CSVが何年分をどれだけ持っているかを数える(ネットに触らない)。"""
@@ -509,7 +567,7 @@ def print_coverage() -> int:
 
 def scout(quick: bool, workers: int, since: date, search_results: int,
           year_from: int | None = None, year_to: int | None = None,
-          skip_revisit: bool = False) -> list[dict]:
+          skip_revisit: bool = False, resync_channel: bool = False) -> list[dict]:
     known = csv_ids()
     ledger = load_ledger()
     decided = set(ledger) | known
@@ -536,17 +594,32 @@ def scout(quick: bool, workers: int, since: date, search_results: int,
     # watchlist は「まだCSVに追加できない/初回の個人投稿者」も救う。
     # チャンネル数が多く(140件超)ここだけで20分以上かかるので、
     # 過去の年を掘るだけのときは --skip-revisit で飛ばせる。
+    # 2026-08-12: カーソル(前回どこまで見たか)で新着だけに絞る(P0)。
+    # revisit 由来は下の judge_ids で cap=None(上限なし)の別枠として必ず完走させる
+    # ため、ここで src を "revisit:" で始めておく(枠分けの目印)。
     if skip_revisit:
         print("[軸3/4] 再訪を飛ばしました(--skip-revisit)", file=sys.stderr)
     else:
         revisit = csv_channels() | watch_channels()
-        print(f"[軸3/4] 収録済み・見張りチャンネルを再訪 ({len(revisit)}件)", file=sys.stderr)
+        cursors = load_cursors()
+        updated_cursors = dict(cursors)
+        print(f"[軸3/4] 収録済み・見張りチャンネルを再訪 ({len(revisit)}件"
+              f"{'、resync' if resync_channel else ''})", file=sys.stderr)
+        no_cursor_yet = sum(1 for cu in revisit if not cursors.get(cu.rstrip('/')))
+        if no_cursor_yet:
+            print(f"  カーソル無し(フル走査){no_cursor_yet}件", file=sys.stderr)
         for cu in sorted(revisit):
             channels_done.add(cu)
-            n = absorb(flat_list(cu.rstrip("/") + "/videos", playlist_end=CHANNEL_SCAN_LIMIT),
-                       f"revisit:{cu}")
+            rows, newest = revisit_channel(cu, cursors, resync=resync_channel)
+            n = absorb(rows, f"revisit:{cu}")
+            if newest:
+                updated_cursors[cu.rstrip("/")] = {
+                    "newest_seen_id": newest,
+                    "checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                }
             if n:
                 print(f"  +{n:>3} {cu}", file=sys.stderr)
+        save_cursors(updated_cursors)
 
     # ── 軸1: 横断検索 ──
     if not quick:
@@ -574,8 +647,12 @@ def scout(quick: bool, workers: int, since: date, search_results: int,
             if i % 25 == 0:
                 print(f"  ..{i}/{len(queries)} (母集団 {len(pool)})", file=sys.stderr)
 
-    def judge_ids(ids: list[str], label: str) -> list[dict]:
-        """キャッシュ／題名で通し、足りない分だけ概要欄をネットワーク取得する。"""
+    def judge_ids(ids: list[str], label: str, cap: int | None = 600) -> list[dict]:
+        """キャッシュ／題名で通し、足りない分だけ概要欄をネットワーク取得する。
+
+        cap=None は上限なし(必ず完走)。既知チャンネルの再訪(枠0)はここを使う。
+        母集団が万単位になる横断検索(枠1)だけ cap で打ち切る(P0)。
+        """
         print(f"[判定:{label}] {len(ids)}本", file=sys.stderr)
         metas = []
         # flat_list は --flat-playlist で尺を返さない(常に None)ため、
@@ -609,9 +686,9 @@ def scout(quick: bool, workers: int, since: date, search_results: int,
             # 件数が多いときは上限を設け、残りは次回キャッシュが育ってから。
             # 200 は横断検索が数百クエリ規模になる前の名残で、いまの母集団
             # (万単位)には小さすぎた。優先度付けと合わせて引き上げる。
-            cap = 600
-            todo = need_net[:cap]
-            if len(need_net) > cap:
+            # cap=None(既知チャンネルの再訪=枠0)は打ち切らず必ず完走する。
+            todo = need_net if cap is None else need_net[:cap]
+            if cap is not None and len(need_net) > cap:
                 print(f"  ネット取得は先頭{cap}本に制限 (残り{len(need_net)-cap}は次回、"
                       f"強い手掛かりは優先済み)", file=sys.stderr)
             with ThreadPoolExecutor(max_workers=min(workers, 4)) as ex:
@@ -635,8 +712,14 @@ def scout(quick: bool, workers: int, since: date, search_results: int,
         return accepted
 
     # まず検索・再訪の全結果を本判定する。題名に手掛かりがない動画もここまで届く。
+    # P0: 既知チャンネルの再訪(枠0)と横断検索(枠1)を同じ判定列・同じcapに
+    # 載せない。枠0は既にカーソルで新着だけに絞れているので、必ず完走させる
+    # (cap=None)。枠1は母集団が万単位になりうるので従来どおり cap=600。
     first_ids = list(pool)
-    cands = judge_ids(first_ids, "一次")
+    revisit_ids = [v for v in first_ids if pool[v].get("src", "").startswith("revisit:")]
+    other_ids = [v for v in first_ids if not pool[v].get("src", "").startswith("revisit:")]
+    cands = judge_ids(revisit_ids, "再訪(枠0・上限なし)", cap=None)
+    cands += judge_ids(other_ids, "横断検索(枠1)", cap=600)
 
     # ── 軸2: 雪だるま ──
     # タイトルではなく、概要欄まで読んで実際にPOV判定を通過した投稿者だけを深掘りする。
@@ -663,8 +746,15 @@ def scout(quick: bool, workers: int, since: date, search_results: int,
 # 人が動画を見ずに採るので、**題名だけで疑いようがないもの**に限る。
 # 2026-08-10 に混入した18件は全て「CSVに1本も無いチャンネル」から来た。
 # だから「すでに収録実績のある投稿者」であることを必須にしている。
-AUTO_MIN_SEC = 300      # 5分
-AUTO_MAX_SEC = 1200     # 20分。これを超える通し映像は別物のことが多い
+AUTO_MIN_SEC = 300       # 5分
+AUTO_MAX_SEC = 1500      # 25分。通常帯はこれを超えると別物のことが多い
+# 拡張帯(25〜40分): Victory Run は複数曲を通すため20分超も珍しくない。
+# 実際 2026-08-12、tWGGNcmJsJE(1218s)/fJAZAstbpBY(1207s)という本物が
+# 旧上限1200sで自動採用から漏れていた。ただし無条件に広げると段語だけの
+# ノイズに弱くなるため、大会の段語(victory run/finals/semifinals/prelims)
+# が題名にあることを追加で必須にする。
+AUTO_EXT_MAX_SEC = 2400  # 40分
+STAGE_WORD = re.compile(r"(victory\s*run|finals?\s*(week|day)?|semifinals|prelims)", re.I)
 
 
 def auto_safe(meta: dict, known_channels: set[str]) -> tuple[bool, str]:
@@ -681,7 +771,7 @@ def auto_safe(meta: dict, known_channels: set[str]) -> tuple[bool, str]:
         return False, "収録実績のないチャンネル"
     if dur is None:
         return False, "尺が分からない"
-    if not (AUTO_MIN_SEC <= dur <= AUTO_MAX_SEC):
+    if dur < AUTO_MIN_SEC:
         return False, f"尺 {dur}s が自動採用の範囲外"
     if NOT_POV.search(title) or NOT_MARCHING.search(title):
         return False, "除外語が題名にある"
@@ -692,7 +782,13 @@ def auto_safe(meta: dict, known_channels: set[str]) -> tuple[bool, str]:
         return False, "題名に楽器・パートが無い"
     if not guess_team(title):
         return False, "題名から団体を特定できない"
-    return True, "確実な線"
+    if dur <= AUTO_MAX_SEC:
+        return True, "確実な線"
+    if dur <= AUTO_EXT_MAX_SEC:
+        if not STAGE_WORD.search(title):
+            return False, f"尺 {dur}s は拡張帯だが大会の段語が題名に無い"
+        return True, "確実な線(拡張帯)"
+    return False, f"尺 {dur}s が自動採用の範囲外"
 
 
 def guess_team(text: str) -> str:
@@ -969,8 +1065,10 @@ def main() -> int:
     ap.add_argument("--since", metavar="YYYY-MM-DD",
                     help="公開日の下限。省略時は直近365日")
     ap.add_argument("--all-time", action="store_true", help="公開日で絞らない(通常は使わない)")
-    ap.add_argument("--search-results", type=int, default=DEFAULT_SEARCH_RESULTS,
-                    help=f"検索語ごとの新着取得件数(既定{DEFAULT_SEARCH_RESULTS})")
+    ap.add_argument("--search-results", type=int, default=None,
+                    help="検索語ごとの新着取得件数(既定: --sinceが直近"
+                         f"{NEAR_TERM_DAYS}日以内なら{NEAR_TERM_SEARCH_RESULTS}"
+                         f"〈日次寄り〉、それ以外は{DEFAULT_SEARCH_RESULTS}〈掘り用〉)")
     ap.add_argument("--out", type=Path, default=ROOT / "pov_candidates.tsv")
     ap.add_argument("--accept", nargs="*", metavar="ID", help="台帳で採用にする")
     ap.add_argument("--reject", nargs="*", metavar="ID", help="台帳で却下にする")
@@ -988,6 +1086,9 @@ def main() -> int:
     ap.add_argument("--year-to", type=int, metavar="YYYY", help="この年まで掘る")
     ap.add_argument("--skip-revisit", action="store_true",
                     help="収録済み・見張りチャンネルの再訪を飛ばす(過去の年を掘るときに速い)")
+    ap.add_argument("--resync-channel", action="store_true",
+                    help="再訪のカーソルを無視して全チャンネルをフル走査し直す"
+                         "(投稿の並び替え・欠落が心配なときに時々)")
     ap.add_argument("--no-network-meta", action="store_true",
                     help="判定時に本メタをネット取得しない(キャッシュと題名のみ)")
     args = ap.parse_args()
@@ -1043,7 +1144,7 @@ def main() -> int:
         since = datetime.now(timezone.utc).date() - timedelta(days=DEFAULT_LOOKBACK_DAYS)
     if args.all_time:
         since = date.min
-    if args.search_results < 1:
+    if args.search_results is not None and args.search_results < 1:
         ap.error("--search-results は1以上にしてください")
 
     # 年を掘るときは、公開日の下限が邪魔をする(2015年の動画は直近365日に無い)。
@@ -1052,9 +1153,21 @@ def main() -> int:
         since = date(args.year_from, 1, 1)
         print(f"[年指定] --since を {since.isoformat()} へ自動で下げました", file=sys.stderr)
 
+    if args.search_results is not None:
+        search_results = args.search_results
+    else:
+        # P1: --year-from(掘りモード)ではなく、--since が直近なら
+        # 「日次寄り」とみなして横断検索を浅くする(弱い候補の母集団を抑える)。
+        near_term = (not (args.year_from and args.year_to)
+                     and since != date.min
+                     and (datetime.now(timezone.utc).date() - since).days <= NEAR_TERM_DAYS)
+        search_results = NEAR_TERM_SEARCH_RESULTS if near_term else DEFAULT_SEARCH_RESULTS
+        print(f"[検索語数] {'日次寄り' if near_term else '掘り用'}: "
+              f"search_results={search_results}", file=sys.stderr)
+
     print(f"[対象期間] {since.isoformat()} 以降", file=sys.stderr)
-    cands = scout(args.quick, args.workers, since, args.search_results,
-                  args.year_from, args.year_to, args.skip_revisit)
+    cands = scout(args.quick, args.workers, since, search_results,
+                  args.year_from, args.year_to, args.skip_revisit, args.resync_channel)
     with args.out.open("w", encoding="utf-8", newline="") as f:
         w = csv.writer(f, delimiter="\t", lineterminator="\n")
         w.writerow(["video_id", "公開日", "尺秒", "チャンネル", "題名", "判定理由", "URL"])
