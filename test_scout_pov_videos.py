@@ -177,6 +177,33 @@ def check_part_guess(fails):
     return 2
 
 
+def check_net_fetch_priority(fails):
+    """ネット取得(cap=600)で先に落ちるのが弱い候補であること。
+
+    2026-08-12、優さん提示の5本のうち4本(下記)が既知チャンネルの新着なのに
+    候補から漏れていた。真因は meta_from_flat() の即採用ショートカットが
+    flat_list(--flat-playlist は尺を返さない)相手には実質発動しないこと。
+    結果、既知チャンネルの新着も横断検索のヒットも同じ「ネット取得待ち」の
+    列に無差別に並び、母集団が万単位だと cap の外へ弾かれていた。
+    title_strong_signal() はこの列の並び順(強い手掛かりを先に)を決めるための
+    関数。ここでは実際に取りこぼした4本の題名すべてで True になることを見張る。
+    """
+    real_missed_titles = [
+        'Bluecoats 2026 "Gravity & Grace" Color Guard Cam - Victory Run',
+        "Bluecoats 2026 Victory Run Snare Cam - AJ Manila",
+        "Bluecoats 2026 Trombone Soloist/Bass Trombone/ Lead Baritone Victory Run Headcam",
+        "Carolina Crown 2026 Mellophone Headcam - Mason Buenzow #1",
+    ]
+    for t in real_missed_titles:
+        if not S.title_strong_signal(t):
+            fails.append(f"実際に取りこぼした題名が強い手掛かり扱いにならない: {t}")
+    # 手掛かりが薄い(POV語も楽器×cam揃いも無い)ものは弱い扱いのままでよい
+    weak = "Bluecoats 2026 - Gravity and Grace - Lead Mello Transcription"
+    if S.title_strong_signal(weak):
+        fails.append(f"手掛かりが薄い題名まで強い扱いになった(門がゆるすぎる): {weak}")
+    return len(real_missed_titles) + 1
+
+
 def check_cam_terms_word_order(fails):
     """大会の段(victory run 等)は「段+cam」「cam+段」の両方向で検索すること。
 
@@ -319,7 +346,7 @@ def main() -> int:
     # 直近365日・尺・個人チャンネル再訪の3つの候補門に加え、見張り台帳の保持も数える。
     n_auto = (check_auto(fails) + check_generated_title(fails) + check_team_guess(fails)
               + check_part_guess(fails) + check_cam_terms_word_order(fails)
-              + check_ytdlp_lookup_finds_path(fails))
+              + check_ytdlp_lookup_finds_path(fails) + check_net_fetch_priority(fails))
 
     total = len(REGRESSION_MISSED) + len(SHOULD_KEEP) + len(SHOULD_DROP) + 4 + n_auto
     if fails:

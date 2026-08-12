@@ -305,14 +305,30 @@ def fetch_meta(vid: str, *, allow_network: bool = True) -> dict | None:
     return meta
 
 
+def title_strong_signal(title: str) -> bool:
+    """タイトルだけで「まず間違いなくPOV候補」と読めるか。
+
+    2026-08-12、優さんの指摘した5本のうち4本がこれに該当するのに
+    最終的に候補から漏れていた。原因は meta_from_flat() の `dur is None` 門
+    (flat_list は --flat-playlist で尺を返さないので**常に真**になり、
+    このショートカットが実質死んでいた)。全候補が judge_ids() のネット取得
+    (1回あたり上限200本)行きになり、母集団が万単位だと大半が「次回」に
+    先送りされたまま埋もれる。この関数はネット取得の順番を決めるためだけに使い、
+    採否そのものは変えない(尺の確認は必ずネットで行う)。
+    """
+    if not title:
+        return False
+    if NOT_POV.search(title):
+        return False
+    return bool(STRONG_POV.search(title) or (PART.search(title) and CAM.search(title)))
+
+
 def meta_from_flat(row: dict) -> dict | None:
     """本メタが取れないときの題名だけの仮メタ。強い手掛かりがある行だけ使う。"""
     title = row.get("title") or ""
     if not title or row.get("dur") is None:
         return None
-    if NOT_POV.search(title):
-        return None
-    if not (STRONG_POV.search(title) or (PART.search(title) and CAM.search(title))):
+    if not title_strong_signal(title):
         return None
     up = row.get("upload_date") or ""
     if up in ("NA", "None"):
@@ -562,7 +578,14 @@ def scout(quick: bool, workers: int, since: date, search_results: int,
         """キャッシュ／題名で通し、足りない分だけ概要欄をネットワーク取得する。"""
         print(f"[判定:{label}] {len(ids)}本", file=sys.stderr)
         metas = []
-        need_net = []
+        # flat_list は --flat-playlist で尺を返さない(常に None)ため、
+        # meta_from_flat() の即採用ショートカットはほぼ発動しない。
+        # 結果、母集団の大半がここでのネット取得(下の cap)行きになる。
+        # cap で切られたときに本当のPOV候補から先に消えないよう、
+        # タイトルだけで強い手掛かりがある(title_strong_signal)ものを
+        # 先に並べる。2026-08-12、優さん提示の5本中4本がこれに該当するのに
+        # 万単位の母集団に埋もれて cap=200 の外へ弾かれていた。
+        need_net_strong, need_net_weak = [], []
         for vid in ids:
             m = fetch_meta(vid, allow_network=False)
             if m:
@@ -575,17 +598,22 @@ def scout(quick: bool, workers: int, since: date, search_results: int,
                 if ok:
                     metas.append(flat)
                     continue
-            need_net.append(vid)
-        print(f"  キャッシュ/題名 {len(metas)} / ネット要 {len(need_net)}", file=sys.stderr)
+            title = (pool.get(vid) or {}).get("title", "")
+            (need_net_strong if title_strong_signal(title) else need_net_weak).append(vid)
+        need_net = need_net_strong + need_net_weak
+        print(f"  キャッシュ/題名 {len(metas)} / ネット要 {len(need_net)}"
+              f"(強い手掛かり{len(need_net_strong)})", file=sys.stderr)
         if need_net and _JUDGE_NO_NETWORK:
             print(f"  ネット取得スキップ ({len(need_net)}本)", file=sys.stderr)
         elif need_net:
-            # 件数が多いときは上限を設け、残りは次回キャッシュが育ってから
-            cap = 200
+            # 件数が多いときは上限を設け、残りは次回キャッシュが育ってから。
+            # 200 は横断検索が数百クエリ規模になる前の名残で、いまの母集団
+            # (万単位)には小さすぎた。優先度付けと合わせて引き上げる。
+            cap = 600
             todo = need_net[:cap]
             if len(need_net) > cap:
-                print(f"  ネット取得は先頭{cap}本に制限 (残り{len(need_net)-cap}は次回)",
-                      file=sys.stderr)
+                print(f"  ネット取得は先頭{cap}本に制限 (残り{len(need_net)-cap}は次回、"
+                      f"強い手掛かりは優先済み)", file=sys.stderr)
             with ThreadPoolExecutor(max_workers=min(workers, 4)) as ex:
                 for i, m in enumerate(ex.map(fetch_meta, todo), 1):
                     if m:
