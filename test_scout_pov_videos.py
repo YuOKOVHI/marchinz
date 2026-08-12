@@ -71,6 +71,10 @@ SHOULD_KEEP = [
 #   実際 2026-08-10 の初版はそれで、multicam の除外を消しても試験が通ってしまった。
 SHOULD_DROP = [
     ("固定カメラ Multi Cam", "Multi Cam: Boston Crusaders 2025 Snare Line at DCI Semifinals", 1015, ""),
+    # 2026-08-13 優さん指示: 実際にPOV CSVへ混入していたYOKOHAMA ROBINSの編集映像。
+    # 団体名・楽器・尺を満たしていても、Multi Camなら必ず落とす。
+    ("YOKOHAMA ROBINS Multi Cam（混入実例）",
+     "YOKOHAMA ROBINS 2025 Trumpet Multi Cam", 900, ""),
     ("Catwalk Cam", "2013 Alamodome Catwalk Cam - Cavaliers Snare Line", 900, ""),
     ("High Cam", "Oarai High School 2025 | Trumpet Feature [HIGH CAM]", 700, ""),
     ("Wide-angle", "2015 Bluecoats Snare Cam @ TOC | WIDE-ANGLE CAM [4K]", 800, ""),

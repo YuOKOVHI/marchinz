@@ -38,9 +38,14 @@ Netlifyクレジットの浪費）を繰り返します。
 | 種類 | 例 | なぜ |
 |---|---|---|
 | 固定カメラ | Catwalk Cam / Overhead Cam / High Cam / Press Box | 奏者の視点ではない |
-| 編集済み | Multi Cam / Wide-angle / Split Cam / Drone | 同上 |
+| 編集済み | Multi Cam / Wide-angle / Split Cam / Drone | 複数視点を編集した映像で、奏者本人の単一視点ではない |
 | 反応・解説 | 「We react to our OWN headcams!」 | 演奏そのものではない |
 | 切り抜き | 「Full Show **Highlights**」（1〜2分） | 5分未満 |
+
+**個別の除外記録（2026-08-13）**: YOKOHAMA ROBINS
+`【POV/2025】YOKOHAMA ROBINS【Trumpet／Multi Cam】`
+([YouTube](https://www.youtube.com/watch?v=82TSJyx_pnE)) は、タイトルどおり
+Multi Camの編集映像のため不採用です。台帳では却下済みにし、将来の探索でも再提示しません。
 
 ### ★ いちばん危ない罠：団体名が他分野と衝突する
 
