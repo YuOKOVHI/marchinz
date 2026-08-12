@@ -12,7 +12,9 @@
   const RECOMMEND_FIRST_EXPAND = 10;
   const RECOMMEND_STEP = 10;
   const SHARE_X_SUFFIX = " @marchinz2026";
-  const COMMUNITY_SHARE_URL = "https://marchinz.netlify.app/?part=brass#top";
+  // Community share links always land on the canonical, unfiltered TOP page.
+  // (Older ?part=brass links remain harmless because unknown query keys are ignored.)
+  const COMMUNITY_SHARE_URL = "https://marchinz.netlify.app/#top";
   const COMMUNITY_SHARE_EMOJIS = ["🥁", "🎺", "🚩"];
 
   function communityShareFooter() {
@@ -1592,7 +1594,10 @@
     const summary = currentSearchSummary();
     const url = buildShareUrl();
     const count = state.filtered.length;
-    return withCommunityShareFooter(`「${summary}」の動画一覧（${count}件）\n${url}`);
+    const head = summary === "現在の検索条件"
+      ? `💡動画一覧（${count}件）`
+      : `💡${summary}の動画一覧（${count}件）`;
+    return withCommunityShareFooter(`${head}\n${url}`);
   }
 
   /** X 用: 1 行目の末尾にのみ @marchinz2026（改行より前）。以降の行（URL 等）はそのまま。 */
@@ -3664,7 +3669,7 @@
     }
     return new Promise((resolve) => {
       const script = document.createElement("script");
-      script.src = "data.inline.js?v=data-daa0b83c1f1e";
+      script.src = "data.inline.js?v=data-c050f7d2f1af";
       script.async = true;
       script.onload = () => resolve(window.__MARCHINZ_DATA || null);
       script.onerror = () => resolve(null);
