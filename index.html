@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-version="2.31.0" data-mz-channel="beta">
+<html lang="ja" data-mz-version="2.32.0" data-mz-channel="beta">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -71,13 +71,27 @@
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
-        "@type": "WebSite",
-        "@id": "https://marchinz.netlify.app/#website",
-        "url": "https://marchinz.netlify.app/",
-        "name": "MarchinZ",
-        "alternateName": ["マーチンズ", "MarchinZ（マーチンズ）", "marchinz.netlify.app"],
-        "description": "マーチングの大会・演奏会の記録、ショウ動画の検索、仲間との交流ができるマーチングコミュニティです。",
-        "inLanguage": "ja"
+        "@graph": [
+          {
+            "@type": "WebSite",
+            "@id": "https://marchinz.netlify.app/#website",
+            "url": "https://marchinz.netlify.app/",
+            "name": "MarchinZ",
+            "alternateName": ["マーチンズ", "MarchinZ（マーチンズ）"],
+            "description": "マーチングの大会・演奏会の記録、ショウ動画の検索、仲間との交流ができるマーチングコミュニティです。",
+            "inLanguage": "ja",
+            "publisher": {"@id": "https://marchinz.netlify.app/#organization"}
+          },
+          {
+            "@type": "Organization",
+            "@id": "https://marchinz.netlify.app/#organization",
+            "name": "MarchinZ",
+            "alternateName": ["マーチンズ", "MarchinZ（マーチンズ）"],
+            "url": "https://marchinz.netlify.app/",
+            "logo": "https://marchinz.netlify.app/logo/marchinz-logo.png",
+            "sameAs": ["https://x.com/marchinz2026"]
+          }
+        ]
       }
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -89,7 +103,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css" />
     <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css?v=1.25.64" />
     <link rel="stylesheet" href="styles.css?v=2.31.0" />
-    <link rel="stylesheet" href="marchinz-brushup.css?v=2.31.0" />
+    <link rel="stylesheet" href="marchinz-brushup.css?v=2.32.0" />
     <!-- Microsoft Clarity -->
     <script type="text/javascript">
       (function(c,l,a,r,i,t,y){
@@ -4399,6 +4413,12 @@
           <a href="#ops" data-page="ops" class="footer-nav-link">運営について</a>
           <a href="#terms" data-page="terms" class="footer-nav-link">利用規約</a>
           <a href="#privacy" data-page="privacy" class="footer-nav-link">プライバシーポリシー</a>
+        </div>
+        <div class="mz-footer-col">
+          <a href="/about/" class="footer-nav-link">MarchinZとは</a>
+          <a href="/marching/" class="footer-nav-link">マーチング</a>
+          <a href="/marching/videos/" class="footer-nav-link">マーチング動画</a>
+          <a href="/marching/events/" class="footer-nav-link">大会・演奏会</a>
         </div>
       </nav>
       <p class="footer-copy">

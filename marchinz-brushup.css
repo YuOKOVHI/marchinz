@@ -1830,9 +1830,9 @@ body {
 
 .site-footer .mz-footer-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 1.6rem;
-  max-width: 780px;
+  max-width: 960px;
   margin: 0 auto;
   padding: 1.4rem 1.2rem 1.6rem;
   text-align: left;
@@ -1872,17 +1872,18 @@ body {
   text-decoration: underline;
 }
 
-/* スマホも3列を維持(見出しが無くなった分、詰めて収める) */
+/* スマホは2列にして、検索用の公開ページも読みやすく辿れるようにする */
 @media (max-width: 720px) {
   .site-footer .mz-footer-grid {
-    gap: 0.6rem;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.6rem 1rem;
     max-width: 400px;
     padding: 0.9rem 0.8rem 1rem;
-    text-align: center;
+    text-align: left;
   }
 
   .mz-footer-col {
-    align-items: center;
+    align-items: flex-start;
     gap: 0;
   }
 
