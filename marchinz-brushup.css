@@ -21,6 +21,50 @@
   --mz-tabbar-h: 3.6rem;
 }
 
+/* 大会動画: 最近の検索行に、検索・絞り込み・履歴をまとめて戻す操作を常設する。 */
+#page-videos .search-history-heading .btn-clear-video-conditions {
+  flex-shrink: 0;
+  min-height: 44px;
+  padding: 0 .8rem;
+  border: 1px solid #b8cdfc;
+  border-radius: 10px;
+  color: #2457e6;
+  background: #eef5ff;
+  box-shadow: none;
+  font-size: .8rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+#page-videos .search-history-heading .btn-clear-video-conditions:hover,
+#page-videos .search-history-heading .btn-clear-video-conditions:focus-visible {
+  background: #e1ecff;
+  border-color: #2457e6;
+}
+
+@media (max-width: 767px) {
+  #page-videos .search-history-heading {
+    flex-wrap: nowrap;
+    gap: .45rem;
+  }
+
+  #page-videos .search-history-heading .search-presets-title--history {
+    flex: 1 1 75%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  #page-videos .search-history-heading .btn-clear-video-conditions {
+    flex: 0 0 25%;
+    width: 25%;
+    min-width: 0;
+    padding: 0 .25rem;
+    font-size: .72rem;
+  }
+}
+
 body {
   font-family: var(--mz-font);
   background: var(--bg);
@@ -6320,23 +6364,56 @@ input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
 
 #page-videos .search-history {
   margin-top: 0.35rem;
-  padding: 0.45rem 0.7rem 0.65rem;
+  padding: 0.42rem 0.7rem 0.55rem;
   border: 1px solid rgba(15, 33, 56, 0.1);
   border-radius: 12px;
   background: #f7f9fc;
 }
 
-#page-videos .search-history > summary {
+#page-videos .search-history-heading {
   min-height: 44px;
+  margin: 0;
+}
+
+#page-videos .search-history-heading .search-presets-title--history {
   color: var(--mzu-muted);
   font-size: 0.78rem;
   font-weight: 800;
-  line-height: 44px;
-  cursor: pointer;
 }
 
-#page-videos .search-history-heading {
-  margin-top: 0.35rem;
+#page-videos .search-history .search-presets-list {
+  margin-top: 0.18rem;
+}
+
+#page-videos .search-history .search-presets-empty {
+  display: none;
+}
+
+#page-videos .videos-tab-notice-block #overseas-notice:not([hidden]) {
+  margin: 0.35rem 0 0;
+}
+
+#page-videos .browse-org-overlay__switch {
+  color: var(--mzu-muted);
+  background: #f4f7fb;
+}
+
+#page-videos .browse-org-overlay__switch::before {
+  content: "次の分類：";
+  color: var(--mzu-muted);
+  font-weight: 700;
+}
+
+#page-videos .browse-org-overlay__switch:hover,
+#page-videos .browse-org-overlay__switch:focus-visible {
+  color: var(--mzu-navy, #0f2138);
+  background: #eaf2ff;
+}
+
+/* 検索条件を閉じる操作は、常に明示した44px以上のタップ領域で残す。 */
+#page-videos .video-search-filter-close {
+  min-width: 72px;
+  min-height: 44px;
 }
 
 #page-videos .search-history-heading .btn-reset-search--history {

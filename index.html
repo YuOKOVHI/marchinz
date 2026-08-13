@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-version="2.33.0" data-mz-channel="beta">
+<html lang="ja" data-mz-version="2.34.0" data-mz-channel="beta">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -103,7 +103,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css" />
     <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css?v=1.25.64" />
     <link rel="stylesheet" href="styles.css?v=2.31.0" />
-    <link rel="stylesheet" href="marchinz-brushup.css?v=2.32.0" />
+    <link rel="stylesheet" href="marchinz-brushup.css?v=2.34.0" />
     <!-- Microsoft Clarity -->
     <script type="text/javascript">
       (function(c,l,a,r,i,t,y){
@@ -930,6 +930,9 @@
           </button>
         </nav>
         <div class="videos-tab-notice-block">
+          <p id="overseas-notice" class="rights-notice videos-tab-notice-line" hidden>
+            海外のマーチング／DCIなどを表示しています。
+          </p>
           <p id="mix3-notice" class="rights-notice rights-notice-mix3 videos-tab-notice-line" hidden>
             *MIX3 （スリークロス）は、NPO法人マーチング祭の商標登録です。
           </p>
@@ -1013,16 +1016,15 @@
               </div>
             </div>
           </div>
-          <details class="search-history" hidden>
-            <summary>最近の検索</summary>
+          <section class="search-history" aria-label="最近の検索と条件クリア">
             <div class="search-history-heading">
-              <p class="search-presets-title search-presets-title--history">以前の条件から探す</p>
-              <button type="button" id="btn-reset-recent-searches" class="btn-reset-search btn-reset-search--history">
-                履歴だけを削除
+              <p class="search-presets-title search-presets-title--history">最近の検索</p>
+              <button type="button" id="btn-clear-video-conditions" class="btn-reset-search btn-clear-video-conditions">
+                条件クリア
               </button>
             </div>
             <div id="recent-searches" class="search-presets-list"></div>
-          </details>
+          </section>
         </section>
         </section>
 
@@ -4453,7 +4455,7 @@
     <script defer src="marchinz-admin-trash.js?v=1.25.105"></script>
     <script defer src="marchinz-admin-banned.js?v=1.25.64"></script>
     <script defer src="site-nav.js?v=2.11.5"></script>
-    <script defer src="data.inline.js?v=data-0e19790fbda3"></script>
+    <script defer src="data.inline.js?v=data-f09fcc00eddc"></script>
     <script defer src="digest.inline.js?v=1.27.0"></script>
     <script defer src="marchinz-data-refresh.js?v=1.36.0"></script>
     <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
@@ -4492,7 +4494,7 @@
     <script defer src="marchinz-moment-pulse.js?v=2.10.4"></script>
     <script defer src="user-profile-page.js?v=2.10.0"></script>
     <script defer src="marchinz-base.js?v=1.39.66"></script>
-    <script defer src="app.js?v=2.33.0"></script>
+    <script defer src="app.js?v=2.34.0"></script>
     <script defer src="marchinz-top-highlights.js?v=2.21.5"></script>
     <script defer src="marchinz-confetti.js?v=1.28.0"></script>
     <script defer src="marchinz-journey.js?v=1.30.1"></script>

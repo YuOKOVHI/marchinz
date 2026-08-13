@@ -202,6 +202,7 @@
   const videoPartFilter = $("#video-part-filter");
   const optMatchExact = $("#opt-match-exact");
   const mix3Notice = $("#mix3-notice");
+  const overseasNotice = $("#overseas-notice");
   const mix3AboutChipWrap = $("#mix3-about-chip-wrap");
   const mix3AboutOverlay = $("#mix3-about-overlay");
   const mix3AboutOpen = $("#mix3-about-open");
@@ -239,6 +240,7 @@
   const videoSearchShareFloatAnchor = $("#video-search-share-float-anchor");
   const shareSearchBtns = () => document.querySelectorAll("[data-marchinz-search-share]");
   const btnResetRecentSearches = $("#btn-reset-recent-searches");
+  const btnClearVideoConditions = $("#btn-clear-video-conditions");
   const recentSearchesEl = $("#recent-searches");
 
   function rowMatchesVideoSourceFilter(row) {
@@ -348,12 +350,15 @@
   }
 
   function updateMix3NoticeVisibility() {
-    if (!mix3Notice && !mix3AboutChipWrap) return;
+    if (!mix3Notice && !mix3AboutChipWrap && !overseasNotice) return;
     const inVideosPage = !pageVideos || pageVideos.hidden === false;
     const threecrossTab = document.getElementById("tab-threecross");
+    const overseasTab = document.getElementById("tab-overseas");
     const show = inVideosPage && threecrossTab?.getAttribute("aria-selected") === "true";
+    const showOverseas = inVideosPage && overseasTab?.getAttribute("aria-selected") === "true";
     if (mix3Notice) mix3Notice.hidden = !show;
     if (mix3AboutChipWrap) mix3AboutChipWrap.hidden = !show;
+    if (overseasNotice) overseasNotice.hidden = !showOverseas;
     if (!show) setMix3AboutOverlayOpen(false);
   }
 
@@ -1059,13 +1064,9 @@
 
   function renderRecentSearches() {
     renderSearchList(recentSearchesEl, state.recentSearches, "最近検索した単語はまだありません。");
-    const history = recentSearchesEl?.closest(".search-history");
-    const hasHistory = state.recentSearches.length > 0;
-    if (history) {
-      history.hidden = !hasHistory;
-      if (!hasHistory && history instanceof HTMLDetailsElement) history.open = false;
-    }
-    if (btnResetRecentSearches) btnResetRecentSearches.hidden = !hasHistory;
+    // 条件クリアは履歴が空でも常に表示する。検索語・絞り込みが残ったまま
+    // 「最近の検索」自体が消えると、初期状態へ戻る入口も失われるため。
+    if (btnClearVideoConditions) btnClearVideoConditions.hidden = false;
   }
 
   function openShare(kind, row) {
@@ -3674,7 +3675,7 @@
     }
     return new Promise((resolve) => {
       const script = document.createElement("script");
-      script.src = "data.inline.js?v=data-0e19790fbda3";
+      script.src = "data.inline.js?v=data-f09fcc00eddc";
       script.async = true;
       script.onload = () => resolve(window.__MARCHINZ_DATA || null);
       script.onerror = () => resolve(null);
@@ -3797,6 +3798,34 @@
     applyFilter();
     renderBrowsePanel();
     setSearchOverlay(false);
+  }
+
+  function clearAllVideoConditions() {
+    cancelSearchDebounce();
+    closeVideoSearchFilter();
+    closeVideoSourceFilterMenu();
+    clearExactFilters();
+    clearExcludedOrgs();
+    state.sourceFilter = "";
+    state.yearFilter = null;
+    state.sortKey = "配信日";
+    state.sortDir = "desc";
+    state.sortExplicit = false;
+    state.browseOpen = false;
+    if (qTeam) qTeam.value = "";
+    if (qEvent) qEvent.value = "";
+    if (qFree) qFree.value = "";
+    if (videoYearFilter) videoYearFilter.value = "";
+    if (videoPartFilter) videoPartFilter.value = "";
+    if (optMatchExact) optMatchExact.checked = false;
+    if (browseOrgFilterInput) browseOrgFilterInput.value = "";
+    state.recentSearches = [];
+    saveJsonStorage(LS_KEY_RECENT_SEARCHES, state.recentSearches);
+    applyFilter();
+    renderBrowsePanel();
+    renderRecentSearches();
+    setSearchOverlay(false);
+    window.MZToast?.ok?.("条件・検索・履歴をすべてクリアしました");
   }
 
   /**
@@ -4116,6 +4145,12 @@
       if (state.filtered.length !== beforeCount) {
         console.error("[MarchinZ] recent search reset changed results unexpectedly");
       }
+    });
+  }
+
+  if (btnClearVideoConditions) {
+    btnClearVideoConditions.addEventListener("click", () => {
+      clearAllVideoConditions();
     });
   }
 
