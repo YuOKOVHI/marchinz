@@ -427,14 +427,25 @@ def save_ledger(d: dict) -> None:
                       encoding="utf-8")
 
 
+def read_pov_csv() -> tuple[str, bool]:
+    """POV CSVを読み、(BOM無しの本文, 元にBOMが付いていたか)を返す。
+
+    BOM付きのままcsv.DictReaderへ渡すと、先頭列名(種別)にBOMが
+    くっついて壊れる(dict契約が崩れてapply/fix_publishersがValueErrorで死ぬ)。
+    """
+    raw = POV_CSV.read_text(encoding="utf-8")
+    bom = raw.startswith("\ufeff")
+    return (raw[1:] if bom else raw), bom
+
+
 def csv_ids() -> set[str]:
-    rows = list(csv.DictReader(io.StringIO(POV_CSV.read_text(encoding="utf-8"))))
+    rows = list(csv.DictReader(io.StringIO(read_pov_csv()[0])))
     return {video_id(r["URL"]) for r in rows} - {""}
 
 
 def csv_channels() -> set[str]:
     """CSV収録のチャンネルURL。配信元URL列を優先し、無いときだけメタへ。"""
-    raw = POV_CSV.read_text(encoding="utf-8")
+    raw, _ = read_pov_csv()
     rows = list(csv.DictReader(io.StringIO(raw)))
     out = set()
     for r in rows:
@@ -517,7 +528,7 @@ def revisit_channel(channel_url: str, cursors: dict, resync: bool = False,
 # ── 本体 ───────────────────────────────────────────────
 def coverage() -> dict:
     """CSVが何年分をどれだけ持っているかを数える(ネットに触らない)。"""
-    rows = list(csv.DictReader(io.StringIO(POV_CSV.read_text(encoding="utf-8"))))
+    rows = list(csv.DictReader(io.StringIO(read_pov_csv()[0])))
     per = {}
     unknown = 0
     for r in rows:
@@ -793,7 +804,7 @@ def auto_safe(meta: dict, known_channels: set[str]) -> tuple[bool, str]:
 
 def guess_team(text: str) -> str:
     """題名・概要欄から団体名を当てる。既にCSVにある団体名を優先。"""
-    rows = list(csv.DictReader(io.StringIO(POV_CSV.read_text(encoding="utf-8"))))
+    rows = list(csv.DictReader(io.StringIO(read_pov_csv()[0])))
     names = {r["団体/チーム名"] for r in rows if r["団体/チーム名"]}
     # 長い名前から先に当てる(部分一致の取り違えを防ぐ)
     for n in sorted(names, key=len, reverse=True):
@@ -879,8 +890,7 @@ def write_pov_csv(rows: list[dict], bom: bool) -> None:
 
 def fix_publishers(workers: int = 6) -> int:
     """既存CSVで動画配信元が『POV』等の誤りの行を、実チャンネル名へ直す。"""
-    raw = POV_CSV.read_text(encoding="utf-8")
-    bom = raw.startswith("﻿")
+    raw, bom = read_pov_csv()
     rows = list(csv.DictReader(io.StringIO(raw)))
     before = len(rows)
     need = []
@@ -915,7 +925,7 @@ def fix_publishers(workers: int = 6) -> int:
         fixed += 1
 
     write_pov_csv(rows, bom)
-    check = list(csv.DictReader(io.StringIO(POV_CSV.read_text(encoding="utf-8"))))
+    check = list(csv.DictReader(io.StringIO(read_pov_csv()[0])))
     assert len(check) == before, f"行数が変わった {before}→{len(check)}"
     still = sum(1 for r in check if (r.get("動画配信元") or "").strip() in ("", "POV"))
     print(f"配信元を更新: {fixed}件 / 失敗 {len(failed)}件 / 残POV表記 {still}件")
@@ -985,8 +995,7 @@ def apply_accepted() -> int:
         print("追記するものはありません")
         return 0
 
-    raw = POV_CSV.read_text(encoding="utf-8")
-    bom = raw.startswith("﻿")
+    raw, bom = read_pov_csv()
     rows = list(csv.DictReader(io.StringIO(raw)))
     before = len(rows)
     known_id = {r["団体/チーム名"]: r["団体ID"] for r in rows if r["団体ID"]}
@@ -1045,7 +1054,7 @@ def apply_accepted() -> int:
 
     if added:
         write_pov_csv(rows, bom)
-        check = list(csv.DictReader(io.StringIO(POV_CSV.read_text(encoding="utf-8"))))
+        check = list(csv.DictReader(io.StringIO(read_pov_csv()[0])))
         assert len(check) == before + len(added), f"行数不一致 {len(check)}"
         print(f"追記 {len(added)}件 ({before} → {len(check)} 行)")
         for r in added:
