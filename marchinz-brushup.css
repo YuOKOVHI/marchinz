@@ -6392,6 +6392,28 @@ input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
   white-space: nowrap;
 }
 
+/* 履歴は団体一覧の折返し規則を継承させず、YouTube同様の横スクロールチップに固定する。 */
+#page-videos #recent-searches.search-presets-list {
+  display: flex !important;
+  flex-flow: row nowrap !important;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+}
+
+#page-videos #recent-searches.search-presets-list > .recent-search-chip {
+  display: block;
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-width: max-content;
+  max-width: min(38vw, 18rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap !important;
+  overflow-wrap: normal;
+  word-break: keep-all;
+}
+
 @media (max-width: 719px) {
   #page-youtube .youtube-page-main,
   #page-youtube .youtube-results-panel {

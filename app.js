@@ -1055,7 +1055,7 @@
     for (const item of arr) {
       const b = document.createElement("button");
       b.type = "button";
-      b.className = "browse-chip";
+      b.className = "browse-chip recent-search-chip";
       b.textContent = item.label;
       b.title = item.label;
       b.addEventListener("click", () => applySavedSearchCriteria(item.criteria));
