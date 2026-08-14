@@ -91,11 +91,19 @@ jobs:
       - name: 変わったかを見る
         id: diff
         run: |
-          if git diff --quiet -- '大会動画リスト_POV.csv' data.json data.inline.js pov_ledger.json pov_channel_cursors.json index.html; then
+          # ★対象を列挙(allowlist)にすると、パイプラインが書くファイルが増えた
+          #   ときにここも直し忘れ、下の git add と食い違う。除外リストで持つ。
+          if git diff --quiet -- . \
+              ':!大会動画リスト_マーチング祭.csv' \
+              ':!大会動画リスト_DrumcorpsfunTV.csv' \
+              ':!大会動画リスト_FloMarching_DCI.csv'; then
             echo "changed=false" >> "$GITHUB_OUTPUT"; echo "変更なし"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
-            git diff --stat -- '大会動画リスト_POV.csv' data.json data.inline.js pov_ledger.json pov_channel_cursors.json index.html
+            git diff --stat -- . \
+              ':!大会動画リスト_マーチング祭.csv' \
+              ':!大会動画リスト_DrumcorpsfunTV.csv' \
+              ':!大会動画リスト_FloMarching_DCI.csv'
           fi
 
       - name: コミットして反映する
@@ -105,12 +113,38 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # ★POV正本と派生データだけを載せる。ほかの3分類のCSVは変更できない。
-          git add '大会動画リスト_POV.csv' data.json data.inline.js pov_ledger.json pov_channel_cursors.json index.html
+          # 日本語ファイル名が \345\244\247... の8進表記になると、
+          # 下のエラー文言を読んでも何のファイルか分からない
+          git config core.quotepath false
+          # ★ほかの3分類のCSVだけは絶対に載せない。それ以外の「追跡ファイルの
+          #   変更」は全部載せる(除外リスト方式)。
+          #
+          #   列挙方式(allowlist)は2夜続けて同じ事故を起こした:
+          #     2026-08-12 pov_channel_cursors.json の載せ忘れ
+          #     2026-08-13 app.js の載せ忘れ
+          #                (sync_csv_to_json.py はキャッシュキーを
+          #                 index.html と app.js の2箇所へ書く)
+          #   どちらも「載せ残しが未ステージで残る → git pull --rebase が
+          #   unstaged changes で拒否 → 3回とも失敗」という同じ経路。
+          #   パイプラインが書くファイルが増えても自動で追随する形にする。
+          git add -u -- . \
+            ':!大会動画リスト_マーチング祭.csv' \
+            ':!大会動画リスト_DrumcorpsfunTV.csv' \
+            ':!大会動画リスト_FloMarching_DCI.csv'
+          # 載せ残しがあれば、rebase の謎エラーではなく名指しで落とす。
+          # ここに残りうるのは上で除外した3つのCSVだけ(＝触らないはずのもの)。
+          if ! git diff --quiet; then
+            echo "::error::このワークフローが触らないはずのファイルが変更されています: $(git diff --name-only | tr '\n' ' ')"
+            echo "::error::(他の3分類CSVは別の取り込みスクリプトが正本。ここでは載せない)"
+            exit 1
+          fi
           git commit -m "chore(pov): 日次更新（自動採用 ${APPLIED:-0}件）"
           # 毎朝5時のデータ更新botと同じ時間帯に走るので、衝突したら取り込み直す
           for i in 1 2 3; do
-            git pull --rebase origin main && git push && exit 0
+            if git pull --rebase origin main && git push; then exit 0; fi
+            # 衝突で rebase が途中停止していると、次の pull が
+            # 「rebase in progress」で必ず失敗する。畳んでから再試行する
+            git rebase --abort 2>/dev/null || true
             echo "push に失敗（$i回目）。取り込み直して再試行します"
             sleep 10
           done

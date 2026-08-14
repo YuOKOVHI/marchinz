@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 import sys
 from datetime import date
 from pathlib import Path
@@ -364,6 +365,87 @@ def check_ytdlp_lookup_finds_path(fails):
     return 1
 
 
+def check_workflow_stages_everything_pipeline_writes(fails):
+    """日次ワークフローは、パイプラインが書く追跡ファイルを1つも載せ残さないこと。
+
+    同じ欠陥で2夜続けて日次CIが死んだ:
+      2026-08-12 pov_channel_cursors.json の載せ忘れ(P0で新設したファイル)
+      2026-08-13 app.js の載せ忘れ
+                 (sync_csv_to_json.py はキャッシュキーを index.html と
+                  app.js の2箇所へ書くのに、git add は index.html だけだった)
+    どちらも経路は同じ:
+      載せ残しが未ステージで残る
+        → git pull --rebase が "cannot pull with rebase: You have unstaged
+          changes." で拒否
+        → 3回リトライとも失敗しジョブが赤くなる(探索は成功しているのに)
+
+    列挙方式(allowlist)は「書くファイルが増えたら追記し忘れる」ので、
+    除外方式(denylist: git add -u + 他3分類CSVだけ除外)に変えた。
+    この試験は、パイプラインの書き込み先を実際に読み取って、
+    除外リストに落ちていないことを機械的に確かめる。
+    """
+    import subprocess
+
+    wf = ROOT / ".github" / "workflows" / "videos-daily-update.yml"
+    if not wf.is_file():
+        fails.append("日次ワークフローが見つからない")
+        return 1
+    text = wf.read_text(encoding="utf-8")
+    n = 0
+
+    # 1) 列挙方式へ戻っていないこと(戻ると必ず載せ残しが出る)
+    n += 1
+    if "git add -u -- ." not in text:
+        fails.append("git add が除外方式(git add -u -- .)でない"
+                     "(列挙方式へ戻すと書くファイルが増えたとき載せ残す)")
+
+    # 2) 載せ残しを名指しで落とす番人があること。
+    #    ★「git diff --quiet」だけを見ると、上の「変わったかを見る」段の
+    #      同じ文字列に当たって、番人を消してもPASSしてしまう(歯が無い)。
+    #      番人だけが持つ「否定形の門」と「その場のerror文言」の両方を見る。
+    n += 1
+    guard = "if ! git diff --quiet; then"
+    guard_msg = "触らないはずのファイルが変更されています"
+    if guard not in text or guard_msg not in text:
+        fails.append("コミット前に載せ残しを名指しで落とす番人が無い"
+                     "(rebaseの謎エラーで死ぬ)")
+
+    # 3) パイプラインが書く追跡ファイルが、除外リストに落ちていないこと
+    excluded = set(re.findall(r"':!([^']+)'", text))
+    if not excluded:
+        fails.append("除外リスト(':!...')が読み取れない")
+        return n + 1
+
+    import sync_csv_to_json as SY
+    writes = [
+        SY.OUT_JSON, SY.OUT_INLINE, SY.INDEX_HTML, SY.APP_JS, SY.META_FILE,
+        S.POV_CSV, S.LEDGER, S.CURSOR_FILE,
+    ]
+    tracked = set(subprocess.run(
+        ["git", "-C", str(ROOT), "ls-files"],
+        capture_output=True, text=True, check=True).stdout.splitlines())
+
+    for p in writes:
+        name = Path(p).name
+        if name not in tracked:
+            continue  # 追跡外(キャッシュ・候補TSV等)は rebase を止めないので対象外
+        n += 1
+        if name in excluded:
+            fails.append(
+                f"{name} はパイプラインが書くのに、ワークフローの除外リストに居る"
+                "(未ステージで残って git pull --rebase が必ず失敗する)")
+
+    # 4) 逆に、他3分類のCSVは必ず除外されていること(このワークフローの正本外)
+    for other in ("大会動画リスト_マーチング祭.csv",
+                  "大会動画リスト_DrumcorpsfunTV.csv",
+                  "大会動画リスト_FloMarching_DCI.csv"):
+        n += 1
+        if other not in excluded:
+            fails.append(f"{other} が除外されていない(別スクリプトが正本なので載せてはいけない)")
+
+    return n
+
+
 def check_generated_title(fails):
     """--apply が組む大会名が 【POV/YYYY】 の形であること。
 
@@ -444,7 +526,8 @@ def main() -> int:
     n_auto = (check_auto(fails) + check_generated_title(fails) + check_team_guess(fails)
               + check_part_guess(fails) + check_cam_terms_word_order(fails)
               + check_ytdlp_lookup_finds_path(fails) + check_net_fetch_priority(fails)
-              + check_channel_cursor(fails) + check_judge_lane_separation(fails))
+              + check_channel_cursor(fails) + check_judge_lane_separation(fails)
+              + check_workflow_stages_everything_pipeline_writes(fails))
 
     total = len(REGRESSION_MISSED) + len(SHOULD_KEEP) + len(SHOULD_DROP) + 4 + n_auto
     if fails:
