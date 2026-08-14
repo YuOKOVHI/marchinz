@@ -1895,19 +1895,18 @@
         state.yearFilter
     );
     syncSearchShareFloat(hasSearchOrExact);
-    // 「タブのカテゴリのみ」(既定OFF)が入っていなければ、検索したときだけ
-    // マーチング等とMIX3を一緒に探す。国内のこの2分類は同じ団体が両方に
-    // 出るため、どちらのタブで検索しても見つかるほうが迷わない。
+    // 「タブのカテゴリのみ」(既定OFF)が入っていなければ、マーチング等と
+    // MIX3は最初から一緒に表示する(検索の有無を問わない)。国内のこの
+    // 2分類は同じ団体が両方に出るため、どちらのタブから入っても
+    // その団体の動画が全部見えるほうが迷わない(2026-08-14 優さん指示)。
     //
-    // ★POV / 海外はタブ意図が強いので、この輪には入れない(検索しても
-    //   自分の分類だけ)。POVは1386件と圧倒的に多く、混ぜると
-    //   マーチング等を見ているつもりがPOVで埋まる。
-    // ★検索していないとき(ただタブを見ているだけ)は必ず自分の分類だけ。
-    //   タブを開いた瞬間に別分類が並ぶと、タブの意味が消えるため。
+    // ★POV / 海外はタブ意図が強いので、この輪には入れない。
+    //   POVは1386件と圧倒的に多く、混ぜるとマーチング等を見ている
+    //   つもりがPOVで埋まる。
+    // ★「タブのカテゴリのみ」をONにすると、どのタブでも自分の分類だけに戻る。
     const CROSS_SEARCH_CATEGORIES = ["マーチング団体等", "スリークロスチーム"];
     const tabCategoryOnly = Boolean(optTabCategoryOnly?.checked);
-    const crossSearchMode =
-      !tabCategoryOnly && hasSearchOrExact && CROSS_SEARCH_CATEGORIES.includes(state.tab);
+    const crossSearchMode = !tabCategoryOnly && CROSS_SEARCH_CATEGORIES.includes(state.tab);
     const sourceRows = state.rows.filter((row) => {
       if (!isVisibleRow(row)) return false;
       const cat = rowCategory(row);
