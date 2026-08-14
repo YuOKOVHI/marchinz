@@ -65,7 +65,34 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- "youtube-list/YouTubeリスト.csv" "youtube-list/youtube-list.inline.js" "data.json" "data.inline.js" "digest.inline.js" "marchinz-notes.inline.js"
+          git config core.quotepath false
+          # ★列挙方式(allowlist)は載せ忘れを必ず生む。除外方式にする。
+          #
+          #   ここは run_youtube_api_refresh.sh 経由で sync_csv_to_json.py を
+          #   呼ぶので、data.inline.js が変わると index.html と app.js の
+          #   キャッシュキー(?v=)も書き換わる。ところが列挙には両方とも
+          #   無かった。しかもこのワークフローは pull --rebase を使わないため
+          #   **未ステージが残っても push は成功しジョブは緑のまま**で、
+          #   「新しい data.inline.js + 古い ?v=」が本番へ出ていた
+          #   (sync_csv_to_json.py 自身が警告している旧データ誤読の再発形)。
+          #   2026-08-13 の三者レビューで発覚。POV側(videos-daily-update.yml)と
+          #   同じ形へ揃える。
+          #
+          #   POV の正本・台帳はこのワークフローの担当外なので除外する。
+          git add -u -- . \
+            ':!大会動画リスト_POV.csv' \
+            ':!pov_ledger.json' \
+            ':!pov_channel_cursors.json'
+          # 載せ残しがあれば、緑のまま本番を壊さずここで赤くして止める
+          if ! git diff --quiet; then
+            echo "::error::このワークフローが触らないはずのファイルが変更されています: $(git diff --name-only | tr '\n' ' ')"
+            exit 1
+          fi
+          # 生成物の削除が紛れ込んでいないか(除外方式は入口が広い)
+          if ! git diff --cached --diff-filter=D --quiet; then
+            echo "::error::ファイルの削除が載っています: $(git diff --cached --diff-filter=D --name-only | tr '\n' ' ')"
+            exit 1
+          fi
           if git diff --staged --quiet; then
             echo "No changes to commit."
             exit 0

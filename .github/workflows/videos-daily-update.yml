@@ -138,16 +138,53 @@ jobs:
             echo "::error::(他の3分類CSVは別の取り込みスクリプトが正本。ここでは載せない)"
             exit 1
           fi
+          # ★git add -u も上の番人も「追跡済み」しか見ない。パイプラインが
+          #   *新設* した生成物は、どちらにも映らず黙って捨てられる
+          #   (2026-08-12 に cursors が赤くなったのは、たまたま既に追跡済み
+          #    だったからにすぎない。次の新設ファイルは赤くならずに消える)。
+          #   作業用の中間ファイルだけを除いて、残りは名指しで止める。
+          untracked="$(git ls-files --others --exclude-standard -- . \
+                        ':!pov_candidates*.tsv' ':!pov-update-issue.md' | tr '\n' ' ')"
+          if [ -n "$untracked" ]; then
+            echo "::error::追跡されていない生成物があります(git add されず消えます): ${untracked}"
+            echo "::error::(意図した新設なら git add してコミットに含めるか、中間ファイルなら上の除外へ足す)"
+            exit 1
+          fi
+          # 除外方式は入口が広い。生成物の削除が紛れ込んでいないか見る
+          if ! git diff --cached --diff-filter=D --quiet; then
+            echo "::error::ファイルの削除が載っています: $(git diff --cached --diff-filter=D --name-only | tr '\n' ' ')"
+            exit 1
+          fi
           git commit -m "chore(pov): 日次更新（自動採用 ${APPLIED:-0}件）"
           # 毎朝5時のデータ更新botと同じ時間帯に走るので、衝突したら取り込み直す
           for i in 1 2 3; do
-            if git pull --rebase origin main && git push; then exit 0; fi
+            if git pull --rebase origin main; then
+              git push && exit 0
+            else
+              # ★衝突するのは data.json / data.inline.js / index.html と
+              #   app.js の ?v= ＝ どれも4本のCSVから決定論的に作り直せる
+              #   派生物。テキストマージする意味が無いので、相手(origin)側を
+              #   土台に置いてから作り直して解決する。
+              #   これが無いと、10秒待って同じ衝突を3回繰り返すだけで終わる
+              #   (2026-08-13 の三者レビューで実測)。
+              if git checkout --ours -- data.json data.inline.js index.html app.js 2>/dev/null \
+                 && python3 sync_csv_to_json.py && python3 check_data.py; then
+                git add -u -- . \
+                  ':!大会動画リスト_マーチング祭.csv' \
+                  ':!大会動画リスト_DrumcorpsfunTV.csv' \
+                  ':!大会動画リスト_FloMarching_DCI.csv'
+                if GIT_EDITOR=true git rebase --continue && git push; then exit 0; fi
+              fi
+            fi
             # 衝突で rebase が途中停止していると、次の pull が
             # 「rebase in progress」で必ず失敗する。畳んでから再試行する
             git rebase --abort 2>/dev/null || true
             echo "push に失敗（$i回目）。取り込み直して再試行します"
             sleep 10
           done
+          # 3回とも駄目でも、成果(CSV・台帳・カーソル)を復旧できる形で残す。
+          # ランナーは使い捨てなのでコミットは消える
+          git format-patch -1 -o pov-failed-patch 2>/dev/null || true
           echo "::error::3回試しても push できませんでした"
           exit 1
 
@@ -173,5 +210,16 @@ jobs:
         with:
           name: pov-candidates
           path: pov_candidates.tsv
+          if-no-files-found: ignore
+          retention-days: 30
+
+      # push に3回とも失敗した回の成果(CSV・台帳・カーソル)。ランナーは
+      # 使い捨てなのでコミットは消えるが、これがあれば手元で git am できる
+      - name: push できなかった回の変更をパッチとして残す
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pov-failed-patch
+          path: pov-failed-patch/
           if-no-files-found: ignore
           retention-days: 30

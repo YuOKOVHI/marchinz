@@ -383,6 +383,16 @@ def check_workflow_stages_everything_pipeline_writes(fails):
     除外方式(denylist: git add -u + 他3分類CSVだけ除外)に変えた。
     この試験は、パイプラインの書き込み先を実際に読み取って、
     除外リストに落ちていないことを機械的に確かめる。
+
+    ★この試験自身が一度「通るだけの試験」だった(2026-08-13 三者レビュー)。
+      直した2点を消さないこと:
+      1. `git ls-files` は非ASCIIパスを8進クォートして返す。素で集合に
+         入れると、いちばん大事な 大会動画リスト_POV.csv が
+         「追跡外」と誤判定され、黙って検査対象から外れていた。-z で読む。
+      2. YAML全文に対する部分文字列検索では、コメントに書いてある文字列や
+         「変わったかを見る」段の除外に当たってしまい、**実際に効く
+         git add 段を壊す変異を素通しした**。段ごとに run: を切り出して、
+         その段の中だけを見る。
     """
     import subprocess
 
@@ -393,46 +403,102 @@ def check_workflow_stages_everything_pipeline_writes(fails):
     text = wf.read_text(encoding="utf-8")
     n = 0
 
-    # 1) 列挙方式へ戻っていないこと(戻ると必ず載せ残しが出る)
-    n += 1
-    if "git add -u -- ." not in text:
-        fails.append("git add が除外方式(git add -u -- .)でない"
-                     "(列挙方式へ戻すと書くファイルが増えたとき載せ残す)")
+    def step_run(step_name: str) -> str:
+        """指定した段の run: ブロックだけを、コメント行を除いて返す。
 
-    # 2) 載せ残しを名指しで落とす番人があること。
-    #    ★「git diff --quiet」だけを見ると、上の「変わったかを見る」段の
-    #      同じ文字列に当たって、番人を消してもPASSしてしまう(歯が無い)。
-    #      番人だけが持つ「否定形の門」と「その場のerror文言」の両方を見る。
-    n += 1
-    guard = "if ! git diff --quiet; then"
-    guard_msg = "触らないはずのファイルが変更されています"
-    if guard not in text or guard_msg not in text:
-        fails.append("コミット前に載せ残しを名指しで落とす番人が無い"
-                     "(rebaseの謎エラーで死ぬ)")
+        全文検索だと、コメントや別の段の同じ文字列に当たって歯が抜ける。
+        """
+        m = re.search(
+            rf"- name: {re.escape(step_name)}\n(.*?)(?=\n      - name: |\Z)",
+            text, re.S)
+        if not m:
+            return ""
+        body = m.group(1)
+        run = re.search(r"run: \|\n(.*)", body, re.S)
+        if not run:
+            return ""
+        return "\n".join(
+            l for l in run.group(1).splitlines() if not l.lstrip().startswith("#"))
 
-    # 3) パイプラインが書く追跡ファイルが、除外リストに落ちていないこと
-    excluded = set(re.findall(r"':!([^']+)'", text))
-    if not excluded:
-        fails.append("除外リスト(':!...')が読み取れない")
-        return n + 1
+    def command(run_text: str, head: str) -> str:
+        """run: の中から、指定コマンド1本だけを行継続込みで取り出す。
+
+        段の中には git add 以外にも除外つきのコマンド(未追跡チェック)が
+        あるので、段全体から除外を拾うと別コマンドのぶんまで混ざる。
+        """
+        lines = run_text.splitlines()
+        for i, l in enumerate(lines):
+            if l.lstrip().startswith(head):
+                out = [l]
+                while out[-1].rstrip().endswith("\\") and i + len(out) < len(lines):
+                    out.append(lines[i + len(out)])
+                return "\n".join(out)
+        return ""
+
+    commit_run = step_run("コミットして反映する")
+    diff_run = step_run("変わったかを見る")
+    n += 1
+    if not commit_run or not diff_run:
+        fails.append("ワークフローの『コミットして反映する』/『変わったかを見る』段を切り出せない")
+        return n
+
+    # 1) 実コマンドが除外方式であること(コメントではなく run: の中身を見る)
+    n += 1
+    add_lines = [l for l in commit_run.splitlines() if l.lstrip().startswith("git add")]
+    if not any("git add -u" in l for l in add_lines):
+        fails.append("git add が除外方式(git add -u)でない"
+                     "(列挙方式へ戻すと、書くファイルが増えたとき載せ残す)")
+
+    # 2) 載せ残し・未追跡・削除の3つを名指しで落とす番人があること
+    for label, needle in (
+        ("載せ残し", "触らないはずのファイルが変更されています"),
+        ("未追跡の生成物", "追跡されていない生成物があります"),
+        ("削除の混入", "ファイルの削除が載っています"),
+    ):
+        n += 1
+        if needle not in commit_run:
+            fails.append(f"コミット前に『{label}』を名指しで落とす番人が無い")
+
+    # 3) パイプラインが書く追跡ファイルが、git add 段の除外に落ちていないこと
+    #    ★除外は「その段の、そのコマンドから」だけ拾う。段全体から拾うと
+    #      未追跡チェック(git ls-files --others)の除外まで混ざる。
+    excluded_add = set(re.findall(r"':!([^']+)'", command(commit_run, "git add")))
+    excluded_diff = set(re.findall(r"':!([^']+)'", command(diff_run, "if git diff")))
+    n += 1
+    if not excluded_add:
+        fails.append("git add 段の除外リスト(':!...')が読み取れない")
+        return n
+    n += 1
+    if excluded_add != excluded_diff:
+        fails.append(
+            "『変わったかを見る』と『コミットして反映する』の除外リストが食い違う "
+            f"(diff段のみ={sorted(excluded_diff - excluded_add)} / "
+            f"add段のみ={sorted(excluded_add - excluded_diff)})")
 
     import sync_csv_to_json as SY
     writes = [
         SY.OUT_JSON, SY.OUT_INLINE, SY.INDEX_HTML, SY.APP_JS, SY.META_FILE,
         S.POV_CSV, S.LEDGER, S.CURSOR_FILE,
     ]
+    # ★-z で読む。素の ls-files は日本語名を "\345\244\247..." とクォートするため、
+    #   POV CSV が「追跡外」と誤判定されて検査から静かに漏れていた。
     tracked = set(subprocess.run(
-        ["git", "-C", str(ROOT), "ls-files"],
-        capture_output=True, text=True, check=True).stdout.splitlines())
+        ["git", "-C", str(ROOT), "ls-files", "-z"],
+        capture_output=True, check=True).stdout.decode().split("\0")) - {""}
 
     for p in writes:
-        name = Path(p).name
-        if name not in tracked:
-            continue  # 追跡外(キャッシュ・候補TSV等)は rebase を止めないので対象外
+        # ★basename比較はやめる。このリポジトリには app.js が5つある
+        #   (tools/{vlog,reangle,switcher,privacy}/js/app.js とルート)。
+        rel = Path(p).resolve().relative_to(ROOT).as_posix()
         n += 1
-        if name in excluded:
+        if rel not in tracked:
+            # 黙って飛ばさない。追跡外なら「なぜ追跡外か」を人が見て決める
+            fails.append(f"{rel} はパイプラインが書くのに git 追跡外"
+                         "(コミットされないので、意図的か確認すること)")
+            continue
+        if rel in excluded_add:
             fails.append(
-                f"{name} はパイプラインが書くのに、ワークフローの除外リストに居る"
+                f"{rel} はパイプラインが書くのに、git add 段の除外リストに居る"
                 "(未ステージで残って git pull --rebase が必ず失敗する)")
 
     # 4) 逆に、他3分類のCSVは必ず除外されていること(このワークフローの正本外)
@@ -440,9 +506,53 @@ def check_workflow_stages_everything_pipeline_writes(fails):
                   "大会動画リスト_DrumcorpsfunTV.csv",
                   "大会動画リスト_FloMarching_DCI.csv"):
         n += 1
-        if other not in excluded:
-            fails.append(f"{other} が除外されていない(別スクリプトが正本なので載せてはいけない)")
+        if other not in excluded_add:
+            fails.append(f"{other} が git add 段で除外されていない"
+                         "(別スクリプトが正本なので載せてはいけない)")
 
+    return n
+
+
+def check_youtube_workflow_stages_cache_keys(fails):
+    """YouTube日次(youtube-api-daily.yml)も、キャッシュキーを載せ残さないこと。
+
+    2026-08-13 三者レビューで発覚。このワークフローは
+    run_youtube_api_refresh.sh 経由で sync_csv_to_json.py を呼ぶので、
+    data.inline.js が変われば index.html と app.js の ?v= も書き換わる。
+    ところが git add の列挙にその2つが無かった。
+
+    さらに悪いことに、このワークフローは git pull --rebase を使わず
+    push 一発なので、**未ステージが残っても push は成功しジョブは緑のまま**。
+    「新しい data.inline.js + 古い ?v=」が本番へ出る
+    (sync_csv_to_json.py 自身が『この経路を通ると旧データを掴む』と
+     警告している不具合の再発形)。POV側と違い赤で気づけないぶん危険。
+    """
+    wf = ROOT / ".github" / "workflows" / "youtube-api-daily.yml"
+    if not wf.is_file():
+        fails.append("youtube-api-daily.yml が見つからない")
+        return 1
+    text = wf.read_text(encoding="utf-8")
+    run = "\n".join(l for l in text.splitlines() if not l.lstrip().startswith("#"))
+    n = 0
+
+    n += 1
+    if "git add -u" not in run:
+        fails.append("youtube-api-daily.yml の git add が除外方式でない"
+                     "(index.html / app.js の ?v= を載せ残し、緑のまま本番が旧データを掴む)")
+
+    n += 1
+    if "触らないはずのファイルが変更されています" not in run:
+        fails.append("youtube-api-daily.yml に載せ残しの番人が無い"
+                     "(pull --rebase が無いので、残っても緑のまま push される)")
+
+    # POVの正本・台帳はこのワークフローの担当外。必ず除外されていること
+    excluded = set(re.findall(r"':!([^']+)'", run))
+    for pov_owned in ("大会動画リスト_POV.csv", "pov_ledger.json",
+                      "pov_channel_cursors.json"):
+        n += 1
+        if pov_owned not in excluded:
+            fails.append(f"youtube-api-daily.yml が {pov_owned} を除外していない"
+                         "(POV側の担当ファイルを巻き込む)")
     return n
 
 
@@ -527,7 +637,8 @@ def main() -> int:
               + check_part_guess(fails) + check_cam_terms_word_order(fails)
               + check_ytdlp_lookup_finds_path(fails) + check_net_fetch_priority(fails)
               + check_channel_cursor(fails) + check_judge_lane_separation(fails)
-              + check_workflow_stages_everything_pipeline_writes(fails))
+              + check_workflow_stages_everything_pipeline_writes(fails)
+              + check_youtube_workflow_stages_cache_keys(fails))
 
     total = len(REGRESSION_MISSED) + len(SHOULD_KEEP) + len(SHOULD_DROP) + 4 + n_auto
     if fails:

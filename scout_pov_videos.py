@@ -885,7 +885,7 @@ def write_pov_csv(rows: list[dict], bom: bool) -> None:
     w = csv.DictWriter(buf, fieldnames=fields, lineterminator="\n")
     w.writeheader()
     w.writerows(rows)
-    POV_CSV.write_text(("﻿" if bom else "") + buf.getvalue(), encoding="utf-8")
+    POV_CSV.write_text(("\ufeff" if bom else "") + buf.getvalue(), encoding="utf-8")
 
 
 def fix_publishers(workers: int = 6) -> int:

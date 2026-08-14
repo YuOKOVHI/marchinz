@@ -77,7 +77,7 @@ def known_channels_from_csv() -> set[str]:
     終わらない(実測でタイムアウトした)。CSVの「動画配信元URL」列は
     2026-08-11 に全行埋めたので、ここから読めばネットに触らずに済む。
     """
-    rows = list(csv.DictReader(io.StringIO(POV_CSV.read_text(encoding="utf-8"))))
+    rows = list(csv.DictReader(io.StringIO(POV_CSV.read_text(encoding="utf-8-sig"))))
     return {r["動画配信元URL"].rstrip("/") for r in rows
             if (r.get("動画配信元URL") or "").startswith("http")}
 
@@ -129,7 +129,7 @@ def auto_apply(rows: list[dict]) -> tuple[list[str], list[dict]]:
             return [], rows
 
     # 本当に入ったかをCSVで確かめる(ツールの成功出力を信じない)
-    now = POV_CSV.read_text(encoding="utf-8")
+    now = POV_CSV.read_text(encoding="utf-8-sig")
     landed = [v for v in ids if v in now]
     if len(landed) != len(ids):
         print(f"[注意] 追記できたのは {len(landed)}/{len(ids)}件", file=sys.stderr)
@@ -153,7 +153,7 @@ def main() -> int:
     if not POV_CSV.exists():
         return die(f"{POV_CSV.name} が無い")
 
-    before = len(list(csv.DictReader(io.StringIO(POV_CSV.read_text(encoding="utf-8")))))
+    before = len(list(csv.DictReader(io.StringIO(POV_CSV.read_text(encoding="utf-8-sig")))))
     print(f"収録済み {before}件 から始めます", file=sys.stderr)
 
     # --quick = 収録済み/見張りチャンネルの再訪 + 雪だるま。
