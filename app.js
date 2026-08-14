@@ -1895,10 +1895,9 @@
         state.yearFilter
     );
     syncSearchShareFloat(hasSearchOrExact);
-    // 「タブのカテゴリのみ」(既定OFF)が入っていなければ、マーチング等と
-    // MIX3は最初から一緒に表示する(検索の有無を問わない)。国内のこの
-    // 2分類は同じ団体が両方に出るため、どちらのタブから入っても
-    // その団体の動画が全部見えるほうが迷わない(2026-08-14 優さん指示)。
+    // 国内2分類は、何も入力していないときは選択中のタブだけを表示する。
+    // 団体名／チーム名で探すときだけ両方を対象にすることで、初期表示は
+    // 分類を正しく保ちつつ、団体を横断して探す用途も残す(2026-08-14 優さん指示)。
     //
     // ★POV / 海外はタブ意図が強いので、この輪には入れない。
     //   POVは1386件と圧倒的に多く、混ぜるとマーチング等を見ている
@@ -1906,7 +1905,11 @@
     // ★「タブのカテゴリのみ」をONにすると、どのタブでも自分の分類だけに戻る。
     const CROSS_SEARCH_CATEGORIES = ["マーチング団体等", "スリークロスチーム"];
     const tabCategoryOnly = Boolean(optTabCategoryOnly?.checked);
-    const crossSearchMode = !tabCategoryOnly && CROSS_SEARCH_CATEGORIES.includes(state.tab);
+    const hasOrganizationSearch = Boolean(teamQ || selectedOrg);
+    const crossSearchMode =
+      !tabCategoryOnly &&
+      hasOrganizationSearch &&
+      CROSS_SEARCH_CATEGORIES.includes(state.tab);
     const sourceRows = state.rows.filter((row) => {
       if (!isVisibleRow(row)) return false;
       const cat = rowCategory(row);

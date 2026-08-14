@@ -6280,6 +6280,111 @@ input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
   #page-profile .user-profile-tab { transition: none !important; }
 }
 
+/* v2.37.0 — YouTubeも大会動画と同じ「見出し→操作→一覧」の面構成に揃える。 */
+#page-youtube .youtube-page-main {
+  padding: clamp(1rem, 2.2vw, 1.6rem);
+  border: 1px solid rgba(15, 33, 56, 0.1);
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(15, 33, 56, 0.08);
+}
+
+#page-youtube .youtube-page-hero {
+  margin-bottom: 0.1rem;
+}
+
+#page-youtube .youtube-panel-lead-block {
+  margin: 0.35rem 0 0.8rem;
+}
+
+#page-youtube .youtube-panel-lead-main {
+  margin: 0;
+  font-size: clamp(0.92rem, 1.4vw, 1.05rem);
+  line-height: 1.6;
+  font-weight: 700;
+  color: var(--mzu-navy, #0f2138);
+}
+
+#page-youtube .youtube-published-list-wrap {
+  margin: 0 0 0.8rem;
+}
+
+#page-youtube nav.youtube-tabs[aria-label="YouTubeカテゴリ"] {
+  margin: 0;
+  padding: 0.35rem;
+  border-radius: 14px;
+  background: rgba(15, 33, 56, 0.06);
+}
+
+#page-youtube .youtube-results-panel {
+  margin-top: 0.8rem;
+  padding: clamp(0.8rem, 2vw, 1.25rem);
+  border: 1px solid rgba(15, 33, 56, 0.1);
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(15, 33, 56, 0.06);
+}
+
+#page-youtube .youtube-page-policy-note {
+  max-width: 1120px;
+  margin: 0.9rem auto 0;
+  padding: 0.7rem 1rem;
+  border-radius: 12px;
+  background: #f7f9fc;
+  color: var(--mzu-muted, #64748b);
+  font-size: 0.75rem;
+  line-height: 1.6;
+}
+
+/* 検索履歴は増えても縦に崩さず、チップを横へ送って読める状態を保つ。 */
+#page-videos .search-history .search-presets-list {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.5rem;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 0.1rem;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+#page-videos .search-history .search-presets-list::-webkit-scrollbar {
+  display: none;
+}
+
+#page-videos .search-history .search-presets-list .browse-chip,
+#page-videos .search-history .search-presets-list button {
+  flex: 0 0 auto;
+  max-width: min(72vw, 18rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 719px) {
+  #page-youtube .youtube-page-main,
+  #page-youtube .youtube-results-panel {
+    border-radius: 16px;
+    box-shadow: 0 5px 16px rgba(15, 33, 56, 0.06);
+  }
+
+  #page-youtube .youtube-page-main {
+    padding: 0.85rem;
+  }
+
+  #page-youtube .youtube-results-panel {
+    margin-top: 0.6rem;
+    padding: 0.7rem;
+  }
+
+  #page-youtube .youtube-page-policy-note {
+    margin-top: 0.7rem;
+    padding: 0.65rem 0.8rem;
+    font-size: 0.72rem;
+  }
+}
+
 /* Team U Pulse final cascade: 後段の旧Moment指定より必ず優先する。 */
 #community-hub-panel-moments .mln-feed-card .mln-feed-card-cover,
 #community-hub-panel-moments .mln-feed-card .mln-feed-card-cover:has(img.mz-img-portrait) {
