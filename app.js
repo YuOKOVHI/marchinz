@@ -201,7 +201,6 @@
   const videoYearFilter = $("#video-year-filter");
   const videoPartFilter = $("#video-part-filter");
   const optMatchExact = $("#opt-match-exact");
-  const optTabCategoryOnly = $("#opt-tab-category-only");
   const mix3Notice = $("#mix3-notice");
   const overseasNotice = $("#overseas-notice");
   const mix3AboutChipWrap = $("#mix3-about-chip-wrap");
@@ -243,6 +242,7 @@
   const btnResetRecentSearches = $("#btn-reset-recent-searches");
   const btnClearVideoConditions = $("#btn-clear-video-conditions");
   const recentSearchesEl = $("#recent-searches");
+  const recentSearchesScrollHint = $("#recent-searches-scroll-hint");
 
   function rowMatchesVideoSourceFilter(row) {
     if (!state.sourceFilter) return true;
@@ -770,7 +770,6 @@
     if (videoYearFilter) videoYearFilter.value = "";
     if (videoPartFilter) videoPartFilter.value = "";
     if (optMatchExact) optMatchExact.checked = false;
-    if (optTabCategoryOnly) optTabCategoryOnly.checked = false;
     if (browseOrgFilterInput) browseOrgFilterInput.value = "";
     syncVideoSourceFilterButton();
   }
@@ -1069,6 +1068,19 @@
     // 条件クリアは履歴が空でも常に表示する。検索語・絞り込みが残ったまま
     // 「最近の検索」自体が消えると、初期状態へ戻る入口も失われるため。
     if (btnClearVideoConditions) btnClearVideoConditions.hidden = false;
+    window.requestAnimationFrame(updateRecentSearchesOverflowHint);
+  }
+
+  /** 履歴が画面幅を超えるときだけ、横スクロールできることを示す。 */
+  function updateRecentSearchesOverflowHint() {
+    if (!recentSearchesEl) return;
+    const hasOverflow = recentSearchesEl.scrollWidth > recentSearchesEl.clientWidth + 2;
+    recentSearchesEl.dataset.overflow = hasOverflow ? "true" : "false";
+    recentSearchesEl.setAttribute(
+      "aria-label",
+      hasOverflow ? "最近の検索。左右にスクロールできます" : "最近の検索"
+    );
+    if (recentSearchesScrollHint) recentSearchesScrollHint.hidden = !hasOverflow;
   }
 
   function openShare(kind, row) {
@@ -1902,12 +1914,11 @@
     // ★POV / 海外はタブ意図が強いので、この輪には入れない。
     //   POVは1386件と圧倒的に多く、混ぜるとマーチング等を見ている
     //   つもりがPOVで埋まる。
-    // ★「タブのカテゴリのみ」をONにすると、どのタブでも自分の分類だけに戻る。
     const CROSS_SEARCH_CATEGORIES = ["マーチング団体等", "スリークロスチーム"];
-    const tabCategoryOnly = Boolean(optTabCategoryOnly?.checked);
-    const hasOrganizationSearch = Boolean(teamQ || selectedOrg);
+    // 主検索欄は団体名・大会名を共用する。国内の2分類を行き来させずに探せるよう、
+    // 入力がある間は「マーチング等」と「MIX3」の両方を検索対象にする。
+    const hasOrganizationSearch = Boolean(teamQ || selectedOrg || qFree?.value.trim());
     const crossSearchMode =
-      !tabCategoryOnly &&
       hasOrganizationSearch &&
       CROSS_SEARCH_CATEGORIES.includes(state.tab);
     const sourceRows = state.rows.filter((row) => {
@@ -3810,7 +3821,6 @@
     if (qFree) qFree.value = "";
     if (videoPartFilter) videoPartFilter.value = "";
     if (optMatchExact) optMatchExact.checked = false;
-    if (optTabCategoryOnly) optTabCategoryOnly.checked = false;
     state.yearFilter = null;
     if (videoYearFilter) videoYearFilter.value = "";
     applyFilter();
@@ -3836,7 +3846,6 @@
     if (videoYearFilter) videoYearFilter.value = "";
     if (videoPartFilter) videoPartFilter.value = "";
     if (optMatchExact) optMatchExact.checked = false;
-    if (optTabCategoryOnly) optTabCategoryOnly.checked = false;
     if (browseOrgFilterInput) browseOrgFilterInput.value = "";
     state.recentSearches = [];
     saveJsonStorage(LS_KEY_RECENT_SEARCHES, state.recentSearches);
@@ -3901,11 +3910,7 @@
       onSearchInputDebounced();
     });
   }
-  if (optTabCategoryOnly) {
-    optTabCategoryOnly.addEventListener("change", () => {
-      onSearchInputDebounced();
-    });
-  }
+  window.addEventListener("resize", updateRecentSearchesOverflowHint, { passive: true });
 
   if (videoSearchFilterClose) {
     videoSearchFilterClose.addEventListener("click", () => {

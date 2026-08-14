@@ -6349,6 +6349,36 @@ input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
   -webkit-overflow-scrolling: touch;
 }
 
+#page-videos .search-history-list-wrap {
+  position: relative;
+}
+
+#page-videos .search-history .search-presets-list[data-overflow="true"] {
+  padding-right: 3.2rem;
+  scroll-padding-right: 3.2rem;
+}
+
+#page-videos .search-history-scroll-hint {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.18rem;
+  height: 100%;
+  padding: 0 0 0 1.15rem;
+  transform: translateY(-50%);
+  background: linear-gradient(90deg, transparent 0%, #f7f9fc 38%);
+  color: var(--mzu-muted, #64748b);
+  font-size: 0.7rem;
+  font-weight: 800;
+  pointer-events: none;
+}
+
+#page-videos .search-history-scroll-hint[hidden] {
+  display: none;
+}
+
 #page-videos .search-history .search-presets-list::-webkit-scrollbar {
   display: none;
 }

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-mz-version="2.37.0" data-mz-channel="beta">
+<html lang="ja" data-mz-version="2.37.1" data-mz-channel="beta">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -103,7 +103,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css" />
     <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css?v=1.25.64" />
     <link rel="stylesheet" href="styles.css?v=2.37.0" />
-    <link rel="stylesheet" href="marchinz-brushup.css?v=2.37.0" />
+    <link rel="stylesheet" href="marchinz-brushup.css?v=2.37.1" />
     <!-- Microsoft Clarity -->
     <script type="text/javascript">
       (function(c,l,a,r,i,t,y){
@@ -990,10 +990,6 @@
                 <div class="search-options" aria-label="検索オプション">
                   <div class="search-options-row">
                     <label class="search-option-box"><input type="checkbox" id="opt-match-exact" /> 完全一致のみ</label>
-                    <label class="search-option-box"
-                      ><input type="checkbox" id="opt-tab-category-only" />
-                      タブのカテゴリのみ</label
-                    >
                   </div>
                 </div>
                 <div class="search-share-row">
@@ -1027,7 +1023,12 @@
                 条件クリア
               </button>
             </div>
-            <div id="recent-searches" class="search-presets-list"></div>
+            <div class="search-history-list-wrap">
+              <div id="recent-searches" class="search-presets-list" aria-label="最近の検索"></div>
+              <span id="recent-searches-scroll-hint" class="search-history-scroll-hint" hidden aria-hidden="true">
+                横へ <i class="fa-solid fa-chevron-right"></i>
+              </span>
+            </div>
           </section>
         </section>
         </section>
@@ -4500,7 +4501,7 @@
     <script defer src="marchinz-moment-pulse.js?v=2.10.4"></script>
     <script defer src="user-profile-page.js?v=2.10.0"></script>
     <script defer src="marchinz-base.js?v=1.39.66"></script>
-    <script defer src="app.js?v=2.37.0"></script>
+    <script defer src="app.js?v=2.37.1"></script>
     <script defer src="marchinz-top-highlights.js?v=2.21.5"></script>
     <script defer src="marchinz-confetti.js?v=1.28.0"></script>
     <script defer src="marchinz-journey.js?v=1.30.1"></script>
