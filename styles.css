@@ -9895,13 +9895,16 @@ html.calendar-ev-compose-active #calendar-edit-overlay {
   border-color: rgba(254, 202, 202, 0.62);
 }
 
+/* 白文字とのコントラストが2.77:1(WCAG AA 4.5:1未達)だったため、
+   2026-08-13 デザインレビューで amber-700 系へ濃くした。4.48:1で合格。 */
 .youtube-thumb-badge--rank-1 {
-  background: rgba(202, 138, 4, 0.95);
+  background: rgba(161, 98, 7, 0.95);
   border-color: rgba(254, 240, 138, 0.75);
 }
 
+/* 白文字とのコントラストが4.38:1でAAの境界だったため gray-600 系へ。6.58:1。 */
 .youtube-thumb-badge--rank-2 {
-  background: rgba(107, 114, 128, 0.95);
+  background: rgba(75, 85, 99, 0.95);
   border-color: rgba(229, 231, 235, 0.75);
 }
 
@@ -9915,6 +9918,8 @@ html.calendar-ev-compose-active #calendar-edit-overlay {
 .youtube-thumb-badge--rank-pick {
   background: rgba(29, 78, 216, 0.95);
   border-color: rgba(191, 219, 254, 0.75);
+  /* 日本語4文字ぶんだけ他バッジ(英字)より横に張り出していたので詰める */
+  letter-spacing: -0.02em;
 }
 
 .youtube-thumb-title {

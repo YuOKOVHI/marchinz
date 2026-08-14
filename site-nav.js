@@ -1818,6 +1818,19 @@
         ],
       },
     ];
+    // ★名簿(channels)に人が手で書いた recommended は、実行時にCSVで
+    //   channels を丸ごと差し替えても失われないよう、ここで不変の控えを
+    //   取っておく。既存の existingRecommendedByUrl はその時点の
+    //   channels(メモリ)からしか作らないため、何かの拍子(URL不一致・
+    //   一時的なAPI失敗等)で1回でも該当チャンネルの行が欠けると、
+    //   次に行が戻ってきても recommended を思い出せず永久に消えていた
+    //   (2026-08-14 三者レビューで発見)。この控えを土台にマージすれば、
+    //   名簿の記述自体は何度でも復元できる。
+    //   ★正規化(normalizeYoutubeChannelUrl)はこの時点でまだ未定義
+    //   (const・TDZ)なので、生URLのまま控えて後で正規化する。
+    const INITIAL_RECOMMENDED_RAW_PAIRS = channels
+      .filter((c) => String(c.recommended || "").trim())
+      .map((c) => [c.url, String(c.recommended).trim()]);
     let videoMetaByUrl = {
       "https://www.youtube.com/@marching-matsuri": {
         latestVideo: "zPrYC0efNLk",
@@ -2520,6 +2533,12 @@
       }
     };
 
+    // ここで初めて normalizeYoutubeChannelUrl が定義されるので、
+    // 生のまま控えていた recommended ペアをここで正規化する。
+    const INITIAL_RECOMMENDED_BY_URL = new Map(
+      INITIAL_RECOMMENDED_RAW_PAIRS.map(([url, rec]) => [normalizeYoutubeChannelUrl(url), rec]),
+    );
+
     /* ★ TOPの「YouTube 新着」(marchinz-top-highlights.js)が名簿のカテゴリで
        出し分ける(海外は最後に1枠だけ・2026-08-06 優さん指示)ための窓口。
        カテゴリの正本はこの channels 1つ ─ 表を外に複製しない。
@@ -2617,11 +2636,17 @@
       //   引き継ぐ。CSVはbotの生成物なのでこの列を持っておらず、
       //   引き継がないと「オススメ」の固定が実行時に黙って消える
       //   (カテゴリと同じ扱い。受け取り経路で落とさないこと)。
-      const existingRecommendedByUrl = new Map(
-        channels
+      //   ★その時点の channels(メモリ)だけを見ると、何かの拍子で1回でも
+      //   該当チャンネルの行が欠けた瞬間に recommended を思い出せなくなり、
+      //   次に行が戻ってきても永久に消えたままになる(2026-08-14 三者
+      //   レビューで発見)。名簿本来の値(INITIAL_RECOMMENDED_BY_URL)を
+      //   常に土台にし、その上に現在の channels の値を重ねる。
+      const existingRecommendedByUrl = new Map([
+        ...INITIAL_RECOMMENDED_BY_URL,
+        ...channels
           .filter((c) => String(c.recommended || "").trim())
           .map((c) => [normalizeYoutubeChannelUrl(c.url), String(c.recommended).trim()]),
-      );
+      ]);
 
       const newChannels = [];
       const newVideoMetaByUrl = {};
@@ -2974,15 +2999,22 @@
       const m = new Map();
       // 「オススメ」は人が固定した枠なので、自動採番(NEW/TOP1..)の外に置く。
       // 先に登録して、同じ動画が最新や人気で来ても上書きされないようにする。
+      // ★ショート動画IDを固定指定すると、buildYoutubeFourThumbIds側は
+      //   shortVideoIdsで弾いて4枠に出さないのに、ここが無条件で
+      //   登録すると「バッジだけ余って誰にも付かない」うえ、下のidx計算
+      //   (pinned?m.size-1:...)が1つズレてTOP3が付くはずのサムネに
+      //   バッジが付かなくなる(2026-08-14 三者レビューで発見)。
+      //   両者の判定を揃える。
       const pinned = pinnedRecommendedId(item);
-      if (pinned) {
+      const pinnedUsable = pinned && !shortVideoIds.has(pinned);
+      if (pinnedUsable) {
         m.set(pinned, { id: pinned, label: "オススメ", rank: "pick" });
       }
       for (const id of order) {
         if (!id || m.has(id)) continue;
         if (m.size >= labels.length) break;
         // 固定枠が1つ埋まっているぶん、自動採番は前へ詰めない
-        const idx = pinned ? m.size - 1 : m.size;
+        const idx = pinnedUsable ? m.size - 1 : m.size;
         if (idx >= labels.length) break;
         m.set(id, { id, label: labels[idx], rank: idx });
       }

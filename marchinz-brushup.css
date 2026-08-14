@@ -7007,11 +7007,16 @@ input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
      縦を最小にできる(3列だと3行になり、最後の行に2個だけ残る)。
      横並び(アイコン+文字)では「マーチング配信」に約142px要って
      入らないので、アイコンを文字の上へ積んで横幅を稼ぐ。
-     375px 実測: 1枠81px。文字は幅に追従させ(clamp)、
-     「マーチング配信」7文字が 320px 端末でも折れないようにする。 */
+     アイコンは縦に積んであるぶん横幅を消費しないため、文字サイズの
+     上限を決めるのは最長ラベルの文字数だけ。2026-08-13 デザインレビューで
+     「マーチング配信」7文字が8.96px(iOS推奨11pxを19%下回る)まで
+     文字を圧迫すると判明したため、表示文字だけ短縮した
+     (data-yt-category は絞り込みキーなので変えていない。フルネームは
+     aria-label に残す)。最長が4文字(中学以下)になり、
+     縦102pxのまま 320px でも 11px を確保できる。 */
   #page-youtube nav.youtube-tabs[aria-label="YouTubeカテゴリ"] {
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 4px;
+    gap: 4px 6px;
     padding: 5px;
   }
 
@@ -7020,25 +7025,31 @@ input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
     /* 縦は詰めるが 44pt は割らない(指が迷う下限) */
     min-height: 44px;
     flex-direction: column;
-    padding: 0.3rem 0.1rem;
+    padding: 0.25rem 0.15rem;
     justify-content: center;
     align-items: center;
     gap: 0.16rem;
-    /* 幅の狭い端末ほど小さく。折り返しを font で吸収する */
-    font-size: clamp(0.56rem, 2.55vw, 0.66rem);
+    /* 320px→11px / 375px以上→12px。ラベル短縮後は最長4文字なので
+       320pxでも18px超の余りがあり、下限に張り付かない */
+    font-size: clamp(0.6875rem, 3.2vw, 0.75rem);
     line-height: 1.15;
     text-align: center;
-    /* 折らない。折れると行の高さがばらついて読みにくい */
+    /* 折らない代わりに、想定外に長いラベルが来ても隣へ被さらず
+       自己申告(…)で崩れる形にする */
     white-space: nowrap;
-    letter-spacing: -0.02em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    letter-spacing: 0;
     transition: background-color 0.18s ease, box-shadow 0.18s ease, color 0.18s ease;
   }
 
-  /* アイコンは主役ではないので、既定は控えめに。選択時だけ色が乗る */
+  /* アイコンは主役ではないので、既定は控えめに。選択時だけ色が乗る。
+     opacity .62(実効コントラスト2.41:1)はWCAG 1.4.11の非テキスト下限
+     3:1を割っていたため .78(3.07:1)へ引き上げた。 */
   #page-youtube nav.youtube-tabs[aria-label="YouTubeカテゴリ"] .youtube-tab-btn .mz-ui-icon {
     font-size: 0.92rem;
     line-height: 1;
-    opacity: 0.62;
+    opacity: 0.78;
     transition: opacity 0.18s ease;
   }
 
@@ -7047,6 +7058,17 @@ input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
     .youtube-tab-btn[aria-selected="true"]
     .mz-ui-icon {
     opacity: 1;
+  }
+
+  /* 選択チップは白地(#fff) vs トラック地(rgba(15,33,56,.06))で
+     コントラスト1.12:1しか無く、影(box-shadow)だけでは明るい場所で
+     輪郭が消える。境界線を1本足して面として見えるようにする。 */
+  #page-youtube
+    nav.youtube-tabs[aria-label="YouTubeカテゴリ"]
+    .youtube-tab-btn[aria-selected="true"] {
+    box-shadow:
+      0 0 0 1px rgba(15, 33, 56, 0.16),
+      0 1px 3px rgba(15, 33, 56, 0.14);
   }
 
   /* Moment は Board/Note と同じ幅の契約にする。
