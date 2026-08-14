@@ -201,6 +201,7 @@
   const videoYearFilter = $("#video-year-filter");
   const videoPartFilter = $("#video-part-filter");
   const optMatchExact = $("#opt-match-exact");
+  const optTabCategoryOnly = $("#opt-tab-category-only");
   const mix3Notice = $("#mix3-notice");
   const overseasNotice = $("#overseas-notice");
   const mix3AboutChipWrap = $("#mix3-about-chip-wrap");
@@ -769,6 +770,7 @@
     if (videoYearFilter) videoYearFilter.value = "";
     if (videoPartFilter) videoPartFilter.value = "";
     if (optMatchExact) optMatchExact.checked = false;
+    if (optTabCategoryOnly) optTabCategoryOnly.checked = false;
     if (browseOrgFilterInput) browseOrgFilterInput.value = "";
     syncVideoSourceFilterButton();
   }
@@ -1893,11 +1895,24 @@
         state.yearFilter
     );
     syncSearchShareFloat(hasSearchOrExact);
-    // 検索・完全一致・配信元・年のすべてを、選択中の分類内だけで行う。
-    // カテゴリをまたぐ検索は意図しない0件/混在の原因になるため提供しない。
-    const sourceRows = state.rows.filter(
-      (row) => rowCategory(row) === state.tab && isVisibleRow(row)
-    );
+    // 「タブのカテゴリのみ」(既定OFF)が入っていなければ、検索したときだけ
+    // マーチング等とMIX3を一緒に探す。国内のこの2分類は同じ団体が両方に
+    // 出るため、どちらのタブで検索しても見つかるほうが迷わない。
+    //
+    // ★POV / 海外はタブ意図が強いので、この輪には入れない(検索しても
+    //   自分の分類だけ)。POVは1386件と圧倒的に多く、混ぜると
+    //   マーチング等を見ているつもりがPOVで埋まる。
+    // ★検索していないとき(ただタブを見ているだけ)は必ず自分の分類だけ。
+    //   タブを開いた瞬間に別分類が並ぶと、タブの意味が消えるため。
+    const CROSS_SEARCH_CATEGORIES = ["マーチング団体等", "スリークロスチーム"];
+    const tabCategoryOnly = Boolean(optTabCategoryOnly?.checked);
+    const crossSearchMode =
+      !tabCategoryOnly && hasSearchOrExact && CROSS_SEARCH_CATEGORIES.includes(state.tab);
+    const sourceRows = state.rows.filter((row) => {
+      if (!isVisibleRow(row)) return false;
+      const cat = rowCategory(row);
+      return crossSearchMode ? CROSS_SEARCH_CATEGORIES.includes(cat) : cat === state.tab;
+    });
 
     const filterPredicate = (row, { skipYear = false } = {}) => {
       const orgTeam = normalize(rowOrgTeam(row));
@@ -3793,6 +3808,7 @@
     if (qFree) qFree.value = "";
     if (videoPartFilter) videoPartFilter.value = "";
     if (optMatchExact) optMatchExact.checked = false;
+    if (optTabCategoryOnly) optTabCategoryOnly.checked = false;
     state.yearFilter = null;
     if (videoYearFilter) videoYearFilter.value = "";
     applyFilter();
@@ -3818,6 +3834,7 @@
     if (videoYearFilter) videoYearFilter.value = "";
     if (videoPartFilter) videoPartFilter.value = "";
     if (optMatchExact) optMatchExact.checked = false;
+    if (optTabCategoryOnly) optTabCategoryOnly.checked = false;
     if (browseOrgFilterInput) browseOrgFilterInput.value = "";
     state.recentSearches = [];
     saveJsonStorage(LS_KEY_RECENT_SEARCHES, state.recentSearches);
@@ -3879,6 +3896,11 @@
   if (videoPartFilter) videoPartFilter.addEventListener("change", () => onSearchInputDebounced("part"));
   if (optMatchExact) {
     optMatchExact.addEventListener("change", () => {
+      onSearchInputDebounced();
+    });
+  }
+  if (optTabCategoryOnly) {
+    optTabCategoryOnly.addEventListener("change", () => {
       onSearchInputDebounced();
     });
   }
