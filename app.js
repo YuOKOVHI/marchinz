@@ -201,6 +201,8 @@
   const videoYearFilter = $("#video-year-filter");
   const videoPartFilter = $("#video-part-filter");
   const optMatchExact = $("#opt-match-exact");
+  const optTabCategoryOnly = $("#opt-tab-category-only");
+  const optTabCategoryOnlyWrap = $("#opt-tab-category-only-wrap");
   const mix3Notice = $("#mix3-notice");
   const overseasNotice = $("#overseas-notice");
   const mix3AboutChipWrap = $("#mix3-about-chip-wrap");
@@ -259,6 +261,15 @@
     );
   }
 
+  const CROSS_SEARCH_CATEGORIES = ["マーチング団体等", "スリークロスチーム"];
+
+  /** 国内2分類の横断検索を、必要なときだけ現在のタブへ限定できるようにする。 */
+  function syncTabCategoryOnlyOption(category = state.tab) {
+    const applicable = CROSS_SEARCH_CATEGORIES.includes(category);
+    if (optTabCategoryOnlyWrap) optTabCategoryOnlyWrap.hidden = !applicable;
+    if (!applicable && optTabCategoryOnly) optTabCategoryOnly.checked = false;
+  }
+
   function setSelectedVideoCategoryTab(category) {
     let selectedId = "";
     videoCategoryTabs().forEach((btn) => {
@@ -270,6 +281,7 @@
     if (resultsPanel && selectedId) {
       resultsPanel.setAttribute("aria-labelledby", selectedId);
     }
+    syncTabCategoryOnlyOption(category);
   }
 
   function categoryHasRowsForSourceFilter(category, source = state.sourceFilter) {
@@ -770,6 +782,7 @@
     if (videoYearFilter) videoYearFilter.value = "";
     if (videoPartFilter) videoPartFilter.value = "";
     if (optMatchExact) optMatchExact.checked = false;
+    if (optTabCategoryOnly) optTabCategoryOnly.checked = false;
     if (browseOrgFilterInput) browseOrgFilterInput.value = "";
     syncVideoSourceFilterButton();
   }
@@ -1914,13 +1927,13 @@
     // ★POV / 海外はタブ意図が強いので、この輪には入れない。
     //   POVは1386件と圧倒的に多く、混ぜるとマーチング等を見ている
     //   つもりがPOVで埋まる。
-    const CROSS_SEARCH_CATEGORIES = ["マーチング団体等", "スリークロスチーム"];
     // 主検索欄は団体名・大会名を共用する。国内の2分類を行き来させずに探せるよう、
     // 入力がある間は「マーチング等」と「MIX3」の両方を検索対象にする。
     const hasOrganizationSearch = Boolean(teamQ || selectedOrg || qFree?.value.trim());
     const crossSearchMode =
       hasOrganizationSearch &&
-      CROSS_SEARCH_CATEGORIES.includes(state.tab);
+      CROSS_SEARCH_CATEGORIES.includes(state.tab) &&
+      !optTabCategoryOnly?.checked;
     const sourceRows = state.rows.filter((row) => {
       if (!isVisibleRow(row)) return false;
       const cat = rowCategory(row);
@@ -3821,6 +3834,7 @@
     if (qFree) qFree.value = "";
     if (videoPartFilter) videoPartFilter.value = "";
     if (optMatchExact) optMatchExact.checked = false;
+    if (optTabCategoryOnly) optTabCategoryOnly.checked = false;
     state.yearFilter = null;
     if (videoYearFilter) videoYearFilter.value = "";
     applyFilter();
@@ -3846,6 +3860,7 @@
     if (videoYearFilter) videoYearFilter.value = "";
     if (videoPartFilter) videoPartFilter.value = "";
     if (optMatchExact) optMatchExact.checked = false;
+    if (optTabCategoryOnly) optTabCategoryOnly.checked = false;
     if (browseOrgFilterInput) browseOrgFilterInput.value = "";
     state.recentSearches = [];
     saveJsonStorage(LS_KEY_RECENT_SEARCHES, state.recentSearches);
@@ -3907,6 +3922,11 @@
   if (videoPartFilter) videoPartFilter.addEventListener("change", () => onSearchInputDebounced("part"));
   if (optMatchExact) {
     optMatchExact.addEventListener("change", () => {
+      onSearchInputDebounced();
+    });
+  }
+  if (optTabCategoryOnly) {
+    optTabCategoryOnly.addEventListener("change", () => {
       onSearchInputDebounced();
     });
   }
