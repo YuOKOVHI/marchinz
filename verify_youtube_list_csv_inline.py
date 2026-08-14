@@ -72,6 +72,26 @@ def load_rows_from_inline() -> tuple[list[dict[str, str]] | None, str]:
     return rows, ""
 
 
+def find_duplicate_urls(rows: list[dict[str, str]]) -> list[str]:
+    """チャンネルURLの重複を検出する。
+
+    2026-08-14、マージのやり直しでCSVが「61チャンネルぶん丸ごと2連結」
+    されて123行になり、件数一致だけを見るこの検証を素通りして本番公開
+    された事故があった(トップの半分が同じチャンネルの二重カードになる)。
+    件数一致では重複を検知できないため、URL単位でも見る。
+    """
+    seen: dict[str, int] = {}
+    dups: list[str] = []
+    for r in rows:
+        u = (r.get("チャンネルURL") or "").strip()
+        if not u:
+            continue
+        seen[u] = seen.get(u, 0) + 1
+        if seen[u] == 2:
+            dups.append(u)
+    return dups
+
+
 def verify_youtube_csv_inline_match() -> tuple[bool, str]:
     csv_rows, err = load_rows_from_csv()
     if csv_rows is None:
@@ -83,6 +103,13 @@ def verify_youtube_csv_inline_match() -> tuple[bool, str]:
         return (
             False,
             f"YouTubeリスト: チャンネル数不一致 CSV={len(csv_rows)} inline={len(inl_rows)}",
+        )
+    dup_urls = find_duplicate_urls(csv_rows)
+    if dup_urls:
+        return (
+            False,
+            f"YouTubeリスト: チャンネルURLが重複({len(dup_urls)}件、例: {dup_urls[0]!r})"
+            " — マージのやり直しでデータが二重連結された疑い。件数一致だけでは検知できない",
         )
     header_keys = list(csv_rows[0].keys())
     for i, (ra, rb) in enumerate(zip(csv_rows, inl_rows)):
