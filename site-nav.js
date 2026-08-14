@@ -1303,6 +1303,20 @@
         ],
       },
       {
+        name: "Funliner Productions",
+        url: "https://www.youtube.com/@funlinerproductions7071",
+        category: "マーチング配信",
+        logo: "https://yt3.googleusercontent.com/nvDOheQjLtOwNQr7Y_CU6KY-zGTpuG7mQdpE7Fvrybiiee-yk2gyNITNHtSKoZrX9dVIyzhy=s900-c-k-c0x00ffffff-no-rj",
+        // 優さん指定の固定枠(2026-08-13)。日次botの最新/人気に流されない
+        recommended: "lnL5MhwVbcM",
+        thumbnails: [
+          "https://i.ytimg.com/vi/lnL5MhwVbcM/hqdefault.jpg",
+          "https://i.ytimg.com/vi/CTjIYGymjgE/hqdefault.jpg",
+          "https://i.ytimg.com/vi/HzGN9w0dd0s/hqdefault.jpg",
+          "https://i.ytimg.com/vi/0UL-yp2Ezkg/hqdefault.jpg",
+        ],
+      },
+      {
         name: "Yokohama INSPIRES Drum & Bugle Corps",
         url: "https://www.youtube.com/@yokohamainspiresdrumbuglec9551",
         category: "一般",
@@ -2377,192 +2391,116 @@
       vmeJ3fyySws: "2026/3/14",
     };
     let videoTitleById = {
+
       "-8cFp3h6bEw": "Indigoes2011 Recruit",
+
+      "0UL-yp2Ezkg": "CAROLINA CROWN 2026 | Funliner Reacts",
+
       "0VWxLDWkbU0": "第59回 関東大会「銀翼〜空への挑戦〜」鵠沼高校マーチングバンド部AN2024",
+
       "12wga6kwkAE": "FMドリスカ　リスナー感謝祭　公開収録直前SP#2",
+
       "1T-rKGBlZ78": "【関西大会金賞!!】宇宙の音楽／京都両洋高校吹奏楽部",
-      "2YKde7XQhKI": "2019 大濠高校 マーチング 【 UNBA∠ANCE 】Timpani Cam",
-      "2k_Kj2G7zN0": "2023 Show Program “The Strides to HAPPINESS”",
-      "3DeziGx2qqo": "【第51回全国大会】2023 show theme「@All」｜GENESIS【マーチング】",
-      "3rgxCdI8M4E": "【本番直前】GENESIS LIVE2026ホールリハ",
-      "4-oSeinpKjI": "【驚愕NEWS】マーチングバンドGENESISに疑惑？？",
-      "4MozbWYxjgo": "京都橘高校吹奏楽部 台湾公演(マーチングステージ)",
-      "4SbK2aCtAzA": "創志学園高校さんの入学式に出演させていただきました！",
-      "4xkLSJOZ87U": "2025 DCJ ALL JAPAN CHAMPIONSHIPS 横浜市立太尾小学校マーチングバンド",
-      "5XjWMRlbPKI": "農大二高：「台湾遠征：嘉義市役所前フラッシュモブ」",
-      "5zVLIM_PqcY": "【Performance shot】Season4 Program  “アイデンティティ”",
-      "6WXGK3eEpek": "2016年5月　台湾遠征",
-      "6YJ4WbFX-8E": "青鷹2025 ”全国直前リハーサル”",
-      "6d5jjGv_Iyo": "【ジュニアマーチングバンド Be-Lights】ドッキリ成立なるか！？～変装して潜入！〜",
-      "6ovjQBRJ6t8": "Boston Crusaders 優勝 ! 愛町メンバーにインタビュー（伊藤ここね、佐野美和）",
-      "6rHvPKeDa6g": "京都橘高校吹奏楽部 台湾西門町パレードｰダイジェスト",
-      "7pYTWatr__s": "自主公演特別演目「カリスマックス」",
-      "85z2E5MM6JA": "【淀工吹奏楽部】1000人の合同演奏 アルメニアンダンス・パートⅠ（2009）",
-      "8NqRfDfMfIo": "湘南台高校WSS Promotion Video",
-      "8R1H14J8JIs": "【ライティング】フィールドアート2026【マーチング】",
-      "9JV3TWfU1sI": "10月18日　2025 DCJプレリムオープン　東京実業高等学校Phoenix Regiment",
-      "9YEZC5wOQ0M": "SENDAI Verdures DCJ All Japan Championships 2025",
-      "9h9Ys1ti8PI": "【GracefulSpirit2023】Snare cam 最後の審判 〜The Last Judgment〜 Chiba Keiai High School Marchingband",
-      A9LC4uRTkck: "SENDAI Verdures トランペット二重奏「Super Duets(P.Sparke)」より抜粋",
-      AWMQboR5slc: "2022 The Yokohama Scouts \" The Courage to Dream \"",
-      "DBST-MK3oLs": "青鷹2025 \"影法師\"",
-      "EW-cKOKVSuo": "Albireo Nova 3rd Concert",
-      EzTtv0EHCjY: "【生配信!!】MIX3 関西奈良オープン NARAGAKU Marching Band",
-      FA3b26ImHxY: "創部100周年コール",
-      FYT5XXMbSnM: "[期間限定公開]第52回神戸まつり",
-      FpnCNTURvqQ: "農大二高：「インフェルノ・トゥ・ヘブン」（第68回定期演奏会）",
-      FtobkfJbzWw: "SONIC LANCERS ソニック ランサーズ | GUEST【PRIDE OF ESTEAM】 | SONIC LANERS HEAVEN 2024' My JAM!",
-      "GI4Cg9kP-_E": "2019 大濠高校 パーカッションコンテスト",
-      GshxNMbDfGg: "農大二高：「千と千尋の神隠し」（第68回定期演奏会）2025年12月28日",
-      HGv6UUHRHtY: "【東海オープン】2026 MIX3™️ / スリークロス 東海オープン｜2026/3/29",
-      Hp2GkWXT7qU: "SONIC LANCERS ソニック ランサーズ | 2024 show | BRAVEHEART",
-      "IQxpDRjE-NE": "【カラーガード全国大会金賞】Revolt colorguard 2025\"Not Machines\"",
-      IXA5utFNtaA: "ZAURUS CONCERT Vol.4 Pit Show \"Zaurus Pit 2025~Side by side~\"",
-      I_2yXCbOekU: "Silent Drill / JOKERS 【2025 HCD】",
-      IaBdAbAk3uc: "2025年度定期演奏会ダイジェスト",
-      J0_Ugul83vQ: "11月16日　TOKYO GUNDAM festivl 東京実業高等学校Phoenix Regiment",
-      JFbOekcHNYE: "全国大会本番映像！【ZODIAC】四條畷学園高等学校 マーチングバンド部 Burning Bravers",
-      JhgyKp9rhh4: "「影法師」　｜青鷹2025 season",
-      JshBoHdjAwk: "滝川第二高等学校吹奏楽部［オープンスクール2025］",
-      KIpQ26ABDSY: "【マーチング】GENESIS collection｜GENESIS LIVE 2023【ステージドリル】",
-      KLE9tyA74fU: "【マーチング】「Flowers for Algernon」フルショー【DER GLANZ】",
-      KOzMrnKMT4Y: "【INSIDE Aimachi】EP.19 -2024 Finals-",
-      KkD1tRcnRqM: "Istanbul Odyssey／Tokushima Indigoes 2023",
-      KmKjzwZknjM: "ブラスのMM練習の模様をお届けします！",
-      L_pT4ES0JWU: "2025 DCJ ALL JAPAN CHAMPIONSHIPS 横浜市立平安小学校マーチングバンド",
-      La34YKX4kEY: "2025 Yokohama INSPIRES presents \"Viva Las Vegas!\"",
-      "LmJn9Gmpq-g": "【GracefulSpirit2023】Promotion Video 最後の審判 〜The Last Judgment〜Chiba Keiai High School Marchingband",
-      LonYKKy9nx8: "【マーチング】Tank! ｜演奏してみた【カウボーイビバップ】GENESIS",
-      MQohaCSvaxg: "A Fool in The mirror | Hands on the Land / JOKERS 【2025 HCD】",
-      MX2ZM2HRmCc: "今年もたくさんの新入生を迎えました！",
-      MfIeHdURVZI: "Via Colorguard Season11 Program \"STYLE WARS\"",
-      Mv2QKE87ek8: "『大洗八朔祭』",
-      O2eOh7RUuZM: "Superhero",
-      vzYGnnISEKw: "第74回 ザ よこはまパレード出演 ダイジェスト",
-      OE85AHEFCYY: "第97回かながわ県中央地域メーデー 出演",
-      "OkrDoYl0t-w": "GENESISのリアル新歓2025｜越谷レイクタウン！BBQで仲間と大笑い",
-      PW6SBgNSBk8: "Legend of ANGELS 2025『ゲキカラ！』【マーチング】",
-      Q69OQls69w4: "創価ルネサンスバンガード 2024 THEME TITLE",
-      Q9596NMszjU: "農大二高：「クレヨンしんちゃん」（第68回定期演奏会）2025年12月28日",
-      QBCPXv_zxdc: "ブラスの楽器動作の練習模様を公開！",
-      QUsjAXxonMs: "【Inside KGMB】 vol.41「2025マーチングバンド全国大会前日練習」｜関東学院マーチングバンド",
-      QcBFtjqiYkU: "活水中学校・高等学校吹奏楽部 2025年11月演奏ダイアリー📔",
-      R1L1HN8jYUg: "【茨城県】17年振り快挙のウラ側！「Look at Me」&シーズン深掘り解説！【COURAGE LIVE】",
-      Rg0X_kWoYcE: "”BigThree” -snare ensemble-【FMドリスカ リスナー感謝祭】",
-      S1aPAia3jvY: "【2025年ありがとうございました！】リボラジ実写版！年末スペシャル",
-      S2xPhSiQ8Ls: "【Inside KGMB】 vol.43「第68回定期演奏会 -part1-」演奏会直前リハーサル！｜関東学院マーチングバンド",
-      S7CTHK_RPfE: "SONIC LANCERS ソニック ランサーズ | Bohemian Rhapsody  | SONIC LANERS HEAVEN 2024' My JAM!",
-      SOmsZEwktkY: "【マーチング】[MB] 20241215 [JMBA National] KANUMA SATSUKI DREAMERS \"Raga -Landscapes of India-\" [Full]",
-      SSCL72YoCdE: "【COURAGE】2025.11.9 関東大会「Look at Me~To the Stage of Dreams~」",
-      SrHSVARVWY8: "【マーチング】[MB] 20251207 [JMBA National] KANUMA SATSUKI DREAMERS \"雨過天晴～芭蕉、おくのほそ道を往く～\" [Full]",
-      SynVyzbifb0: "ZAURUS CONCERT Vol.4 Battery Show Dramatic Drummer",
-      TbKA95P1y70: "東京都大会　東京実業高等学校Phoenix Regiment",
-      TzhNIBzjRJk: "【Mix】2025「The Last Night of Saigon」全国大会出場動画",
-      U5ds0IJZmLI: "活水中学校・高等学校吹奏楽部 2026年3月演奏ダイアリー📔",
-      UsyzwgUQ3ts: "2021 TP monochrome",
-      VXZWoKcmMZ0: "『アニソン』Hit Parade 四條畷学園高等学校マーチングバンド部 Burning Bravers 第38回定期演奏会 WING CONCERT 2026",
-      W5OCs5rigJk: "【代表同士のぶっちゃけトーク！】リボラジ！第25回　ゲストVia Colorguard代表 TUNA.",
-      WFTu5moizog: "SENDAI Verdures 金管七重奏「マンモス･ケーブの軌跡」",
-      "WToG-UGq5GY": "【ダイジェスト🎥】260222DER_GLANZコンサート",
-      YI3IkUwWuBE: "2020 TP Emotions ablaze",
-      YP1oERLuqeY: "S.P.Y ～Secret party of yokefellow～ Full Show multi cam 【Graceful Spirit 2024】",
-      Z6k5j1VP5_s: "創価ルネサンスバンガード 2025 THEME TITLE",
-      _1qnl2TBs20: "COLOR 予告動画",
-      _MBlvGdfAJ0: "【Full shot】2025「The Last Night of Saigon」全国大会出場動画",
-      _Qa0jJQUe6Y: "響け！ユーフォニアムの聖地で「プロヴァンスの風」を演奏してみた！",
-      _Zz4CX5yh10: "2024 TP わらべうた",
-      _fv8gqR6FMY: "【Inside KGMB】 vol.42「マーチングステージ全国大会&定期演奏会に向けて」｜関東学院マーチングバンド",
-      _gZMLqdQjXw: "【Via Jr.  〜チームZoo〜】2026スリークロス Div.1 FINAL【Director's Cut】",
-      aAFuaVPafUA: "創価ルネサンスバンガード 2023メインショー「粋・HOKUSAI〜一筆に込めた不屈の志(こころ)〜」",
-      alfvvj4PgOQ: "【NGM-log】 NARAGAKU Live 2026 Behind vlog",
-      bHsTHVkOAKQ: "【日本舞踊×マーチング】煌めく京の姫物語／京都両洋高校吹奏楽部",
-      bMYAfSOgvWs: "2023 TP green leaves",
-      bd5UYGBoEBs: "湘南台高校WSS 2023 \"Chameleon Patrol\" JMBA The 51st National Championship",
-      "cM53weq-1w4": "ルイブルジョアの讃美歌による変奏曲／京都両洋高校吹奏楽部",
-      cyMvNGDcRLQ: "【緊急告知!!】NARAGAKU Live 2026 開催！！",
-      d1XVDUKH7dQ: "Legend of ANGELS 2024 『Electricity』【マーチング】",
-      dA7FSojZnCo: "湘南台高校WSS 2025 \"CoMiX\" JMBA The 53rd National Championship",
-      "dJ7c6-Wzed4": "2025_DER_GLANZコンサート ２部",
-      dMh4dhgwEuM: "2025/11/09 関東大会　東京実業高等学校Phoenix Regiment",
-      dZigNOX9sds: "YouTubeで見る",
-      d_nCThWwKj4: "創価ルネサンスバンガード 2022 メインショー「UNLOCK〜新たな光に向かって〜」",
-      e18yN2ZaHq0: "SENDAI Verdures 2025年度全国大会「”V”lizzard」",
-      e4F5V2D4P8Y: "【Relic】四條畷学園高等学校マーチングバンド部 Burning Bravers　第38回定期演奏会 WING CONCERT 2026",
-      e8qKX0dX8BQ: "エールズご支援に感謝【全員で御礼篇】",
-      etz7gj7qJVQ: "\"STYLE WARS\" Outtake",
-      fBBGst2WQ0w: "Via Colorguard Jr. のライブ配信",
-      faU99xUKxJQ: "マーチング祭 湘南藤沢「銀翼〜空への挑戦〜」鵠沼高校マーチングバンド部AN2024",
-      gXORjDZnq04: "NARAGAKU Marching Band 2025『EN GARDE〜覚悟を決めろ〜』【4K】",
-      gcdSqSGH3L8: "INSPIRIT～Superhero～",
-      "h-kMmQw5FQ0": "【GracefulSpirit2023】Fullshot＋Tenor Cam 最後の審判〜The Last Judgment〜Chiba Keiai High School Marchingband",
-      hBUWObLutRA: "Carnival Night / JOKERS 【2025 HCD】",
-      hF2Dx4mRb3k: "Aimachi Drumline 2024 Warmup",
-      hZNbTItbd4I: "愛町マーチングバンド2025 『中心 〜JOURNEY TO THE CORE〜』",
-      hqKYgm2YPhc: "Via Colorguard Season10 Program \"Press start\"",
-      jLnXRrpljIU: "2025 DCJ ALL JAPAN CHAMPIONSHIPS 横浜市立西谷中学校マーチングバンド部 Splash Hearts",
-      jMikVRlXE0o: "Color Guard【パート紹介】",
-      jdrSQdEK1pQ: "京都橘高校吹奏楽部第61回定期演奏会 メイキング映像",
-      "k-QcvPLxoGQ": "京都橘高校吹奏楽部第60回定期演奏会 メイキング映像",
-      k54QTSmJyis: "HP　訂正",
-      "kMyJF4dZ-g8": "【ライブ】2026 MIX3™️ / スリークロス山形OPEN｜2026/3/29【マーチング】",
-      kkioMNNhleU: "Tango Nuevo Astor Piazzolla／Tokushima Indigoes 2024",
-      kn4ohkuEhZY: "【Red Warriors】四條畷学園高等学校マーチングバンド部 Burning Bravers　第38回定期演奏会 WING CONCERT 2026",
-      ktSQPm8RrJU: "2025 DCJ ALL JAPAN CHAMPIONSHIPS FUKUOKA DreamScouts performance corps",
-      l1zJ2XxWjqo: "【Full shot】Season4 Program “アイデンティティ” 〜full shot〜",
-      l8F9K17MAfA: "2020 WHITE GALAXY クリスマスメドレー【マーチングブラス＆パーカッション演奏】",
-      "lSm-i0pRZeA": "MARCHING BAND COURAGE 2025 Sideshow【MOMENTUM】",
-      lhi6QGcwMGo: "SONIC LANCERS ソニック ランサーズ | Malagueña | SONIC LANERS HEAVEN 2024' My JAM!",
-      "n17EPBV18-M": "2024 Concert \" Bonne Bouche de HAPPINESS \"",
-      nDIB2rczuUI: "Phoenix Regiment 2026/01/25Crowdfunding Start.#マーチングバンド #drumcorps #fyp",
-      nDIDSipebTY: "【COURAGE】2025.12.7 マーチングバンド全国大会 ※再アップ",
-      nDxMVsTvdrw: "FUKUOKA DreamScouts performance corp 2024season メンバー募集‼️",
-      nGriCxIbOOI: "第25回サマーコンサート コバにゃん☆さんのキャッチ挨拶パロディ",
-      oKRQSZkCSh4: "【淀工吹奏楽部】歌劇「アイーダ」第二幕より 凱旋行進曲とバレエ音楽（2022）",
-      "oSP-SW-Up_M": "～IWATO～ / JOKERS 【2025 Main Show】 WMP",
-      pCevh31HDC8: "【マーチング】12+（Twelve Plus）｜GENESIS LIVE 2023【ステージドリル】marching band GENESIS",
-      peaKgHzPdqQ: "Zaurus Award 2025 授与式",
-      "qOboab-c8ak": "活水中学校・高等学校吹奏楽部 2025年12月演奏ダイアリー📔",
-      qYIJXG_XDUg: "【淀工OB吹奏楽団】アメリカングラフィティーXV（2017）",
-      qqf5VixBnlU: "ZAURUS CONCERT Vol.4 Brass  Ensemble \"There A Great Day Coming\"",
-      qrRESxrwHm8: "【淀工吹奏楽部】コンサートマーチ Number1（2017）",
-      qtwsPEUi_K8: "【祝全国!!!!】Milky Way〜天の川の伝説／京都両洋高校吹奏楽部",
-      r0y7EHWqnSs: "2018年7月 天津遠征",
-      ri1K7s4cq9o: "【関東学院マーチングバンド】第68回定期演奏会 PV",
-      rnfB71T_PmA: "【関西CS】2026 MIX3™️ / スリークロス 関西CS｜2026/4/26",
-      ru_KM9w1GIE: "湘南台高校WSS 2024 \"WAVES\" JMBA The 52nd National Championship",
-      "sEX_Uj6-szI": "INSPIRIT〜Superhero〜　Opener",
-      sEevfI4VrGk: "香水",
-      sXUDBOFOCVw: "COLOR / IK ALUMNI CGT 2026",
-      tRbc6Szj9mc: "大和市民祭2025「QUGE ROCK」鵠沼高校マーチングバンド部AN",
-      uJYRxkAByl0: "2025_DER_GLANZコンサート １部",
-      uWwCquBqEbo: "2019 大濠高校 カラーガードコンテスト",
-      v0i8LFKTzWM: "JUNGLIA  / GIFUSHO BAND MARCHING SHOW 2025",
-      vB4cRF2WftQ: "【17年ぶりの全国出場・金賞！茨城県の古豪クレージュさんの2025年シーズンは！？】リボラジ第24回",
-      vmeJ3fyySws: "Via Colorguard Via Colorguard Jr. 合同自主公演ライブ配信",
-      w8nMzNLrk6Y: "【カラーガード】YOASOBI \"ラブレター / LOVE LETTER\"  | Color Guard Team MINERVA",
-      eoFRft2pEaY: "【カラーガード】\"あいとわ - Pray for 3.11 Version\"  | Color Guard Team MINERVA",
-      YPVPPnewwEk: "WGI Japan 2020 3rd place 「Worth Standing Up For」Color Guard Team MINERVA",
-      k6M8zCK3ViA: "【カラーガード】MINERVA×VOXV \"CURTAIN CALL\"  | Color Guard Team MINERVA",
-      wn0g6TjLDZI: "2025 大濠高校 パレードコンテスト 【 大濠電車でGO！ 】",
-      yN3lIkgV9iY: "2024 大濠高校 マーチング  【パイレーツ・オブ・ホリビアン】",
-      "yQiUBTi-2Es": "【パーカッション】Unbreakable Diamond【マーチング】",
-      yZwRoCpiu8Y: "Fiesta!Fiesta!!Fiesta!!!／Tokushima Indigoes Drum&Bugle Corps 2025",
-      y_8vhNwOCaw: "活水中学校・高等学校吹奏楽部 2026年2月演奏ダイアリー📔",
-      "yjZRBWu-wVI": "2023 POWER & PASSION",
-      yk1dM0EVeIA: "FMドリスカ　リスナー感謝祭　公開収録直前SP#1",
-      zPrYC0efNLk: "【綾北“Mercury winds” 】2026スリークロス Div.1 FINAL【Director's Cut】",
-      "YQ_s52PCy-Q": "【Marchig Matsuri Shonan Fujisawa Open 2025 Intermission】allure×Instant corps #marchingmatsuri #マーチング",
-      nRwVpFd6gZE: 'allure2025 mix3 show program "Я I И N Ǝ" ~ 巡る輪廻と運命の導き~',
-      "6Q7xBO8Nnjg": "allure 2024 Echo of the Soul ~共鳴の旋律~ Last Music Run-through #マーチング #allure2024",
+
       "2ESFmUgxMnc": "allure 2024 Echo of the Soul ~共鳴の旋律~ MarchingMatsuri Yokohama Final 12.28 MULTI-CAM｜FINAL ROUND",
+
+      "2YKde7XQhKI": "2019 大濠高校 マーチング 【 UNBA∠ANCE 】Timpani Cam",
+
+      "2k_Kj2G7zN0": "2023 Show Program “The Strides to HAPPINESS”",
+
+      "3DeziGx2qqo": "【第51回全国大会】2023 show theme「@All」｜GENESIS【マーチング】",
+
+      "3rgxCdI8M4E": "【本番直前】GENESIS LIVE2026ホールリハ",
+
+      "4-oSeinpKjI": "【驚愕NEWS】マーチングバンドGENESISに疑惑？？",
+
+      "4MozbWYxjgo": "京都橘高校吹奏楽部 台湾公演(マーチングステージ)",
+
+      "4SbK2aCtAzA": "創志学園高校さんの入学式に出演させていただきました！",
+
+      "4xkLSJOZ87U": "2025 DCJ ALL JAPAN CHAMPIONSHIPS 横浜市立太尾小学校マーチングバンド",
+
+      "5XjWMRlbPKI": "農大二高：「台湾遠征：嘉義市役所前フラッシュモブ」",
+
+      "5zVLIM_PqcY": "【Performance shot】Season4 Program  “アイデンティティ”",
+
       "6-JYneJC6fQ": "【カラーガード】振り付け集 Aimer - ONE | #shorts #カラーガード #マーチング #colorguard #marchingband",
+
+      "6Q7xBO8Nnjg": "allure 2024 Echo of the Soul ~共鳴の旋律~ Last Music Run-through #マーチング #allure2024",
+
+      "6WXGK3eEpek": "2016年5月　台湾遠征",
+
+      "6YJ4WbFX-8E": "青鷹2025 ”全国直前リハーサル”",
+
+      "6d5jjGv_Iyo": "【ジュニアマーチングバンド Be-Lights】ドッキリ成立なるか！？～変装して潜入！〜",
+
+      "6ovjQBRJ6t8": "Boston Crusaders 優勝 ! 愛町メンバーにインタビュー（伊藤ここね、佐野美和）",
+
+      "6rHvPKeDa6g": "京都橘高校吹奏楽部 台湾西門町パレードｰダイジェスト",
+
       "73bjO5p08L8": "史上初！２本同時投げ",
+
+      "7pYTWatr__s": "自主公演特別演目「カリスマックス」",
+
       "8-VsguPEbuU": "【カラーガード】MINERVAフラッグトス集#2 | Flag Toss & Tricks #Shorts #カラーガード #マーチング",
-      BQG9ufw7faQ: "二刀流 ③",
-      amcpfT6L2Uo: "【カラーガード】振り付け集 official髭男dism-ミックスナッツ part 2 | #shorts #カラーガード #マーチング #colorguard #marchingband",
-      hhTUgYQAGQ0: "boom rifle",
-      m7yBzuQOA04: "MINERVAライフルトス集#17 セイバー×ライフルコンビネーション  | #shorts #カラーガード #マーチング #colorguard #marchingband",
-      xQ6GHfHdMag: "二刀流 ②",
+
+      "85z2E5MM6JA": "【淀工吹奏楽部】1000人の合同演奏 アルメニアンダンス・パートⅠ（2009）",
+
+      "8NqRfDfMfIo": "湘南台高校WSS Promotion Video",
+
+      "8R1H14J8JIs": "【ライティング】フィールドアート2026【マーチング】",
+
+      "9JV3TWfU1sI": "10月18日　2025 DCJプレリムオープン　東京実業高等学校Phoenix Regiment",
+
+      "9YEZC5wOQ0M": "SENDAI Verdures DCJ All Japan Championships 2025",
+
+      "9h9Ys1ti8PI": "【GracefulSpirit2023】Snare cam 最後の審判 〜The Last Judgment〜 Chiba Keiai High School Marchingband",
+
+      "CTjIYGymjgE": "IN THE LOT: Bluecoats Brass 2026",
+
+      "DBST-MK3oLs": "青鷹2025 \"影法師\"",
+
+      "EW-cKOKVSuo": "Albireo Nova 3rd Concert",
+
+      "GI4Cg9kP-_E": "2019 大濠高校 パーカッションコンテスト",
+
+      "HzGN9w0dd0s": "BOSTON CRUSADERS 2026 | Funliner Reacts",
+
+      "IQxpDRjE-NE": "【カラーガード全国大会金賞】Revolt colorguard 2025\"Not Machines\"",
+
+      "LmJn9Gmpq-g": "【GracefulSpirit2023】Promotion Video 最後の審判 〜The Last Judgment〜Chiba Keiai High School Marchingband",
+
+      "OkrDoYl0t-w": "GENESISのリアル新歓2025｜越谷レイクタウン！BBQで仲間と大笑い",
+
+      "WToG-UGq5GY": "【ダイジェスト🎥】260222DER_GLANZコンサート",
+
+      "YQ_s52PCy-Q": "【Marchig Matsuri Shonan Fujisawa Open 2025 Intermission】allure×Instant corps #marchingmatsuri #マーチング",
+
+      "cM53weq-1w4": "ルイブルジョアの讃美歌による変奏曲／京都両洋高校吹奏楽部",
+
+      "dJ7c6-Wzed4": "2025_DER_GLANZコンサート ２部",
+
+      "h-kMmQw5FQ0": "【GracefulSpirit2023】Fullshot＋Tenor Cam 最後の審判〜The Last Judgment〜Chiba Keiai High School Marchingband",
+
+      "k-QcvPLxoGQ": "京都橘高校吹奏楽部第60回定期演奏会 メイキング映像",
+
+      "kMyJF4dZ-g8": "【ライブ】2026 MIX3™️ / スリークロス山形OPEN｜2026/3/29【マーチング】",
+
+      "lSm-i0pRZeA": "MARCHING BAND COURAGE 2025 Sideshow【MOMENTUM】",
+
+      "lnL5MhwVbcM": "This marching band from Japan is INSANE",
+
+      "n17EPBV18-M": "2024 Concert \" Bonne Bouche de HAPPINESS \"",
+
+      "oSP-SW-Up_M": "～IWATO～ / JOKERS 【2025 Main Show】 WMP",
+
+      "qOboab-c8ak": "活水中学校・高等学校吹奏楽部 2025年12月演奏ダイアリー📔",
+
+      "sEX_Uj6-szI": "INSPIRIT〜Superhero〜　Opener",
+
+      "yQiUBTi-2Es": "【パーカッション】Unbreakable Diamond【マーチング】",
+
+      "yjZRBWu-wVI": "2023 POWER & PASSION",
     };
 
     const normalizeYoutubeChannelUrl = (url) => {
@@ -2675,6 +2613,15 @@
       const existingCategoryByUrl = new Map(
         channels.map((c) => [normalizeYoutubeChannelUrl(c.url), c.category || "一般"]),
       );
+      // ★人が名簿(site-nav.js)へ手で書いた値は、CSVで名簿を差し替えても
+      //   引き継ぐ。CSVはbotの生成物なのでこの列を持っておらず、
+      //   引き継がないと「オススメ」の固定が実行時に黙って消える
+      //   (カテゴリと同じ扱い。受け取り経路で落とさないこと)。
+      const existingRecommendedByUrl = new Map(
+        channels
+          .filter((c) => String(c.recommended || "").trim())
+          .map((c) => [normalizeYoutubeChannelUrl(c.url), String(c.recommended).trim()]),
+      );
 
       const newChannels = [];
       const newVideoMetaByUrl = {};
@@ -2729,6 +2676,10 @@
           name,
           url,
           category: existingCategoryByUrl.get(url) || "一般",
+          // 名簿側の手書き値。無ければ付けない(既存チャンネルの挙動を変えない)
+          ...(existingRecommendedByUrl.has(url)
+            ? { recommended: existingRecommendedByUrl.get(url) }
+            : {}),
           logo,
           thumbnails: thumbs,
         });
@@ -2862,6 +2813,8 @@
 
     function buildYoutubeFourThumbIds(meta, fallbackIds, options = {}) {
       const allowShortFallback = options.allowShortFallback === true;
+      // 人が固定した「オススメ」。日次botの最新/人気より優先して枠を取る
+      const pinned = String(options.pinned || "").trim();
       const v = (x) => String(x || "").trim();
       const isAllowedId = (id) => {
         const vv = v(id);
@@ -2871,11 +2824,13 @@
       const f = (fallbackIds || []).map(v).filter(isAllowedId);
       const fAny = (fallbackIds || []).map(v).filter(isAnyVideoId);
       // 4枠の優先順位（重複除外・ショート除外）。
+      // 0. オススメ(人が固定。指定があるときだけ)
       // 1. 最新動画 2. 最新LIVE 3. 動画視聴回数1位 4. LIVE視聴回数1位
       // 5. 動画視聴回数2位 6. 動画視聴回数3位 7. 動画視聴回数4位
       // 8. LIVE視聴回数2位 9. LIVE視聴回数3位 10. LIVE視聴回数4位
       {
         const priorityThumbIds = [
+          pinned,
           v(meta.latestVideo),
           v(meta.latestLive),
           v(meta.popularVideo),
@@ -2991,7 +2946,17 @@
       return out.slice(0, 4);
     }
 
-    function buildThumbBadgeMap(meta) {
+    /**
+     * チャンネルに「オススメ」として手で固定した動画IDを返す(無ければ "")。
+     *
+     * botが毎日書き換える最新/人気の枠と違い、ここは人が選んで据え置く枠。
+     * 名簿(site-nav.js)の recommended に置くので、日次更新で流れない。
+     */
+    function pinnedRecommendedId(item) {
+      return String((item && item.recommended) || "").trim();
+    }
+
+    function buildThumbBadgeMap(meta, item) {
       const v = (x) => String(x || "").trim();
       const order = [
         v(meta.latestVideo),
@@ -3007,10 +2972,18 @@
       ];
       const labels = ["NEW", "TOP1", "TOP2", "TOP3"];
       const m = new Map();
+      // 「オススメ」は人が固定した枠なので、自動採番(NEW/TOP1..)の外に置く。
+      // 先に登録して、同じ動画が最新や人気で来ても上書きされないようにする。
+      const pinned = pinnedRecommendedId(item);
+      if (pinned) {
+        m.set(pinned, { id: pinned, label: "オススメ", rank: "pick" });
+      }
       for (const id of order) {
         if (!id || m.has(id)) continue;
         if (m.size >= labels.length) break;
-        const idx = m.size;
+        // 固定枠が1つ埋まっているぶん、自動採番は前へ詰めない
+        const idx = pinned ? m.size - 1 : m.size;
+        if (idx >= labels.length) break;
         m.set(id, { id, label: labels[idx], rank: idx });
       }
       return m;
@@ -3189,9 +3162,10 @@
       thumbs.className = "youtube-thumb-list";
       const fallbackIds = fallbackThumbIdsFor(item);
       const meta = resolvedMetaFor(item);
-      const badgeMap = buildThumbBadgeMap(meta);
+      const badgeMap = buildThumbBadgeMap(meta, item);
       const thumbIds = buildYoutubeFourThumbIds(meta, fallbackIds, {
         allowShortFallback: false,
+        pinned: pinnedRecommendedId(item),
       });
       const [t1, t2, t3, t4] = thumbIds;
       thumbIds.forEach((vid) => {

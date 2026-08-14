@@ -9910,6 +9910,13 @@ html.calendar-ev-compose-active #calendar-edit-overlay {
   border-color: rgba(253, 186, 116, 0.72);
 }
 
+/* オススメ = 人が選んで固定した枠。botが毎日入れ替える NEW/TOP と
+   同じ色にすると「自動で出た枠」と見分けが付かないので別の色を当てる */
+.youtube-thumb-badge--rank-pick {
+  background: rgba(29, 78, 216, 0.95);
+  border-color: rgba(191, 219, 254, 0.75);
+}
+
 .youtube-thumb-title {
   position: absolute;
   left: 0.28rem;
