@@ -106,14 +106,21 @@
     synth: { label: "Synth", terms: ["synth"] },
     rack: { label: "Rack", terms: ["rack"] },
   };
-  /** 大会動画・初期表示で必ず先頭に試す団体（順固定・各1動画・最大3枠）。動画が無い団体はスキップ。 */
-  const INITIAL_RANDOM_PRIORITY_SLOTS = 3;
+  /** DrumcorpsfunTVの既存優先判定に使うチーム名。初期表示の順番は固定しない。 */
   const INITIAL_RANDOM_PRIORITY_TEAMS = [
     "インスタントコー",
     "YOKOHAMA ROBINS",
     "THE FOCUS",
   ];
   const INITIAL_RANDOM_TEAM_SET = new Set(INITIAL_RANDOM_PRIORITY_TEAMS);
+  /** MIX3の初期表示で出会いを作る候補。各チームから1本ずつ、順番は毎回シャッフルする。 */
+  const MIX3_INITIAL_RANDOM_PRIORITY_TEAMS = [
+    "allure",
+    "岐阜商業高校吹奏楽部 カラーガード",
+    "井上 こすず",
+    "インスタントコー",
+    "Splendore",
+  ];
 
   const state = {
     rows: [],
@@ -2008,8 +2015,19 @@
     state.filtered = sourceRows.filter((row) => filterPredicate(row));
     renderYearFilter(sourceRows.filter((row) => filterPredicate(row, { skipYear: true })));
     if (shouldUseInitialRandom()) {
-      const matsuriOnly = state.filtered.filter((row) => isMarchingMatsuriVideo(row));
-      state.filtered = applyInitialRandomOrder(matsuriOnly);
+      if (state.tab === "マーチング団体等") {
+        // 既存の「マーチング祭の動画だけ」という対象ルールは維持し、
+        // 固定チームの優先順だけを外して毎回ランダムにする。
+        const matsuriOnly = state.filtered.filter((row) => isMarchingMatsuriVideo(row));
+        state.filtered = shuffleArray(matsuriOnly);
+      } else {
+        // MIX3は指定チームを先頭候補に含めつつ、候補の順番も残りの動画も毎回変える。
+        state.filtered = applyInitialRandomOrder(
+          state.filtered,
+          MIX3_INITIAL_RANDOM_PRIORITY_TEAMS,
+          MIX3_INITIAL_RANDOM_PRIORITY_TEAMS.length
+        );
+      }
     } else if (shouldUseUnfilteredCategoryRandom()) {
       // 海外・POVは、検索前だけその分類の中で出会いを作る。
       state.filtered = shuffleArray(state.filtered);
@@ -2106,9 +2124,9 @@
   }
 
   function shouldUseInitialRandom() {
-    // 「マーチング祭だけをランダム表示」はマーチング等タブの初期表示専用。
-    // MIX3・海外へ適用すると、その分類の動画がすべて0件になる。
-    if (state.sortExplicit || state.tab !== "マーチング団体等") return false;
+    // 国内2分類（マーチング等・MIX3）の検索条件なし初期表示だけをランダム化する。
+    // 海外・POVは既存どおり配信日の新しい順を維持する。
+    if (state.sortExplicit || !CROSS_SEARCH_CATEGORIES.includes(state.tab)) return false;
     return hasNoVideoSearchConditions();
   }
 
@@ -2126,9 +2144,32 @@
     return false;
   }
 
+  function normalizeInitialPriorityTeam(value) {
+    return String(value || "")
+      .normalize("NFKC")
+      .toLocaleLowerCase()
+      .replace(/\s+/g, "")
+      .trim();
+  }
+
+  /** 指定チーム名が団体名・表示名・大会名・元動画タイトルのいずれかに含まれるか。 */
+  function isInitialPriorityTeamRow(row, team) {
+    const target = normalizeInitialPriorityTeam(team);
+    if (!target) return false;
+    return [
+      rowOrgTeam(row),
+      rowDisplayName(row),
+      row["大会名"],
+      row["元動画タイトル"],
+    ].some((value) => {
+      const candidate = normalizeInitialPriorityTeam(value);
+      return candidate === target || candidate.includes(target);
+    });
+  }
+
   /** @param {object[]} rows @param {string} team */
   function pickRandomVideoForPriorityTeam(rows, team) {
-    const candidates = rows.filter((r) => String(rowOrgTeam(r) || "").trim() === team);
+    const candidates = rows.filter((r) => isInitialPriorityTeamRow(r, team));
     if (!candidates.length) return null;
     const sortedByPref = [...candidates].sort((a, b) => {
       const ca = drumcorpsFinalVsIntroBonus(a);
@@ -2146,12 +2187,16 @@
     return pool[Math.floor(Math.random() * pool.length)] ?? null;
   }
 
-  function applyInitialRandomOrder(rows) {
+  function applyInitialRandomOrder(
+    rows,
+    priorityTeams = INITIAL_RANDOM_PRIORITY_TEAMS,
+    prioritySlots = priorityTeams.length
+  ) {
     const required = [];
     const usedUrls = new Set();
     const usedTeams = new Set();
-    for (const team of INITIAL_RANDOM_PRIORITY_TEAMS) {
-      if (required.length >= INITIAL_RANDOM_PRIORITY_SLOTS) break;
+    for (const team of shuffleArray(priorityTeams)) {
+      if (required.length >= prioritySlots) break;
       if (usedTeams.has(team)) continue;
       const picked = pickRandomVideoForPriorityTeam(rows, team);
       if (!picked) continue;

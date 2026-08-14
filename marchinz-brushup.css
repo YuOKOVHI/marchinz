@@ -7448,3 +7448,42 @@ input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
     margin-top: 0;
   }
 }
+/* PC: 長い検索履歴の最小幅で大会動画の検索カードが横へ押し広がらないようにする。 */
+@media (min-width: 720px) {
+  #page-videos,
+  #page-videos .videos-page-main,
+  #page-videos .video-search-deck,
+  #page-videos .video-search-deck > *,
+  #page-videos .video-search-primary-row,
+  #page-videos .video-search-primary-row > *,
+  #page-videos .video-search-omni,
+  #page-videos .video-search-omni input[type="search"],
+  #page-videos .search-inline-header,
+  #page-videos .search-history,
+  #page-videos .search-history-heading,
+  #page-videos .search-history-list-wrap,
+  #page-videos #recent-searches.search-presets-list {
+    box-sizing: border-box;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  #page-videos,
+  #page-videos .videos-page-main,
+  #page-videos .video-search-deck,
+  #page-videos .video-search-omni,
+  #page-videos .search-history,
+  #page-videos .search-history-list-wrap,
+  #page-videos #recent-searches.search-presets-list {
+    width: 100%;
+  }
+
+  #page-videos .video-search-primary-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  /* 履歴チップは横スクロールを残し、履歴ラッパーだけが親幅を越えないようにする。 */
+  #page-videos .search-history-list-wrap {
+    overflow: hidden;
+  }
+}

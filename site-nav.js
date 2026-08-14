@@ -1424,6 +1424,16 @@
         ],
       },
       {
+        name: "星野学園中学・星野高校吹奏楽部マーチングバンド",
+        url: "https://www.youtube.com/@hoshino.marching",
+        category: "高校",
+        logo: "https://yt3.googleusercontent.com/1zEImVpy8U5MlBA9DPLy4ZYcu0gHgO2Dy_Hw3flxtUH5hKtK_fqfoBYd-yLZ8cPS2ajCw4jFkA=s900-c-k-c0x00ffffff-no-rj",
+        thumbnails: [
+          "https://i.ytimg.com/vi/H7P8GYPpNhw/hqdefault.jpg",
+          "https://i.ytimg.com/vi/X-8wennOnWE/hqdefault.jpg",
+        ],
+      },
+      {
         name: "農大二高吹奏楽部エメラルドナイツ",
         url: "https://youtube.com/channel/UCBeLVZz52RfizavumDvRiFA?si=OufqB30QHV482KjW",
         category: "高校",
