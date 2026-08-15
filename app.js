@@ -3230,9 +3230,9 @@
         originalTitleEl.href = urlStr;
         originalTitleEl.target = "_blank";
         originalTitleEl.rel = "noopener noreferrer";
-        originalTitleEl.setAttribute("aria-label", `元動画「${originalTitle}」を開く`);
+        originalTitleEl.setAttribute("aria-label", `タイトル「${originalTitle}」を開く`);
       } else {
-        originalTitleEl.setAttribute("aria-label", `元動画タイトル: ${originalTitle}`);
+        originalTitleEl.setAttribute("aria-label", `タイトル: ${originalTitle}`);
       }
       sourceStack.appendChild(originalTitleEl);
     }

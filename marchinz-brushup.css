@@ -7094,11 +7094,6 @@ input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
   outline-offset: 2px;
 }
 
-.video-result-list .recommend-item-source-original-title::before {
-  content: "元動画: ";
-  color: var(--mzu-muted);
-  font-weight: 700;
-}
 
 .video-result-list .recommend-item-yt-original-title::before,
 .video-result-list .recommend-item-yt-date::before {
