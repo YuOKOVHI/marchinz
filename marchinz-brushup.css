@@ -7067,6 +7067,39 @@ input.mz-auto-filled--weak, select.mz-auto-filled--weak { background: #fffdf7; }
   flex: 0 1 auto;
 }
 
+/* POV・海外は整理済みの表示名とは別に、YouTube上の元タイトルを補助情報として残す。 */
+.video-result-list .recommend-item-source-original-title {
+  margin: 0.08rem 0 0;
+  overflow: hidden;
+  color: var(--mzu-muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.video-result-list a.recommend-item-source-original-title {
+  text-decoration: none;
+}
+
+.video-result-list a.recommend-item-source-original-title:hover {
+  color: var(--mzu-navy);
+  text-decoration: underline;
+}
+
+.video-result-list a.recommend-item-source-original-title:focus-visible {
+  border-radius: 0.2rem;
+  outline: 2px solid var(--mzu-blue);
+  outline-offset: 2px;
+}
+
+.video-result-list .recommend-item-source-original-title::before {
+  content: "元動画: ";
+  color: var(--mzu-muted);
+  font-weight: 700;
+}
+
 .video-result-list .recommend-item-yt-original-title::before,
 .video-result-list .recommend-item-yt-date::before {
   content: "·";

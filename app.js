@@ -3186,9 +3186,11 @@
     const sourceStack = document.createElement("div");
     sourceStack.className = "recommend-item-source-stack";
 
-    /** 配信元＋チャンネル名・元動画タイトル（カードでは常に一行）。 */
+    /** POV・海外は整理済みの表示名とは別に、YouTube上の元タイトルを示す。 */
     const originalTitle = String(row["元動画タイトル"] ?? "").trim();
-    if (dateStr || chName || originalTitle) {
+    const sourceCategory = String(row["分類"] ?? "").trim();
+    const showsOriginalTitle = sourceCategory === "POV" || sourceCategory === "海外";
+    if (dateStr || chName) {
       const metaLine = document.createElement("p");
       metaLine.className = "recommend-item-yt-meta-line";
       const metaPrefix = document.createElement("span");
@@ -3210,19 +3212,29 @@
         chNameEl.textContent = chName;
         metaLine.appendChild(chNameEl);
       }
-      if (originalTitle) {
-        const rawTitle = document.createElement("span");
-        rawTitle.className = "recommend-item-yt-original-title";
-        rawTitle.textContent = originalTitle;
-        rawTitle.title = originalTitle;
-        metaLine.appendChild(rawTitle);
-      } else if (dateStr) {
+      if (dateStr) {
         const date = document.createElement("span");
         date.className = "recommend-item-yt-date";
         date.textContent = dateStr;
         metaLine.appendChild(date);
       }
       sourceStack.appendChild(metaLine);
+    }
+
+    if (showsOriginalTitle && originalTitle) {
+      const originalTitleEl = document.createElement(urlStr ? "a" : "p");
+      originalTitleEl.className = "recommend-item-source-original-title";
+      originalTitleEl.textContent = originalTitle;
+      originalTitleEl.title = originalTitle;
+      if (urlStr) {
+        originalTitleEl.href = urlStr;
+        originalTitleEl.target = "_blank";
+        originalTitleEl.rel = "noopener noreferrer";
+        originalTitleEl.setAttribute("aria-label", `元動画「${originalTitle}」を開く`);
+      } else {
+        originalTitleEl.setAttribute("aria-label", `元動画タイトル: ${originalTitle}`);
+      }
+      sourceStack.appendChild(originalTitleEl);
     }
 
     sourceRow.appendChild(avatarWrap);
