@@ -36,6 +36,14 @@ python3 push_check.py
 **QAは desktop の窓で回すこと。** モバイル判定のUA/タッチ環境だと、
 会員×端末の門の試験が実力どおり落ちて偽FAILになる（1時間溶かした実績あり）。
 
+## 高速検証（品質を落とさない）
+
+- **編集中**: `python3 scripts/fast_verify.py`。差分から必要な0.1〜0.4秒級の確認だけ選ぶ
+- **ローカル完成時**: 変更した画面・機能だけを実操作。小修正ごとに標準/full QAは回さない
+- **push直前**: `python3 scripts/fast_verify.py --base origin/main --release`。表示された標準/full QAを、まとめた本番候補に対して最後に1回だけ回す
+- 自動選択の詳細は `docs/FAST_DEVELOPMENT_WORKFLOW.md`。選択ロジック変更時は `python3 scripts/test_fast_verify.py`も必須
+- pushと本番デプロイの都度承認、版番、Drive巻き戻り確認は従来どおり省略しない
+
 ## 絶対に守ること
 
 - **`git push` は本番自動デプロイ。実行前に毎回、優さんの明示確認を得る。**

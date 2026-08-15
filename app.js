@@ -106,7 +106,7 @@
     synth: { label: "Synth", terms: ["synth"] },
     rack: { label: "Rack", terms: ["rack"] },
   };
-  /** DrumcorpsfunTVの既存優先判定に使うチーム名。初期表示の順番は固定しない。 */
+  /** マーチング等の初期表示で出会いを作る候補。各チームから1本ずつ、順番は毎回シャッフルする。 */
   const INITIAL_RANDOM_PRIORITY_TEAMS = [
     "インスタントコー",
     "YOKOHAMA ROBINS",
@@ -2016,10 +2016,14 @@
     renderYearFilter(sourceRows.filter((row) => filterPredicate(row, { skipYear: true })));
     if (shouldUseInitialRandom()) {
       if (state.tab === "マーチング団体等") {
-        // 既存の「マーチング祭の動画だけ」という対象ルールは維持し、
-        // 固定チームの優先順だけを外して毎回ランダムにする。
+        // マーチング祭だけを対象に、指定チームを各1本ずつ先頭候補へ。
+        // 指定チームの順番と、その後の動画は毎回ランダムにする。
         const matsuriOnly = state.filtered.filter((row) => isMarchingMatsuriVideo(row));
-        state.filtered = shuffleArray(matsuriOnly);
+        state.filtered = applyInitialRandomOrder(
+          matsuriOnly,
+          INITIAL_RANDOM_PRIORITY_TEAMS,
+          INITIAL_RANDOM_PRIORITY_TEAMS.length
+        );
       } else {
         // MIX3は指定チームを先頭候補に含めつつ、候補の順番も残りの動画も毎回変える。
         state.filtered = applyInitialRandomOrder(
