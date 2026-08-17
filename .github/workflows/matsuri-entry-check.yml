@@ -1,0 +1,78 @@
+name: マーチング祭 エントリー更新メール
+
+on:
+  schedule:
+    # 毎日 05:10 JST（20:10 UTC）。湘南藤沢・東海・横浜を必ず報告する。
+    - cron: "10 20 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: matsuri-entry-check
+  cancel-in-progress: false
+
+jobs:
+  check-and-email:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 前回リストを復元
+        id: restore-state
+        uses: actions/cache/restore@v4
+        with:
+          path: matsuri-entry-state.json
+          key: matsuri-entry-state-${{ github.run_id }}
+          restore-keys: |
+            matsuri-entry-state-
+
+      - name: 3大会のエントリー更新を確認
+        id: entry-check
+        continue-on-error: true
+        run: |
+          python3 check_matsuri_entries.py \
+            --state matsuri-entry-state.json \
+            --report matsuri-entry-report.txt \
+            --subject-file matsuri-entry-subject.txt
+
+      - name: 監視失敗のメール本文を作成
+        if: steps.entry-check.outcome == 'failure'
+        run: |
+          printf '%s\n' \
+            '【更新】' \
+            '監視に失敗しました。公式ページまたは監視処理の確認が必要です。' \
+            '' \
+            '【現在のリスト】' \
+            '取得できませんでした。' \
+            '' \
+            '確認先：https://www.marching-matsuri.com/2026mmcs' \
+            > matsuri-entry-report.txt
+          printf '%s\n' '[マーチング祭] エントリー監視失敗' > matsuri-entry-subject.txt
+
+      - name: 今回リストを保存
+        if: steps.entry-check.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: matsuri-entry-state.json
+          key: matsuri-entry-state-${{ github.run_id }}
+
+      - name: 更新レポートをメール送信
+        if: always() && (steps.entry-check.outcome == 'success' || steps.entry-check.outcome == 'failure')
+        env:
+          MATSURI_SMTP_USER: ${{ secrets.MATSURI_SMTP_USER }}
+          MATSURI_SMTP_APP_PASSWORD: ${{ secrets.MATSURI_SMTP_APP_PASSWORD }}
+          MATSURI_REPORT_EMAIL_TO: ${{ secrets.MATSURI_REPORT_EMAIL_TO }}
+        run: |
+          python3 send_matsuri_report_email.py \
+            --subject-file matsuri-entry-subject.txt \
+            --body-file matsuri-entry-report.txt
+
+      - name: 監視失敗をワークフローへ反映
+        if: steps.entry-check.outcome == 'failure'
+        run: exit 1

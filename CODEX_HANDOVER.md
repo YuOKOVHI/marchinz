@@ -141,3 +141,12 @@ iPhone でしか無理なものは「未確認」と分けて報告して。
 MarchinZ で「被写体」の初期値が初回に必ず「指定なし」になる件を調べて、
 quickProbe に被写体判定を足す場合の設計案を出して。実装はまだしないで。
 ```
+
+## 10. マーチング祭エントリー監視（2026-08-18）
+
+- 対象は `https://www.marching-matsuri.com/2026mmcs` の「湘南藤沢OPEN」「東海OPEN」「横浜FINAL」の3スライド。
+- `check_matsuri_entries.py` がWix公式データから一覧を取得し、前回との追加・削除・見出し変更を大会・部門ごとに具体的に報告する。解析不能な場合は「更新なし」とせず失敗扱い。
+- 報告は必ず `【更新】` と `【現在のリスト】` を含み、3大会の全団体を載せる。
+- `.github/workflows/matsuri-entry-check.yml` は毎日05:10 JSTに実行し、`send_matsuri_report_email.py` でSMTPメールを送る。
+- GitHub Secretsは `MATSURI_SMTP_USER`、`MATSURI_SMTP_APP_PASSWORD`、`MATSURI_REPORT_EMAIL_TO`。パスワードはリポジトリや引き継ぎ書に記載しない。
+- 2026-08-18時点で実測と自動確認9件はPASS。

@@ -28,3 +28,8 @@ backups/
 
 # メディア更新チェックが Issue 本文用に吐く一時ファイル
 media-update-issue.md
+
+# マーチング祭エントリー監視の生成物
+matsuri-entry-state.json
+matsuri-entry-report.txt
+matsuri-entry-subject.txt
