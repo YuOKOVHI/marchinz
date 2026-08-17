@@ -26,8 +26,11 @@ Issue が立つ。
 終了コード:
     0  正常に調べ終えた(新着の有無は問わない)
     2  調べ方が壊れている(yt-dlpが無い/CSVが読めない 等)
-       → ここだけ赤くする。ネットに弾かれただけの日は 0 のまま。
-         毎日走るので、弾かれた日まで赤くすると失敗通知に埋もれて誰も見なくなる。
+    3  制限時間内に収集が完了しなかった
+    4  収集処理が失敗した
+
+ネットワーク障害やYouTube側の一時拒否を「新着なし」と誤判定しない。
+日次側は 3 / 4 を失敗として通知し、次回の再実行対象にする。
 """
 from __future__ import annotations
 
@@ -168,9 +171,9 @@ def main() -> int:
         p = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True,
                            timeout=args.timeout)
     except subprocess.TimeoutExpired:
-        print(f"[弾かれた] {args.timeout}秒で終わらなかった。今日は見送ります",
-              file=sys.stderr)
-        return 0
+        print(f"[収集失敗] {args.timeout}秒で終わりませんでした。"
+              "更新なしとは判定しません", file=sys.stderr)
+        return 3
     except FileNotFoundError as e:
         return die(f"実行できない: {e}")
 
@@ -181,9 +184,9 @@ def main() -> int:
         # yt-dlp がそもそも無い等は「壊れている」。それ以外は「弾かれた」。
         if "yt-dlp が見つかりません" in (p.stderr or ""):
             return die("yt-dlp が無い")
-        print(f"[弾かれた] scout が {p.returncode} で終了。今日は見送ります",
-              file=sys.stderr)
-        return 0
+        print(f"[収集失敗] scout が {p.returncode} で終了しました。"
+              "更新なしとは判定しません", file=sys.stderr)
+        return 4
 
     if not OUT_TSV.exists():
         return die("候補ファイルが作られなかった")

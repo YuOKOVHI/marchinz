@@ -43,6 +43,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
@@ -76,6 +77,9 @@ REVISIT_SCAN_LIMIT = 40       # カーソルがあるときの通常走査(新�
 SNOWBALL_CHANNEL_SCAN_LIMIT = 20
 # True のとき判定の本メタ取得をネットに投げない(キャッシュ+題名のみ)
 _JUDGE_NO_NETWORK = False
+_YTDLP_SUCCESSES = 0
+_YTDLP_FAILURES = 0
+_YTDLP_FAILURE_DETAILS: list[str] = []
 
 # yt-dlp は venv 側にしか無い環境があるので順に探す。
 # CutStudy 側を先に見る(MarchShot 同梱が古いと SABR で落ちることがある)。
@@ -104,6 +108,12 @@ PART = re.compile(
     r"シンバル|マリンバ|ドラムメジャー|カラーガード|ピット)", re.I)
 
 CAM = re.compile(r"(\bcam\b|\bcamera\b|カメラ|視点)", re.I)
+
+# 元の奏者POVを採譜した派生動画。通常のPOVと混同しないよう、元動画への
+# YouTubeリンクが概要欄にある場合だけ候補へ出し、採用時は「譜面」と明記する。
+SCORE_DERIVATIVE = re.compile(
+    r"(transcription|sheet\s*music|score\s*(?:video|animation)?|譜面|採譜)", re.I)
+ORIGINAL_VIDEO_REF = re.compile(r"(youtube\.com/watch\?v=|youtu\.be/)", re.I)
 
 # 「POV」だけでは車載・ゲーム・警察映像などが大量に混ざる。タイトルと概要欄の
 # どちらかにマーチングの文脈も必要とする。団体名だけでなく、題名が簡素な個人投稿を
@@ -225,12 +235,28 @@ def video_id(url: str) -> str:
 
 
 def run_ytdlp(args: list[str], timeout: int = 300) -> str:
-    try:
-        p = subprocess.run([ytdlp_bin(), *args], capture_output=True,
-                           text=True, timeout=timeout)
-        return p.stdout
-    except subprocess.TimeoutExpired:
-        return ""
+    """yt-dlpを実行する。失敗を空の検索結果として黙殺しない。"""
+    global _YTDLP_SUCCESSES, _YTDLP_FAILURES
+    last_error = ""
+    for attempt in range(1, 4):
+        try:
+            p = subprocess.run([ytdlp_bin(), *args], capture_output=True,
+                               text=True, timeout=timeout)
+            if p.returncode == 0:
+                _YTDLP_SUCCESSES += 1
+                return p.stdout
+            last_error = (p.stderr or f"exit {p.returncode}").strip().splitlines()[-1]
+        except subprocess.TimeoutExpired:
+            last_error = f"timeout {timeout}s"
+        if attempt < 3:
+            time.sleep(attempt)
+
+    _YTDLP_FAILURES += 1
+    target = str(args[-1])[:120] if args else "(target不明)"
+    detail = f"{target}: {last_error[:240]}"
+    _YTDLP_FAILURE_DETAILS.append(detail)
+    print(f"[yt-dlp失敗] {detail}", file=sys.stderr)
+    return ""
 
 
 def flat_list(target: str, timeout: int = 300, playlist_end: int | None = None) -> list[dict]:
@@ -402,6 +428,9 @@ def judge(meta: dict) -> tuple[bool, str]:
 
     if not MARCHING_CONTEXT.search(both):
         return False, "マーチング文脈なし"
+
+    if SCORE_DERIVATIVE.search(both) and ORIGINAL_VIDEO_REF.search(desc):
+        return True, "POV譜面・採譜（元動画参照あり）"
 
     if STRONG_POV.search(both):
         where = "題名" if STRONG_POV.search(title) else "概要欄"
@@ -1177,6 +1206,13 @@ def main() -> int:
     print(f"[対象期間] {since.isoformat()} 以降", file=sys.stderr)
     cands = scout(args.quick, args.workers, since, search_results,
                   args.year_from, args.year_to, args.skip_revisit, args.resync_channel)
+    if _YTDLP_FAILURES and _YTDLP_SUCCESSES == 0:
+        print("[収集失敗] yt-dlpが一度も成功していません。"
+              "『新着なし』ではなく収集異常として終了します。", file=sys.stderr)
+        return 2
+    if _YTDLP_FAILURES:
+        print(f"[部分失敗] yt-dlp失敗 {_YTDLP_FAILURES}件。"
+              "取得できた範囲だけ候補化しました。", file=sys.stderr)
     with args.out.open("w", encoding="utf-8", newline="") as f:
         w = csv.writer(f, delimiter="\t", lineterminator="\n")
         w.writerow(["video_id", "公開日", "尺秒", "チャンネル", "題名", "判定理由", "URL"])
