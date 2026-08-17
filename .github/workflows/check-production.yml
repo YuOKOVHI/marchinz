@@ -10,6 +10,9 @@
 #     しない(異常はこのジョブの失敗＝GitHubからのメールで伝える)
 #   - 帯域 … 1回あたり約400KB(月12MB程度)
 #   - GitHub Actions … public リポジトリのため無料。1回15秒ほど
+#
+# 結果は固定の GitHub Issue へ毎回通知する。正常なら「問題なし」、
+# 異常なら check_production.py が見つけた差分を本文に載せる。
 
 name: Check production
 
@@ -21,6 +24,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 concurrency:
   group: check-production
@@ -38,4 +42,47 @@ jobs:
           python-version: "3.11"
 
       - name: Check production site
-        run: python3 check_production.py
+        id: check
+        shell: bash
+        run: |
+          # 検査の終了コードは保ったまま、後段の通知が読めるよう出力を残す。
+          set +e
+          python3 check_production.py 2>&1 | tee check-production-out.txt
+          code=${PIPESTATUS[0]}
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          exit "$code"
+
+      - name: 毎朝の結果を Issue へ通知する
+        # 問題があって上の段が赤でも、その差分こそ通知する。
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CHECK_CODE: ${{ steps.check.outputs.code }}
+        run: |
+          case "$CHECK_CODE" in
+            0|1|2) ;;
+            *) CHECK_CODE=2 ;;
+          esac
+
+          checked_at="$(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M JST')"
+          python3 scripts/format_production_notification.py \
+            --exit-code "$CHECK_CODE" \
+            --input check-production-out.txt \
+            --output check-production-notification.md \
+            --checked-at "$checked_at" \
+            --run-url "$RUN_URL"
+
+          TITLE="MarchinZ 本番サイト・毎朝チェック"
+          num=$(gh issue list --state open --limit 100 --json number,title \
+                  --jq ".[] | select(.title==\"$TITLE\") | .number" | head -1)
+          if [ -n "$num" ]; then
+            # 担当者にすることで、後続コメントも GitHub 通知の対象にする。
+            gh issue edit "$num" --add-assignee "$OWNER" >/dev/null
+            gh issue comment "$num" --body-file check-production-notification.md
+          else
+            gh issue create --title "$TITLE" \
+              --assignee "$OWNER" \
+              --body-file check-production-notification.md
+          fi
