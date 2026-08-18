@@ -59,6 +59,15 @@ CACHE = Path.home() / "Movies" / ".cache" / "marchinz-pov-scout"
 MIN_SEC = 300  # 5分
 DEFAULT_LOOKBACK_DAYS = 365
 
+# 視聴に年齢・会員資格・認証が必要な動画は、POV一覧へ掲載しない。
+# YouTube/yt-dlp の表記揺れを吸収するが、メタデータが空の場合は
+# 既存の公開判定を維持して誤除外を避ける。
+RESTRICTED_AVAILABILITIES = {
+    "private", "needs_auth", "needs_subscription", "needs_purchase",
+    "needs_membership", "members_only", "members-only",
+    "subscriber_only", "subscriber-only", "premium",
+}
+
 # 年ごとのカバー状況を読むときの目安
 COVID_YEARS = {2020}      # DCIのシーズンが中止。少ないのが正しい
 PREGOPRO_YEAR = 2012      # これ以前はヘッドカム自体がほとんど無い
@@ -306,7 +315,7 @@ def fetch_meta(vid: str, *, allow_network: bool = True) -> dict | None:
         out = run_ytdlp([
             "--skip-download", "--no-warnings",
             "--extractor-args", client,
-            "--print", "%(.{id,title,duration,channel,channel_url,upload_date,description})j",
+            "--print", "%(.{id,title,duration,channel,channel_url,upload_date,description,age_limit,availability,is_private})j",
             f"https://www.youtube.com/watch?v={vid}",
         ], timeout=35)
         line = (out or "").strip().splitlines()
@@ -334,6 +343,9 @@ def fetch_meta(vid: str, *, allow_network: bool = True) -> dict | None:
         "channel_url": str(raw.get("channel_url") or ""),
         "upload_date": str(raw.get("upload_date") or ""),
         "desc": str(raw.get("description") or "")[:1500],
+        "age_limit": raw.get("age_limit"),
+        "availability": str(raw.get("availability") or ""),
+        "is_private": raw.get("is_private"),
     }
     cf.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
     return meta
@@ -408,8 +420,34 @@ def eligible_flat(row: dict, since: date) -> bool:
     return published is None or published >= since
 
 
+def restriction_reason(meta: dict) -> str | None:
+    """POV掲載不可のアクセス制限を返す。未知/欠損メタデータは許容する。"""
+    if not isinstance(meta, dict):
+        return None
+    age = meta.get("age_limit")
+    try:
+        if age is not None and int(age) >= 18:
+            return "年齢制限（18歳以上）"
+    except (TypeError, ValueError):
+        pass
+    if meta.get("is_private") is True:
+        return "非公開"
+    availability = str(meta.get("availability") or "").strip().lower()
+    if availability in RESTRICTED_AVAILABILITIES:
+        return "限定公開/認証が必要"
+    if availability and any(
+        term in availability for term in ("member", "subscriber", "premium")
+    ):
+        return "限定公開/認証が必要"
+    return None
+
+
 def judge(meta: dict) -> tuple[bool, str]:
     """タイトル＋概要欄で採否を決める。戻り: (候補にするか, 理由)"""
+    restricted = restriction_reason(meta)
+    if restricted:
+        return False, restricted
+
     title, desc = meta["title"], meta.get("desc", "")
     both = f"{title}\n{desc}"
 

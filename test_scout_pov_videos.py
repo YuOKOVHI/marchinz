@@ -618,6 +618,20 @@ def main() -> int:
         if ok:
             fails.append(f"落とすべきが残った [{name}] {title} [{why}]")
 
+    # 視聴制限のある動画は、POVの内容が正しくても掲載しない。
+    restricted_base = meta("Bluecoats 2026 GoPro Snare Cam", 900, "")
+    ok, why = S.judge(dict(restricted_base, age_limit=18))
+    if ok or "年齢制限" not in why:
+        fails.append(f"18歳以上の年齢制限動画を通してしまった [{why}]")
+    if not S.judge(dict(restricted_base, age_limit=17))[0]:
+        fails.append("17歳以下の動画まで年齢制限で除外した")
+    for availability in ("members_only", "subscriber_only", "needs_auth"):
+        ok, why = S.judge(dict(restricted_base, availability=availability))
+        if ok or "認証" not in why:
+            fails.append(f"視聴制限 {availability} を通してしまった [{why}]")
+    if not S.judge(restricted_base)[0]:
+        fails.append("制限メタデータ欠損の通常公開候補を除外した")
+
     # 題名にカメラ語がなくても、検索結果から概要欄を読むところまで進める。
     # これを title 判定に戻すと「概要欄だけに GoPro」と書いた個人投稿を落とす。
     since = date(2025, 8, 10)
