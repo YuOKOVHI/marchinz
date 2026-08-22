@@ -1529,6 +1529,9 @@
         p.set("ex", [...state.excludedOrgTeams].join("|"));
       }
     }
+    // 団体IDで共有先を特定できる場合、補助的な自由検索語は残さない。
+    // 例: Yokohama INSPIRES Alumni の共有URLに f=ins を重ねない。
+    if (p.has("o")) p.delete("f");
     return p;
   }
 
@@ -1606,7 +1609,8 @@
     const parts = [];
     const team = (qTeam?.value ?? "").trim() || String(state.exactOrgTeam ?? "").trim();
     const event = (qEvent?.value ?? "").trim() || String(state.exactEvent ?? "").trim();
-    const free = (qFree?.value ?? "").trim();
+    // URL側で団体IDに正規化できる共有では、自由検索語を共有文にも出さない。
+    const free = buildShareSearchParams().has("o") ? "" : (qFree?.value ?? "").trim();
     const part = VIDEO_PART_FILTERS[videoPartFilter?.value]?.label || "";
     if (team) parts.push(team);
     if (event) parts.push(event);
