@@ -230,7 +230,8 @@
         event_name: title,
         event_id: eventId,
         target_label: `${kind} ${date}の${title}`,
-        target_href: "#community/events",
+        // 更新情報から、一覧入口ではなく登録されたイベントそのものへ着地させる。
+        target_href: `#community/events?event=${encodeURIComponent(eventId)}`,
       });
     },
     /** @param {{ momentId: string; excerpt?: string; actorUid?: string; actorName?: string }} p */

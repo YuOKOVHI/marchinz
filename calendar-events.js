@@ -404,17 +404,42 @@
 
   function onCalendarEventEnterEvents() {
     const draft = readCalendarEventDraft();
-    if (!draft || !hasCalendarEventDraftContent(draft)) return;
-    applyCalendarEventDraftFields(draft);
-    if (
-      draft.uiOpen &&
-      getUser()?.id &&
-      !window.MLL_AUTH?.isWithdrawn?.() &&
-      !registerFormExpanded
-    ) {
-      registerFormExpanded = true;
-      syncRegisterFormVisibility();
+    if (draft && hasCalendarEventDraftContent(draft)) {
+      applyCalendarEventDraftFields(draft);
+      if (
+        draft.uiOpen &&
+        getUser()?.id &&
+        !window.MLL_AUTH?.isWithdrawn?.() &&
+        !registerFormExpanded
+      ) {
+        registerFormExpanded = true;
+        syncRegisterFormVisibility();
+      }
     }
+    focusCalendarEventFromHash();
+  }
+
+  /** `#community/events?event=…` の個別イベントを、絞り込みを外して表示する。 */
+  function focusCalendarEventFromHash() {
+    const raw = String(window.location.hash || "").replace(/^#/, "").trim();
+    const qi = raw.indexOf("?");
+    if (qi === -1 || raw.slice(0, qi).trim().toLowerCase() !== "community/events") return;
+    const eventId = String(new URLSearchParams(raw.slice(qi + 1)).get("event") || "").trim();
+    if (!eventId) return;
+
+    // 共有リンクは受け手が設定していた絞り込みにも負けず、対象イベントを見せる。
+    kindTab = "all";
+    upcomingOnly = false;
+    venueFilterPref = "";
+    yearFilterYear = "";
+    eventSearchQuery = "";
+    if (calEvSearchInput) calEvSearchInput.value = "";
+    setViewMode("list");
+    syncViewButtons();
+    syncSortBar();
+    renderCurrentView();
+    // 初回ロードのFirestore取得を待てるよう、通常の登録後より長く保持する。
+    focusCalendarEventOrList(eventId, 15000);
   }
 
   function getUser() {
@@ -3391,8 +3416,8 @@
      → 期限つきの予約にして、描き直しのたびに付け直す。
        スクロールは1回だけ(何度も動かすと酔う) */
   let pendingFocus = null;   // {id, until, scrolled}
-  function focusCalendarEventOrList(eventId) {
-    pendingFocus = { id: String(eventId || ""), until: Date.now() + 2500, scrolled: false };
+  function focusCalendarEventOrList(eventId, timeoutMs = 2500) {
+    pendingFocus = { id: String(eventId || ""), until: Date.now() + timeoutMs, scrolled: false };
     applyPendingFocus();
   }
   function applyPendingFocus() {

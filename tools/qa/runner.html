@@ -12392,6 +12392,40 @@ async function countSamples(ns, file, fromSec) {
     }
   });
 
+  await test("★更新情報のイベントリンク: 既存分も個別イベントへ着地して強調表示する", async () => {
+    const [updatesSrc, logSrc] = await Promise.all([
+      fetch("../../marchinz-community-updates.js", { cache: "no-store" }).then((r) => r.text()),
+      fetch("../../marchinz-admin-ugc-log.js", { cache: "no-store" }).then((r) => r.text()),
+    ]);
+    if (!/eventTargetHref[\s\S]*event_id[\s\S]*#community\/events\?event=/.test(updatesSrc)) {
+      throw new Error("既存のイベント更新情報を個別リンクへ正規化していない");
+    }
+    if (!/target_href:\s*`#community\/events\?event=\$\{encodeURIComponent\(eventId\)\}`/.test(logSrc)) {
+      throw new Error("新規イベント更新情報が個別リンクを保存していない");
+    }
+    const f = document.createElement("iframe");
+    f.style.cssText = "position:fixed;left:-9999px;top:0;width:390px;height:844px;border:0";
+    f.src = "../../index.html?mzQaCalendarCard=1#community/events?event=qa-event-ticket";
+    document.body.appendChild(f);
+    try {
+      for (let i = 0; i < 120 && !f.contentWindow?.__MZQA_CALENDAR_CARD_READY; i++) {
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      const d = f.contentDocument;
+      const row = d?.querySelector('[data-cal-event-id="qa-event-ticket"]');
+      if (!row) throw new Error("個別URLで対象イベントの行を描画できない");
+      for (let i = 0; i < 80 && !row.classList.contains("calendar-ev-card--just-added"); i++) {
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      if (!row.classList.contains("calendar-ev-card--just-added")) {
+        throw new Error("個別URLから対象イベントへ着地していない");
+      }
+      return "既存更新=個別URL化 / 新規記録=個別URL保存 / 実URLで対象行を強調";
+    } finally {
+      f.remove();
+    }
+  });
+
   group("㊹ デザインチームU Action Rail + Finder Rail + Stage Poster（現行版）");
   await test("★実画面操作: 390pxヘッダー・目的起点TOP導線・大会動画検索とカード", async () => {
     const siteSrc = await (await fetch("../../index.html", { cache: "no-store" })).text();

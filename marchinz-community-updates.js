@@ -85,6 +85,14 @@
     return `【${title}】`;
   }
 
+  /** 既存の更新情報も event_id があれば個別イベントへ案内する。 */
+  function eventTargetHref(row) {
+    const eventId = String(row.event_id || "").trim();
+    if (eventId) return `#community/events?event=${encodeURIComponent(eventId)}`;
+    const fallback = String(row.target_href || "#").trim() || "#";
+    return fallback.startsWith("#") ? fallback : `#${fallback}`;
+  }
+
   /** @param {import("firebase").firestore.Firestore} db @param {string} kind */
   async function loadRows(db, kind) {
     const snap = await db.collection("mll_community_updates").where("kind", "==", kind).limit(120).get();
@@ -120,7 +128,9 @@
       const actorUid = String(row.actor_uid || "").trim();
       const actorName = `${String(row.actor_name || "ユーザー").trim()}さん`;
       const emoji = String(row.emoji || "").trim();
-      const href = String(row.target_href || "#").trim() || "#";
+      const href = kind === "event"
+        ? eventTargetHref(row)
+        : String(row.target_href || "#").trim() || "#";
 
       line.appendChild(document.createTextNode(`${fmtMd(String(row.created_at || ""))}に `));
 
