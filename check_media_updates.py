@@ -231,13 +231,18 @@ def latest_express(page_html):
     全角ピリオド・空白・大小文字をまとめて許す。
     """
     text = strip_tags(page_html)
-    if re.search(r"Enter the characters|自動化されたアクセス", text, re.I):
+    if re.search(r"Enter the characters|自動化されたアクセス|Robot Check|captcha", text, re.I):
         raise Blocked("Amazon にロボット判定された(CAPTCHA)")
     vols = [
         int(m.group(1))
         for m in re.finditer(r"マーチングエクスプレス\s*21\s*vol[.．]?\s*(\d{1,3})", text, re.I)
     ]
     if not vols:
+        # Amazon が HTTP 200 で検索結果のない制限ページを返した場合は翌日に再試行する。
+        if not re.search(r'id=["\']s-search-results["\']|data-component-type=["\']s-search-result["\']',
+                         page_html, re.I):
+            raise Blocked("Amazon が商品一覧を返さなかった(HTTP 200)。翌日再試行")
+
         raise RuntimeError("Amazon の検索結果から vol 番号を読めなかった")
     return {"vol": max(vols), "url": EXPRESS_SEARCH}
 
