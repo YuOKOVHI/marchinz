@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ja" data-mz-channel="beta">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MarchinZ SG（開発中） — ショウのテンポと音量を見る〈ベータ版〉</title>
+<meta name="description" content="YouTubeのショウ動画のテンポと音量をグラフにして、ショウを客観的に見られるMarchinZのツール。">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#ffffff">
+<link rel="icon" type="image/png" href="/favicon.png?v=1.75.0">
+<link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
+<link rel="stylesheet" href="css/sg.css?v=2.45.1">
+</head>
+<body data-mz-tool="sg">
+<header class="sg-top">
+  <a href="/#creators" class="sg-back">← 戻る</a>
+  <h1 class="sg-title">MarchinZ <span class="sg-title-em">SG</span><span class="sg-beta">ベータ版</span></h1>
+</header>
+
+<main class="sg-wrap">
+  <form class="sg-url" id="urlForm" autocomplete="off">
+    <label for="urlInput" class="sg-label">YouTubeのURL</label>
+    <div class="sg-url-row">
+      <input id="urlInput" type="url" inputmode="url" placeholder="https://youtu.be/…"
+             value="https://youtu.be/72jaX1-e55U?si=WOtF-CJRSw3Kn6jT">
+      <button type="submit" class="sg-btn sg-btn--key"><i class="fa-solid fa-chart-area" aria-hidden="true"></i> 表示</button>
+    </div>
+    <p class="sg-err" id="urlErr" role="alert" hidden></p>
+  </form>
+
+  <section class="sg-show" id="showSec" hidden>
+    <div class="sg-player"><div id="player"></div></div>
+
+    <div class="sg-now" aria-live="off">
+      <div class="sg-stat"><span class="sg-stat-k">再生位置</span><span class="sg-stat-v" id="nowTime">0:00</span></div>
+      <div class="sg-stat"><span class="sg-stat-k">音量</span><span class="sg-stat-v" id="nowDb">—</span></div>
+      <div class="sg-stat"><span class="sg-stat-k">テンポ</span><span class="sg-stat-v" id="nowBpm">—</span></div>
+    </div>
+
+    <div class="sg-pending" id="pending" hidden>
+      <p><strong>この動画はまだ解析されていません。</strong>SG（テンポ・音量）は解析後に表示されます。テーマ・ショウ概要・ショウ解説は今から書けます。</p>
+      <p class="sg-pending-cmd">解析コマンド: <code id="pendingCmd"></code></p>
+    </div>
+
+    <div class="sg-charts" id="charts" hidden>
+      <div class="sg-chart-head">
+        <h2 class="sg-h2">SOUND GRAFIC</h2>
+        <div class="sg-seg" role="radiogroup" aria-label="テンポの表示">
+          <button type="button" role="radio" data-tempo-mode="abs" aria-checked="true">絶対 BPM</button>
+          <button type="button" role="radio" data-tempo-mode="rel" aria-checked="false">相対 %</button>
+        </div>
+      </div>
+      <figure class="sg-fig">
+        <figcaption class="sg-cap">音量 <span class="sg-unit">dBFS</span></figcaption>
+        <canvas id="dbCanvas" class="sg-canvas" height="150"></canvas>
+      </figure>
+      <figure class="sg-fig">
+        <figcaption class="sg-cap">テンポ <span class="sg-unit" id="tempoUnit">BPM</span> <span class="sg-note" id="tempoNote"></span></figcaption>
+        <canvas id="bpmCanvas" class="sg-canvas" height="150"></canvas>
+      </figure>
+      <div class="sg-tip" id="tip" hidden></div>
+      <p class="sg-hint">グラフをタップするとその位置から再生します。数字はショウ解説の番号です。</p>
+      <details class="sg-table">
+        <summary>数値で見る（10秒ごと）</summary>
+        <div class="sg-table-wrap"><table><thead><tr><th>時刻</th><th>音量 dBFS</th><th>テンポ BPM</th><th>相対 %</th></tr></thead><tbody id="tableBody"></tbody></table></div>
+      </details>
+    </div>
+
+    <section class="sg-panel">
+      <h2 class="sg-h2">テーマ</h2>
+      <input id="themeInput" class="sg-input" type="text" maxlength="120" placeholder="例: 光と影">
+      <h2 class="sg-h2">ショウ概要</h2>
+      <textarea id="summaryInput" class="sg-input" rows="4" maxlength="2000" placeholder="ショウの流れ・構成・楽曲など"></textarea>
+    </section>
+
+    <section class="sg-panel">
+      <h2 class="sg-h2">ショウ解説</h2>
+      <ol class="sg-notes" id="notes"></ol>
+      <p class="sg-empty" id="notesEmpty">まだショウ解説はありません。</p>
+      <form class="sg-add" id="addForm">
+        <div class="sg-add-row">
+          <input id="addTime" class="sg-input sg-input--time" type="text" inputmode="numeric" placeholder="0:46" aria-label="時刻">
+          <button type="button" class="sg-btn" id="useNow"><i class="fa-solid fa-location-crosshairs" aria-hidden="true"></i> 現在の再生位置</button>
+        </div>
+        <textarea id="addText" class="sg-input" rows="2" maxlength="500" placeholder="この場面の解説" aria-label="解説"></textarea>
+        <div class="sg-add-row">
+          <button type="submit" class="sg-btn sg-btn--key" id="addSubmit"><i class="fa-solid fa-plus" aria-hidden="true"></i> ショウ解説を追加</button>
+          <button type="button" class="sg-btn" id="addCancel" hidden>やめる</button>
+        </div>
+      </form>
+      <p class="sg-foot">テーマ・概要・解説はこの端末のブラウザに保存されます。
+        <button type="button" class="sg-link" id="exportBtn">JSONで書き出す</button></p>
+    </section>
+  </section>
+</main>
+
+<script src="js/sg.js?v=2.45.1"></script>
+</body>
+</html>
